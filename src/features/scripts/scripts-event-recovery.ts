@@ -1,3 +1,4 @@
+import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
   type RendererRecoveryScope,
@@ -18,24 +19,13 @@ interface RecoveryStore {
   dispatch(action: { type: string }): unknown;
   subscribe(listener: () => void): () => void;
 }
-const lanes = new Map<string, Promise<void>>();
 let activeStore: RecoveryStore | undefined;
 const owners = new Map<string, RendererRecoveryHandle>();
 export const scriptsRecoveryKey = (workspaceId: string) =>
   'scripts:' + JSON.stringify([workspaceId]);
 
 function serial<T>(workspaceId: string, read: () => Promise<T>): Promise<T> {
-  const prior = lanes.get(workspaceId) ?? Promise.resolve();
-  const result = prior.then(read);
-  const tail = result.then(
-    () => {},
-    () => {},
-  );
-  lanes.set(workspaceId, tail);
-  void tail.then(() => {
-    if (lanes.get(workspaceId) === tail) lanes.delete(workspaceId);
-  });
-  return result;
+  return trackRuntimeRead(scriptsRecoveryKey(workspaceId), read);
 }
 
 /** Take a thunk: an already-started request cannot be serialized with recovery. */
@@ -62,7 +52,6 @@ export function installScriptsRecovery(
   scope: RendererRecoveryScope,
   store: RecoveryStore,
 ): () => void {
-  lanes.clear();
   activeStore = store;
   const registered = new Map<string, { authority: string; handle: RendererRecoveryHandle }>();
   let disposed = false;
@@ -135,7 +124,6 @@ export function installScriptsRecovery(
           retire: () => {
             registered.delete(workspaceId);
             owners.delete(workspaceId);
-            lanes.delete(workspaceId);
             store.dispatch(scriptsRecoveryRetired(workspaceId));
           },
         });
@@ -156,7 +144,6 @@ export function installScriptsRecovery(
       if (owners.get(id) === entry.handle) owners.delete(id);
     }
     registered.clear();
-    lanes.clear();
     if (activeStore === store) activeStore = undefined;
   };
 }

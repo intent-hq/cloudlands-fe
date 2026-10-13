@@ -1,3 +1,4 @@
+import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
   type RendererRecoveryHandle,
@@ -201,11 +202,19 @@ function* refetchWorkspace(
   const token = rendererEventRecovery.capture('background-hooks:' + JSON.stringify([workspaceId]));
   const generation = entry.generation;
   try {
-    const request = entry.scope
-      ? entry.scope
-          .request<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId })
-          .then((result) => (Array.isArray(result?.hooks) ? result.hooks : []))
-      : listHooks(workspaceId);
+    const request = trackRuntimeRead('background-hooks:' + JSON.stringify([workspaceId]), () => {
+      if (
+        active.get(workspaceId) !== entry ||
+        entry.generation !== generation ||
+        !token.commit(() => {})
+      )
+        throw new Error('Hook read superseded');
+      return entry.scope
+        ? entry.scope
+            .request<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId })
+            .then((result) => (Array.isArray(result?.hooks) ? result.hooks : []))
+        : listHooks(workspaceId);
+    });
     entry.pendingRead = request;
     const hooks = yield* call(() => request);
     if (active.get(workspaceId) === entry && entry.generation === generation) {
@@ -296,9 +305,13 @@ function* handleSubscribe(
       isCurrent: () => active.get(workspaceId) === entry && entry.generation === generation,
       read: async (reader) => {
         if (entry.pendingRead) await entry.pendingRead.catch(() => {});
-        const result = await reader.request<{ hooks?: BackgroundHook[] }>('hook.list', {
-          workspaceId,
-        });
+        const result = await trackRuntimeRead(
+          'background-hooks:' + JSON.stringify([workspaceId]),
+          () =>
+            reader.request<{ hooks?: BackgroundHook[] }>('hook.list', {
+              workspaceId,
+            }),
+        );
         return Array.isArray(result?.hooks) ? result.hooks : [];
       },
       apply: (hooks) => {

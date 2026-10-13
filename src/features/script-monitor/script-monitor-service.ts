@@ -1,3 +1,4 @@
+import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
   type RendererRecoveryScope,
@@ -75,17 +76,18 @@ export function subscribeScriptMonitors(
   let controller: AbortController | undefined;
   let loadedPages = 1;
   const selectedDetails = new Set<string>();
-  const pending = new Set<Promise<unknown>>();
   const request = <T>(method: string, params?: unknown): Promise<T> => {
-    const result = recoveryScope
-      ? recoveryScope.request<T>(method, params)
-      : backendRequest<T>(method, params);
-    pending.add(result);
-    void result.then(
-      () => pending.delete(result),
-      () => pending.delete(result),
-    );
-    return result;
+    const scope = recoveryScope;
+    const invoke = () =>
+      scope ? scope.request<T>(method, params) : backendRequest<T>(method, params);
+    if (!['scriptMonitor.list', 'scriptMonitor.get', 'script.get'].includes(method))
+      return invoke();
+    const token = rendererEventRecovery.capture(key);
+    return trackRuntimeRead(key, () => {
+      if (disposed || recoveryScope !== scope || !token.commit(() => {}))
+        throw new Error('Script monitor read superseded');
+      return invoke();
+    });
   };
   let disposed = false;
   let epoch = 0;
@@ -311,57 +313,57 @@ export function subscribeScriptMonitors(
       workspaceId,
       eventTypes: ['scriptMonitor:*', 'script:changed', 'script:removed'],
       isCurrent: () => !disposed && recoveryScope === scope,
-      read: async (reader) => {
-        await Promise.allSettled([...pending]);
-        const monitors: ScriptMonitorSummary[] = [];
-        let nextCursor: string | undefined;
-        for (let page = 0; page < loadedPages; page++) {
-          const result = await reader.request<{
-            view: string;
-            monitors: ScriptMonitorSummary[];
-            nextCursor?: string;
-          }>('scriptMonitor.list', {
-            workspaceId,
-            state: 'active',
-            view: 'summary',
-            limit: 100,
-            ...(nextCursor ? { cursor: nextCursor } : {}),
-          });
-          if (result.view !== 'summary' || !Array.isArray(result.monitors))
-            throw new Error('Invalid script monitor summary');
-          monitors.push(
-            ...result.monitors.filter(
-              (row) => row.workspaceId === workspaceId && row.state === 'active',
-            ),
-          );
-          nextCursor = result.nextCursor;
-          if (!nextCursor) break;
-        }
-        const details: Record<string, ActiveScriptMonitor | null> = {};
-        const scripts: ScriptWithState[] = [];
-        for (const row of monitors) {
-          if (!selectedDetails.has(row.monitorId)) continue;
-          const monitor = await reader.request<ActiveScriptMonitor>('scriptMonitor.get', {
-            workspaceId,
-            monitorId: row.monitorId,
-          });
-          const script = await reader.request<ScriptWithState>('script.get', {
-            workspaceId,
-            scriptId: row.scriptId,
-          });
-          if (monitor.state === 'active') details[row.monitorId] = monitor;
-          if (!script.archivedAt && !scripts.some((item) => item.id === script.id))
-            scripts.push(script);
-        }
-        return {
-          monitors,
-          details,
-          scripts,
-          nextCursor,
-          status: 'ready' as const,
-          loadingMore: false,
-        };
-      },
+      read: (reader) =>
+        trackRuntimeRead(key, async () => {
+          const monitors: ScriptMonitorSummary[] = [];
+          let nextCursor: string | undefined;
+          for (let page = 0; page < loadedPages; page++) {
+            const result = await reader.request<{
+              view: string;
+              monitors: ScriptMonitorSummary[];
+              nextCursor?: string;
+            }>('scriptMonitor.list', {
+              workspaceId,
+              state: 'active',
+              view: 'summary',
+              limit: 100,
+              ...(nextCursor ? { cursor: nextCursor } : {}),
+            });
+            if (result.view !== 'summary' || !Array.isArray(result.monitors))
+              throw new Error('Invalid script monitor summary');
+            monitors.push(
+              ...result.monitors.filter(
+                (row) => row.workspaceId === workspaceId && row.state === 'active',
+              ),
+            );
+            nextCursor = result.nextCursor;
+            if (!nextCursor) break;
+          }
+          const details: Record<string, ActiveScriptMonitor | null> = {};
+          const scripts: ScriptWithState[] = [];
+          for (const row of monitors) {
+            if (!selectedDetails.has(row.monitorId)) continue;
+            const monitor = await reader.request<ActiveScriptMonitor>('scriptMonitor.get', {
+              workspaceId,
+              monitorId: row.monitorId,
+            });
+            const script = await reader.request<ScriptWithState>('script.get', {
+              workspaceId,
+              scriptId: row.scriptId,
+            });
+            if (monitor.state === 'active') details[row.monitorId] = monitor;
+            if (!script.archivedAt && !scripts.some((item) => item.id === script.id))
+              scripts.push(script);
+          }
+          return {
+            monitors,
+            details,
+            scripts,
+            nextCursor,
+            status: 'ready' as const,
+            loadingMore: false,
+          };
+        }),
       apply: (value) => {
         retired.clear();
         snapshot = value;

@@ -1,3 +1,4 @@
+import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
   type RendererRecoveryHandle,
@@ -268,13 +269,15 @@ export function subscribePrMonitors(
     refetchInFlight = true;
     const epoch = registerEpoch;
     const token = rendererEventRecovery.capture(key);
-    pendingRead = (
-      recoveryScope
+    pendingRead = trackRuntimeRead(key, () => {
+      if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
+        throw new Error('Runtime read superseded');
+      return recoveryScope
         ? recoveryScope
             .request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', { workspaceId })
             .then((result) => (Array.isArray(result?.monitors) ? result.monitors : []))
-        : listPrMonitors(workspaceId)
-    )
+        : listPrMonitors(workspaceId);
+    })
       .then((fetched) => {
         if (disposed || epoch !== registerEpoch) return;
         token.commit(() => {
@@ -385,9 +388,11 @@ export function subscribePrMonitors(
       isCurrent: () => !disposed && epoch === registerEpoch,
       read: async (reader) => {
         if (pendingRead) await pendingRead;
-        const result = await reader.request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
-          workspaceId,
-        });
+        const result = await trackRuntimeRead(key, () =>
+          reader.request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
+            workspaceId,
+          }),
+        );
         return Array.isArray(result?.monitors) ? result.monitors : [];
       },
       apply: (rows) => {

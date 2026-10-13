@@ -1,3 +1,4 @@
+import { runtimeReadDrained } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
   type RendererRecoveryScope,
@@ -32,10 +33,7 @@ export function trackTerminalRuntimeRead<T>(
     }
   };
   const result = previous?.lifetime === lifetime ? previous.settled.then(invoke) : invoke();
-  const settled = result.then(
-    () => {},
-    () => {},
-  );
+  const settled = runtimeReadDrained(result);
   const entry = { lifetime, settled };
   pendingReads.set(workspaceId, entry);
   void settled.then(() => {

@@ -1,3 +1,4 @@
+import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
   acquireAgentMetadataDemand,
   trackAgentMetadataRead,
@@ -172,7 +173,11 @@ function applyUsage(result: UsageResult): void {
 /** Fetch the 24h usage rollup (§5.36) and fold it into the slice. */
 async function loadUsage(isLive: () => boolean, scope?: RendererRecoveryScope): Promise<void> {
   const token = rendererEventRecovery.capture('hud-stats');
-  const request = scope?.request ?? backendRequest;
+  const request: typeof backendRequest = (method, params) =>
+    trackRuntimeRead('hud-stats', () => {
+      if (!isLive() || !token.commit(() => {})) throw new Error('HUD stats read superseded');
+      return (scope?.request ?? backendRequest)(method, params);
+    });
   try {
     const result = await request<{
       totals?: HudUsageTotals;
@@ -210,7 +215,11 @@ async function loadRateHistory(
   scope?: RendererRecoveryScope,
 ): Promise<void> {
   const token = rendererEventRecovery.capture('hud-stats');
-  const request = scope?.request ?? backendRequest;
+  const request: typeof backendRequest = (method, params) =>
+    trackRuntimeRead('hud-stats', () => {
+      if (!isLive() || !token.commit(() => {})) throw new Error('HUD stats read superseded');
+      return (scope?.request ?? backendRequest)(method, params);
+    });
   try {
     const result = await request<{
       samples?: Array<{ bucketUtc: string } & HudUsageTotals>;
@@ -801,18 +810,18 @@ export function startHudSubscription(): () => void {
       workspaceId: null,
       eventTypes: HUD_SUBSCRIBE_EVENT_TYPES,
       isCurrent: live,
-      read: async (reader) => {
-        await Promise.allSettled([...pendingStats.values()]);
-        return {
-          usage: await reader.request<UsageResult>('stats.getUsage', {
-            period: '24h',
-            tzOffsetMinutes: -new Date().getTimezoneOffset(),
-          }),
-          rates: await reader.request<RateHistoryResult>('stats.getRateHistory', {
-            limit: HUD_RATE_HISTORY_LIMIT,
-          }),
-        };
-      },
+      read: (reader) =>
+        trackRuntimeRead('hud-stats', async () => {
+          return {
+            usage: await reader.request<UsageResult>('stats.getUsage', {
+              period: '24h',
+              tzOffsetMinutes: -new Date().getTimezoneOffset(),
+            }),
+            rates: await reader.request<RateHistoryResult>('stats.getRateHistory', {
+              limit: HUD_RATE_HISTORY_LIMIT,
+            }),
+          };
+        }),
       apply: (value) => {
         applyUsage(value.usage);
         applyRateHistory(value.rates);

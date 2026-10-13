@@ -398,3 +398,115 @@ describe('script monitor recovery', () => {
     ]);
   });
 });
+
+import { RecoveryRequestTimeoutError as VerifierTimeout } from '$shared/event-recovery/session';
+describe.each(cases)('$name physical read lane', (c) => {
+  it('physical read: retains ordinary timeout drain before recovery', async () => {
+    vi.useFakeTimers();
+    const h = session();
+    h.request.mockImplementation(async (method) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'lease-1', lossRecovery: 1 }
+        : { [c.field]: [c.row] },
+    );
+    legacy.request.mockResolvedValue({ [c.field]: [c.row] });
+    legacy.subscribe.mockResolvedValue({ subscriptionId: 'legacy' });
+    const s = c.subscribe(() => {});
+    dispose = s.dispose;
+    await settle();
+    let finish!: (v: any) => void;
+    const error = new VerifierTimeout(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    h.request.mockClear();
+    h.request.mockRejectedValueOnce(error);
+    s.refetch();
+    await settle();
+    h.emit(loss());
+    await settle();
+    const before = h.request.mock.calls.filter(([m]) => m === c.method).length;
+    finish({ retired: false, errors: [] });
+    await settle();
+    expect(before).toBe(1);
+    expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
+  });
+});
+
+it('physical read: script monitor recovery waits for a timed out seed to drain', async () => {
+  const h = session();
+  let finish!: (value: any) => void;
+  const timeout = new VerifierTimeout(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  let reads = 0;
+  h.request.mockImplementation(async (method) => {
+    if (method === 'client.hello')
+      return { server: { protocolVersion: '14.0', capabilities: { scriptMonitors: 2 } } };
+    if (method === 'events.subscribe') return { subscriptionId: 'lease-1', lossRecovery: 1 };
+    if (method === 'scriptMonitor.list') {
+      if (++reads === 1) throw timeout;
+      return { view: 'summary', monitors: [monitorSummaryFixture] };
+    }
+    return {};
+  });
+  legacy.request.mockImplementation(h.request);
+  legacy.subscribe.mockResolvedValue({ subscriptionId: 'legacy' });
+  let state!: ScriptMonitorSnapshot;
+  dispose = subscribeScriptMonitors(monitorFixture.workspaceId, (value) => {
+    state = value;
+  }).dispose;
+  await settle();
+  h.emit({
+    method: 'events.lost',
+    params: {
+      subscriptionId: 'lease-1',
+      generation: '1',
+      scope: { workspaceId: monitorFixture.workspaceId },
+    },
+  });
+  await settle();
+  expect(reads).toBe(1);
+  expect(state.monitors).toEqual([]);
+  finish({ retired: false, errors: [] });
+  await settle();
+  expect(reads).toBe(2);
+  expect(state.monitors).toEqual([monitorSummaryFixture]);
+});
+
+describe.each(cases)('$name remounted physical read lane', (c) => {
+  it('physical read: keeps a held read through same-session resubscription', async () => {
+    const h = session();
+    h.request.mockImplementation(async (method) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'lease-1', lossRecovery: 1 }
+        : { [c.field]: [c.row] },
+    );
+    legacy.request.mockResolvedValue({ [c.field]: [c.row] });
+    legacy.subscribe.mockResolvedValue({ subscriptionId: 'legacy' });
+    const old = c.subscribe(() => {});
+    dispose = old.dispose;
+    await settle();
+    let finish!: (value: unknown) => void;
+    h.request.mockClear();
+    h.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    old.refetch();
+    await settle();
+    old.dispose();
+    const next = c.subscribe(() => {});
+    dispose = next.dispose;
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(1);
+    finish({ [c.field]: [] });
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
+  });
+});

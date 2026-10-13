@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -227,10 +228,11 @@ describe('HUD subscription (mock backend, real store)', () => {
     scriptHappyBackend(backend);
     stop = startHudSubscription();
     await flush();
-    const current = selectHudUsage.select(appStore.state);
+    expect(backend.requests.filter((r) => r.method === 'stats.getUsage')).toHaveLength(1);
     resolveOld({ ...usageResult(), runs: 999 });
     await flush();
-    expect(selectHudUsage.select(appStore.state)).toEqual(current);
+    expect(backend.requests.filter((r) => r.method === 'stats.getUsage')).toHaveLength(2);
+    expect(selectHudUsage.select(appStore.state)?.runs).toBe(3);
   });
 
   it('recovers current HUD attention while keeping later feed events transient', async () => {
@@ -303,65 +305,71 @@ describe('HUD subscription (mock backend, real store)', () => {
     appStore.dispatch(removeWorkspaceEntity(WS_ID));
   });
 
-  it('serializes loss recovery behind an ordinary stats read and clears retired data', async () => {
-    scriptHappyBackend(backend);
-    const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
-    const retirees = new Set<() => void>();
-    let resolveOld!: (value: unknown) => void;
-    let reads = 0;
-    let current = true;
-    const request = vi.fn(async (method: string) => {
-      if (method === 'events.subscribe') return { subscriptionId: 'hud-held', lossRecovery: 1 };
-      if (method === 'stats.getUsage') {
-        if (++reads === 1)
-          return new Promise((resolve) => {
-            resolveOld = resolve;
+  it.each(['reply', 'timeout'])(
+    'serializes loss recovery behind an ordinary stats %s and clears retired data',
+    async (completion) => {
+      scriptHappyBackend(backend);
+      const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
+      const retirees = new Set<() => void>();
+      let resolveOld!: (value: unknown) => void;
+      let reads = 0;
+      let current = true;
+      const request = vi.fn(async (method: string) => {
+        if (method === 'events.subscribe') return { subscriptionId: 'hud-held', lossRecovery: 1 };
+        if (method === 'stats.getUsage') {
+          if (++reads === 1) {
+            const pending = new Promise<any>((resolve) => {
+              resolveOld = resolve;
+            });
+            if (completion === 'timeout') throw new RecoveryRequestTimeoutError(pending);
+            return pending;
+          }
+          return { ...usageResult(), runs: 42 };
+        }
+        if (method === 'stats.getRateHistory') return rateHistoryResult();
+        return {};
+      });
+      rendererEventRecovery.attach({
+        supported: true,
+        isCurrent: () => current,
+        request: request as EventRecoverySession['request'],
+        fence: async (_ids, observe) => {
+          observe();
+        },
+        dispose: () => {},
+        onRetired: (fn) => {
+          retirees.add(fn);
+          return () => {
+            retirees.delete(fn);
+          };
+        },
+        onNotification: (fn) => {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
+      });
+      stop = startHudSubscription();
+      await flush();
+      for (const generation of ['1', '2', '3'])
+        for (const fn of listeners)
+          void fn({
+            method: 'events.lost',
+            params: { subscriptionId: 'hud-held', generation, scope: { workspaceId: null } },
           });
-        return { ...usageResult(), runs: 42 };
-      }
-      if (method === 'stats.getRateHistory') return rateHistoryResult();
-      return {};
-    });
-    rendererEventRecovery.attach({
-      supported: true,
-      isCurrent: () => current,
-      request: request as EventRecoverySession['request'],
-      fence: async (_ids, observe) => {
-        observe();
-      },
-      dispose: () => {},
-      onRetired: (fn) => {
-        retirees.add(fn);
-        return () => {
-          retirees.delete(fn);
-        };
-      },
-      onNotification: (fn) => {
-        listeners.add(fn);
-        return () => {
-          listeners.delete(fn);
-        };
-      },
-    });
-    stop = startHudSubscription();
-    await flush();
-    for (const generation of ['1', '2', '3'])
-      for (const fn of listeners)
-        void fn({
-          method: 'events.lost',
-          params: { subscriptionId: 'hud-held', generation, scope: { workspaceId: null } },
-        });
-    await flush();
-    expect(reads).toBe(1);
-    resolveOld({ ...usageResult(), runs: 999 });
-    await flush();
-    await vi.waitFor(() => expect(selectHudUsage.select(appStore.state)?.runs).toBe(42));
-    expect(reads).toBeLessThanOrEqual(3);
-    current = false;
-    for (const fn of [...retirees]) fn();
-    expect(selectHudUsage.select(appStore.state)).toBeNull();
-    expect(selectHudActive.select(appStore.state)).toBe(false);
-  });
+      await flush();
+      expect(reads).toBe(1);
+      resolveOld({ ...usageResult(), runs: 999 });
+      await flush();
+      await vi.waitFor(() => expect(selectHudUsage.select(appStore.state)?.runs).toBe(42));
+      expect(reads).toBeLessThanOrEqual(3);
+      current = false;
+      for (const fn of [...retirees]) fn();
+      expect(selectHudUsage.select(appStore.state)).toBeNull();
+      expect(selectHudActive.select(appStore.state)).toBe(false);
+    },
+  );
 
   it('fetches the 24h stats.getUsage rollup on start — and NEVER its own system.status', async () => {
     scriptHappyBackend(backend);

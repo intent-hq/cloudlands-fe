@@ -187,3 +187,56 @@ it('preserves exact loaded-page demand when the recovery owner is reinstalled', 
   await settle();
   expect(page).toBe(2);
 });
+
+import { RecoveryRequestTimeoutError as VerifierTimeout } from '$shared/event-recovery/session';
+it('physical read: scripts retain timeout physical drain', async () => {
+  const request = vi.fn(async (method: string) =>
+    method === 'events.subscribe'
+      ? { subscriptionId: 'lease', lossRecovery: 1 }
+      : { view: 'summary', scripts: [] },
+  );
+  const h = setup(request as EventRecoverySession['request']);
+  await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['script:*'] }, { recover: true });
+  let finish!: (v: any) => void;
+  const error = new VerifierTimeout(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await trackScriptsRecoveryRead('ws', () => Promise.reject(error)).catch(() => {});
+  h.emit('events.lost', { subscriptionId: 'lease', generation: '1', scope: { workspaceId: 'ws' } });
+  await settle();
+  const before = request.mock.calls.filter(([m]) => m === 'script.list').length;
+  finish({ retired: false, errors: [] });
+  await settle();
+  expect(before).toBe(0);
+  expect(request.mock.calls.filter(([m]) => m === 'script.list')).toHaveLength(1);
+});
+it('physical read: scripts keep physical lane through installer replacement', async () => {
+  const request = vi.fn(async (method: string) =>
+    method === 'events.subscribe'
+      ? { subscriptionId: 'lease', lossRecovery: 1 }
+      : { view: 'summary', scripts: [] },
+  );
+  const h = setup(request as EventRecoverySession['request']);
+  await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['script:*'] }, { recover: true });
+  let finish!: (v: any) => void;
+  const ordinary = trackScriptsRecoveryRead(
+    'ws',
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await settle();
+  dispose();
+  dispose = installScriptsRecovery(h.scope, h.store);
+  h.emit('events.lost', { subscriptionId: 'lease', generation: '1', scope: { workspaceId: 'ws' } });
+  await settle();
+  const before = request.mock.calls.filter(([m]) => m === 'script.list').length;
+  finish('old');
+  await ordinary;
+  await settle();
+  expect(before).toBe(0);
+  expect(request.mock.calls.filter(([m]) => m === 'script.list')).toHaveLength(1);
+});
