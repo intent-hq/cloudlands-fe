@@ -1,3 +1,5 @@
+import { applyAgentMetadataPatch } from '../agent-metadata-patch';
+import type { AgentSessionUpdate, AgentMetadataPatch } from '../agent-session-types';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import {
   all,
@@ -158,7 +160,7 @@ function* persistSession(session: WireAgentSession): SagaGenerator<void> {
  */
 function* patchStoredSession(
   agentId: string,
-  patch: Partial<AgentSession>,
+  patch: AgentSessionUpdate,
 ): SagaGenerator<StoredAgentSession | undefined> {
   yield* put(updateSession(agentId, patch));
   return yield* selectAgentSession.effect(agentId);
@@ -434,23 +436,7 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
       (specialistUpdate.model === undefined || current?.model === specialistUpdate.model) &&
       (specialistUpdate.provider === undefined || current?.provider === specialistUpdate.provider);
     if (rollback && specialistStillOptimistic) {
-      // The picker owns these fields; copied metadata is not a new projection.
-      // Preserve unrelated writes that landed while specialist persistence failed.
-      const metadata = {
-        ...current?.metadata,
-        specialist: rollback.metadata?.specialist,
-        behaviorPrompt: rollback.metadata?.behaviorPrompt,
-        specialistName: rollback.metadata?.specialistName,
-      };
-      yield* put(
-        updateSession(
-          agentId,
-          { ...rollback, metadata },
-          {
-            projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'],
-          },
-        ),
-      );
+      yield* put(updateSession(agentId, rollback));
     }
     yield* call(showError, failure.message);
     yield* put(action.failure(failure));
@@ -588,22 +574,26 @@ function* setBackground(
     if (current && ownership.isCurrent(current.workspaceId)) {
       // Only patch mode, keeping transcript, runtime flags, and task/parent metadata
       // that may have changed while the request was in flight.
+      const metadataPatch: AgentMetadataPatch = {
+        isBackground: { op: 'set', value: isBackground },
+      };
       const changes = {
         isBackground,
-        metadata: { ...current.metadata, isBackground },
         ...(current.agentMetadata
           ? { agentMetadata: { ...current.agentMetadata, isBackground } }
           : {}),
       };
-      const next = { ...current, ...changes };
+      const next = {
+        ...current,
+        ...changes,
+        metadata: applyAgentMetadataPatch(current.metadata, metadataPatch),
+      };
       yield* put(
-        updateSession(
-          agentId,
-          { ...changes, hasUnread: deriveAgentHasUnread(next) },
-          {
-            projectedMetadataKeys: ['isBackground'],
-          },
-        ),
+        updateSession(agentId, {
+          ...changes,
+          metadataPatch,
+          hasUnread: deriveAgentHasUnread(next),
+        }),
       );
       yield* put(addAgent(wsId, next));
       // Existing coalesced hydration refreshes authoritative bin counts and loaded groups.

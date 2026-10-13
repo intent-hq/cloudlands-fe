@@ -1,3 +1,8 @@
+import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
+import type {
+  AgentSessionUpdate,
+  AgentMetadataPatch,
+} from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
@@ -161,7 +166,6 @@ import {
 } from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
 import type {
-  AgentSession,
   ContentBlock,
   MessageMetadata,
   PullRequestInfo,
@@ -1478,8 +1482,8 @@ function projectAgentMetadata(
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (!session || session.workspaceId !== event.workspaceId || isAgentDeletionPending(agentId))
     return false;
-  const updates: Partial<AgentSession> = {};
-  const metadataUpdates: NonNullable<AgentSession['metadata']> = {};
+  const updates: AgentSessionUpdate = {};
+  const metadataPatch: AgentMetadataPatch = {};
   const consumed = new Set(['agentId']);
   for (const key of [
     'pendingQuestionsMessageId',
@@ -1487,7 +1491,7 @@ function projectAgentMetadata(
     'lastSeenMessageId',
   ]) {
     if (typeof data[key] === 'string') {
-      metadataUpdates[key] = data[key];
+      metadataPatch[key] = { op: 'set', value: data[key] };
       consumed.add(key);
     }
   }
@@ -1501,7 +1505,7 @@ function projectAgentMetadata(
         typeof item.messageId === 'string',
     )
   ) {
-    metadataUpdates.pendingProposals = data.pendingProposals;
+    metadataPatch.pendingProposals = { op: 'set', value: data.pendingProposals };
     consumed.add('pendingProposals');
   }
   const resolutions = data.proposalResolutions;
@@ -1511,12 +1515,15 @@ function projectAgentMetadata(
     !Array.isArray(resolutions) &&
     Object.values(resolutions).every((value) => value === 'applied' || value === 'dismissed')
   ) {
-    metadataUpdates.proposalResolutions = resolutions as Record<string, 'applied' | 'dismissed'>;
+    metadataPatch.proposalResolutions = {
+      op: 'set',
+      value: resolutions as Record<string, 'applied' | 'dismissed'>,
+    };
     consumed.add('proposalResolutions');
   }
   if (data.completionReportCleared === true) {
-    metadataUpdates.completionReport = undefined;
-    metadataUpdates.completionReportTimestamp = undefined;
+    metadataPatch.completionReport = { op: 'clear' };
+    metadataPatch.completionReportTimestamp = { op: 'clear' };
     consumed.add('completionReportCleared');
   }
   if (data.attentionRequestCleared === true) {
@@ -1526,7 +1533,7 @@ function projectAgentMetadata(
       'attentionRequestTimestamp',
     ] as const) {
       updates[key] = undefined;
-      metadataUpdates[key] = undefined;
+      metadataPatch[key] = { op: 'clear' };
     }
     consumed.add('attentionRequestCleared');
   }
@@ -1539,16 +1546,19 @@ function projectAgentMetadata(
     updates.attentionRequestReason = data.reason;
     updates.attentionRequestTimestamp =
       typeof data.timestamp === 'string' ? data.timestamp : event.timestamp;
-    Object.assign(metadataUpdates, updates);
+    metadataPatch.attentionRequestKind = { op: 'set', value: updates.attentionRequestKind };
+    metadataPatch.attentionRequestReason = { op: 'set', value: updates.attentionRequestReason };
+    metadataPatch.attentionRequestTimestamp = {
+      op: 'set',
+      value: updates.attentionRequestTimestamp,
+    };
     for (const key of Object.keys(data)) consumed.add(key);
   }
   if (consumed.size === 1) return false;
-  const metadata = { ...session.metadata, ...metadataUpdates };
-  updates.metadata = metadata;
+  const metadata = applyAgentMetadataPatch(session.metadata, metadataPatch);
+  updates.metadataPatch = metadataPatch;
   updates.hasUnread = deriveAgentHasUnread({ ...session, metadata });
-  appStore.dispatch(
-    updateSession(agentId, updates, { projectedMetadataKeys: Object.keys(metadataUpdates) }),
-  );
+  appStore.dispatch(updateSession(agentId, updates));
   // modelId alone lacks the changed provider; completionReportLength lacks
   // the report; id-only recovery events also still require an agent.get.
   return Object.keys(data).every((key) => consumed.has(key));
@@ -1650,7 +1660,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   const role = data.role;
   if (role !== 'user' && role !== 'assistant') return;
-  const updates: Partial<AgentSession> = {
+  const updates: AgentSessionUpdate = {
     lastToolUse: readPersistedLastToolUse(data.lastToolUse),
   };
   if (data.lastMessageRole === 'user' || data.lastMessageRole === 'assistant') {

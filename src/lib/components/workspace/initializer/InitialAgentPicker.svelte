@@ -807,8 +807,8 @@
             />
             <Menu.Separator />
             <!-- Create new specialist link -->
-            <Menu.Item class="gap-2" onSelect={openSpecialistSettings}>
-              <Fa icon={faPlus} class="size-3! opacity-60" />
+            <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
+              {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
               <span class="type-caption"
                 >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
               >

@@ -1,3 +1,4 @@
+import type { AgentSessionUpdate } from '../agent-session/agent-session-types';
 import type { NodeCapabilities } from '$features/agent/services/node-execution';
 import type {
   AgentSession,
@@ -184,7 +185,9 @@ export interface SaveAgentSessionOptions {
     provider?: string;
     systemPrompt?: string | null;
   };
-  specialistRollback?: Pick<AgentSession, 'metadata' | 'model' | 'provider'>;
+  specialistRollback?: Pick<AgentSessionUpdate, 'metadataPatch' | 'model' | 'provider'> & {
+    metadata?: never;
+  };
 }
 
 function reconcileWorkspaceAgentSnapshot(

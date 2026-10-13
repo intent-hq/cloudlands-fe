@@ -86,8 +86,8 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     );
     for (const row of geometry) {
       expect(row.leadingX - row.x).toBeCloseTo(8, 1);
-      expect(row.leadingWidth).toBe(16);
-      expect(row.textX - row.x).toBeCloseTo(32, 1);
+      expect(row.leadingWidth).toBe(18);
+      expect(row.textX - row.x).toBeCloseTo(34, 1);
       expect(row.leadingX).toBeCloseTo(geometry[0].leadingX, 1);
       expect(row.textX).toBeCloseTo(geometry[0].textX, 1);
       expect(row.textRight).toBeLessThanOrEqual(row.right - 8);

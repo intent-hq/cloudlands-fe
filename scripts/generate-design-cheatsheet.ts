@@ -206,8 +206,8 @@ with an explicit colour from the status mapping above.
 - **Families:** Navigation rows use 28/32px compact/regular heights; content rows grow with their content (\`ListRow\` retains 36/48px minimums); setting rows use label/control/description tiers. See [Option and list rows](DESIGN_SYSTEM.md#option-and-list-rows) for the height and alignment table.
 - **Alignment:** Center icons and avatars on the first text line, never on the full multiline block. ListRow and Menu.ActionRow provide this by default; custom rows use a top-aligned layout and an icon slot of one line-height with matching typography. Place secondary copy below. Use \`type-caption\` for compact row labels and metadata, and \`type-body\` for expanded form content.
 - **States:** option labels are 13px / 400 at rest and 500 when selected; hover and selected layers use the measured inset item bounds.
-- **End slot:** checks, indicators, and chevrons use one aligned 16px end slot inside the item padding.
-- **Popups:** option popups use semantic surface backgrounds with the overlay elevation; preserve viewport collision handling, scrolling, and focus restoration.
+- **End slot:** checks, indicators, and chevrons use the shared 18px menu icon slot, centered on the first label line inside the item padding.
+- **Popups:** option popups use semantic surface backgrounds with the overlay elevation; preserve viewport collision handling, scrolling, and focus restoration. Popups with leading icons align iconless labels to the same column; text-only popups stay compact.
 - **Focus:** keep the 1px solid outline, non-zero offset, and no-shadow focus tuple. Do not reduce disabled or muted contrast.
 
 ${sections.join('\n')}\n`;

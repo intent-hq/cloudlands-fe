@@ -418,43 +418,43 @@
                   data-viewport-padding="12"
                 >
                   <Menu.Item
-                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
                     onSelect={() => handleCheckAndFlush(monitor)}
                   >
-                    <Fa icon={faArrowsRotate} class="mt-0.5 h-2.5 w-2.5" />
-                    <span class="min-w-0 break-words leading-4">
+                    {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
+                    <span class="min-w-0 break-words">
                       {m.chat_monitoredPrs_checkAndFlush_label()}
                     </span>
                   </Menu.Item>
                   <Menu.Item
-                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-in-app-item"
                     onSelect={() => handleOpenInApp(monitor)}
                   >
-                    <Fa icon={faWindowMaximize} class="mt-0.5 h-2.5 w-2.5" />
-                    <span class="min-w-0 break-words leading-4">
+                    {#snippet leading()}<Fa icon={faWindowMaximize} />{/snippet}
+                    <span class="min-w-0 break-words">
                       {m.chat_monitoredPrs_openInApp_label()}
                     </span>
                   </Menu.Item>
                   <Menu.Item
-                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-external-item"
                     onSelect={() => handleOpenExternal(monitor)}
                   >
-                    <Fa icon={faArrowUpRightFromSquare} class="mt-0.5 h-2.5 w-2.5" />
-                    <span class="min-w-0 break-words leading-4">
+                    {#snippet leading()}<Fa icon={faArrowUpRightFromSquare} />{/snippet}
+                    <span class="min-w-0 break-words">
                       {m.chat_monitoredPrs_openInExternalBrowser_label()}
                     </span>
                   </Menu.Item>
                   <Menu.Separator />
                   <Menu.Item
-                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
                     onSelect={() => handleCancel(monitor)}
                   >
-                    <Fa icon={faXmark} class="mt-0.5 h-2.5 w-2.5" />
-                    <span class="min-w-0 break-words leading-4">
+                    {#snippet leading()}<Fa icon={faXmark} />{/snippet}
+                    <span class="min-w-0 break-words">
                       {m.chat_monitoredPrs_cancel_label()}
                     </span>
                   </Menu.Item>
