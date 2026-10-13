@@ -64,7 +64,7 @@ export function installWorkspaceListRecovery(
     const workspace = store.getState().workspace;
     const present = new Set<string>(workspace.workspaces.ids);
     for (const id of incarnations.keys()) if (!present.has(id)) incarnations.delete(id);
-    for (const id of present) {
+    for (const id of workspace.workspaces.ids) {
       const row = workspace.workspaces.map[id];
       const authority = JSON.stringify([
         row.myRole,
