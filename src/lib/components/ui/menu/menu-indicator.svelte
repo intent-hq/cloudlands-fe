@@ -25,8 +25,10 @@
   {#if state !== 'empty'}
     <Fa
       icon={state === 'mixed' ? faMinus : state === 'submenu' ? faChevronRight : faCheck}
-      size={16}
-      class={state === 'submenu' ? 'size-4 rtl:rotate-180' : 'size-4'}
+      size="var(--menu-icon-size)"
+      class={state === 'submenu'
+        ? 'size-(--menu-icon-size) rtl:rotate-180'
+        : 'size-(--menu-icon-size)'}
     />
   {/if}
 </span>
