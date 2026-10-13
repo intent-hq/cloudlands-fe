@@ -84,3 +84,52 @@ for (const role of ['td', 'th'] as const) {
     expect(await root.count()).toBe(0);
   });
 }
+
+test('renders a dense two megabyte Store note through the bounded native view', async ({
+  mount,
+  page,
+}, info) => {
+  const component = await mount(Harness, { props: { denseMarkdown: true } });
+  const root = page.getByTestId('canonical-reading-harness');
+  await expect(root).toHaveAttribute('data-status', 'ready');
+  await expect(root.locator('.tiptap h2')).toHaveText('Section heading');
+  await expect(root.locator('.tiptap strong')).toHaveText('bold words');
+  await expect(root.locator('.tiptap em')).toHaveText('italic words');
+  await expect(root.locator('.tiptap code')).toHaveText('inline code');
+  const result = await root.evaluate((element: any) => element.read());
+  expect(result.sourceLength).toBe(2_000_000);
+  expect(result.range.start).toBe(0);
+  expect(result.range.end).toBeGreaterThan(93);
+  expect(result.requests).toBeLessThanOrEqual(96);
+  expect(result.windowCost.requests).toBe(result.requests);
+  expect(result.windowCost.sourceBytes).toBeLessThanOrEqual(8192);
+  expect(result.windowCost.canonicalBytes).toBeLessThanOrEqual(32768);
+  expect(result.cost.mountedViews).toBe(1);
+  await expect(root.locator('.tiptap h2')).toBeInViewport();
+  await expect.poll(() => root.evaluate((element: any) => element.read().growthDeclined)).toBe(1);
+  const prefix = await root.evaluate((element: any) => {
+    element.prefixEditor = element.view.editor;
+    return element.read().range;
+  });
+  await expect(root.locator('.tiptap h2')).toHaveText('Section heading');
+  expect(await root.evaluate((element: any) => element.prefixEditor.isDestroyed)).toBe(false);
+  await root.evaluate((element: any) => element.view.page(1));
+  await expect
+    .poll(() => root.evaluate((element: any) => element.read().range.start))
+    .toBe(prefix.end);
+  await expect.poll(() => root.evaluate((element: any) => element.read().growthDeclined)).toBe(2);
+  expect(await root.evaluate((element: any) => element.prefixEditor.isDestroyed)).toBe(true);
+  await root.evaluate((element: any) => element.view.page(-1));
+  await expect.poll(() => root.evaluate((element: any) => element.read().range)).toEqual(prefix);
+  await expect(root.locator('.tiptap h2')).toHaveText('Section heading');
+  const attempts = await root.evaluate((element: any) => element.read().attempts);
+  expect(attempts.every((attempt: { requests: number }) => attempt.requests <= 96)).toBe(true);
+  expect(
+    attempts.filter((attempt: { minimumEnd?: number }) => attempt.minimumEnd !== undefined).length,
+  ).toBeLessThanOrEqual(3);
+  await info.attach('dense-store-native-window', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await component.unmount();
+});

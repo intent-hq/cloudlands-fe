@@ -22,6 +22,11 @@ export const NOTE_WINDOW_LIMITS = {
 // Stop collecting source pages at the original work threshold, independently
 // of the larger FINAL retained graph allowance (including separator-only pages).
 const CANONICAL_CONTINUATION_BYTES = 4096;
+// After dense lexical admission fails, a small seed leaves room for the native
+// maps, ancestors and paged attributes in the SAME request budget. Repeated
+// 4/2/1 KiB attempts can exhaust it before any complete view is available.
+// This is a retry size, not a new allowance; smaller failures still halve it.
+const DENSE_SOURCE_RETRY_BYTES = 256;
 const size = (value: string) => new TextEncoder().encode(value).length;
 const encoded = (value: unknown) => size(JSON.stringify(value));
 export interface NoteWindowAddress {
@@ -140,6 +145,9 @@ function* assembleWindowSteps(
   }
   const context = new Map<string, Descriptor>();
   const refs = new Set<string>();
+  // Keys already belong to charged descriptors; this bounded worklist adds no
+  // fetched payload. Encoded cost counters do not claim exact JS heap usage.
+  const pendingParents = new Set<string>();
   const details: NoteWindow['details'] = {};
   const mapBindings: NoteWindow['mapBindings'] = [];
   let native: NoteCanonicalResources | undefined;
@@ -292,11 +300,11 @@ function* assembleWindowSteps(
     context.set(item.id, item);
     if (item.kind === 'boundary' && item.tablePosition && !refs.has(item.tablePosition.tableRef)) {
       refs.add(item.tablePosition.tableRef);
-      yield* collection(item.tablePosition.tableRef, descriptor);
+      pendingParents.add(item.tablePosition.tableRef);
     }
     if ('parentRef' in item && item.parentRef && !refs.has(item.parentRef)) {
       refs.add(item.parentRef);
-      yield* collection(item.parentRef, descriptor);
+      pendingParents.add(item.parentRef);
     }
   }
   function* lexicalDetails(): Generator<NotePageRequest, void, NoteReadPage> {
@@ -373,6 +381,12 @@ function* assembleWindowSteps(
       yield* collection(page.contextRef, (item) =>
         descriptor(item, { range: page.range, contextRef: page.contextRef }),
       );
+    }
+    // Admit the issuing page before traversing its parent closure. Dense pages
+    // that must shrink should not spend the shared request budget on ancestors.
+    for (const ref of pendingParents) {
+      pendingParents.delete(ref);
+      yield* collection(ref, descriptor);
     }
     if (mapBindings.length > boundMaps) {
       native = yield* canonicalResources(
@@ -498,7 +512,7 @@ export function* noteWindowSteps(
         pageBytes = Math.max(4, 2 ** Math.floor(Math.log2(smaller)));
       } else {
         if (!(error instanceof WindowAdmissionError) || pageBytes === 4) throw error;
-        pageBytes = Math.max(4, Math.floor(pageBytes / 2));
+        pageBytes = Math.max(4, Math.min(DENSE_SOURCE_RETRY_BYTES, Math.floor(pageBytes / 2)));
       }
     }
   }

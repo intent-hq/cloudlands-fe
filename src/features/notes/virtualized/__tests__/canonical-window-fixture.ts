@@ -1,6 +1,7 @@
 import type { Workspace } from '$shared/types';
 import { NoteWindowView } from '../note-window-view';
 import { NoteCanonicalProjection } from '../note-canonical-projection';
+import { mountDenseMarkdownFixture } from './dense-window-fixture';
 import { storeTableFixture } from './store-table-fixture';
 import { canonicalTableFixture } from './canonical-table-fixture';
 export function mountCanonicalTableFixture(
@@ -8,7 +9,9 @@ export function mountCanonicalTableFixture(
   scroller: HTMLDivElement,
   status: (value: string) => void,
   storeRole?: 'td' | 'th',
+  denseMarkdown = false,
 ) {
+  if (denseMarkdown) return mountDenseMarkdownFixture(root, scroller, status);
   let disposed = false;
   const seeks: number[] = [];
   const view = new NoteWindowView(scroller, {
