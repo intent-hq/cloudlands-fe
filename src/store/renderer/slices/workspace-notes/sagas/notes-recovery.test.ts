@@ -505,9 +505,9 @@ describe('independent typed-note review probes', () => {
 });
 
 describe('newer push while ordinary read is pending', () => {
-  it('preserves one physical comment read when an accepted push supersedes its receipt', async () => {
+  it('serializes comment reads and settles view loading after an accepted push', async () => {
     const h = await harness();
-    const finishes: Array<(rows: any[]) => void> = [];
+    const finishes: Array<(rows: Awaited<ReturnType<typeof appClient.comments.list>>) => void> = [];
     let active = 0,
       peak = 0;
     const read = vi.spyOn(appClient.comments, 'list').mockImplementation(() => {
@@ -530,28 +530,11 @@ describe('newer push while ordinary read is pending', () => {
     finishes[1]([]);
     await settle();
     expect(peak).toBe(1);
+    expect(getItem(h.store.state.comments.loadsByConsumer, 'view')?.status).toBe('ready');
   });
 });
 
 describe('settlement after an admitted push supersedes an ordinary read', () => {
-  it('settles comment view loading after the fresh trailing list completes', async () => {
-    const h = await harness();
-    const finishes: Array<(rows: Awaited<ReturnType<typeof appClient.comments.list>>) => void> = [];
-    const read = vi
-      .spyOn(appClient.comments, 'list')
-      .mockImplementation(() => new Promise((done) => finishes.push(done)));
-    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
-    await settle();
-    h.dispatch(commentEventReceived('ws', 'spec', 'added'));
-    await settle();
-    expect(read).toHaveBeenCalledTimes(1);
-    finishes[0]([]);
-    await settle();
-    expect(read).toHaveBeenCalledTimes(2);
-    finishes[1]([]);
-    await settle();
-    expect(getItem(h.store.state.comments.loadsByConsumer, 'view')?.status).toBe('ready');
-  });
   it('preserves full workspace hydration when a note event arrives before the list', async () => {
     const h = await harness();
     let finish!: (rows: ReturnType<typeof row>[]) => void;

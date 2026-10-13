@@ -19,6 +19,7 @@ import { tabStateReducer } from '$store/renderer/slices/tab-state/tab-state-slic
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from './renderer-event-recovery';
+import { trackRuntimeRead } from './runtime-read-lane';
 import { subscribeGitRoots, type GitRootRow } from '$features/git-roots/git-roots-service';
 import { subscribePrMonitors, type PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 
@@ -88,6 +89,7 @@ function subscribeHooks(emit: (rows: unknown[]) => void) {
 const cases = [
   {
     name: 'background hooks',
+    key: 'background-hooks:' + JSON.stringify(['ws']),
     method: 'hook.list',
     field: 'hooks',
     row: hook,
@@ -97,6 +99,7 @@ const cases = [
   },
   {
     name: 'git roots',
+    key: 'git-roots:' + JSON.stringify(['ws']),
     method: 'gitRoot.list',
     field: 'gitRoots',
     row: root,
@@ -106,6 +109,7 @@ const cases = [
   },
   {
     name: 'PR monitors',
+    key: 'pr-monitors:' + JSON.stringify(['ws']),
     method: 'prMonitor.list',
     field: 'monitors',
     row: monitor,
@@ -145,8 +149,9 @@ function session() {
     fence,
     dispose: () => {},
   };
-  rendererEventRecovery.attach(captured);
+  const scope = rendererEventRecovery.attach(captured);
   return {
+    scope,
     request,
     fence,
     emit: (n: RecoveryNotification) => {
@@ -511,122 +516,62 @@ describe.each(cases)('$name remounted physical read lane', (c) => {
     expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
   });
 });
-describe.each(cases)('$name authority change after timeout', (c) => {
-  it.each(['recovery', 'ordinary'])(
-    'physical read: keeps %s timeout drain through same-session authority replacement',
-    async (kind) => {
-      vi.useFakeTimers();
-      const h = session();
-      let serial = 0;
-      let timeout = false;
-      let drain!: (v: any) => void;
-      const physical = new Promise<
-        import('$shared/event-recovery/session').RecoveryRequestCompletion
-      >((resolve) => {
-        drain = resolve;
-      });
-      const error =
-        kind === 'recovery'
-          ? new VerifierTimeout(physical)
-          : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, physical);
-      h.request.mockImplementation(async (method) => {
-        if (method === 'events.subscribe')
-          return { subscriptionId: `lease-${++serial}`, lossRecovery: 1 };
-        if (method === c.method && timeout) {
-          timeout = false;
-          throw error;
-        }
-        return { [c.field]: [c.row] };
-      });
-      let rows: unknown[] = [];
-      const s = c.subscribe((value) => {
-        rows = value;
-      });
-      dispose = s.dispose;
+// All three owners use trackRuntimeRead(..., true). Keep their timeout/remount/denial
+// wiring above and below; exercise the shared session and classification matrix once.
+describe('shared runtime read lane', () => {
+  it.each([
+    ['recovery', 'authority'],
+    ['ordinary', 'authority'],
+    ['recovery', 'transport'],
+    ['ordinary', 'transport'],
+  ] as const)('keeps %s timeout occupancy across only the same %s', async (kind, change) => {
+    session();
+    const key = 'shared-runtime';
+    let finish!: (
+      value: import('$shared/event-recovery/session').RecoveryRequestCompletion,
+    ) => void;
+    const completion = new Promise<
+      import('$shared/event-recovery/session').RecoveryRequestCompletion
+    >((resolve) => {
+      finish = resolve;
+    });
+    const timeout =
+      kind === 'recovery'
+        ? new VerifierTimeout(completion)
+        : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(trackRuntimeRead(key, () => Promise.reject(timeout), true)).rejects.toBe(timeout);
+    if (change === 'authority') rendererEventRecovery.refreshAuthority();
+    else session();
+    const read = vi.fn(async () => 'replacement');
+    const pending = trackRuntimeRead(key, read, true);
+    try {
       await settle();
-      h.request.mockClear();
-      timeout = true;
-      s.refetch();
-      await settle();
-      rendererEventRecovery.refreshAuthority();
-      await settle();
-      const before = h.request.mock.calls.filter(([m]) => m === c.method).length;
-      expect(rows).toEqual([]);
-      drain({ retired: false, errors: [] });
-      await settle();
-      expect(before).toBe(1);
-      expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
-      expect(rows).toEqual([c.row]);
-    },
-  );
-});
+      expect(read).toHaveBeenCalledTimes(change === 'transport' ? 1 : 0);
+    } finally {
+      finish({ retired: false, errors: [] });
+      await expect(pending).resolves.toBe('replacement');
+    }
+    expect(read).toHaveBeenCalledTimes(1);
+  });
 
-describe.each(cases)('$name physical transport replacement', (c) => {
-  it.each(['recovery', 'ordinary'])(
-    'starts a replacement transport while the old %s timeout is still draining',
-    async (kind) => {
-      const old = session();
-      old.request.mockImplementation(async (method) =>
-        method === 'events.subscribe'
-          ? { subscriptionId: 'old-lease', lossRecovery: 1 }
-          : { [c.field]: [c.row] },
-      );
-      let rows: unknown[] = [];
-      const subscription = c.subscribe((value) => {
-        rows = value;
-      });
-      dispose = subscription.dispose;
-      await settle();
-      let drain!: (value: any) => void;
-      const physical = new Promise<
-        import('$shared/event-recovery/session').RecoveryRequestCompletion
-      >((resolve) => {
-        drain = resolve;
-      });
-      const timeout =
-        kind === 'recovery'
-          ? new VerifierTimeout(physical)
-          : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, physical);
-      old.request.mockRejectedValueOnce(timeout);
-      subscription.refetch();
-      await settle();
-      const replacement = session();
-      replacement.request.mockImplementation(async (method) =>
-        method === 'events.subscribe'
-          ? { subscriptionId: 'new-lease', lossRecovery: 1 }
-          : { [c.field]: [c.row] },
-      );
-      await settle();
-      expect(replacement.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(
-        1,
-      );
-      expect(rows).toEqual([c.row]);
-      drain({ retired: false, errors: [] });
-      await settle();
-      expect(rows).toEqual([c.row]);
-      expect(replacement.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(
-        1,
-      );
-    },
-  );
-});
-
-describe.each(cases)('$name ordinary late authority denial', (c) => {
   it.each(['denied', 'workspace missing', 'invalid params', 'retired', 'replacement'])(
-    'handles %s before releasing the physical lane',
+    'classifies late %s against the captured owner before releasing capacity',
     async (transition) => {
       const h = session();
-      h.request.mockImplementation(async (method) =>
-        method === 'events.subscribe'
-          ? { subscriptionId: 'authority-lease', lossRecovery: 1 }
-          : { [c.field]: [c.row] },
-      );
-      let rows: unknown[] = [];
-      const subscription = c.subscribe((value) => {
-        rows = value;
-      });
-      dispose = subscription.dispose;
-      await settle();
+      const key = 'shared-runtime';
+      const retire = vi.fn();
+      const register = () =>
+        h.scope.registerResource({
+          key,
+          workspaceId: 'ws',
+          eventTypes: ['hook:*'],
+          isCurrent: () => true,
+          read: async () => [],
+          apply: () => {},
+          invalidate: () => {},
+          retire,
+        });
+      register();
       let finish!: (
         value: import('$shared/event-recovery/session').RecoveryRequestCompletion,
       ) => void;
@@ -635,38 +580,94 @@ describe.each(cases)('$name ordinary late authority denial', (c) => {
       >((resolve) => {
         finish = resolve;
       });
-      h.request.mockRejectedValueOnce(
-        new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion),
+      const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+      await expect(trackRuntimeRead(key, () => Promise.reject(timeout), true)).rejects.toBe(
+        timeout,
       );
-      subscription.refetch();
+      // A push changes the snapshot receipt without changing its retirement authority.
+      rendererEventRecovery.push(key);
+      if (transition === 'replacement') {
+        rendererEventRecovery.refreshAuthority();
+        register();
+        retire.mockClear();
+      }
+      const receipt = rendererEventRecovery.capture(key);
+      const successor = vi.fn(async () => ({
+        retired: retire.mock.calls.length,
+        current: receipt.isCurrent(),
+      }));
+      const pending = trackRuntimeRead(key, successor, true);
       await settle();
-      if (transition === 'replacement') rendererEventRecovery.refreshAuthority();
-      else
-        h.emit('events.lost', {
-          subscriptionId: 'authority-lease',
-          generation: '1',
-          scope: { workspaceId: 'ws' },
-        });
-      await settle();
-      const before = h.request.mock.calls.filter(([method]) => method === c.method).length;
+      expect(successor).not.toHaveBeenCalled();
       finish({
         retired: transition === 'retired',
         errors: [
           transition === 'workspace missing' || transition === 'invalid params'
-            ? new BackendError({
-                code: 'INVALID_PARAMS',
-                message: 'Missing',
+            ? {
                 rpcCode: -32602,
                 ...(transition === 'workspace missing' ? { data: { code: 'not-found' } } : {}),
-              })
-            : new BackendError({ code: 'FORBIDDEN', message: 'Denied', rpcCode: -32003 }),
+              }
+            : { rpcCode: -32003 },
         ],
       });
-      await settle();
-      if (transition === 'denied' || transition === 'workspace missing') {
-        expect(rows).toEqual([]);
-        expect(h.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(before);
-      } else expect(rows).toEqual([c.row]);
+      const denied = transition === 'denied' || transition === 'workspace missing';
+      await expect(pending).resolves.toEqual({ retired: denied ? 1 : 0, current: !denied });
+      expect(successor).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe.each(cases)('$name ordinary late authority denial', (c) => {
+  it('clears a missing workspace after loss without a replacement read', async () => {
+    const h = session();
+    h.request.mockImplementation(async (method) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'authority-lease', lossRecovery: 1 }
+        : { [c.field]: [c.row] },
+    );
+    let rows: unknown[] = [];
+    const subscription = c.subscribe((value) => {
+      rows = value;
+    });
+    dispose = subscription.dispose;
+    await settle();
+    expect(rows).toEqual([c.row]);
+    let finish!: (
+      value: import('$shared/event-recovery/session').RecoveryRequestCompletion,
+    ) => void;
+    const completion = new Promise<
+      import('$shared/event-recovery/session').RecoveryRequestCompletion
+    >((resolve) => {
+      finish = resolve;
+    });
+    h.request.mockRejectedValueOnce(
+      new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion),
+    );
+    subscription.refetch();
+    await settle();
+    const receipt = rendererEventRecovery.capture(c.key);
+    expect(receipt.commit(() => undefined)).toBe(true);
+    h.emit({
+      method: 'events.lost',
+      params: { subscriptionId: 'authority-lease', generation: '1', scope: { workspaceId: 'ws' } },
+    });
+    await settle();
+    expect(receipt.commit(() => undefined)).toBe(false);
+    expect(rows).toEqual([c.row]);
+    expect(h.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(2);
+    finish({
+      retired: false,
+      errors: [
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          message: 'Missing',
+          rpcCode: -32602,
+          data: { code: 'not-found' },
+        }),
+      ],
+    });
+    await settle();
+    expect(rows).toEqual([]);
+    expect(h.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(2);
+  });
 });

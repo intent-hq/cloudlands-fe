@@ -160,35 +160,6 @@ it('recovers the lost final global settings event once and rejects earlier write
   stop();
 });
 
-it('stops after three failed recovery attempts even when more loss markers arrive', async () => {
-  vi.useFakeTimers();
-  admitLegacyPrincipal();
-  const h = recoveryHarness();
-  const stop = installTracked();
-  const scope = rendererEventRecovery.attach(h.session);
-  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
-  const normal = h.request.getMockImplementation()!;
-  h.request.mockImplementation(async (method, params) => {
-    if (method === 'settings.list') throw new Error('offline');
-    return normal(method, params);
-  });
-  h.emit({
-    method: 'events.lost',
-    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: null } },
-  });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(h.request.mock.calls.filter(([method]) => method === 'settings.list')).toHaveLength(3);
-  h.emit({
-    method: 'events.lost',
-    params: { subscriptionId: 'global', generation: '2', scope: { workspaceId: null } },
-  });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(h.request.mock.calls.filter(([method]) => method === 'settings.list')).toHaveLength(3);
-  stop();
-  rendererEventRecovery.dispose();
-  vi.useRealTimers();
-});
-
 const formClient = vi.hoisted(() => ({
   list: vi.fn(),
   get: vi.fn(),

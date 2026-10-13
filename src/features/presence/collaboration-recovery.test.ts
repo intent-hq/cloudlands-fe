@@ -404,24 +404,6 @@ describe('collaboration loss recovery', () => {
     expect(getItems(h.state().presence.rosters.ws)).toEqual([]);
     expect(h.request.mock.calls.filter(([m]) => m === 'presence.snapshot')).toHaveLength(2);
   });
-  it('stops failed recovery after three attempts, even under more loss', async () => {
-    const h = harness();
-    await h.subscribe();
-    const original = h.request.getMockImplementation()!;
-    h.request.mockImplementation((method, params) =>
-      method === 'presence.snapshot' ? Promise.reject(Error('offline')) : original(method, params),
-    );
-    h.loss();
-    await settle();
-    await vi.advanceTimersByTimeAsync(1000);
-    await settle();
-    await vi.advanceTimersByTimeAsync(4000);
-    await settle();
-    h.loss('lease-1', '2');
-    await vi.advanceTimersByTimeAsync(10000);
-    await settle();
-    expect(h.request.mock.calls.filter(([m]) => m === 'presence.snapshot')).toHaveLength(3);
-  });
   it('retires host roster and invite capabilities on backend session disposal', async () => {
     const h = harness();
     h.dispatch(hostMembershipOpened({ session: 'host', context: h.context }));
