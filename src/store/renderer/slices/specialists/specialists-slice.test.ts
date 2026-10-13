@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import {
+  settingsAuthorityRetired,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   updateSpecialistDraft,
@@ -8,6 +12,7 @@ import {
   initialState,
   setBundledSpecialists,
   setDefaultSpecialistId,
+  specialistSessionEnded,
   setFileSpecialists,
   setOverridesLoaded,
   setCustomSpecialistsLoaded,
@@ -32,6 +37,19 @@ describe('specialistsReducer', () => {
       const state = specialistsReducer(seeded, setDefaultSpecialistId(''));
       expect(state.defaultSpecialistId).toBe('');
     });
+  });
+
+  it.each([
+    ['settings authority retirement', settingsAuthorityRetired],
+    ['complete settings snapshot replacement', settingsSnapshotReplacing],
+    ['specialist session retirement', specialistSessionEnded],
+  ] as const)('clears the protected default on %s', (_name, retire) => {
+    const seeded = specialistsReducer(initialState, setDefaultSpecialistId('private-specialist'));
+    const cleared = specialistsReducer(seeded, retire());
+    expect(cleared.defaultSpecialistId).toBe('');
+    expect(specialistsReducer(cleared, setDefaultSpecialistId('current')).defaultSpecialistId).toBe(
+      'current',
+    );
   });
 
   describe('setBundledSpecialists', () => {
