@@ -10,6 +10,17 @@ import type { JsonRpcClient, RepositoryConnection } from './json-rpc-client';
 
 import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 
+const typedUnsubscribeMethods = new Map([
+  ['note.subscribe', 'note.unsubscribe'],
+  ['task.subscribe', 'task.unsubscribe'],
+  ['comment.subscribe', 'comment.unsubscribe'],
+  ['workspace.subscribe', 'workspace.unsubscribe'],
+  ['agent.subscribe', 'events.unsubscribe'],
+]);
+const ownedUnsubscribeMethods = new Set([
+  'events.unsubscribe',
+  ...typedUnsubscribeMethods.values(),
+]);
 const MAX_SESSIONS = 64;
 const MAX_REQUESTS_PER_SESSION = 64;
 const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
@@ -39,6 +50,11 @@ export function registerEventRecoveryHandlers(
     connection: RepositoryConnection;
     stop: () => void;
     leases: Set<string>;
+    // Typed controls own cleanup, but never confer generic notification/fence authority.
+    typedLeases: Map<
+      string,
+      { method: string; params: { subscriptionId: string; workspaceId?: string } }
+    >;
     requests: number;
   }
   const entries = new Map<string, Entry>();
@@ -69,6 +85,11 @@ export function registerEventRecoveryHandlers(
         .requestOnCapturedConnection(entry.connection, 'events.unsubscribe', { subscriptionId })
         .catch(() => {});
     entry.leases.clear();
+    for (const lease of entry.typedLeases.values())
+      void entry.client
+        .requestOnCapturedConnection(entry.connection, lease.method, lease.params)
+        .catch(() => {});
+    entry.typedLeases.clear();
   }
   function admitted(event: IpcMainInvokeEvent, id: string) {
     const entry = entries.get(id);
@@ -95,6 +116,7 @@ export function registerEventRecoveryHandlers(
       connection,
       stop: () => {},
       leases: new Set(),
+      typedLeases: new Map(),
       requests: 0,
     };
     entries.set(id, entry);
@@ -147,6 +169,9 @@ export function registerEventRecoveryHandlers(
       !entry ||
       entry.requests >= MAX_REQUESTS_PER_SESSION ||
       method === 'client.hello' ||
+      (method.endsWith('.subscribe') &&
+        method !== 'events.subscribe' &&
+        !typedUnsubscribeMethods.has(method)) ||
       requiresRepositoryRoute(method, params) ||
       isRepositoryCheckoutCreate(method, params) ||
       (method === 'events.subscribe' && !replyId) ||
@@ -154,9 +179,16 @@ export function registerEventRecoveryHandlers(
     )
       return unavailable();
     const controls = params as { subscriptionId?: unknown; subscriptionIds?: unknown } | null;
+    const controlId = controls?.subscriptionId;
+    const typedControl =
+      typeof controlId === 'string' ? entry.typedLeases.get(`${method}:${controlId}`) : undefined;
     if (
-      method === 'events.unsubscribe' &&
-      (typeof controls?.subscriptionId !== 'string' || !entry.leases.has(controls.subscriptionId))
+      method.endsWith('.unsubscribe') &&
+      !(
+        ownedUnsubscribeMethods.has(method) &&
+        typeof controlId === 'string' &&
+        ((method === 'events.unsubscribe' && entry.leases.has(controlId)) || typedControl)
+      )
     )
       return unavailable();
     if (
@@ -174,9 +206,22 @@ export function registerEventRecoveryHandlers(
     // Replace-group names are connection-wide on the daemon, but renderer owners
     // are narrower. Never let one captured sender replace another sender's lease.
     const routedParams =
-      method === 'events.subscribe' && typeof subscription?.replaceGroup === 'string'
+      typedControl?.params ??
+      ((method === 'events.subscribe' || typedUnsubscribeMethods.has(method)) &&
+      typeof subscription?.replaceGroup === 'string'
         ? { ...subscription, replaceGroup: `${id}:${subscription.replaceGroup}` }
-        : params;
+        : params);
+    const typedUnsubscribe = typedUnsubscribeMethods.get(method);
+    const typedLease = (method: string, subscriptionId: string) => ({
+      method,
+      params: {
+        subscriptionId,
+        ...(typeof (params as { workspaceId?: unknown } | null)?.workspaceId === 'string'
+          ? { workspaceId: (params as { workspaceId: string }).workspaceId }
+          : {}),
+      },
+    });
+    let leaseAdmitted = false;
     entry.requests++;
     try {
       const result = await entry.client.requestOnCapturedConnection(
@@ -189,22 +234,38 @@ export function registerEventRecoveryHandlers(
             if (!current(entry) || entries.get(id) !== entry) return;
             const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
             // Ownership must be recorded at decode, before any following frame.
-            if (method === 'events.subscribe' && typeof subscriptionId === 'string')
+            if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
               entry.leases.add(subscriptionId);
+              leaseAdmitted = true;
+            }
+            if (typedUnsubscribe && typeof subscriptionId === 'string') {
+              entry.typedLeases.set(
+                `${typedUnsubscribe}:${subscriptionId}`,
+                typedLease(typedUnsubscribe, subscriptionId),
+              );
+              leaseAdmitted = true;
+            }
+            if (typedControl && typeof controlId === 'string')
+              entry.typedLeases.delete(`${method}:${controlId}`);
             if (method === 'events.unsubscribe' && typeof controls?.subscriptionId === 'string')
               entry.leases.delete(controls.subscriptionId);
             if (replyId) send(entry, { id, kind: 'reply', replyId, result });
           },
         },
       );
-      if (method === 'events.subscribe') {
+      if (!current(entry)) drop(id);
+      if (!leaseAdmitted && (method === 'events.subscribe' || typedUnsubscribe)) {
         const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
         if (typeof subscriptionId === 'string') {
           if (!current(entry) || entries.get(id) !== entry)
             void entry.client
-              .requestOnCapturedConnection(entry.connection, 'events.unsubscribe', {
-                subscriptionId,
-              })
+              .requestOnCapturedConnection(
+                entry.connection,
+                typedUnsubscribe ?? 'events.unsubscribe',
+                typedUnsubscribe
+                  ? typedLease(typedUnsubscribe, subscriptionId).params
+                  : { subscriptionId },
+              )
               .catch(() => {});
         }
       }

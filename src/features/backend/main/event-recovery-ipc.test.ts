@@ -302,6 +302,9 @@ describe('recovery renderer authority', () => {
     expect(other.delivered).toEqual([]);
   });
   it.each([
+    ['chat.subscribe', {}],
+    ['presence.focus.subscribe', {}],
+    ['note.presence.subscribe', {}],
     ['sourceControl.read.capture', {}],
     ['sourceControl.read.status', {}],
     ['sourceControl.checkout.capture', {}],
@@ -528,4 +531,155 @@ it.each([
   expect(
     h.socket.frames.filter((f) => ['file.read', 'events.fence'].includes(f.method)),
   ).toHaveLength(2);
+});
+
+const typedChannels = [
+  ['note.subscribe', 'note.unsubscribe'],
+  ['task.subscribe', 'task.unsubscribe'],
+  ['comment.subscribe', 'comment.unsubscribe'],
+  ['workspace.subscribe', 'workspace.unsubscribe'],
+  ['agent.subscribe', 'events.unsubscribe'],
+] as const;
+
+describe.each(typedChannels)('captured typed lease %s', (subscribe, unsubscribe) => {
+  const params = subscribe === 'workspace.subscribe' ? {} : { workspaceId: 'ws-a' };
+  it('cleans an owned lease and excludes it from generic fences', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params);
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'typed' });
+    await pending;
+    const before = h.socket.frames.length;
+    await expect(session.fence(['typed'], vi.fn())).rejects.toThrow();
+    expect(h.socket.frames).toHaveLength(before);
+    const stopping = session.request(unsubscribe, {
+      workspaceId: 'forged',
+      subscriptionId: 'typed',
+    });
+    expect(h.socket.frames.at(-1)).toMatchObject({
+      method: unsubscribe,
+      params: { ...params, subscriptionId: 'typed' },
+    });
+    expect(h.socket.frames.at(-1)!.params).not.toHaveProperty('workspaceId', 'forged');
+    h.socket.reply(h.socket.frames.at(-1)!.id, {});
+    await stopping;
+    session.dispose();
+    expect(h.socket.frames.filter((f) => f.method === unsubscribe)).toHaveLength(1);
+  });
+  it('rejects foreign and unknown lease IDs without daemon dispatch', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const other = await h.createSender().capture();
+    cleanup.push(() => {
+      session.dispose();
+      other.dispose();
+    });
+    const pending = session.request(subscribe, params);
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'typed' });
+    await pending;
+    const before = h.socket.frames.length;
+    for (const [owner, id] of [
+      [other, 'typed'],
+      [session, 'unknown'],
+    ] as const) {
+      const denied = owner
+        .request(unsubscribe, { ...params, subscriptionId: id })
+        .catch(() => 'denied');
+      // Reply even to an incorrectly admitted call so the regression fails immediately.
+      for (const frame of h.socket.frames.slice(before)) h.socket.reply(frame.id, {});
+      expect(await denied).toBe('denied');
+    }
+    expect(h.socket.frames).toHaveLength(before);
+  });
+  it('releases captured workspace ownership when the renderer retires', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params);
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'typed' });
+    await pending;
+    session.dispose();
+    expect(h.socket.frames.filter((f) => f.method === unsubscribe)).toEqual([
+      expect.objectContaining({ params: { ...params, subscriptionId: 'typed' } }),
+    ]);
+  });
+  it('releases a late acknowledgement after renderer replacement without touching its successor', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params).catch(() => 'retired');
+    const request = h.socket.frames.at(-1)!;
+    stampWindowWithBackend(h.window as unknown as BrowserWindow, 'B');
+    stampWindowWithBackend(h.window as unknown as BrowserWindow, 'A');
+    const successor = await h.capture();
+    cleanup.push(() => successor.dispose());
+    const next = successor.request(subscribe, params);
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'successor' });
+    await next;
+    h.socket.reply(request.id, { subscriptionId: 'old' });
+    expect(await pending).toBe('retired');
+    expect(h.socket.frames.filter((f) => f.method === unsubscribe)).toEqual([
+      expect.objectContaining({ params: { ...params, subscriptionId: 'old' } }),
+    ]);
+    expect(successor.isCurrent()).toBe(true);
+  });
+  it('cleans only once when retirement follows reply decode before promise settlement', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params).catch(() => 'retired');
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'typed' });
+    session.dispose();
+    await pending;
+    expect(h.socket.frames.filter((f) => f.method === unsubscribe)).toHaveLength(1);
+  });
+  it('does not dispatch a late acknowledgement cleanup after principal replacement', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params).catch(() => 'retired');
+    const request = h.socket.frames.at(-1)!;
+    await h.client.request('client.hello', {});
+    const before = h.socket.frames.length;
+    h.socket.reply(request.id, { subscriptionId: 'old' });
+    expect(await pending).toBe('retired');
+    expect(h.socket.frames).toHaveLength(before);
+  });
+  it('isolates typed replacement groups and denies alternate unsubscribe aliases', async () => {
+    const h = await harness();
+    const a = await h.capture();
+    const b = await h.createSender().capture();
+    cleanup.push(() => {
+      a.dispose();
+      b.dispose();
+    });
+    const first = a.request(subscribe, { ...params, replaceGroup: 'shared' });
+    const requestA = h.socket.frames.at(-1)!;
+    h.socket.reply(requestA.id, { subscriptionId: 'a' });
+    await first;
+    const second = b.request(subscribe, { ...params, replaceGroup: 'shared' });
+    const requestB = h.socket.frames.at(-1)!;
+    h.socket.reply(requestB.id, { subscriptionId: 'b' });
+    await second;
+    expect(requestA.params).not.toEqual(requestB.params);
+    const before = h.socket.frames.length;
+    for (const method of [
+      'agent.unsubscribe',
+      'chat.unsubscribe',
+      'presence.focus.unsubscribe',
+      'note.presence.unsubscribe',
+    ]) {
+      const denied = b.request(method, { subscriptionId: 'a' }).catch(() => 'denied');
+      for (const frame of h.socket.frames.slice(before)) h.socket.reply(frame.id, {});
+      expect(await denied).toBe('denied');
+    }
+    expect(h.socket.frames).toHaveLength(before);
+  });
+  it('dispatches no cleanup on a disconnected captured socket', async () => {
+    const h = await harness();
+    const session = await h.capture();
+    const pending = session.request(subscribe, params);
+    h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'typed' });
+    await pending;
+    const before = h.socket.frames.length;
+    h.client.dispose();
+    session.dispose();
+    expect(h.socket.frames).toHaveLength(before);
+  });
 });
