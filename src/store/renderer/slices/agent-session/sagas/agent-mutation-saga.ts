@@ -2,6 +2,8 @@ import { rendererEventRecovery } from '$features/events/renderer-event-recovery'
 import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
 import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { applyAgentMetadataPatch } from '../agent-metadata-patch';
+import type { AgentSessionUpdate, AgentMetadataPatch } from '../agent-session-types';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import {
   all,
@@ -190,7 +192,7 @@ function* persistSession(
  */
 function* patchStoredSession(
   agentId: string,
-  patch: Partial<AgentSession>,
+  patch: AgentSessionUpdate,
   recovery: RecoveryLifetime,
 ): SagaGenerator<StoredAgentSession | undefined> {
   if (!recovery.commit(() => undefined)) return undefined;
@@ -510,26 +512,7 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
       (current?.metadata?.specialist ?? null) === specialistUpdate.specialist &&
       (specialistUpdate.model === undefined || current?.model === specialistUpdate.model);
     if (rollback && specialistStillOptimistic) {
-      // The picker owns these fields; copied metadata is not a new projection.
-      // Preserve unrelated writes that landed while specialist persistence failed.
-      const metadata = {
-        ...current?.metadata,
-        specialist: rollback.metadata?.specialist,
-        behaviorPrompt: rollback.metadata?.behaviorPrompt,
-        specialistName: rollback.metadata?.specialistName,
-      };
-      yield* put(
-        withRecoveryLifetime(
-          updateSession(
-            agentId,
-            { ...rollback, metadata },
-            {
-              projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'],
-            },
-          ),
-          recovery,
-        ),
-      );
+      yield* put(withRecoveryLifetime(updateSession(agentId, rollback), recovery));
     }
     yield* call(showError, failure.message, recovery);
     yield* put(action.failure(failure));
@@ -678,23 +661,27 @@ function* setBackground(
     if (current && ownership.isCurrent(current.workspaceId)) {
       // Only patch mode, keeping transcript, runtime flags, and task/parent metadata
       // that may have changed while the request was in flight.
+      const metadataPatch: AgentMetadataPatch = {
+        isBackground: { op: 'set', value: isBackground },
+      };
       const changes = {
         isBackground,
-        metadata: { ...current.metadata, isBackground },
         ...(current.agentMetadata
           ? { agentMetadata: { ...current.agentMetadata, isBackground } }
           : {}),
       };
-      const next = { ...current, ...changes };
+      const next = {
+        ...current,
+        ...changes,
+        metadata: applyAgentMetadataPatch(current.metadata, metadataPatch),
+      };
       yield* put(
         withRecoveryLifetime(
-          updateSession(
-            agentId,
-            { ...changes, hasUnread: deriveAgentHasUnread(next) },
-            {
-              projectedMetadataKeys: ['isBackground'],
-            },
-          ),
+          updateSession(agentId, {
+            ...changes,
+            metadataPatch,
+            hasUnread: deriveAgentHasUnread(next),
+          }),
           recovery,
         ),
       );

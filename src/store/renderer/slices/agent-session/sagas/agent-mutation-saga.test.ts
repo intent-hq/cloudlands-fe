@@ -336,7 +336,14 @@ describe('agentMutationSaga', () => {
           mocks.updateSpecialist.mockResolvedValue({ success: false, error: 'rejected' });
           const action = saveAgentSessionRequested(WS, A1, true, {
             specialistUpdate: { specialist: 'optimistic', rememberSpecialist: true },
-            specialistRollback: { metadata: { provider: 'before' }, model: prior.model },
+            specialistRollback: {
+              metadataPatch: {
+                specialist: { op: 'clear' },
+                behaviorPrompt: { op: 'clear' },
+                specialistName: { op: 'clear' },
+              },
+              model: prior.model,
+            },
           });
           const failed = expect(action.promise).rejects.toThrow('rejected');
           appStore.dispatch(action);
@@ -763,25 +770,27 @@ describe('agentMutationSaga', () => {
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
-      specialistRollback: { metadata: previousMetadata, model: 'default-model' },
+      specialistRollback: {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
+        },
+        model: 'default-model',
+      },
     });
     channel.put(action);
 
     await expect(action.promise).rejects.toThrow('update rejected');
     expect(dispatched).toContainEqual(
-      updateSession(
-        A1,
-        {
-          metadata: {
-            ...previousMetadata,
-            specialist: undefined,
-            behaviorPrompt: undefined,
-            specialistName: undefined,
-          },
-          model: 'default-model',
+      updateSession(A1, {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
         },
-        { projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'] },
-      ),
+        model: 'default-model',
+      }),
     );
     expect(mocks.error).toHaveBeenCalledWith('update rejected');
     await stop(task);
@@ -1245,7 +1254,9 @@ describe('agentMutationSaga', () => {
     await settle();
     expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
 
-    dispatch(updateSession(A1, { metadata: { lastSeenMessageId: 'm-9' } }));
+    dispatch(
+      updateSession(A1, { metadataPatch: { lastSeenMessageId: { op: 'set', value: 'm-9' } } }),
+    );
     pending.resolve({ success: false, error: 'mute rejected' });
 
     await expect(action.promise).rejects.toThrow('mute rejected');
@@ -2155,6 +2166,59 @@ it.each(['rename', 'restore', 'delete'] as const)(
       await stop(h.task);
       rendererEventRecovery.dispose();
       clearPendingAgentDeletions();
+    }
+  },
+);
+
+it.each([false, true])(
+  'specialist metadata patch rollback preserves unrelated keys and rejects stale=%s',
+  async (stale) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    appStore.init();
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    scope.registerResource({
+      key: agentMetadataRecoveryKey(WS),
+      workspaceId: WS,
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    const reply = Promise.withResolvers<{ success: boolean; error: string }>();
+    mocks.updateSpecialist.mockReturnValueOnce(reply.promise);
+    const h = start(
+      { [A1]: session(A1, { metadata: { specialist: 'optimistic', source: 'before' } }) },
+      { live: true },
+    );
+    try {
+      const action = saveAgentSessionRequested(WS, A1, true, {
+        specialistUpdate: { specialist: 'optimistic' },
+        specialistRollback: { metadataPatch: { specialist: { op: 'clear' } } },
+      });
+      h.channel.put(action);
+      const rejected = expect(action.promise).rejects.toThrow('patch rejected');
+      h.dispatch(updateSession(A1, { metadataPatch: { source: { op: 'set', value: 'current' } } }));
+      if (stale) rendererEventRecovery.invalidate(agentMetadataRecoveryKey(WS));
+      reply.resolve({ success: false, error: 'patch rejected' });
+      await rejected;
+      expect(selectAgentSession.select(h.getState() as never, A1)?.metadata).toEqual({
+        source: 'current',
+        ...(stale ? { specialist: 'optimistic' } : {}),
+      });
+    } finally {
+      await stop(h.task);
+      rendererEventRecovery.dispose();
     }
   },
 );

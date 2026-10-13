@@ -1,8 +1,9 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -20,11 +21,16 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: mocks.info, error: mocks.error }),
 }));
 
-import { createTerminalRequested, createPanelTerminalRequested } from '../terminals-slice';
+import {
+  createOverlayTerminalRequested,
+  createPanelTerminalRequested,
+  createTerminalRequested,
+} from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
 import { terminalCommandsSaga } from './terminal-commands-saga';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const settle = async () => {
   await Promise.resolve();
@@ -60,8 +66,136 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
 beforeEach(() => {
   vi.clearAllMocks();
 });
+afterEach(() => rendererEventRecovery.dispose());
 
 describe('terminalCreationSaga', () => {
+  it('returns the daemon-assigned id for an authorized overlay create', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-pty-1' });
+    const { channel, dispatched, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-pty-1');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+    });
+    expect(dispatched.map((action) => action.type)).toEqual([
+      createOverlayTerminalRequested.success.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects an old-session overlay create reply before it can restore a terminal', async () => {
+    let finish!: (value: { success: boolean; id: string }) => void;
+    mocks.create.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { channel, dispatched, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1');
+    const result = request.promise.then(
+      () => 'accepted',
+      () => 'rejected',
+    );
+    channel.put(request);
+    await settle();
+    rendererEventRecovery.dispose();
+    finish({ success: true, id: 'obsolete-terminal' });
+    expect(await result).toBe('rejected');
+    expect(
+      dispatched.some((action) => action.type === createOverlayTerminalRequested.success.type),
+    ).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it.each([false, true])(
+    'keeps command authority through pushes but rejects retirement (retire: %s)',
+    async (retire) => {
+      const key = 'terminals:' + JSON.stringify(['ws-1']);
+      const scope = rendererEventRecovery.attach({
+        supported: true,
+        isCurrent: () => true,
+        request: async <T>() => ({}) as T,
+        fence: async (_ids, observe) => {
+          observe();
+        },
+        dispose: () => {},
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+      })!;
+      scope.registerResource({
+        key,
+        workspaceId: 'ws-1',
+        eventTypes: ['terminal:exit'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      });
+      let finish!: (value: { success: boolean; id: string }) => void;
+      mocks.create.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const { channel, task } = startSaga();
+      const request = createOverlayTerminalRequested('ws-1');
+      const result = request.promise.then(
+        () => 'accepted',
+        () => 'rejected',
+      );
+      channel.put(request);
+      await settle();
+      rendererEventRecovery.push(key);
+      if (retire) rendererEventRecovery.captureRetirement(key)(new Error('Denied'));
+      finish({ success: true, id: 'created-terminal' });
+      expect(await result).toBe(retire ? 'rejected' : 'accepted');
+      task.cancel();
+      await task.toPromise();
+    },
+  );
+
+  it('allows the root overlay to create without a workspace membership row', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-root-pty' });
+    const { channel, task } = startSaga();
+    const request = createOverlayTerminalRequested(ROOT_WORKSPACE_ID);
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-root-pty');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: ROOT_WORKSPACE_ID,
+      cols: 80,
+      rows: 24,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects a collaborator overlay create before terminal.create', async () => {
+    const { channel, dispatched, task } = startSaga('collaborator');
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).rejects.toThrow();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched.map((action) => action.type)).toEqual([
+      createOverlayTerminalRequested.failure.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('creates, reloads, and opens a terminal in the focused panel', async () => {
     mocks.create.mockResolvedValue({ success: true, id: 'term-1' });
     const { channel, dispatched, task } = startSaga();

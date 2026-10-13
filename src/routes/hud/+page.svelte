@@ -21,7 +21,8 @@
   import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
-  import { startHudSubscription } from '$features/hud';
+  import { store as appStore } from '$store/renderer/store';
+  import { hudActivated, hudDeactivated } from '$store/renderer/slices/hud/hud-slice';
   import { HudWorkspaceGrid } from '$features/hud/grid';
   import HudFooter from '$features/hud/components/HudFooter.svelte';
   import HudHeader from '$features/hud/components/HudHeader.svelte';
@@ -48,14 +49,14 @@
       isFullScreen = !!event.payload;
     });
 
-    const stopSubscription = startHudSubscription();
+    appStore.dispatch(hudActivated());
     const clockTimer = setInterval(() => {
       nowMs = Date.now();
     }, 1000);
 
     return () => {
       clearInterval(clockTimer);
-      stopSubscription();
+      appStore.dispatch(hudDeactivated());
       cleanup();
     };
   });

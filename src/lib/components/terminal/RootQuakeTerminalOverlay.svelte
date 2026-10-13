@@ -32,12 +32,12 @@
     closeTerminalOverlay,
     selectTerminal as selectTerminalAction,
     addTerminal,
+    createOverlayTerminalRequested,
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { appClient } from '$lib/client';
   import { notify } from '$lib/components/patterns/notify';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
@@ -195,28 +195,16 @@
     if (isCreatingTerminal) return;
     isCreatingTerminal = true;
     try {
-      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
-      // assigns the PTY id and the Redux tab is keyed by it, so hydration
-      // (`terminal.list`) always matches the tab id.
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- AppClient mutation (terminal.create), not a domain data fetch; the daemon-assigned id must be awaited before the tab enters Redux (monorepo#1411).
-      const result = await appClient.terminals.create({
-        workspaceId: ROOT_WORKSPACE_ID,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
+      const terminalId = await appStore.dispatch(createOverlayTerminalRequested(ROOT_WORKSPACE_ID));
       appStore.dispatch(
         addTerminal(
           ROOT_WORKSPACE_ID,
-          result.id,
+          terminalId,
           m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
         ),
       );
       if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
+        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, terminalId));
       }
       // Focus the overlay container immediately so keyboard shortcuts
       // route to the terminal before xterm is ready

@@ -1,3 +1,4 @@
+import { hudSaga } from '$store/renderer/slices/hud/sagas/hud-saga';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('$store/renderer/middlewares/daemon-health-service', () => ({
   createDaemonHealthMiddleware: () => () => (next: (action: unknown) => unknown) => next,
@@ -13,7 +14,11 @@ import { BackendError } from '$lib/client/live/backend-transport-types';
 import * as factory from '$lib/client/live/backend-transport-factory';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { installAgentMetadataRecovery } from '$features/agent/agent-metadata-recovery';
-import { startHudSubscription } from '$features/hud/hud-subscription';
+import { hudActivated, hudDeactivated } from '$store/renderer/slices/hud/hud-slice';
+const startHudSubscription = () => {
+  store.dispatch(hudActivated());
+  return () => store.dispatch(hudDeactivated());
+};
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -91,6 +96,7 @@ const usage = {
   byMonth: [],
   availablePeriods: { months: [], years: [] },
 };
+let stopRootSaga: (() => void) | undefined;
 let transport: BrowserWebSocketTransport;
 let stop: (() => void) | undefined;
 let off: (() => void) | undefined;
@@ -98,8 +104,10 @@ beforeEach(() => {
   store.dispose();
   store.init();
   admitLegacyPrincipal();
+  stopRootSaga = store.runSaga(hudSaga);
 });
 afterEach(() => {
+  stopRootSaga?.();
   stop?.();
   stop = undefined;
   off?.();

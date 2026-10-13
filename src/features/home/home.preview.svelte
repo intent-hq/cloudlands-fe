@@ -15,6 +15,7 @@
       __homeAssistantPreview?: { removeSelectedThread: () => void };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
+        setTitle: (id: string, title: string) => void;
       };
     }
   }
@@ -22,6 +23,7 @@
   interface Props {
     scenario?:
       | 'populated'
+      | 'untitled'
       | 'status-icons'
       | 'board'
       | 'board-long-content'
@@ -48,6 +50,7 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       board: { props: { scenario: 'board' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
@@ -239,6 +242,8 @@
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
     replaceWorkspaceList,
+    updateWorkspaceEntity,
+    bulkUpdateWorkspaceEntities,
     setWorkspaceHasLoaded,
     setWorkspaceError,
   } from '$store/renderer/slices/workspace/workspace-slice';
@@ -275,6 +280,8 @@
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setTitle: (id, title) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
@@ -337,6 +344,11 @@
           : (scenario === 'status-icons' ? statusFixtures : fixtures).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'untitled' && workspace.id === 'home-running'
+                ? { title: '' }
+                : scenario === 'untitled' && workspace.id === 'home-review'
+                  ? { title: ' \t ' }
+                  : {}),
               ...(scenario === 'board-long-content'
                 ? {
                     title: `${workspace.title} ${'workspace'.repeat(12)}`,

@@ -69,6 +69,11 @@ export const selectHudUsageError = store.createSelector((state) => state.hud.usa
 
 export const selectHudRateHistory = store.createSelector((state) => state.hud.rateHistory);
 
+/** Raw workspace entities observed by the root-owned HUD hydration lifetime. */
+export const selectHudWorkspaceEntities = store.createSelector((state): Workspace[] =>
+  getItems(state.workspace.workspaces),
+);
+
 /**
  * 24h TOKEN BURN total — every `stats.getUsage` counter summed, `thoughtTokens`
  * included when the daemon reported it (§5.23 omits it when zero). 0 before the

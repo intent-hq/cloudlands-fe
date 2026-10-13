@@ -1,4 +1,4 @@
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -221,6 +221,15 @@ export const hydratePlacements = createAction<
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
+);
+
+export const createOverlayTerminalRequested = createAsyncAction<[wsId: string], string>(
+  'terminals/createOverlayTerminal',
+  'terminals/createOverlayTerminalRequested',
+);
+
+export const killRestoredTerminalRequested = createAction<[termId: string, workspaceId?: string]>(
+  'terminals/killRestoredTerminalRequested',
 );
 
 export const createPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
