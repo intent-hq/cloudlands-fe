@@ -7,7 +7,7 @@ defineGeometrySnapshotSuite({
   component: Preview,
   states: ['pr-status-list', 'board-pr-status'],
   widths: [1440],
-  selector: '[data-home-workspace]',
+  selector: '[data-home-workspace], [data-home-status] [data-icon^="hourglass"]',
   snapshotPath: fileURLToPath(
     new URL('./__geometry__/home-pr-status.geometry.json', import.meta.url),
   ),

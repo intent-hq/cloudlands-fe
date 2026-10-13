@@ -107,7 +107,13 @@
         >
           <span class="inline-flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             {#if presentation.icon}
-              <Fa icon={presentation.icon} weight="fill" class="size-full!" />
+              <Fa
+                icon={presentation.icon}
+                weight="fill"
+                class={cause === 'pr_queued' || (waiting && cause === 'idle')
+                  ? 'size-3!'
+                  : 'size-full!'}
+              />
             {:else}
               <span class="size-2 rounded-full bg-current"></span>
             {/if}
