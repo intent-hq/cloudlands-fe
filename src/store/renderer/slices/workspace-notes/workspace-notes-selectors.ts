@@ -5,20 +5,18 @@
  */
 
 import { store } from '../../store';
+import * as projections from './workspace-notes-projections';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import type { Note } from '$shared/types';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
-import type { NoteVersionsState, WorkspaceNotesWorkspaceState } from './workspace-notes-types';
+import type { NoteVersionsState } from './workspace-notes-types';
 
 // ============================================================================
 // Per-workspace base selector
 // ============================================================================
 
-export const selectWorkspaceNotesState = store.createSelector(
-  (state, workspaceId: string): WorkspaceNotesWorkspaceState =>
-    state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState,
-);
+export const selectWorkspaceNotesState = store.createSelector(projections.getWorkspaceNotesState);
 
 // ============================================================================
 // Scalar selectors
@@ -44,14 +42,7 @@ export const selectHasPendingNoteContent = store.createSelector(
     state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true,
 );
 
-export const selectNoteContentView = store.createSelector(
-  (state, workspaceId: string, consumerId: string) =>
-    getItem(
-      state.workspaceNotes.byWorkspaceId[workspaceId]?.contentViews ??
-        emptyWorkspaceNotesState.contentViews,
-      consumerId,
-    ),
-);
+export const selectNoteContentView = store.createSelector(projections.getNoteContentView);
 
 export const selectNoteWorkspaceRoot = store.createSelector(
   (state, workspaceId: string, consumerId: string) =>
@@ -86,18 +77,7 @@ export const selectNoteAttributionView = store.createSelector(
 // Note item selectors
 // ============================================================================
 
-export const selectNoteById = store.createSelector(
-  (
-    state,
-    workspaceId: string | null | undefined,
-    noteId: string | null | undefined,
-  ): Note | undefined => {
-    if (!workspaceId || !noteId) return undefined;
-    const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
-    if (!ws) return undefined;
-    return getItem(ws.notes, noteId as Note['id']);
-  },
-);
+export const selectNoteById = store.createSelector(projections.getNoteById);
 
 export const selectSpec = store.createSelector((state, workspaceId: string): Note | undefined => {
   const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
@@ -105,12 +85,7 @@ export const selectSpec = store.createSelector((state, workspaceId: string): Not
   return getItem(ws.notes, SPEC_NOTE_ID as Note['id']);
 });
 
-export const selectAllNotes = store.createSelector((state, workspaceId?: string | null): Note[] => {
-  if (!workspaceId) return [];
-  const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
-  if (!ws) return [];
-  return getItems(ws.notes);
-});
+export const selectAllNotes = store.createSelector(projections.getAllNotes);
 
 export const selectNoteVersions = store.createSelector(
   (state, workspaceId: string): NoteVersionsState | null =>

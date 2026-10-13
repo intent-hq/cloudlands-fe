@@ -14,14 +14,17 @@ async function connections(port) {
     .map((line) => line.trim().split(/\s+/).slice(-2).join(' '));
 }
 
-test('real workspace summary survives list navigation and releases its browser connection', async ({
+test('real workspace notes survive navigation and release view state and browser connections', async ({
   browser,
 }, info) => {
   test.setTimeout(120_000);
   const baseUrl = process.env.REACT_BASE_URL;
   const workspaceId = process.env.REACT_WORKSPACE_ID;
-  if (!baseUrl || !workspaceId)
-    throw new Error('Set REACT_BASE_URL and REACT_WORKSPACE_ID for the real daemon journey');
+  const noteId = process.env.REACT_NOTE_ID;
+  if (!baseUrl || !workspaceId || !noteId)
+    throw new Error(
+      'Set REACT_BASE_URL, REACT_WORKSPACE_ID and REACT_NOTE_ID for the real daemon journey',
+    );
   const endpoint = new URL(baseUrl);
   if (process.platform !== 'linux' || !['127.0.0.1', 'localhost'].includes(endpoint.hostname))
     throw new Error(
@@ -37,19 +40,28 @@ test('real workspace summary survives list navigation and releases its browser c
   const sockets = [];
   let ownedConnections = [];
   let workspace;
+  const noteLists = [];
+  const noteReads = [];
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname !== '/intentd/ws') return;
     sockets.push(socket);
     socket.on('framesent', ({ payload }) => {
       const request = JSON.parse(String(payload));
       requests.push(request);
-      if (request.method === 'workspace.list') pending.set(request.id, request);
+      pending.set(request.id, request);
     });
     socket.on('framereceived', ({ payload }) => {
       const response = JSON.parse(String(payload));
       if (!pending.has(response.id)) return;
-      expect(pending.get(response.id).params).toEqual({ includeArchived: true });
-      workspace = response.result?.workspaces?.find((row) => row.id === workspaceId);
+      const request = pending.get(response.id);
+      pending.delete(response.id);
+      if (request.method === 'workspace.list') {
+        workspace = response.result?.workspaces?.find((row) => row.id === workspaceId);
+      }
+      if (request.method === 'note.list' && request.params.workspaceId === workspaceId)
+        noteLists.push({ request, response });
+      if (request.method === 'note.get' && request.params.noteId === noteId)
+        noteReads.push({ request, response });
     });
   });
   try {
@@ -75,10 +87,67 @@ test('real workspace summary survives list navigation and releases its browser c
       await expect(overview.getByTestId('workspace-status-message')).toHaveText(
         workspace.statusMessage,
       );
+    const notes = page.getByTestId('workspace-notes');
+    await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toBeVisible({ timeout: 30_000 });
+    expect(noteLists.length).toBeGreaterThan(0);
+    expect(noteLists[0].request.params).toEqual({ workspaceId, projection: 'slim' });
+    const listedNote = noteLists[0].response.result.notes.find((note) => note.id === noteId);
+    expect(listedNote).toBeTruthy();
+    await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toHaveText(listedNote.title);
+    await notes.locator(`a[data-note-id="${noteId}"]`).click();
+    await expect.poll(() => noteReads.length).toBeGreaterThan(0);
+    expect(noteReads[0].request.params).toEqual({ workspaceId, noteId });
+    const note = noteReads[0].response.result.note;
+    expect(note.id).toBe(noteId);
+    const content = page.getByTestId('note-content');
+    await expect.poll(() => content.textContent()).toBe(note.content);
+    await expect(page.getByTestId('workspace-note').getByRole('heading')).toHaveText(note.title);
+    await expect(page.locator('[contenteditable="true"], textarea')).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: info.outputPath('real-note.png') });
+    await info.attach('real-note', {
+      path: info.outputPath('real-note.png'),
+      contentType: 'image/png',
+    });
+    await page.setViewportSize({ width: 420, height: 900 });
+    await expect
+      .poll(() => content.evaluate((element) => element.scrollWidth - element.clientWidth), {
+        message: 'Long saved note content must wrap within a narrow viewport',
+      })
+      .toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath('real-note-narrow.png') });
+    await info.attach('real-note-narrow', {
+      path: info.outputPath('real-note-narrow.png'),
+      contentType: 'image/png',
+    });
+    await page.setViewportSize({ width: 1000, height: 700 });
+    const readState = () =>
+      page.evaluate(async (id) => {
+        const module = performance
+          .getEntriesByType('resource')
+          .find((entry) => new URL(entry.name).pathname.endsWith('/src/store/index.ts'));
+        if (!module) throw new Error('The running Store module was not observed');
+        const { store } = await import(module.name);
+        const state = store.state.workspaceNotes.byWorkspaceId[id];
+        return state ? { views: state.contentViews.ids, initialized: state.initialized } : null;
+      }, workspaceId);
+    await expect.poll(async () => (await readState())?.views.length).toBe(1);
+    await page.getByRole('link', { name: 'All notes', exact: true }).click();
+    await expect(content).toHaveCount(0);
+    await expect.poll(async () => (await readState())?.views).toEqual([]);
+    await page.goBack();
+    await expect.poll(() => content.textContent()).toBe(note.content);
     await overview.getByRole('link', { name: 'Workspaces', exact: true }).click();
     await expect(overview).toHaveCount(0);
+    await expect.poll(readState).toBeNull();
     await list.locator(`a[href="${href}"]`).click();
     await expect(overview.getByRole('heading', { level: 1 })).toHaveText(workspace.title);
+    await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toBeVisible();
+    await notes.locator(`a[data-note-id="${noteId}"]`).click();
+    await expect.poll(() => noteReads.length).toBeGreaterThan(1);
+    await expect
+      .poll(() => content.textContent())
+      .toBe(noteReads.at(-1).response.result.note.content);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: info.outputPath('real-workspace.png') });
     await info.attach('real-workspace', {
@@ -88,8 +157,17 @@ test('real workspace summary survives list navigation and releases its browser c
     expect(errors).toEqual([]);
     expect(requests.some((request) => request.method === 'workspace.list')).toBe(true);
     expect(
+      requests
+        .filter((request) => request.method === 'workspace.list')
+        .every(
+          (request) => JSON.stringify(request.params) === JSON.stringify({ includeArchived: true }),
+        ),
+    ).toBe(true);
+    expect(
       requests.filter((request) =>
-        /\.(set|update|create|delete|markSeen|execute|open)$/.test(request.method ?? ''),
+        /\.(set.*|update.*|create|delete|add|edit.*|restore.*|markSeen|execute|open|join|leave|computeNow)$/.test(
+          request.method ?? '',
+        ),
       ),
     ).toEqual([]);
     expect(sockets.length).toBeGreaterThan(0);
@@ -106,6 +184,8 @@ test('real workspace summary survives list navigation and releases its browser c
         {
           requests,
           workspace,
+          noteLists,
+          noteReads,
           ownedConnections,
           remainingConnections: await connections(port),
           daemonSockets: sockets.length,

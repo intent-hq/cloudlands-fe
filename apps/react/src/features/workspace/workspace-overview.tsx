@@ -10,6 +10,7 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import { WorkspaceNotes } from './workspace-notes';
 
 function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   const workspace = selectWorkspaceById(workspaceId);
@@ -65,7 +66,13 @@ export function WorkspaceList() {
   );
 }
 
-export function WorkspaceOverview({ workspaceId }: { workspaceId: string }) {
+export function WorkspaceOverview({
+  workspaceId,
+  noteId,
+}: {
+  workspaceId: string;
+  noteId?: string;
+}) {
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const workspace = selectWorkspaceById(workspaceId);
@@ -93,8 +100,10 @@ export function WorkspaceOverview({ workspaceId }: { workspaceId: string }) {
           <p>This workspace is not available on the connected daemon.</p>
         ) : (
           <>
-            {row.statusMessage && <p data-testid="workspace-status-message">{row.statusMessage}</p>}
-            <dl className="grid min-w-0 gap-4">
+            {!noteId && row.statusMessage && (
+              <p data-testid="workspace-status-message">{row.statusMessage}</p>
+            )}
+            <dl className={noteId ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'}>
               <div>
                 <dt className="type-caption text-muted-foreground">Repository</dt>
                 <dd data-testid="workspace-repository">{row.repositoryName}</dd>
@@ -110,10 +119,7 @@ export function WorkspaceOverview({ workspaceId }: { workspaceId: string }) {
                 <dd data-testid="workspace-status">{row.status}</dd>
               </div>
             </dl>
-            <p className="type-caption text-muted-foreground">
-              Workspace summary from the daemon. Notes, chat, and editing are not connected in this
-              preview.
-            </p>
+            <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} />
           </>
         )}
       </ScreenBody>

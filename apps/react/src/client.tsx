@@ -15,6 +15,7 @@ import { agentMemorySaga } from './store/daemon-health/sagas/agent-memory-saga';
 import { agentMetadataSaga } from './store/agent-session/sagas/agent-metadata-saga';
 import { agentModelSaga } from './store/agent-model/sagas/agent-model-saga';
 import { hasAutoUpdatePreload } from './features/auto-update/auto-update.client';
+import { notesContentReadSaga } from './store/workspace-notes/sagas/notes-content-read-saga';
 import { initAutoUpdate } from '../../../src/store/renderer/slices/auto-update/auto-update-slice';
 // This entry runs only in the browser, before Start loads selector consumers.
 const disposeStore = store.init();
@@ -29,6 +30,7 @@ const cancelAgentModelSaga = store.runSaga(agentModelSaga);
 const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
+const cancelNotesContentReadSaga = store.runSaga(notesContentReadSaga);
 if (hasAutoUpdatePreload()) store.dispatch(initAutoUpdate());
 let root: ReturnType<typeof hydrateRoot>;
 startTransition(() => {
@@ -51,6 +53,7 @@ function dispose() {
   cancelAgentMemorySaga();
   cancelAgentModelSaga();
   cancelAgentMetadataSaga();
+  cancelNotesContentReadSaga();
   disposeProviderRuntime();
   cancelBackendConnectionSaga();
   disposeStore();

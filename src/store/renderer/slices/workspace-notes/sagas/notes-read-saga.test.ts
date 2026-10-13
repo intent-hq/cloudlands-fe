@@ -118,6 +118,77 @@ function harness(seed: Note[] = []) {
 describe('notesReadSaga', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('does not start hydration or content reads without an admitted connection', async () => {
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([]);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(null);
+    const run = harness();
+    run.setConnectionContext(null);
+    run.channel.put(workspaceMounted(WS));
+    const request = readNoteRequested(WS, 'note-1');
+    run.channel.put(request);
+    await expect(request.promise).resolves.toBeNull();
+    expect(list).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(run.state().workspaceNotes.byWorkspaceId[WS]).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('suppresses hydration results after connection authority changes without an unmount', async () => {
+    const pending = deferred<Note[]>();
+    vi.spyOn(appClient.notes, 'list').mockReturnValue(pending.promise);
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(note(SPEC_NOTE_ID));
+    const run = harness();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.setConnectionContext('backend-b');
+    pending.resolve([note(SPEC_NOTE_ID)]);
+    await settle();
+    expect(run.actions).toEqual([]);
+    expect(run.state().workspaceNotes.byWorkspaceId[WS]).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('suppresses hydration failures after connection authority is lost', async () => {
+    let reject!: (error: Error) => void;
+    vi.spyOn(appClient.notes, 'list').mockReturnValue(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(null);
+    const run = harness();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.setConnectionContext(null);
+    reject(new Error('old connection closed'));
+    await settle();
+    expect(run.actions).toEqual([]);
+    expect(run.state().workspaceNotes.byWorkspaceId[WS]).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not issue a queued event read under a replacement connection', async () => {
+    const pending = deferred<Note | null>();
+    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1')]);
+    const first = readNoteRequested(WS, 'note-1');
+    const trailing = readNoteRequested(WS, 'note-1', 'note:updated');
+    run.channel.put(first);
+    run.channel.put(trailing);
+    await settle();
+    run.setConnectionContext('backend-b');
+    pending.resolve(note('note-1', { content: 'obsolete' }));
+    await expect(first.promise).resolves.toBeNull();
+    await expect(trailing.promise).resolves.toBeNull();
+    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
     const spec = {
       ...note(SPEC_NOTE_ID),

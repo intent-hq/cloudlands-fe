@@ -10,10 +10,14 @@ const Overview = lazy(
 
 export const Route = createFileRoute('/workspaces/$workspaceId')({
   ssr: false,
+  validateSearch: (search: Record<string, unknown>): { note?: string } => ({
+    ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
+  }),
   component: WorkspacePage,
 });
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams();
-  return <Overview workspaceId={workspaceId} />;
+  const { note } = Route.useSearch();
+  return <Overview workspaceId={workspaceId} noteId={note} />;
 }
