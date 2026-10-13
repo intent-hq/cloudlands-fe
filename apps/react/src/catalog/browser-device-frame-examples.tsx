@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { BrowserDeviceFrame } from '@/components/browser/browser-device-frame';
 import { BrowserViewportMenu } from '@/components/browser/browser-viewport-menu';
+import { BrowserElementPickerButton } from '@/components/browser/browser-element-picker-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
@@ -13,11 +14,14 @@ export function BrowserDeviceFrameExamples() {
     height: 360,
   });
   const [visible, setVisible] = useState(true);
+  const [selecting, setSelecting] = useState(false);
+  const [pickerToggles, setPickerToggles] = useState(0);
   return (
     <section
       className="grid w-2xl min-w-0 max-w-[calc(100vw-var(--spacing)*12)] gap-6"
       data-testid="browser-device-frame-demo"
       data-viewport={JSON.stringify(viewport)}
+      data-picker-toggles={pickerToggles}
     >
       <header>
         <h1>Browser device frame</h1>
@@ -25,9 +29,23 @@ export function BrowserDeviceFrameExamples() {
       </header>
       <div className="flex flex-wrap gap-3">
         <BrowserViewportMenu viewport={viewport} onViewportChange={setViewport} />
-        <Button variant="ghost" onClick={() => setVisible(!visible)}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setVisible(!visible);
+            setSelecting(false);
+          }}
+        >
           {visible ? 'Hide frame' : 'Show frame'}
         </Button>
+        <BrowserElementPickerButton
+          active={selecting}
+          disabled={!visible}
+          onToggle={() => {
+            setSelecting(!selecting);
+            setPickerToggles((count) => count + 1);
+          }}
+        />
       </div>
       <div className="h-96 min-w-0">
         {visible && (
