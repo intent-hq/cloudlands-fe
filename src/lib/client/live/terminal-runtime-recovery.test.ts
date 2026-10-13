@@ -1,3 +1,4 @@
+import { BackendError } from './backend-transport-types';
 import { afterEach, expect, it, vi } from 'vitest';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
@@ -405,53 +406,71 @@ it('serializes a held ordinary list and rejects its stale local state before rec
 
 import { RecoveryRequestTimeoutError as VerifierTimeout } from '$shared/event-recovery/session';
 import { trackTerminalRuntimeRead as verifierTrack } from './terminal-runtime-recovery';
-it('physical read: terminals retain timeout physical drain', async () => {
-  const request = vi.fn(async (method: string) =>
-    method === 'events.subscribe'
-      ? { subscriptionId: 'lease', lossRecovery: 1 }
-      : { terminals: [] },
-  );
-  const h = session(request as EventRecoverySession['request']);
-  cleanups.push(subscribeTerminalRuntime('ws', 'one', {}, () => {}).dispose);
-  await settle();
-  let finish!: (v: any) => void;
-  const error = new VerifierTimeout(
-    new Promise((resolve) => {
+it.each(['recovery', 'ordinary'])(
+  'physical read: terminals retain %s timeout physical drain',
+  async (kind) => {
+    const request = vi.fn(async (method: string) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'lease', lossRecovery: 1 }
+        : { terminals: [] },
+    );
+    const h = session(request as EventRecoverySession['request']);
+    cleanups.push(subscribeTerminalRuntime('ws', 'one', {}, () => {}).dispose);
+    await settle();
+    let finish!: (v: any) => void;
+    const completion = new Promise<
+      import('$shared/event-recovery/session').RecoveryRequestCompletion
+    >((resolve) => {
       finish = resolve;
-    }),
-  );
-  await verifierTrack('ws', () => Promise.reject(error)).catch(() => {});
-  h.emit('events.lost', { subscriptionId: 'lease', generation: '1', scope: { workspaceId: 'ws' } });
-  await settle();
-  const before = request.mock.calls.filter(([m]) => m === 'terminal.list').length;
-  finish({ retired: false, errors: [] });
-  await settle();
-  expect(before).toBe(0);
-  expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(1);
-});
+    });
+    const error =
+      kind === 'recovery'
+        ? new VerifierTimeout(completion)
+        : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await verifierTrack('ws', () => Promise.reject(error)).catch(() => {});
+    h.emit('events.lost', {
+      subscriptionId: 'lease',
+      generation: '1',
+      scope: { workspaceId: 'ws' },
+    });
+    await settle();
+    const before = request.mock.calls.filter(([m]) => m === 'terminal.list').length;
+    finish({ retired: false, errors: [] });
+    await settle();
+    expect(before).toBe(0);
+    expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(1);
+  },
+);
 
-it('physical read: terminal timeout drain survives authority refresh on the same session', async () => {
-  let serial = 0;
-  const request = vi.fn(async (method: string) =>
-    method === 'events.subscribe'
-      ? { subscriptionId: 'lease-' + ++serial, lossRecovery: 1 }
-      : { terminals: [] },
-  );
-  session(request as EventRecoverySession['request']);
-  cleanups.push(subscribeTerminalRuntime('ws', 'one', {}, () => {}).dispose);
-  await settle();
-  let finish!: (value: any) => void;
-  const timeout = new VerifierTimeout(
-    new Promise((resolve) => {
+it.each(['recovery', 'ordinary'])(
+  'physical read: terminal %s timeout drain survives authority refresh on the same session',
+  async (kind) => {
+    let serial = 0;
+    const request = vi.fn(async (method: string) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'lease-' + ++serial, lossRecovery: 1 }
+        : { terminals: [] },
+    );
+    session(request as EventRecoverySession['request']);
+    cleanups.push(subscribeTerminalRuntime('ws', 'one', {}, () => {}).dispose);
+    await settle();
+    let finish!: (value: any) => void;
+    const completion = new Promise<
+      import('$shared/event-recovery/session').RecoveryRequestCompletion
+    >((resolve) => {
       finish = resolve;
-    }),
-  );
-  await verifierTrack('ws', () => Promise.reject(timeout)).catch(() => {});
-  rendererEventRecovery.refreshAuthority();
-  await settle();
-  const before = request.mock.calls.filter(([method]) => method === 'terminal.list').length;
-  finish({ retired: false, errors: [] });
-  await settle();
-  expect(before).toBe(0);
-  expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
-});
+    });
+    const timeout =
+      kind === 'recovery'
+        ? new VerifierTimeout(completion)
+        : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await verifierTrack('ws', () => Promise.reject(timeout)).catch(() => {});
+    rendererEventRecovery.refreshAuthority();
+    await settle();
+    const before = request.mock.calls.filter(([method]) => method === 'terminal.list').length;
+    finish({ retired: false, errors: [] });
+    await settle();
+    expect(before).toBe(0);
+    expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
+  },
+);

@@ -1,3 +1,4 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
@@ -305,7 +306,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     appStore.dispatch(removeWorkspaceEntity(WS_ID));
   });
 
-  it.each(['reply', 'timeout'])(
+  it.each(['reply', 'timeout', 'ordinary timeout'])(
     'serializes loss recovery behind an ordinary stats %s and clears retired data',
     async (completion) => {
       scriptHappyBackend(backend);
@@ -322,6 +323,8 @@ describe('HUD subscription (mock backend, real store)', () => {
               resolveOld = resolve;
             });
             if (completion === 'timeout') throw new RecoveryRequestTimeoutError(pending);
+            if (completion === 'ordinary timeout')
+              throw new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, pending);
             return pending;
           }
           return { ...usageResult(), runs: 42 };
@@ -2011,7 +2014,7 @@ it('HUD retains the original agents receipt across a held list and accepted push
   }
 });
 
-it.each(['timeout', 'failed sibling'])(
+it.each(['timeout', 'ordinary timeout', 'failed sibling'])(
   'HUD retains a busy read after %s until recovery can safely start',
   async (failure) => {
     let finish!: (value: any) => void;
@@ -2019,7 +2022,14 @@ it.each(['timeout', 'failed sibling'])(
       finish = resolve;
     });
     const h = await hudMetadataBoundaryHarness(
-      () => (failure === 'timeout' ? Promise.reject(new RecoveryRequestTimeoutError(held)) : held),
+      () =>
+        failure === 'timeout'
+          ? Promise.reject(new RecoveryRequestTimeoutError(held))
+          : failure === 'ordinary timeout'
+            ? Promise.reject(
+                new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, held),
+              )
+            : held,
       failure === 'failed sibling'
         ? async () => {
             throw new Error('list failed');
@@ -2038,7 +2048,7 @@ it.each(['timeout', 'failed sibling'])(
       await flush();
       await flush();
       expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
-      finish(failure === 'timeout' ? { retired: false, errors: [] } : { streams: [] });
+      finish(failure !== 'failed sibling' ? { retired: false, errors: [] } : { streams: [] });
       await flush();
       await flush();
       expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(2);
@@ -2049,7 +2059,7 @@ it.each(['timeout', 'failed sibling'])(
   },
 );
 
-it.each(['reply', 'timeout'])(
+it.each(['reply', 'timeout', 'ordinary timeout'])(
   'HUD holds point-read siblings through %s and rejects their stale writes',
   async (completion) => {
     let finish!: (value: any) => void;
@@ -2060,7 +2070,13 @@ it.each(['reply', 'timeout'])(
       async () => ({ streams: [{ workspaceId: WS_ID, agentId: 'held-point-agent' }] }),
       undefined,
       () =>
-        completion === 'timeout' ? Promise.reject(new RecoveryRequestTimeoutError(held)) : held,
+        completion === 'timeout'
+          ? Promise.reject(new RecoveryRequestTimeoutError(held))
+          : completion === 'ordinary timeout'
+            ? Promise.reject(
+                new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, held),
+              )
+            : held,
     );
     try {
       expect(h.request.mock.calls.filter(([m]) => m === 'agent.get')).toHaveLength(1);
@@ -2076,7 +2092,7 @@ it.each(['reply', 'timeout'])(
       await flush();
       expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
       finish(
-        completion === 'timeout'
+        completion !== 'reply'
           ? { retired: false, errors: [] }
           : {
               agent: {

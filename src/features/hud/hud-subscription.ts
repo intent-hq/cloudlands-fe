@@ -1,5 +1,5 @@
 import { runtimeReadDrained, trackRuntimeRead } from '$features/events/runtime-read-lane';
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import {
   acquireAgentMetadataDemand,
   trackAgentMetadataRead,
@@ -345,7 +345,7 @@ async function readBusyAgentIds(scope?: RendererRecoveryScope): Promise<BusyAgen
       ids.add(stream.agentId);
     }
   } catch (error) {
-    if (error instanceof RecoveryRequestTimeoutError) await error.drained;
+    await getPhysicalRequestCompletion(error);
     logger.warn('agent.listActive failed for HUD hydration; top-level rows only', { error });
   }
   return byWorkspaceId;
