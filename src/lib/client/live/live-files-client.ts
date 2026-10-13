@@ -1,3 +1,5 @@
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import { fileReadAuthorityDenied } from '$features/file/file-read-completion';
 /**
  * Live files domain backed by the intentd daemon.
  *
@@ -168,12 +170,14 @@ export class LiveFilesClient implements FilesClient {
   // Directory listing via the daemon's `file.list` (a directory listing, unlike
   // `list` which models the content cache). Used by the explorer to lazily load
   // a directory's children on expand/refresh. Errors resolve to `[]` so a failed
-  // read leaves the existing rows intact rather than throwing into the store.
+  // read leaves existing rows intact. Physical deadlines and authority failures
+  // must reach the captured read owner so its lane and retirement stay correct.
   async listDirectory(workspaceId: string, path: string): Promise<FileNode[]> {
     try {
       const result = await backendRequest<unknown>('file.list', { workspaceId, path });
       return toFileNodes(result);
-    } catch {
+    } catch (error) {
+      if (getPhysicalRequestCompletion(error) || fileReadAuthorityDenied(error)) throw error;
       return [];
     }
   }
@@ -192,7 +196,8 @@ export class LiveFilesClient implements FilesClient {
         };
       }
       return map;
-    } catch {
+    } catch (error) {
+      if (getPhysicalRequestCompletion(error) || fileReadAuthorityDenied(error)) throw error;
       return {};
     }
   }

@@ -163,7 +163,7 @@ function* loadAgentFileEdits(wsId: string) {
       readFileSnapshot<Map<string, string[]>>,
       fileEditsRecoveryKey(wsId),
       receipt,
-      () => getAgentFileEdits(wsId),
+      (onFailure: (error: unknown) => void) => getAgentFileEdits(wsId, 3, onFailure),
     );
     const record: Record<string, string[]> = {};
     for (const [path, agents] of edits) record[path] = [...agents];
@@ -257,8 +257,10 @@ function* hydrateExplorer(wsId: string, force = false) {
       yield* putFileRecovery(receipt, setRootNode(wsId, tree));
       if (!receipt.commit(() => undefined)) return;
       const gitStatus: Awaited<ReturnType<typeof appClient.files.gitStatusMap>> = yield* call(
-        [appClient.files, appClient.files.gitStatusMap],
-        wsId,
+        readFileSnapshot<Awaited<ReturnType<typeof appClient.files.gitStatusMap>>>,
+        fileExplorerRecoveryKey(wsId),
+        receipt,
+        () => appClient.files.gitStatusMap(wsId),
       );
       yield* putFileRecovery(receipt, setGitStatusMap(wsId, mapGitStatus(gitStatus)));
       for (const path of collectDirectoryPaths(tree))

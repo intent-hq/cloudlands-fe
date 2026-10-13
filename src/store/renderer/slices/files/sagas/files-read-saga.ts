@@ -60,7 +60,7 @@ function* loadFileContentWorker(
         readFileSnapshot<Awaited<ReturnType<typeof resolveFileBySuffix>>>,
         fileContentRecoveryKey(workspaceId, path),
         receipt,
-        () => resolveFileBySuffix(workspaceId, path),
+        (onFailure: (error: unknown) => void) => resolveFileBySuffix(workspaceId, path, onFailure),
       );
       if (!truncated && candidates.length === 1) {
         // Provably unique match (search not truncated): retarget open file

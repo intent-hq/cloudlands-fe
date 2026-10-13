@@ -1,4 +1,5 @@
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { fileReadAuthorityDenied } from './file-read-completion';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
@@ -57,15 +58,6 @@ const anchor = (nodes: FileNode[], path: string): FileNode[] =>
     ...(node.type === 'directory' ? { children: [] } : {}),
   }));
 
-function fileReadAuthorityDenied(error: unknown): boolean {
-  const value = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
-  return (
-    value?.rpcCode === -32003 ||
-    value?.rpcCode === -32001 ||
-    (value?.rpcCode === -32602 && value.data?.code === 'not-found')
-  );
-}
-
 async function readEdits(
   workspaceId: string,
   root: string,
@@ -83,8 +75,9 @@ async function readEdits(
         });
       } catch (error) {
         if (fileReadAuthorityDenied(error)) retire();
-        if (error instanceof RecoveryRequestTimeoutError) {
-          const completion = await error.completion;
+        const physical = getPhysicalRequestCompletion(error);
+        if (physical) {
+          const completion = await physical;
           if (!completion.retired && completion.errors.some(fileReadAuthorityDenied)) retire();
         }
         throw error;
