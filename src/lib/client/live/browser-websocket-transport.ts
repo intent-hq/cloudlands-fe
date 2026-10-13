@@ -255,7 +255,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
-  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private nodeCapabilities: Readonly<Record<string, unknown>> | null = null;
   private capabilityHelloGeneration = 0;
   private readonly recoveryRetired = new Set<() => void>();
   private readonly recoveryPools = new WeakMap<BrowserWebSocketLike, RecoveryWirePool>();
@@ -295,6 +295,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
     const socket = await this.ensureConnected();
     if (this.disposed || !this.connected || this.socket !== socket)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    if (!this.nodeCapabilities)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' });
     return { server: { capabilities: this.nodeCapabilities } };
   }
 
@@ -532,6 +534,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   result as { server?: { capabilities?: Record<string, unknown> } }
                 ).server?.capabilities;
                 this.nodeCapabilities = Object.freeze({
+                  ...capabilities,
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,

@@ -1370,6 +1370,10 @@ describe('captured repository socket dispatch', () => {
       clientId: 'confirmed-client',
       server: {
         capabilities: {
+          hostMembership: 1,
+          personalPairing: 1,
+          liveState: true,
+          futureCapability: 2,
           agentNodes: 1,
           localNodeIsolation: 1,
           agentPlatformRouting: 1,
@@ -1379,6 +1383,10 @@ describe('captured repository socket dispatch', () => {
     });
     const connection = client.getRepositoryConnection();
     expect(client.getNodeCapabilities()).toEqual({
+      hostMembership: 1,
+      personalPairing: 1,
+      liveState: true,
+      futureCapability: 2,
       agentNodes: 1,
       localNodeIsolation: 1,
       agentPlatformRouting: 1,

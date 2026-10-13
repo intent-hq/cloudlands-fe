@@ -4629,7 +4629,13 @@ export function registerBackendHandlers(): void {
   ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
     try {
       const { client } = getBackendClientForIpcEvent(event);
-      return { ok: true, result: { server: { capabilities: client.getNodeCapabilities() } } };
+      const capabilities = client.getNodeCapabilities();
+      if (!capabilities)
+        return {
+          ok: false,
+          error: { code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' },
+        };
+      return { ok: true, result: { server: { capabilities } } };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }

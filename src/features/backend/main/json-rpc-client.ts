@@ -289,7 +289,7 @@ export class JsonRpcClient extends EventEmitter {
     (connection: RepositoryConnection) => void
   >();
   private helloAttempt: object | null = null;
-  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private nodeCapabilities: Readonly<Record<string, unknown>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -571,7 +571,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Observe only the current acknowledged identity; never send or renew hello. */
-  getNodeCapabilities(): Readonly<Record<string, number>> | null {
+  getNodeCapabilities(): Readonly<Record<string, unknown>> | null {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
   }
 
@@ -671,6 +671,7 @@ export class JsonRpcClient extends EventEmitter {
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
     this.nodeCapabilities = Object.freeze({
+      ...capabilities,
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
       agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,

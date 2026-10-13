@@ -945,13 +945,25 @@ describe('observational node capabilities', () => {
       result: {
         clientId: 'A',
         server: {
-          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
+          capabilities: {
+            agentNodes: 1,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 1,
+            hostMembership: 1,
+            personalPairing: 1,
+            liveState: true,
+            futureCapability: 2,
+          },
         },
       },
     });
     await expect(observing).resolves.toEqual({
       server: {
         capabilities: {
+          hostMembership: 1,
+          personalPairing: 1,
+          liveState: true,
+          futureCapability: 2,
           agentNodes: 1,
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
@@ -963,13 +975,13 @@ describe('observational node capabilities', () => {
     await h.transport.observeNodeCapabilities();
     expect(socket.sent).toHaveLength(1);
     const rehello = h.transport.request('client.hello', {});
-    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
-      server: { capabilities: null },
+    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
     });
     socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'rejected' } });
     await expect(rehello).rejects.toThrow('rejected');
-    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
-      server: { capabilities: null },
+    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
     });
     socket.drop();
     const reconnecting = h.transport.observeNodeCapabilities();
@@ -1722,4 +1734,22 @@ it('socket retirement settles ordinary browser timeout receipts and cancels unse
   ).toHaveLength(0);
   expect(vi.getTimerCount()).toBe(0);
   session.dispose();
+});
+
+it('never reports an unconfirmed browser capability bag as explicit legacy support', async () => {
+  const h = createHarness();
+  const observing = h.transport.observeNodeCapabilities();
+  h.socket().open();
+  await flush();
+  h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult() });
+  await observing;
+  const hello = h.transport.request('client.hello', {}).catch((error) => error);
+  try {
+    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
+      code: 'UNAVAILABLE',
+    });
+  } finally {
+    h.transport.dispose();
+    await hello;
+  }
 });
