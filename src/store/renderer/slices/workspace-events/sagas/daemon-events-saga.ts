@@ -284,13 +284,14 @@ function* manageScopedFileLease(
   }
 }
 
-export function* daemonEventsSaga(enableRecovery = false) {
+export function* daemonEventsSaga(enableRecovery = true) {
   const { channel, publish } = createDaemonEventsChannel(enableRecovery);
   const reduxStore = enableRecovery
     ? yield* getContext<RecoveryReduxStore | undefined>('reduxStore')
     : undefined;
   const pendingAdmissions = new Set<() => void>();
   let stopOwners = () => {};
+  let ownersInstalled = false;
   let stopAuthority = () => {};
   let stopRetired = () => {};
   let authority: string | null = null;
@@ -326,6 +327,18 @@ export function* daemonEventsSaga(enableRecovery = false) {
       leases.recoveryPending = false;
       return;
     }
+    if (!ownersInstalled && reduxStore) {
+      const { installRendererRecoveryOwners } =
+        await import('$features/events/renderer-recovery-owners');
+      if (!session.isCurrent()) {
+        session.dispose();
+        return;
+      }
+      stopOwners = rendererEventRecovery.onSession((scope) =>
+        installRendererRecoveryOwners(scope, reduxStore),
+      );
+      ownersInstalled = true;
+    }
     leases.scope = rendererEventRecovery.attach(session, (notification, lifetimes) => {
       const receipt = rendererEventRecovery.captureAuthority('daemon-ingress');
       return new Promise<void>((resolve) => {
@@ -353,12 +366,6 @@ export function* daemonEventsSaga(enableRecovery = false) {
   };
   try {
     if (reduxStore) {
-      const { installRendererRecoveryOwners } = yield* call(
-        () => import('$features/events/renderer-recovery-owners'),
-      );
-      stopOwners = rendererEventRecovery.onSession((scope) =>
-        installRendererRecoveryOwners(scope, reduxStore),
-      );
       authority = selectPrincipalActionContext.select(reduxStore.getState());
       hadAuthority = authority !== null;
       stopAuthority = reduxStore.subscribe(() => {

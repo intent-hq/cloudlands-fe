@@ -7,6 +7,7 @@ import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
+  observeBackendNodeCapabilities: () => wire.request('capabilities.observe', {}),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
 }));
@@ -68,7 +69,9 @@ describe('connected principal hydration', () => {
     vi.useFakeTimers();
     wire.request
       .mockReset()
-      .mockImplementation(async (method) => (method === 'client.hello' ? hello : principal()));
+      .mockImplementation(async (method) =>
+        method === 'capabilities.observe' ? hello : principal(),
+      );
     dispose = store.init();
   });
   afterEach(() => {
@@ -127,13 +130,13 @@ describe('connected principal hydration', () => {
     bind('remote');
     await settle();
     expect(wire.request.mock.calls).toEqual([
-      ['client.hello', {}],
+      ['capabilities.observe', {}],
       ['principal.me', {}],
     ]);
     expect(selectHostRole.select(store.state)).toBe('member');
   });
 
-  it.each(['client.hello', 'principal.me'])(
+  it.each(['capabilities.observe', 'principal.me'])(
     'recovers after a transient %s timeout on the same connection',
     async (failedMethod) => {
       let failed = false;
@@ -142,7 +145,7 @@ describe('connected principal hydration', () => {
           failed = true;
           throw new BackendError({ code: 'TIMEOUT', message: 'Request timed out' });
         }
-        return method === 'client.hello' ? hello : principal('owner');
+        return method === 'capabilities.observe' ? hello : principal('owner');
       });
       start();
       await settle();
@@ -187,7 +190,7 @@ describe('connected principal hydration', () => {
 
   it('does not retry an incompatible advertised principal', async () => {
     wire.request.mockImplementation(async (method) =>
-      method === 'client.hello' ? hello : { ...principal(), hostRole: undefined },
+      method === 'capabilities.observe' ? hello : { ...principal(), hostRole: undefined },
     );
     start();
     await vi.advanceTimersByTimeAsync(60_000);
@@ -203,7 +206,7 @@ describe('connected principal hydration', () => {
       await vi.advanceTimersByTimeAsync(500);
       if (transition === 'backend') {
         wire.request.mockImplementation(async (method) =>
-          method === 'client.hello' ? hello : principal('guest'),
+          method === 'capabilities.observe' ? hello : principal('guest'),
         );
         bind('other-backend');
       } else if (transition === 'disconnect')
@@ -307,7 +310,7 @@ describe('connected principal hydration', () => {
     'uses %s authority and keeps workspace ownership truthful',
     async (role) => {
       wire.request.mockImplementation(async (method) =>
-        method === 'client.hello' ? hello : principal(role),
+        method === 'capabilities.observe' ? hello : principal(role),
       );
       start('invited-host');
       store.dispatch(
@@ -450,7 +453,7 @@ describe('connected principal hydration', () => {
     'uses valid legacy isAdministrator=%s without inventing member rights',
     async (isAdministrator) => {
       wire.request.mockImplementation(async (method) =>
-        method === 'client.hello'
+        method === 'capabilities.observe'
           ? { server: {} }
           : {
               id: 'legacy',
@@ -477,7 +480,9 @@ describe('connected principal hydration', () => {
     { ...principal(), hostMembershipRevision: -1 },
     { ...principal(), isAdministrator: true },
   ])('fails closed on an invalid advertised principal: %j', async (reply) => {
-    wire.request.mockImplementation(async (method) => (method === 'client.hello' ? hello : reply));
+    wire.request.mockImplementation(async (method) =>
+      method === 'capabilities.observe' ? hello : reply,
+    );
     start();
     await settle();
     expect(selectHostRole.select(store.state)).toBe(null);
@@ -497,7 +502,7 @@ describe('connected principal hydration', () => {
   it('holds a discovery flight until both wire reads settle, even if one rejects', async () => {
     let finishPrincipal!: (value: unknown) => void;
     wire.request.mockImplementation((method) =>
-      method === 'client.hello'
+      method === 'capabilities.observe'
         ? Promise.reject(new Error('offline'))
         : new Promise((resolve) => {
             finishPrincipal = resolve;
@@ -537,7 +542,7 @@ describe('connected principal hydration', () => {
 
   it('preserves ordinary legacy owner controls with Multiplayer off or missing', async () => {
     wire.request.mockImplementation(async (method) =>
-      method === 'client.hello'
+      method === 'capabilities.observe'
         ? { server: {} }
         : { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true },
     );

@@ -104,7 +104,11 @@ const scopedFileParams = (workspaceId: string) => ({
   replaceGroup: FILE_EVENTS_REPLACE_GROUP,
 });
 
-function startSaga(currentTabId: string | null = null, dispatch = vi.fn(), enableRecovery = false) {
+function startSaga(
+  currentTabId: string | null = null,
+  dispatch = vi.fn(),
+  enableRecovery: boolean | null = false,
+) {
   const input = stdChannel();
   let state = {
     agentLock: agentLockReducer(undefined, setAgentLockState('ws', { old: true }, {})),
@@ -155,7 +159,7 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn(), enabl
       context: { reduxStore },
     },
     daemonEventsSaga,
-    enableRecovery,
+    enableRecovery ?? undefined,
   );
   return { input, task, setActive, state: () => state };
 }
@@ -835,83 +839,87 @@ describe('daemonEventsSaga', () => {
   });
 });
 
-it('opts in only on the supported captured session and recovers a lost final snapshot through the reducer', async () => {
-  vi.clearAllMocks();
-  let receive!: (n: RecoveryNotification) => void;
-  const wire = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
-    if (method === 'events.subscribe') return { subscriptionId: 'adopted-global', lossRecovery: 1 };
-    if (method === 'events.fence') return params;
-    if (method === 'file-tracking.getAgentLocks') return { lockedAgentIds: ['new'] };
-    if (method === 'events.unsubscribe') return {};
-    throw new Error(method);
-  });
-  const session = createEventRecoverySession({
-    supported: true,
-    isCurrent: () => true,
-    onNotification: (fn) => {
-      receive = fn;
-      return () => {};
-    },
-    onRetired: () => () => {},
-    dispose: () => {},
-    request: async (method, params, observe) => {
-      const value = await wire(method, params);
-      observe?.(value);
-      return value;
-    },
-  });
-  mocks.capture.mockResolvedValue(session);
-  mocks.installOwners.mockImplementation(
-    (scope: RendererRecoveryScope, store: RecoveryReduxStore) => {
-      const owner = scope.registerResource({
-        key: 'locks:ws',
-        workspaceId: 'ws',
-        eventTypes: ['changes:agent-locks'],
-        isCurrent: () => true,
-        read: (reader) =>
-          reader.request<{ lockedAgentIds: string[] }>('file-tracking.getAgentLocks', {
-            workspaceId: 'ws',
-          }),
-        apply: (value) => {
-          store.dispatch(
-            setAgentLockState(
-              'ws',
-              Object.fromEntries(value.lockedAgentIds.map((id) => [id, true])),
-              {},
-            ),
-          );
-        },
-        invalidate: () => {},
-        retire: () => {
-          store.dispatch(setAgentLockState('ws', {}, {}));
-        },
-      });
-      return () => owner.dispose();
-    },
-  );
-  const h = startSaga(null, vi.fn(), true);
-  try {
-    await settle();
-    await settle();
-    expect(mocks.subscribe).not.toHaveBeenCalled();
-    expect(wire.mock.calls.filter(([m]) => m === 'events.subscribe')).toEqual([
-      ['events.subscribe', { ...firehoseParams, lossRecovery: 1 }],
-    ]);
-    receive({
-      method: 'events.lost',
-      params: { subscriptionId: 'adopted-global', generation: '1', scope: { workspaceId: null } },
+it.each([true, null])(
+  'recovers a lost final snapshot with configured opt-in %s',
+  async (enabled) => {
+    vi.clearAllMocks();
+    let receive!: (n: RecoveryNotification) => void;
+    const wire = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
+      if (method === 'events.subscribe')
+        return { subscriptionId: 'adopted-global', lossRecovery: 1 };
+      if (method === 'events.fence') return params;
+      if (method === 'file-tracking.getAgentLocks') return { lockedAgentIds: ['new'] };
+      if (method === 'events.unsubscribe') return {};
+      throw new Error(method);
     });
-    await settle();
-    await settle();
-    expect(h.state().agentLock.byWorkspaceId.ws.lockedAgentIds).toEqual({ new: true });
-    expect(wire.mock.calls.filter(([m]) => m === 'file-tracking.getAgentLocks')).toHaveLength(1);
-    expect(wire.mock.calls.filter(([m]) => m === 'events.fence')).toHaveLength(2);
-  } finally {
-    h.task.cancel();
-    await settle();
-  }
-  expect(wire.mock.calls.filter(([m]) => m === 'events.unsubscribe')).toHaveLength(1);
-});
+    const session = createEventRecoverySession({
+      supported: true,
+      isCurrent: () => true,
+      onNotification: (fn) => {
+        receive = fn;
+        return () => {};
+      },
+      onRetired: () => () => {},
+      dispose: () => {},
+      request: async (method, params, observe) => {
+        const value = await wire(method, params);
+        observe?.(value);
+        return value;
+      },
+    });
+    mocks.capture.mockResolvedValue(session);
+    mocks.installOwners.mockImplementation(
+      (scope: RendererRecoveryScope, store: RecoveryReduxStore) => {
+        const owner = scope.registerResource({
+          key: 'locks:ws',
+          workspaceId: 'ws',
+          eventTypes: ['changes:agent-locks'],
+          isCurrent: () => true,
+          read: (reader) =>
+            reader.request<{ lockedAgentIds: string[] }>('file-tracking.getAgentLocks', {
+              workspaceId: 'ws',
+            }),
+          apply: (value) => {
+            store.dispatch(
+              setAgentLockState(
+                'ws',
+                Object.fromEntries(value.lockedAgentIds.map((id) => [id, true])),
+                {},
+              ),
+            );
+          },
+          invalidate: () => {},
+          retire: () => {
+            store.dispatch(setAgentLockState('ws', {}, {}));
+          },
+        });
+        return () => owner.dispose();
+      },
+    );
+    const h = startSaga(null, vi.fn(), enabled);
+    try {
+      await settle();
+      await settle();
+      expect(mocks.subscribe).not.toHaveBeenCalled();
+      expect(wire.mock.calls.filter(([m]) => m === 'events.subscribe')).toEqual([
+        ['events.subscribe', { ...firehoseParams, lossRecovery: 1 }],
+      ]);
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'adopted-global', generation: '1', scope: { workspaceId: null } },
+      });
+      await settle();
+      await settle();
+      expect(h.state().agentLock.byWorkspaceId.ws.lockedAgentIds).toEqual({ new: true });
+      expect(wire.mock.calls.filter(([m]) => m === 'file-tracking.getAgentLocks')).toHaveLength(1);
+      expect(wire.mock.calls.filter(([m]) => m === 'events.fence')).toHaveLength(2);
+    } finally {
+      h.task.cancel();
+      await settle();
+    }
+    expect(wire.mock.calls.filter(([m]) => m === 'events.unsubscribe')).toHaveLength(1);
+  },
+);
 
 it('waits for confirmed recovery readiness and deduplicates the physical reconnect', async () => {
   vi.clearAllMocks();

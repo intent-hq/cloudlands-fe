@@ -9,6 +9,8 @@ describe('principal discovery through browser startup', () => {
   let transport: { dispose?: () => void } | undefined;
   let role: 'owner' | 'member' | 'guest' = 'owner';
   let malformed = false;
+  let recoverySupported = false;
+  let receive: (event: { data: string }) => void;
   const frames: { id: number; method: string; params?: unknown }[] = [];
 
   class Socket {
@@ -17,15 +19,37 @@ describe('principal discovery through browser startup', () => {
     onclose: (() => void) | null = null;
     onerror: (() => void) | null = null;
     constructor(readonly url: string) {
+      receive = (event) => this.onmessage?.(event);
       queueMicrotask(() => this.onopen?.());
     }
     close() {}
     send(data: string) {
       const frame = JSON.parse(data);
       frames.push(frame);
+      // Bound a regressed handshake loop so the real startup test fails instead of starving timers.
+      if (
+        frame.method === 'client.hello' &&
+        frames.filter((item) => item.method === 'client.hello').length > 3
+      ) {
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: JSON.stringify({
+              jsonrpc: '2.0',
+              id: frame.id,
+              error: { code: -32003, message: 'Repeated hello during startup' },
+            }),
+          }),
+        );
+        return;
+      }
       let result: unknown = {};
       if (frame.method === 'client.hello')
-        result = { server: { capabilities: { hostMembership: 1 } } };
+        result = {
+          clientId: 'browser-startup-client',
+          server: {
+            capabilities: { hostMembership: 1, eventStreamRecovery: recoverySupported ? 1 : 0 },
+          },
+        };
       if (frame.method === 'principal.me')
         result = malformed
           ? { id: 'caller' }
@@ -47,8 +71,19 @@ describe('principal discovery through browser startup', () => {
           protocolVersion: '2.6',
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
         };
+      if (frame.method === 'events.fence') result = frame.params;
+      if (frame.method === 'git.status')
+        result = {
+          branch: 'recovered',
+          ahead: 0,
+          behind: 0,
+          files: [{ path: 'final.ts', status: 'modified', staged: true }],
+        };
       if (frame.method === 'events.subscribe')
-        result = { subscriptionId: `subscription-${frame.id}` };
+        result = {
+          subscriptionId: `subscription-${frame.id}`,
+          ...(recoverySupported ? { lossRecovery: 1 } : {}),
+        };
       queueMicrotask(() =>
         this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) }),
       );
@@ -66,6 +101,7 @@ describe('principal discovery through browser startup', () => {
     frames.length = 0;
     role = 'owner';
     malformed = false;
+    recoverySupported = false;
     await import('$lib/browser-mock');
   });
   afterEach(() => {
@@ -117,6 +153,88 @@ describe('principal discovery through browser startup', () => {
       expect(selectCanCreateWorkspace.select(store.state)).toBe(callerRole !== 'guest');
     },
   );
+
+  it('starts supported recovery through the real browser and production root owners', async () => {
+    recoverySupported = true;
+    const store = await boot();
+    const { selectHostRole } = await import('../principal-selectors');
+    await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('owner'));
+    expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(1);
+    expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+    expect(frames.find((frame) => frame.method === 'events.subscribe')?.params).toMatchObject({
+      lossRecovery: 1,
+    });
+    expect(store.state.workspaceEvents.subscriptionPending).toBe(false);
+  });
+
+  it('recovers selected Git state after a final file loss with production owners and no later push', async () => {
+    recoverySupported = true;
+    const store = await boot();
+    const { selectPrincipalActionContext } = await import('../principal-selectors');
+    await vi.waitFor(() => expect(selectPrincipalActionContext.select(store.state)).not.toBeNull());
+    const { replaceWorkspaceList, setWorkspaceHasLoaded } =
+      await import('../../workspace/workspace-slice');
+    const { WorkspaceId } = await import('$shared/types/branded-ids');
+    const { openWorkspaceTab } = await import('../../tab-state/tab-state-slice');
+    const { setGitStatus } = await import('../../git/git-slice');
+    const workspaceId = 'startup-workspace';
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          id: WorkspaceId(workspaceId),
+          title: 'Startup',
+          myRole: 'owner',
+          canManage: true,
+        } as import('$shared/types').Workspace,
+      ]),
+    );
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        'browser-websocket',
+        selectPrincipalActionContext.select(store.state),
+      ),
+    );
+    store.dispatch(
+      setGitStatus(workspaceId, {
+        branch: 'old',
+        ahead: 0,
+        behind: 0,
+        files: [],
+      } as import('$shared/types').GitStatus),
+    );
+    store.dispatch(openWorkspaceTab(workspaceId));
+    await vi.waitFor(() =>
+      expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(2),
+    );
+    const scoped = frames.find(
+      (frame) =>
+        frame.method === 'events.subscribe' &&
+        (frame.params as { workspaceId?: string }).workspaceId === workspaceId,
+    )!;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    receive({
+      data: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'events.lost',
+        params: {
+          subscriptionId: `subscription-${scoped.id}`,
+          generation: '1',
+          scope: { workspaceId },
+        },
+      }),
+    });
+    await vi.waitFor(() =>
+      expect(store.state.git.byWorkspaceId[workspaceId]?.status?.branch).toBe('recovered'),
+    );
+    expect(store.state.git.byWorkspaceId[workspaceId]?.status?.files).toEqual([
+      { path: 'final.ts', status: 'modified', staged: true },
+    ]);
+    expect(frames.filter((frame) => frame.method === 'git.status')).toHaveLength(1);
+    expect(frames.filter((frame) => frame.method === 'events.fence')).toHaveLength(2);
+    expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+    expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(2);
+  });
 
   it('does not confer owner authority when the actual browser principal is malformed', async () => {
     malformed = true;

@@ -171,6 +171,8 @@ beforeEach(() => {
       channel: string,
       params: { method: string; params?: unknown; localMachine?: boolean },
     ) => {
+      if (channel === 'backend:node-capabilities')
+        return { ok: true, result: await rpc('client.hello') };
       if (channel !== 'backend:request') throw new Error(`Unexpected IPC ${channel}`);
       return { ok: true, result: await rpc(params.method) };
     },
