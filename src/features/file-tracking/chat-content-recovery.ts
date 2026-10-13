@@ -41,7 +41,7 @@ import {
 import type { WorktreeRecoveryStore } from './worktree-snapshots-recovery';
 
 /** Refresh only live mutable projections; immutable transcript views never enroll. */
-export async function readChatContentSnapshot(
+async function readChatContentSnapshot(
   wsId: string,
   consumer: ChatChangesConsumer,
   transport: GitReadTransport,

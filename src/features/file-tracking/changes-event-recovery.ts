@@ -35,7 +35,7 @@ export interface ChangesRecoveryProjection {
 }
 
 /** A status identity only proves immutable history correspondence, never event publication order. */
-export async function readChangesRecovery(
+async function readChangesRecovery(
   workspaceId: string,
   projection: ChangesRecoveryProjection,
   { request }: RecoveryReader,
