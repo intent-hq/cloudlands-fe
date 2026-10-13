@@ -137,6 +137,7 @@ describe('composer mic latch → voice.transcribe wire contract', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'voice.transcribe',
       params: {
         audio: 'AQID',

@@ -33,6 +33,7 @@ describe('importLegacyWorkspaces', () => {
 
     await expect(importLegacyWorkspaces()).resolves.toEqual(report);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'system.importLegacy',
       params: { force: false },
     });
@@ -43,6 +44,7 @@ describe('importLegacyWorkspaces', () => {
 
     await importLegacyWorkspaces(true);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'system.importLegacy',
       params: { force: true },
     });

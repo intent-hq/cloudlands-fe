@@ -241,6 +241,7 @@ describe('hardware-console production composition', () => {
       }
     });
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'voice.transcribe',
       params: { audio: 'AQID', mimeType: 'audio/webm', workspaceId: 'ws-1' },
       timeoutMs: 120_000,

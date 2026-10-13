@@ -269,6 +269,7 @@ describe('handleFinishedRecording', () => {
     await flow;
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'voice.transcribe',
       params: {
         audio: 'AQID',
