@@ -24,6 +24,10 @@ import { EditorIconExamples } from './editor-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
 import { TimelineSectionExamples } from './timeline-section-examples';
+import {
+  HomePullStateExamples,
+  SidebarSkeletonExamples,
+} from './workspace-loading-status-examples';
 import { BrowserDeviceFrameExamples } from './browser-device-frame-examples';
 import { ChatReferenceExamples } from './chat-reference-examples';
 import { ChatInlineExamples } from './chat-inline-examples';
@@ -503,6 +507,8 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'device-icons' && <DeviceIconExamples />}
       {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'timeline-section' && <TimelineSectionExamples />}
+      {slug === 'home-pull-state' && <HomePullStateExamples />}
+      {slug === 'sidebar-skeleton' && <SidebarSkeletonExamples />}
       {slug === 'browser-device-frame' && <BrowserDeviceFrameExamples />}
       {slug === 'chat-reference' && <ChatReferenceExamples />}
       {slug === 'chat-inline' && <ChatInlineExamples />}
@@ -599,6 +605,8 @@ export function hasFunctionalExample(slug: string) {
     'device-icons',
     'home-loading',
     'timeline-section',
+    'home-pull-state',
+    'sidebar-skeleton',
     'browser-device-frame',
     'chat-reference',
     'chat-inline',
