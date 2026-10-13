@@ -85,6 +85,7 @@ import { shouldDeferTranscriptReveal } from '$lib/components/chat/chat-panel-vis
 import { selectSubscriptionSnapshotStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 
 const WS = 'read-workspace';
 const AGENT = 'read-agent';
@@ -365,6 +366,7 @@ describe('background reads through the real store, sagas, clients and event brid
   });
 
   it('settles concurrent note content demand through one shared transport read', async () => {
+    admitLegacyPrincipal();
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     backend.onRequest('note.get', () => pending.promise);
     const first = ensureNoteContentLoaded(WS, 'task-note');
@@ -382,6 +384,7 @@ describe('background reads through the real store, sagas, clients and event brid
   });
 
   it('preserves one trailing event read when a genuine note event arrives during content demand', async () => {
+    admitLegacyPrincipal();
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     let calls = 0;
     backend.onRequest('note.get', () =>

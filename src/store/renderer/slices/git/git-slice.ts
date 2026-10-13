@@ -127,6 +127,8 @@ export const setGitStatus = createAction('git/setStatus', (wsId: string, status:
   wsId,
   status,
 }));
+export const setGitStatusLoading = createAction<[wsId: string]>('git/setStatusLoading');
+export const setGitStatusError = createAction<[wsId: string, error: string]>('git/setStatusError');
 
 export const loadSecondaryRootGit =
   createAction<[wsId: string, gitRootId: string, registeredCommitSha?: string, limit?: number]>(
@@ -268,6 +270,16 @@ gitReducer.with(
     });
   },
 );
+gitReducer.with(setGitStatusLoading, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.loading && ws.error === null) return state;
+  return setWorkspaceState(state, wsId, { ...ws, loading: true, error: null });
+});
+gitReducer.with(setGitStatusError, (state, { payload: [wsId, error] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!ws.loading && ws.error === error) return state;
+  return setWorkspaceState(state, wsId, { ...ws, loading: false, error });
+});
 gitReducer.with(setGitStatus, (state, action) => {
   const { wsId, status } = action.payload;
   const ws = getWorkspaceState(state, wsId);

@@ -19,6 +19,8 @@
       "$features/workspace-sharing/types": ["../../src/features/workspace-sharing/types.ts"],
       "$features/events/types": ["../../src/features/events/types.ts"],
       "$features/context/types": ["../../src/features/context/types.ts"],
+      "$features/file-tracking/types": ["../../src/features/file-tracking/types.ts"],
+      "$features/accept-changes/types": ["../../src/features/accept-changes/types.ts"],
       "$store/renderer/slices/guest-sessions/guest-sessions-types": [
         "../../src/store/renderer/slices/guest-sessions/guest-sessions-types.ts"
       ],

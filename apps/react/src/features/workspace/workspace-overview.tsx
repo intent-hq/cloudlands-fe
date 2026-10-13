@@ -1,5 +1,11 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link } from '@tanstack/react-router';
+import { useLayoutEffect } from 'react';
+import { store } from '@/store';
+import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
+import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { Logo } from '@/components/logo';
 import { Screen, ScreenHeader, ScreenBody, LoadingState } from '@/components/patterns/screen';
 import { buttonVariants } from '@/components/ui/button';
@@ -11,6 +17,9 @@ import {
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceNotes } from './workspace-notes';
+import { WorkspaceGitStatus } from './workspace-git-status';
+
+let nextHydrationGeneration = 0;
 
 function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   const workspace = selectWorkspaceById(workspaceId);
@@ -79,6 +88,16 @@ export function WorkspaceOverview({
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const workspace = selectWorkspaceById(workspaceId);
   const row = loaded.value ? workspace.value : undefined;
+  const authority = selectAdmittedWorkspaceReadContext(workspaceId);
+  const connection = authority.value;
+  useLayoutEffect(() => {
+    if (!connection) return;
+    store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
+    store.dispatch(loadGitStatus(workspaceId));
+    return () => {
+      store.dispatch(workspaceUnmounted(workspaceId));
+    };
+  }, [workspaceId, connection]);
   return (
     <Screen
       className="min-h-screen"
@@ -121,6 +140,7 @@ export function WorkspaceOverview({
                 <dd data-testid="workspace-status">{row.status}</dd>
               </div>
             </dl>
+            {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} />}
             <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} query={query} />
           </>
         )}

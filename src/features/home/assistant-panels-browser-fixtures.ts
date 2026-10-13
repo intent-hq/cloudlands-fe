@@ -25,6 +25,7 @@ import {
 import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import { installMockElectronBridge } from '../../test/ct-mock-electron-bridge';
 import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 
@@ -304,6 +305,7 @@ export function setupAssistantPanelsFixture(
     'note.presence.unsubscribe': () => ({ ok: true }),
     'note.presence.update': () => ({ ok: true }),
   });
+  admitLegacyPrincipal();
   const stopNotes = startWorkspaceNotesSagaFixture(store);
   return () => {
     for (const stop of stopNotes) stop();

@@ -19,16 +19,12 @@ import {
   noteContentViewReleased,
   noteContentViewRequested,
   selectNote,
-  workspaceNotesHydrationRequested,
 } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { parseIntentLink } from '$shared/utils/intent-link-parser';
 import type { LinkHandlerOptions } from '$shared/utils/link-helpers';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { filterContextNotes } from '$lib/components/workspace/sidebar/sidebar-search';
 import { m } from '$shared/paraglide/messages.js';
-
-let nextHydrationGeneration = 0;
 
 function NoteContent({
   workspaceId,
@@ -175,13 +171,6 @@ export function WorkspaceNotes({
   const filterHeader = useRef<HTMLElement>(null);
   const previousNoteId = useRef(noteId);
   const connection = authority.value;
-  useLayoutEffect(() => {
-    if (!connection) return;
-    store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
-    return () => {
-      store.dispatch(workspaceUnmounted(workspaceId));
-    };
-  }, [workspaceId, connection]);
   useLayoutEffect(() => {
     const previous = previousNoteId.current;
     previousNoteId.current = noteId;

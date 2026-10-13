@@ -1,6 +1,7 @@
 import type { SagaGenerator } from 'typed-redux-saga';
 import { call, fork, join, put, takeEvery } from 'typed-redux-saga';
 import { gitConsumerReadSaga } from './git-consumer-read-saga';
+import { createGitStatusReadSaga } from './git-status-read-saga-factory';
 import {
   getGitMutationVersion,
   isGitMutationPending,
@@ -11,54 +12,24 @@ import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { CommitFile } from '$features/file-tracking/types';
-import { LineType, type CommitInfo, type GitStatus, type WorkspaceId } from '$shared/types';
-import {
-  takeLatestInContext,
-  takeSingleFlightInContext,
-} from '../../../utils/context-saga-effects';
+import { LineType, type CommitInfo, type WorkspaceId } from '$shared/types';
+import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  loadGitStatus,
   loadSecondaryRootCommitFiles,
   loadSecondaryRootGit,
-  setGitStatus,
   setSecondaryRootGit,
   setSecondaryRootGitError,
   setSecondaryRootGitLoading,
   setSecondaryRootCommitFiles,
 } from '../git-slice';
-import { toGitStatus } from '../utils/git-status';
 
 const logger = createLogger('GitReadSaga');
 
-function* loadGitStatusWorker(workspaceId: string, forceRefresh?: boolean): SagaGenerator<void> {
-  for (;;) {
-    if (isGitMutationPending(workspaceId)) yield* call(waitForGitMutations, workspaceId);
-    const epoch = getGitMutationVersion(workspaceId);
-    try {
-      const status: GitStatus | null = yield* call(
-        [appClient.git, appClient.git.status],
-        workspaceId,
-        ...(forceRefresh ? [{ forceRefresh: true }] : []),
-      );
-      if (epoch !== getGitMutationVersion(workspaceId)) continue;
-      if (status) yield* put(setGitStatus(workspaceId, toGitStatus(status)));
-    } catch (error) {
-      if (epoch !== getGitMutationVersion(workspaceId)) continue;
-      logger.error('Failed to load git status', error);
-    }
-    return;
-  }
-}
-
-type GitStatusReadAction = ReturnType<typeof loadGitStatus> | ReturnType<typeof workspaceUnmounted>;
-
-function workspaceReadContext(action: GitStatusReadAction) {
-  const workspaceId = action.payload[0];
-  return action.type === workspaceUnmounted.type
-    ? { context: workspaceId, cancel: true as const }
-    : workspaceId;
-}
+const gitStatusReadSaga = createGitStatusReadSaga({
+  readStatus: (...args) => appClient.git.status(...args),
+  onError: (error) => logger.error('Failed to load git status', error),
+});
 
 async function readSecondaryRoot(
   workspaceId: string,
@@ -261,24 +232,13 @@ function* invalidateSecondaryRootWorkspace(
   versions.workspaces.set(workspaceId, (versions.workspaces.get(workspaceId) ?? 0) + 1);
 }
 
-function* loadGitStatusRequestWorker(action: GitStatusReadAction): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
-  if (!workspaceId) return;
-  if (action.type === workspaceUnmounted.type) return;
-  yield* call(loadGitStatusWorker, workspaceId, action.payload[1]);
-}
-
 export function* gitReadSaga() {
   yield* fork(gitConsumerReadSaga);
   const secondaryRootReadVersions: SecondaryRootReadVersions = {
     workspaces: new Map<string, number>(),
     roots: new Map<string, number>(),
   };
-  const watcher = yield* takeSingleFlightInContext(
-    [loadGitStatus, workspaceUnmounted],
-    workspaceReadContext,
-    loadGitStatusRequestWorker,
-  );
+  const watcher = yield* fork(gitStatusReadSaga);
   yield* takeLatestInContext(
     loadSecondaryRootGit,
     secondaryRootContext,

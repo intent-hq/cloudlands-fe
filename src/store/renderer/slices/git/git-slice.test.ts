@@ -3,6 +3,8 @@ import {
   gitReducer,
   initialState,
   setGitStatus,
+  setGitStatusLoading,
+  setGitStatusError,
   getGitWorkspaceState,
   setSecondaryRootGit,
   setSecondaryRootGitError,
@@ -34,6 +36,36 @@ const makeGitStatus = (overrides: Partial<GitStatus> = {}): GitStatus => ({
 });
 
 describe('gitReducer', () => {
+  it('settles status loading and errors without replacing the last snapshot or another workspace', () => {
+    const status = makeGitStatus();
+    let state = reduce(initialState, setGitStatus('ws', status));
+    state = reduce(state, setGitStatus('other', makeGitStatus({ branch: 'other' })));
+    const other = getGitWorkspaceState(state, 'other');
+    state = reduce(state, setGitStatusLoading('ws'));
+    expect(getGitWorkspaceState(state, 'ws')).toMatchObject({ loading: true, error: null });
+    expect(reduce(state, setGitStatusLoading('ws'))).toBe(state);
+    state = reduce(state, setGitStatusError('ws', 'read failed'));
+    expect(getGitWorkspaceState(state, 'ws')).toMatchObject({
+      loading: false,
+      error: 'read failed',
+    });
+    expect(getGitWorkspaceState(state, 'ws').status).toBe(status);
+    expect(reduce(state, setGitStatusError('ws', 'read failed'))).toBe(state);
+    state = reduce(state, setGitStatusLoading('ws'));
+    expect(getGitWorkspaceState(state, 'ws')).toMatchObject({ loading: true, error: null });
+    state = reduce(state, setGitStatus('ws', makeGitStatus({ ahead: 2 })));
+    expect(getGitWorkspaceState(state, 'ws')).toMatchObject({
+      loading: false,
+      error: null,
+      ahead: 2,
+    });
+    expect(getGitWorkspaceState(state, 'other')).toBe(other);
+    expect(structuredClone(state)).toEqual(state);
+    state = reduce(state, workspaceUnmounted('ws'));
+    expect(state.byWorkspaceId.ws).toBeUndefined();
+    expect(getGitWorkspaceState(state, 'other')).toBe(other);
+  });
+
   it('retains shared read results until the last correlated consumer releases them', () => {
     let state = reduce(
       initialState,
