@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const LIMIT = 64 * 1024;
 const LINE_LIMIT = 8192;
@@ -12,6 +13,7 @@ export function redactDiagnosticLine(line) {
 
 export function createPackageDiagnostics(output, privateRoot) {
   let text = '';
+  let ownedChild;
   const append = (line) => {
     text += redactDiagnosticLine(line) + '\n';
     while (Buffer.byteLength(text) > LIMIT) text = text.slice(text.indexOf('\n') + 1);
@@ -23,6 +25,7 @@ export function createPackageDiagnostics(output, privateRoot) {
     }
   };
   const attach = (child) => {
+    ownedChild = child;
     const disposers = [];
     for (const [name, stream] of [
       ['stdout', child.stdout],
@@ -48,7 +51,48 @@ export function createPackageDiagnostics(output, privateRoot) {
       stream.on('data', onData);
       disposers.push(() => stream.off('data', onData));
     }
-    return () => disposers.forEach((dispose) => dispose());
+    return () => {
+      disposers.forEach((dispose) => dispose());
+      if (ownedChild === child) ownedChild = undefined;
+    };
+  };
+  const captureStacks = () => {
+    // Sample only the child returned by this verifier's Electron launch. This
+    // host-side observation works even when main cannot answer inspector calls.
+    const child = ownedChild;
+    if (
+      !child ||
+      !Number.isSafeInteger(child.pid) ||
+      child.pid <= 0 ||
+      child.exitCode !== null ||
+      child.signalCode !== null
+    )
+      return;
+    try {
+      const sample = execFileSync('/usr/bin/sample', [String(child.pid), '1', '10'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+        killSignal: 'SIGKILL',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      // Omit process headers, invocation arguments, binary-image paths and all
+      // non-stack sections. Apply the same whole-line redaction and byte cap.
+      const graph = sample.split('Call graph:\n')[1]?.split('Total number in stack:')[0];
+      let frames = '';
+      for (const line of (graph ?? '').split('\n')) {
+        if (!/^\s*(?:[+!:|]\s*)*\d+\s+\S/.test(line)) continue;
+        const frame =
+          redactDiagnosticLine(line.length > LINE_LIMIT ? '[oversize frame omitted]' : line) + '\n';
+        if (Buffer.byteLength(frames) + Buffer.byteLength(frame) > LIMIT) break;
+        frames += frame;
+      }
+      // Preserve the initial/main-thread frames separately from rolling logs.
+      fs.writeFileSync(path.join(output, 'startup-stacks.log'), frames, { mode: 0o600 });
+    } catch {
+      // Never serialize an exec error: it can contain unfiltered child output.
+      append('Stack sample unavailable');
+    }
   };
   const capture = () => {
     // Read only the dedicated console log, never config, databases, secrets, or normal state.
@@ -84,5 +128,5 @@ export function createPackageDiagnostics(output, privateRoot) {
       if (fd !== undefined) fs.closeSync(fd);
     }
   };
-  return { attach, capture };
+  return { attach, capture, captureStacks };
 }

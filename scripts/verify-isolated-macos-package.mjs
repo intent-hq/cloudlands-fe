@@ -420,6 +420,7 @@ try {
   evidence.error = String(error?.stack ?? error);
   process.exitCode = 1;
 } finally {
+  if (evidence.error) diagnostics?.captureStacks();
   diagnostics?.capture();
   probe.persist();
   if (application) {
