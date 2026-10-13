@@ -891,6 +891,9 @@
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}
+                            {@const displayTitle = item.title.trim()
+                              ? item.title
+                              : m.workspace_links_untitled_label()}
                             {@const pullRequestCount =
                               item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
                             <ListRow
@@ -948,9 +951,10 @@
                                         >{#snippet child({ props: homeTooltipProps })}<span
                                             {...homeTooltipProps}
                                             class="home-row-title truncate font-medium"
-                                            >{item.title}</span
+                                            >{displayTitle}</span
                                           >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
+                                      ><Tooltip.Content>{displayTitle}</Tooltip.Content
+                                      ></Tooltip.Root
                                     ></Tooltip.Provider
                                   >
                                   <span
@@ -1056,7 +1060,10 @@
                               rowHeight={48}
                               virtualize={scroll ? 'auto' : false}
                               getKey={(workspace) => workspace.id}
-                              getText={(workspace) => workspace.title}
+                              getText={(workspace) =>
+                                workspace.title.trim()
+                                  ? workspace.title
+                                  : m.workspace_links_untitled_label()}
                               selectable="single"
                               selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
                               onSelectedKeysChange={(keys) =>
