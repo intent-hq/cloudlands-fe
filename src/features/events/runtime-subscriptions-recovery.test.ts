@@ -510,3 +510,88 @@ describe.each(cases)('$name remounted physical read lane', (c) => {
     expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
   });
 });
+describe.each(cases)('$name authority change after timeout', (c) => {
+  it('physical read: keeps timeout drain through same-session authority replacement', async () => {
+    vi.useFakeTimers();
+    const h = session();
+    let serial = 0;
+    let timeout = false;
+    let drain!: (v: any) => void;
+    const error = new VerifierTimeout(
+      new Promise((resolve) => {
+        drain = resolve;
+      }),
+    );
+    h.request.mockImplementation(async (method) => {
+      if (method === 'events.subscribe')
+        return { subscriptionId: `lease-${++serial}`, lossRecovery: 1 };
+      if (method === c.method && timeout) {
+        timeout = false;
+        throw error;
+      }
+      return { [c.field]: [c.row] };
+    });
+    let rows: unknown[] = [];
+    const s = c.subscribe((value) => {
+      rows = value;
+    });
+    dispose = s.dispose;
+    await settle();
+    h.request.mockClear();
+    timeout = true;
+    s.refetch();
+    await settle();
+    rendererEventRecovery.refreshAuthority();
+    await settle();
+    const before = h.request.mock.calls.filter(([m]) => m === c.method).length;
+    expect(rows).toEqual([]);
+    drain({ retired: false, errors: [] });
+    await settle();
+    expect(before).toBe(1);
+    expect(h.request.mock.calls.filter(([m]) => m === c.method)).toHaveLength(2);
+    expect(rows).toEqual([c.row]);
+  });
+});
+
+describe.each(cases)('$name physical transport replacement', (c) => {
+  it('starts a replacement transport while the old timeout is still draining', async () => {
+    const old = session();
+    old.request.mockImplementation(async (method) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'old-lease', lossRecovery: 1 }
+        : { [c.field]: [c.row] },
+    );
+    let rows: unknown[] = [];
+    const subscription = c.subscribe((value) => {
+      rows = value;
+    });
+    dispose = subscription.dispose;
+    await settle();
+    let drain!: (value: any) => void;
+    const timeout = new VerifierTimeout(
+      new Promise((resolve) => {
+        drain = resolve;
+      }),
+    );
+    old.request.mockRejectedValueOnce(timeout);
+    subscription.refetch();
+    await settle();
+    const replacement = session();
+    replacement.request.mockImplementation(async (method) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'new-lease', lossRecovery: 1 }
+        : { [c.field]: [c.row] },
+    );
+    await settle();
+    expect(replacement.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(
+      1,
+    );
+    expect(rows).toEqual([c.row]);
+    drain({ retired: false, errors: [] });
+    await settle();
+    expect(rows).toEqual([c.row]);
+    expect(replacement.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(
+      1,
+    );
+  });
+});

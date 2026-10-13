@@ -429,3 +429,29 @@ it('physical read: terminals retain timeout physical drain', async () => {
   expect(before).toBe(0);
   expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(1);
 });
+
+it('physical read: terminal timeout drain survives authority refresh on the same session', async () => {
+  let serial = 0;
+  const request = vi.fn(async (method: string) =>
+    method === 'events.subscribe'
+      ? { subscriptionId: 'lease-' + ++serial, lossRecovery: 1 }
+      : { terminals: [] },
+  );
+  session(request as EventRecoverySession['request']);
+  cleanups.push(subscribeTerminalRuntime('ws', 'one', {}, () => {}).dispose);
+  await settle();
+  let finish!: (value: any) => void;
+  const timeout = new VerifierTimeout(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await verifierTrack('ws', () => Promise.reject(timeout)).catch(() => {});
+  rendererEventRecovery.refreshAuthority();
+  await settle();
+  const before = request.mock.calls.filter(([method]) => method === 'terminal.list').length;
+  finish({ retired: false, errors: [] });
+  await settle();
+  expect(before).toBe(0);
+  expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
+});

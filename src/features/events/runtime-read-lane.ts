@@ -15,7 +15,7 @@ export function runtimeReadDrained(result: Promise<unknown>): Promise<void> {
 
 /** Resource remounts share a physical lane; a replacement transport owns a new one. */
 export function trackRuntimeRead<T>(key: string, read: () => Promise<T>): Promise<T> {
-  const session = rendererEventRecovery.capture('runtime-physical-read-lane').key;
+  const session = rendererEventRecovery.capturePhysicalSessionIdentity();
   const lanes = sessions.get(session) ?? new Map<string, Promise<void>>();
   sessions.set(session, lanes);
   const invoke = () => {

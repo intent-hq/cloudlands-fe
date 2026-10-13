@@ -23,7 +23,7 @@ export function trackTerminalRuntimeRead<T>(
   workspaceId: string,
   read: () => Promise<T>,
 ): Promise<T> {
-  const lifetime = rendererEventRecovery.capture('terminal-list-read-lane').key;
+  const lifetime = rendererEventRecovery.capturePhysicalSessionIdentity();
   const previous = pendingReads.get(workspaceId);
   const invoke = () => {
     try {
