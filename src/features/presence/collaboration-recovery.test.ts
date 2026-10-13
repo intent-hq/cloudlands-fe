@@ -663,3 +663,133 @@ it('newer presence push supersedes held membership recovery snapshot', async () 
   await settle();
   expect(getItems(h.state().presence.members.ws)[0].displayName).toBe('fresh');
 });
+
+it('discarded invite completion cannot settle a pending member operation', async () => {
+  const { shareMemberAddRequested } =
+    await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+  const h = harness();
+  await h.subscribe();
+  h.run(workspaceShareSaga);
+  const created = deferred<unknown>();
+  const added = deferred<unknown>();
+  wire.request.mockReset().mockImplementation(async (method: string) => {
+    if (method === 'workspace.members.list') return { members: [], guestCount: 0, guestLimit: 10 };
+    if (method === 'workspace.invite.list') return { invites: [] };
+    if (method === 'principal.list') return { principals: [] };
+    if (method === 'workspace.invite.create') return created.promise;
+    if (method === 'workspace.members.add') return added.promise;
+    throw Error(method);
+  });
+  h.dispatch(openShareDialog({ workspaceId: 'ws', workspaceTitle: 'Shared' }));
+  await settle();
+  h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+  h.dispatch(shareMemberAddRequested('guest'));
+  await settle();
+  expect(h.state().workspaceShare).toMatchObject({ creating: true, addingPrincipalId: 'guest' });
+  h.loss();
+  await settle();
+  created.resolve({
+    invite: { id: 'revoked', pinLogin: null, pinIdentity: null },
+    url: 'old-secret',
+  });
+  await settle();
+  const pendingAfterSiblingSettles = h.state().workspaceShare.addingPrincipalId;
+  h.dispatch(shareMemberAddRequested('guest'));
+  h.dispatch(shareMemberAddRequested('other-guest'));
+  await settle();
+  const starts = wire.request.mock.calls.filter(([m]) => m === 'workspace.members.add').length;
+  added.resolve({ added: true });
+  await settle();
+  expect({ pendingAfterSiblingSettles, physicalMemberStarts: starts }).toEqual({
+    pendingAfterSiblingSettles: 'guest',
+    physicalMemberStarts: 1,
+  });
+});
+
+it('retired hover removal cannot settle a new workspace lifetime operation', async () => {
+  const { shareRosterMemberRemoveRequested } =
+    await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+  const h = harness();
+  await h.subscribe();
+  h.run(workspaceShareSaga);
+  const first = deferred<unknown>();
+  const second = deferred<unknown>();
+  let starts = 0;
+  wire.request.mockReset().mockImplementation(async (method: string) => {
+    if (method === 'workspace.members.list')
+      return {
+        members: [member, { ...member, principalId: 'second-guest' }],
+        guestCount: 2,
+        guestLimit: 10,
+      };
+    if (method === 'workspace.members.remove')
+      return ++starts === 1 ? first.promise : second.promise;
+    throw Error(method);
+  });
+  h.dispatch(shareRosterRequested({ workspaceId: 'ws' }));
+  await settle();
+  h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws', principalId: 'guest' }));
+  await settle();
+  expect(starts).toBe(1);
+  const original = h.state().workspace;
+  h.change((s) => ({ ...s, workspace: { ...s.workspace, workspaces: createCollection('id') } }));
+  expect(h.state().workspaceShare.byWorkspaceId.ws).toBeUndefined();
+  h.change((s) => ({ ...s, workspace: original }));
+  h.dispatch(shareRosterRequested({ workspaceId: 'ws' }));
+  await settle();
+  h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws', principalId: 'second-guest' }));
+  await settle();
+  expect(starts).toBe(2);
+  expect(h.state().workspaceShare.byWorkspaceId.ws.removingPrincipalId).toBe('second-guest');
+  first.resolve({});
+  await settle();
+  const pendingAfterOldSettles = h.state().workspaceShare.byWorkspaceId.ws.removingPrincipalId;
+  h.dispatch(shareRosterMemberRemoveRequested({ workspaceId: 'ws', principalId: 'third-guest' }));
+  await settle();
+  const totalStarts = starts;
+  second.resolve({});
+  await settle();
+  expect({ pendingAfterOldSettles, totalStarts }).toEqual({
+    pendingAfterOldSettles: 'second-guest',
+    totalStarts: 2,
+  });
+});
+
+it('discarded member completion cannot settle a pending invite creation', async () => {
+  const { shareMemberAddRequested } =
+    await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+  const h = harness();
+  await h.subscribe();
+  h.run(workspaceShareSaga);
+  const created = deferred<unknown>();
+  const added = deferred<unknown>();
+  wire.request.mockReset().mockImplementation(async (method: string) => {
+    if (method === 'workspace.members.list') return { members: [], guestCount: 0, guestLimit: 10 };
+    if (method === 'workspace.invite.list') return { invites: [] };
+    if (method === 'principal.list') return { principals: [] };
+    if (method === 'workspace.invite.create') return created.promise;
+    if (method === 'workspace.members.add') return added.promise;
+    throw Error(method);
+  });
+  h.dispatch(openShareDialog({ workspaceId: 'ws', workspaceTitle: 'Shared' }));
+  await settle();
+  h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+  h.dispatch(shareMemberAddRequested('guest'));
+  await settle();
+  h.loss();
+  await settle();
+  added.resolve({ added: true });
+  await settle();
+  const creating = h.state().workspaceShare.creating;
+  // The dialog enables Create only after its own operation settles.
+  if (!creating) h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+  await settle();
+  const starts = wire.request.mock.calls.filter(([m]) => m === 'workspace.invite.create').length;
+  created.resolve({
+    invite: { id: 'revoked', pinLogin: null, pinIdentity: null },
+    url: 'old-secret',
+  });
+  await settle();
+  expect({ creating, starts }).toEqual({ creating: true, starts: 1 });
+  expect(readInviteLink('revoked')).toBeNull();
+});

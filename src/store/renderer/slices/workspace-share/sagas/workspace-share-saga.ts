@@ -88,6 +88,8 @@ import {
   selectShareCanManage,
   selectShareCreateRequest,
   selectShareHasMember,
+  selectShareActionOperationId,
+  selectWorkspaceRosterRemoveOperationId,
   selectShareMutationGeneration,
   selectShareRemovingPrincipalId,
   selectShareRevokingInviteId,
@@ -356,7 +358,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     receipt,
   );
   if (!settledReceipt) {
-    yield* put(shareCommandDiscarded(target));
+    yield* put(shareCommandDiscarded(target, { kind: 'create', request }));
     return;
   }
   if (!outcome.success) {
@@ -406,7 +408,8 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
 function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
-  const [inviteId] = action.payload;
+  const [inviteId, operationId] = action.payload;
+  if ((yield* selectShareActionOperationId.effect()) !== operationId) return;
   if ((yield* selectShareRevokingInviteId.effect()) !== inviteId) return;
   const receipt = rendererEventRecovery.capture(
     collaborationKey('share-dialog', target.workspaceId),
@@ -418,7 +421,7 @@ function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): S
     receipt,
   );
   if (!settledReceipt) {
-    yield* put(shareCommandDiscarded(target));
+    yield* put(shareCommandDiscarded(target, { kind: 'action', operationId }));
     return;
   }
   if (!result.success) {
@@ -429,13 +432,13 @@ function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): S
     logFailure('Revoking an invite', target.workspaceId, result);
     yield* putCommand(
       settledReceipt,
-      shareActionSettled({ target, error: m.workspace_share_revokeFailed_error() }),
+      shareActionSettled({ target, operationId, error: m.workspace_share_revokeFailed_error() }),
     );
     return;
   }
   yield* putCommand(
     settledReceipt,
-    shareActionSettled({ target, error: null, revokedInviteId: inviteId }),
+    shareActionSettled({ target, operationId, error: null, revokedInviteId: inviteId }),
   );
   yield* putCommand(settledReceipt, shareDataRequested());
 }
@@ -443,13 +446,20 @@ function* revokeInvite(action: ReturnType<typeof shareInviteRevokeRequested>): S
 function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
-  const [principalId] = action.payload;
+  const [principalId, operationId] = action.payload;
+  if ((yield* selectShareActionOperationId.effect()) !== operationId) return;
   if ((yield* selectShareRemovingPrincipalId.effect()) !== principalId) return;
   const member = (yield* selectShareMembers.effect()).find(
     (row) => row.principalId === principalId,
   );
   if (member && !isWorkspaceGuest(member)) {
-    yield* put(shareActionSettled({ target, error: m.collaboration_workspace_inherited_error() }));
+    yield* put(
+      shareActionSettled({
+        target,
+        operationId,
+        error: m.collaboration_workspace_inherited_error(),
+      }),
+    );
     return;
   }
   const receipt = rendererEventRecovery.capture(
@@ -462,7 +472,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
     receipt,
   );
   if (!settledReceipt) {
-    yield* put(shareCommandDiscarded(target));
+    yield* put(shareCommandDiscarded(target, { kind: 'action', operationId }));
     return;
   }
   if (!result.success) {
@@ -475,6 +485,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
       settledReceipt,
       shareActionSettled({
         target,
+        operationId,
         error:
           result.code === 'host-membership-required'
             ? m.collaboration_workspace_inherited_error()
@@ -483,7 +494,7 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
     );
     return;
   }
-  yield* putCommand(settledReceipt, shareActionSettled({ target, error: null }));
+  yield* putCommand(settledReceipt, shareActionSettled({ target, operationId, error: null }));
   yield* putCommand(settledReceipt, shareDataRequested());
 }
 
@@ -501,7 +512,8 @@ function addMemberErrorMessage(code: ShareFailure['code']): string {
 function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGenerator<void> {
   const target = yield* manageableTarget();
   if (!target) return;
-  const [principalId] = action.payload;
+  const [principalId, operationId] = action.payload;
+  if ((yield* selectShareActionOperationId.effect()) !== operationId) return;
   if ((yield* selectShareAddingPrincipalId.effect()) !== principalId) return;
   const receipt = rendererEventRecovery.capture(
     collaborationKey('share-dialog', target.workspaceId),
@@ -513,7 +525,7 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
     receipt,
   );
   if (!settledReceipt) {
-    yield* put(shareCommandDiscarded(target));
+    yield* put(shareCommandDiscarded(target, { kind: 'action', operationId }));
     return;
   }
   if (!result.success) {
@@ -524,11 +536,11 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
     logFailure('Adding a member', target.workspaceId, result);
     yield* putCommand(
       settledReceipt,
-      shareActionSettled({ target, error: addMemberErrorMessage(result.code) }),
+      shareActionSettled({ target, operationId, error: addMemberErrorMessage(result.code) }),
     );
     return;
   }
-  yield* putCommand(settledReceipt, shareActionSettled({ target, error: null }));
+  yield* putCommand(settledReceipt, shareActionSettled({ target, operationId, error: null }));
   // `added: true` — the daemon commits, then emits `workspace:updated`
   // (`members`) to every client including this one, so
   // `refreshOnMembershipChange` re-reads the roster: no read is issued here.
@@ -583,7 +595,8 @@ function* loadRoster(workspaceId: string): SagaGenerator<void> {
 function* removeRosterMember(
   action: ReturnType<typeof shareRosterMemberRemoveRequested>,
 ): SagaGenerator<void> {
-  const [{ workspaceId, principalId }] = action.payload;
+  const [{ workspaceId, principalId }, operationId] = action.payload;
+  if ((yield* selectWorkspaceRosterRemoveOperationId.effect(workspaceId)) !== operationId) return;
   if (!(yield* selectWorkspaceRosterCanManage.effect(workspaceId))) {
     yield* put(shareRosterWithheld({ workspaceId }));
     return;
@@ -596,7 +609,11 @@ function* removeRosterMember(
   );
   if (member && !isWorkspaceGuest(member)) {
     yield* put(
-      shareRosterActionSettled({ workspaceId, error: m.collaboration_workspace_inherited_error() }),
+      shareRosterActionSettled({
+        workspaceId,
+        operationId,
+        error: m.collaboration_workspace_inherited_error(),
+      }),
     );
     return;
   }
@@ -612,7 +629,7 @@ function* removeRosterMember(
     receipt,
   );
   if (!settledReceipt) {
-    yield* put(shareRosterActionSettled({ workspaceId, error: null }));
+    yield* put(shareRosterActionSettled({ workspaceId, operationId, error: null }));
     return;
   }
   if (!result.success) {
@@ -625,6 +642,7 @@ function* removeRosterMember(
       settledReceipt,
       shareRosterActionSettled({
         workspaceId,
+        operationId,
         error:
           result.code === 'host-membership-required'
             ? m.collaboration_workspace_inherited_error()
@@ -633,7 +651,10 @@ function* removeRosterMember(
     );
     return;
   }
-  yield* putCommand(settledReceipt, shareRosterActionSettled({ workspaceId, error: null }));
+  yield* putCommand(
+    settledReceipt,
+    shareRosterActionSettled({ workspaceId, operationId, error: null }),
+  );
   yield* putCommand(settledReceipt, shareRosterRequested({ workspaceId }));
 }
 

@@ -158,3 +158,12 @@ export const selectWorkspaceRosterRemoveError = store.createSelector(
 export const selectShareIntegrationAuth = store.createSelector(
   (state) => state.workspaceShare.integrationAuth,
 );
+
+/** Exact accepted mutation; matching a principal alone cannot admit repeated requests. */
+export const selectShareActionOperationId = store.createSelector(
+  (state) => state.workspaceShare.actionOperationId,
+);
+export const selectWorkspaceRosterRemoveOperationId = store.createSelector(
+  (state, workspaceId: string) =>
+    getRosterState(state.workspaceShare, workspaceId).removeOperationId,
+);
