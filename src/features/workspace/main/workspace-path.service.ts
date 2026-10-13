@@ -26,7 +26,10 @@
  * knows it.
  */
 
-import { captureMainEventRecovery } from '../../backend/main/main-event-recovery';
+import {
+  captureMainEventRecovery,
+  onMainEventRecoveryReady,
+} from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import {
@@ -35,7 +38,7 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
-import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import type { JsonRpcClient, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
 
 const logger = new Logger('WorkspacePathService');
@@ -64,6 +67,8 @@ const invalidationGenerations = new Map<string, number>();
 let cacheEpoch = 0;
 let recovery: ReturnType<typeof captureMainEventRecovery>;
 let disposeNotification: (() => void) | undefined;
+let readinessClient: JsonRpcClient | undefined;
+let disposeReadiness: (() => void) | undefined;
 let disposeReconnect: (() => void) | undefined;
 function invalidatePaths(): void {
   cache.clear();
@@ -102,7 +107,19 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
   const epoch = subscribeEpoch;
   try {
     const client = getBackendClientForConnection(LOCAL_CONNECTION_ID);
-    if (!client || (client.getRepositoryConnection && !client.getRepositoryConnection())) return;
+    if (!client) return;
+    if (readinessClient !== client) {
+      disposeReadiness?.();
+      readinessClient = client;
+      disposeReadiness =
+        typeof client.getRepositoryConnection === 'function'
+          ? onMainEventRecoveryReady(client, () => {
+              if (!recovery?.session.isCurrent()) void subscribeToWorkspaceEvents();
+            })
+          : undefined;
+    }
+    if (typeof client.getRepositoryConnection === 'function' && !client.getRepositoryConnection())
+      return;
     if (!recovery?.session.isCurrent()) {
       recovery = captureMainEventRecovery(client, () => {
         invalidatePaths();
@@ -124,6 +141,7 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
         onEvent: (n) => handleBackendNotification(n, true),
       });
     }
+    if (typeof client.getRepositoryConnection === 'function' && !recovery) return;
     const eventTypes = ['workspace:updated', 'workspace:deleted'];
     const result = recovery
       ? {
@@ -155,6 +173,7 @@ function attachListeners(): void {
   listenersAttached = true;
   disposeNotification = onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
   disposeReconnect = onBackendReconnected(() => {
+    if (recovery?.session.isCurrent()) return;
     recovery?.coordinator.dispose();
     recovery = undefined;
     // The daemon dropped in-memory subscriptions and the backend may have
@@ -226,11 +245,14 @@ async function fetchWorkspacePathInfo(
     const backendClient = getBackendClientForConnection(backendId);
     if (
       !backendClient ||
-      (backendClient.getRepositoryConnection && !backendClient.getRepositoryConnection())
+      (typeof backendClient.getRepositoryConnection === 'function' &&
+        !backendClient.getRepositoryConnection())
     )
       return null;
     const connection = backendClient.getRepositoryConnection?.();
     const session = recovery?.session;
+    if (typeof backendClient.getRepositoryConnection === 'function' && !session?.isCurrent())
+      return null;
     const response = (await (session ?? backendClient).request('workspace.get', {
       workspaceId,
     })) as { workspace?: unknown } | unknown;
@@ -320,6 +342,9 @@ export function __resetWorkspacePathServiceForTesting(): void {
   recovery = undefined;
   disposeNotification?.();
   disposeNotification = undefined;
+  disposeReadiness?.();
+  disposeReadiness = undefined;
+  readinessClient = undefined;
   disposeReconnect?.();
   disposeReconnect = undefined;
   cache.clear();

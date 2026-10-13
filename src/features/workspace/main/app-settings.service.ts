@@ -52,7 +52,10 @@
  * remaining consumers in main.
  */
 
-import { captureMainEventRecovery } from '../../backend/main/main-event-recovery';
+import {
+  captureMainEventRecovery,
+  onMainEventRecoveryReady,
+} from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import {
   getLocalBackendClient,
@@ -150,7 +153,7 @@ function allHydrated(): boolean {
 
 async function fetchStringSetting(path: string): Promise<string> {
   const client = getLocalBackendClient();
-  if (client.getRepositoryConnection && !client.getRepositoryConnection())
+  if (typeof client.getRepositoryConnection === 'function' && !client.getRepositoryConnection())
     throw new Error('Local identity unavailable');
   const result = (await (recovery?.session ?? getLocalBackendClient()).request('settings.get', {
     path,
@@ -178,7 +181,12 @@ async function refreshSettings(paths: readonly string[]): Promise<void> {
 }
 
 async function refreshSettingsPass(paths: readonly string[]): Promise<void> {
-  if (authorityRetired) return;
+  if (
+    authorityRetired ||
+    (typeof getLocalBackendClient().getRepositoryConnection === 'function' &&
+      !recovery?.session.isCurrent())
+  )
+    return;
   // Missing-path hydration joins recovery demand instead of issuing parallel reads.
   if (recoveryResource?.status.stale) {
     if (recoveryResource.status.suspended) recoveryResource.refresh();
@@ -272,10 +280,13 @@ function captureSettingsRecovery(): void {
   if (identityClient !== client) {
     identityDisposer?.();
     identityClient = client;
-    identityDisposer = client.onRepositoryIdentityConfirmed?.(() => {
-      if (recovery?.session.isCurrent()) return;
-      void initAppSettingsService();
-    });
+    identityDisposer =
+      typeof client.getRepositoryConnection === 'function'
+        ? onMainEventRecoveryReady(client, () => {
+            if (recovery?.session.isCurrent()) return;
+            void initAppSettingsService();
+          })
+        : undefined;
   }
   if (recovery?.session.isCurrent()) return;
   recovery = captureMainEventRecovery(client, retireSettings);
@@ -323,8 +334,9 @@ async function subscribeToSettingsChanges(): Promise<void> {
   const epoch = subscribeEpoch;
   try {
     const client = getLocalBackendClient();
-    if (client.getRepositoryConnection && !client.getRepositoryConnection())
+    if (typeof client.getRepositoryConnection === 'function' && !client.getRepositoryConnection())
       throw new Error('Local identity unavailable');
+    if (typeof client.getRepositoryConnection === 'function' && !recovery) return;
     const id = recovery
       ? (
           await recovery.coordinator.subscribe(
@@ -425,12 +437,14 @@ function clearSubscribeRetry(): void {
  */
 function attachSettingsListeners(): Promise<void> {
   if (listenersAttached)
-    return recovery && !recovery.session.isCurrent()
+    return !recovery?.session.isCurrent() &&
+      typeof getLocalBackendClient().getRepositoryConnection === 'function'
       ? subscribeToSettingsChanges()
       : Promise.resolve();
   listenersAttached = true;
   notificationDisposer = onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
   reconnectDisposer = onBackendReconnected(() => {
+    if (recovery?.session.isCurrent()) return;
     // The daemon dropped every in-memory subscription on reconnect; the
     // stale id belonged to the previous connection. Re-subscribe FIRST,
     // then re-fetch all three paths: a change landing between the fetch

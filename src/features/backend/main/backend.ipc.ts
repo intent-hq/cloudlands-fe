@@ -1,4 +1,4 @@
-import { captureMainEventRecovery } from './main-event-recovery';
+import { captureMainEventRecovery, onMainEventRecoveryReady } from './main-event-recovery';
 import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
 import { registerEventRecoveryHandlers } from './event-recovery-ipc';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
@@ -1640,6 +1640,8 @@ export function disconnectBackendClient(id: string): void {
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
+  guestRecoveryReadiness.get(instance)?.();
+  guestRecoveryReadiness.delete(instance);
   guestWorkspaceRecoveries.get(instance)?.capture.coordinator.dispose();
   backendClients.delete(id);
   captureRegistrations.get(id)?.();
@@ -1781,6 +1783,7 @@ const invitedClientCredentials = new WeakMap<
   guestSessionsStore.InvitedCredentialLease
 >();
 const invitedClientHellos = new WeakMap<JsonRpcClient, unknown>();
+const guestRecoveryReadiness = new WeakMap<JsonRpcClient, () => void>();
 type MainRecovery = NonNullable<ReturnType<typeof captureMainEventRecovery>>;
 const guestWorkspaceRecoveries = new WeakMap<
   JsonRpcClient,
@@ -1944,7 +1947,13 @@ function createAdditionalBackendClient(
           refreshAgain = false;
           const generation = guestWorkspaceEvents.generation;
           const revision = identityRevision;
-          const recovery = guestWorkspaceRecoveries.get(instance);
+          const recovery = ensureGuestRecovery();
+          if (
+            !recovery &&
+            (typeof instance.onRepositoryIdentityConfirmed === 'function' ||
+              instance.getRepositoryConnection?.())
+          )
+            continue;
           if (recovery?.resource.status.stale) {
             recovery.resource.refresh();
             continue;
@@ -1965,7 +1974,9 @@ function createAdditionalBackendClient(
           // the subsequent workspace read owns its own mutation receipt.
           const current = admitted;
           invitedConnectionGuards.delete(id);
-          principalRead = poolRequest(owner, instance, 'principal.me');
+          principalRead = recovery
+            ? recovery.capture.session.request('principal.me')
+            : poolRequest(owner, instance, 'principal.me');
           const principal = await principalRead;
           principalRead = undefined;
           if (!current()) continue;
@@ -2345,7 +2356,23 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
-  if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
+  if (invitedCredential) {
+    invitedClientCredentials.set(instance, invitedCredential);
+    if (typeof instance.onRepositoryIdentityConfirmed === 'function')
+      guestRecoveryReadiness.set(
+        instance,
+        onMainEventRecoveryReady(instance, () => {
+          if (
+            backendClients.get(id) !== instance ||
+            !latestHello ||
+            (poolLifecycle && poolLifecycle.phase !== 'active') ||
+            guestWorkspaceRecoveries.get(instance)?.capture.session.isCurrent()
+          )
+            return;
+          void refreshInvited();
+        }),
+      );
+  }
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   poolLifecycle?.members.set(instance, { id });
   if (poolLifecycle)
@@ -2794,6 +2821,7 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
     const epoch = guestMembershipEpochs.get(id);
     const recovery = guestWorkspaceRecoveries.get(client);
     if (recovery?.resource.status.stale) return;
+    if (!recovery && typeof client.onRepositoryIdentityConfirmed === 'function') return;
     const receipt = recovery?.resource.captureLifetime();
     const read = (guestHydrationReads.get(id) ?? 0) + 1;
     guestHydrationReads.set(id, read);
@@ -2908,6 +2936,7 @@ async function subscribeGuestWorkspaceEventsOriginal(
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
     if (!isCurrent()) return undefined;
     const recovery = guestWorkspaceRecoveries.get(client);
+    if (!recovery && typeof client.onRepositoryIdentityConfirmed === 'function') return undefined;
     const eventTypes = hostMembership
       ? [...GUEST_WORKSPACE_EVENT_TYPES, 'workspace:created', 'host:members-changed']
       : GUEST_WORKSPACE_EVENT_TYPES;
@@ -5576,6 +5605,8 @@ export function disposeAllBackendClients(): void {
     checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
+    guestRecoveryReadiness.get(instance)?.();
+    guestRecoveryReadiness.delete(instance);
     guestWorkspaceRecoveries.get(instance)?.capture.coordinator.dispose();
     instance.dispose();
   }

@@ -77,6 +77,12 @@ function daemon(supported = true, connected = true) {
     },
   } as unknown as JsonRpcClient;
   Object.assign(client, {
+    on: (_event: string, fn: (status: string) => void) => {
+      mock.statuses.add(fn);
+    },
+    removeListener: (_event: string, fn: (status: string) => void) => {
+      mock.statuses.delete(fn);
+    },
     onRepositoryIdentityConfirmed: (fn: () => void) => {
       confirmed.add(fn);
       return () => confirmed.delete(fn);
@@ -142,6 +148,144 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('main-process generic loss recovery', () => {
+  it.each(
+    ['settings', 'tunnel', 'paths'].flatMap((service) =>
+      ['confirm-first', 'drain-first'].map((order) => ({ service, order })),
+    ),
+  )(
+    'restores $service after real rehello with $order physical reads',
+    async ({ service, order }) => {
+      const { EventEmitter } = await import('node:events');
+      const { JsonRpcClient: RealClient } = await import('../json-rpc-client');
+      let hold = false;
+      let holdHello = false;
+      let finishHello: (() => void) | undefined;
+      let value = 'old/';
+      let subscription = 0;
+      const held: Array<() => void> = [];
+      class Socket extends EventEmitter {
+        destroyed = false;
+        frames: Array<{ id: number; method: string; params?: Record<string, unknown> }> = [];
+        write(line: string) {
+          const frame = JSON.parse(line);
+          this.frames.push(frame);
+          let result: unknown = {};
+          if (frame.method === 'client.hello')
+            result = { clientId: 'desktop', server: { capabilities: { eventStreamRecovery: 1 } } };
+          else if (frame.method === 'events.subscribe')
+            result = { subscriptionId: `s-${++subscription}`, lossRecovery: 1 };
+          else if (frame.method === 'settings.get') result = { value };
+          else if (frame.method === 'workspace.list') result = { workspaces: [{ id: 'w' }] };
+          else if (frame.method === 'workspace.get')
+            result = { workspace: { id: 'w', path: value } };
+          else if (frame.method === 'events.fence') result = frame.params;
+          const reply = () =>
+            this.emit(
+              'data',
+              Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\n'),
+            );
+          if (holdHello && frame.method === 'client.hello') finishHello = reply;
+          else if (
+            hold &&
+            ['settings.get', 'workspace.list', 'workspace.get'].includes(frame.method)
+          )
+            held.push(reply);
+          else queueMicrotask(reply);
+          return true;
+        }
+        destroy() {
+          this.destroyed = true;
+        }
+      }
+      const socket = new Socket();
+      const client = new RealClient({
+        socketFactory: () => socket as unknown as import('node:stream').Duplex,
+        helloParams: () => ({ clientId: 'desktop' }),
+        heartbeatIntervalMs: 0,
+      });
+      mock.client = client;
+      const registry = new ForwardOwnershipRegistry();
+      registry.record(3000, 'w');
+      const closeForward = vi.fn();
+      const count = (method: string) =>
+        socket.frames.filter((frame) => frame.method === method).length;
+      try {
+        client.start();
+        socket.emit('connect');
+        await flush();
+        if (service === 'settings') await settings.initAppSettingsService();
+        else if (service === 'tunnel')
+          ensureWorkspaceForwardCleanup({ client, registry, closeForward });
+        else expect(await paths.getWorkspacePath('w')).toBe('old/');
+        await flush();
+        expect(count('events.subscribe')).toBe(1);
+        hold = true;
+        socket.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'events.lost',
+              params: {
+                subscriptionId: 's-1',
+                generation: '1',
+                scope: { workspaceId: null },
+              },
+            }) + '\n',
+          ),
+        );
+        await flush();
+        const oldPath = service === 'paths' ? paths.getWorkspacePath('w') : undefined;
+        await flush();
+        expect(held).toHaveLength(service === 'settings' ? 3 : 1);
+        holdHello = order === 'drain-first';
+        const rehello = client.request('client.hello', {}, { timeoutMs: 120_000 });
+        await flush();
+        if (!holdHello) await rehello;
+        if (service === 'settings') expect(settings.getBranchPrefix()).toBe('');
+        if (service === 'tunnel') {
+          expect(closeForward).toHaveBeenCalledExactlyOnceWith(3000);
+          registry.record(3001, 'w');
+        }
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(count('events.subscribe')).toBe(1);
+        expect(held).toHaveLength(service === 'settings' ? 3 : 1);
+        hold = false;
+        value = 'renewed/';
+        for (const reply of held.splice(0)) reply();
+        await flush();
+        await oldPath;
+        if (holdHello) {
+          expect(count('events.subscribe')).toBe(1);
+          holdHello = false;
+          finishHello?.();
+          await rehello;
+          await flush();
+        }
+        expect(count('events.subscribe')).toBe(2);
+        if (service === 'settings') expect(settings.getBranchPrefix()).toBe('renewed/');
+        if (service === 'paths') expect(await paths.getWorkspacePath('w')).toBe('renewed/');
+        if (service === 'tunnel') expect(closeForward).toHaveBeenCalledExactlyOnceWith(3000);
+        const settled = socket.frames.length;
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(socket.frames).toHaveLength(settled);
+        settings.__resetAppSettingsForTesting();
+        paths.__resetWorkspacePathServiceForTesting();
+        resetWorkspaceForwardCleanup();
+        await flush();
+        const subscribedBeforeDispose = count('events.subscribe');
+        await client.request('client.hello', {});
+        await flush();
+        expect(count('events.subscribe')).toBe(subscribedBeforeDispose);
+      } finally {
+        settings.__resetAppSettingsForTesting();
+        paths.__resetWorkspacePathServiceForTesting();
+        resetWorkspaceForwardCleanup();
+        client.dispose();
+      }
+    },
+  );
+
   it('real reconnect renews settings only once', async () => {
     const { EventEmitter } = await import('node:events');
     const { JsonRpcClient: RealClient } = await import('../json-rpc-client');
@@ -860,7 +1004,8 @@ describe('main-process generic loss recovery', () => {
     d.loss();
     await flush();
     expect(settings.getBranchPrefix()).toBe('old/');
-    for (const reconnect of mock.reconnects) reconnect();
+    d.retire();
+    d.connect(true);
     await flush();
     expect(settings.getBranchPrefix()).toBe('new/');
     expect(calls(d, 'events.fence')).toHaveLength(0);

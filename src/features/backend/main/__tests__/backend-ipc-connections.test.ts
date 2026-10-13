@@ -39,6 +39,7 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
   recovery: false,
+  socket: undefined as unknown,
   handler: (async () => ({})) as (method: string, params?: unknown) => Promise<unknown>,
   principal: (async () => ({
     id: 'prn_7',
@@ -56,7 +57,8 @@ const rpc = vi.hoisted(() => ({
   options: [] as Array<{ timeoutMs?: number } | undefined>,
 }));
 
-vi.mock('../json-rpc-client', () => {
+vi.mock('../json-rpc-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../json-rpc-client')>();
   let seq = 0;
   class FakeJsonRpcClient {
     private readonly id = ++seq;
@@ -85,6 +87,14 @@ vi.mock('../json-rpc-client', () => {
     }
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
     constructor(opts: { config: unknown; onHelloResult?: (result: unknown) => void }) {
+      if (rpc.socket)
+        return new actual.JsonRpcClient({
+          ...opts,
+          config: opts.config as import('../backend-connection').BackendConnectionConfig,
+          socketFactory: () => rpc.socket as import('node:stream').Duplex,
+          helloParams: () => ({ clientId: 'desktop' }),
+          heartbeatIntervalMs: 0,
+        }) as unknown as FakeJsonRpcClient;
       this.config = opts.config;
       this.onHelloResult = opts.onHelloResult;
       lifecycle.events.push({ type: 'construct', seq: this.id });
@@ -150,7 +160,7 @@ vi.mock('../json-rpc-client', () => {
       return null;
     }
   }
-  return { JsonRpcClient: FakeJsonRpcClient };
+  return { ...actual, JsonRpcClient: FakeJsonRpcClient };
 });
 
 vi.mock('../client-identity', () => ({
@@ -440,6 +450,7 @@ function findHandler(channel: string) {
 
 beforeEach(() => {
   rpc.recovery = false;
+  rpc.socket = undefined;
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
@@ -5524,6 +5535,117 @@ describe('guest-sessions:* IPC handlers', () => {
         guestStore.setWorkspaces.mockClear();
         return { guest, send, mod };
       }
+
+      it.each(['confirm-first', 'drain-first'])(
+        'real guest rehello restores admission with %s',
+        async (order) => {
+          const { EventEmitter } = await import('node:events');
+          let hold = false;
+          let holdHello = false;
+          let finishHello: (() => void) | undefined;
+          let title = 'Before';
+          let subscription = 0;
+          const held: Array<() => void> = [];
+          const methods: string[] = [];
+          class Socket extends EventEmitter {
+            destroyed = false;
+            write(line: string) {
+              const frame = JSON.parse(line);
+              methods.push(frame.method);
+              let result: unknown = {};
+              if (frame.method === 'client.hello')
+                result = {
+                  ...hello,
+                  clientId: 'desktop',
+                  server: { ...hello.server, capabilities: { eventStreamRecovery: 1 } },
+                };
+              else if (frame.method === 'principal.me')
+                result = {
+                  id: GUEST.principalId,
+                  login: null,
+                  displayName: null,
+                  avatarUrl: null,
+                  isAdministrator: false,
+                };
+              else if (frame.method === 'events.subscribe')
+                result = { subscriptionId: `real-${++subscription}`, lossRecovery: 1 };
+              else if (frame.method === 'events.fence') result = frame.params;
+              else if (frame.method === 'workspace.list')
+                result = { workspaces: [{ id: 'ws-guest', title, myRole: 'collaborator' }] };
+              const reply = () =>
+                this.emit(
+                  'data',
+                  Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\n'),
+                );
+              if (frame.method === 'client.hello' && holdHello) finishHello = reply;
+              else if (frame.method === 'workspace.list' && hold) held.push(reply);
+              else queueMicrotask(reply);
+              return true;
+            }
+            destroy() {
+              this.destroyed = true;
+            }
+          }
+          const socket = new Socket();
+          rpc.socket = socket;
+          installGuest();
+          guestStore.setWorkspaces.mockResolvedValue(true);
+          installWindow();
+          const { mod } = await loadModule();
+          mod.registerBackendHandlers();
+          const guest = await mod.connectBackendClient(GUEST.id);
+          socket.emit('connect');
+          await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1));
+          vi.useFakeTimers();
+          try {
+            hold = true;
+            socket.emit(
+              'data',
+              Buffer.from(
+                JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'events.lost',
+                  params: {
+                    subscriptionId: 'real-1',
+                    generation: '1',
+                    scope: { workspaceId: null },
+                  },
+                }) + '\n',
+              ),
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(held).toHaveLength(1);
+            const principalCount = methods.filter((m) => m === 'principal.me').length;
+            holdHello = order === 'drain-first';
+            const rehello = guest.request('client.hello', {}, { timeoutMs: 120_000 });
+            await vi.advanceTimersByTimeAsync(0);
+            if (!holdHello) await rehello;
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(methods.filter((m) => m === 'principal.me')).toHaveLength(principalCount);
+            expect(methods.filter((m) => m === 'events.subscribe')).toHaveLength(1);
+            hold = false;
+            title = 'Restored';
+            held.shift()!();
+            await vi.advanceTimersByTimeAsync(0);
+            if (holdHello) {
+              expect(methods.filter((m) => m === 'events.subscribe')).toHaveLength(1);
+              holdHello = false;
+              finishHello?.();
+              await rehello;
+              await vi.advanceTimersByTimeAsync(0);
+            }
+            expect(methods.filter((m) => m === 'events.subscribe')).toHaveLength(2);
+            expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+              GUEST.id,
+              [{ id: 'ws-guest', title: 'Restored' }],
+              expect.any(Function),
+            );
+          } finally {
+            mod.disconnectBackendClient(GUEST.id);
+            vi.useRealTimers();
+          }
+        },
+      );
 
       it('ordinary guest updates still refresh after same-socket hello', async () => {
         rpc.recovery = true;

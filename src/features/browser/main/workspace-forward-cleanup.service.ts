@@ -29,7 +29,10 @@
  * most one follow-up `workspace.list`.
  */
 
-import { captureMainEventRecovery } from '../../backend/main/main-event-recovery';
+import {
+  captureMainEventRecovery,
+  onMainEventRecoveryReady,
+} from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import {
   getLocalBackendClient,
@@ -81,7 +84,10 @@ class WorkspaceForwardCleanupState {
   constructor(private readonly deps: WorkspaceForwardCleanupDeps & { client: JsonRpcClient }) {
     if (deps.provider) this.providers.add(deps.provider);
     deps.client.on?.('status', this.onStatus);
-    this.disposeIdentity = deps.client.onRepositoryIdentityConfirmed?.(() => this.ensure());
+    this.disposeIdentity =
+      typeof deps.client.getRepositoryConnection === 'function'
+        ? onMainEventRecoveryReady(deps.client, () => this.ensure())
+        : undefined;
     const backendId = deps.backendId ?? LOCAL_CONNECTION_ID;
     this.disposeNotification = onBackendNotification(
       (notification) => this.handleBackendNotification(notification),
@@ -159,7 +165,13 @@ class WorkspaceForwardCleanupState {
   private async runReconcilePass(): Promise<void> {
     if (
       this.disposed ||
-      (this.deps.client.getRepositoryConnection && !this.deps.client.getRepositoryConnection())
+      (typeof this.deps.client.getRepositoryConnection === 'function' &&
+        !this.deps.client.getRepositoryConnection())
+    )
+      return;
+    if (
+      typeof this.deps.client.getRepositoryConnection === 'function' &&
+      !this.recovery?.session.isCurrent()
     )
       return;
     const providers = this.providers.size > 0 ? this.providers : undefined;
@@ -283,7 +295,8 @@ class WorkspaceForwardCleanupState {
   private async subscribeToWorkspaceEvents(): Promise<void> {
     if (
       this.disposed ||
-      (this.deps.client.getRepositoryConnection && !this.deps.client.getRepositoryConnection())
+      (typeof this.deps.client.getRepositoryConnection === 'function' &&
+        !this.deps.client.getRepositoryConnection())
     )
       return;
     if (this.subscriptionId !== undefined || this.subscribeInFlight) {
@@ -291,6 +304,7 @@ class WorkspaceForwardCleanupState {
       return;
     }
     this.captureRecovery();
+    if (typeof this.deps.client.getRepositoryConnection === 'function' && !this.recovery) return;
     this.subscribeInFlight = true;
     const epoch = this.subscribeEpoch;
     try {
