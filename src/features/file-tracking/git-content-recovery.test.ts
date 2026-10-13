@@ -31,7 +31,11 @@ import {
 } from '$store/renderer/slices/git/git-slice';
 import { gitReadKey } from '$store/renderer/slices/git/utils/git-read-key';
 import { installGitContentRecovery } from './git-content-recovery';
-import { installSecondaryRootRecovery } from './git-secondary-root-recovery';
+import {
+  installSecondaryRootRecovery,
+  captureSecondaryRootRead,
+  readSecondaryRootSnapshot,
+} from './git-secondary-root-recovery';
 import { captureGitRead, gitContentRecoveryKey } from './git-recovery-read-lane';
 import { readGitContent } from './git-content-read';
 import { installChatChangesRecovery } from './chat-content-recovery';
@@ -538,3 +542,134 @@ it('shares physical recovery batches between Git and live chat views of the same
   expect(h.request.mock.calls.filter(([m, p]) => m === 'git.diffs' && !p.staged)).toHaveLength(1);
   expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(1);
 });
+
+it.each([false, true])(
+  'keeps the ordinary Git lane occupied until a timed-out physical read drains (replacement=%s)',
+  async (replacement) => {
+    const h = await setup();
+    const held = deferred<{ content: string }>();
+    const normal = h.request.getMockImplementation()!;
+    let calls = 0;
+    h.request.mockImplementation((m, p) =>
+      m === 'git.showFile' && ++calls === 1 ? held.promise : normal(m, p),
+    );
+    const lane = captureGitRead(gitContentRecoveryKey('ws', h.key));
+    const ordinary = lane
+      .run(() =>
+        readGitContent('ws', h.read, lane.transport!, new AbortController().signal, () => true),
+      )
+      .catch((e) => e);
+    await settle();
+    h.loss();
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30001);
+    if (replacement) {
+      h.request.mockImplementation((m, p) =>
+        m === 'events.subscribe'
+          ? Promise.resolve({ subscriptionId: 'successor', lossRecovery: 1 })
+          : normal(m, p),
+      );
+      await h.scope.subscribe({ eventTypes: ['*'] }, { recover: true });
+    }
+    await settle();
+    try {
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(1);
+    } finally {
+      held.resolve({ content: 'old physical reply' });
+      await ordinary;
+      await settle();
+    }
+    await vi.runAllTimersAsync();
+    await settle();
+    expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(2);
+    expect(h.entry().result).toMatchObject({ content: 'fresh' });
+  },
+);
+it.each(['recovery', 'ordinary', 'late', 'obsolete'] as const)(
+  'clears only a current denied secondary-root cache before its sibling drains (%s)',
+  async (mode) => {
+    const h = await setup(true);
+    h.dispatch(releaseGitRead('ws', 'view', 'request'));
+    const initial = {
+      status: { branch: 'private', ahead: 0, behind: 0, files: [] },
+      commits: [],
+      commitFiles: {},
+    };
+    h.dispatch(setSecondaryRootGit('ws', 'root', initial as any));
+    h.change({
+      panelLayout: {
+        byWorkspaceId: {
+          ws: {
+            panels: {
+              p: {
+                activeTabId: 'a',
+                tabs: [{ id: 'a', type: 'local-changes', data: { gitRootId: 'root' } }],
+              },
+            },
+          },
+        },
+      },
+    });
+    cleanups.push(installSecondaryRootRecovery(h.scope, h.store));
+    const held = deferred<any>();
+    let deny!: (reason: unknown) => void;
+    const status = new Promise((_, reject) => {
+      deny = reject;
+    });
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation((m, p) =>
+      m === 'git.status'
+        ? mode === 'late' || mode === 'obsolete'
+          ? status
+          : Promise.reject({ rpcCode: -32003 })
+        : m === 'git.commits'
+          ? held.promise
+          : normal(m, p),
+    );
+    let ordinary: Promise<unknown> | undefined;
+    if (mode === 'ordinary') {
+      const lane = captureSecondaryRootRead('ws', 'root');
+      ordinary = lane
+        .run(() => readSecondaryRootSnapshot('ws', 'root', undefined, 30, lane.transport!))
+        .catch((e) => e);
+    } else h.loss();
+    await settle();
+    if (mode === 'late') {
+      await vi.advanceTimersByTimeAsync(30001);
+      deny({ rpcCode: -32003 });
+      await settle();
+    }
+    if (mode === 'obsolete') {
+      h.change({
+        gitRoots: {
+          byWorkspaceId: {
+            ws: {
+              gitRoots: createCollection('id', [{ id: 'root', path: '/new', createdAt: 'new' }]),
+            },
+          },
+        },
+      });
+      h.dispatch(
+        setSecondaryRootGit('ws', 'root', {
+          ...initial,
+          status: { ...initial.status, branch: 'successor' },
+        } as any),
+      );
+      deny({ rpcCode: -32003 });
+      await settle();
+    }
+    try {
+      if (mode === 'obsolete')
+        expect(h.store.getState().git.byWorkspaceId.ws.secondaryRoots.root.status.branch).toBe(
+          'successor',
+        );
+      else expect(h.store.getState().git.byWorkspaceId.ws.secondaryRoots.root).toBeUndefined();
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.status')).toHaveLength(1);
+    } finally {
+      held.resolve({ items: [] });
+      await ordinary;
+      await settle();
+    }
+  },
+);

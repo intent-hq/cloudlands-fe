@@ -1,5 +1,6 @@
 import {
   captureGitRead,
+  gitReadFailureDrained,
   chatContentRecoveryKey,
 } from '$features/file-tracking/git-recovery-read-lane';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
@@ -622,6 +623,11 @@ export function* chatChangesSaga(): SagaGenerator<void> {
 
 export async function settleReads<T>(reads: Promise<T>[]): Promise<T[]> {
   const values = await Promise.allSettled(reads);
+  await Promise.all(
+    values.map((value) =>
+      value.status === 'rejected' ? gitReadFailureDrained(value.reason) : undefined,
+    ),
+  );
   for (const value of values) if (value.status === 'rejected') throw value.reason;
   return values.map((value) => (value as PromiseFulfilledResult<T>).value);
 }

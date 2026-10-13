@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { GitReadTransport } from './components/diff/diff-ipc-batcher';
@@ -8,6 +9,45 @@ export const secondaryRootRecoveryKey = (workspaceId: string, rootId: string) =>
   `git-secondary-root:${JSON.stringify([workspaceId, rootId])}`;
 
 const transports = new Map<string, GitReadTransport>();
+const failures = new Map<string, (error: unknown) => void>();
+
+/** Logical rejection does not release physical ownership, including nested deadlines. */
+export async function gitReadFailureDrained(error: unknown): Promise<void> {
+  if (!(error instanceof RecoveryRequestTimeoutError)) return;
+  const completion = await error.completion;
+  if (!completion.retired) await Promise.all(completion.errors.map(gitReadFailureDrained));
+}
+export function gitReadDrained(result: Promise<unknown>, release?: () => void): Promise<void> {
+  return result.then(
+    () => {
+      release?.();
+    },
+    (error) => {
+      if (error instanceof RecoveryRequestTimeoutError)
+        return gitReadFailureDrained(error).then(() => {
+          release?.();
+        });
+      release?.();
+    },
+  );
+}
+export function observeGitReadFailure<T>(
+  result: Promise<T>,
+  failed?: (error: unknown) => void,
+): Promise<T> {
+  const observe = (error: unknown) => {
+    failed?.(error);
+    if (error instanceof RecoveryRequestTimeoutError)
+      void error.completion.then((completion) => {
+        if (!completion.retired) for (const late of completion.errors) observe(late);
+      });
+  };
+  return result.catch((error) => {
+    observe(error);
+    throw error;
+  });
+}
+
 const pendingByTransport = new WeakMap<object, Set<Promise<unknown>>>();
 export async function waitForGitReads(transport: GitReadTransport): Promise<void> {
   await Promise.allSettled([...(pendingByTransport.get(transport.key) ?? [])]);
@@ -18,19 +58,29 @@ export function trackGitRead<T>(transport: GitReadTransport, result: Promise<T>)
     pending = new Set();
     pendingByTransport.set(transport.key, pending);
   }
-  pending.add(result);
+  const drained = gitReadDrained(result);
+  pending.add(drained);
   const done = () => {
-    pending.delete(result);
+    pending.delete(drained);
   };
-  void result.then(done, done);
+  void drained.then(done, done);
   return result;
 }
 // Physical work survives a lease epoch change and cancellation of its caller.
 const tails = new Map<string, Promise<unknown>>();
-export function bindGitReadTransport(key: string, transport: GitReadTransport) {
+export function bindGitReadTransport(
+  key: string,
+  transport: GitReadTransport,
+  onFailure?: (error: unknown) => void,
+) {
   transports.set(key, transport);
+  if (onFailure) failures.set(key, onFailure);
+  else failures.delete(key);
   return () => {
-    if (transports.get(key) === transport) transports.delete(key);
+    if (transports.get(key) === transport) {
+      transports.delete(key);
+      failures.delete(key);
+    }
   };
 }
 export function serializeGitRead<T>(
@@ -50,11 +100,12 @@ export function serializeGitRead<T>(
   } catch (error) {
     result = Promise.reject(error);
   }
-  tails.set(key, result);
+  const drained = gitReadDrained(result);
+  tails.set(key, drained);
   const done = () => {
-    if (tails.get(key) === result) tails.delete(key);
+    if (tails.get(key) === drained) tails.delete(key);
   };
-  void result.then(done, done);
+  void drained.then(done, done);
   return result;
 }
 export function captureGitRead(key: string): {
@@ -63,7 +114,14 @@ export function captureGitRead(key: string): {
   run<T>(read: () => Promise<T>): Promise<T>;
 } {
   const receipt = rendererEventRecovery.capture(key);
-  const transport = transports.get(key);
+  const bound = transports.get(key);
+  const failed = failures.get(key);
+  const transport = bound && {
+    ...bound,
+    onFailure: (error: unknown) => {
+      if (receipt.isCurrent()) failed?.(error);
+    },
+  };
   return {
     receipt,
     transport,

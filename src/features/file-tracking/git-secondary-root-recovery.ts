@@ -27,6 +27,8 @@ import {
 } from './git-recovery-authority';
 import {
   bindGitReadTransport,
+  gitReadFailureDrained,
+  observeGitReadFailure,
   captureGitRead,
   secondaryRootRecoveryKey,
   serializeGitRead,
@@ -38,6 +40,11 @@ export const captureSecondaryRootRead = (workspaceId: string, gitRootId: string)
 /** Settle every physical sibling before releasing the shared ordinary/recovery lane. */
 async function settled<T>(reads: Promise<T>[]): Promise<T[]> {
   const results = await Promise.allSettled(reads);
+  await Promise.all(
+    results.map((result) =>
+      result.status === 'rejected' ? gitReadFailureDrained(result.reason) : undefined,
+    ),
+  );
   for (const result of results) if (result.status === 'rejected') throw result.reason;
   return results.map((result) => (result as PromiseFulfilledResult<T>).value);
 }
@@ -50,10 +57,12 @@ export async function readSecondaryRootSnapshot(
   transport: GitReadTransport,
   previous?: SecondaryRootGitData,
 ): Promise<SecondaryRootGitData> {
+  const request = <T>(method: string, params?: unknown) =>
+    observeGitReadFailure(transport.request<T>(method, params), transport.onFailure);
   const params = { workspaceId, gitRootId };
   const [rawStatus, rawPage] = await settled<unknown>([
-    transport.request('git.status', params),
-    transport.request('git.commits', { ...params, limit }),
+    request('git.status', params),
+    request('git.commits', { ...params, limit }),
   ]);
   const status = parsePushedGitStatus(rawStatus);
   if (!status) throw new Error('Invalid secondary root status');
@@ -69,10 +78,11 @@ export async function readSecondaryRootSnapshot(
   ) {
     if (seenTokens.has(nextToken)) throw new Error('Repeated secondary root history page');
     seenTokens.add(nextToken);
-    const next = await transport.request<{ items: CommitInfo[]; nextToken?: string }>(
-      'git.commits',
-      { ...params, limit, nextToken },
-    );
+    const next = await request<{ items: CommitInfo[]; nextToken?: string }>('git.commits', {
+      ...params,
+      limit,
+      nextToken,
+    });
     if (!Array.isArray(next.items)) throw new Error('Invalid secondary root history');
     const seen = new Set(commits.map((row) => row.hash));
     commits.push(...next.items.filter((row) => !seen.has(row.hash)));
@@ -89,7 +99,7 @@ export async function readSecondaryRootSnapshot(
           return;
         }
         const detail = normalizeCommitDetails(
-          await transport.request<Record<string, unknown>>('git.commitDetails', {
+          await request<Record<string, unknown>>('git.commitDetails', {
             ...params,
             commitHash: commit.hash,
           }),
@@ -102,10 +112,8 @@ export async function readSecondaryRootSnapshot(
     );
   };
   const [unstaged, staged] = await settled<unknown>([
-    paths.length ? transport.request('git.diffs', { ...params, paths }) : Promise.resolve([]),
-    paths.length
-      ? transport.request('git.diffs', { ...params, paths, staged: true })
-      : Promise.resolve([]),
+    paths.length ? request('git.diffs', { ...params, paths }) : Promise.resolve([]),
+    paths.length ? request('git.diffs', { ...params, paths, staged: true }) : Promise.resolve([]),
     details(),
   ]);
   const stats = new Map<string, { additions: number; deletions: number }>();
@@ -225,6 +233,12 @@ export function installSecondaryRootRecovery(
               return result;
             },
           };
+          const retireDenied = (error: unknown) => {
+            if (!current() || !gitReadAuthorityDenied(error)) return;
+            live = false;
+            owner.dispose();
+            clear();
+          };
           const snapshot = (reader: GitReadTransport) => {
             const previous =
               store.getState().git.byWorkspaceId[workspaceId]?.secondaryRoots[rootId];
@@ -259,6 +273,9 @@ export function installSecondaryRootRecovery(
               () =>
                 snapshot({
                   key: transport.key,
+                  onFailure: (error) => {
+                    if (lifetime.isCurrent()) retireDenied(error);
+                  },
                   request: async <T>(method: string, params?: unknown): Promise<T> => {
                     if (!lifetime.commit(() => undefined))
                       throw new Error('Git root receipt expired');
@@ -290,7 +307,14 @@ export function installSecondaryRootRecovery(
               serializeGitRead(
                 key,
                 () => current() && reader.lifetime.isCurrent(),
-                () => snapshot({ key: reader.lifetime.key, request: reader.request }),
+                () =>
+                  snapshot({
+                    key: reader.lifetime.key,
+                    request: reader.request,
+                    onFailure: (error) => {
+                      if (reader.lifetime.isCurrent()) retireDenied(error);
+                    },
+                  }),
               ),
             apply,
             invalidate: () => {},
@@ -300,7 +324,7 @@ export function installSecondaryRootRecovery(
             },
             onEvent: (_notification, lifetime) => ordinary(lifetime),
           });
-          const unbind = bindGitReadTransport(key, transport);
+          const unbind = bindGitReadTransport(key, transport, retireDenied);
           rows.set(key, {
             owner,
             current: authority,

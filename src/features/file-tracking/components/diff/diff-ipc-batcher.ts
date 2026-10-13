@@ -1,3 +1,4 @@
+import { gitReadDrained, gitReadFailureDrained } from '../../git-recovery-read-lane';
 /**
  * Request coalescer / deduper for the diff viewers' git reads.
  *
@@ -104,6 +105,7 @@ interface GitlinkMeta {
 
 export interface GitReadTransport {
   key: object;
+  onFailure?(error: unknown): void;
   request<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
 const transportIds = new WeakMap<object, number>();
@@ -332,6 +334,11 @@ async function enrichChunkContents(
           transport,
         ),
   ]);
+  await Promise.all(
+    sides.map((side) =>
+      side.status === 'rejected' ? gitReadFailureDrained(side.reason) : undefined,
+    ),
+  );
   for (const side of sides) if (side.status === 'rejected') throw side.reason;
   const [oldRes, newRes] = sides.map(
     (side) => (side as PromiseFulfilledResult<ShowFileResponse>).value,
@@ -391,9 +398,10 @@ function sharedFullTreeDiffRead(
     staged
       ? { workspaceId, staged: true, ...(gitRootId ? { gitRootId } : {}) }
       : { workspaceId, ...(gitRootId ? { gitRootId } : {}) },
-  )
-    .then(toDaemonDiffChunks)
-    .finally(() => pendingFullTreeReads.delete(key));
+  ).then(toDaemonDiffChunks);
+  void gitReadDrained(promise, () => {
+    pendingFullTreeReads.delete(key);
+  });
 
   pendingFullTreeReads.set(key, promise);
   return promise;
@@ -519,6 +527,11 @@ async function flushDiffGroup(key: string) {
       ),
     );
 
+    await Promise.all(
+      enriched.map((result) =>
+        result.status === 'rejected' ? gitReadFailureDrained(result.reason) : undefined,
+      ),
+    );
     for (const result of enriched) if (result.status === 'rejected') throw result.reason;
     for (const [path, resolvers] of pending.resolvers) {
       const chunk = matches.get(path);
@@ -753,10 +766,10 @@ export function dedupedShowFile(
         error: error instanceof Error ? error.message : String(error),
         ...(isNotAFileError(error) ? { notAFile: true } : {}),
       };
-    })
-    .finally(() => {
-      pendingShows.delete(key);
     });
+  void gitReadDrained(promise, () => {
+    pendingShows.delete(key);
+  });
 
   pendingShows.set(key, { promise });
   return promise;
@@ -790,9 +803,10 @@ export function dedupedGitNumstat(
           .request<NumstatEntry[]>('git.numstat', { workspaceId, ...params })
           .then((data) => ({ success: true, data }))
       : (invoke('git:numstat', { workspaceId, ...params }) as Promise<GitNumstatResponse>)
-  )
-    .then((result) => (result?.success && Array.isArray(result.data) ? result.data : []))
-    .finally(() => pendingNumstats.delete(key));
+  ).then((result) => (result?.success && Array.isArray(result.data) ? result.data : []));
+  void gitReadDrained(promise, () => {
+    pendingNumstats.delete(key);
+  });
 
   pendingNumstats.set(key, promise);
   return promise;

@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 /**
@@ -992,4 +993,28 @@ describe('captured Git read identity', () => {
     ).rejects.toThrow('Secondary-root numstat');
     expect(request).not.toHaveBeenCalled();
   });
+});
+
+it('retains show-file deduplication until the timed-out physical request drains', async () => {
+  let finish!: (value: { retired: boolean; errors: unknown[] }) => void;
+  const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+    finish = resolve;
+  });
+  const timeout = new RecoveryRequestTimeoutError(completion);
+  const request = vi.fn().mockRejectedValueOnce(timeout).mockResolvedValue({ content: 'fresh' });
+  const transport = { key: {}, request };
+  await expect(dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).rejects.toBe(
+    timeout,
+  );
+  await expect(dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).rejects.toBe(
+    timeout,
+  );
+  expect(request).toHaveBeenCalledTimes(1);
+  finish({ retired: false, errors: [] });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(await dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).toEqual({
+    success: true,
+    data: 'fresh',
+  });
+  expect(request).toHaveBeenCalledTimes(2);
 });
