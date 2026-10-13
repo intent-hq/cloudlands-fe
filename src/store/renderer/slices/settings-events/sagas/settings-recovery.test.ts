@@ -195,6 +195,7 @@ const formClient = vi.hoisted(() => ({
   update: vi.fn(),
   getMcpServers: vi.fn(),
   getMcpServerStatuses: vi.fn(),
+  toggleWorkspaceMcpServer: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({ appClient: { settings: formClient } }));
 import { settingsFormSaga } from './settings-form-saga';
@@ -482,3 +483,61 @@ it.each(['load', 'save'] as const)(
     expect(getItem(form.operations, resource)?.status).toBe('cancelled');
   },
 );
+
+import { workspaceCatalogReceived } from '../../provider-catalog/provider-catalog-slice';
+import { toggleWorkspaceMcpServer } from '../../mcp-settings/mcp-settings-slice';
+
+it('invalidates a post-loss workspace MCP toggle before writing the protected mirror', async () => {
+  vi.useFakeTimers();
+  const ws = 'workspace-mcp';
+  const h = recoveryHarness();
+  const normal = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) =>
+    method === 'mcp.servers.list' ? { servers: [] } : normal(method, params),
+  );
+  const scope = rendererEventRecovery.attach(h.session);
+  scope.registerResource({
+    key: `workspace-catalog:${JSON.stringify([ws])}`,
+    workspaceId: ws,
+    eventTypes: ['mcp.servers:status-changed'],
+    isCurrent: () => true,
+    read: ({ request }) => request('mcp.servers.list', { workspaceId: ws }),
+    apply: () => {
+      store.dispatch(setWorkspaceDisabledMcpServers(ws, {}));
+    },
+    invalidate: () => {},
+    retire: () => {},
+  });
+  store.dispatch(
+    workspaceCatalogReceived(
+      ws,
+      {
+        catalog: { providers: [] },
+        readiness: {},
+        settings: [],
+        specialists: [],
+        mcpServers: [{ id: 'server', name: 'tools', type: 'stdio' }],
+      },
+      0,
+    ),
+  );
+  await scope.subscribe(
+    { workspaceId: ws, eventTypes: ['mcp.servers:status-changed'] },
+    { recover: true },
+  );
+  h.emit({
+    method: 'events.lost',
+    params: { subscriptionId: 'global', generation: '1', scope: { workspaceId: ws } },
+  });
+  await settle();
+  expect(store.state.mcpSettings.byWorkspaceId[ws].disabledServers).toEqual({});
+  formClient.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: true });
+  cleanups.add(store.runSaga(mcpSettingsSaga));
+  store.dispatch(toggleWorkspaceMcpServer(ws, 'server', false));
+  await settle();
+  expect(formClient.toggleWorkspaceMcpServer).toHaveBeenCalledTimes(1);
+  expect(store.state.mcpSettings.byWorkspaceId[ws].disabledServers).toEqual({});
+  await vi.advanceTimersByTimeAsync(250);
+  expect(h.request.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(2);
+  expect(h.request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(4);
+});

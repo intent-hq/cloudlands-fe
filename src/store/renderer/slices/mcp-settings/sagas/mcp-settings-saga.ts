@@ -1,3 +1,4 @@
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   captureSettingsWork,
@@ -494,7 +495,17 @@ function* toggleForWorkspace(
   // returns bare OK) is treated as unconfirmed rather than inferred from the
   // request, so state stays daemon-confirmed-only: re-hydrate instead.
   if (result.success && typeof result.workspaceDisabled === 'boolean') {
-    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverKey, result.workspaceDisabled));
+    const key = `workspace-catalog:${JSON.stringify([workspaceId])}`;
+    // Admit the unversioned command result before either mirror consumes it.
+    // After recovery it invalidates the catalog instead of replaying a delta.
+    if (!rendererEventRecovery.push(key)) return;
+    const admitted = rendererEventRecovery.capture(key);
+    yield* put(
+      withRecoveryLifetime(
+        setWorkspaceMcpServerDisabled(workspaceId, serverKey, result.workspaceDisabled),
+        admitted,
+      ),
+    );
     return;
   }
   if (!result.success) {
@@ -507,10 +518,8 @@ function* toggleForWorkspace(
  * Hydrate one workspace's disabled-server map from the daemon's scoped
  * `mcp.servers.list` (§5.22 — every entry carries `workspaceDisabled`). A
  * failed read keeps the current state rather than clearing it. The snapshot
- * is a point-in-time read: an `mcpServerToggled` delta landing between the
- * list request and the `put` below is overwritten by the older snapshot —
- * a narrow, self-correcting window (the next toggle/hydrate converges), so
- * no versioning is layered on top.
+ * shares the catalog lifetime so events, loss, and authority replacement
+ * between the request and dispatch reject an obsolete mirror update.
  */
 function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!workspaceId) return;
@@ -527,7 +536,7 @@ function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!work.isCurrent() || keys === null) return;
   const disabled: Record<string, true> = {};
   for (const key of keys) disabled[key] = true;
-  yield* put(setWorkspaceDisabledMcpServers(workspaceId, disabled));
+  yield* put(withRecoveryLifetime(setWorkspaceDisabledMcpServers(workspaceId, disabled), receipt));
 }
 
 function* toggleFeature(): SagaGenerator<void> {
