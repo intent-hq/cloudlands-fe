@@ -1,3 +1,6 @@
+import { withRecoveryAdmissions } from '../../middlewares/event-recovery';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
+import { streamStatusReceived, streamTimedOut } from '../chat-state/chat-state-slice';
 import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
 import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { describe, expect, it } from 'vitest';
@@ -7527,5 +7530,70 @@ describe('rejected metadata admission', () => {
     expect(getMsgs(next, 'a1')).toMatchObject([
       { id: 'remote-user', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello' }] },
     ]);
+  });
+});
+
+describe('mixed stream metadata admission', () => {
+  const actions = [
+    eventReceived(
+      'ws-1',
+      {
+        id: 'metadata',
+        workspaceId: 'ws-1',
+        type: 'agent:session-stats-changed',
+        timestamp: '2026-01-01',
+        data: { agentId: 'a1', stats: { creditsUsed: 1, messageCount: 9, toolCount: 2 } },
+      } as any,
+      true,
+    ),
+    chatSendStarted('a1', 'ws-1'),
+    chatSendFailed('a1', 'failure'),
+    streamStatusReceived(
+      'a1',
+      { phase: 'tool-call', message: 'Running', level: 'info', timestamp: 1 },
+      false,
+    ),
+    agentStreamUpdateReceived({
+      agentId: 'a1',
+      workspaceId: 'ws-1',
+      handlerSessionId: 'a1',
+      source: 'sendMessage',
+      eventType: 'chunk',
+    }),
+    streamCompleted('a1', { lastAttemptedMessage: null, modelUnavailable: null }),
+    streamTimedOut('a1'),
+  ];
+  describe.each(['rejected', 'missing', 'expired', 'accepted'] as const)('%s admission', (mode) => {
+    it.each(actions)('protects recovered metadata for $type', (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', { isStreaming: true, isProcessing: true, isResponding: true }),
+        ),
+      );
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 1, 1, 'capacity'));
+      const receipt =
+        mode === 'rejected'
+          ? null
+          : {
+              key: {},
+              isCurrent: () => true,
+              commit: (write: () => undefined) => {
+                if (mode === 'expired') return false;
+                write();
+                return true;
+              },
+            };
+      const tagged = withRecoveryAdmissions(
+        { ...action },
+        mode === 'missing' ? new Map() : new Map([[agentMetadataRecoveryKey('ws-1'), receipt]]),
+      );
+      if (mode === 'accepted') {
+        expect(agentSessionReducer(state, tagged)).toEqual(agentSessionReducer(state, action));
+        expect(agentSessionReducer(state, tagged)).not.toBe(state);
+      } else {
+        expect(agentSessionReducer(state, tagged)).toBe(state);
+      }
+    });
   });
 });
