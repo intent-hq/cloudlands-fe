@@ -175,18 +175,20 @@
     {/if}
 
     <div class="flex-1 overflow-auto">
-      {#key `${selectedVersionIndex}`}
-        <DiffViewer
-          oldContent={normalizeForDiff(oldContent)}
-          newContent={normalizeForDiff(newContent)}
-          fileName="note.md"
-          viewMode="unified"
-          showHeader={false}
-          showStats={false}
-          showLineNumbers
-          expandUnchanged
-        />
-      {/key}
+      {#if visible}
+        {#key `${selectedVersionIndex}`}
+          <DiffViewer
+            oldContent={normalizeForDiff(oldContent)}
+            newContent={normalizeForDiff(newContent)}
+            fileName="note.md"
+            viewMode="unified"
+            showHeader={false}
+            showStats={false}
+            showLineNumbers
+            expandUnchanged
+          />
+        {/key}
+      {/if}
     </div>
   </div>
 </div>

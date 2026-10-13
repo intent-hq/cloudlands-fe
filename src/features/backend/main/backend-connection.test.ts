@@ -2413,11 +2413,12 @@ describe('testWssConnection saved-route probes', () => {
             ? { ...options, host: '127.0.0.1', port: stalledPort }
             : options,
         )) as typeof tls.connect);
+      const primaryHost = '127.0.0.2';
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       await testWssConnection({
         ...config(),
-        host: '127.0.0.2',
-        hosts: ['127.0.0.2', daemon.host, `  ${daemon.host}  `, ''],
+        host: primaryHost,
+        hosts: [primaryHost, daemon.host, `  ${daemon.host}  `, ''],
       });
       expect(primaryAccepted).toBe(true);
       // No clock advancement: success cannot wait for the stalled primary's deadline.
@@ -2437,7 +2438,7 @@ describe('testWssConnection saved-route probes', () => {
       vi.useRealTimers();
       accepted();
       for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+      if (stalled.listening) await new Promise<void>((resolve) => stalled.close(() => resolve()));
     }
   });
 

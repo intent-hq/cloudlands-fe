@@ -1,9 +1,23 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../test/ct-test';
 import Preview from './assistant-panels.preview.svelte';
+import type { AssistantNoteSaveControl } from './assistant-panels-browser-fixtures';
 
-async function selectNoteView(panel: Locator, page: Page, name: 'Editor' | 'Rendered preview') {
+type SaveFixtureWindow = typeof window & {
+  assistantNoteSaveControl?: AssistantNoteSaveControl;
+  assistantNoteRequests?: Array<{ method: string; params: unknown }>;
+};
+
+async function selectNoteView(
+  panel: Locator,
+  page: Page,
+  name: 'Editor' | 'Rendered preview' | 'Raw Markdown',
+) {
   await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  if (name === 'Raw Markdown') {
+    await page.getByRole('menuitem', { name: 'Edit Raw Markdown', exact: true }).click();
+    return;
+  }
   await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
   await page.getByRole('menuitemradio', { name, exact: true }).click();
   await page.keyboard.press('Escape');
@@ -48,8 +62,7 @@ for (const note of [
               window as typeof window & {
                 assistantNoteRequests?: Array<{ method: string; params: unknown }>;
               }
-            ).assistantNoteRequests?.filter((request) => request.method === 'note.setContent') ??
-            [],
+            ).assistantNoteRequests?.filter((request) => request.method === 'note.update') ?? [],
         ),
       )
       .toHaveLength(1);
@@ -65,8 +78,9 @@ for (const note of [
       method: 'workspace.get',
       params: { workspaceId: '__chief__' },
     });
-    expect(requests.find((request) => request.method === 'note.setContent')).toEqual({
-      method: 'note.setContent',
+    expect(requests.filter((request) => request.method === 'note.setContent')).toHaveLength(0);
+    expect(requests.find((request) => request.method === 'note.update')).toEqual({
+      method: 'note.update',
       params: {
         workspaceId: '__chief__',
         noteId: note.id,
@@ -116,7 +130,7 @@ test('Assistant opens workspace notes in their own editable workspace', async ({
             window as typeof window & {
               assistantNoteRequests?: Array<{ method: string; params: unknown }>;
             }
-          ).assistantNoteRequests?.find((request) => request.method === 'note.setContent')?.params,
+          ).assistantNoteRequests?.find((request) => request.method === 'note.update')?.params,
       ),
     )
     .toEqual({
@@ -125,6 +139,13 @@ test('Assistant opens workspace notes in their own editable workspace', async ({
       expectedVersion: 1,
       content: expect.stringContaining('Saved in its workspace.'),
     });
+  expect(
+    await page.evaluate(() =>
+      (window as SaveFixtureWindow).assistantNoteRequests!.filter(
+        (r) => r.method === 'note.setContent',
+      ),
+    ),
+  ).toHaveLength(0);
   await testInfo.attach('workspace-note-edited', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -175,8 +196,9 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
     'aria-disabled',
     'true',
   );
+  await page.keyboard.press('Escape');
   await expect(
-    views.getByRole('menuitemradio', { name: 'Raw Markdown', exact: true }),
+    menu.getByRole('menuitem', { name: 'Edit Raw Markdown', exact: true }),
   ).toHaveAttribute('aria-disabled', 'true');
   await testInfo.attach('unavailable-workspace-note', {
     body: await page.screenshot(),
@@ -289,6 +311,114 @@ test('Automatic Assistant opens reuse a panel and handle missing notes and narro
   });
 });
 
+for (const raw of [false, true]) {
+  test(`Assistant ${raw ? 'raw failed' : 'rich superseded'} preview keeps its admitted editor until save settles`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(Preview);
+    await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+    const panel = component.locator('[data-assistant-content-panel]');
+    await expect(panel.locator('.tiptap[contenteditable="true"]')).toBeVisible();
+    if (raw) await selectNoteView(panel, page, 'Raw Markdown');
+    const editor = raw ? panel.locator('.monaco-editor') : panel.locator('.tiptap');
+    await expect(editor).toBeVisible();
+    await page.evaluate(() => (window as SaveFixtureWindow).assistantNoteSaveControl!.holdNext());
+    await editor.click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.insertText(' Admitted draft survives.');
+    await selectNoteView(panel, page, 'Rendered preview');
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as SaveFixtureWindow).assistantNoteSaveControl!.pending),
+      )
+      .toBe(true);
+    await expect(editor).toBeVisible();
+    await expect(panel.getByTestId('rendered-note-preview')).toHaveCount(0);
+    if (raw) {
+      await page.evaluate(() =>
+        (window as SaveFixtureWindow).assistantNoteSaveControl!.settle('Controlled save failure'),
+      );
+      await expect(panel.getByRole('alert')).toContainText('Controlled save failure');
+      await expect(editor).toBeVisible();
+      await expect(editor).toContainText('Admitted draft survives.');
+      await expect(panel.getByTestId('rendered-note-preview')).toHaveCount(0);
+      await selectNoteView(panel, page, 'Raw Markdown');
+      await panel.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as SaveFixtureWindow).assistantNoteRequests!.filter(
+                (r) => r.method === 'note.update',
+              ).length,
+          ),
+        )
+        .toBe(2);
+    } else {
+      await selectNoteView(panel, page, 'Editor');
+      await page.evaluate(() => (window as SaveFixtureWindow).assistantNoteSaveControl!.settle());
+      await expect(editor).toHaveAttribute('contenteditable', 'true');
+      await expect(editor).toContainText('Admitted draft survives.');
+      await expect(panel.getByTestId('rendered-note-preview')).toHaveCount(0);
+    }
+    await selectNoteView(panel, page, 'Rendered preview');
+    await expect(panel.getByTestId('rendered-note-preview')).toContainText(
+      'Admitted draft survives.',
+    );
+    const writes = await page.evaluate(() =>
+      (window as SaveFixtureWindow).assistantNoteRequests!.filter(
+        (r) => r.method === 'note.update',
+      ),
+    );
+    expect(writes).toHaveLength(raw ? 2 : 1);
+    expect(
+      await page.evaluate(() =>
+        (window as SaveFixtureWindow).assistantNoteRequests!.filter(
+          (r) => r.method === 'note.setContent',
+        ),
+      ),
+    ).toHaveLength(0);
+    for (const write of writes)
+      expect(write.params).toEqual({
+        workspaceId: '__chief__',
+        noteId: 'plan',
+        expectedVersion: 1,
+        content: expect.stringContaining('Admitted draft survives.'),
+      });
+    await selectNoteView(panel, page, raw ? 'Raw Markdown' : 'Editor');
+    await expect(editor).toBeVisible();
+    await expect(editor).toContainText('Admitted draft survives.');
+    await component.unmount();
+    expect(
+      await page.evaluate(() => (window as SaveFixtureWindow).assistantNoteSaveControl),
+    ).toBeUndefined();
+  });
+}
+
+test('Assistant large notes stay read-only until explicit raw editing', async ({ mount, page }) => {
+  const content = '世'.repeat(100001);
+  expect(content.length).toBeLessThan(300000);
+  expect(new TextEncoder().encode(content).length).toBeGreaterThan(300000);
+  const component = await mount(Preview, { props: { noteContent: content } });
+  await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+  const panel = component.locator('[data-assistant-content-panel]');
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toHaveCount(0);
+  await expect(panel.getByTestId('raw-note-view')).toHaveCount(0);
+  await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await page.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
+  await expect(page.getByRole('menuitemradio', { name: 'Editor', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await selectNoteView(panel, page, 'Raw Markdown');
+  await expect(panel.getByTestId('raw-note-view')).toBeVisible();
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toHaveCount(0);
+  await expect(panel.getByTestId('rendered-note-preview')).toHaveCount(0);
+});
+
 test('Background content keeps the current page, pane and composer focus', async ({
   mount,
   page,
@@ -297,7 +427,9 @@ test('Background content keeps the current page, pane and composer focus', async
   const component = await mount(Preview);
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
   const panel = component.locator('[data-assistant-content-panel]');
-  await expect(panel).toContainText('Plan for the repository');
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toContainText(
+    'Plan for the repository',
+  );
   const draft = component.getByRole('textbox', { name: 'Message the Assistant' });
   await draft.fill('Keep reading this plan');
   await page.evaluate(() => window.__assistantPanels!.leaveAssistant());
@@ -328,10 +460,15 @@ test('Background content keeps the current page, pane and composer focus', async
     body: await page.screenshot({ path: testInfo.outputPath('after-background-open.png') }),
     contentType: 'image/png',
   });
+  const beforeRepeat = await page.evaluate(() => [...window.__assistantPanels!.calls]);
   await page.evaluate(() =>
     window.__assistantPanels!.navigate('intent://local/note/second', 'assistant-source'),
   );
-  await expect.poll(() => page.evaluate(() => window.__assistantPanels!.calls.length)).toBe(3);
+  await expect
+    .poll(() =>
+      page.evaluate((count) => window.__assistantPanels!.calls.slice(count), beforeRepeat.length),
+    )
+    .toEqual([{ noteId: 'second', workspaceId: '__chief__' }]);
   await expect(panel).toContainText('Plan for the repository');
   await panel.getByTestId('pane-stack-selector-trigger').click();
   await expect(page.getByRole('menuitem', { name: /Second plan/ })).toHaveCount(1);
@@ -500,12 +637,19 @@ test('Unattributed background events cannot open notes in an arbitrary thread', 
   await page.evaluate(() => window.__assistantPanels!.addThread());
   await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
   const panel = component.locator('[data-assistant-content-panel]');
-  await expect(panel).toContainText('Plan for the repository');
+  await expect(panel.locator('.tiptap[contenteditable="true"]')).toContainText(
+    'Plan for the repository',
+  );
+  const admittedCalls = await page.evaluate(() => [...window.__assistantPanels!.calls]);
+  const admittedState = await page.evaluate(() => window.__assistantPanels!.snapshot());
+  expect(admittedCalls.length).toBeGreaterThan(0);
+  expect(
+    admittedCalls.every((call) => call.noteId === 'plan' && call.workspaceId === '__chief__'),
+  ).toBe(true);
   await page.evaluate(() =>
     window.__assistantPanels!.navigateWithoutCaller('intent://local/note/second'),
   );
-  expect(await page.evaluate(() => window.__assistantPanels!.calls)).toEqual([
-    { noteId: 'plan', workspaceId: '__chief__' },
-  ]);
+  expect(await page.evaluate(() => window.__assistantPanels!.calls)).toEqual(admittedCalls);
+  expect(await page.evaluate(() => window.__assistantPanels!.snapshot())).toEqual(admittedState);
   await expect(panel).toContainText('Plan for the repository');
 });

@@ -6,7 +6,7 @@ import { Editor } from '@tiptap/core';
 import { tick } from 'svelte';
 import DOMPurify from 'dompurify';
 import { createEditorConfig } from './editor-config';
-import { processHTMLToMarkdown, processMarkdownToHTML } from './markdown-processor';
+import { escapeHtmlTags, processHTMLToMarkdown, processMarkdownToHTML } from './markdown-processor';
 
 describe('processMarkdownForDisplay error path', () => {
   afterEach(() => {
@@ -513,4 +513,58 @@ describe('markdown-processor blank-line round trip', () => {
       editor.destroy();
     }
   });
+});
+
+describe('protected Markdown source restoration', () => {
+  it.each(['`', '~'].flatMap((marker) => [5, 9, 13].map((length) => ({ marker, length }))))(
+    'preserves shorter literal $marker fences inside a $length-character fence',
+    async ({ marker, length }) => {
+      const fence = marker.repeat(length);
+      const body = '`x`\n' + marker.repeat(length - 1) + '\n' + marker.repeat(3) + '\n`y`\n';
+      const source = fence + 'text\n' + body + fence + '\n';
+      expect(escapeHtmlTags(source)).toBe(source);
+      const rendered = document.createElement('div');
+      rendered.innerHTML = await processMarkdownToHTML(source, { skipIfHTML: false });
+      expect(rendered.querySelectorAll('pre code')).toHaveLength(1);
+      expect(rendered.querySelector('pre code')?.textContent).toBe(body.slice(0, -1));
+      expect(rendered.querySelector('pre code')?.className).toContain('language-text');
+      expect(rendered.querySelector('p')).toBeNull();
+    },
+  );
+
+  it('restores mixed protections once while keeping user placeholder text and HTML escaping', () => {
+    const code = '`````text\n`x`\n````\n`y`\n`````';
+    const inline = '`<img src=x>`';
+    const math = '$a<b$ and $c>d$';
+    const placeholders = '__MARKDOWN_SOURCE_0__ __MARKDOWN_SOURCE__1__';
+    const preserved = [
+      code,
+      inline,
+      math,
+      placeholders,
+      '<!--anchor:cmt-test:start-->',
+      '<br><sub>x</sub>',
+    ].join('\n\n');
+    expect(escapeHtmlTags(preserved + '\n\n<img src=x onerror=alert(1)>')).toBe(
+      preserved + '\n\n&lt;img src=x onerror=alert(1)&gt;',
+    );
+  });
+});
+
+describe('mixed protected fence markers', () => {
+  it.each(['`', '~'])(
+    'does not consume prose after a %s fence containing the other marker',
+    async (marker) => {
+      const other = marker === '`' ? '~' : '`';
+      const body = other.repeat(5) + 'text\n<tag>literal</tag>\n`inline`\n';
+      const code = marker.repeat(4) + 'text\n' + body + marker.repeat(4);
+      const source = code + '\n\n<strong>outside</strong>';
+      expect(escapeHtmlTags(source)).toBe(code + '\n\n&lt;strong&gt;outside&lt;/strong&gt;');
+      const rendered = document.createElement('div');
+      rendered.innerHTML = await processMarkdownToHTML(source, { skipIfHTML: false });
+      expect(rendered.querySelector('pre code')?.textContent).toBe(body.slice(0, -1));
+      expect(rendered.querySelector('p')?.textContent).toBe('<strong>outside</strong>');
+      expect(rendered.querySelector('strong, tag')).toBeNull();
+    },
+  );
 });

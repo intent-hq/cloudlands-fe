@@ -300,6 +300,10 @@ export const IPC_CHANNELS = {
     OPEN_EXTERNAL: 'system:open-external',
     SHOW_ITEM_IN_FOLDER: 'system:show-item-in-folder',
     WRITE_CLIPBOARD: 'system:write-clipboard',
+    SOURCE_CLIPBOARD_BEGIN: 'system:source-clipboard-begin',
+    SOURCE_CLIPBOARD_WRITE: 'system:source-clipboard-write',
+    SOURCE_CLIPBOARD_COMMIT: 'system:source-clipboard-commit',
+    SOURCE_CLIPBOARD_ABORT: 'system:source-clipboard-abort',
     BEEP: 'system:beep',
     HOME_DIRECTORY: 'system:home-directory',
     EXECUTE_COMMAND: 'system:execute-command',
@@ -953,6 +957,16 @@ export const IPC_CHANNELS = {
       RELEASE: 'backend:repository-resource:release',
       RETIRED: 'backend:repository-resource:retired',
     },
+    NOTE_DELETE_SUBSCRIPTION: {
+      SUBSCRIBE: 'backend:note-delete-subscription:subscribe',
+      UNSUBSCRIBE: 'backend:note-delete-subscription:unsubscribe',
+    },
+    NOTE_SAVE_CONNECTION: {
+      CAPTURE: 'backend:note-save-connection:capture',
+      REQUEST: 'backend:note-save-connection:request',
+      RELEASE: 'backend:note-save-connection:release',
+      RETIRED: 'backend:note-save-connection:retired',
+    },
     REPOSITORY: {
       CAPTURE: 'backend:repository:capture',
       RETIRED: 'backend:repository:retired',
@@ -1090,6 +1104,7 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.NOTE_SAVE_CONNECTION.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

@@ -31,10 +31,12 @@
   const { as = 'div' as T, children, ...rest }: Props = $props();
 
   const context = getContext<NodeViewContext | undefined>(NODE_VIEW_CONTEXT_KEY);
-  let element: HTMLElement;
+  let element: HTMLElement | null = null;
 
   onMount(async () => {
     await tick();
+    // Destruction clears bind:this while this mount callback is suspended.
+    if (!element) return;
     element.style.whiteSpace = 'normal';
   });
 </script>

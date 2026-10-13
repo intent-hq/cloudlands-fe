@@ -1,0 +1,910 @@
+{
+  "caseId": "adjacentHtmlPreCodePlain",
+  "source": "<pre><code class=\"language-diff\">-café &amp; old\n+世界 &lt;new&gt;\n</code></pre><pre><code class=\"language-mermaid\">flowchart LR\n A[\"café &amp; 世界\"] --&gt; B\n</code></pre>",
+  "oracleAtoms": [
+    {
+      "type": "diffBlock",
+      "code": "-café & old\n+世界 <new>\n"
+    },
+    {
+      "type": "mermaidBlock",
+      "code": "flowchart LR\n A[\"café & 世界\"] --> B\n"
+    }
+  ],
+  "readiness": "test-only-real-store-capture",
+  "calls": [
+    {
+      "request": {
+        "kind": "source",
+        "maxSourceBytes": 4096,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteSourcePage",
+        "sourceLength": 169,
+        "metadataRef": "AXil8AoY40ruhtCFB9z3TBkAAgQIAAAAAA.X3ycmHZaMPfTM1XZd-pU5dVEW5O_AO95FAebscueYZs",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkABAEMAAwADKkBAAAAAA.593r0f_aEqOGYN3OPEPViM76dNHdrLay8G0nBXf6irY",
+        "range": {
+          "start": 0,
+          "end": 169
+        },
+        "text": "<pre><code class=\"language-diff\">-café &amp; old\n+世界 &lt;new&gt;\n</code></pre><pre><code class=\"language-mermaid\">flowchart LR\n A[\"café &amp; 世界\"] --&gt; B\n</code></pre>",
+        "nextCursor": null,
+        "previousCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkABAEMAAwADKkBAAAAAA.593r0f_aEqOGYN3OPEPViM76dNHdrLay8G0nBXf6irY",
+        "maxItems": 64,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "span",
+            "id": "0000000000000002",
+            "sourceRange": {
+              "start": 0,
+              "end": 49
+            },
+            "role": "literal",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILAQwADKkBAAAAAA.5HunUaI_hp8T4FKSqH4fuMBXZtlM0j4o3d-E7SKiyxA"
+          },
+          {
+            "kind": "nativeNode",
+            "id": "000000000000001a",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "diffBlock",
+            "nodeClass": "atom",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 78
+            },
+            "provenance": "explicit",
+            "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULHQgAAAAA.dZoeh1AXgCsdBI84BngHkjjoyj-3aRaE0ngO5Wr0kJg",
+            "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000001",
+            "sourceRange": {
+              "start": 0,
+              "end": 127
+            },
+            "construct": "htmlBlock",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "AXil8AoY40ruhtCFB9z3TBkAAwILAQkAAAAA.GPaKKwa5ECdR3J8JiiCY6L44PnTQTnNK5KE4WSNc0ZI"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000023",
+            "construct": "htmlDocument",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "html",
+            "sourceRange": {
+              "start": 0,
+              "end": 169
+            },
+            "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+            "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULHAgAAAAA.PGMxi5_2H2RKF7PuF-xXN7XYZ6DBC-yC8OxqaDQAJww",
+            "sourceMapRef": "AXil8AoY40ruhtCFB9z3TBkABAYLIwwADKkBAAAAAA.7EAnk3xpmN0TkTPxnERDDMC3X7hO2fn9wVpuut_c2BI",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000003",
+            "sourceRange": {
+              "start": 49,
+              "end": 65
+            },
+            "role": "literal",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILAQwADKkBAAAAAA.5HunUaI_hp8T4FKSqH4fuMBXZtlM0j4o3d-E7SKiyxA"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000004",
+            "sourceRange": {
+              "start": 65,
+              "end": 127
+            },
+            "role": "literal",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILAQwADKkBAAAAAA.5HunUaI_hp8T4FKSqH4fuMBXZtlM0j4o3d-E7SKiyxA"
+          },
+          {
+            "kind": "nativeNode",
+            "id": "000000000000001b",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "mermaidBlock",
+            "nodeClass": "atom",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+            "childIndex": 1,
+            "sourceRange": {
+              "start": 78,
+              "end": 169
+            },
+            "provenance": "explicit",
+            "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULIAgAAAAA.YF-Qq2-7XXBq-_X2vRIH2WGIw3XuDc0GfNm0sKoud_Q",
+            "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000008",
+            "sourceRange": {
+              "start": 128,
+              "end": 129
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000007",
+            "sourceRange": {
+              "start": 128,
+              "end": 169
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "AXil8AoY40ruhtCFB9z3TBkAAwILBwkAAAAA.zvR887UnonSMJlZ7nYlGwYIVd4JSjsI-UAbigaE4P9E"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000009",
+            "sourceRange": {
+              "start": 129,
+              "end": 130
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000a",
+            "sourceRange": {
+              "start": 130,
+              "end": 131
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000b",
+            "sourceRange": {
+              "start": 131,
+              "end": 136
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000c",
+            "sourceRange": {
+              "start": 136,
+              "end": 141
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000d",
+            "sourceRange": {
+              "start": 141,
+              "end": 144
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000e",
+            "sourceRange": {
+              "start": 144,
+              "end": 145
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000f",
+            "sourceRange": {
+              "start": 145,
+              "end": 146
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000010",
+            "sourceRange": {
+              "start": 146,
+              "end": 147
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000011",
+            "sourceRange": {
+              "start": 147,
+              "end": 149
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000012",
+            "sourceRange": {
+              "start": 149,
+              "end": 153
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000013",
+            "sourceRange": {
+              "start": 153,
+              "end": 155
+            },
+            "role": "text",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000014",
+            "sourceRange": {
+              "start": 155,
+              "end": 156
+            },
+            "role": "lineBreak",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000015",
+            "sourceRange": {
+              "start": 156,
+              "end": 163
+            },
+            "role": "literal",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000016",
+            "sourceRange": {
+              "start": 163,
+              "end": 169
+            },
+            "role": "literal",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkABAILBwwADKkBAAAAAA.sLWXOhpUYx_lfVcT0X1BrySaHjuVL21ELJPIU240zh0"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000001a",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "diffBlock",
+            "nodeClass": "atom",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 78
+            },
+            "provenance": "explicit",
+            "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULHQgAAAAA.dZoeh1AXgCsdBI84BngHkjjoyj-3aRaE0ngO5Wr0kJg",
+            "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AXil8AoY40ruhtCFB9z3TBkAAwULHQgAAAAA.dZoeh1AXgCsdBI84BngHkjjoyj-3aRaE0ngO5Wr0kJg",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000001d",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "AXil8AoY40ruhtCFB9z3TBkAAgULHQAAAAA.D3SfMm2NJWMexdIdyUt8BdsFWaiU3h97czhjEqJfeQw"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AXil8AoY40ruhtCFB9z3TBkAAgULHQAAAAA.D3SfMm2NJWMexdIdyUt8BdsFWaiU3h97czhjEqJfeQw",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000001e",
+            "parentId": "000000000000001d",
+            "key": "code",
+            "type": "string",
+            "valueRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLHwAAAAA.Zj5jXGwavtNEjar1CR2C76LH6xpy3XzDc2omDSyL3qc"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLHwAAAAA.Zj5jXGwavtNEjar1CR2C76LH6xpy3XzDc2omDSyL3qc",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000001f",
+            "field": "value",
+            "offset": 0,
+            "text": "-café & old\n+世界 <new>\n",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000001b",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "mermaidBlock",
+            "nodeClass": "atom",
+            "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+            "childIndex": 1,
+            "sourceRange": {
+              "start": 78,
+              "end": 169
+            },
+            "provenance": "explicit",
+            "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULIAgAAAAA.YF-Qq2-7XXBq-_X2vRIH2WGIw3XuDc0GfNm0sKoud_Q",
+            "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AXil8AoY40ruhtCFB9z3TBkAAwULIAgAAAAA.YF-Qq2-7XXBq-_X2vRIH2WGIw3XuDc0GfNm0sKoud_Q",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000020",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "AXil8AoY40ruhtCFB9z3TBkAAgULIAAAAAA.3Fu4NJ2tJnRLF9tbyxo9maOYRsfTLBQNwym0v8Ugspw"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AXil8AoY40ruhtCFB9z3TBkAAgULIAAAAAA.3Fu4NJ2tJnRLF9tbyxo9maOYRsfTLBQNwym0v8Ugspw",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000021",
+            "parentId": "0000000000000020",
+            "key": "code",
+            "type": "string",
+            "valueRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000022",
+            "field": "value",
+            "offset": 0,
+            "text": "flowchart LR\n A[\"café & 世界\"] --> B\n",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  ],
+  "sources": [
+    {
+      "node": {
+        "kind": "nativeNode",
+        "id": "000000000000001a",
+        "profile": "canonicalNote",
+        "profileVersion": 1,
+        "nodeType": "diffBlock",
+        "nodeClass": "atom",
+        "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+        "childIndex": 0,
+        "sourceRange": {
+          "start": 0,
+          "end": 78
+        },
+        "provenance": "explicit",
+        "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULHQgAAAAA.dZoeh1AXgCsdBI84BngHkjjoyj-3aRaE0ngO5Wr0kJg",
+        "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc"
+      },
+      "codeField": {
+        "id": "000000000000001e",
+        "parentId": "000000000000001d",
+        "key": "code",
+        "type": "string",
+        "valueRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLHwAAAAA.Zj5jXGwavtNEjar1CR2C76LH6xpy3XzDc2omDSyL3qc"
+      },
+      "code": "-café & old\n+世界 <new>\n",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLHwAAAAA.Zj5jXGwavtNEjar1CR2C76LH6xpy3XzDc2omDSyL3qc"
+        },
+        "primitive": "diff",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalSourceGrant": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z"
+      },
+      "grantLimit": "Source binding only; test profile is unregistered; no renderer or artifact publication authority."
+    },
+    {
+      "node": {
+        "kind": "nativeNode",
+        "id": "000000000000001b",
+        "profile": "canonicalNote",
+        "profileVersion": 1,
+        "nodeType": "mermaidBlock",
+        "nodeClass": "atom",
+        "parentRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGQAAAAA.0sbrgr0Y0g-MsC5j2M4AB7FIM12UCfdBlNI_xF9Y8OA",
+        "childIndex": 1,
+        "sourceRange": {
+          "start": 78,
+          "end": 169
+        },
+        "provenance": "explicit",
+        "attributesRef": "AXil8AoY40ruhtCFB9z3TBkAAwULIAgAAAAA.YF-Qq2-7XXBq-_X2vRIH2WGIw3XuDc0GfNm0sKoud_Q",
+        "nativeRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ"
+      },
+      "codeField": {
+        "id": "0000000000000021",
+        "parentId": "0000000000000020",
+        "key": "code",
+        "type": "string",
+        "valueRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+      },
+      "code": "flowchart LR\n A[\"café & 世界\"] --> B\n",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalSourceGrant": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+        "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+        "expiresAt": "2026-10-04T05:58:38.336278203Z"
+      },
+      "grantLimit": "Source binding only; test profile is unregistered; no renderer or artifact publication authority."
+    }
+  ],
+  "internalGrantFailures": [
+    {
+      "case": "different-principal",
+      "principal": "bob",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(CursorInvalid)"
+    },
+    {
+      "case": "different-note-instance",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00000000-0000-0000-0000-000000000001"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(Stale)"
+    },
+    {
+      "case": "different-revision",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "not-the-captured-revision",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(Stale)"
+    },
+    {
+      "case": "ownerRef",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGgAAAAA.4gii8HfJJD9warOb0dkmSt_WTpzzOtYuGj-VVvHtpsc",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLIgAAAAA.rmXa_jTDC5dbGrQzCjQVDe48PAlfIn5RyvdxFN4g1yo"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(CursorInvalid)"
+    },
+    {
+      "case": "sourceRef",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "3fe823dfc247d5cdff46190ef9300d3f",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00ac1fb06aa692fac0cf04e333ddc024"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "78a5f00a18e34aee86d08507dcf74c19",
+          "sourceRevision": "r:0:1ece86a92da9599b16f2b25fd02365db",
+          "ownerRef": "AXil8AoY40ruhtCFB9z3TBkAAgILGwAAAAA.nDbZA7paa2w1YnnNKZY1R9z5Xw3MOu9BJ2MaYwgjLIQ",
+          "sourceRef": "AXil8AoY40ruhtCFB9z3TBkAAgMLHwAAAAA.Zj5jXGwavtNEjar1CR2C76LH6xpy3XzDc2omDSyL3qc"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(CursorInvalid)"
+    }
+  ],
+  "internalInvalidationChecks": [],
+  "limitations": "Store results captured before transport. Internal source grants do not register a profile, authorize construction, publish an artifact or prove a production provider."
+}

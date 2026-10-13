@@ -85,9 +85,9 @@ export function extractOrderedSpecTaskIds(content: string | undefined): string[]
  *
  * This is the **single source of truth** for "which tasks count toward progress".
  */
-export function getSpecTaskNotes(notes: Note[]): Note[] {
+export function getSpecTaskNotes(notes: Note[], linkedIds?: string[]): Note[] {
   const specNote = notes.find((n) => isSpecNote(n.id as string));
-  const specTaskIds = extractSpecTaskIds(specNote?.content);
+  const specTaskIds = linkedIds ? new Set(linkedIds) : extractSpecTaskIds(specNote?.content);
   const hasSpecLinks = specTaskIds.size > 0;
 
   const seen = new Set<string>();

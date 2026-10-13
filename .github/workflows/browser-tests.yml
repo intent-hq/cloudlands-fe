@@ -15,16 +15,16 @@ permissions:
 
 jobs:
   test-ct:
-    name: Component Tests (shard ${{ matrix.shard }}/4)
+    name: Component Tests (shard ${{ matrix.shard }}/8)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
     runs-on: gh-linux-8x
-    # Four hosted shards, one worker each; preserve the pinned CT browser.
+    # Eight hosted shards, one worker each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     # A healthy shard takes 36 min for tests plus setup/report/cache work.
     # Leave headroom after passing tests hit 40 min (cloudlands-fe#3251).
     timeout-minutes: 50
@@ -190,7 +190,7 @@ jobs:
         # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
         # with their spec file and status instead of scraping the log.
         # The 4 GB heap cap covers the runner + accumulated per-test state
-        # for a quarter-shard; the memory-hungry Vite build already ran
+        # for each shard; the memory-hungry Vite build already ran
         # above. The sampler streams `free -m` + top-RSS processes into
         # this step's live log every 15s — logs stream to GitHub as they
         # are written, so the evidence survives even a runner-VM OOM kill
@@ -220,7 +220,7 @@ jobs:
           # --fail-on-flaky-tests turns a pass-on-retry into a red shard
           # instead of silent 3x runtime. A flaky required test must be fixed
           # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
+          pnpm run test:ct --shard=${{ matrix.shard }}/8 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
       - name: Record browser outcome
         if: always()
         env:
@@ -233,7 +233,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-ct-report-${{ matrix.shard }}-of-4
+          name: playwright-ct-report-${{ matrix.shard }}-of-8
           path: |
             playwright-report/
             test-results/

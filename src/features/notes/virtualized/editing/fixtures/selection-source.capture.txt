@@ -1,0 +1,228 @@
+{
+  "backendHead": "b6d9dffc9e72f53bcb0f5784218bfceadb770d08",
+  "capturedAtMs": 1791226738951,
+  "source": "prefix😀\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "at": 10,
+  "workspaceId": "pages",
+  "noteId": "spec",
+  "principal": "alice",
+  "rpcId": 1,
+  "calls": [
+    {
+      "request": {
+        "kind": "source",
+        "at": 10,
+        "maxSourceBytes": 4096,
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteSourcePage",
+        "sourceLength": 2060,
+        "metadataRef": "AXujTCSIuE2Ij9-YtP_SEQcAAgQIAAAAAA.PlAVGQmPavAKzRpmHJH0MbSVyShlOND0AXI8lCHubsk",
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcABAEMAAwKDIwQAAAAAA.LJTsdZS8vDTYp9YZEyhouhWSNLCWua4LAQFZvurejrY",
+        "range": {
+          "start": 10,
+          "end": 2060
+        },
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nextCursor": null,
+        "previousCursor": "AXujTCSIuE2Ij9-YtP_SEQcCAQAKgCCAQEA.g51-_ruDuHjEhTR_scRyScwOZPVzKPt5I8E987MY_4g"
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcABAEMAAwKDIwQAAAAAA.LJTsdZS8vDTYp9YZEyhouhWSNLCWua4LAQFZvurejrY",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000005",
+            "sourceRange": {
+              "start": 10,
+              "end": 2060
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "AXujTCSIuE2Ij9-YtP_SEQcAAwILBQkAAAAA.Ox8TMDXqVX7yuV3ddF6ulUO_0M1Nb2QyOf9cBdhYcqY"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000006",
+            "sourceRange": {
+              "start": 10,
+              "end": 2060
+            },
+            "role": "text",
+            "parentRef": "AXujTCSIuE2Ij9-YtP_SEQcABAILBQwKDIwQAAAAAA.knacxgs9BRNrqAw6qy6kIAXvVP1D4MjwokoNRPzt7TE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "maxWireBytes": 8192,
+        "maxItems": 64,
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcABAILBQwKDIwQAAAAAA.knacxgs9BRNrqAw6qy6kIAXvVP1D4MjwokoNRPzt7TE"
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000005",
+            "sourceRange": {
+              "start": 10,
+              "end": 2060
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "AXujTCSIuE2Ij9-YtP_SEQcAAwILBQkAAAAA.Ox8TMDXqVX7yuV3ddF6ulUO_0M1Nb2QyOf9cBdhYcqY"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "maxWireBytes": 8192,
+        "maxItems": 64,
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcAAwILBQkAAAAA.Ox8TMDXqVX7yuV3ddF6ulUO_0M1Nb2QyOf9cBdhYcqY"
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000005:0",
+            "field": "openingSource",
+            "offset": 0,
+            "text": "",
+            "nextRef": "AXujTCSIuE2Ij9-YtP_SEQcAAgMLBwAAAAA.islPp7_8UX6UU5Gr15nqm_BGz7mix0lHcQm7-pOSA6k"
+          },
+          {
+            "kind": "fragment",
+            "id": "0000000000000005:1",
+            "field": "closingSource",
+            "offset": 0,
+            "text": "",
+            "nextRef": "AXujTCSIuE2Ij9-YtP_SEQcAAgMLCAAAAAA.yFddxEnAM2SrypPsE1icRD82CiLH5wYNg3G2qXjE2Ik"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "maxWireBytes": 8192,
+        "maxItems": 64,
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcAAgMLCAAAAAA.yFddxEnAM2SrypPsE1icRD82CiLH5wYNg3G2qXjE2Ik"
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000008",
+            "field": "closingSource",
+            "offset": 0,
+            "text": "",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "maxWireBytes": 8192,
+        "maxItems": 64,
+        "contextRef": "AXujTCSIuE2Ij9-YtP_SEQcAAgMLBwAAAAA.islPp7_8UX6UU5Gr15nqm_BGz7mix0lHcQm7-pOSA6k"
+      },
+      "response": {
+        "scope": {
+          "backendId": "cfd9f7ea0f863002a9030af9b1d53829",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "81638d9a9c7ffe69b46e2e159638e528"
+        },
+        "sourceRevision": "r:0:c39af75a91a1afbdc16c82ebf1b5801a",
+        "snapshotId": "7ba34c2488b84d888fdf98b4ffd21107",
+        "expiresAt": "2026-10-05T19:03:58.95702488Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000007",
+            "field": "openingSource",
+            "offset": 0,
+            "text": "",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  ],
+  "retainedDatabase": "/home/clement/intent/workspaces/proper-implement/intent/.intent/artifacts/bounded-note-reads/delivery-20261005/selection-complete-phase1-capture/selection-source.db",
+  "claim": "actual lexical Store source/context closure; native selection is captured separately by the frontend"
+}

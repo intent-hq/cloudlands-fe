@@ -930,3 +930,44 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
     ]);
   });
 });
+
+describe('complete editor CAS client', () => {
+  afterEach(() => vi.clearAllMocks());
+  it('uses strict note.update and adopts conversion-returned content and revision', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      id: 'n',
+      workspaceId: 'w',
+      content: 'converted task link',
+      rev: 9,
+    });
+    const note = await new LiveNotesClient().update('n', '@@@task original', 7, 'w');
+    expect(mockedRequest).toHaveBeenCalledWith('note.update', {
+      workspaceId: 'w',
+      noteId: 'n',
+      content: '@@@task original',
+      expectedVersion: 7,
+    });
+    expect(note).toMatchObject({ content: 'converted task link', rev: 9 });
+  });
+  it('refuses another workspace acknowledgement for the same spec id', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      id: 'spec',
+      workspaceId: 'other',
+      content: 'wrong',
+      rev: 9,
+    });
+    await expect(new LiveNotesClient().update('spec', 'draft', 7, 'w')).rejects.toThrow();
+  });
+  it('propagates stale refusal and never falls back to setContent', async () => {
+    const conflict = Object.assign(new Error('Conflict'), { rpcCode: -32005 });
+    mockedRequest.mockRejectedValueOnce(conflict);
+    await expect(new LiveNotesClient().update('n', 'draft', 7, 'w')).rejects.toBe(conflict);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+  it('refuses missing revision without issuing a request', async () => {
+    await expect(
+      new LiveNotesClient().update('n', 'draft', undefined as unknown as number, 'w'),
+    ).rejects.toThrow();
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+});

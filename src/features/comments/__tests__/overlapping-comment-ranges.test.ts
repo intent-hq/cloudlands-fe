@@ -177,7 +177,16 @@ describe('Overlapping comment ranges', () => {
       );
       let text = '';
       spans.forEach((span) => {
-        text += span.textContent ?? '';
+        const visible = span.cloneNode(true) as Element;
+        // CommentAnchor's hidden native node view contains a composition sentinel
+        // that is absent from PM source. Remove that atom only, never user text.
+        visible
+          .querySelectorAll('.comment-anchor[data-anchor-id][aria-hidden="true"]')
+          .forEach((anchor) => {
+            expect(anchor.textContent).toBe('\u2060');
+            anchor.remove();
+          });
+        text += visible.textContent ?? '';
       });
       return text;
     }
@@ -203,6 +212,16 @@ describe('Overlapping comment ranges', () => {
 
       expect(decoratedText('cmt-a')).toBe('alpha beta gamma delta');
       expect(decoratedText('cmt-b')).toBe('beta gamma');
+    });
+
+    it('preserves a user word joiner while excluding hidden anchor node views', () => {
+      editor.commands.setContent('<p>alpha\u2060 beta</p>');
+      insertAnchorAt(editor, 'cmt-a', 'end', 8);
+      insertAnchorAt(editor, 'cmt-a', 'start', 1);
+      setupDecorations('cmt-a', 'cmt-b');
+      expect(decoratedText('cmt-a')).toBe('alpha\u2060 ');
+      const range = findCommentAnchors(editor.state.doc, 'cmt-a');
+      expect(editor.state.doc.textBetween(range.start!, range.end!)).toBe('alpha\u2060 ');
     });
 
     it('routes clicks on each highlight to the right comment', () => {

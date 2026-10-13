@@ -5,6 +5,7 @@
  */
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { registerSourceClipboardIPC } from './source-clipboard.ipc';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { spawn } from 'child_process';
 import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
@@ -601,6 +602,7 @@ export async function autoRepairCliSymlink(): Promise<void> {
 // ============================================================================
 
 export function setupSystemIPC() {
+  registerSourceClipboardIPC();
   installNativeThemeBackgroundSync();
   const handledWindowOpenRequests = new Map<string, WindowOpenRequestEntry>();
 

@@ -1,0 +1,117 @@
+{
+  "source": "<!--anchor:comment-a:point-->\n\n<table><tr><td>x</td></tr></table>\n\n**After**",
+  "at": 46,
+  "calls": [
+    {
+      "request": {
+        "kind": "source",
+        "at": 46,
+        "maxSourceBytes": 4096,
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "3b75f30b4d0f98a383008c113570a430",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "daad64a2cf8bb819f116ed24a86f968c"
+        },
+        "sourceRevision": "r:0:765be48204fc5b773d15ddd9ccd2410e",
+        "snapshotId": "72d4fd8348f042e791479ff98805ccec",
+        "expiresAt": "2026-10-04T02:28:51.121346566Z",
+        "kind": "noteSourcePage",
+        "sourceLength": 76,
+        "metadataRef": "AXLU_YNI8ELnkUef-YgFzOwAAgQIAAAAAA.EFm0_glNfeiQlYlE4-abwYgqG-LbY0lpKd8R7dPqstc",
+        "contextRef": "AXLU_YNI8ELnkUef-YgFzOwABAEMAAwuDEwAAAAA.PQbB0-AvSAksenNUkgncyWAk63JQ1yB_d3sBgSG8dZk",
+        "range": {
+          "start": 46,
+          "end": 76
+        },
+        "text": "x</td></tr></table>\n\n**After**",
+        "nextCursor": null,
+        "previousCursor": "AXLU_YNI8ELnkUef-YgFzOwCAQAugCCAQEA.WLeZf8iSq7K97nCmPMB6igjJfCOaMSgxFiDKOHM9Rmg"
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AXLU_YNI8ELnkUef-YgFzOwABAEMAAwuDEwAAAAA.PQbB0-AvSAksenNUkgncyWAk63JQ1yB_d3sBgSG8dZk",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "3b75f30b4d0f98a383008c113570a430",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "daad64a2cf8bb819f116ed24a86f968c"
+        },
+        "sourceRevision": "r:0:765be48204fc5b773d15ddd9ccd2410e",
+        "snapshotId": "72d4fd8348f042e791479ff98805ccec",
+        "expiresAt": "2026-10-04T02:28:51.121346566Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000005",
+            "sourceRange": {
+              "start": 31,
+              "end": 66
+            },
+            "construct": "htmlBlock",
+            "continuationBefore": true,
+            "continuationAfter": false,
+            "detailRef": "AXLU_YNI8ELnkUef-YgFzOwAAwILBQkAAAAA.Fgd9aF5ddGAFP0BwxIl7fx28yOfmsA30bI5hkhTyluQ"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000006",
+            "sourceRange": {
+              "start": 31,
+              "end": 66
+            },
+            "role": "literal",
+            "parentRef": "AXLU_YNI8ELnkUef-YgFzOwABAILBQwuDEwAAAAA.LiCh7DnzIikobn2qzgIoC_aqajDnm-ePqEQRL9bjpFI"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000009",
+            "sourceRange": {
+              "start": 67,
+              "end": 76
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "AXLU_YNI8ELnkUef-YgFzOwAAwILCQkAAAAA.9-pwKst-X2GrOALOGbCJwA3DxT-ClXQCw9-hdN0kiec"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000000a",
+            "sourceRange": {
+              "start": 67,
+              "end": 76
+            },
+            "construct": "strong",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "AXLU_YNI8ELnkUef-YgFzOwABAILCQwuDEwAAAAA.GPPJ_Q5sObC64ezU9kiQysR1RYwqCeY1kTAUThy6-H8",
+            "detailRef": "AXLU_YNI8ELnkUef-YgFzOwAAwILCgkAAAAA.Ig775V_uQAFtBXElGTeDSA8nPwIqDxDoARPH9xubdFM"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000b",
+            "sourceRange": {
+              "start": 69,
+              "end": 74
+            },
+            "role": "text",
+            "parentRef": "AXLU_YNI8ELnkUef-YgFzOwABAILCgwuDEwAAAAA.GV_jpuv6lVe8AXE6JopMhBkCvQAygwBNHJMIlf9gvI0"
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  ]
+}

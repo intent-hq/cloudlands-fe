@@ -27,9 +27,16 @@
     /** Render controls within the panel's existing action menu. */
     embedded?: boolean;
     canEdit?: boolean;
+    canRichEdit?: boolean;
   }
 
-  let { workspaceId, noteId, embedded = false, canEdit = true }: Props = $props();
+  let {
+    workspaceId,
+    noteId,
+    embedded = false,
+    canEdit = true,
+    canRichEdit = true,
+  }: Props = $props();
 
   const noteFontStyle = selectNoteFontStyle();
   const spellcheckEnabled = selectSpellcheckEnabled();
@@ -38,7 +45,9 @@
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => noteIdStore.set(noteId));
   const noteViewMode = selectNoteViewMode(workspaceIdStore, noteIdStore);
-  const effectiveViewMode = $derived(canEdit ? $noteViewMode : 'preview');
+  const effectiveViewMode = $derived(
+    canEdit && ($noteViewMode !== 'editor' || canRichEdit) ? $noteViewMode : 'preview',
+  );
 
   let open = $state(false);
   const descriptionId = $props.id();
@@ -64,12 +73,17 @@
 
   function selectViewMode(value: string) {
     if (value !== 'editor' && value !== 'preview' && value !== 'raw') return;
-    if (!canEdit && value !== 'preview') return;
+    if ((!canEdit && value !== 'preview') || (value === 'editor' && !canRichEdit)) return;
     appStore.dispatch(setNoteViewMode(workspaceId, noteId, value as NoteViewMode));
   }
 </script>
 
 {#snippet settingsItems()}
+  <Menu.CommandItem
+    label={m.layout_noteTab_editRawMarkdown_action()}
+    disabled={!canEdit}
+    onclick={() => selectViewMode('raw')}
+  />
   <Menu.Sub>
     <Menu.SubTrigger>
       <span class="min-w-0 flex-1">
@@ -104,14 +118,11 @@
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_noteViewMode_label()}>
       <Menu.RadioGroup value={effectiveViewMode} onValueChange={selectViewMode}>
-        <Menu.RadioItem value="editor" closeOnSelect={false} disabled={!canEdit}>
+        <Menu.RadioItem value="editor" closeOnSelect={false} disabled={!canEdit || !canRichEdit}>
           {m.ui_viewSettings_editor_label()}
         </Menu.RadioItem>
         <Menu.RadioItem value="preview" closeOnSelect={false}>
           {m.ui_viewSettings_renderedPreview_label()}
-        </Menu.RadioItem>
-        <Menu.RadioItem value="raw" closeOnSelect={false} disabled={!canEdit}>
-          {m.ui_viewSettings_rawMarkdown_label()}
         </Menu.RadioItem>
       </Menu.RadioGroup>
     </Menu.SubContent>

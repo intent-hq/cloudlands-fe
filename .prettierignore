@@ -49,3 +49,27 @@ cdp-mcp-server/dist/
 *.gif
 *.bmp
 *.webp
+
+# Immutable Store response captures; replay tests verify producer SHA-256 bytes.
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-crlf-compacted-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-crlf-halfopen-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-lf-compacted-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-lf-halfopen-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-marks-compacted-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-markdown-html-marks-halfopen-windows.json
+src/features/notes/virtualized/__tests__/fixtures/store-table-td-halfopen.json
+src/features/notes/virtualized/__tests__/fixtures/store-table-th-halfopen.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlBase64.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlPlainAttributes.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlPlainWithoutArrow.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlPreCodeBase64.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlPreCodePlain.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-mixedFences.json
+src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-titledMermaidFence.json
+
+# Byte-identical paragraph Store captures; producer hashes live in provenance.json.
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-far.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-html-tail.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-one.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-two.json
+src/features/notes/virtualized/editing/__fixtures__/note-local-point/plain-paragraph-ab.json

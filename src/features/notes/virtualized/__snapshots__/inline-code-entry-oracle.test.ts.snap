@@ -1,0 +1,83 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records actual canonical inline-code mapping for giantOpening > giantOpening 1`] = `
+{
+  "firstTarget": 100008,
+  "sourceLength": 200021,
+  "spans": [
+    {
+      "marks": [],
+      "text": "before ",
+    },
+    {
+      "marks": [
+        "code",
+      ],
+      "text": "TARGET",
+    },
+    {
+      "marks": [],
+      "text": " after",
+    },
+  ],
+}
+`;
+
+exports[`records actual canonical inline-code mapping for multilineTrim > multilineTrim 1`] = `
+{
+  "firstTarget": -1,
+  "sourceLength": 27,
+  "spans": [
+    {
+      "marks": [],
+      "text": "before ",
+    },
+    {
+      "marks": [
+        "code",
+      ],
+      "text": "A \` B C",
+    },
+    {
+      "marks": [],
+      "text": " after",
+    },
+  ],
+}
+`;
+
+exports[`records actual canonical inline-code mapping for multipleDelimiters > multipleDelimiters 1`] = `
+{
+  "firstTarget": -1,
+  "sourceLength": 29,
+  "spans": [
+    {
+      "marks": [],
+      "text": "before ",
+    },
+    {
+      "marks": [
+        "code",
+      ],
+      "text": "x \`\` y \` z",
+    },
+    {
+      "marks": [],
+      "text": " after",
+    },
+  ],
+}
+`;
+
+exports[`records actual canonical inline-code mapping for noTrimAllSpaces > noTrimAllSpaces 1`] = `
+{
+  "firstTarget": -1,
+  "sourceLength": 18,
+  "spans": [
+    {
+      "marks": [],
+      "text": "before after",
+    },
+  ],
+}
+`;

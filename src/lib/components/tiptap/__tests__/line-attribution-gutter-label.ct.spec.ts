@@ -221,3 +221,13 @@ test('bottom-partial span: the label stays inside the visible panel', async ({ m
   expect(labelBox.top).toBeGreaterThanOrEqual(panelBox.top);
   expect(labelBox.left).toBeGreaterThanOrEqual(panelBox.left);
 });
+
+test('paged ownership skips whole attribution loading', async ({ mount }) => {
+  const component = await mount(LineAttributionGutterHarness, {
+    props: { hostWidth: 1200, markdown: MARKDOWN, paged: true },
+    hooksConfig,
+  });
+  await expect(component.locator('.tiptap-editor')).toBeVisible();
+  await expect(component.getByTestId('whole-attribution-reads')).toHaveText('0');
+  await expect(component.locator('[data-attribution-span]')).toHaveCount(0);
+});

@@ -1019,6 +1019,54 @@ describe('QueuedMessageList', () => {
       },
     );
 
+    it.each([false, true])(
+      'late autofocus preserves an existing user selection: %s',
+      async (alreadyFocused) => {
+        const frames = new Map<number, FrameRequestCallback>();
+        let nextFrame = 0;
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+          frames.set(++nextFrame, callback);
+          return nextFrame;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+        const onedit = vi.fn().mockResolvedValue({ success: true });
+        const view = renderQueue({
+          props: { messages: [queued({ content: 'original' })], onedit },
+        });
+        try {
+          await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'F2' });
+          const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+          if (alreadyFocused) {
+            textarea.focus();
+            textarea.setSelectionRange(0, textarea.value.length);
+          }
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const callback of pending) callback(0);
+          expect(document.activeElement).toBe(textarea);
+          expect([textarea.selectionStart, textarea.selectionEnd]).toEqual(
+            alreadyFocused ? [0, 8] : [8, 8],
+          );
+          if (alreadyFocused) {
+            textarea.setRangeText(
+              'replacement',
+              textarea.selectionStart,
+              textarea.selectionEnd,
+              'end',
+            );
+            await fireEvent.input(textarea);
+            await fireEvent.keyDown(textarea, { key: 'Enter' });
+            await waitFor(() =>
+              expect(onedit).toHaveBeenLastCalledWith('q-1', 'replacement', false),
+            );
+          }
+        } finally {
+          view.unmount();
+          vi.unstubAllGlobals();
+        }
+      },
+    );
+
     it('auto-resizes multiline content', async () => {
       const { textarea } = await beginEdit({ messages: [queued({})] });
       Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 84 });

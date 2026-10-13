@@ -1,0 +1,3557 @@
+{
+  "provenance": {
+    "backendCommit": "7b39e9b1ed8ed34ce2f124aee7d9f8a55a51291e",
+    "binarySha256": "cbd33df2acf7baf7bb81ba801b761099cfc4bf3488e811c93ae53168cee2ad41",
+    "capture": "6e9d9e23-6da5-433b-a01d-368f52774f12/fedf4169-1864-4a4d-82d8-ad648fc045cd",
+    "qualification": "Verbatim public bounded-read responses from disposable copied state. Diagnostic capture allowed1024requests/1MiB to measure completeclosure; consumer regression uses unchanged production reader and configured limits. Frozen expiry is evidence, not live lease."
+  },
+  "source": "# Converted task control\n\nUnicode café 漢字 🙂 remains visible.\n\n- [ ] [First task](intent://local/task/4e2383d8-9c83-4c86-9837-3dbef62e53fd)\n\n- [x] [Second task](intent://local/task/a89cfc68-da2c-4aa2-aba3-c6f4fac9c395)\n\nFinal paragraph.\n",
+  "address": {
+    "scope": {
+      "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+      "workspaceId": "purple-kangaroo",
+      "noteId": "spec",
+      "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+    },
+    "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+    "at": 0
+  },
+  "calls": [
+    {
+      "request": {
+        "kind": "source",
+        "maxSourceBytes": 4096,
+        "at": 0,
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "noteInstanceId": "56594c6d0d522991afac4c54206cace2",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteSourcePage",
+        "sourceLength": 237,
+        "metadataRef": "ARpy-g5_L0ochv1cuTAMD1gAAgQIAAAAAA.GA50ggu2vGUkLB_LY3wZlXK3kxOJPGJ45Zle0OA-iqQ",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAEMAAwADO0BAAAAAA.zDsks4vvEeIjDHjuCZ37lX1vhMIgF7Qp-JVGHyVwKlE",
+        "range": {
+          "start": 0,
+          "end": 237
+        },
+        "text": "# Converted task control\n\nUnicode café 漢字 🙂 remains visible.\n\n- [ ] [First task](intent://local/task/4e2383d8-9c83-4c86-9837-3dbef62e53fd)\n\n- [x] [Second task](intent://local/task/a89cfc68-da2c-4aa2-aba3-c6f4fac9c395)\n\nFinal paragraph.\n",
+        "nextCursor": null,
+        "previousCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAEMAAwADO0BAAAAAA.zDsks4vvEeIjDHjuCZ37lX1vhMIgF7Qp-JVGHyVwKlE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000001",
+            "sourceRange": {
+              "start": 0,
+              "end": 25
+            },
+            "construct": "heading",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILAQkAAAAA.ci-CW7OPFFbXY0c3ksvF5tng3kpSN4NkTqCeCasAfGk"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000074",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 0,
+              "end": 25
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMQAAAAA.Y11WU5vGnlHhanzyiGeFKogWbbvaa1Z8Yq5igun2Qes",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPwgAAAAA.qYMoeBDETPZuLhgGcpSWoGXMb1cVTjjnrcbEGpPTgNE",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLdAwADO0BAAAAAA.LJPw9AlqLhqJOgWdHU8xL02fLWdxYyZFGQ_lnJ5Vk_M",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000002",
+            "sourceRange": {
+              "start": 2,
+              "end": 24
+            },
+            "role": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILAQwADO0BAAAAAA.k_Q6LfupBBwKvNXy18GrMHtZG8DhjVgt68Tx7ruK1LQ"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000006f",
+            "construct": "markdownDocument",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 0,
+              "end": 237
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPggAAAAA.HeUPQi9PTiJHyGsEmJhX8mauEhTmklD6kh5oUcUdeO0",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLbwwADO0BAAAAAA.yTxuVrtu1alyWu2_OIHX2Mm_nE55RJf-5zXDHVwoJRc",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000007",
+            "sourceRange": {
+              "start": 26,
+              "end": 61
+            },
+            "role": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILBgwADO0BAAAAAA.aoOoo2DRpgBJc-uL2SntuQ2JeH-hea4_tG6GTHiuVmc"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000006",
+            "sourceRange": {
+              "start": 26,
+              "end": 62
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILBgkAAAAA.ENAKIbwVsnTUGB82ZloJ0zkrfc7PpcZPQlMykOIp5HM"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000079",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 26,
+              "end": 62
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMwAAAAA.xCFPwBaF2DMiBK_En6Ge5j7tX6e-zAbMhMTZWzglzds",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULQggAAAAA.vd3_yR06k2x9lGQpamZXexkjYXn2SqQ8pLvrAkPDKFQ",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLeQwADO0BAAAAAA.KYMvt8BLGTAyHZS2815yOv4tyg0Vhw_AubXXyFc4hAk",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000000b",
+            "sourceRange": {
+              "start": 63,
+              "end": 141
+            },
+            "construct": "listItem",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCgwADO0BAAAAAA.jJYV1wrRS3Hf4cl00NAIjMntradCiv2DlWETdcU26Wo",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILCwkAAAAA.s35BO7dYDiua76ZrFKQxyfym-nbt29g-mvzuv3wIR3E"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000000a",
+            "sourceRange": {
+              "start": 63,
+              "end": 220
+            },
+            "construct": "list",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILCgkAAAAA.RkjFQg0MtvINW-cwRexw0RIj6uS1UDv19sMAPaANOTk"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000d",
+            "sourceRange": {
+              "start": 65,
+              "end": 68
+            },
+            "role": "taskMarker",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCwwADO0BAAAAAA.QgL0N8Gac-BOIvtoDSVn4EHvxP0Z_qjQGwcV5Mcq0ek"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000000e",
+            "sourceRange": {
+              "start": 69,
+              "end": 139
+            },
+            "construct": "link",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILDAwADO0BAAAAAA.-Mfn24CiwqsuMbt_d6FdkZpXxXwt0mc1jyFyuVaZ9KM",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILDgkAAAAA.88-EtknbzQQ4772oFPKu2KDx4sb5qTNZAQs1fs9C7gc"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000000c",
+            "sourceRange": {
+              "start": 69,
+              "end": 140
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCwwADO0BAAAAAA.QgL0N8Gac-BOIvtoDSVn4EHvxP0Z_qjQGwcV5Mcq0ek",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILDAkAAAAA.pToLg5W5irQqEpq-D0xMeyy0bbVZEq2W4DxI-mAX8ew"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000007d",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 69,
+              "end": 140
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNwAAAAA.KjzOv4r9mMdCRFPamgAYQ961-HsfQ1hslPLh9xTbzEw",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULSggAAAAA.wBR1-B6PmW7KKQn-Wuwb1ZnnhhzY8Ecpvu45UrKEo84",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLfQwADO0BAAAAAA.yr0LFTuMJlDmo1xjeMbA6dN_zv3XPitThB4eJy_0QkU",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "span",
+            "id": "000000000000000f",
+            "sourceRange": {
+              "start": 70,
+              "end": 80
+            },
+            "role": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILDgwADO0BAAAAAA.2ZJPpXxn6YTyhKknUMBfQ5lY7m1YJh5KmEUT4TIPqDE"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000001a",
+            "sourceRange": {
+              "start": 141,
+              "end": 220
+            },
+            "construct": "listItem",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCgwADO0BAAAAAA.jJYV1wrRS3Hf4cl00NAIjMntradCiv2DlWETdcU26Wo",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILGgkAAAAA.Wt6DaTauchmWPhF5q71_7vqP2LBZnRnkbS_uBPhQZ-c"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000001c",
+            "sourceRange": {
+              "start": 143,
+              "end": 146
+            },
+            "role": "taskMarker",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGgwADO0BAAAAAA.dmX7-3Eiuw0gkMSxkmz8izMSk-65gHH38rUCc17IvG0"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000001d",
+            "sourceRange": {
+              "start": 147,
+              "end": 218
+            },
+            "construct": "link",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGwwADO0BAAAAAA.TSYJE-sTxwru24X0oTkwQ7KQNqyHjjW0sqYQTf5Uvdg",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILHQkAAAAA.FezfCH3PDrj1un-CVQwqMRB5AWeMzUjAMYOa_3c1vPM"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000001b",
+            "sourceRange": {
+              "start": 147,
+              "end": 219
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGgwADO0BAAAAAA.dmX7-3Eiuw0gkMSxkmz8izMSk-65gHH38rUCc17IvG0",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILGwkAAAAA.banfJHqkX6lNRmvqeJx9CPYGT8lXKVIt1StTQhBNC5o"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000082",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 147,
+              "end": 219
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOgAAAAA.Mk03hzkqHNVHQNYx3al82Zjctafm5o07aOFVKAi4zNc",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULXggAAAAA.vpm9fVhoNtQGncLHsfbSKJbhV1Jvsx0LP5Oze7jjagE",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLggEMAAztAQAAAAA.HRahR317f2lB2kbrsPoKOYbXP9VSAsRhXGhqNNZ-RMI",
+            "continuationBefore": false,
+            "continuationAfter": false
+          },
+          {
+            "kind": "span",
+            "id": "000000000000001e",
+            "sourceRange": {
+              "start": 148,
+              "end": 159
+            },
+            "role": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILHQwADO0BAAAAAA.EJtxQpmPXugJY4YlErSkRj1PLJ-_vuRwCtZ_gcIHLp8"
+          },
+          {
+            "kind": "span",
+            "id": "000000000000002d",
+            "sourceRange": {
+              "start": 220,
+              "end": 236
+            },
+            "role": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILLAwADO0BAAAAAA.YNRDYOTjgeovWhQdJB0JNOEhCTu6qOCUw5lB3NbYVv0"
+          },
+          {
+            "kind": "boundary",
+            "id": "000000000000002c",
+            "sourceRange": {
+              "start": 220,
+              "end": 237
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILLAkAAAAA.vthaCjBYVfi2EHd2W94c6QLE6AhMzZBAKRFPXVKXdIw"
+          },
+          {
+            "kind": "boundary",
+            "id": "0000000000000087",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 220,
+              "end": 237
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPAAAAAA.iXn1D9NK2Bdx1iLczjX0Vk8ydAmg7XnYT-GqQc5Nnw8",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULbQgAAAAA.DUBCVjua69yWrM9Te3MdD8LIpap3gKeQWGNeaodZcPQ",
+            "sourceMapRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLhwEMAAztAQAAAAA.3wwcIQIU-evINPHkUwwAwcQG79BDl2xweA0lOSu5o1I",
+            "continuationBefore": false,
+            "continuationAfter": false
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILAQwADO0BAAAAAA.k_Q6LfupBBwKvNXy18GrMHtZG8DhjVgt68Tx7ruK1LQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000001",
+            "sourceRange": {
+              "start": 0,
+              "end": 25
+            },
+            "construct": "heading",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILAQkAAAAA.ci-CW7OPFFbXY0c3ksvF5tng3kpSN4NkTqCeCasAfGk"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILBgwADO0BAAAAAA.aoOoo2DRpgBJc-uL2SntuQ2JeH-hea4_tG6GTHiuVmc",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000006",
+            "sourceRange": {
+              "start": 26,
+              "end": 62
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILBgkAAAAA.ENAKIbwVsnTUGB82ZloJ0zkrfc7PpcZPQlMykOIp5HM"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCgwADO0BAAAAAA.jJYV1wrRS3Hf4cl00NAIjMntradCiv2DlWETdcU26Wo",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000000a",
+            "sourceRange": {
+              "start": 63,
+              "end": 220
+            },
+            "construct": "list",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILCgkAAAAA.RkjFQg0MtvINW-cwRexw0RIj6uS1UDv19sMAPaANOTk"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCwwADO0BAAAAAA.QgL0N8Gac-BOIvtoDSVn4EHvxP0Z_qjQGwcV5Mcq0ek",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000000b",
+            "sourceRange": {
+              "start": 63,
+              "end": 141
+            },
+            "construct": "listItem",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCgwADO0BAAAAAA.jJYV1wrRS3Hf4cl00NAIjMntradCiv2DlWETdcU26Wo",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILCwkAAAAA.s35BO7dYDiua76ZrFKQxyfym-nbt29g-mvzuv3wIR3E"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILDAwADO0BAAAAAA.-Mfn24CiwqsuMbt_d6FdkZpXxXwt0mc1jyFyuVaZ9KM",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000000c",
+            "sourceRange": {
+              "start": 69,
+              "end": 140
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCwwADO0BAAAAAA.QgL0N8Gac-BOIvtoDSVn4EHvxP0Z_qjQGwcV5Mcq0ek",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILDAkAAAAA.pToLg5W5irQqEpq-D0xMeyy0bbVZEq2W4DxI-mAX8ew"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILDgwADO0BAAAAAA.2ZJPpXxn6YTyhKknUMBfQ5lY7m1YJh5KmEUT4TIPqDE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000000e",
+            "sourceRange": {
+              "start": 69,
+              "end": 139
+            },
+            "construct": "link",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILDAwADO0BAAAAAA.-Mfn24CiwqsuMbt_d6FdkZpXxXwt0mc1jyFyuVaZ9KM",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILDgkAAAAA.88-EtknbzQQ4772oFPKu2KDx4sb5qTNZAQs1fs9C7gc"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGgwADO0BAAAAAA.dmX7-3Eiuw0gkMSxkmz8izMSk-65gHH38rUCc17IvG0",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000001a",
+            "sourceRange": {
+              "start": 141,
+              "end": 220
+            },
+            "construct": "listItem",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILCgwADO0BAAAAAA.jJYV1wrRS3Hf4cl00NAIjMntradCiv2DlWETdcU26Wo",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILGgkAAAAA.Wt6DaTauchmWPhF5q71_7vqP2LBZnRnkbS_uBPhQZ-c"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGwwADO0BAAAAAA.TSYJE-sTxwru24X0oTkwQ7KQNqyHjjW0sqYQTf5Uvdg",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000001b",
+            "sourceRange": {
+              "start": 147,
+              "end": 219
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGgwADO0BAAAAAA.dmX7-3Eiuw0gkMSxkmz8izMSk-65gHH38rUCc17IvG0",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILGwkAAAAA.banfJHqkX6lNRmvqeJx9CPYGT8lXKVIt1StTQhBNC5o"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILHQwADO0BAAAAAA.EJtxQpmPXugJY4YlErSkRj1PLJ-_vuRwCtZ_gcIHLp8",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000001d",
+            "sourceRange": {
+              "start": 147,
+              "end": 218
+            },
+            "construct": "link",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gABAILGwwADO0BAAAAAA.TSYJE-sTxwru24X0oTkwQ7KQNqyHjjW0sqYQTf5Uvdg",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILHQkAAAAA.FezfCH3PDrj1un-CVQwqMRB5AWeMzUjAMYOa_3c1vPM"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAILLAwADO0BAAAAAA.YNRDYOTjgeovWhQdJB0JNOEhCTu6qOCUw5lB3NbYVv0",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000002c",
+            "sourceRange": {
+              "start": 220,
+              "end": 237
+            },
+            "construct": "paragraph",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "entryPath": "markdown",
+            "detailRef": "ARpy-g5_L0ochv1cuTAMD1gAAwILLAkAAAAA.vthaCjBYVfi2EHd2W94c6QLE6AhMzZBAKRFPXVKXdIw"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLdAwADO0BAAAAAA.LJPw9AlqLhqJOgWdHU8xL02fLWdxYyZFGQ_lnJ5Vk_M",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000075",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILdAAAAAA.PvL_rzzUJ2_2mcFFc5TK0K4icEXBegssM8-wL0VRqfE",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 0,
+              "end": 2
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000076",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILdAAAAAA.PvL_rzzUJ2_2mcFFc5TK0K4icEXBegssM8-wL0VRqfE",
+            "textNodeId": "0000000000000032",
+            "textNodeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMgAAAAA.dbCFAMBwQJXI1RyLZTbGxM2SkD1_2VMU_oGECu9fQP4",
+            "sourceRange": {
+              "start": 2,
+              "end": 24
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 22
+            },
+            "mapping": "identity",
+            "textRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLdwwADBYAAAAA.g5xqhG_vxZYVd9J_gg7Xccz4qIsp6ZpflVPkacAGdU0"
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000078",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILdAAAAAA.PvL_rzzUJ2_2mcFFc5TK0K4icEXBegssM8-wL0VRqfE",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 24,
+              "end": 25
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILdAAAAAA.PvL_rzzUJ2_2mcFFc5TK0K4icEXBegssM8-wL0VRqfE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000074",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 0,
+              "end": 25
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMQAAAAA.Y11WU5vGnlHhanzyiGeFKogWbbvaa1Z8Yq5igun2Qes",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPwgAAAAA.qYMoeBDETPZuLhgGcpSWoGXMb1cVTjjnrcbEGpPTgNE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLdwwADBYAAAAA.g5xqhG_vxZYVd9J_gg7Xccz4qIsp6ZpflVPkacAGdU0",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000077",
+            "field": "renderedText",
+            "offset": 0,
+            "text": "Converted task control",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMgAAAAA.dbCFAMBwQJXI1RyLZTbGxM2SkD1_2VMU_oGECu9fQP4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000032",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "text",
+            "nodeClass": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMQAAAAA.Y11WU5vGnlHhanzyiGeFKogWbbvaa1Z8Yq5igun2Qes",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 2,
+              "end": 24
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULQQgAAAAA.KkxrlQ-HKdq6OFkRcwJv3MXW4A-epDT1PRSx7rB5OMQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLbwwADO0BAAAAAA.yTxuVrtu1alyWu2_OIHX2Mm_nE55RJf-5zXDHVwoJRc",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000070",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILbwAAAAA.FRLumL0fYq0GR2hA7m0GPFMnDaxRo1E3pA4w13n-Y9E",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 25,
+              "end": 26
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000071",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILbwAAAAA.FRLumL0fYq0GR2hA7m0GPFMnDaxRo1E3pA4w13n-Y9E",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 62,
+              "end": 69
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000072",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILbwAAAAA.FRLumL0fYq0GR2hA7m0GPFMnDaxRo1E3pA4w13n-Y9E",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 140,
+              "end": 147
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000073",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILbwAAAAA.FRLumL0fYq0GR2hA7m0GPFMnDaxRo1E3pA4w13n-Y9E",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 219,
+              "end": 220
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILbwAAAAA.FRLumL0fYq0GR2hA7m0GPFMnDaxRo1E3pA4w13n-Y9E",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000006f",
+            "construct": "markdownDocument",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 0,
+              "end": 237
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPggAAAAA.HeUPQi9PTiJHyGsEmJhX8mauEhTmklD6kh5oUcUdeO0"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLeQwADO0BAAAAAA.KYMvt8BLGTAyHZS2815yOv4tyg0Vhw_AubXXyFc4hAk",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "000000000000007a",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILeQAAAAA.1zaYe2ljM9160sM1u6YUZz1iggPElaycPkdMsy8tH2E",
+            "textNodeId": "0000000000000034",
+            "textNodeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNAAAAAA.Yc2G-FyNFvw-J8HjSuCZ-g_V2I9__PxMuOQuxkHdsSc",
+            "sourceRange": {
+              "start": 26,
+              "end": 61
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 35
+            },
+            "mapping": "identity",
+            "textRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLewwADCMAAAAA.70dncolu4dlqlMDRDHyRooEs-F5tBldE-KYEMVEefZ4"
+          },
+          {
+            "kind": "sourceMap",
+            "id": "000000000000007c",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILeQAAAAA.1zaYe2ljM9160sM1u6YUZz1iggPElaycPkdMsy8tH2E",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 61,
+              "end": 62
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILeQAAAAA.1zaYe2ljM9160sM1u6YUZz1iggPElaycPkdMsy8tH2E",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000079",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 26,
+              "end": 62
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMwAAAAA.xCFPwBaF2DMiBK_En6Ge5j7tX6e-zAbMhMTZWzglzds",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULQggAAAAA.vd3_yR06k2x9lGQpamZXexkjYXn2SqQ8pLvrAkPDKFQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLewwADCMAAAAA.70dncolu4dlqlMDRDHyRooEs-F5tBldE-KYEMVEefZ4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000007b",
+            "field": "renderedText",
+            "offset": 0,
+            "text": "Unicode café 漢字 🙂 remains visible.",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNAAAAAA.Yc2G-FyNFvw-J8HjSuCZ-g_V2I9__PxMuOQuxkHdsSc",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000034",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "text",
+            "nodeClass": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMwAAAAA.xCFPwBaF2DMiBK_En6Ge5j7tX6e-zAbMhMTZWzglzds",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 26,
+              "end": 61
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULQwgAAAAA.oeh6U5v-5RC6SJ3AhV9-z2xnusu_fY4Yzd1VI1F4M1A"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLfQwADO0BAAAAAA.yr0LFTuMJlDmo1xjeMbA6dN_zv3XPitThB4eJy_0QkU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "000000000000007e",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILfQAAAAA.KwICwXyVJNkNnQ4pDM06K6bSYSSaFZVHpaL9jIIyDVM",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 69,
+              "end": 70
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "000000000000007f",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILfQAAAAA.KwICwXyVJNkNnQ4pDM06K6bSYSSaFZVHpaL9jIIyDVM",
+            "textNodeId": "0000000000000038",
+            "textNodeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOAAAAAA.MYR5S6xXVfey9MRAMMmbp34b633A89-z4zy53sbkmMg",
+            "sourceRange": {
+              "start": 70,
+              "end": 80
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 10
+            },
+            "mapping": "identity",
+            "textRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLgAEMAAwKAAAAAA.f5L3jMe7jA9_PVZsyYapAM5RxnirSmG8DzrhBkephkI"
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000081",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILfQAAAAA.KwICwXyVJNkNnQ4pDM06K6bSYSSaFZVHpaL9jIIyDVM",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 80,
+              "end": 140
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILfQAAAAA.KwICwXyVJNkNnQ4pDM06K6bSYSSaFZVHpaL9jIIyDVM",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "000000000000007d",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 69,
+              "end": 140
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNwAAAAA.KjzOv4r9mMdCRFPamgAYQ961-HsfQ1hslPLh9xTbzEw",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULSggAAAAA.wBR1-B6PmW7KKQn-Wuwb1ZnnhhzY8Ecpvu45UrKEo84"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLgAEMAAwKAAAAAA.f5L3jMe7jA9_PVZsyYapAM5RxnirSmG8DzrhBkephkI",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000080",
+            "field": "renderedText",
+            "offset": 0,
+            "text": "First task",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOAAAAAA.MYR5S6xXVfey9MRAMMmbp34b633A89-z4zy53sbkmMg",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000038",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "text",
+            "nodeClass": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNwAAAAA.KjzOv4r9mMdCRFPamgAYQ961-HsfQ1hslPLh9xTbzEw",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 70,
+              "end": 80
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULSwgAAAAA.BhD6k6iOzZH3edK6IekeodL95DEXf3DQ6zxT9l_SPVQ",
+            "marksRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULTAgAAAAA.szzsl4lMTo42cddZjIxPdf5OfaFKw3WuCI7JlTS6HLI"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLggEMAAztAQAAAAA.HRahR317f2lB2kbrsPoKOYbXP9VSAsRhXGhqNNZ-RMI",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000083",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILggEAAAAA.Xw_n3-eyalRx0K5lBtjzRQv8qa2p2DAPi0on2FzZJPY",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 147,
+              "end": 148
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000084",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILggEAAAAA.Xw_n3-eyalRx0K5lBtjzRQv8qa2p2DAPi0on2FzZJPY",
+            "textNodeId": "000000000000003b",
+            "textNodeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOwAAAAA.e1_HvgB2gmIN8i4KKhR1ZndyHnZQVbqzCcq5bql1I2g",
+            "sourceRange": {
+              "start": 148,
+              "end": 159
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 11
+            },
+            "mapping": "identity",
+            "textRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLhQEMAAwLAAAAAA.PachaYadTH3n-KTcuPkhGgVQlqLXXHk01LyoquEzjsQ"
+          },
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000086",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILggEAAAAA.Xw_n3-eyalRx0K5lBtjzRQv8qa2p2DAPi0on2FzZJPY",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 159,
+              "end": 219
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILggEAAAAA.Xw_n3-eyalRx0K5lBtjzRQv8qa2p2DAPi0on2FzZJPY",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000082",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 147,
+              "end": 219
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOgAAAAA.Mk03hzkqHNVHQNYx3al82Zjctafm5o07aOFVKAi4zNc",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULXggAAAAA.vpm9fVhoNtQGncLHsfbSKJbhV1Jvsx0LP5Oze7jjagE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLhQEMAAwLAAAAAA.PachaYadTH3n-KTcuPkhGgVQlqLXXHk01LyoquEzjsQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000085",
+            "field": "renderedText",
+            "offset": 0,
+            "text": "Second task",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOwAAAAA.e1_HvgB2gmIN8i4KKhR1ZndyHnZQVbqzCcq5bql1I2g",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000003b",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "text",
+            "nodeClass": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOgAAAAA.Mk03hzkqHNVHQNYx3al82Zjctafm5o07aOFVKAi4zNc",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 148,
+              "end": 159
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULXwgAAAAA.9e8z_KLmeGO2KiCKWdwYCNzBf0i6G4A4Dqvc-AvdhYQ",
+            "marksRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULYAgAAAAA.UNfGjIU-wPIZCtx4iuvnDOciIaX7vlmciiccL0hLg7c"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAYLhwEMAAztAQAAAAA.3wwcIQIU-evINPHkUwwAwcQG79BDl2xweA0lOSu5o1I",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "sourceMap",
+            "id": "0000000000000088",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILhwEAAAAA.S-bNK9FrpYKt01EXLtPRdNOBkvdJqTEtk0-jPCDm_60",
+            "textNodeId": "000000000000003d",
+            "textNodeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPQAAAAA.V9cwpF-lUXTNKG5Sp287G60ylHnVZpbBuDtnTDe6CP4",
+            "sourceRange": {
+              "start": 220,
+              "end": 236
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 16
+            },
+            "mapping": "identity",
+            "textRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLiQEMAAwQAAAAAA.06UHms0mbel9vUxlPIqOSgtYFv7_vap7jLEi3VbScfY"
+          },
+          {
+            "kind": "sourceMap",
+            "id": "000000000000008a",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "ownerRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILhwEAAAAA.S-bNK9FrpYKt01EXLtPRdNOBkvdJqTEtk0-jPCDm_60",
+            "textNodeId": null,
+            "textNodeRef": null,
+            "sourceRange": {
+              "start": 236,
+              "end": 237
+            },
+            "renderedRange": {
+              "start": 0,
+              "end": 0
+            },
+            "mapping": "omitted",
+            "textRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILhwEAAAAA.S-bNK9FrpYKt01EXLtPRdNOBkvdJqTEtk0-jPCDm_60",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000087",
+            "construct": "markdownBlock",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "entryPath": "markdown",
+            "sourceRange": {
+              "start": 220,
+              "end": 237
+            },
+            "nativeRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPAAAAAA.iXn1D9NK2Bdx1iLczjX0Vk8ydAmg7XnYT-GqQc5Nnw8",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULbQgAAAAA.DUBCVjua69yWrM9Te3MdD8LIpap3gKeQWGNeaodZcPQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gABAMLiQEMAAwQAAAAAA.06UHms0mbel9vUxlPIqOSgtYFv7_vap7jLEi3VbScfY",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000089",
+            "field": "renderedText",
+            "offset": 0,
+            "text": "Final paragraph.",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPQAAAAA.V9cwpF-lUXTNKG5Sp287G60ylHnVZpbBuDtnTDe6CP4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000003d",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "text",
+            "nodeClass": "text",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPAAAAAA.iXn1D9NK2Bdx1iLczjX0Vk8ydAmg7XnYT-GqQc5Nnw8",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 220,
+              "end": 236
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULbggAAAAA.88JJhZITjMSCSAE41BzgFQbgizDj4ieOwsloryIragw"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMQAAAAA.Y11WU5vGnlHhanzyiGeFKogWbbvaa1Z8Yq5igun2Qes",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000031",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "heading",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 25
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPwgAAAAA.qYMoeBDETPZuLhgGcpSWoGXMb1cVTjjnrcbEGpPTgNE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000030",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "doc",
+            "nodeClass": "container",
+            "parentRef": null,
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 0
+            },
+            "provenance": "implicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULPggAAAAA.HeUPQi9PTiJHyGsEmJhX8mauEhTmklD6kh5oUcUdeO0"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMwAAAAA.xCFPwBaF2DMiBK_En6Ge5j7tX6e-zAbMhMTZWzglzds",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000033",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "paragraph",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "childIndex": 1,
+            "sourceRange": {
+              "start": 26,
+              "end": 62
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULQggAAAAA.vd3_yR06k2x9lGQpamZXexkjYXn2SqQ8pLvrAkPDKFQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNwAAAAA.KjzOv4r9mMdCRFPamgAYQ961-HsfQ1hslPLh9xTbzEw",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000037",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "paragraph",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNgAAAAA.Nr05EVeNope8VtHWU01g7KIXr23-iYMAvRHOM_4Q9j0",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 69,
+              "end": 140
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULSggAAAAA.wBR1-B6PmW7KKQn-Wuwb1ZnnhhzY8Ecpvu45UrKEo84"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOgAAAAA.Mk03hzkqHNVHQNYx3al82Zjctafm5o07aOFVKAi4zNc",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000003a",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "paragraph",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOQAAAAA.e8xZvTw3EoTOURhgiCqWKDJytUp5L-6R49m_SPBh0ms",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 147,
+              "end": 219
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULXggAAAAA.vpm9fVhoNtQGncLHsfbSKJbhV1Jvsx0LP5Oze7jjagE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILPAAAAAA.iXn1D9NK2Bdx1iLczjX0Vk8ydAmg7XnYT-GqQc5Nnw8",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "000000000000003c",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "paragraph",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "childIndex": 3,
+            "sourceRange": {
+              "start": 220,
+              "end": 237
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULbQgAAAAA.DUBCVjua69yWrM9Te3MdD8LIpap3gKeQWGNeaodZcPQ"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULQQgAAAAA.KkxrlQ-HKdq6OFkRcwJv3MXW4A-epDT1PRSx7rB5OMQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000041",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULQQAAAAA.Us4a6p6IrhrkXmy-9TFo98j604r-MkqUcYUZ1lxGFSU"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULQQAAAAA.Us4a6p6IrhrkXmy-9TFo98j604r-MkqUcYUZ1lxGFSU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULQwgAAAAA.oeh6U5v-5RC6SJ3AhV9-z2xnusu_fY4Yzd1VI1F4M1A",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000043",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULQwAAAAA.nYBU9QmMb6QkMsbIPZGQzXHAGNRWEmX_Rcy8Zx3N4HE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULQwAAAAA.nYBU9QmMb6QkMsbIPZGQzXHAGNRWEmX_Rcy8Zx3N4HE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULSwgAAAAA.BhD6k6iOzZH3edK6IekeodL95DEXf3DQ6zxT9l_SPVQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004b",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULSwAAAAA.FxUTCaG8hBiTLrOKSta0kzzyiPP_coLXeRZKeA0fkeM"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULSwAAAAA.FxUTCaG8hBiTLrOKSta0kzzyiPP_coLXeRZKeA0fkeM",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULTAgAAAAA.szzsl4lMTo42cddZjIxPdf5OfaFKw3WuCI7JlTS6HLI",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004c",
+            "parentId": null,
+            "type": "array",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULTAAAAAA.-GLD_LU5SBdULyXeBJ7rfC1W4fT2HG_ctQtCW6QNWAg"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULTAAAAAA.-GLD_LU5SBdULyXeBJ7rfC1W4fT2HG_ctQtCW6QNWAg",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004d",
+            "parentId": "000000000000004c",
+            "index": 0,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULTQAAAAA.SK2PneHioBBbiJ1v4LdVzqBDtAY9L8XZz9yf-pww5cA"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULTQAAAAA.SK2PneHioBBbiJ1v4LdVzqBDtAY9L8XZz9yf-pww5cA",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004e",
+            "parentId": "000000000000004d",
+            "key": "attrs",
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULTgAAAAA.wakqg6J4oyzgl2I30Mo0-aKgzHdx7fdS5yRyvny0IUU"
+          },
+          {
+            "id": "0000000000000057",
+            "parentId": "000000000000004d",
+            "key": "type",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLWAAAAAA.HNSuEAfNeP_AaB6YsJnwdbod1lbLXGK8Smsr0qaJCv4"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULTgAAAAA.wakqg6J4oyzgl2I30Mo0-aKgzHdx7fdS5yRyvny0IUU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004f",
+            "parentId": "000000000000004e",
+            "key": "class",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLUAAAAAA.gUOhAD329xLCLjIQqr5FkpByxoysLmf-fbW7MVQtnRs"
+          },
+          {
+            "id": "0000000000000051",
+            "parentId": "000000000000004e",
+            "key": "href",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLUgAAAAA.0OmvxV5yr9kdisQIaZzAnnGDGGr4R-GB5JRamTdxLZ8"
+          },
+          {
+            "id": "0000000000000053",
+            "parentId": "000000000000004e",
+            "key": "rel",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLVAAAAAA._zlC1RviOS25TNc0DDgvwMxSaAowmz6sd4HR2iLi4ww"
+          },
+          {
+            "id": "0000000000000055",
+            "parentId": "000000000000004e",
+            "key": "target",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLVgAAAAA.usfKJ99iUgmWI9u50wt-7eQScaSgttG0cB7JehfsAsg"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLUAAAAAA.gUOhAD329xLCLjIQqr5FkpByxoysLmf-fbW7MVQtnRs",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000050",
+            "field": "value",
+            "offset": 0,
+            "text": "text-primary-ink underline cursor-pointer",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLUgAAAAA.0OmvxV5yr9kdisQIaZzAnnGDGGr4R-GB5JRamTdxLZ8",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000052",
+            "field": "value",
+            "offset": 0,
+            "text": "intent://local/task/4e2383d8-9c83-4c86-9837-3dbef62e53fd",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLVAAAAAA._zlC1RviOS25TNc0DDgvwMxSaAowmz6sd4HR2iLi4ww",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000054",
+            "field": "value",
+            "offset": 0,
+            "text": "noopener noreferrer nofollow",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLVgAAAAA.usfKJ99iUgmWI9u50wt-7eQScaSgttG0cB7JehfsAsg",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000056",
+            "field": "value",
+            "offset": 0,
+            "text": "_blank",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLWAAAAAA.HNSuEAfNeP_AaB6YsJnwdbod1lbLXGK8Smsr0qaJCv4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000058",
+            "field": "value",
+            "offset": 0,
+            "text": "link",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULXwgAAAAA.9e8z_KLmeGO2KiCKWdwYCNzBf0i6G4A4Dqvc-AvdhYQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000005f",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULXwAAAAA.hom5LDOO4nkx4ecy934HiydK4L_vUF2Gi_IbN3vUj84"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULXwAAAAA.hom5LDOO4nkx4ecy934HiydK4L_vUF2Gi_IbN3vUj84",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULYAgAAAAA.UNfGjIU-wPIZCtx4iuvnDOciIaX7vlmciiccL0hLg7c",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000060",
+            "parentId": null,
+            "type": "array",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULYAAAAAA.qnlB9wFUCywk7Lxzb1trij1YaGuqg3XFtZo1dzJnmUE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULYAAAAAA.qnlB9wFUCywk7Lxzb1trij1YaGuqg3XFtZo1dzJnmUE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000061",
+            "parentId": "0000000000000060",
+            "index": 0,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULYQAAAAA.pxcUwBVx78jB4qE8ZKSV4OEHEF3zv5tQdWA3Mubsxts"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULYQAAAAA.pxcUwBVx78jB4qE8ZKSV4OEHEF3zv5tQdWA3Mubsxts",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000062",
+            "parentId": "0000000000000061",
+            "key": "attrs",
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULYgAAAAA.ArBoGj7EX3w53qA8txtL7C23MVpDBypp2FNQiSK6bxw"
+          },
+          {
+            "id": "000000000000006b",
+            "parentId": "0000000000000061",
+            "key": "type",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLbAAAAAA.f7RW21IZ-P37STUWzGyq560O4NNwHn9MndGazgliOuU"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULYgAAAAA.ArBoGj7EX3w53qA8txtL7C23MVpDBypp2FNQiSK6bxw",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000063",
+            "parentId": "0000000000000062",
+            "key": "class",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLZAAAAAA.adM00drLeLAahN2c3mwCxh4tUogIXkfLiasMz5Oqgmo"
+          },
+          {
+            "id": "0000000000000065",
+            "parentId": "0000000000000062",
+            "key": "href",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLZgAAAAA.PJ1Ly9dJRoJ01OB1VtnNKRPAvEqh-M2VW-fLiNGb8IQ"
+          },
+          {
+            "id": "0000000000000067",
+            "parentId": "0000000000000062",
+            "key": "rel",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLaAAAAAA.-oHVOfkxmfmB1lghwy2veAV9NHJodbKjcA3PhOzc3Ck"
+          },
+          {
+            "id": "0000000000000069",
+            "parentId": "0000000000000062",
+            "key": "target",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLagAAAAA.p0kkLutVz04FiW4_NqYqmdHW7OgjUdOE7bL7nsqQxw4"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLZAAAAAA.adM00drLeLAahN2c3mwCxh4tUogIXkfLiasMz5Oqgmo",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000064",
+            "field": "value",
+            "offset": 0,
+            "text": "text-primary-ink underline cursor-pointer",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLZgAAAAA.PJ1Ly9dJRoJ01OB1VtnNKRPAvEqh-M2VW-fLiNGb8IQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000066",
+            "field": "value",
+            "offset": 0,
+            "text": "intent://local/task/a89cfc68-da2c-4aa2-aba3-c6f4fac9c395",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLaAAAAAA.-oHVOfkxmfmB1lghwy2veAV9NHJodbKjcA3PhOzc3Ck",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000068",
+            "field": "value",
+            "offset": 0,
+            "text": "noopener noreferrer nofollow",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLagAAAAA.p0kkLutVz04FiW4_NqYqmdHW7OgjUdOE7bL7nsqQxw4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000006a",
+            "field": "value",
+            "offset": 0,
+            "text": "_blank",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLbAAAAAA.f7RW21IZ-P37STUWzGyq560O4NNwHn9MndGazgliOuU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000006c",
+            "field": "value",
+            "offset": 0,
+            "text": "link",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULbggAAAAA.88JJhZITjMSCSAE41BzgFQbgizDj4ieOwsloryIragw",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000006e",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULbgAAAAA.Vb64gW48DxIuaIKYXKV12XJiXXjG3OxbtPrykbodOOw"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULbgAAAAA.Vb64gW48DxIuaIKYXKV12XJiXXjG3OxbtPrykbodOOw",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULPwgAAAAA.qYMoeBDETPZuLhgGcpSWoGXMb1cVTjjnrcbEGpPTgNE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000003f",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULPwAAAAA.0PQqLNQGqqS0G38XVSFrUXeSvD4FLGiX1XjwQ7eRI2A"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULPwAAAAA.0PQqLNQGqqS0G38XVSFrUXeSvD4FLGiX1XjwQ7eRI2A",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000040",
+            "parentId": "000000000000003f",
+            "key": "level",
+            "type": "number",
+            "value": 1
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULPggAAAAA.HeUPQi9PTiJHyGsEmJhX8mauEhTmklD6kh5oUcUdeO0",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000003e",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULPgAAAAA.U-hSBrzsxgbdTiEJEvkiDJNWm3zgb238ZYDY2Wf5L_s"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULPgAAAAA.U-hSBrzsxgbdTiEJEvkiDJNWm3zgb238ZYDY2Wf5L_s",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULQggAAAAA.vd3_yR06k2x9lGQpamZXexkjYXn2SqQ8pLvrAkPDKFQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000042",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULQgAAAAA.oZ7i0H7hy6cihER4aoiKe3PA_Sq9jrem0J2ED-vnUi4"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULQgAAAAA.oZ7i0H7hy6cihER4aoiKe3PA_Sq9jrem0J2ED-vnUi4",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNgAAAAA.Nr05EVeNope8VtHWU01g7KIXr23-iYMAvRHOM_4Q9j0",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000036",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "taskItem",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNQAAAAA.jWMXREcP7SKOpw2Nflu3LM_cC-ARq5v-FH9VCImLPlI",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 63,
+              "end": 141
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULRQgAAAAA.KrQ4jftu94cplQ_IkZx0myRcFhKJnAiWd8rsq1MUx9g"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULSggAAAAA.wBR1-B6PmW7KKQn-Wuwb1ZnnhhzY8Ecpvu45UrKEo84",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000004a",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULSgAAAAA.qNcQdvmpwBiSmBNY9L_b88wcBias9MRP-_2Yb4r4xxU"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULSgAAAAA.qNcQdvmpwBiSmBNY9L_b88wcBias9MRP-_2Yb4r4xxU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILOQAAAAA.e8xZvTw3EoTOURhgiCqWKDJytUp5L-6R49m_SPBh0ms",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000039",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "taskItem",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNQAAAAA.jWMXREcP7SKOpw2Nflu3LM_cC-ARq5v-FH9VCImLPlI",
+            "childIndex": 1,
+            "sourceRange": {
+              "start": 141,
+              "end": 220
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULWQgAAAAA.jDfuQIE6Saj4RQpfiY9qqpdmtOZvvlKGOgtiIpL8kiE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULXggAAAAA.vpm9fVhoNtQGncLHsfbSKJbhV1Jvsx0LP5Oze7jjagE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000005e",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULXgAAAAA.dbbdTaAK50rQAnYOyWpwmouHcqwPM24u5SRvhRCzFtA"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULXgAAAAA.dbbdTaAK50rQAnYOyWpwmouHcqwPM24u5SRvhRCzFtA",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULbQgAAAAA.DUBCVjua69yWrM9Te3MdD8LIpap3gKeQWGNeaodZcPQ",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000006d",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULbQAAAAA.ZfsWTOOzCIhmIQn9UGLChuiGwRGKehe51p_1nfvSfTA"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULbQAAAAA.ZfsWTOOzCIhmIQn9UGLChuiGwRGKehe51p_1nfvSfTA",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILNQAAAAA.jWMXREcP7SKOpw2Nflu3LM_cC-ARq5v-FH9VCImLPlI",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000035",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "taskList",
+            "nodeClass": "container",
+            "parentRef": "ARpy-g5_L0ochv1cuTAMD1gAAgILMAAAAAA.3eo23X01JXCPlCsDW20I6dcUyjoG1H_uOWhQr4QUNqQ",
+            "childIndex": 2,
+            "sourceRange": {
+              "start": 63,
+              "end": 220
+            },
+            "provenance": "explicit",
+            "attributesRef": "ARpy-g5_L0ochv1cuTAMD1gAAwULRAgAAAAA.Av_Emur1HkqLl9gi1McgHErVvLOc6IO_Y4icv39VsAU"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULRQgAAAAA.KrQ4jftu94cplQ_IkZx0myRcFhKJnAiWd8rsq1MUx9g",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000045",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULRQAAAAA.2FNkmNpgzX093Xs87R7uTYEbKUTAoNdnm342J9VU1Ks"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULRQAAAAA.2FNkmNpgzX093Xs87R7uTYEbKUTAoNdnm342J9VU1Ks",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000046",
+            "parentId": "0000000000000045",
+            "key": "checked",
+            "type": "boolean",
+            "value": false
+          },
+          {
+            "id": "0000000000000047",
+            "parentId": "0000000000000045",
+            "key": "delegatedAgentId",
+            "type": "null",
+            "value": null
+          },
+          {
+            "id": "0000000000000048",
+            "parentId": "0000000000000045",
+            "key": "status",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLSQAAAAA.Zjo-z5HuRj-PZkcxfJ4Wq11NNlwpYW2s5959QSCc398"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLSQAAAAA.Zjo-z5HuRj-PZkcxfJ4Wq11NNlwpYW2s5959QSCc398",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "0000000000000049",
+            "field": "value",
+            "offset": 0,
+            "text": "todo",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULWQgAAAAA.jDfuQIE6Saj4RQpfiY9qqpdmtOZvvlKGOgtiIpL8kiE",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000059",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULWQAAAAA.4HjkAQTToMo4PcsphuEqcuZZz36s9_Gk2SbW2MRiuBM"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULWQAAAAA.4HjkAQTToMo4PcsphuEqcuZZz36s9_Gk2SbW2MRiuBM",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000005a",
+            "parentId": "0000000000000059",
+            "key": "checked",
+            "type": "boolean",
+            "value": true
+          },
+          {
+            "id": "000000000000005b",
+            "parentId": "0000000000000059",
+            "key": "delegatedAgentId",
+            "type": "null",
+            "value": null
+          },
+          {
+            "id": "000000000000005c",
+            "parentId": "0000000000000059",
+            "key": "status",
+            "type": "string",
+            "valueRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLXQAAAAA.VkBWO6FnmeC2ZNKDFE6lTIqPowJWx6ejgiQyhS7jY7U"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "ARpy-g5_L0ochv1cuTAMD1gAAgMLXQAAAAA.VkBWO6FnmeC2ZNKDFE6lTIqPowJWx6ejgiQyhS7jY7U",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000005d",
+            "field": "value",
+            "offset": 0,
+            "text": "done",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAwULRAgAAAAA.Av_Emur1HkqLl9gi1McgHErVvLOc6IO_Y4icv39VsAU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "0000000000000044",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "ARpy-g5_L0ochv1cuTAMD1gAAgULRAAAAAA.t4mKKi3dW4UYKrDN6TJ58GGNFMH1xdvlD5hlY_JXEsU"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "ARpy-g5_L0ochv1cuTAMD1gAAgULRAAAAAA.t4mKKi3dW4UYKrDN6TJ58GGNFMH1xdvlD5hlY_JXEsU",
+        "maxWireBytes": 8192,
+        "maxItems": 64
+      },
+      "response": {
+        "scope": {
+          "backendId": "ba99672f7fae43cd016563d9bf23aa3f",
+          "workspaceId": "purple-kangaroo",
+          "noteId": "spec",
+          "noteInstanceId": "56594c6d0d522991afac4c54206cace2"
+        },
+        "sourceRevision": "r:3:5cb3f31235c176682838426845f3d18c",
+        "snapshotId": "1a72fa0e7f2f4a1c86fd5cb9300c0f58",
+        "expiresAt": "2026-10-07T15:57:44.300619456Z",
+        "kind": "noteMetadataPage",
+        "items": [],
+        "nextCursor": null
+      }
+    }
+  ]
+}

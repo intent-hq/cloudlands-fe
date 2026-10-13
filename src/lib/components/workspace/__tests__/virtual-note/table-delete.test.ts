@@ -1,0 +1,137 @@
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { Editor } from '@tiptap/core';
+import { store } from '$store/renderer/configured-store';
+import { createEditorConfig } from '$lib/utils/editor-config';
+import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+import { SourceJournal } from './source-journal';
+import { DocumentSession } from './document-session';
+import { scanTables } from './table-source';
+
+beforeAll(() => store.init());
+afterAll(() => store.dispose());
+const source =
+  'untouched **prefix**\n\n| H | R |\n| --- | --- |\n' +
+  Array.from({ length: 80 }, (_, r) => `| left${r} | right${r} |`).join('\n') +
+  '\n\nuntouched _suffix_';
+for (const newlineCount of [2, 4])
+  for (const fault of ['none', 'stage', 'record'] as const) {
+    const originalSource = source.replace('prefix**\n\n', 'prefix**' + '\n'.repeat(newlineCount));
+    it(`deletes the logical table with exact neighboring source and native history (${fault}, ${newlineCount} newlines)`, async () => {
+      const source = originalSource;
+      const native = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: await processMarkdownToHTML(source),
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        }),
+      );
+      const service = new SourceJournal(() => source, 1);
+      const session = new DocumentSession(service, document.createElement('div'));
+      try {
+        await session.seek(source.indexOf('right30'));
+        for (const editor of [native, session.editor!]) {
+          let at = -1;
+          editor.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'paragraph' && node.textContent === 'right30') at = pos + 1;
+          });
+          editor.commands.setTextSelection(at);
+        }
+        const selection = structuredClone(session.selection),
+          doc = session.editor!.getJSON(),
+          depth = service.depth;
+        let spy: ReturnType<typeof vi.spyOn> | undefined;
+        if (fault !== 'none') {
+          const original = service[fault].bind(service);
+          spy = vi.spyOn(service, fault).mockImplementationOnce((...args: never[]) => {
+            Reflect.apply(original, service, args);
+            throw new Error(`injected delete ${fault}`);
+          });
+        }
+        const nativeBefore = native.getJSON();
+        expect(native.commands.deleteTable()).toBe(true);
+        expect(session.editor!.commands.deleteTable()).toBe(true);
+        spy?.mockRestore();
+        if (fault !== 'none') {
+          expect(session.error).toContain(`injected delete ${fault}`);
+          expect(service.region(0)).toBe(source);
+          expect(service.depth).toBe(depth);
+          expect(session.selection).toEqual(selection);
+          expect(session.editor!.getJSON()).toEqual(doc);
+          return;
+        }
+        const table = scanTables(source)[0];
+        const saved = source.slice(0, table.from) + source.slice(table.to);
+        expect(session.error).toBe('');
+        expect(service.region(0)).toBe(saved);
+        const canonical = new Editor(
+          createEditorConfig({
+            element: document.createElement('div'),
+            content: await processMarkdownToHTML(saved),
+            editable: true,
+            useMarkdown: true,
+            enableComments: false,
+            enableMentions: false,
+            onUpdate: () => {},
+          }),
+        );
+        try {
+          // Fresh parsing intentionally expands the retained three-newline boundary.
+          // Live native deletion has only the two surviving paragraphs.
+          expect(saved).toContain('prefix**' + '\n'.repeat(newlineCount + 1) + 'untouched');
+          const live = native.getJSON();
+          expect(live.content).toHaveLength(newlineCount);
+          expect(canonical.getJSON()).toEqual({
+            type: 'doc',
+            content: [...live.content!.slice(0, -1), { type: 'paragraph' }, live.content!.at(-1)!],
+          });
+          const fresh = new DocumentSession(
+            new SourceJournal(() => saved, 1),
+            document.createElement('div'),
+          );
+          try {
+            await fresh.show(0);
+            expect(fresh.editor!.getJSON()).toEqual(canonical.getJSON());
+          } finally {
+            fresh.destroy();
+          }
+        } finally {
+          canonical.destroy();
+        }
+        session.save();
+        const old = session.editor!;
+        await session.seek(session.selection.head);
+        expect(old.isDestroyed).toBe(true);
+        expect(session.editor!.getJSON()).toEqual(native.getJSON());
+        expect(session.editor!.state.selection.toJSON()).toEqual(native.state.selection.toJSON());
+        const after = structuredClone(session.selection);
+        await session.history();
+        expect(service.region(0)).toBe(source);
+        expect(session.selection).toEqual({ ...selection, revision: service.revision });
+        expect(native.commands.undo()).toBe(true);
+        expect(native.getJSON()).toEqual(nativeBefore);
+        await session.history(true);
+        expect(native.commands.redo()).toBe(true);
+        expect(service.region(0)).toBe(saved);
+        expect(session.selection).toEqual({ ...after, revision: service.revision });
+        expect(session.editor!.getJSON()).toEqual(native.getJSON());
+        expect(session.editor!.state.selection.toJSON()).toEqual(native.state.selection.toJSON());
+        native.commands.insertContent('TYPED');
+        session.editor!.commands.insertContent('TYPED');
+        expect(session.error).toBe('');
+        expect(service.region(0).replace('TYPED', '')).toBe(saved);
+        const edited = session.editor!;
+        await session.seek(session.selection.head);
+        expect(edited.isDestroyed).toBe(true);
+        expect(session.editor!.getJSON()).toEqual(native.getJSON());
+        expect(service.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
+        expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
+      } finally {
+        native.destroy();
+        session.destroy();
+      }
+    });
+  }

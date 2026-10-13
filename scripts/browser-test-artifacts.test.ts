@@ -47,7 +47,7 @@ function testRecord(overrides = {}) {
 }
 
 describe('browser artifact producer contract', () => {
-  it('enumerates all four CT and root shards, Electron and advisory quarantine', () => {
+  it('enumerates all eight CT and four root shards, Electron and advisory quarantine', () => {
     const dir = directory();
     const result = run(dir, ['manifest']);
     expect(result.status, result.stderr).toBe(0);
@@ -66,10 +66,14 @@ describe('browser artifact producer contract', () => {
     expect(
       manifest.artifacts.map((artifact: { artifactName: string }) => artifact.artifactName),
     ).toEqual([
-      'playwright-ct-report-1-of-4',
-      'playwright-ct-report-2-of-4',
-      'playwright-ct-report-3-of-4',
-      'playwright-ct-report-4-of-4',
+      'playwright-ct-report-1-of-8',
+      'playwright-ct-report-2-of-8',
+      'playwright-ct-report-3-of-8',
+      'playwright-ct-report-4-of-8',
+      'playwright-ct-report-5-of-8',
+      'playwright-ct-report-6-of-8',
+      'playwright-ct-report-7-of-8',
+      'playwright-ct-report-8-of-8',
       'playwright-root-report-1',
       'playwright-root-report-2',
       'playwright-root-report-3',

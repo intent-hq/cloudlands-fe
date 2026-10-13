@@ -116,6 +116,8 @@ export default defineConfig(async () => {
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',
+        // The required unit launcher runs this file with Node's own test runner.
+        'scripts/table-paste-owner.test.mjs',
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
         // Remote-environment suites need a real daemon/host; not part of the unit gate.

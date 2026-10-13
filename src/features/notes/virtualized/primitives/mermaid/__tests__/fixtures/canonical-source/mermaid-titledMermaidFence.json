@@ -1,0 +1,419 @@
+{
+  "caseId": "titledMermaidFence",
+  "source": "```mermaid title\nflowchart LR\n A[\"café & 世界\"] --> B\n```",
+  "oracleAtoms": [
+    {
+      "type": "mermaidBlock",
+      "code": "flowchart LR\n A[\"café & 世界\"] --> B"
+    }
+  ],
+  "readiness": "test-only-real-store-capture",
+  "calls": [
+    {
+      "request": {
+        "kind": "source",
+        "maxSourceBytes": 4096,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteSourcePage",
+        "sourceLength": 55,
+        "metadataRef": "AQ2jTGceNEaGtNiIowr2kRgAAgQIAAAAAA.bziWhW6ybIX9heQNz0ruon8soK7YGemEIyAP4bXPR8k",
+        "contextRef": "AQ2jTGceNEaGtNiIowr2kRgABAEMAAwADDcAAAAA.k3_f8IZXl3gLoatBmMtu17r1NtEbGiNwjG8OdZxarn8",
+        "range": {
+          "start": 0,
+          "end": 55
+        },
+        "text": "```mermaid title\nflowchart LR\n A[\"café & 世界\"] --> B\n```",
+        "nextCursor": null,
+        "previousCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AQ2jTGceNEaGtNiIowr2kRgABAEMAAwADDcAAAAA.k3_f8IZXl3gLoatBmMtu17r1NtEbGiNwjG8OdZxarn8",
+        "maxItems": 64,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "boundary",
+            "id": "0000000000000001",
+            "sourceRange": {
+              "start": 0,
+              "end": 55
+            },
+            "construct": "codeBlock",
+            "continuationBefore": false,
+            "continuationAfter": false,
+            "detailRef": "AQ2jTGceNEaGtNiIowr2kRgAAwILAQkAAAAA.hd_mH3i1c48pbUi4IoV7vKYqSPgMjdh75EU9DeErXLw",
+            "nativeRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek"
+          },
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000008",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "mermaidBlock",
+            "nodeClass": "atom",
+            "parentRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILBwAAAAA.TaL3xp7qjCnMkbaPe4oMmfd28ddIcdH_NMO-T_JIklo",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 55
+            },
+            "provenance": "explicit",
+            "attributesRef": "AQ2jTGceNEaGtNiIowr2kRgAAwULCggAAAAA.ZKGaPa8CCLe3V7D0s7HHmO3ZYusrVDN0dbbqd18f-rA",
+            "nativeRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek"
+          },
+          {
+            "kind": "span",
+            "id": "0000000000000002",
+            "sourceRange": {
+              "start": 17,
+              "end": 52
+            },
+            "role": "text",
+            "parentRef": "AQ2jTGceNEaGtNiIowr2kRgABAILAQwADDcAAAAA.Dc5k-AvTnA4uKs-PqM6QM3HsJBGiUKJ99zHAJJehqO8"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "nativeNode",
+            "id": "0000000000000008",
+            "profile": "canonicalNote",
+            "profileVersion": 1,
+            "nodeType": "mermaidBlock",
+            "nodeClass": "atom",
+            "parentRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILBwAAAAA.TaL3xp7qjCnMkbaPe4oMmfd28ddIcdH_NMO-T_JIklo",
+            "childIndex": 0,
+            "sourceRange": {
+              "start": 0,
+              "end": 55
+            },
+            "provenance": "explicit",
+            "attributesRef": "AQ2jTGceNEaGtNiIowr2kRgAAwULCggAAAAA.ZKGaPa8CCLe3V7D0s7HHmO3ZYusrVDN0dbbqd18f-rA",
+            "nativeRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AQ2jTGceNEaGtNiIowr2kRgAAwULCggAAAAA.ZKGaPa8CCLe3V7D0s7HHmO3ZYusrVDN0dbbqd18f-rA",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000000a",
+            "parentId": null,
+            "type": "object",
+            "childrenRef": "AQ2jTGceNEaGtNiIowr2kRgAAgULCgAAAAA.t5rrHkvJAK7FHH45kSVdT53RchEDlmHlBB8UshTn_zI"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "metadata",
+        "ref": "AQ2jTGceNEaGtNiIowr2kRgAAgULCgAAAAA.t5rrHkvJAK7FHH45kSVdT53RchEDlmHlBB8UshTn_zI",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteMetadataPage",
+        "items": [
+          {
+            "id": "000000000000000b",
+            "parentId": "000000000000000a",
+            "key": "code",
+            "type": "string",
+            "valueRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "request": {
+        "kind": "context",
+        "contextRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE",
+        "maxItems": 1,
+        "maxWireBytes": 8192
+      },
+      "response": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z",
+        "kind": "noteContextPage",
+        "items": [
+          {
+            "kind": "fragment",
+            "id": "000000000000000c",
+            "field": "value",
+            "offset": 0,
+            "text": "flowchart LR\n A[\"café & 世界\"] --> B",
+            "nextRef": null
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  ],
+  "sources": [
+    {
+      "node": {
+        "kind": "nativeNode",
+        "id": "0000000000000008",
+        "profile": "canonicalNote",
+        "profileVersion": 1,
+        "nodeType": "mermaidBlock",
+        "nodeClass": "atom",
+        "parentRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILBwAAAAA.TaL3xp7qjCnMkbaPe4oMmfd28ddIcdH_NMO-T_JIklo",
+        "childIndex": 0,
+        "sourceRange": {
+          "start": 0,
+          "end": 55
+        },
+        "provenance": "explicit",
+        "attributesRef": "AQ2jTGceNEaGtNiIowr2kRgAAwULCggAAAAA.ZKGaPa8CCLe3V7D0s7HHmO3ZYusrVDN0dbbqd18f-rA",
+        "nativeRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek"
+      },
+      "codeField": {
+        "id": "000000000000000b",
+        "parentId": "000000000000000a",
+        "key": "code",
+        "type": "string",
+        "valueRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+      },
+      "code": "flowchart LR\n A[\"café & 世界\"] --> B",
+      "header": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "0da34c671e344686b4d888a30af69118",
+          "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+          "ownerRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek",
+          "sourceRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalSourceGrant": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "snapshotId": "0da34c671e344686b4d888a30af69118",
+        "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+        "expiresAt": "2026-10-04T05:58:38.78641973Z"
+      },
+      "grantLimit": "Source binding only; test profile is unregistered; no renderer or artifact publication authority."
+    }
+  ],
+  "internalGrantFailures": [
+    {
+      "case": "different-principal",
+      "principal": "bob",
+      "header": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "0da34c671e344686b4d888a30af69118",
+          "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+          "ownerRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek",
+          "sourceRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(CursorInvalid)"
+    },
+    {
+      "case": "different-note-instance",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "00000000-0000-0000-0000-000000000001"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "0da34c671e344686b4d888a30af69118",
+          "sourceRevision": "r:0:f019827b8f136d108662e8eeec1890fa",
+          "ownerRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek",
+          "sourceRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(Stale)"
+    },
+    {
+      "case": "different-revision",
+      "principal": "alice",
+      "header": {
+        "scope": {
+          "backendId": "ce7833650a4ee3713bc1792a726527d5",
+          "workspaceId": "pages",
+          "noteId": "spec",
+          "noteInstanceId": "f478d6f7cc313b34280bc1fb33461f6c"
+        },
+        "source": {
+          "kind": "snapshot",
+          "snapshotId": "0da34c671e344686b4d888a30af69118",
+          "sourceRevision": "not-the-captured-revision",
+          "ownerRef": "AQ2jTGceNEaGtNiIowr2kRgAAgILCAAAAAA.iZgZezEL-V9yh0qc8zWjsT3vDnCn9L6yKO7o-oaJqek",
+          "sourceRef": "AQ2jTGceNEaGtNiIowr2kRgAAgMLDAAAAAA.Fri4CjY_gHKpk7bnpesnS_aX1pEl1OTi8HXNQh8AoGE"
+        },
+        "primitive": "mermaid",
+        "profile": "test-profile-not-registered",
+        "environment": {
+          "width": 800,
+          "height": 600,
+          "theme": "light",
+          "fontRef": "test-font",
+          "fontSize": 14,
+          "devicePixelRatio": 1
+        },
+        "reservation": {
+          "payloadBytes": 4096,
+          "records": 10,
+          "indexEntries": 10,
+          "storageChargeBytes": 65536
+        }
+      },
+      "internalStoreError": "NotePage(Stale)"
+    }
+  ],
+  "internalInvalidationChecks": [],
+  "limitations": "Store results captured before transport. Internal source grants do not register a profile, authorize construction, publish an artifact or prove a production provider."
+}

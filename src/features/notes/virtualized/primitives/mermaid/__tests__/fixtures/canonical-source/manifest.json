@@ -1,0 +1,68 @@
+{
+  "base": "f887fc1b85d84c3706da611cf1625cba597e3368",
+  "files": {
+    "crates/intent-store/src/tests/note_pages.rs": "d262416653afb4cd9a68771e613f68e5429d892efc3971274b9077d1594b0241",
+    "crates/intent-store/src/tests/note_pages/primitive_source_capture.rs": "b7080f3dc627d621c781ca27271c80f86abedf8a4eb31d14f3dab40fd7fd3e54",
+    "crates/intent-store/src/tests/fixtures/note_primitive_native.json": "a480376c8dc921c1f8afc0f20e274d64c3c988574e00d583d62d5ef5b0ef2736"
+  },
+  "contract": "c802a2b6e5adb7381cd3d4f71e5715cc128a57fe",
+  "limits": "Real Store only; no public artifact RPC, renderer profile authorization or production adapter.",
+  "scriptId": "b4bcea78-e2f2-46fb-86b0-70b9dde3d25f",
+  "runId": "fa522580-f98e-40be-af2d-53e46119feb2",
+  "startedAt": "2026-10-04T05:53:18.183578421Z",
+  "stoppedAt": "2026-10-04T05:53:38.844269633Z",
+  "exitCode": 0,
+  "result": "1 real Store test, seven frozen native-entry cases passed",
+  "artifacts": {
+    "mermaid-adjacentHtmlBase64.json": {
+      "sha256": "b3ca78bfd55c7c6c170062de5a76b21dec7da6e3668bbd4a2dc17ff1dbf8a2a5",
+      "calls": 10,
+      "codeUtf8Bytes": 56,
+      "invalidations": 0,
+      "grantFailures": 5
+    },
+    "mermaid-adjacentHtmlPlainAttributes.json": {
+      "sha256": "ca2e8a046d71d23713ba51add8555f3a481222cf614b15022eac471e0702c098",
+      "calls": 10,
+      "codeUtf8Bytes": 0,
+      "invalidations": 0,
+      "grantFailures": 5
+    },
+    "mermaid-adjacentHtmlPlainWithoutArrow.json": {
+      "sha256": "8163af36330c791028ceb27c74fc2f9abfd2eb290ae2d828366ecdd0228ab2eb",
+      "calls": 10,
+      "codeUtf8Bytes": 18,
+      "invalidations": 3,
+      "grantFailures": 5
+    },
+    "mermaid-adjacentHtmlPreCodeBase64.json": {
+      "sha256": "e0a67e6c443ad9c73b90cb657d3d8b8bdea35664ee592677177f732a93811c12",
+      "calls": 10,
+      "codeUtf8Bytes": 56,
+      "invalidations": 0,
+      "grantFailures": 5
+    },
+    "mermaid-adjacentHtmlPreCodePlain.json": {
+      "sha256": "f07a3e769b3109a09eea248ea518a5fc2e8e16249e4d597d090fb1917055af7b",
+      "calls": 10,
+      "codeUtf8Bytes": 40,
+      "invalidations": 0,
+      "grantFailures": 5
+    },
+    "mermaid-mixedFences.json": {
+      "sha256": "aeccb1b36cfe12cdd050bd4f9a3013954b1693527dbad13d608fb88771676f23",
+      "calls": 10,
+      "codeUtf8Bytes": 52,
+      "invalidations": 0,
+      "grantFailures": 5
+    },
+    "mermaid-titledMermaidFence.json": {
+      "sha256": "6fc5524c609dd091393fac1ef0d9dced161f4f63b8f0220477774503b4510458",
+      "calls": 6,
+      "codeUtf8Bytes": 39,
+      "invalidations": 0,
+      "grantFailures": 3
+    }
+  },
+  "logSha256": "aaabbaaf5e817660a626b2dbdadc7b9046ed458606a41414166af61a76cacd0b"
+}

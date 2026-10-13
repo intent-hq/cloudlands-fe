@@ -1,0 +1,387 @@
+import { expect, it, vi } from 'vitest';
+import type { NoteCommitReceipt } from './note-pages';
+import { readNoteReceiptPage, type NoteReceiptReadRequest } from './note-receipt-reader';
+const receipt: NoteCommitReceipt = {
+  kind: 'noteCommitReceipt',
+  outcome: 'committed',
+  scope: { backendId: 'b', workspaceId: 'w', noteId: 'n', noteInstanceId: 'i' },
+  operationId: 'operation',
+  payloadDigest: 'a'.repeat(64),
+  beforeRevision: 'r1',
+  afterRevision: 'r2',
+  sourceLength: 12,
+  mappingRef: 'map',
+  effectsRef: 'effect',
+  inverseRef: 'inverse',
+  receiptExpiresAt: '2099-01-01T00:00:00.000000001Z',
+  invalidation: 'all',
+};
+const request: NoteReceiptReadRequest = {
+  kind: 'mapping',
+  baseLength: 10,
+  maxItems: 1,
+  maxWireBytes: 4096,
+};
+const page = () => ({
+  kind: 'noteOperationPage',
+  scope: { ...receipt.scope },
+  operationId: receipt.operationId,
+  payloadDigest: receipt.payloadDigest,
+  beforeRevision: 'r1',
+  afterRevision: 'r2',
+  outputKind: 'mapping',
+  sourceLength: 10,
+  items: [{ start: 1, end: 1, insertedLength: 2 }],
+  nextCursor: null,
+  expiresAt: receipt.receiptExpiresAt,
+});
+it('uses only the receipt-owned inline root and preserves original expiry and cursor selectors', async () => {
+  const response = page(),
+    send = vi.fn().mockResolvedValue(response);
+  expect(await readNoteReceiptPage(send, receipt, request)).toBe(response);
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    ...receipt.scope,
+    operationId: 'operation',
+    payloadDigest: 'a'.repeat(64),
+    kind: 'mapping',
+    ref: 'map',
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  const effects = { ...page(), outputKind: 'effects', convertedCount: 7, items: [] };
+  send.mockResolvedValueOnce(effects);
+  expect(
+    await readNoteReceiptPage(send, receipt, {
+      ...request,
+      kind: 'effects',
+      cursor: 'continuation',
+    }),
+  ).toBe(effects);
+  expect(send).toHaveBeenLastCalledWith({
+    ...receipt.scope,
+    operationId: 'operation',
+    payloadDigest: 'a'.repeat(64),
+    kind: 'effects',
+    ref: 'effect',
+    cursor: 'continuation',
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+});
+it.each([
+  { operationId: 'other' },
+  { payloadDigest: 'other' },
+  { beforeRevision: 'wrong' },
+  { afterRevision: 'wrong' },
+  { scope: { ...receipt.scope, backendId: 'foreign' } },
+  { scope: { ...receipt.scope, noteInstanceId: 'foreign' } },
+  { sourceLength: receipt.sourceLength },
+  { outputKind: 'effects' },
+  { headerDigest: 'staged' },
+  { viewId: 'view' },
+  { expiresAt: '2099-01-01T00:00:00Z' },
+  { nextCursor: undefined },
+  { items: [{}, {}] },
+  { items: [{ text: '"'.repeat(4096) }] },
+])('rejects mismatched or overbudget receipt envelope %j', async (delta) => {
+  await expect(
+    readNoteReceiptPage(vi.fn().mockResolvedValue({ ...page(), ...delta }), receipt, request),
+  ).rejects.toThrow();
+});
+it.each([
+  { maxItems: 0 },
+  { maxItems: 129 },
+  { maxWireBytes: 4095 },
+  { maxWireBytes: 65537 },
+  { baseLength: -1 },
+  { cursor: '' },
+])('refuses invalid admission bounds before transport %j', async (delta) => {
+  const send = vi.fn();
+  await expect(readNoteReceiptPage(send, receipt, { ...request, ...delta })).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it('rejects incomplete staged receipts and missing scope before transport', async () => {
+  const send = vi.fn();
+  await expect(
+    readNoteReceiptPage(send, { ...receipt, headerDigest: 'staged' }, request),
+  ).rejects.toThrow();
+  await expect(
+    readNoteReceiptPage(send, { ...receipt, scope: { ...receipt.scope, backendId: '' } }, request),
+  ).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it('checks the original nanosecond deadline before dispatch and again after physical IO', async () => {
+  const r = { ...receipt, receiptExpiresAt: '1970-01-01T00:00:01.000000001Z' };
+  const send = vi.fn().mockResolvedValue({ ...page(), expiresAt: r.receiptExpiresAt });
+  await expect(readNoteReceiptPage(send, r, request, () => 1000)).resolves.toMatchObject({
+    expiresAt: r.receiptExpiresAt,
+  });
+  const late = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1001);
+  await expect(readNoteReceiptPage(send, r, request, late)).rejects.toThrow('Receipt expired');
+  send.mockClear();
+  await expect(readNoteReceiptPage(send, r, request, () => 1001)).rejects.toThrow(
+    'Receipt expired',
+  );
+  expect(send).not.toHaveBeenCalled();
+});
+it('captures identity and bounds before awaiting transport without automatic continuation', async () => {
+  const r = { ...receipt, scope: { ...receipt.scope } },
+    q = { ...request };
+  const response = { ...page(), nextCursor: 'more' };
+  const send = vi.fn(async () => {
+    r.scope.backendId = 'changed';
+    r.afterRevision = 'changed';
+    r.receiptExpiresAt = '2100-01-01T00:00:00Z';
+    q.baseLength = 99;
+    q.maxItems = 99;
+    return response;
+  });
+  expect(await readNoteReceiptPage(send, r, q)).toBe(response);
+  expect(send).toHaveBeenCalledOnce();
+});
+
+it.each(['digest', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64)])(
+  'refuses malformed payload digest before dispatch: %s',
+  async (payloadDigest) => {
+    const send = vi.fn();
+    await expect(readNoteReceiptPage(send, { ...receipt, payloadDigest }, request)).rejects.toThrow(
+      'Invalid receipt read',
+    );
+    expect(send).not.toHaveBeenCalled();
+  },
+);
+it.each([undefined, null, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '2'])(
+  'refuses absent or invalid aggregate convertedCount: %s',
+  async (convertedCount) => {
+    const send = vi
+      .fn()
+      .mockResolvedValue({ ...page(), outputKind: 'effects', items: [], convertedCount });
+    await expect(
+      readNoteReceiptPage(send, receipt, { ...request, kind: 'effects' }),
+    ).rejects.toThrow();
+  },
+);
+it('retains aggregate conversion count independently of this page item count', async () => {
+  const response = { ...page(), outputKind: 'effects', items: [], convertedCount: 19 };
+  const result = await readNoteReceiptPage(vi.fn().mockResolvedValue(response), receipt, {
+    ...request,
+    kind: 'effects',
+  });
+  expect(result.outputKind).toBe('effects');
+  if (result.outputKind !== 'effects') throw new Error('Wrong kind');
+  expect(result.convertedCount).toBe(19);
+  expect(result.items).toEqual([]);
+});
+it('refuses a page that expires during validation before returning it', async () => {
+  const r = { ...receipt, receiptExpiresAt: '1970-01-01T00:00:01.000000001Z' };
+  const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(1001);
+  const send = vi.fn().mockResolvedValue({ ...page(), expiresAt: r.receiptExpiresAt });
+  await expect(readNoteReceiptPage(send, r, request, now)).rejects.toThrow('Receipt expired');
+  expect(send).toHaveBeenCalledOnce();
+  expect(now).toHaveBeenCalledTimes(3);
+});
+
+const stagedReceipt = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'sealed-view' };
+const stagedPage = () => {
+  const { beforeRevision: _before, afterRevision: _after, ...envelope } = page();
+  return { ...envelope, headerDigest: stagedReceipt.headerDigest, viewId: stagedReceipt.viewId };
+};
+it.each(['mapping', 'effects'] as const)(
+  'reads retained staged %s by header only, with receipt lifetime and frozen input extent',
+  async (kind) => {
+    const response = {
+      ...stagedPage(),
+      outputKind: kind,
+      ...(kind === 'effects' ? { convertedCount: 4 } : {}),
+    };
+    const send = vi.fn().mockResolvedValue(response);
+    expect(
+      await readNoteReceiptPage(send, stagedReceipt, { ...request, kind, cursor: 'next' }),
+    ).toBe(response);
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      ...receipt.scope,
+      operationId: receipt.operationId,
+      headerDigest: stagedReceipt.headerDigest,
+      kind,
+      ref: kind === 'mapping' ? receipt.mappingRef : receipt.effectsRef,
+      cursor: 'next',
+      maxItems: 1,
+      maxWireBytes: 4096,
+    });
+  },
+);
+it.each([
+  { headerDigest: undefined },
+  { headerDigest: 'B'.repeat(64) },
+  { viewId: undefined },
+  { viewId: '' },
+  { payloadDigest: 'bad' },
+])('refuses incomplete or malformed staged receipt before dispatch: %j', async (delta) => {
+  const send = vi.fn();
+  await expect(
+    readNoteReceiptPage(send, { ...stagedReceipt, ...delta }, request),
+  ).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it.each([
+  { headerDigest: 'c'.repeat(64) },
+  { headerDigest: undefined },
+  { viewId: 'other' },
+  { viewId: undefined },
+  { payloadDigest: 'c'.repeat(64) },
+  { beforeRevision: 'r1' },
+  { afterRevision: 'r2' },
+  { expiresAt: '2099-01-01T00:00:00Z' },
+  { sourceLength: receipt.sourceLength },
+])('rejects staged identity mixing or changed retained identity: %j', async (delta) => {
+  await expect(
+    readNoteReceiptPage(
+      vi.fn().mockResolvedValue({ ...stagedPage(), ...delta }),
+      stagedReceipt,
+      request,
+    ),
+  ).rejects.toThrow();
+});
+it('captures both staged digests, view, root and deadline before transport', async () => {
+  const captured = { ...stagedReceipt },
+    response = stagedPage();
+  const send = vi.fn(async (_params: Record<string, unknown>) => {
+    captured.headerDigest = 'c'.repeat(64);
+    captured.payloadDigest = 'd'.repeat(64);
+    captured.viewId = 'other';
+    captured.mappingRef = 'other';
+    captured.receiptExpiresAt = '2100-01-01T00:00:00Z';
+    return response;
+  });
+  expect(await readNoteReceiptPage(send, captured, request)).toBe(response);
+  expect(send.mock.calls[0][0]).toMatchObject({
+    headerDigest: stagedReceipt.headerDigest,
+    ref: receipt.mappingRef,
+  });
+});
+it('applies the original receipt deadline after staged page validation', async () => {
+  const r = { ...stagedReceipt, receiptExpiresAt: '1970-01-01T00:00:01.000000001Z' };
+  const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(1001);
+  await expect(
+    readNoteReceiptPage(
+      vi.fn().mockResolvedValue({ ...stagedPage(), expiresAt: r.receiptExpiresAt }),
+      r,
+      request,
+      now,
+    ),
+  ).rejects.toThrow('Receipt expired');
+});
+
+it('binds staged inverse and scalar text reads to retained header/root and final extent', async () => {
+  const staged = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'retained-view' };
+  const response = {
+    ...page(),
+    headerDigest: staged.headerDigest,
+    viewId: staged.viewId,
+    outputKind: 'inverse',
+    sourceLength: receipt.sourceLength,
+    items: [],
+  } as Record<string, unknown>;
+  delete response.beforeRevision;
+  delete response.afterRevision;
+  const send = vi.fn().mockResolvedValue(response);
+  await readNoteReceiptPage(send, staged, { ...request, kind: 'inverse' });
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'inverse',
+    ref: receipt.inverseRef,
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  send.mockResolvedValue({
+    ...response,
+    outputKind: 'inverseText',
+    items: [{ textId: 'removed', offset: 0, text: '🙂' }],
+  });
+  await readNoteReceiptPage(send, staged, {
+    ...request,
+    kind: 'inverseText',
+    textId: 'removed',
+    offset: 0,
+    maxSourceBytes: 4,
+  });
+  expect(send).toHaveBeenLastCalledWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'inverseText',
+    ref: receipt.inverseRef,
+    textId: 'removed',
+    offset: 0,
+    maxSourceBytes: 4,
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  await readNoteReceiptPage(send, staged, {
+    ...request,
+    kind: 'inverseText',
+    textId: 'removed',
+    cursor: 'next',
+    maxSourceBytes: 4,
+  });
+  expect(send.mock.calls.at(-1)![0]).not.toHaveProperty('offset');
+});
+it.each([
+  { kind: 'inverseText', textId: '', maxSourceBytes: 4 },
+  { kind: 'inverseText', textId: 'text', maxSourceBytes: 3 },
+  { kind: 'inverseText', textId: 'text', maxSourceBytes: 4, cursor: 'next', offset: 0 },
+  { kind: 'inverse', textId: 'text' },
+] as const)('refuses malformed inverse selectors before RPC %j', async (delta) => {
+  const send = vi.fn();
+  await expect(readNoteReceiptPage(send, receipt, { ...request, ...delta })).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it('binds provenance detail reads to the original receipt and base extent', async () => {
+  const response = { ...stagedPage(), outputKind: 'detail', items: [] };
+  const send = vi.fn().mockResolvedValue(response);
+  await readNoteReceiptPage(send, stagedReceipt, {
+    ...request,
+    kind: 'detail',
+    ref: 'owned-provenance',
+  });
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: stagedReceipt.headerDigest,
+    kind: 'detail',
+    ref: 'owned-provenance',
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  send.mockClear();
+  await expect(
+    readNoteReceiptPage(send, stagedReceipt, { ...request, kind: 'detail' }),
+  ).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it.each([
+  { text: '🙂a' },
+  { text: '\ud800' },
+  { text: '\0' },
+  { offset: -1 },
+  { textId: 'foreign' },
+  { extra: true },
+])('refuses malformed or source-overbudget inverse text %j', async (delta) => {
+  const response = {
+    ...stagedPage(),
+    sourceLength: receipt.sourceLength,
+    outputKind: 'inverseText',
+    items: [{ textId: 'removed', offset: 0, text: '🙂', ...delta }],
+  };
+  await expect(
+    readNoteReceiptPage(vi.fn().mockResolvedValue(response), stagedReceipt, {
+      ...request,
+      kind: 'inverseText',
+      textId: 'removed',
+      offset: 0,
+      maxSourceBytes: 4,
+    }),
+  ).rejects.toThrow('Invalid inverse text fragment');
+});

@@ -2,7 +2,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
+import { READABLE_BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
 import { githubClient, readJson } from './nightly-test-github.mjs';
 import { synchronizeIssues } from './nightly-test-issues.mjs';
 import {
@@ -119,7 +119,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
           artifactName: 'browser-test-manifest',
           paths: { manifest: 'browser-test-manifest.json' },
         },
-        ...BROWSER_ARTIFACTS.map((e) => ({
+        ...READABLE_BROWSER_ARTIFACTS.map((e) => ({
           ...e,
           paths: { outcome: e.outcomePath, report: e.reportPath },
         })),
@@ -141,7 +141,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       plan.historical = historical;
       if (historical) {
         plan.historicalFailures = [];
-        for (const entry of BROWSER_ARTIFACTS) {
+        for (const entry of READABLE_BROWSER_ARTIFACTS) {
           const report = documents[entry.artifactName]?.report;
           if (report) plan.historicalFailures.push(...parseReport(report, entry).failures);
         }

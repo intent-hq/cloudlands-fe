@@ -1,4 +1,5 @@
 import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
+import { copyNoteSaveData, parseNoteSaveIdentity } from '$shared/types/note-save-connection';
 /**
  * Unit tests for the Electron-IPC `BackendTransport` broadcast fan-outs.
  *
@@ -56,6 +57,192 @@ function installFakeApi() {
 afterEach(() => {
   delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   vi.restoreAllMocks();
+});
+
+describe('explicit note connection transport', () => {
+  const freshTransport = async () => {
+    vi.resetModules();
+    return (await import('./electron-ipc-transport')).createElectronIpcBackendTransport();
+  };
+  const channels = IPC_CHANNELS.BACKEND.NOTE_SAVE_CONNECTION;
+  const op = {
+    scope: { backendId: 'b', workspaceId: 'w', noteId: 'n', noteInstanceId: 'i' },
+    operationId: 'o',
+    baseRevision: 'r',
+    headerDigest: 'a'.repeat(64),
+    payloadDigest: 'b'.repeat(64),
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    viewLength: 59 as const,
+  };
+  it('refuses absent bridge and DTO getters/overbounds before IPC', async () => {
+    await expect((await freshTransport()).captureNoteSaveConnection!(op)).rejects.toThrow();
+    const api = installFakeApi(),
+      getter = vi.fn(() => op.scope);
+    const bad = { ...op };
+    Object.defineProperty(bad, 'scope', { get: getter, enumerable: true });
+    expect(() => parseNoteSaveIdentity(bad)).toThrow();
+    expect(getter).not.toHaveBeenCalled();
+    expect(() => copyNoteSaveData({ value: 'x'.repeat(16385) })).toThrow();
+    expect(() => parseNoteSaveIdentity({ ...op, principal: 'forged' })).toThrow();
+    expect(api.invoke).not.toHaveBeenCalled();
+  });
+  it.each(['known', 'lost', 'foreign'] as const)(
+    'caches only the original %s release acknowledgement',
+    async (mode) => {
+      const api = installFakeApi();
+      api.invoke.mockImplementation(async (channel) => {
+        if (channel === channels.CAPTURE) return { ok: true, result: { id: 'slot' } } as any;
+        if (mode === 'lost') throw new Error('controlled lost IPC ACK');
+        return {
+          ok: true,
+          result: {
+            id: mode === 'foreign' ? 'other' : 'slot',
+            operationId: op.operationId,
+            released: true,
+          },
+        } as any;
+      });
+      const bound = await (await freshTransport()).captureNoteSaveConnection!(op);
+      const release = bound.release();
+      expect(bound.release()).toBe(release);
+      if (mode === 'known') await release;
+      else await expect(release).rejects.toThrow();
+      expect(bound.current()).toBe(false);
+      expect(api.invoke.mock.calls.filter(([c]) => c === channels.RELEASE)).toHaveLength(1);
+      expect(api.listenerCount(channels.RETIRED)).toBe(0);
+    },
+  );
+  it('keeps late response DATA and joins held IO before one release', async () => {
+    const api = installFakeApi();
+    let finish!: (v: any) => void;
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.CAPTURE) return { ok: true, result: { id: 'slot' } } as any;
+      if (channel === channels.REQUEST)
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return {
+        ok: true,
+        result: { id: 'slot', operationId: op.operationId, released: true },
+      } as any;
+    });
+    const bound = await (await freshTransport()).captureNoteSaveConnection!(op);
+    const request = bound.request({ kind: 'commit' });
+    await expect(bound.request({ kind: 'commit' })).rejects.toThrow();
+    api.emit(channels.RETIRED, { id: 'slot' });
+    const release = bound.release();
+    await Promise.resolve();
+    expect(api.invoke.mock.calls.filter(([c]) => c === channels.RELEASE)).toHaveLength(0);
+    finish({
+      ok: true,
+      result: {
+        id: 'slot',
+        current: true,
+        settlement: { status: 'fulfilled', value: { committed: true } },
+      },
+    });
+    await expect(request).resolves.toMatchObject({
+      current: false,
+      settlement: { value: { committed: true } },
+    });
+    await release;
+  });
+  it('owns a product retired during capture and releases its exact original handle', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.CAPTURE) {
+        api.emit(channels.RETIRED, { id: 'slot' });
+        return { ok: true, result: { id: 'slot' } } as any;
+      }
+      return {
+        ok: true,
+        result: { id: 'slot', operationId: op.operationId, released: true },
+      } as any;
+    });
+    await expect((await freshTransport()).captureNoteSaveConnection!(op)).rejects.toThrow();
+    expect(api.invoke.mock.calls.filter(([c]) => c === channels.RELEASE)).toEqual([
+      [channels.RELEASE, { id: 'slot' }],
+    ]);
+  });
+  it('rejects bridge descriptor loss without invoking its getter in the final check', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.CAPTURE
+              ? { id: 'slot' }
+              : { id: 'slot', operationId: op.operationId, released: true },
+        }) as any,
+    );
+    const bound = await (await freshTransport()).captureNoteSaveConnection!(op);
+    const check = bound.captureCurrent();
+    expect(check?.()).toBe(true);
+    const get = vi.fn(() => api);
+    Object.defineProperty(window, 'electronAPI', { configurable: true, get });
+    expect(check?.()).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true,
+      writable: true,
+      value: api,
+    });
+    expect(bound.current()).toBe(false);
+    await bound.release();
+  });
+  it('does not let a nested capture refresh an outer pure checkpoint', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.CAPTURE
+              ? { id: 'slot' }
+              : { id: 'slot', operationId: op.operationId, released: true },
+        }) as any,
+    );
+    const bound = await (await freshTransport()).captureNoteSaveConnection!(op);
+    const outer = bound.captureCurrent(),
+      inner = bound.captureCurrent();
+    expect(inner?.()).toBe(true);
+    expect(outer?.()).toBe(false);
+    expect(inner?.()).toBe(false);
+    await bound.release();
+  });
+  it('blocks capture reentry before subscription callbacks and retains unknown listener debt', async () => {
+    const api = installFakeApi(),
+      transport = await freshTransport();
+    const on = api.on.bind(api);
+    let nested: Promise<unknown> | undefined;
+    vi.spyOn(api, 'on').mockImplementation((channel, callback) => {
+      on(channel, callback);
+      nested = transport.captureNoteSaveConnection!(op).catch((e) => e);
+      throw new Error('controlled subscription registered then threw');
+    });
+    await expect(transport.captureNoteSaveConnection!(op)).rejects.toThrow('registered');
+    expect(await nested).toBeInstanceOf(Error);
+    await expect(transport.captureNoteSaveConnection!(op)).rejects.toThrow();
+    expect(api.on).toHaveBeenCalledOnce();
+    expect(api.invoke).not.toHaveBeenCalled();
+  });
+  it('refuses the actual browser transport without an optional binding or ordinary fallback', async () => {
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+    vi.stubEnv('VITE_INTENTD_WS_URL', 'ws://localhost:9100/rpc');
+    vi.resetModules();
+    try {
+      const { resolveBackendTransport } = await import('./backend-transport-factory');
+      const transport = resolveBackendTransport(),
+        send = vi.spyOn(transport, 'request');
+      const { captureNoteSaveConnection } = await import('./backend-transport');
+      expect(transport.captureNoteSaveConnection).toBeUndefined();
+      expect(() => captureNoteSaveConnection(op)).toThrow();
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('electron-ipc-transport onReconnected fan-out', () => {

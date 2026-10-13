@@ -33,6 +33,9 @@
 
   interface Props {
     value?: string;
+    /** Explicit whole-note editing permits a full Monaco model. */
+    allowLargeContent?: boolean;
+    initialSelection?: { anchor: number; head: number };
     language?: string;
     theme?: 'light' | 'dark';
     readOnly?: boolean;
@@ -57,6 +60,8 @@
 
   let {
     value = $bindable(''),
+    allowLargeContent = false,
+    initialSelection,
     language = 'javascript',
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     theme = 'light',
@@ -265,7 +270,7 @@
     const val = toEditorContent(value);
     const currentSize = val.length;
 
-    if (currentSize <= MAX_CONTENT_SIZE_BYTES) {
+    if (allowLargeContent || currentSize <= MAX_CONTENT_SIZE_BYTES) {
       // Content is now acceptable - reset the "too large" state if it was set
       if (contentTooLarge) {
         logger.debug('Content size now acceptable, resetting contentTooLarge', {
@@ -541,6 +546,11 @@
 
   // Update word wrap when lineWrapping prop changes
   $effect(() => {
+    const locked = readOnly;
+    if (editorReady && editor) editor.updateOptions({ readOnly: locked });
+  });
+
+  $effect(() => {
     const wrap = lineWrapping;
     if (editor) {
       editor.updateOptions({ wordWrap: wrap ? 'on' : 'off' });
@@ -612,7 +622,7 @@
     try {
       // Check content size before creating editor
       const initialValue = toEditorContent(value);
-      if (initialValue.length > MAX_CONTENT_SIZE_BYTES) {
+      if (!allowLargeContent && initialValue.length > MAX_CONTENT_SIZE_BYTES) {
         logger.warn('Content too large for Monaco editor', {
           fileName,
           size: initialValue.length,
@@ -829,6 +839,24 @@
    * Focus the Monaco editor.
    * Called when switching to this panel via keyboard navigation.
    */
+  let selectionApplied = false;
+  $effect(() => {
+    if (!editorReady || !editor || !initialSelection || selectionApplied) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const anchor = model.getPositionAt(initialSelection.anchor);
+    const head = model.getPositionAt(initialSelection.head);
+    editor.setSelection({
+      selectionStartLineNumber: anchor.lineNumber,
+      selectionStartColumn: anchor.column,
+      positionLineNumber: head.lineNumber,
+      positionColumn: head.column,
+    });
+    editor.revealPositionInCenterIfOutsideViewport(head);
+    editor.focus();
+    selectionApplied = true;
+  });
+
   export function focus(): boolean {
     if (editor) {
       try {

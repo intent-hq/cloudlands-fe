@@ -136,7 +136,7 @@ describe('panel header view settings consolidation', () => {
         expect(screen.queryByRole('menu', { name: 'Note view', exact: true })).toBeNull(),
       );
 
-      const spellcheck = within(root).getByRole('menuitemcheckbox', {
+      let spellcheck = within(root).getByRole('menuitemcheckbox', {
         name: 'Spellcheck',
         exact: true,
       });
@@ -144,20 +144,19 @@ describe('panel header view settings consolidation', () => {
       await fireEvent.click(spellcheck);
       expect(selectSpellcheckEnabled.select(appStore.state)).toBe(true);
 
-      await fireEvent.keyDown(viewTrigger, { key: 'ArrowRight' });
-      const editableMenu = await screen.findByRole('menu', { name: 'Note view', exact: true });
-      const raw = within(editableMenu).getByRole('menuitemradio', { name: /^Raw markdown$/i });
-      await fireEvent.click(raw);
+      await fireEvent.click(within(root).getByRole('menuitem', { name: 'Edit Raw Markdown' }));
       expect(selectNoteViewMode.select(appStore.state, 'view-settings', 'note-1')).toBe('raw');
-      await fireEvent.keyDown(raw, { key: 'Escape' });
-      await waitFor(() =>
-        expect(screen.queryByRole('menu', { name: 'Note view', exact: true })).toBeNull(),
-      );
+      await fireEvent.click(screen.getByRole('button', { name: 'Panel appearance' }));
+      const reopened = await screen.findByRole('menu', { name: 'Panel appearance' });
+      spellcheck = within(reopened).getByRole('menuitemcheckbox', {
+        name: 'Spellcheck',
+        exact: true,
+      });
       await waitFor(() => expect(spellcheck.getAttribute('aria-disabled')).not.toBe('true'));
       await fireEvent.click(spellcheck);
       expect(selectSpellcheckEnabled.select(appStore.state)).toBe(false);
       await waitFor(() => expect(spellcheck.getAttribute('aria-checked')).toBe('false'));
-      expect(await screen.findByRole('menu', { name: 'Panel appearance' })).toBe(root);
+      expect(await screen.findByRole('menu', { name: 'Panel appearance' })).toBe(reopened);
     });
   });
 });

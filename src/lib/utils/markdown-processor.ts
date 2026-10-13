@@ -285,18 +285,40 @@ export function escapeHtmlTags(content: string): string {
       new RegExp(`${prefix}(\\d+)__`, 'g'),
       (_match, index) => protectedSources[parseInt(index, 10)],
     );
-  let processedContent = content;
+  // Shield each complete top-level fence before looking for inline delimiters.
+  // Scan both marker types together so a marker inside code cannot hide later prose.
+  const openingFence = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n/gm;
+  const chunks: string[] = [];
+  let consumed = 0;
+  for (let opening = openingFence.exec(content); opening; opening = openingFence.exec(content)) {
+    const marker = opening[1];
+    if (marker[0] === '`' && opening[2].includes('`')) continue;
+    const closingFence = new RegExp(
+      `^ {0,3}${marker[0]}{${marker.length},}[ \\t]*\\r?(?=\\n|$)`,
+      'gm',
+    );
+    closingFence.lastIndex = openingFence.lastIndex;
+    const closing = closingFence.exec(content);
+    const end = closing ? closing.index + closing[0].length : content.length;
+    chunks.push(content.slice(consumed, opening.index), protect(content.slice(opening.index, end)));
+    consumed = end;
+    openingFence.lastIndex = end;
+  }
+  chunks.push(content.slice(consumed));
+  let processedContent = chunks.join('');
 
   // Extract fenced code blocks first (they can contain backticks)
   // Match: ```lang\ncode\n``` or ```\ncode\n```
   processedContent = processedContent.replace(/```[\s\S]*?```/g, (match) => {
-    return protect(match);
+    return protect(restore(match));
   });
 
   // Extract inline code (single backticks)
   // Match: `code` but not `` (empty)
+  // A long fence can leave inline delimiters around an earlier protected source.
+  // Flatten it before shielding so the final restore remains a single pass.
   processedContent = processedContent.replace(/`([^`]+)`/g, (match) => {
-    return protect(match);
+    return protect(restore(match));
   });
 
   // Math must reach its tokenizer byte-for-byte in both literal and rendered modes.
@@ -1777,6 +1799,118 @@ export function processHTMLToMarkdown(
       // Convert HTML table to markdown table
       const rows: string[][] = [];
       const alignments: string[] = [];
+      const cellContent = (cell: Element): string => {
+        const children = Array.from(cell.childNodes).filter(
+          (node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
+        );
+        const paragraphs = Array.from(cell.children).filter((node) => node.tagName === 'P');
+        if (
+          paragraphs.length &&
+          children.some((node) => !(node instanceof Element && node.tagName === 'P'))
+        ) {
+          // Other block shapes retain their legacy serialization path.
+          logger.warn('[markdown-processor] Table cell contains unsupported multiple blocks');
+          return processInlineContent(cell).trim();
+        }
+        const content = cell.cloneNode(false) as Element;
+        // Pipe Markdown already flattens native paragraphs without a separator.
+        // Flatten before escaping so adjacent marks/code share one inline stream;
+        // paragraph boundaries remain session metadata, not persisted Markdown.
+        for (const parent of paragraphs.length ? paragraphs : [cell])
+          for (const node of Array.from(parent.childNodes)) content.append(node.cloneNode(true));
+        const escapeText = (value: string) =>
+          value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            // Backslash-bracket pairs are TeX delimiters in our parser.
+            .replace(/\[/g, '&#91;')
+            .replace(/\]/g, '&#93;')
+            .replace(/[\\`*_~]/g, '\\$&');
+        const prepare = (parent: Element) => {
+          for (const node of Array.from(parent.childNodes)) {
+            if (node.parentNode !== parent) continue;
+            if (node.nodeType === Node.TEXT_NODE)
+              node.textContent = escapeText(node.textContent ?? '');
+            else if (node instanceof Element) {
+              // The math validator compares the complete rendered subtree.
+              // Escaping its descendants would invalidate genuine source metadata.
+              if (validatedMathSource(node)) continue;
+              if (node.tagName === 'BR') {
+                // The existing Markdown grammar permits attribute-free BR.
+                // A raw newline here would start another pipe-table row.
+                node.replaceWith(document.createTextNode('<br>'));
+              } else if (node.tagName === 'CODE') {
+                while (node.nextSibling instanceof Element && node.nextSibling.tagName === 'CODE') {
+                  const next = node.nextSibling;
+                  node.textContent = (node.textContent ?? '') + (next.textContent ?? '');
+                  next.remove();
+                }
+                const value = node.textContent ?? '';
+                // A backslash immediately before a pipe cannot survive GFM's
+                // cell splitter in one code span. Separate adjacent code spans
+                // with an inert comment; native parsing merges their code marks.
+                const code = value
+                  .split(/(?<=\\)(?=\|)/)
+                  .map((part) => {
+                    let longest = 0;
+                    for (const run of part.matchAll(/`+/g))
+                      longest = Math.max(longest, run[0].length);
+                    const fence = '`'.repeat(longest + 1);
+                    const pad = /^`|`$/.test(part) || (/^ .* $/.test(part) && /[^ ]/.test(part));
+                    return `${fence}${pad ? ' ' : ''}${part}${pad ? ' ' : ''}${fence}`;
+                  })
+                  .join('<!-- -->');
+                node.replaceWith(document.createTextNode(code));
+              } else {
+                prepare(node);
+                const delimiter =
+                  node.tagName === 'STRONG' || node.tagName === 'B'
+                    ? '**'
+                    : node.tagName === 'EM' || node.tagName === 'I'
+                      ? '*'
+                      : undefined;
+                if (delimiter) {
+                  // Markdown emphasis cannot open/close on whitespace. Entities
+                  // retain that whitespace inside its original native mark.
+                  const inline = processInlineContent(node).replace(/^\s+|\s+$/g, (space) =>
+                    Array.from(space, (char) => `&#${char.charCodeAt(0)};`).join(''),
+                  );
+                  // Inert separators prevent adjacent marks or punctuation from
+                  // changing delimiter flanking. The parser removes the comments.
+                  const needsSeparator = (direction: 'previousSibling' | 'nextSibling') => {
+                    for (let adjacent = node[direction]; adjacent; adjacent = adjacent[direction]) {
+                      if (adjacent.nodeType === Node.COMMENT_NODE) {
+                        // A retained anchor comment already separates delimiters.
+                        if ((adjacent as Comment).data.startsWith('anchor:')) return false;
+                        continue;
+                      }
+                      const text = adjacent.textContent ?? '';
+                      // Empty anchor spans disappear when anchors are not preserved.
+                      if (!text) continue;
+                      return !(direction === 'previousSibling' ? /\s$/ : /^\s/).test(text);
+                    }
+                    return false;
+                  };
+                  const prefix = needsSeparator('previousSibling') ? '<!-- -->' : '';
+                  const suffix = needsSeparator('nextSibling') ? '<!-- -->' : '';
+                  node.replaceWith(
+                    document.createTextNode(`${prefix}${delimiter}${inline}${delimiter}${suffix}`),
+                  );
+                }
+              }
+            }
+          }
+        };
+        prepare(content);
+        return processInlineContent(content).trim().replace(/\|/g, '\\|');
+      };
+      const cellAlignment = (cell: Element): string => {
+        const value = ((cell as HTMLElement).style.textAlign || cell.getAttribute('align') || '')
+          .trim()
+          .toLowerCase();
+        return /^(left|center|right)$/.test(value) ? value : '';
+      };
 
       // Process thead
       const thead = el.querySelector('thead');
@@ -1784,13 +1918,12 @@ export function processHTMLToMarkdown(
         const headerRow = thead.querySelector('tr');
         if (headerRow) {
           const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-          const headerTexts = headerCells.map((cell) => processInlineContent(cell).trim());
+          const headerTexts = headerCells.map(cellContent);
           rows.push(headerTexts);
 
           // Extract alignments from th elements
           headerCells.forEach((cell) => {
-            const align = cell.getAttribute('align') || 'left';
-            alignments.push(align);
+            alignments.push(cellAlignment(cell));
           });
         }
       }
@@ -1803,14 +1936,13 @@ export function processHTMLToMarkdown(
         if (thead && tr.parentElement === thead) return;
 
         const cells = Array.from(tr.querySelectorAll('td, th'));
-        const cellTexts = cells.map((cell) => processInlineContent(cell).trim());
+        const cellTexts = cells.map(cellContent);
         rows.push(cellTexts);
 
         // If no header, get alignments from first row
         if (alignments.length === 0 && cells.length > 0) {
           cells.forEach((cell) => {
-            const align = cell.getAttribute('align') || 'left';
-            alignments.push(align);
+            alignments.push(cellAlignment(cell));
           });
         }
       });
@@ -1826,7 +1958,8 @@ export function processHTMLToMarkdown(
 
         // Separator row with alignments
         const separators = rows[0].map((_, i) => {
-          const align = alignments[i] || 'left';
+          const align = alignments[i];
+          if (align === 'left') return ':---';
           if (align === 'center') return ':---:';
           if (align === 'right') return '---:';
           return '---';

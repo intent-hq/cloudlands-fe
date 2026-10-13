@@ -1,3 +1,9 @@
+import {
+  bindPhysicalSocketCloseSource,
+  createPhysicalSocketCloseSignal,
+  observePhysicalSocketClose,
+  restorePhysicalSocketCloseObserver,
+} from './physical-socket-close';
 /**
  * tailcat tunnel dialer for the remote `wss` transport.
  *
@@ -258,6 +264,7 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
   const connectTimeoutMs = options.connectTimeoutMs ?? TUNNEL_CONNECT_TIMEOUT_MS;
   let inner: Duplex | null = null;
   let tunnel: TailcatTunnel | null = null;
+  const physicalClose = createPhysicalSocketCloseSignal();
   const facade = new Duplex({
     allowHalfOpen: false,
     read() {
@@ -275,6 +282,7 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
     destroy(error, callback) {
       clearTimeout(connectTimer);
       inner?.removeAllListeners();
+      if (inner) restorePhysicalSocketCloseObserver(inner);
       // A destroyed-but-alive inner socket can still emit async 'error'
       // events; keep a sink listener so they cannot become uncaught.
       inner?.on('error', () => {});
@@ -283,6 +291,7 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
       callback(error);
     },
   });
+  bindPhysicalSocketCloseSource(facade, physicalClose);
   const connectTimer = setTimeout(() => {
     if (facade.destroyed) return;
     logger.debug('tailcat tunnel candidate did not connect within the bound', {
@@ -303,6 +312,7 @@ export function createTunneledSocket(options: CreateTunneledSocketOptions): Dupl
       }
       tunnel = created;
       inner = options.createInner(created.localPort);
+      observePhysicalSocketClose(inner, () => physicalClose.closeObserved());
       inner.once('connect', () => {
         clearTimeout(connectTimer);
         facade.emit('connect');

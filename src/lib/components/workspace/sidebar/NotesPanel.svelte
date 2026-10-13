@@ -50,18 +50,20 @@
     type SidebarContextPosition,
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
+  import { noteDeleteWorkspaceCheckRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import NoteDeleteRecovery from '$features/notes/NoteDeleteRecovery.svelte';
+  import NoteDeleteStatus from '$features/notes/NoteDeleteStatus.svelte';
   import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-adapter';
+    noteDeleteUiTarget,
+    observeNoteDeletionWorkspace,
+    scheduleNoteDeleteFromUi,
+    selectWorkspaceNoteDeletions,
+    selectNoteDeletionObservationError,
+    selectNoteDeletionPaused,
+    selectNoteDeletionChecking,
+  } from '$features/notes/note-delete-ui';
 
-  import {
-    createNotePersistRequested,
-    deleteNotePersistRequested,
-    updateNoteTitlePersistRequested,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { notify } from '$lib/components/patterns/notify';
-  import { withToastCountdown } from '$lib/components/patterns/notify';
+  import { updateNoteTitlePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { store as appStore } from '$store/renderer/store';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -98,6 +100,39 @@
   }: Props = $props();
 
   const workspaceIdStore = writable('');
+  const deletions = selectWorkspaceNoteDeletions(workspaceIdStore);
+  const deletionObservationError = selectNoteDeletionObservationError(workspaceIdStore);
+  const deletionPaused = selectNoteDeletionPaused(workspaceIdStore);
+  const deletionChecking = selectNoteDeletionChecking(workspaceIdStore);
+  const deletionObserver = `note-sidebar:${crypto.randomUUID()}`;
+  const heldNotes = $derived(
+    new Set(
+      $deletions
+        .filter((view) => view.held || view.phase === 'preparing')
+        .map((view) => view.noteId),
+    ),
+  );
+  const hiddenNotes = $derived(
+    new Set($deletions.filter((view) => view.hidden).map((view) => view.noteId)),
+  );
+  const visibleDeletionStatus = $derived(
+    $deletions.filter(
+      (view) =>
+        (view.phase !== 'deleted' ||
+          view.error ||
+          view.failureCode === 'replaced' ||
+          view.failureCode === 'registration-limit') &&
+        (view.held ||
+          view.hidden ||
+          view.error ||
+          view.phase === 'preparing' ||
+          view.failureCode === 'registration-limit'),
+    ),
+  );
+  $effect(() => {
+    if (!workspaceId) return;
+    return observeNoteDeletionWorkspace(workspaceId, deletionObserver);
+  });
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -113,7 +148,10 @@
   const contextNote = $derived(notes.find((note) => note.id === contextMenu?.noteId));
 
   $effect(() => {
-    if (contextMenu && (!contextNote || contextMenu.workspaceId !== workspaceId))
+    if (
+      contextMenu &&
+      (!contextNote || hiddenNotes.has(contextNote.id) || contextMenu.workspaceId !== workspaceId)
+    )
       contextMenu = null;
   });
 
@@ -131,7 +169,7 @@
     if (editingNoteId && editingValue.trim()) {
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
-      if (note && trimmed !== getNoteTitle(note)) {
+      if (note && !heldNotes.has(note.id) && trimmed !== getNoteTitle(note)) {
         void appStore.dispatch(
           updateNoteTitlePersistRequested(workspaceId, editingNoteId, trimmed),
         );
@@ -162,7 +200,7 @@
     e.preventDefault();
     e.stopPropagation();
     // Don't allow editing spec notes
-    if (isSpecNote(note.id)) return;
+    if (isSpecNote(note.id) || heldNotes.has(note.id)) return;
     startEditing(note.id, getNoteTitle(note));
   }
 
@@ -206,6 +244,7 @@
         id: 'rename',
         label: m.workspace_notes_rename_label(),
         icon: faPencil,
+        disabled: heldNotes.has(note.id),
         onClick: () => {
           startEditing(note.id, getNoteTitle(note));
           closeContextMenu();
@@ -217,43 +256,13 @@
         label: m.workspace_notes_delete_label(),
         icon: faTrash,
         destructive: true,
+        disabled: heldNotes.has(note.id),
         onClick: async () => {
-          const savedNote = { ...note };
-          const noteTitle = getNoteTitle(note);
-
-          // Close related panel tabs before deleting
-          if (hasPanelLayoutManager(workspaceId)) {
-            const layoutManager = getPanelLayoutManager(workspaceId);
-            layoutManager.closeTabsByType('note', 'noteId', note.id);
-          }
-
-          void appStore.dispatch(deleteNotePersistRequested(workspaceId, note.id));
+          const ownerWorkspace = workspaceId;
+          const ownerNote = note.id;
+          const title = getNoteTitle(note);
           closeContextMenu();
-
-          notify.warning(
-            m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
-            withToastCountdown(
-              {
-                duration: 15000,
-                action: {
-                  label: m.ui_workspaceActions_undo_label(),
-                  onClick: () => {
-                    void appStore.dispatch(
-                      createNotePersistRequested(workspaceId, {
-                        title: savedNote.title,
-                        content: savedNote.content,
-                        contentType: savedNote.contentType,
-                        tags: savedNote.tags,
-                        parentId: savedNote.parentId,
-                        visibility: savedNote.visibility,
-                      }),
-                    );
-                  },
-                },
-              },
-              { pauseOnHover: false },
-            ),
-          );
+          await scheduleNoteDeleteFromUi(ownerWorkspace, ownerNote, title);
         },
       });
     }
@@ -294,7 +303,9 @@
   }
 
   const sortedNotes = $derived(sortNotes(notes, customNoteOrder));
-  const renderedNotes = $derived(sortedNotes.filter((note) => !isHiddenByCollapsedParent(note)));
+  const renderedNotes = $derived(
+    sortedNotes.filter((note) => !hiddenNotes.has(note.id) && !isHiddenByCollapsedParent(note)),
+  );
 
   // Check if a note has unread changes (reactive via selector readable)
   // NOTE: The refresh is triggered by the parent component (WorkspaceDetailSidebar)
@@ -456,6 +467,35 @@
     </Button>
   {/if}
 
+  <NoteDeleteRecovery {workspaceId} />
+
+  {#if $deletionPaused || $deletionObservationError}
+    <div role="status" class="mb-2 flex flex-col items-start gap-1 text-xs text-muted-foreground">
+      <span
+        >{$deletionPaused
+          ? m.notes_delete_registrationPaused_label()
+          : m.notes_delete_workspaceCheckFailed_error()}</span
+      >
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={$deletionChecking}
+        onclick={() => {
+          if (!$deletionChecking) appStore.dispatch(noteDeleteWorkspaceCheckRequested(workspaceId));
+        }}
+      >
+        {m.notes_delete_check_label()}
+      </Button>
+    </div>
+  {/if}
+
+  {#each visibleDeletionStatus as view (JSON.stringify( [view.backendGeneration, view.noteId, view.owner] ))}
+    <NoteDeleteStatus
+      target={noteDeleteUiTarget(view)}
+      title={notes.find((note) => note.id === view.noteId)?.title || view.noteId}
+    />
+  {/each}
+
   {#if loading}
     <!-- Skeleton loader while notes are loading -->
     <div class="space-y-1 py-1">
@@ -473,7 +513,7 @@
         {@const childNotes = getChildNotes(note, notes)}
         {@const hasChildren = childNotes.length > 0}
         {@const isCollapsed = collapsedNoteIds.has(note.id as string)}
-        {@const isHidden = isHiddenByCollapsedParent(note)}
+        {@const isHidden = hiddenNotes.has(note.id) || isHiddenByCollapsedParent(note)}
         {@const isDraggable = canDrag(note)}
         {@const isDragging = draggedNoteId === note.id}
         {@const isDragOver = dragOverNoteId === note.id}

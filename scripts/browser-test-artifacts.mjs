@@ -17,11 +17,24 @@ function artifact(suite, shard, shardCount, artifactName, advisory = false) {
   });
 }
 
-export const BROWSER_ARTIFACTS = Object.freeze([
-  ...[1, 2, 3, 4].map((shard) => artifact('ct', shard, 4, `playwright-ct-report-${shard}-of-4`)),
-  ...[1, 2, 3, 4].map((shard) => artifact('root', shard, 4, `playwright-root-report-${shard}`)),
-  artifact('electron', 1, 1, 'playwright-electron-lifetime-report'),
-  artifact('quarantine', 1, 1, 'playwright-ct-report-quarantine', true),
+function browserArtifacts(ctShards) {
+  return Object.freeze([
+    ...Array.from({ length: ctShards }, (_, index) => {
+      const shard = index + 1;
+      return artifact('ct', shard, ctShards, `playwright-ct-report-${shard}-of-${ctShards}`);
+    }),
+    ...[1, 2, 3, 4].map((shard) => artifact('root', shard, 4, `playwright-root-report-${shard}`)),
+    artifact('electron', 1, 1, 'playwright-electron-lifetime-report'),
+    artifact('quarantine', 1, 1, 'playwright-ct-report-quarantine', true),
+  ]);
+}
+
+export const BROWSER_ARTIFACTS = browserArtifacts(8);
+// The completion workflow runs main's code, including for retained four-shard runs.
+// Only these complete layouts are recognized; a partial manifest is never accepted.
+export const BROWSER_ARTIFACT_LAYOUTS = Object.freeze([BROWSER_ARTIFACTS, browserArtifacts(4)]);
+export const READABLE_BROWSER_ARTIFACTS = Object.freeze([
+  ...new Map(BROWSER_ARTIFACT_LAYOUTS.flat().map((entry) => [entry.artifactName, entry])).values(),
 ]);
 
 function runContext(env) {

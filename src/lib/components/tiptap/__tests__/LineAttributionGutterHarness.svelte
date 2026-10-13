@@ -12,6 +12,12 @@
    * daemon seam (`note.lineAttribution.load`), scripted by the spec's
    * `mockBackend` hooks config.
    */
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    pagePanelOpened,
+    pagePanelClosed,
+  } from '$store/renderer/slices/note-pages/note-pages-slice';
+  import { appClient } from '$lib/client';
   import { onDestroy, onMount } from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
@@ -24,16 +30,32 @@
     hostHeight?: number;
     inactivePanel?: boolean;
     markdown: string;
+    paged?: boolean;
   }
 
-  let { hostWidth, hostHeight = 640, inactivePanel = false, markdown }: Props = $props();
+  let {
+    hostWidth,
+    hostHeight = 640,
+    inactivePanel = false,
+    paged = false,
+    markdown,
+  }: Props = $props();
 
   let editorElement: HTMLDivElement;
   let editor: Editor | null = $state(null);
   const stopReadFixture = startLineAttributionReadFixture();
   onDestroy(stopReadFixture);
 
+  let wholeAttributionReads = $state(0);
   onMount(() => {
+    const original = appClient.notes.lineAttribution.load;
+    if (paged) {
+      appStore.dispatch(pagePanelOpened('ws-1', 'note-1', 'gutter-test'));
+      appClient.notes.lineAttribution.load = async (...args) => {
+        wholeAttributionReads++;
+        return original.apply(appClient.notes.lineAttribution, args);
+      };
+    }
     editor = new Editor({
       element: editorElement,
       extensions: [StarterKit],
@@ -58,12 +80,17 @@
     });
 
     return () => {
+      if (paged) {
+        appStore.dispatch(pagePanelClosed('ws-1', 'note-1', 'gutter-test'));
+        appClient.notes.lineAttribution.load = original;
+      }
       editor?.destroy();
       editor = null;
     };
   });
 </script>
 
+<output data-testid="whole-attribution-reads">{wholeAttributionReads}</output>
 {#if inactivePanel}
   <section id="editor-content" class="hidden" data-testid="inactive-editor-content"></section>
 {/if}

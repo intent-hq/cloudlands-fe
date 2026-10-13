@@ -35,8 +35,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, join, posix } from 'node:path';
+import { basename, dirname, join, posix } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -81,6 +82,8 @@ interface Word {
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid.config.ts':
+    '2026-10-05: manual persisted-paint Electron proof requiring MERMAID_PERSISTED_EVIDENCE, a matching frozen-host-sources.json/MERMAID_FROZEN_HOST_SHA and prebuilt manager/renderer artifacts plus a private display; hosted CI provisioning and execution remain absent',
   'test/fixtures/native-review-native/playwright.config.ts':
     '2026-09-29: manual Electron native-client proof requiring explicit evidence, digest-pinned 5bed0a98 composed driver and private lifetime pipe/display/profiles/two hosts; provider API is loopback HTTP and Git is verified HTTPS; normal provider TLS and hosted CI remain unproven',
   'test/fixtures/repository-route/playwright.config.ts':
@@ -954,6 +957,36 @@ describe(`${WORKFLOWS_DIR} reaches every test-runner suite`, () => {
     readLauncher: fileReader(process.cwd()),
   };
   const report = auditCoverage(input);
+
+  it('reaches the unit launcher in required CI and runs the Node-owned table contract', () => {
+    const workflow = readFileSync('.github/workflows/intent-pr.yml', 'utf8');
+    const commands = expandCommands(scripts, workflowRunSteps(workflow));
+    // The launcher boundary tests exercise child ordering and failure propagation;
+    // this establishes that the required workflow actually reaches that launcher.
+    expect(commands.flatMap(commandSegments).map(launcherFile)).toContain(
+      'scripts/run-unit-tests.mjs',
+    );
+    const output = execFileSync(
+      process.execPath,
+      ['--test-reporter=tap', '--test', 'scripts/table-paste-owner.test.mjs'],
+      { encoding: 'utf8', timeout: 15_000 },
+    );
+    expect(Number(output.match(/^# tests (\d+)$/m)?.[1])).toBeGreaterThanOrEqual(56);
+    expect(output).toMatch(/^# fail 0$/m);
+    expect(output).toMatch(/^ok \d+ - esm /m);
+    expect(output).toMatch(/^ok \d+ - cjs /m);
+  });
+
+  it('does not collect the Node-owned table-paste suite in Vitest', () => {
+    const require = createRequire(import.meta.url);
+    const cli = join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs');
+    const output = execFileSync(
+      process.execPath,
+      [cli, 'list', 'scripts/table-paste-owner.test.mjs', '--filesOnly', '--json'],
+      { encoding: 'utf8', timeout: 15_000 },
+    );
+    expect(JSON.parse(output)).toEqual([]);
+  });
 
   it('enumerates at least the root vitest and playwright configs', () => {
     expect(suites).toContain('vitest.config.ts');

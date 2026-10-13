@@ -4,6 +4,8 @@ import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import TaskItemNodeView from './TaskItemNodeView.svelte';
 import { createLogger } from '$lib/utils/client-logger';
 import { taskNoteUrl } from '$shared/constants/intent-links';
+import { linkedTaskNoteId } from './task-item-adjacency';
+import { nextInlineTaskState } from './inline-task-status';
 
 const logger = createLogger('CustomTaskItem');
 
@@ -286,9 +288,12 @@ export const CustomTaskItem = TaskItem.extend<CustomTaskItemOptions>({
         for (let depth = $from.depth; depth >= 0; depth--) {
           const node = $from.node(depth);
           if (node.type.name === this.name) {
-            return this.editor.commands.updateAttributes(this.name, {
-              checked: !node.attrs.checked,
-            });
+            return this.editor.commands.updateAttributes(
+              this.name,
+              linkedTaskNoteId(node)
+                ? { checked: !node.attrs.checked }
+                : nextInlineTaskState(node.attrs.status),
+            );
           }
         }
         return false;

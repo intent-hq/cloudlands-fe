@@ -5,6 +5,8 @@ import { parseIntentLink } from '$lib/utils/workspaces-link-handler';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
+import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
+import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { readNoteRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   selectPanelLayoutWorkspace,
@@ -252,14 +254,29 @@ async function openAssistantContent(
   }
   if (info.type !== 'note' && info.type !== 'task') return false;
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
-  const [note, workspace] = await Promise.all([
-    store.dispatch(readNoteRequested(workspaceId, info.resourceId)),
+  const retained = selectNoteById.select(store.state, workspaceId, info.resourceId);
+  const paged = selectNotePageSession.select(store.state, workspaceId, info.resourceId);
+  // Navigation only needs identity/title. An existing bounded reader must not
+  // trigger an unleased full read; the Assistant tab acquires its edit source.
+  const retainedIdentity =
+    retained &&
+    String(retained.id) === info.resourceId &&
+    String(retained.workspaceId) === workspaceId &&
+    Object.keys(paged?.panels ?? {}).length > 0;
+  const [readNote, workspace] = await Promise.all([
+    retainedIdentity
+      ? Promise.resolve(retained)
+      : store.dispatch(readNoteRequested(workspaceId, info.resourceId)),
     Promise.resolve(
       selectWorkspaceById.select(store.state, workspaceId) ?? appClient.workspaces.get(workspaceId),
     ).catch(() => null),
   ]);
   if (!isCurrentOpenRequest(layoutId, request)) return true;
-  if (!note || String(note.workspaceId) !== workspaceId) {
+  // The workspace lookup may outlive deletion or cleanup of retained metadata.
+  const note = retainedIdentity
+    ? selectNoteById.select(store.state, workspaceId, info.resourceId)
+    : readNote;
+  if (!note || String(note.id) !== info.resourceId || String(note.workspaceId) !== workspaceId) {
     notify.error(m.ui_linkHandler_notFound_title(), {
       description: m.ui_linkHandler_noteNotFound_error({ noteId: info.resourceId, workspaceId }),
     });

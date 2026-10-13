@@ -3,12 +3,19 @@
   import * as Menu from '$lib/components/ui/menu';
   import NoteTabType from '../../NoteTabType.svelte';
 
-  let { tab, workspaceId = 'ws-1', isActive = true, isPanelFocused = true } = $props();
+  let {
+    tab,
+    workspaceId = 'ws-1',
+    layoutId = undefined,
+    isActive = true,
+    isPanelFocused = true,
+    readingSurface = undefined,
+  } = $props();
 
   const header = createPanelHeaderContext();
 </script>
 
-<NoteTabType {tab} {workspaceId} {isActive} {isPanelFocused} />
+<NoteTabType {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {readingSurface} />
 
 {#if header.actions.current}
   <div data-testid="header-primary">

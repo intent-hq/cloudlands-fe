@@ -597,3 +597,52 @@ describe('Playwright identities and expected outcomes', () => {
     expect(trustedRun({ ...run, path: '.github/workflows/other.yml' })).toBe(false);
   });
 });
+
+describe('eight-shard component report migration', () => {
+  it.each([4, 8])(
+    'binds the complete %i-shard manifest and quarantine to its owning job',
+    (count) => {
+      const data = fixture(count);
+      const result = analyzeReports(data);
+      expect(result.incidents).toEqual([]);
+      expect(result.lanes).toHaveLength(count + 6);
+      expect(
+        result.lanes.find((lane) => lane.artifact === 'playwright-ct-report-quarantine').job,
+      ).toBe(
+        data.jobs.find((job) => job.name === `test-ct / Component Tests (shard 1/${count})`).id,
+      );
+    },
+  );
+  it.each([5, 6, 7, 8])('retains failures from new shard %i', (shard) => {
+    const data = fixture(8);
+    const artifact = `playwright-ct-report-${shard}-of-8`;
+    const job = data.jobs.find(
+      (value) => value.name === `test-ct / Component Tests (shard ${shard}/8)`,
+    );
+    job.conclusion = 'failure';
+    data.documents[artifact].report = report('unexpected');
+    data.documents[artifact].outcome.testOutcome = 'failure';
+    data.documents[artifact].outcome.jobStatus = 'failure';
+    const result = analyzeReports(data);
+    expect(result.incidents).toEqual([]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].occurrences[0].job).toBe(job.id);
+  });
+  it.each(['missing', 'duplicate', 'wrong-count', 'quarantine-parent'])(
+    'rejects %s eight-shard evidence',
+    (change) => {
+      const data = fixture(8);
+      const manifest = structuredClone(data.documents['browser-test-manifest'].manifest);
+      data.documents['browser-test-manifest'].manifest = manifest;
+      if (change === 'missing') manifest.artifacts.splice(7, 1);
+      else if (change === 'duplicate') manifest.artifacts[7] = manifest.artifacts[6];
+      else if (change === 'wrong-count') manifest.artifacts[7].shardCount = 4;
+      else
+        data.jobs.find((job) => job.name === 'test-ct / Component Tests (shard 1/8)').name =
+          'test-ct / Component Tests (shard 1/4)';
+      const result = analyzeReports(data);
+      expect(result.incidents.length).toBeGreaterThan(0);
+      expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
+    },
+  );
+});

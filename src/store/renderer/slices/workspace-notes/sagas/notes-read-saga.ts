@@ -1,3 +1,17 @@
+import {
+  captureNotePublicationOwner,
+  isNotePublicationOwnerCurrent,
+  isNotePublicationLifetimeCurrent,
+} from './note-publication-owner';
+import { ownedActionChannel } from '$store/renderer/utils/owned-action-channel';
+import {
+  hasFullNoteEditLease,
+  isFullNoteEditLeaseCurrent,
+  invalidateFullNoteEditLeases,
+} from '../note-full-edit-lease';
+import { isMissingNote } from '$lib/client/note-page-errors';
+import { pageReset } from '../../note-pages/note-pages-slice';
+import { selectNotePageSession } from '../../note-pages/note-pages-selectors';
 import { buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
 import {
   actionChannel,
@@ -19,6 +33,10 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import {
   commentLoadFinished,
@@ -33,15 +51,22 @@ import {
   paletteNoteSearchRequested,
 } from '../../palette/palette-slice';
 import type { PaletteNoteSearchUpdate } from '../../palette/palette-types';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestInContext,
   takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import {
+  selectNoteById,
+  selectWorkspaceNotesState,
+  selectRetainedNoteDraft,
+  selectHasPendingNoteContent,
+} from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
+  applyLocalNoteUpdate,
+  loadFullNoteEditRequested,
+  fullNoteEditReleased,
   applyNoteDeleted,
   applyNoteUpdated,
   commentEventReceived,
@@ -49,6 +74,7 @@ import {
   listSlimNotesRequested,
   loadNoteCommentsRequested,
   loadWorkspaceNotesFailed,
+  setWorkspaceNotesLoading,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   noteAttributionInvalidated,
@@ -68,6 +94,7 @@ import {
   refreshNoteFromEventRequested,
   searchNotesRequested,
   selectNote,
+  specTaskLinksReceived,
   workspaceNotesHydrationRequested,
   type NoteEventType,
 } from '../workspace-notes-slice';
@@ -110,9 +137,19 @@ function getWorkspaceRoot(workspaceId: string): Promise<string | null> {
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
-    action.type === workspaceUnmounted.type &&
+    action.type === backendReconnected.type ||
+    (action.type === workspaceUnmounted.type &&
+      Array.isArray(action.payload) &&
+      action.payload[0] === workspaceId)
+  );
+}
+
+function isDeletedNote(action: ObservedAction, workspaceId: string, noteId: string): boolean {
+  return (
+    action.type === applyNoteDeleted.type &&
     Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
   );
 }
 
@@ -157,6 +194,7 @@ function* fetchNoteSlot(
       });
       if (cleanup) return { note: null };
     }
+    if (yield* call(blocksFullRead, workspaceId, noteId)) return { note: null };
     const { found, cleanup } = yield* race({
       found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
       cleanup: take((action: ObservedAction) => isNoteReadCleanup(action, workspaceId, noteId)),
@@ -220,29 +258,52 @@ function* admitNoteRead(
 function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (current.loading || (!force && current.initialized)) return;
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
   try {
-    // Slim projection (§5.2): the initial hydrate does not need full bodies —
-    // sidebar surfaces read titles/tags/metadata, and slim rows carry
-    // contentPreview/contentLength. The spec is the one structural exception
-    // (task links, ordering), so fetch it full alongside the slim list.
-    // The spec fetch is fail-soft: a workspace without a spec note must not
-    // fail the hydrate (its slim row, if any, is kept as-is).
-    const fetchSlimListAndSpec = (id: string) =>
-      Promise.all([
+    const fetchSlimListAndLinks = async (id: string) => {
+      const [rows, links] = await Promise.all([
         appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+        (appClient.notes.listTaskLinks?.(id, SPEC_NOTE_ID) ?? Promise.resolve(null)).catch(
+          (error) => {
+            if (isMissingNote(error)) return [];
+            throw error;
+          },
+        ),
       ]);
-    const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
-      fetchSlimListAndSpec,
-      workspaceId,
+      // Viewing never hydrates a complete body as an unsupported-capability fallback.
+      return { rows, links };
+    };
+    const { rows, links } = yield* call(fetchSlimListAndLinks, workspaceId);
+    const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+    if (!(yield* isNotePublicationOwnerCurrent(publicationOwner))) {
+      if (yield* isNotePublicationLifetimeCurrent(publicationOwner))
+        yield* put(setWorkspaceNotesLoading([workspaceId], false));
+      return;
+    }
+    const summaryCurrent = latest.specTaskLinksGeneration === current.specTaskLinksGeneration;
+    const acceptedRows = summaryCurrent
+      ? rows
+      : rows.flatMap((n) => {
+          if (String(n.id) !== SPEC_NOTE_ID) return [n];
+          if (latest.specDeleted) return [];
+          return [latest.notes.map[SPEC_NOTE_ID] ?? n];
+        });
+    const notes = acceptedRows.map(toRuntimeNote);
+    if (links !== null || current.specTaskLinks !== null)
+      yield* put(specTaskLinksReceived(workspaceId, links, current.specTaskLinksGeneration));
+    yield* put(
+      loadWorkspaceNotesSucceeded(
+        [workspaceId],
+        { [workspaceId]: notes },
+        ...(current.deleteReadAuthority
+          ? ([{ [workspaceId]: current.deleteReadAuthority }] as const)
+          : ([] as const)),
+      ),
     );
-    const notes = response.map((note) =>
-      specNote && String(note.id) === SPEC_NOTE_ID ? toRuntimeNote(specNote) : toRuntimeNote(note),
-    );
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
   } catch (error) {
+    if (!(yield* isNotePublicationOwnerCurrent(publicationOwner))) return;
     logger.error('Failed to hydrate workspace notes', error);
     yield* put(
       loadWorkspaceNotesFailed(
@@ -254,6 +315,38 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
 }
 
 function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
+  const owner = yield* selectWorkspaceNotesState.effect(workspaceId);
+  if (noteId === SPEC_NOTE_ID && eventType !== 'note:deleted' && appClient.notes.listTaskLinks) {
+    try {
+      const links = yield* call(
+        [appClient.notes, appClient.notes.listTaskLinks],
+        workspaceId,
+        noteId,
+      );
+      if (links !== null) {
+        yield* put(specTaskLinksReceived(workspaceId, links, owner.specTaskLinksGeneration));
+        const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+        if (latest.specTaskLinksGeneration !== owner.specTaskLinksGeneration) return;
+        const complete = yield* selectNoteById.effect(workspaceId, noteId);
+        if (!complete || isNoteContentStale(complete)) return;
+      }
+    } catch (error) {
+      if (isMissingNote(error))
+        yield* put(specTaskLinksReceived(workspaceId, [], owner.specTaskLinksGeneration));
+      else logger.error('Failed to refresh task links', error);
+      return;
+    }
+  }
+  const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
+  if (paged && Object.keys(paged.panels).length && !hasFullNoteEditLease(workspaceId, noteId)) {
+    // The bounded state subscription is authoritative; legacy events contain no page epochs.
+    if (eventType === 'note:deleted') yield* put(pageReset(workspaceId, noteId, 'Note deleted'));
+    return;
+  }
+  if (eventType === 'note:deleted') {
+    yield* put(applyNoteDeleted(workspaceId, noteId));
+    return;
+  }
   try {
     const request = readNoteRequested(workspaceId, noteId, eventType);
     yield* put(request);
@@ -263,26 +356,155 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
   }
 }
 
+function* blocksWholeAnnotations(workspaceId: string, noteId: string) {
+  const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
+  return !!paged && paged.status !== 'legacy' && Object.keys(paged.panels).length > 0;
+}
+
+function* blocksFullRead(workspaceId: string, noteId: string) {
+  const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
+  return (
+    !!paged && Object.keys(paged.panels).length > 0 && !hasFullNoteEditLease(workspaceId, noteId)
+  );
+}
+
+function isReleasedEdit(
+  action: ObservedAction,
+  workspaceId: string,
+  noteId: string,
+  leaseId: number,
+): boolean {
+  return (
+    action.type === fullNoteEditReleased.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId &&
+    action.payload[2] === leaseId
+  );
+}
+
+function* loadFullNoteEditWorker(action: ReturnType<typeof loadFullNoteEditRequested>) {
+  const [workspaceId, noteId, leaseId] = action.payload;
+  const current = () => isFullNoteEditLeaseCurrent(workspaceId, noteId, leaseId);
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
+  const readAuthority = publicationOwner.readAuthority;
+  const ended = yield* ownedActionChannel(
+    [
+      backendReconnected.type,
+      workspaceUnmounted.type,
+      applyNoteDeleted.type,
+      fullNoteEditReleased.type,
+    ],
+    (a: ObservedAction) =>
+      isWorkspaceCleanup(a, workspaceId) ||
+      isDeletedNote(a, workspaceId, noteId) ||
+      isReleasedEdit(a, workspaceId, noteId, leaseId),
+    buffers.sliding(1),
+  );
+  try {
+    if (!current()) {
+      yield* put(action.success(false));
+      return;
+    }
+    const retained = yield* selectRetainedNoteDraft.effect(workspaceId, noteId);
+    const existing = yield* selectNoteById.effect(workspaceId, noteId);
+    if (retained?.error && existing) {
+      yield* put(
+        applyLocalNoteUpdate(workspaceId, noteId, {
+          content: retained.content,
+          contentLength: undefined,
+          contentPreview: undefined,
+        }),
+      );
+      yield* put(action.success(true));
+      return;
+    }
+    const { found, cleanup } = yield* race({
+      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      cleanup: take(ended),
+    });
+    const cached = yield* selectNoteById.effect(workspaceId, noteId);
+    const pending = yield* selectHasPendingNoteContent.effect(workspaceId, noteId);
+    if (
+      cleanup ||
+      !(yield* isNotePublicationOwnerCurrent(publicationOwner)) ||
+      !current() ||
+      !found ||
+      String(found.id) !== noteId ||
+      String(found.workspaceId) !== workspaceId ||
+      isNoteContentStale(found) ||
+      !Number.isSafeInteger(found.rev) ||
+      found.rev === undefined ||
+      found.rev < 0 ||
+      pending ||
+      !cached ||
+      (cached.rev !== undefined && found.rev < cached.rev)
+    ) {
+      yield* put(action.success(false));
+      return;
+    }
+    yield* put(
+      applyNoteUpdated(
+        workspaceId,
+        noteId,
+        toRuntimeNote(found),
+        ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+      ),
+    );
+    yield* put(action.success(current()));
+  } catch (error) {
+    logger.error('Failed to load complete note for editing', error);
+    yield* put(action.success(false));
+  } finally {
+    ended.close();
+    if (yield* cancelled()) yield* put(action.success(false));
+  }
+}
+
 function* readNoteWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof readNoteRequested>,
 ) {
   const [workspaceId, noteId, eventType] = action.payload;
+  const publicationOwner = yield* captureNotePublicationOwner(workspaceId);
+  const readAuthority = publicationOwner.readAuthority;
   let settled = false;
   try {
+    if (yield* call(blocksFullRead, workspaceId, noteId)) {
+      yield* put(action.success(null));
+      settled = true;
+      return;
+    }
     const authority = yield* selectPrincipalConnectionContext.effect();
     const slot = yield* call(admitNoteRead, coordinator, action, authority);
     const result = (yield* join(slot.task)) as ReadResult;
     if ('error' in result) throw result.error;
-    const { note } = result;
+    const note =
+      (yield* isNotePublicationOwnerCurrent(publicationOwner)) &&
+      !(yield* call(blocksFullRead, workspaceId, noteId))
+        ? result.note
+        : null;
     const authorityStillMatches =
       slot.authority === (yield* selectPrincipalConnectionContext.effect());
     if (note && authorityStillMatches && slot.leaderSeq === action.seq) {
       const existing = yield* selectNoteById.effect(workspaceId, noteId);
       if (eventType === 'note:created' && !existing) {
-        yield* put(applyNoteCreated(workspaceId, note));
+        yield* put(
+          applyNoteCreated(
+            workspaceId,
+            note,
+            ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+          ),
+        );
       } else {
-        yield* put(applyNoteUpdated(workspaceId, noteId, note));
+        yield* put(
+          applyNoteUpdated(
+            workspaceId,
+            noteId,
+            note,
+            ...(readAuthority ? ([readAuthority] as const) : ([] as const)),
+          ),
+        );
       }
     }
     yield* put(action.success(authorityStillMatches ? note : null));
@@ -435,12 +657,14 @@ function* noteAttributionViewWorker(
   try {
     while (true) {
       try {
+        if (yield* call(blocksWholeAnnotations, workspaceId, noteId)) return;
         const data = yield* call(
           [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
           workspaceId,
           noteId,
         );
         if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
+        if (yield* call(blocksWholeAnnotations, workspaceId, noteId)) return;
         const valid =
           data === null ||
           (String(data.workspaceId) === workspaceId && String(data.noteId) === noteId);
@@ -489,7 +713,7 @@ function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoa
   const [workspaceId, noteId] = action.payload;
   try {
     const cached = yield* selectNoteById.effect(workspaceId, noteId);
-    if (!cached) {
+    if (!cached || (yield* call(blocksFullRead, workspaceId, noteId))) {
       yield* put(action.success(false));
       return;
     }
@@ -602,11 +826,15 @@ function* paletteNoteSearchWorker(action: ReturnType<typeof paletteNoteSearchReq
 }
 
 function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
+  const before = yield* selectNotePageSession.effect(workspaceId, noteId);
+  if (before && before.status !== 'legacy' && Object.keys(before.panels).length) return [];
   const comments: Awaited<ReturnType<typeof appClient.comments.list>> = yield* call(
     [appClient.comments, appClient.comments.list],
     noteId,
     workspaceId,
   );
+  const after = yield* selectNotePageSession.effect(workspaceId, noteId);
+  if (after && after.status !== 'legacy' && Object.keys(after.panels).length) return [];
   if (apply) yield* put(replaceNoteCommentsAction(workspaceId, noteId, comments));
   return comments;
 }
@@ -679,7 +907,10 @@ function* applyNoteEventWorker(action: ReturnType<typeof refreshNoteFromEventReq
   if (!workspaceId || !noteId || eventType === 'note:deleted') return;
   yield* race({
     apply: call(applyNoteEvent, workspaceId, noteId, eventType),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+    cleanup: take(
+      (cleanup: ObservedAction) =>
+        isWorkspaceCleanup(cleanup, workspaceId) || isDeletedNote(cleanup, workspaceId, noteId),
+    ),
   });
 }
 
@@ -688,11 +919,25 @@ function* routeNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
   if (!workspaceId || !noteId) return;
   if (eventType === 'note:deleted') {
     yield* put(applyNoteDeleted(workspaceId, noteId));
+    const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
+    if (paged && Object.keys(paged.panels).length)
+      yield* put(pageReset(workspaceId, noteId, 'Note deleted'));
   }
   yield* put(refreshNoteFromEventRequested(workspaceId, noteId, eventType));
 }
 
 export function* notesReadSaga() {
+  yield* takeEvery(backendReconnected, function* () {
+    invalidateFullNoteEditLeases();
+  });
+  yield* takeEvery(workspaceUnmounted, function* (action) {
+    invalidateFullNoteEditLeases(action.payload[0]);
+  });
+  yield* takeEvery(applyNoteDeleted, function* (action) {
+    const [workspaceId, noteId] = action.payload;
+    invalidateFullNoteEditLeases(workspaceId, noteId);
+  });
+  yield* takeEvery(loadFullNoteEditRequested, loadFullNoteEditWorker);
   const coordinator: ReadCoordinator = { admissions: new Map(), nextGeneration: 0 };
   yield* takeEvery(readNoteRequested, readNoteWorker, coordinator);
   yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);

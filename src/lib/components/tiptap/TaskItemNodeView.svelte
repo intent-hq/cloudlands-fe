@@ -45,6 +45,7 @@
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
+  import { nextInlineTaskState } from './inline-task-status';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -157,13 +158,8 @@
           : 'not_started',
   );
 
-  function handleNormalCheckboxClick(newChecked: boolean) {
-    if (newChecked === checked) return;
-    if (newChecked) {
-      updateAttributes({ checked: newChecked, status: 'in-progress', delegatedAgentId });
-      return;
-    }
-    updateAttributes({ checked: newChecked, status: 'todo', delegatedAgentId });
+  function handleNormalCheckboxClick() {
+    updateAttributes(nextInlineTaskState(status));
   }
 
   function handleLinkedTaskCheckboxClick(event: MouseEvent) {
@@ -192,7 +188,7 @@
     if (isLinkedTask) {
       handleLinkedTaskCheckboxClick(event);
     } else {
-      handleNormalCheckboxClick(!checked);
+      handleNormalCheckboxClick();
     }
   }
 
@@ -584,7 +580,11 @@
     <div class="min-w-0 w-full flex items-start gap-1.5 py-1 pl-1">
       <span class="shrink-0 flex mt-1" contenteditable="false">
         <!-- The Checkbox primitive replaces the former native checkbox here. -->
-        <Checkbox {checked} onCheckedChange={handleNormalCheckboxClick} />
+        <Checkbox
+          {checked}
+          indeterminate={status === 'in-progress'}
+          onCheckedChange={handleNormalCheckboxClick}
+        />
       </span>
       <div class="flex-1 min-w-0">
         <NodeViewContent />
