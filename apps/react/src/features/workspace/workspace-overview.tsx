@@ -7,11 +7,10 @@ import { workspaceNotesHydrationRequested } from '../../../../../src/store/rende
 import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
+import { HomeWorkspaceStatus } from '@/features/home/components/home-workspace-status';
 import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { HomeSearch } from '@/features/home/components/home-search';
 import { HomeLoading } from '@/features/home/components/home-loading';
-import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import {
   Screen,
   ScreenHeader,
@@ -74,7 +73,7 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
         className="flex min-w-0 flex-col gap-1 rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace.value)} />
+          <HomeWorkspaceStatus workspace={workspace.value} />
           <span className="truncate">{workspace.value.title}</span>
         </span>
         {workspace.value.statusMessage && (
