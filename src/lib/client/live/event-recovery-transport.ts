@@ -158,3 +158,27 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
     }
   };
 }
+
+/** Register before initial capture; main replays ready state after installing the watch. */
+export function onElectronEventRecoveryReady(
+  getBridge: () => Window['electronAPI'] | undefined,
+  handler: () => void,
+): () => void {
+  const bridge = getBridge();
+  if (!bridge) return () => {};
+  const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
+  const id = crypto.randomUUID();
+  let stopped = false;
+  const listener = bridge.on(channels.READY, (value: unknown) => {
+    if (!stopped && getBridge() === bridge && (value as { id?: unknown } | null)?.id === id)
+      handler();
+  });
+  // Invoke ordering guarantees an immediate dispose follows WATCH on this sender.
+  void bridge.invoke(channels.WATCH_READY, { id }).catch(() => {});
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    bridge.offById(channels.READY, listener);
+    void bridge.invoke(channels.UNWATCH_READY, { id }).catch(() => {});
+  };
+}

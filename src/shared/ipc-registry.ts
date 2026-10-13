@@ -968,6 +968,9 @@ export const IPC_CHANNELS = {
       REQUEST: 'backend:event-recovery:request',
       RELEASE: 'backend:event-recovery:release',
       FRAME: 'backend:event-recovery:frame',
+      WATCH_READY: 'backend:event-recovery:watch-ready',
+      UNWATCH_READY: 'backend:event-recovery:unwatch-ready',
+      READY: 'backend:event-recovery:ready',
     },
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
@@ -1276,6 +1279,7 @@ export const EVENT_CHANNELS = [
   'dev-console:changed',
   'backend:notification',
   'backend:event-recovery:frame',
+  'backend:event-recovery:ready',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',

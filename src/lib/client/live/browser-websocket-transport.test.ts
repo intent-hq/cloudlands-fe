@@ -1427,3 +1427,161 @@ it('releases physical browser recovery ownership on close and captures the new s
   next.dispose();
   h.transport.dispose();
 });
+
+describe('bounded lease cleanup browser', () => {
+  it('queues cleanup within the physical cap and drains every admitted lease once', async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    const initial = h.transport.captureEventRecovery();
+    await connect(h.socket(), true);
+    const first = await initial;
+    first.dispose();
+    const getSession = () => h.transport.captureEventRecovery();
+    const frames = (): Array<{ id: number; method: string; params: unknown }> =>
+      h.socket().sent.map((line) => JSON.parse(line));
+    const reply = (id: number, result: unknown) => h.socket().receive({ id, result });
+    const stop = () => h.transport.dispose();
+    const session = await getSession();
+    for (let i = 0; i < 70; i++) {
+      const pending = session.request('events.subscribe', {
+        eventTypes: ['file:*'],
+        lossRecovery: 1,
+      });
+      reply(frames().at(-1)!.id, { subscriptionId: `lease-${i}`, lossRecovery: 1 });
+      await pending;
+    }
+    session.dispose();
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    const sent = () => frames().filter((frame) => frame.method === 'events.unsubscribe');
+    expect(sent()).toHaveLength(64);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sent()).toHaveLength(64);
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(getSession()).rejects.toThrow();
+    const firstBatch = [...sent()];
+    for (const frame of firstBatch) reply(frame.id, {});
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(sent()).toHaveLength(70);
+    expect(
+      new Set(sent().map((frame) => (frame.params as { subscriptionId: string }).subscriptionId))
+        .size,
+    ).toBe(70);
+    for (const frame of sent().slice(64)) reply(frame.id, {});
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    const next = await getSession();
+    next.dispose();
+    stop();
+  });
+  for (const method of ['events.subscribe', 'note.subscribe'])
+    it(`cleans abandoned ${method} once across late ack and disposal`, async () => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      const initial = h.transport.captureEventRecovery();
+      await connect(h.socket(), true);
+      const first = await initial;
+      first.dispose();
+      const getSession = () => h.transport.captureEventRecovery();
+      const frames = (): Array<{ id: number; method: string; params: unknown }> =>
+        h.socket().sent.map((line) => JSON.parse(line));
+      const reply = (id: number, result: unknown) => h.socket().receive({ id, result });
+      const stop = () => h.transport.dispose();
+      const session = await getSession();
+      const pending = session
+        .request(method, { workspaceId: 'w', eventTypes: ['file:*'], lossRecovery: 1 })
+        .catch((error) => error);
+      const frame = frames().at(-1)!;
+      await vi.advanceTimersByTimeAsync(35_000);
+      const timeout = await pending;
+      expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
+      reply(frame.id, { subscriptionId: 'orphan', lossRecovery: 1 });
+      await timeout.completion;
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      const unsubscribe = method === 'events.subscribe' ? 'events.unsubscribe' : 'note.unsubscribe';
+      const sent = () => frames().filter((frame) => frame.method === unsubscribe);
+      expect(sent()).toHaveLength(1);
+      expect(sent()[0].params).toMatchObject({ subscriptionId: 'orphan' });
+      session.dispose();
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      expect(sent()).toHaveLength(1);
+      await expect(getSession()).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sent()).toHaveLength(1);
+      reply(sent()[0].id, {});
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      const next = await getSession();
+      next.dispose();
+      stop();
+    });
+});
+
+it('announces recovery readiness only after confirmed hello and old wire drain', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const first = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const old = await first;
+  const ready = vi.fn();
+  const off = h.transport.onEventRecoveryReady(ready);
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  ready.mockClear();
+  const pending = old.request('data.read').catch((error) => error);
+  const frame = h.socket().lastFrame();
+  await vi.advanceTimersByTimeAsync(60_000);
+  const hello = h.transport.request('client.hello');
+  expect(ready).not.toHaveBeenCalled();
+  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
+  h.socket().receive({
+    id: h.socket().lastFrame().id,
+    result: { clientId: 'renewed', server: { capabilities: { eventStreamRecovery: 1 } } },
+  });
+  await hello;
+  expect(ready).not.toHaveBeenCalled();
+  h.socket().receive({ id: frame.id, result: 'stale' });
+  await pending;
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  expect(ready).toHaveBeenCalledTimes(1);
+  const next = await h.transport.captureEventRecovery();
+  const read = next.request('data.read');
+  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
+  expect(await read).toBe('fresh');
+  expect(ready).toHaveBeenCalledTimes(1);
+  off();
+  next.dispose();
+  old.dispose();
+  h.transport.dispose();
+  expect(ready).toHaveBeenCalledTimes(1);
+});
+
+it('cleans an acknowledged browser lease when its owner barrier times out', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const first = h.transport.captureEventRecovery();
+  await connect(h.socket(), true);
+  const session = await first;
+  const held = Promise.withResolvers<void>();
+  session.onNotification(() => held.promise);
+  h.socket().receive({ method: 'events.event', params: { subscriptionId: 'existing' } });
+  const pending = session
+    .request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 })
+    .catch((error) => error);
+  h.socket().receive({
+    id: h.socket().lastFrame().id,
+    result: { subscriptionId: 'blocked-ack', lossRecovery: 1 },
+  });
+  await vi.advanceTimersByTimeAsync(35_000);
+  expect(await pending).toBeInstanceOf(RecoveryRequestTimeoutError);
+  const cleanups = () =>
+    h
+      .socket()
+      .sent.map((line) => JSON.parse(line))
+      .filter((frame) => frame.method === 'events.unsubscribe');
+  expect(cleanups()).toHaveLength(1);
+  h.socket().receive({ id: cleanups()[0].id, result: {} });
+  held.resolve();
+  await (
+    await pending
+  ).completion;
+  session.dispose();
+  expect(cleanups()).toHaveLength(1);
+  h.transport.dispose();
+});

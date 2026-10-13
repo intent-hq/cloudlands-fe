@@ -1,3 +1,5 @@
+import { subscriptionCleanup } from './wire-pool';
+
 export interface RecoveryNotification {
   method: string;
   params?: unknown;
@@ -217,12 +219,24 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
       };
     },
     request<T>(method: string, params?: unknown): Promise<T> {
-      return bounded(READ_TIMEOUT_MS, (resolve, reject, alive, track) => {
+      let acknowledged: unknown,
+        abandoned = false,
+        cleaned = false;
+      const cleanup = () => {
+        if (!abandoned || cleaned || !current()) return;
+        const control = subscriptionCleanup(method, params, acknowledged);
+        if (!control) return;
+        cleaned = true;
+        void driver.request(control.method, control.params).catch(() => {});
+      };
+      const result = bounded<T>(READ_TIMEOUT_MS, (resolve, reject, alive, track) => {
         if (method === 'events.subscribe') {
           // Admission's await continuation must finish before following domain callbacks.
           // Merely resolving an IPC invoke promise does not establish this ordering.
           track(
             driver.request(method, params, (value) => {
+              acknowledged = value;
+              cleanup();
               if (!alive() || !current()) return;
               void track(
                 ingress.dispatch(() => {
@@ -235,9 +249,16 @@ export function createEventRecoverySession(driver: Driver): EventRecoverySession
           ).catch(reject);
         } else
           track(driver.request(method, params)).then((value) => {
+            acknowledged = value;
+            cleanup();
             if (current()) resolve(value as T);
             else reject(unavailable());
           }, reject);
+      });
+      return result.catch((error) => {
+        abandoned = true;
+        cleanup();
+        throw error;
       });
     },
     fence(ids, observe) {

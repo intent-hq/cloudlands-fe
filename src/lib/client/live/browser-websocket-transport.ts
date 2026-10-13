@@ -1,3 +1,4 @@
+import { RecoveryWirePool } from '$shared/event-recovery/wire-pool';
 import {
   createEventRecoverySession,
   type EventRecoverySession,
@@ -216,7 +217,6 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout> | undefined;
 }
 
-const MAX_RECOVERY_WIRE_REQUESTS = 64;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_MS = 30_000;
@@ -258,12 +258,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
   private readonly recoveryRetired = new Set<() => void>();
-  private readonly recoveryRequests = new Set<{
-    socket: BrowserWebSocketLike;
-    generation: number;
-    expired: boolean;
-    released: () => boolean;
-  }>();
+  private readonly recoveryPools = new WeakMap<BrowserWebSocketLike, RecoveryWirePool>();
   private protocolVersion: unknown;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
@@ -303,27 +298,78 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return { server: { capabilities: this.nodeCapabilities } };
   }
 
+  private readonly recoveryReadyHandlers = new Set<() => void>();
+  private recoveryReadyIdentity: number | undefined;
+  private recoveryReadyScheduled = false;
+  private recoveryReadyPool: RecoveryWirePool | undefined;
+  private offRecoveryReadyPool: (() => void) | undefined;
+
+  onEventRecoveryReady(handler: () => void): () => void {
+    this.recoveryReadyHandlers.add(handler);
+    // A newly registered listener must not miss readiness during async IPC/capture setup.
+    this.checkRecoveryReady();
+    if (!this.recoveryReadyScheduled)
+      queueMicrotask(() => {
+        if (this.recoveryReadyHandlers.has(handler) && this.isRecoveryReady()) handler();
+      });
+    return () => {
+      this.recoveryReadyHandlers.delete(handler);
+    };
+  }
+  private isRecoveryReady(): boolean {
+    return (
+      !this.disposed &&
+      this.connected &&
+      this.nodeCapabilities !== null &&
+      !!this.socket &&
+      (this.recoveryPools.get(this.socket)?.canCapture(this.capabilityHelloGeneration) ?? true)
+    );
+  }
+  private checkRecoveryReady(): void {
+    const pool = this.socket ? this.recoveryPools.get(this.socket) : undefined;
+    if (pool !== this.recoveryReadyPool) {
+      this.offRecoveryReadyPool?.();
+      this.recoveryReadyPool = pool;
+      this.offRecoveryReadyPool = pool?.onChange(() => this.checkRecoveryReady());
+    }
+    if (!this.isRecoveryReady()) {
+      this.recoveryReadyIdentity = undefined;
+      return;
+    }
+    const identity = this.capabilityHelloGeneration;
+    if (this.recoveryReadyIdentity === identity || this.recoveryReadyScheduled) return;
+    this.recoveryReadyScheduled = true;
+    queueMicrotask(() => {
+      this.recoveryReadyScheduled = false;
+      if (!this.isRecoveryReady() || this.capabilityHelloGeneration !== identity) {
+        this.checkRecoveryReady();
+        return;
+      }
+      this.recoveryReadyIdentity = identity;
+      for (const handler of [...this.recoveryReadyHandlers]) handler();
+    });
+  }
+
   async captureEventRecovery(): Promise<EventRecoverySession> {
     const socket = await this.ensureConnected();
     const generation = this.capabilityHelloGeneration;
-    const leases = new Set<string>();
-    let released = false;
     const current = () =>
       !this.disposed &&
       this.connected &&
+      this.nodeCapabilities !== null &&
       this.socket === socket &&
       this.capabilityHelloGeneration === generation;
     if (!current()) throw new Error('Event recovery connection unavailable');
-    if (
-      [...this.recoveryRequests].some(
-        (row) =>
-          row.socket === socket && (row.generation !== generation || row.expired || row.released()),
-      )
-    )
-      throw new Error('Event recovery requests still draining');
+    const pool = this.recoveryPools.get(socket) ?? new RecoveryWirePool();
+    this.recoveryPools.set(socket, pool);
+    this.checkRecoveryReady();
+    const requests = pool.capture(generation, current, (method, params, observe) =>
+      this.requestOnSocket(method, params, undefined, socket, observe, true),
+    );
+    if (!requests) throw new Error('Event recovery requests still draining');
     return createEventRecoverySession({
       supported: this.nodeCapabilities?.eventStreamRecovery === 1,
-      isCurrent: () => !released && current(),
+      isCurrent: current,
       onRetired: (handler) => {
         this.recoveryRetired.add(handler);
         return () => {
@@ -331,60 +377,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
         };
       },
       onNotification: (handler) => this.onNotification(handler),
-      request: (method, params, observe) => {
-        if (!current() || method === 'client.hello')
-          return Promise.reject(new Error('Event recovery connection retired'));
-        if (
-          [...this.recoveryRequests].filter((row) => row.socket === socket).length >=
-          MAX_RECOVERY_WIRE_REQUESTS
-        )
-          return Promise.reject(new Error('Event recovery request limit reached'));
-        const row = { socket, generation, expired: false, released: () => released };
-        this.recoveryRequests.add(row);
-        const deadline = setTimeout(
-          () => {
-            row.expired = true;
-          },
-          method === 'events.fence' ? 5000 : 30000,
-        );
-        return this.requestOnSocket(method, params, undefined, socket, observe, true)
-          .then((result) => {
-            if (method === 'events.subscribe') {
-              const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
-              if (typeof id === 'string') {
-                if (released && current())
-                  void this.requestOnSocket(
-                    'events.unsubscribe',
-                    { subscriptionId: id },
-                    undefined,
-                    socket,
-                  ).catch(() => {});
-                else leases.add(id);
-              }
-            } else if (method === 'events.unsubscribe') {
-              const id = (params as { subscriptionId?: unknown } | null)?.subscriptionId;
-              if (typeof id === 'string') leases.delete(id);
-            }
-            return result;
-          })
-          .finally(() => {
-            clearTimeout(deadline);
-            this.recoveryRequests.delete(row);
-          });
-      },
-      dispose: () => {
-        if (released) return;
-        released = true;
-        if (current())
-          for (const subscriptionId of leases)
-            void this.requestOnSocket(
-              'events.unsubscribe',
-              { subscriptionId },
-              undefined,
-              socket,
-            ).catch(() => {});
-        leases.clear();
-      },
+      request: (method, params, observe) => requests.request(method, params, observe),
+      dispose: () => requests.dispose(),
     });
   }
 
@@ -473,6 +467,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
         if (method === 'client.hello') {
           this.nodeCapabilities = null;
+          this.checkRecoveryReady();
           for (const retire of [...this.recoveryRetired]) retire();
         }
         this.pending.set(id, {
@@ -498,6 +493,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   eventStreamRecovery: capabilities?.eventStreamRecovery === 1 ? 1 : 0,
                 });
               }
+              this.checkRecoveryReady();
               this.helloConfirmed = true;
               this.protocolVersion = (result as { protocolVersion?: unknown } | null)
                 ?.protocolVersion;
@@ -578,6 +574,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.notifyStatusChange();
     this.notificationHandlers.clear();
     this.reconnectedHandlers.clear();
+    this.recoveryReadyHandlers.clear();
+    this.offRecoveryReadyPool?.();
     this.statusHandlers.clear();
   }
 
@@ -675,6 +673,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.hasConnectionFailed = false;
     this.notifyStatusChange();
     this.flushWaiters(socket);
+    this.checkRecoveryReady();
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
     // connected transport; see RESUB-1.
     if (wasReconnect) {
@@ -793,6 +792,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     for (const retire of [...this.recoveryRetired]) retire();
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
+    this.checkRecoveryReady();
     this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;

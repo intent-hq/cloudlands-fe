@@ -8,6 +8,7 @@ import {
 } from '../../../main/window-backend';
 import {
   captureRecoveryRequests,
+  onRecoveryRequestsReady,
   type JsonRpcClient,
   type RepositoryConnection,
 } from './json-rpc-client';
@@ -86,15 +87,7 @@ export function registerEventRecoveryHandlers(
     } catch {
       /* Original document may be gone. */
     }
-    for (const subscriptionId of entry.leases)
-      void entry.client
-        .requestOnCapturedConnection(entry.connection, 'events.unsubscribe', { subscriptionId })
-        .catch(() => {});
     entry.leases.clear();
-    for (const lease of entry.typedLeases.values())
-      void entry.client
-        .requestOnCapturedConnection(entry.connection, lease.method, lease.params)
-        .catch(() => {});
     entry.typedLeases.clear();
   }
   function admitted(event: IpcMainInvokeEvent, id: string) {
@@ -107,6 +100,77 @@ export function registerEventRecoveryHandlers(
     }
     return entry;
   }
+  const readyWatches = new Map<
+    string,
+    { sender: WebContents; binding: Binding; stop: () => void }
+  >();
+  const stopReadyWatch = (id: string) => {
+    const watch = readyWatches.get(id);
+    readyWatches.delete(id);
+    watch?.stop();
+  };
+  ipc.handle(channels.WATCH_READY, (event, payload) => {
+    const parsed = reference.safeParse(payload);
+    const binding = getStrictBackendBindingForWebContents(event.sender);
+    if (
+      !parsed.success ||
+      disposed ||
+      !binding ||
+      binding.frame !== event.senderFrame ||
+      readyWatches.size >= MAX_SESSIONS ||
+      readyWatches.has(parsed.data.id)
+    )
+      return unavailable();
+    const client = deps.readBackend(binding.backendId);
+    if (!client) return unavailable();
+    const { id } = parsed.data;
+    const stop = () => stopReadyWatch(id);
+    const valid = () =>
+      !disposed &&
+      !event.sender.isDestroyed() &&
+      event.sender.mainFrame === binding.frame &&
+      getStrictBackendBindingForWebContents(event.sender) === binding &&
+      deps.readBackend(binding.backendId) === client;
+    const offReady = onRecoveryRequestsReady(client, () => {
+      if (!valid()) {
+        stop();
+        return;
+      }
+      try {
+        binding.frame.send(channels.READY, { id });
+      } catch {
+        stop();
+      }
+    });
+    const offBinding = onStrictBackendBindingRetired(event.sender, stop);
+    const navigation = (_event: unknown, _url: string, inPlace: boolean, mainFrame: boolean) => {
+      if (mainFrame && !inPlace) stop();
+    };
+    event.sender.on('did-start-navigation', navigation);
+    event.sender.on('render-process-gone', stop);
+    event.sender.once('destroyed', stop);
+    readyWatches.set(id, {
+      sender: event.sender,
+      binding,
+      stop: () => {
+        offReady();
+        offBinding();
+        event.sender.removeListener('did-start-navigation', navigation);
+        event.sender.removeListener('render-process-gone', stop);
+        event.sender.removeListener('destroyed', stop);
+      },
+    });
+    return { ok: true };
+  });
+  ipc.handle(channels.UNWATCH_READY, (event, payload) => {
+    const parsed = reference.safeParse(payload);
+    if (!parsed.success) return unavailable();
+    const watch = readyWatches.get(parsed.data.id);
+    if (!watch || watch.sender !== event.sender || watch.binding.frame !== event.senderFrame)
+      return unavailable();
+    stopReadyWatch(parsed.data.id);
+    return { ok: true };
+  });
   ipc.handle(channels.CAPTURE, (event) => {
     const binding = getStrictBackendBindingForWebContents(event.sender);
     if (disposed || !binding || binding.frame !== event.senderFrame || entries.size >= MAX_SESSIONS)
@@ -230,23 +294,20 @@ export function registerEventRecoveryHandlers(
           : {}),
       },
     });
-    let leaseAdmitted = false;
     entry.requests++;
     try {
-      const result = await entry.physical.request(method, routedParams, (result) => {
+      const result = await entry.physical.request(method, routedParams, (result, abandoned) => {
         if (!current(entry) || entries.get(id) !== entry) return;
         const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
         // Ownership must be recorded at decode, before any following frame.
-        if (method === 'events.subscribe' && typeof subscriptionId === 'string') {
+        if (!abandoned && method === 'events.subscribe' && typeof subscriptionId === 'string') {
           entry.leases.add(subscriptionId);
-          leaseAdmitted = true;
         }
-        if (typedUnsubscribe && typeof subscriptionId === 'string') {
+        if (!abandoned && typedUnsubscribe && typeof subscriptionId === 'string') {
           entry.typedLeases.set(
             `${typedUnsubscribe}:${subscriptionId}`,
             typedLease(typedUnsubscribe, subscriptionId),
           );
-          leaseAdmitted = true;
         }
         if (typedControl && typeof controlId === 'string')
           entry.typedLeases.delete(`${method}:${controlId}`);
@@ -255,21 +316,6 @@ export function registerEventRecoveryHandlers(
         if (replyId) send(entry, { id, kind: 'reply', replyId, result });
       });
       if (!current(entry)) drop(id);
-      if (!leaseAdmitted && (method === 'events.subscribe' || typedUnsubscribe)) {
-        const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
-        if (typeof subscriptionId === 'string') {
-          if (!current(entry) || entries.get(id) !== entry)
-            void entry.client
-              .requestOnCapturedConnection(
-                entry.connection,
-                typedUnsubscribe ?? 'events.unsubscribe',
-                typedUnsubscribe
-                  ? typedLease(typedUnsubscribe, subscriptionId).params
-                  : { subscriptionId },
-              )
-              .catch(() => {});
-        }
-      }
       if (!current(entry) || entries.get(id) !== entry) return unavailable();
       return { ok: true, result };
     } catch (error) {
@@ -295,6 +341,7 @@ export function registerEventRecoveryHandlers(
       for (const [id, entry] of entries) if (entry.binding.backendId === backendId) drop(id);
     },
     dispose() {
+      for (const id of readyWatches.keys()) stopReadyWatch(id);
       for (const id of entries.keys()) drop(id);
       disposed = true;
     },

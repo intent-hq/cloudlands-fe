@@ -1,4 +1,7 @@
-import { createEventRecoveryTransport } from './event-recovery-transport';
+import {
+  createEventRecoveryTransport,
+  onElectronEventRecoveryReady,
+} from './event-recovery-transport';
 import {
   NativeReviewInputSchema,
   NativeReviewPreparedViewSchema,
@@ -194,6 +197,7 @@ export function createElectronIpcBackendTransport(): BackendTransport {
   return {
     captureRepositorySelection,
     captureEventRecovery: createEventRecoveryTransport(electronAPI),
+    onEventRecoveryReady: (handler) => onElectronEventRecoveryReady(electronAPI, handler),
     async observeNodeCapabilities() {
       const api = electronAPI();
       if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });

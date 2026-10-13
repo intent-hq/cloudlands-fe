@@ -565,6 +565,8 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:event-recovery:capture',
   'backend:event-recovery:request',
   'backend:event-recovery:release',
+  'backend:event-recovery:watch-ready',
+  'backend:event-recovery:unwatch-ready',
   // Checkout sessions bind the original real preload bridge and host connection.
   // Mock bridging would bypass capture/currentness; preview clients report unavailable.
   'backend:repository-checkout:capture',

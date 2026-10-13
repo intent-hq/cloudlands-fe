@@ -1,3 +1,4 @@
+import { RecoveryWirePool } from '../../../shared/event-recovery/wire-pool';
 /**
  * Main-process JSON-RPC 2.0 client for the live intentd daemon.
  *
@@ -49,65 +50,81 @@ export interface RepositoryConnection {
   readonly nativeReviewCompanion: boolean;
 }
 
-const MAX_RECOVERY_WIRE_REQUESTS = 64;
 type RecoveryClient = Pick<
   JsonRpcClient,
   'getRepositoryConnection' | 'requestOnCapturedConnection'
 >;
-interface RecoveryWireRequest {
-  connection: RepositoryConnection;
-  expired: boolean;
-  released: () => boolean;
-}
-const recoveryWireRequests = new WeakMap<RecoveryClient, Set<RecoveryWireRequest>>();
+const recoveryWirePools = new WeakMap<RecoveryClient, WeakMap<object, RecoveryWirePool>>();
 
-/** Shared physical accounting for direct main and renderer recovery captures. */
+function recoveryPool(client: RecoveryClient, connection: RepositoryConnection) {
+  const sockets = recoveryWirePools.get(client) ?? new WeakMap<object, RecoveryWirePool>();
+  recoveryWirePools.set(client, sockets);
+  const pool = sockets.get(connection.incarnation) ?? new RecoveryWirePool();
+  sockets.set(connection.incarnation, pool);
+  return pool;
+}
+
+/** Shared physical accounting, including lease cleanup, for main and renderer captures. */
 export function captureRecoveryRequests(client: RecoveryClient, connection: RepositoryConnection) {
   if (client.getRepositoryConnection() !== connection) return undefined;
-  const requests = recoveryWireRequests.get(client) ?? new Set<RecoveryWireRequest>();
-  recoveryWireRequests.set(client, requests);
-  const physical = () =>
-    [...requests].filter((row) => row.connection.incarnation === connection.incarnation);
-  // A hello replaces authority, not the physical socket or its outstanding work.
-  if (physical().some((row) => row.expired || row.released() || row.connection !== connection))
-    return undefined;
-  let released = false;
-  return {
-    request(
-      method: string,
-      params?: unknown,
-      observe?: (result: unknown) => void,
-    ): Promise<unknown> {
-      if (
-        released ||
-        client.getRepositoryConnection() !== connection ||
-        physical().length >= MAX_RECOVERY_WIRE_REQUESTS
-      )
-        return Promise.reject(new Error('Event recovery connection unavailable'));
-      const row: RecoveryWireRequest = { connection, expired: false, released: () => released };
-      requests.add(row);
-      const deadline = setTimeout(
-        () => {
-          row.expired = true;
-        },
-        method === 'events.fence' ? 5000 : 30000,
-      );
-      const settled = () => {
-        clearTimeout(deadline);
-        requests.delete(row);
-      };
-      try {
-        return client
-          .requestOnCapturedConnection(connection, method, params, { waitForReply: true, observe })
-          .finally(settled);
-      } catch (error) {
-        settled();
-        return Promise.reject(error);
+  return recoveryPool(client, connection).capture(
+    connection,
+    () => client.getRepositoryConnection() === connection,
+    (method, params, observe) =>
+      client.requestOnCapturedConnection(connection, method, params, {
+        waitForReply: true,
+        observe,
+      }),
+  );
+}
+
+/** Subscribe before capture. Replays current readiness once, then only ready transitions. */
+export function onRecoveryRequestsReady(client: JsonRpcClient, handler: () => void): () => void {
+  let stopped = false,
+    scheduled = false;
+  let previous: RepositoryConnection | undefined;
+  let listeningPool: RecoveryWirePool | undefined;
+  let offPool: (() => void) | undefined;
+  const check = () => {
+    if (stopped) return;
+    const connection = client.getRepositoryConnection();
+    const pool = connection ? recoveryPool(client, connection) : undefined;
+    if (pool !== listeningPool) {
+      offPool?.();
+      listeningPool = pool;
+      offPool = pool?.onChange(check);
+    }
+    const ready = connection && pool?.canCapture(connection) ? connection : undefined;
+    if (!ready) {
+      previous = undefined;
+      return;
+    }
+    if (previous === ready || scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      if (stopped) return;
+      const now = client.getRepositoryConnection();
+      if (now !== ready || !pool?.canCapture(ready)) {
+        check();
+        return;
       }
-    },
-    dispose() {
-      released = true;
-    },
+      previous = ready;
+      handler();
+    });
+  };
+  const offConnection = client.onRepositoryConnectionEvent((event) => {
+    if (event.type !== 'notification') check();
+  });
+  const offIdentity = client.onRepositoryIdentityConfirmed(check);
+  client.on('status', check);
+  check();
+  return () => {
+    stopped = true;
+    offPool?.();
+    offConnection();
+    offIdentity();
+    client.removeListener('status', check);
   };
 }
 
