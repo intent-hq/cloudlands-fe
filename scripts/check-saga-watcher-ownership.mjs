@@ -35,7 +35,23 @@ export const WILDCARD_EFFECTS = new Set([
 ]);
 const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
+// These loops observe lifetime/demand only; they do not route saga execution.
+// Keep the exception tied to the reviewed function and reject execution yields.
+const OBSERVATION_LOOPS = new Map([
+  ['src/store/renderer/slices/git/sagas/git-consumer-read-saga.ts', 'waitForNavigationRetirement'],
+  ['src/store/renderer/slices/workspace-notes/sagas/notes-recovery.ts', 'notesRecoverySaga'],
+]);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
+  {
+    pattern: /^src\/store\/renderer\/slices\/principal\/principal-slice\.ts#principalReceived$/,
+    rationale:
+      'confirmed principal admission independently rebinds browser reads and restores workspace layout',
+  },
+  {
+    pattern:
+      /^src\/store\/renderer\/slices\/panel-layout\/panel-layout-slice\.ts#clearPanelLayout$/,
+    rationale: 'layout persistence cleanup and browser-tab recovery retirement are independent',
+  },
   {
     pattern: /^src\/store\/renderer\/slices\/changes\/changes-slice\.ts#changesEventReceived$/,
     rationale:
@@ -669,7 +685,32 @@ export function inspectSagaWatcherOwnership(files) {
             )
               routesByType = true;
           });
-          if (routesByType)
+          let observationOnly = OBSERVATION_LOOPS.get(filePath) === owner.name?.text;
+          if (observationOnly) {
+            const imports = importsFor(source);
+            visit(owner, (child) => {
+              if (!ts.isYieldExpression(child)) return;
+              const expression = child.expression;
+              if (!expression || !ts.isCallExpression(expression)) {
+                observationOnly = false;
+                return;
+              }
+              const yielded = effectForExpression(
+                expression.expression,
+                effectNames,
+                effectNamespaces,
+              );
+              const binding = ts.isIdentifier(expression.expression)
+                ? imports.get(expression.expression.text)
+                : undefined;
+              const selectsState =
+                binding?.imported === 'select' &&
+                ['typed-redux-saga', 'redux-saga/effects'].includes(binding.specifier);
+              if (!['take', 'takeMaybe'].includes(yielded) && !selectsState)
+                observationOnly = false;
+            });
+          }
+          if (routesByType && !observationOnly)
             violations.push(
               `${filePath}:${lineFor(source, node)}: manual multi-action Redux router`,
             );
@@ -748,6 +789,10 @@ export function inspectSagaWatcherOwnership(files) {
         typeText,
       );
       const executionType = /\b(Task|SagaTask|WorkerSlot|TrackedTask)\b/i.test(typeText);
+      // Read receipts plus a physical completion promise account for backend work;
+      // they do not own saga execution. Task storage/cancellation still fails below.
+      const receiptCompletion =
+        /\bRecoveryLifetime\b/.test(typeText) && /\bPromise\s*</.test(typeText);
       const executionName = /(running|workers?|slots?|debounc|fetch|restore|history)/i.test(name);
       const explicitDomainType =
         /^\s*(?:string|number|boolean)\s*$/i.test(typeText) ||
@@ -780,7 +825,7 @@ export function inspectSagaWatcherOwnership(files) {
         (executionType ||
           storesExecution ||
           cancelsEntries ||
-          (executionName && !explicitDomainType))
+          (executionName && !explicitDomainType && !receiptCompletion))
       )
         violations.push(
           `${filePath}:${lineFor(source, node)}: saga-local execution registry ${name}`,

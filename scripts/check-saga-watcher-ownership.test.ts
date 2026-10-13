@@ -600,3 +600,95 @@ describe('saga watcher ownership guard', () => {
     ]);
   });
 });
+
+it('distinguishes receipt-bound RPC completion accounting from saga task registries', () => {
+  const inspect = (body: string) =>
+    inspectSagaWatcherOwnership([
+      root(
+        ['projectionSaga'],
+        ["import { projectionSaga } from './slices/projection/sagas/projection-saga';"],
+      ),
+      {
+        path: 'src/store/renderer/slices/projection/sagas/projection-saga.ts',
+        content: [
+          "import { takeEvery, fork, cancel } from 'typed-redux-saga';",
+          "import type { RecoveryLifetime } from '$shared/event-recovery/resource';",
+          "import type { Task } from 'redux-saga';",
+          'type ProjectionFlight = { next?: RecoveryLifetime; done: Promise<void> };',
+          `export function* projectionSaga() { ${body} }`,
+        ].join('\n'),
+      },
+    ]);
+  expect(inspect('const fetches = new Map<string, ProjectionFlight>();').violations).toEqual([]);
+  expect(inspect('const fetches = new Map<string, Promise<void>>();').violations).toHaveLength(1);
+  expect(
+    inspect('const fetches = new Map<string, ProjectionFlight & { task: Task }>();').violations,
+  ).toHaveLength(1);
+  expect(
+    inspect(
+      'const fetches = new Map<string, ProjectionFlight>(); const task = yield* fork(worker); fetches.set("x", task);',
+    ).violations,
+  ).toHaveLength(1);
+  expect(
+    inspect('const fetches = new Map<string, ProjectionFlight>(); yield* cancel(fetches.get("x"));')
+      .violations,
+  ).toHaveLength(1);
+});
+
+it.each([
+  ['src/store/renderer/slices/principal/principal-slice.ts', 'principalReceived'],
+  ['src/store/renderer/slices/panel-layout/panel-layout-slice.ts', 'clearPanelLayout'],
+])('permits independent projection observers for %s#%s', (owner, action) => {
+  const result = inspectSagaWatcherOwnership([
+    root(
+      ['firstSaga', 'secondSaga'],
+      ["import { firstSaga, secondSaga } from './slices/projection/sagas/projection-saga';"],
+    ),
+    actionOwner(owner, [action]),
+    {
+      path: 'src/store/renderer/slices/projection/sagas/projection-saga.ts',
+      content: [
+        "import { takeEvery } from 'typed-redux-saga';",
+        `import { ${action} } from '$store/renderer/slices/${owner.split('/slices/')[1].replace('.ts', '')}';`,
+        `export function* firstSaga(){yield* takeEvery(${action}, firstProjection);}`,
+        `export function* secondSaga(){yield* takeEvery(${action}, secondProjection);}`,
+      ].join('\n'),
+    },
+  ]);
+  expect(result.violations).toEqual([]);
+  expect(result.watcherCount).toBe(1);
+});
+
+it.each([
+  ['src/store/renderer/slices/git/sagas/git-consumer-read-saga.ts', 'waitForNavigationRetirement'],
+  ['src/store/renderer/slices/workspace-notes/sagas/notes-recovery.ts', 'notesRecoverySaga'],
+])('permits only observation effects in the reviewed %s observer', (filePath, name) => {
+  const inspect = (extra: string, path = filePath) =>
+    inspectSagaWatcherOwnership([
+      root(
+        [name],
+        [
+          `import { ${name} } from '${path.replace('src/store/renderer/', './').replace('.ts', '')}';`,
+        ],
+      ),
+      {
+        path,
+        content: [
+          "import { take, select, call, put, fork } from 'typed-redux-saga';",
+          `export function* ${name}() { while (true) { const action = yield* take([start, stop]); if(action.type === stop.type) return; yield* select(identity); ${extra} } }`,
+        ].join('\n'),
+      },
+    ]);
+  expect(inspect('').violations).toEqual([]);
+  for (const execution of [
+    'yield* call(run, action);',
+    'yield* put(action);',
+    'yield* fork(run, action);',
+  ])
+    expect(inspect(execution).violations).toContainEqual(
+      expect.stringContaining('manual multi-action Redux router'),
+    );
+  expect(inspect('', filePath.replace('.ts', '-unreviewed.ts')).violations).toContainEqual(
+    expect.stringContaining('manual multi-action Redux router'),
+  );
+});
