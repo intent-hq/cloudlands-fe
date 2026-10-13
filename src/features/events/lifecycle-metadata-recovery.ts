@@ -1,6 +1,10 @@
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-import type { RendererRecoveryHandle, RendererRecoveryScope } from './renderer-event-recovery';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+  type RendererRecoveryScope,
+} from './renderer-event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { Workspace } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
@@ -78,10 +82,13 @@ export interface LifecycleMetadataMutation {
 }
 interface MutationOwner {
   generation: object;
+  physicalIdentity: object;
+  retire(error: unknown): boolean;
   isCurrent(): boolean;
   handle: RendererRecoveryHandle;
 }
 interface PendingMutation {
+  physicalIdentity: object;
   owner: MutationOwner | undefined;
   drained: Promise<void>;
   cancel(): void;
@@ -127,19 +134,13 @@ export function beginLifecycleMetadataMutation(
     done = true;
     owned.delete(entry);
     if (!owned.size && pendingMutations.get(key) === owned) pendingMutations.delete(key);
-    // A clean optimistic edit needs no read. Only supersede a recovery which
-    // may have observed the pre-mutation snapshot while this request was pending.
-    if (
-      !cancelled &&
-      owner &&
-      mutationOwners.get(key) === owner &&
-      owner.isCurrent() &&
-      owner.handle.status.stale
-    )
-      owner.handle.invalidate();
+    // Ingress already invalidated older reads. Recovery waits on this barrier
+    // before sending, so settlement must not invalidate that waiting snapshot again.
     resolve();
   };
   const entry: PendingMutation = {
+    physicalIdentity:
+      owner?.physicalIdentity ?? rendererEventRecovery.capturePhysicalSessionIdentity(),
     owner,
     drained,
     cancel: () => {
@@ -184,8 +185,14 @@ export function beginLifecycleMetadataMutation(
           return value;
         },
         (error) => {
-          physical--;
-          settle();
+          // The caller deadline does not release an already-sent mutation.
+          // A missing note/task target is not proof that its workspace disappeared.
+          void drainMetadataFailure(key, owner, error, !key.startsWith('task-agent-links:')).then(
+            () => {
+              physical--;
+              settle();
+            },
+          );
           throw error;
         },
       );
@@ -199,11 +206,13 @@ function retireMutations(key: string, generation: object): void {
     if (pending.owner?.generation === generation) pending.cancel();
   if (mutationOwners.get(key)?.generation === generation) mutationOwners.delete(key);
 }
-async function waitForMutations(key: string): Promise<void> {
+async function waitForMutations(key: string, physicalIdentity: object): Promise<void> {
   for (;;) {
-    const pending = pendingMutations.get(key);
-    if (!pending?.size) return;
-    await Promise.all([...pending].map((mutation) => mutation.drained));
+    const pending = [...(pendingMutations.get(key) ?? [])].filter(
+      (mutation) => mutation.physicalIdentity === physicalIdentity,
+    );
+    if (!pending.length) return;
+    await Promise.all(pending.map((mutation) => mutation.drained));
   }
 }
 
@@ -220,7 +229,30 @@ interface ReadLane {
   tail?: Promise<unknown>;
   ordinary?: PendingRead;
 }
-const lanes = new Map<string, ReadLane>();
+const sessions = new WeakMap<object, Map<string, ReadLane>>();
+
+async function drainMetadataFailure(
+  key: string,
+  owner: MutationOwner | undefined,
+  error: unknown,
+  workspaceNotFound = true,
+): Promise<void> {
+  const observe = (failure: unknown) => {
+    const e = failure as { rpcCode?: number; data?: { code?: string } } | undefined;
+    if (
+      owner &&
+      mutationOwners.get(key) === owner &&
+      owner.isCurrent() &&
+      (e?.rpcCode === -32003 ||
+        e?.rpcCode === -32001 ||
+        (workspaceNotFound && e?.rpcCode === -32602 && e.data?.code === 'not-found'))
+    )
+      owner.retire(failure);
+  };
+  observe(error);
+  const completion = await getPhysicalRequestCompletion(error);
+  if (completion && !completion.retired) for (const failure of completion.errors) observe(failure);
+}
 
 /** A lease change invalidates its result, but cannot erase a physical read still in flight. */
 function readInLane<T>(
@@ -231,6 +263,11 @@ function readInLane<T>(
 ): Promise<T> {
   if (!(recovery ? receipt.isCurrent() : receipt.commit(() => undefined)))
     return Promise.reject(new Error('Lifecycle metadata read authority expired'));
+  const owner = mutationOwners.get(key);
+  const physicalIdentity =
+    owner?.physicalIdentity ?? rendererEventRecovery.capturePhysicalSessionIdentity();
+  const lanes = sessions.get(physicalIdentity) ?? new Map<string, ReadLane>();
+  sessions.set(physicalIdentity, lanes);
   let lane = lanes.get(key);
   if (!lane) {
     lane = {};
@@ -240,7 +277,12 @@ function readInLane<T>(
   if (!recovery && owned.ordinary?.receipt.commit(() => undefined))
     return owned.ordinary.result as Promise<T>;
   const start = (): Promise<T> => {
-    if (pendingMutations.get(key)?.size) return waitForMutations(key).then(start);
+    if (
+      [...(pendingMutations.get(key) ?? [])].some(
+        (mutation) => mutation.physicalIdentity === physicalIdentity,
+      )
+    )
+      return waitForMutations(key, physicalIdentity).then(start);
     if (!(recovery ? receipt.isCurrent() : receipt.commit(() => undefined)))
       return Promise.reject(new Error('Lifecycle metadata read authority expired'));
     try {
@@ -252,7 +294,7 @@ function readInLane<T>(
   const result = owned.tail ? owned.tail.then(start, start) : start();
   const drained = result.then(
     () => undefined,
-    (error) => (error instanceof RecoveryRequestTimeoutError ? error.drained : undefined),
+    (error) => drainMetadataFailure(key, owner, error),
   );
   owned.tail = drained;
   if (!recovery) owned.ordinary = { receipt, result };
@@ -316,8 +358,13 @@ function agentLinks(raw: unknown): Record<string, TaskAgentAssociationsByTaskKey
 export function installLifecycleMetadataRecovery(
   scope: RendererRecoveryScope,
   store: MetadataStore,
+  registry: Pick<
+    typeof rendererEventRecovery,
+    'captureRetirement' | 'capturePhysicalSessionIdentity'
+  > = rendererEventRecovery,
 ): () => void {
   const context = getPrincipalActionContext(store.getState());
+  const physicalIdentity = registry.capturePhysicalSessionIdentity();
   const owners = new Map<string, RendererRecoveryHandle[]>();
   const capturedDemands = new Set<{ workspaceId: string; domain: MetadataDomain }>();
   let disposed = false,
@@ -475,8 +522,10 @@ export function installLifecycleMetadataRecovery(
         [contextKey, tokenKey, linksKey].forEach((key, index) => {
           mutationOwners.set(key, {
             generation,
+            physicalIdentity,
             handle: handles[index],
             isCurrent: common.isCurrent,
+            retire: registry.captureRetirement(key),
           });
         });
         owners.set(workspaceId, handles);

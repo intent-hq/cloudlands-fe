@@ -1,3 +1,4 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -112,16 +113,20 @@ async function harness(mounted = true, initial = [event(1)], expanded = false) {
   });
   const registry = new RendererEventRecovery();
   const off = registry.onSession((scope) =>
-    installWorkspaceActivityRecovery(scope, {
-      getState: () => state,
-      dispatch,
-      subscribe: (fn) => {
-        listeners.add(fn);
-        return () => {
-          listeners.delete(fn);
-        };
+    installWorkspaceActivityRecovery(
+      scope,
+      {
+        getState: () => state,
+        dispatch,
+        subscribe: (fn) => {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
       },
-    }),
+      registry,
+    ),
   );
   const scope = registry.attach(session);
   await scope.subscribe({ workspaceId: 'ws', eventTypes: ['*'] }, { recover: true });
@@ -394,31 +399,37 @@ describe('workspace activity recovery', () => {
   });
 });
 
-it('retains the physical read lane after a logical timeout', async () => {
-  const registry = new RendererEventRecovery();
-  const key = 'timeout-workspace-activity';
-  let release!: () => void;
-  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
-    release = () => resolve({ errors: [], retired: false });
-  });
-  const error = new RecoveryRequestTimeoutError(completion);
-  await expect(
-    runWorkspaceActivityRead(key, registry.capture(key), async () => {
-      throw error;
-    }),
-  ).rejects.toBe(error);
-  const send = vi.fn(async () => ['new']);
-  const pending = runWorkspaceActivityRead(key, registry.capture(key), send);
-  try {
-    await settle();
-    expect(send).not.toHaveBeenCalled();
-  } finally {
-    release();
-    await pending;
-    registry.dispose();
-  }
-  expect(send).toHaveBeenCalledTimes(1);
-});
+it.each(['recovery', 'ordinary'] as const)(
+  'retains the physical read lane after a %s timeout',
+  async (kind) => {
+    const registry = new RendererEventRecovery();
+    const key = 'timeout-workspace-activity';
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [], retired: false });
+    });
+    const error =
+      kind === 'recovery'
+        ? new RecoveryRequestTimeoutError(completion)
+        : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runWorkspaceActivityRead(key, registry.capture(key), async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    const send = vi.fn(async () => ['new']);
+    const pending = runWorkspaceActivityRead(key, registry.capture(key), send);
+    try {
+      await settle();
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await pending;
+      registry.dispose();
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  },
+);
 
 it('does not query durable history for transient stream, presence or watcher pushes', async () => {
   const h = await harness();
@@ -508,4 +519,132 @@ it('discards a held recovery when another loss arrives and runs only one trailin
   await settle();
   expect(queries).toBe(2);
   expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((e) => e.id)).toEqual(['5']);
+});
+
+it.each([-32003, -32001, -32602])(
+  'retires the original ordinary owner on late canonical denial %s',
+  async (rpcCode) => {
+    const h = await harness();
+    const readKey = workspaceActivityRecoveryKey('ws');
+    const receipt = h.registry.capture(readKey);
+    let release!: (value: { errors: readonly unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runWorkspaceActivityRead(readKey, receipt, async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    h.registry.push(readKey);
+    release({ errors: [{ rpcCode, data: { code: 'not-found' } }], retired: false });
+    await settle();
+    expect(h.state.workspaceEvents.byWorkspaceId.ws).toBeUndefined();
+    expect(h.registry.capture(readKey).commit(() => undefined)).toBe(false);
+    h.loss();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.request.mock.calls.filter((c) => !c[0].startsWith('events.')).length).toBe(0);
+  },
+);
+
+it.each([true, false])(
+  'does not clear replacement state from a late ordinary completion (retired=%s)',
+  async (retired) => {
+    const h = await harness();
+    const readKey = workspaceActivityRecoveryKey('ws');
+    let release!: (value: { errors: readonly unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runWorkspaceActivityRead(readKey, h.registry.capture(readKey), async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    if (!retired) {
+      h.registry.refreshAuthority();
+      h.dispatch(eventsLoaded('ws', [event(99)], null));
+    }
+    const newer = h.registry.capture(readKey);
+    release({ errors: [{ rpcCode: -32003 }], retired });
+    await settle();
+    expect(newer.commit(() => undefined)).toBe(true);
+    if (!retired)
+      expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['99']);
+    if (retired)
+      expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['1']);
+  },
+);
+
+it('clears immediate ordinary denial while another physical read is held', async () => {
+  const h = await harness();
+  const readKey = workspaceActivityRecoveryKey('ws');
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [], retired: false });
+  });
+  const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  await expect(
+    runWorkspaceActivityRead(
+      'independent-sibling-workspace-activity',
+      h.registry.capture('independent-sibling-workspace-activity'),
+      async () => {
+        throw timeout;
+      },
+    ),
+  ).rejects.toBe(timeout);
+  try {
+    await expect(
+      runWorkspaceActivityRead(readKey, h.registry.capture(readKey), async () => {
+        throw { rpcCode: -32003 };
+      }),
+    ).rejects.toEqual({ rpcCode: -32003 });
+    expect(h.state.workspaceEvents.byWorkspaceId.ws).toBeUndefined();
+  } finally {
+    release();
+    await settle();
+  }
+});
+
+it.each(['authority', 'session'] as const)(
+  'keeps physical occupancy only across the same session after %s replacement',
+  async (change) => {
+    const h = await harness();
+    const readKey = workspaceActivityRecoveryKey('ws');
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [], retired: true });
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runWorkspaceActivityRead(readKey, h.registry.capture(readKey), async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    const next = change === 'session' ? await harness() : h;
+    if (change === 'authority') h.registry.refreshAuthority();
+    const send = vi.fn(async () => 'replacement');
+    const pending = runWorkspaceActivityRead(readKey, next.registry.capture(readKey), send);
+    try {
+      await settle();
+      expect(send).toHaveBeenCalledTimes(change === 'session' ? 1 : 0);
+    } finally {
+      release();
+      await pending;
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('does not treat ordinary invalid parameters as a canonical disappearance', async () => {
+  const h = await harness();
+  const readKey = workspaceActivityRecoveryKey('ws');
+  await expect(
+    runWorkspaceActivityRead(readKey, h.registry.capture(readKey), async () => {
+      throw { rpcCode: -32602 };
+    }),
+  ).rejects.toEqual({ rpcCode: -32602 });
+  expect(h.registry.capture(readKey).commit(() => undefined)).toBe(true);
 });

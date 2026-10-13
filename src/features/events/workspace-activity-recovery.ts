@@ -2,7 +2,7 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import {
-  RecoveryRequestTimeoutError,
+  getPhysicalRequestCompletion,
   type RecoveryNotification,
 } from '$shared/event-recovery/session';
 import type { StoreState } from '$store/renderer/types';
@@ -14,7 +14,11 @@ import {
 } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { sanitizeWorkspaceEventsList } from '$store/renderer/slices/workspace-events/workspace-events-sanitizer';
 import type { EventQueryPage } from '$lib/client/app-client';
-import type { RendererRecoveryHandle, RendererRecoveryScope } from './renderer-event-recovery';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+  type RendererRecoveryScope,
+} from './renderer-event-recovery';
 import type { RecoveryReader } from './event-recovery-coordinator';
 
 export const workspaceActivityRecoveryKey = (workspaceId: string) =>
@@ -22,7 +26,35 @@ export const workspaceActivityRecoveryKey = (workspaceId: string) =>
 const PAGE_SIZE = 100;
 const demands = new Set<{ workspaceId: string }>();
 const demandListeners = new Set<() => void>();
-const lanes = new Map<string, Promise<void>>();
+const sessions = new WeakMap<object, Map<string, Promise<void>>>();
+interface ActivityOwner {
+  physicalIdentity: object;
+  isCurrent(): boolean;
+  retire(error: unknown): boolean;
+}
+const readOwners = new Map<string, ActivityOwner>();
+
+async function drainActivityFailure(
+  key: string,
+  owner: ActivityOwner | undefined,
+  error: unknown,
+): Promise<void> {
+  const observe = (failure: unknown) => {
+    const e = failure as { rpcCode?: number; data?: { code?: string } } | undefined;
+    if (
+      owner &&
+      readOwners.get(key) === owner &&
+      owner.isCurrent() &&
+      (e?.rpcCode === -32003 ||
+        e?.rpcCode === -32001 ||
+        (e?.rpcCode === -32602 && e.data?.code === 'not-found'))
+    )
+      owner.retire(failure);
+  };
+  observe(error);
+  const completion = await getPhysicalRequestCompletion(error);
+  if (completion && !completion.retired) for (const failure of completion.errors) observe(failure);
+}
 
 // These publishers use intentd's broadcast-only path, never event.query.
 // Keep wildcard loss coverage; only omit known transient *pushes*. Unknown
@@ -71,6 +103,11 @@ function inReadLane<T>(
     if (!current()) throw new Error('Activity read authority expired');
     return read();
   };
+  const owner = readOwners.get(key);
+  const identity =
+    owner?.physicalIdentity ?? rendererEventRecovery.capturePhysicalSessionIdentity();
+  const lanes = sessions.get(identity) ?? new Map<string, Promise<void>>();
+  sessions.set(identity, lanes);
   // Cursors distinguish requests. Never coalesce a newest-page read with an older page.
   const preceding = lanes.get(key);
   let result: Promise<T>;
@@ -81,7 +118,7 @@ function inReadLane<T>(
   }
   const drained = result.then(
     () => undefined,
-    (error) => (error instanceof RecoveryRequestTimeoutError ? error.drained : undefined),
+    (error) => drainActivityFailure(key, owner, error),
   );
   lanes.set(key, drained);
   void drained.then(() => {
@@ -153,8 +190,14 @@ async function readWindow(
 export function installWorkspaceActivityRecovery(
   scope: RendererRecoveryScope,
   store: ActivityStore,
+  registry: Pick<
+    typeof rendererEventRecovery,
+    'captureRetirement' | 'capturePhysicalSessionIdentity'
+  > = rendererEventRecovery,
 ): () => void {
   const context = getPrincipalActionContext(store.getState());
+  const physicalIdentity = registry.capturePhysicalSessionIdentity();
+  const bound = new Map<string, ActivityOwner>();
   const owners = new Map<string, RendererRecoveryHandle>();
   const capturedDemands = new Set<{ workspaceId: string }>();
   let disposed = false,
@@ -204,6 +247,10 @@ export function installWorkspaceActivityRecovery(
       for (const workspaceId of workspaces) {
         if (owners.has(workspaceId) || !workspaceCurrent(workspaceId)) continue;
         const key = workspaceActivityRecoveryKey(workspaceId);
+        const retire = (): undefined => {
+          if (readOwners.get(key) === bound.get(key)) readOwners.delete(key);
+          store.dispatch(eventsCleared(workspaceId));
+        };
         const handle = scope.registerResource<ActivitySnapshot>({
           key,
           workspaceId,
@@ -234,10 +281,15 @@ export function installWorkspaceActivityRecovery(
               store.dispatch(olderEventsLoaded(workspaceId, [], snapshot.nextToken));
           },
           invalidate: () => {},
-          retire: () => {
-            store.dispatch(eventsCleared(workspaceId));
-          },
+          retire,
         });
+        const owner: ActivityOwner = {
+          physicalIdentity,
+          isCurrent: () => workspaceCurrent(workspaceId),
+          retire: registry.captureRetirement(key),
+        };
+        readOwners.set(key, owner);
+        bound.set(key, owner);
         owners.set(workspaceId, handle);
       }
     } finally {
@@ -257,5 +309,7 @@ export function installWorkspaceActivityRecovery(
       store.dispatch(eventsCleared(id));
     }
     owners.clear();
+    for (const [key, owner] of bound) if (readOwners.get(key) === owner) readOwners.delete(key);
+    bound.clear();
   };
 }

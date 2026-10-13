@@ -1,3 +1,4 @@
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -126,16 +127,20 @@ async function harness(mounted = true) {
   });
   const registry = new RendererEventRecovery();
   const off = registry.onSession((scope) =>
-    installLifecycleMetadataRecovery(scope, {
-      getState: () => state,
-      dispatch,
-      subscribe: (fn) => {
-        listeners.add(fn);
-        return () => {
-          listeners.delete(fn);
-        };
+    installLifecycleMetadataRecovery(
+      scope,
+      {
+        getState: () => state,
+        dispatch,
+        subscribe: (fn) => {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
       },
-    }),
+      registry,
+    ),
   );
   const scope = registry.attach(session);
   await scope.subscribe({ workspaceId: 'ws', eventTypes: ['*'] }, { recover: true });
@@ -559,28 +564,293 @@ describe('lifecycle metadata recovery', () => {
   });
 });
 
-it('retains the physical read lane after a logical timeout', async () => {
-  const registry = new RendererEventRecovery();
-  const key = 'timeout-lifecycle-metadata';
+it.each(['recovery', 'ordinary'] as const)(
+  'retains the physical read lane after a %s timeout',
+  async (kind) => {
+    const registry = new RendererEventRecovery();
+    const key = 'timeout-lifecycle-metadata';
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [], retired: false });
+    });
+    const error =
+      kind === 'recovery'
+        ? new RecoveryRequestTimeoutError(completion)
+        : new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runLifecycleMetadataRead(key, registry.capture(key), async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    const send = vi.fn(async () => ['new']);
+    const pending = runLifecycleMetadataRead(key, registry.capture(key), send);
+    try {
+      await settle();
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await pending;
+      registry.dispose();
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('keeps a timed-out ordinary mutation physical barrier until actual completion', async () => {
+  const h = await harness();
   let release!: () => void;
   const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
     release = () => resolve({ errors: [], retired: false });
   });
-  const error = new RecoveryRequestTimeoutError(completion);
-  await expect(
-    runLifecycleMetadataRead(key, registry.capture(key), async () => {
-      throw error;
-    }),
-  ).rejects.toBe(error);
-  const send = vi.fn(async () => ['new']);
-  const pending = runLifecycleMetadataRead(key, registry.capture(key), send);
+  const error = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  const lease = beginLifecycleMetadataMutation(addContextItem('ws', item('edit') as never))!;
+  const mutate = vi.fn(async () => {
+    throw error;
+  });
+  await expect(lease.run(mutate)).rejects.toBe(error);
+  lease.finish();
+  h.loss();
   try {
     await settle();
-    expect(send).not.toHaveBeenCalled();
+    expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(0);
+  } finally {
+    release();
+    await settle();
+    await vi.advanceTimersByTimeAsync(250);
+  }
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(1);
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['fresh']);
+  expect(mutate).toHaveBeenCalledTimes(1);
+});
+
+it.each([-32003, -32001, -32602])(
+  'retires the original ordinary owner on late canonical denial %s',
+  async (rpcCode) => {
+    const h = await harness();
+    const readKey = contextRecoveryKey('ws');
+    const receipt = h.registry.capture(readKey);
+    let release!: (value: { errors: readonly unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runLifecycleMetadataRead(readKey, receipt, async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    h.registry.push(readKey);
+    release({ errors: [{ rpcCode, data: { code: 'not-found' } }], retired: false });
+    await settle();
+    expect(getItems(h.state.context.byWorkspaceId.ws.items)).toEqual([]);
+    expect(h.registry.capture(readKey).commit(() => undefined)).toBe(false);
+    h.loss();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(h.request.mock.calls.filter((c) => !c[0].startsWith('events.')).length).toBe(2);
+  },
+);
+
+it.each([true, false])(
+  'does not clear replacement state from a late ordinary completion (retired=%s)',
+  async (retired) => {
+    const h = await harness();
+    const readKey = contextRecoveryKey('ws');
+    let release!: (value: { errors: readonly unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runLifecycleMetadataRead(readKey, h.registry.capture(readKey), async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    if (!retired) {
+      h.registry.refreshAuthority();
+      h.dispatch(hydrateContextItems('ws', [item('replacement')] as never));
+    }
+    const newer = h.registry.capture(readKey);
+    release({ errors: [{ rpcCode: -32003 }], retired });
+    await settle();
+    expect(newer.commit(() => undefined)).toBe(true);
+    if (!retired)
+      expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual([
+        'replacement',
+      ]);
+    if (retired)
+      expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual([
+        'old',
+      ]);
+  },
+);
+
+it('clears immediate ordinary denial while another physical read is held', async () => {
+  const h = await harness();
+  const readKey = contextRecoveryKey('ws');
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [], retired: false });
+  });
+  const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  await expect(
+    runLifecycleMetadataRead(
+      'independent-sibling-lifecycle-metadata',
+      h.registry.capture('independent-sibling-lifecycle-metadata'),
+      async () => {
+        throw timeout;
+      },
+    ),
+  ).rejects.toBe(timeout);
+  try {
+    await expect(
+      runLifecycleMetadataRead(readKey, h.registry.capture(readKey), async () => {
+        throw { rpcCode: -32003 };
+      }),
+    ).rejects.toEqual({ rpcCode: -32003 });
+    expect(getItems(h.state.context.byWorkspaceId.ws.items)).toEqual([]);
+  } finally {
+    release();
+    await settle();
+  }
+});
+
+it.each(['authority', 'session'] as const)(
+  'keeps physical occupancy only across the same session after %s replacement',
+  async (change) => {
+    const h = await harness();
+    const readKey = contextRecoveryKey('ws');
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [], retired: true });
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    await expect(
+      runLifecycleMetadataRead(readKey, h.registry.capture(readKey), async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    const next = change === 'session' ? await harness() : h;
+    if (change === 'authority') h.registry.refreshAuthority();
+    const send = vi.fn(async () => 'replacement');
+    const pending = runLifecycleMetadataRead(readKey, next.registry.capture(readKey), send);
+    try {
+      await settle();
+      expect(send).toHaveBeenCalledTimes(change === 'session' ? 1 : 0);
+    } finally {
+      release();
+      await pending;
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('does not treat ordinary invalid parameters as a canonical disappearance', async () => {
+  const h = await harness();
+  const readKey = contextRecoveryKey('ws');
+  await expect(
+    runLifecycleMetadataRead(readKey, h.registry.capture(readKey), async () => {
+      throw { rpcCode: -32602 };
+    }),
+  ).rejects.toEqual({ rpcCode: -32602 });
+  expect(h.registry.capture(readKey).commit(() => undefined)).toBe(true);
+});
+
+it.each(['authority', 'session'] as const)(
+  'keeps timed-out mutation occupancy across only the same physical session after %s replacement',
+  async (change) => {
+    const h = await harness();
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [{ rpcCode: -32003 }], retired: true });
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+    const lease = beginLifecycleMetadataMutation(removeContextItem('ws', 'old'))!;
+    await expect(
+      lease.run(async () => {
+        throw timeout;
+      }),
+    ).rejects.toBe(timeout);
+    lease.finish();
+    const next = change === 'session' ? await harness() : h;
+    if (change === 'authority') h.registry.refreshAuthority();
+    const key = contextRecoveryKey('ws');
+    const send = vi.fn(async () => 'replacement');
+    const pending = runLifecycleMetadataRead(key, next.registry.capture(key), send);
+    try {
+      await settle();
+      expect(send).toHaveBeenCalledTimes(change === 'session' ? 1 : 0);
+    } finally {
+      release();
+      await pending;
+    }
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(next.registry.capture(key).commit(() => undefined)).toBe(true);
+  },
+);
+
+it('retires a timed-out mutation owner on eventual permission denial without replay', async () => {
+  const h = await harness();
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [{ rpcCode: -32003 }], retired: false });
+  });
+  const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  const lease = beginLifecycleMetadataMutation(removeContextItem('ws', 'old'))!;
+  const mutate = vi.fn(async () => {
+    throw timeout;
+  });
+  await expect(lease.run(mutate)).rejects.toBe(timeout);
+  lease.finish();
+  h.loss();
+  await settle();
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(0);
+  release();
+  await settle();
+  expect(getItems(h.state.context.byWorkspaceId.ws.items)).toEqual([]);
+  expect(h.registry.capture(contextRecoveryKey('ws')).commit(() => undefined)).toBe(false);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(0);
+  expect(mutate).toHaveBeenCalledTimes(1);
+});
+
+it('does not infer workspace retirement from a missing task-link mutation target', async () => {
+  const h = await harness();
+  const key = 'task-agent-links:["ws"]';
+  h.dispatch(hydrateTaskAgentAssociations('ws', { note: { task: link } }));
+  const lease = beginLifecycleMetadataMutation(removeTaskAgentAssociation('ws', 'note', 'task'))!;
+  await expect(
+    lease.run(async () => {
+      throw { rpcCode: -32602, data: { code: 'not-found' } };
+    }),
+  ).rejects.toEqual({ rpcCode: -32602, data: { code: 'not-found' } });
+  lease.finish();
+  await settle();
+  expect(h.registry.capture(key).commit(() => undefined)).toBe(true);
+  expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({ note: { task: link } });
+});
+
+it('does not carry a legacy mutation barrier into a newly installed physical session', async () => {
+  let release!: () => void;
+  const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+    release = () => resolve({ errors: [], retired: true });
+  });
+  const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion);
+  const lease = beginLifecycleMetadataMutation(removeContextItem('ws', 'old'))!;
+  await expect(
+    lease.run(async () => {
+      throw timeout;
+    }),
+  ).rejects.toBe(timeout);
+  lease.finish();
+  const h = await harness();
+  const key = contextRecoveryKey('ws');
+  const send = vi.fn(async () => 'fresh');
+  const pending = runLifecycleMetadataRead(key, h.registry.capture(key), send);
+  try {
+    await settle();
+    expect(send).toHaveBeenCalledTimes(1);
   } finally {
     release();
     await pending;
-    registry.dispose();
   }
-  expect(send).toHaveBeenCalledTimes(1);
 });
