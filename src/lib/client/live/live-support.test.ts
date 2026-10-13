@@ -44,6 +44,7 @@ import {
   isEventOneOf,
   listWorkspaceIds,
   rememberNoteWorkspace,
+  captureNoteWorkspaceCacheLifetime,
   resolveNoteWorkspaceId,
   subscribeWorkspaceIds,
 } from './live-support';
@@ -818,6 +819,26 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
     expect(noteListCalls).toHaveLength(2);
   });
 
+  it('does not retry a resolver read after its workspace authority is disposed', async () => {
+    const off = subscribeWorkspaceIds(() => {});
+    await flush();
+    let reject!: (error: unknown) => void;
+    noteListImpl = () =>
+      new Promise((_done, fail) => {
+        reject = fail;
+      });
+    const resolving = resolveNoteWorkspaceId('retired-note');
+    await flush();
+    expect(noteListCalls).toHaveLength(1);
+    off();
+    reject(Object.assign(new Error('Invalid params'), { rpcCode: -32602 }));
+    await flush();
+    const count = noteListCalls.length;
+    if (count > 1) reject(new Error('finish unexpected retry'));
+    expect(await resolving).toBeNull();
+    expect(count).toBe(1);
+  });
+
   it('a daemon that rejects the projection param (-32602) gets ONE projection-less retry', async () => {
     noteListImpl = (params) => {
       if ((params as { projection?: string }).projection === 'slim') {
@@ -929,12 +950,20 @@ describe('workspace scope recovery after generic loss', () => {
       await scope.subscribe({ eventTypes: ['workspace:*'] }, { recover: true });
       await flush();
       expect(snapshots.at(-1)).toEqual(['deleted', 'remaining']);
+      rememberNoteWorkspace('deleted-note', 'deleted');
+      expect(await resolveNoteWorkspaceId('deleted-note')).toBe('deleted');
+      const cacheLifetime = captureNoteWorkspaceCacheLifetime();
       receive({
         method: 'events.lost',
         params: { subscriptionId: 'loss', generation: '1', scope: { workspaceId: null } },
       });
       await flush();
       expect(snapshots.at(-1)).toEqual(['remaining']);
+      expect(await resolveNoteWorkspaceId('deleted-note')).toBeNull();
+      rememberNoteWorkspace('deleted-note', 'deleted');
+      expect(await resolveNoteWorkspaceId('deleted-note')).toBeNull();
+      rememberNoteWorkspace('removed-note', 'remaining', cacheLifetime);
+      expect(await resolveNoteWorkspaceId('removed-note')).toBeNull();
       emit('events.event', {
         event: { type: 'workspace:created', data: { workspace: { id: 'deleted' } } },
       });
@@ -945,4 +974,67 @@ describe('workspace scope recovery after generic loss', () => {
       rendererEventRecovery.dispose();
     }
   });
+});
+
+it('serializes workspace scope recovery behind a held ordinary seed', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+  let receive!: (n: any) => void, finish!: (value: any) => void;
+  let active = 0,
+    peak = 0;
+  const snapshot = vi.fn(async () => {
+    peak = Math.max(peak, ++active);
+    active--;
+    return workspaceListResult(['ws-new']);
+  });
+  const scope = rendererEventRecovery.attach(
+    createEventRecoverySession({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      onNotification: (fn) => {
+        receive = fn;
+        return () => {};
+      },
+      request: async (method, params, observe) => {
+        const value =
+          method === 'events.subscribe'
+            ? { subscriptionId: 'loss', lossRecovery: 1 }
+            : method === 'workspace.list'
+              ? await snapshot()
+              : params;
+        observe?.(value);
+        return value;
+      },
+      dispose: () => {},
+    }),
+  );
+  await scope.subscribe({ eventTypes: ['workspace:*'] }, { recover: true });
+  listWorkspaceIdsImpl = () => {
+    peak = Math.max(peak, ++active);
+    return new Promise((done) => {
+      finish = (value) => {
+        active--;
+        done(value);
+      };
+    });
+  };
+  const values: string[][] = [];
+  const off = subscribeWorkspaceIds((ids) => values.push([...ids]));
+  try {
+    receive({
+      method: 'events.lost',
+      params: { subscriptionId: 'loss', generation: '1', scope: { workspaceId: null } },
+    });
+    await flush();
+    expect(snapshot).not.toHaveBeenCalled();
+    finish(workspaceListResult(['ws-old']));
+    await flush();
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(peak).toBe(1);
+    expect(values.at(-1)).toEqual(['ws-new']);
+  } finally {
+    off();
+    rendererEventRecovery.dispose();
+  }
 });

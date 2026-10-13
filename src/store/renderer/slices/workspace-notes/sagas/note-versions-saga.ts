@@ -1,3 +1,4 @@
+import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, type Channel } from 'redux-saga';
 import {
   actionChannel,
@@ -48,10 +49,14 @@ function* fetchVersions(workspaceId: string, noteId: string) {
   const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!lifetime.commit(() => {})) return;
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.listVersions>> = yield* call(
-      [appClient.notes, appClient.notes.listVersions],
-      workspaceId,
-      noteId,
+    const response = yield* call(() =>
+      runRecoveryRead(
+        notesRecoveryKey(workspaceId),
+        lifetime,
+        'ordinary',
+        `versions:${noteId}`,
+        () => appClient.notes.listVersions(workspaceId, noteId),
+      ),
     );
     const versions = response.map(toRuntimeNoteVersion);
     yield* commitNoteAction(lifetime, applyNoteVersions(workspaceId, noteId, versions));

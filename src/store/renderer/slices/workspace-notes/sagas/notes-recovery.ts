@@ -1,3 +1,4 @@
+import { runRecoveryRead, retireRecoveryReads } from '$lib/client/live/recovery-read-queue';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { call, getContext, take } from 'typed-redux-saga';
 import {
@@ -113,12 +114,13 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
         isCurrent: () =>
           workspaces.has(workspaceId) &&
           authority === selectPrincipalConnectionContext.select(store.state),
-        read: async ({ request }) => {
-          const result = await request<{ notes: Record<string, unknown>[] }>('note.list', {
-            workspaceId,
-          });
-          return result.notes.map((raw) => toRuntimeNote(normalizeNote(raw, workspaceId)));
-        },
+        read: ({ request, lifetime }) =>
+          runRecoveryRead(key, lifetime, 'recovery', key, async () => {
+            const result = await request<{ notes: Record<string, unknown>[] }>('note.list', {
+              workspaceId,
+            });
+            return result.notes.map((raw) => toRuntimeNote(normalizeNote(raw, workspaceId)));
+          }),
         apply: (notes) => {
           const current = store.state.workspaceNotes.byWorkspaceId[workspaceId];
           const rows = notes.map((note) => {
@@ -151,15 +153,16 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
         isCurrent: () =>
           comments.get(key) === demand &&
           authority === selectPrincipalConnectionContext.select(store.state),
-        read: async ({ request }) => {
-          const result = await request<{ threads: { comments?: Record<string, unknown>[] }[] }>(
-            'comment.list',
-            { workspaceId, noteId, includeComments: true },
-          );
-          return result.threads.flatMap((thread) =>
-            (thread.comments ?? []).map((raw) => normalizeComment(raw, noteId, workspaceId)),
-          );
-        },
+        read: ({ request, lifetime }) =>
+          runRecoveryRead(key, lifetime, 'recovery', key, async () => {
+            const result = await request<{ threads: { comments?: Record<string, unknown>[] }[] }>(
+              'comment.list',
+              { workspaceId, noteId, includeComments: true },
+            );
+            return result.threads.flatMap((thread) =>
+              (thread.comments ?? []).map((raw) => normalizeComment(raw, noteId, workspaceId)),
+            );
+          }),
         apply: (rows) => {
           store.dispatch(replaceNoteCommentsAction(workspaceId, noteId, rows));
           for (const [consumerId, requestId] of consumers)
@@ -193,18 +196,19 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
         isCurrent: () =>
           attributions.get(key) === demand &&
           authority === selectPrincipalConnectionContext.select(store.state),
-        read: async ({ request }) => {
-          const data = await request<LineAttributionData | null>('note.lineAttribution.load', {
-            workspaceId,
-            noteId,
-          });
-          if (
-            data !== null &&
-            (String(data.workspaceId) !== workspaceId || String(data.noteId) !== noteId)
-          )
-            throw new Error('Attribution response scope mismatch');
-          return data;
-        },
+        read: ({ request, lifetime }) =>
+          runRecoveryRead(key, lifetime, 'recovery', key, async () => {
+            const data = await request<LineAttributionData | null>('note.lineAttribution.load', {
+              workspaceId,
+              noteId,
+            });
+            if (
+              data !== null &&
+              (String(data.workspaceId) !== workspaceId || String(data.noteId) !== noteId)
+            )
+              throw new Error('Attribution response scope mismatch');
+            return data;
+          }),
         apply,
         invalidate: () => {},
         retire: () => {
@@ -311,9 +315,11 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
       else if (action.type === workspaceUnmounted.type || action.type === workspaceDeleted.type) {
         const workspaceId = String(action.payload?.[0]);
         workspaces.delete(workspaceId);
+        retireRecoveryReads(notesRecoveryKey(workspaceId));
         for (const [key, demand] of attributions) {
           if (demand.workspaceId !== workspaceId) continue;
           for (const consumer of demand.consumers.keys()) attributionKeys.delete(consumer);
+          retireRecoveryReads(key);
           handles.get(key)?.dispose();
           handles.delete(key);
           attributions.delete(key);
@@ -323,6 +329,7 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
         for (const [key, demand] of comments) {
           if (demand.workspaceId !== workspaceId) continue;
           for (const consumer of demand.consumers.keys()) consumerKeys.delete(consumer);
+          retireRecoveryReads(key);
           handles.get(key)?.dispose();
           handles.delete(key);
           comments.delete(key);

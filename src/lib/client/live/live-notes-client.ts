@@ -31,6 +31,7 @@ import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
+  captureNoteWorkspaceCacheLifetime,
   resolveNoteWorkspaceId,
   runMutation,
   subscribeWorkspaceIds,
@@ -149,6 +150,7 @@ export class LiveNotesClient implements NotesClient {
 
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
     const lifetime = rendererEventRecovery.capture(`notes:${JSON.stringify([workspaceId])}`);
+    const cacheLifetime = captureNoteWorkspaceCacheLifetime();
     // §5.2 `projection`: only ride the wire when "slim" is requested so older
     // daemons see an unchanged request. If a daemon rejects the unknown param
     // (-32602 Invalid params), fall back once to the plain full list; other
@@ -171,7 +173,7 @@ export class LiveNotesClient implements NotesClient {
     return notes.map((n) => {
       const note = normalizeNote(n as Record<string, unknown>, workspaceId);
       lifetime.commit(() => {
-        rememberNoteWorkspace(String(note.id), workspaceId);
+        rememberNoteWorkspace(String(note.id), workspaceId, cacheLifetime);
       });
       return note;
     });

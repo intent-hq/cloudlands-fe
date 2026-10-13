@@ -1,3 +1,4 @@
+import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -78,6 +79,10 @@ import {
 import { toRuntimeNote } from './note-payload-mappers';
 
 const NOTE_MUTATION_LIFETIME = 'noteMutationLifetime';
+function mutationAuthorityCurrent(workspaceId: string, lifetime: RecoveryLifetime) {
+  const current = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  return current.key === lifetime.key && current.isCurrent();
+}
 function* commitMutationAction(action: { type: string }) {
   const lifetime = yield* getContext<RecoveryLifetime | undefined>(NOTE_MUTATION_LIFETIME);
   if (lifetime) return yield* commitNoteAction(lifetime, action);
@@ -243,9 +248,10 @@ function* refetchWorkspaceNotes(workspaceId: string) {
   if (mutation && !mutation.isCurrent()) return;
   const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
-      workspaceId,
+    const response = yield* call(() =>
+      runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', 'list:full', () =>
+        appClient.notes.list(workspaceId),
+      ),
     );
     const notes = response.map(toRuntimeNote);
     yield* commitNoteAction(
@@ -545,8 +551,10 @@ function* enqueueMutation(
   queue: Channel<MutationEnvelope>,
   command: MutationCommand,
   waitForCompletion = false,
+  originalLifetime?: RecoveryLifetime,
 ) {
   const lifetime =
+    originalLifetime ??
     commandLifetimes.get(command) ??
     rendererEventRecovery.capture(notesRecoveryKey(command.workspaceId));
   const envelope = {
@@ -784,10 +792,12 @@ function* handleTitleAction(
   action: ReturnType<typeof updateNoteTitle>,
 ) {
   const [workspaceId, noteId, title] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId || typeof title !== 'string') return;
   const before = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   yield* enqueueMutation(
     queue,
     {
@@ -799,6 +809,7 @@ function* handleTitleAction(
       titleOnly: true,
     },
     true,
+    lifetime,
   );
 }
 
@@ -819,6 +830,7 @@ function* handleMetadataAction(
   action: ReturnType<typeof updateNote>,
 ) {
   const [workspaceId, noteId, updates] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId) return;
   const patch: NoteMetadataPatch = {
     ...(updates.title !== undefined ? { title: updates.title } : {}),
@@ -832,10 +844,12 @@ function* handleMetadataAction(
   };
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, patch));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   yield* enqueueMutation(
     queue,
     { kind: 'metadata', workspaceId, noteId, patch, rollback, titleOnly: false },
     true,
+    lifetime,
   );
 }
 
@@ -844,11 +858,13 @@ function* handleDeleteAction(
   action: ReturnType<typeof deleteNote>,
 ) {
   const [workspaceId, noteId] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId) return;
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyNoteDeleted(workspaceId, noteId));
-  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
+  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true, lifetime);
 }
 
 function* handleDeleteRequested(
@@ -887,10 +903,12 @@ function* createNewNote(
       return undefined;
     }
 
+    if (!lifetime.isCurrent()) return undefined;
     try {
-      const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-        [appClient.notes, appClient.notes.list],
-        workspaceId,
+      const response = yield* call(() =>
+        runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', 'list:full', () =>
+          appClient.notes.list(workspaceId),
+        ),
       );
       const notes = response.map(toRuntimeNote);
       if (

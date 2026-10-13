@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -121,7 +122,10 @@ function harness(seed: Note[] = []) {
 }
 
 describe('notesReadSaga', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rendererEventRecovery.dispose();
+  });
 
   it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
     const spec = {

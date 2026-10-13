@@ -1,3 +1,5 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { runRecoveryRead } from './recovery-read-queue';
 /**
  * Shared helpers for the live domain clients.
  *
@@ -199,6 +201,14 @@ let workspaceIdRecovery: RendererRecoveryHandle | undefined;
 let offWorkspaceIdRecovery: Unsubscribe | undefined;
 let workspaceIdAuthorityRetired = false;
 let workspaceIdOwnerEpoch: object = {};
+function workspaceScopeLifetime(lifetime: RecoveryLifetime): RecoveryLifetime {
+  const epoch = workspaceIdOwnerEpoch;
+  return {
+    key: epoch,
+    isCurrent: () => epoch === workspaceIdOwnerEpoch && lifetime.isCurrent(),
+    commit: (write) => epoch === workspaceIdOwnerEpoch && lifetime.commit(write),
+  };
+}
 let workspaceListCache: { ids: readonly string[]; fetchedAt: number } | null = null;
 let workspaceListRpcInFlight: Promise<string[]> | null = null;
 
@@ -227,7 +237,13 @@ function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
   const lifetime = rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY);
   const ownerEpoch = workspaceIdOwnerEpoch;
   logWorkspaceListRpc(tag, detail);
-  const fetch = backendRequest<{ workspaces?: unknown[] }>('workspace.list').then((result) => {
+  const fetch = runRecoveryRead(
+    WORKSPACE_IDS_RECOVERY_KEY,
+    workspaceScopeLifetime(lifetime),
+    'ordinary',
+    'list',
+    () => backendRequest<{ workspaces?: unknown[] }>('workspace.list'),
+  ).then((result) => {
     const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
     const ids = workspaces
       .map((w) =>
@@ -586,18 +602,28 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
     workspaceIdAuthorityRetired = false;
     let installed = false;
     offWorkspaceIdRecovery = rendererEventRecovery.onSession((scope) => {
+      workspaceIdOwnerEpoch = {};
       workspaceIdAuthorityRetired = false;
       workspaceIdRecovery = scope.registerResource({
         key: WORKSPACE_IDS_RECOVERY_KEY,
         workspaceId: null,
         eventTypes: WORKSPACE_ID_SET_EVENTS,
         isCurrent: () => workspaceIdRefCount > 0,
-        read: async ({ request }) => {
-          const result = await request<{ workspaces: { id?: string; workspaceId?: string }[] }>(
-            'workspace.list',
-          );
-          return result.workspaces.map((row) => row.id ?? row.workspaceId ?? '').filter(Boolean);
-        },
+        read: ({ request, lifetime }) =>
+          runRecoveryRead(
+            WORKSPACE_IDS_RECOVERY_KEY,
+            workspaceScopeLifetime(lifetime),
+            'recovery',
+            'list',
+            async () => {
+              const result = await request<{ workspaces: { id?: string; workspaceId?: string }[] }>(
+                'workspace.list',
+              );
+              return result.workspaces
+                .map((row) => row.id ?? row.workspaceId ?? '')
+                .filter(Boolean);
+            },
+          ),
         apply: (ids) => {
           sharedWorkspaceIds = new Set(ids);
           workspaceListCache = { ids, fetchedAt: Date.now() };
@@ -606,6 +632,9 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
         },
         invalidate: () => {
           workspaceListCache = null;
+          noteWorkspaceIndex.clear();
+          noteResolveNegativeCache.clear();
+          noteResolveScansInFlight.clear();
         },
         retire: () => {
           workspaceIdAuthorityRetired = true;
@@ -681,8 +710,23 @@ const noteWorkspaceIndex = new Map<string, string>();
  * Discovering a note also clears any negative-cache entry for it so a note
  * that appears within the negative TTL resolves immediately.
  */
-export function rememberNoteWorkspace(noteId: string, workspaceId: string): void {
-  if (noteId && workspaceId) {
+export function captureNoteWorkspaceCacheLifetime(): RecoveryLifetime {
+  return workspaceScopeLifetime(rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY));
+}
+
+export function rememberNoteWorkspace(
+  noteId: string,
+  workspaceId: string,
+  lifetime?: RecoveryLifetime,
+): void {
+  if (lifetime && !lifetime.commit(() => {})) return;
+  if (
+    noteId &&
+    workspaceId &&
+    !workspaceIdAuthorityRetired &&
+    !workspaceIdRecovery?.status.stale &&
+    (sharedWorkspaceIds === null || sharedWorkspaceIds.has(workspaceId))
+  ) {
     noteWorkspaceIndex.set(noteId, workspaceId);
     noteResolveNegativeCache.delete(noteId);
   }
@@ -712,7 +756,7 @@ const noteResolveScansInFlight = new Map<string, Promise<string | null>>();
  * so the next resolution retries instead of serving a stale `null`.
  */
 async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
-  const lifetime = rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY);
+  const lifetime = captureNoteWorkspaceCacheLifetime();
   let workspaceIds: string[];
   try {
     workspaceIds = await listWorkspaceIdsOrThrow('resolver');
@@ -733,6 +777,7 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
         });
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
+        if (!lifetime.commit(() => {})) return null;
         result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       }
       if (!lifetime.commit(() => undefined)) return null;
@@ -750,7 +795,8 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
       scanComplete = false;
     }
   }
-  if (scanComplete && workspaceIds.length > 0) noteResolveNegativeCache.set(noteId, Date.now());
+  if (scanComplete && lifetime.commit(() => {}) && workspaceIds.length > 0)
+    noteResolveNegativeCache.set(noteId, Date.now());
   return null;
 }
 
@@ -766,7 +812,8 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
 export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
   if (workspaceIdAuthorityRetired || workspaceIdRecovery?.status.stale) return null;
   const cached = noteWorkspaceIndex.get(noteId);
-  if (cached) return cached;
+  if (cached && (sharedWorkspaceIds === null || sharedWorkspaceIds.has(cached))) return cached;
+  if (cached) noteWorkspaceIndex.delete(noteId);
 
   const missedAt = noteResolveNegativeCache.get(noteId);
   if (missedAt !== undefined) {

@@ -15,6 +15,11 @@ import {
   readNoteRequested,
   restoreNoteVersion,
   updateNoteContent,
+  updateNoteTitle,
+  updateNote,
+  deleteNote,
+  noteEventReceived,
+  commentEventReceived,
   noteAttributionViewRequested,
   noteAttributionViewReleased,
 } from '../workspace-notes-slice';
@@ -108,27 +113,28 @@ async function harness() {
     if (method === 'comment.list') return commentRead();
     return {};
   });
-  const session = createEventRecoverySession({
-    supported: true,
-    isCurrent: () => current,
-    onNotification: (fn) => {
-      receive = fn;
-      return () => {};
-    },
-    onRetired: (fn) => {
-      retire = fn;
-      return () => {};
-    },
-    request: async (method, params, observe) => {
-      const result = await request(method, params);
-      observe?.(result);
-      return result;
-    },
-    dispose: () => {
-      current = false;
-    },
-  });
-  const scope = rendererEventRecovery.attach(session);
+  const makeSession = () =>
+    createEventRecoverySession({
+      supported: true,
+      isCurrent: () => current,
+      onNotification: (fn) => {
+        receive = fn;
+        return () => {};
+      },
+      onRetired: (fn) => {
+        retire = fn;
+        return () => {};
+      },
+      request: async (method, params, observe) => {
+        const result = await request(method, params);
+        observe?.(result);
+        return result;
+      },
+      dispose: () => {
+        current = false;
+      },
+    });
+  const scope = rendererEventRecovery.attach(makeSession());
   const task = runSaga({ channel, dispatch, getState: () => store.state }, notesReadSaga, store);
   const writes = runSaga({ channel, dispatch, getState: () => store.state }, notesWriteSaga, store);
   const versions = runSaga(
@@ -149,6 +155,10 @@ async function harness() {
   await settle();
   return {
     dispatch,
+    replace: () => {
+      current = true;
+      return rendererEventRecovery.attach(makeSession());
+    },
     read,
     commentRead,
     attributionRead,
@@ -189,7 +199,8 @@ describe('active note recovery', () => {
     await settle();
     h.loss();
     await settle();
-    expect(h.row()?.content).toBe('new');
+    expect(h.read).not.toHaveBeenCalled();
+    expect(h.row()?.content).toBe('old');
     resolve(row('old reply'));
     await settle();
     expect(h.row()?.content).toBe('new');
@@ -325,5 +336,185 @@ describe('active note recovery', () => {
     finish({ success: true, note: row('old restore echo') });
     await settle();
     expect(h.row()?.content).toBe('new');
+  });
+});
+
+describe('independent typed-note review probes', () => {
+  it('shares an ordinary pending comment read across two open views', async () => {
+    const h = await harness();
+    const finishes: Array<(rows: any[]) => void> = [];
+    const read = vi
+      .spyOn(appClient.comments, 'list')
+      .mockImplementation(() => new Promise((done) => finishes.push(done)));
+    h.dispatch(commentLoadRequested('view-a', 'one', 'ws', 'spec'));
+    h.dispatch(commentLoadRequested('view-b', 'two', 'ws', 'spec'));
+    await settle();
+    const count = read.mock.calls.length;
+    for (const done of finishes) done([]);
+    await settle();
+    expect(count).toBe(1);
+  });
+  it('does not overlap recovery with an ordinary held comment read', async () => {
+    const h = await harness();
+    let finish!: (rows: any[]) => void;
+    vi.spyOn(appClient.comments, 'list').mockImplementation(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    h.loss();
+    await settle();
+    const recoveryReadsWhilePending = h.commentRead.mock.calls.length;
+    finish([]);
+    await settle();
+    expect(recoveryReadsWhilePending).toBe(0);
+    expect(h.commentRead).toHaveBeenCalledTimes(1);
+    expect(h.store.state.comments.commentsById.ids).toEqual(['comment']);
+  });
+  it('does not issue a title mutation after a preceding flush crosses session replacement', async () => {
+    const h = await harness();
+    let finish!: (value: any) => void;
+    vi.spyOn(appClient.notes, 'setContent').mockImplementation(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    const title = vi
+      .spyOn(appClient.notes, 'updateMetadata')
+      .mockResolvedValue({ success: true } as never);
+    h.dispatch(updateNoteContent('ws', 'spec', 'private draft'));
+    h.dispatch(updateNoteTitle('ws', 'spec', 'old-session title'));
+    await settle();
+    h.retire();
+    h.replace();
+    h.dispatch(loadWorkspaceNotesSucceeded(['ws'], { ws: [row('successor')] } as never));
+    finish({ success: true, newContent: 'private draft', noteRev: 1 });
+    await settle();
+    expect(title).not.toHaveBeenCalled();
+    expect(h.row()?.title).toBe('Spec');
+  });
+  it('does not start a queued note event read after its captured authority retires', async () => {
+    const h = await harness();
+    const finishes: Array<(value: any) => void> = [];
+    const read = vi
+      .spyOn(appClient.notes, 'get')
+      .mockImplementation(() => new Promise((done) => finishes.push(done)));
+    h.dispatch(readNoteRequested('ws', 'spec'));
+    h.dispatch(noteEventReceived('ws', 'spec', 'note:updated'));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    h.retire();
+    finishes[0](row('private old'));
+    await settle();
+    const count = read.mock.calls.length;
+    for (const done of finishes.slice(1)) done(row('private trailing'));
+    await settle();
+    expect(count).toBe(1);
+  });
+  it('shares ordinary attribution work and serializes its recovery snapshot', async () => {
+    const h = await harness();
+    let finish!: (value: any) => void;
+    let active = 0,
+      peak = 0;
+    const load = vi.spyOn(appClient.notes.lineAttribution, 'load').mockImplementation(() => {
+      peak = Math.max(peak, ++active);
+      return new Promise((done) => {
+        finish = (value) => {
+          active--;
+          done(value);
+        };
+      });
+    });
+    h.attributionRead.mockImplementation(async () => {
+      peak = Math.max(peak, ++active);
+      active--;
+      return { workspaceId: 'ws', noteId: 'spec', lines: [], revision: 3 };
+    });
+    h.dispatch(noteAttributionViewRequested('a', 'one', 'ws', 'spec'));
+    h.dispatch(noteAttributionViewRequested('b', 'two', 'ws', 'spec'));
+    await settle();
+    expect(load).toHaveBeenCalledTimes(1);
+    h.loss();
+    await settle();
+    expect(h.attributionRead).not.toHaveBeenCalled();
+    finish(null);
+    await settle();
+    expect(h.attributionRead).toHaveBeenCalledTimes(1);
+    expect(peak).toBe(1);
+    expect(
+      getItem(h.store.state.workspaceNotes.byWorkspaceId.ws.attributionViews, 'a')?.data,
+    ).toMatchObject({ revision: 3 });
+    expect(
+      getItem(h.store.state.workspaceNotes.byWorkspaceId.ws.attributionViews, 'b')?.data,
+    ).toMatchObject({ revision: 3 });
+  });
+  it.each(['title', 'metadata', 'delete'] as const)(
+    'does not dispatch an old %s command after same-id workspace remount',
+    async (kind) => {
+      const h = await harness();
+      let finish!: (value: any) => void;
+      vi.spyOn(appClient.notes, 'setContent').mockImplementation(
+        () =>
+          new Promise((done) => {
+            finish = done;
+          }),
+      );
+      const metadata = vi
+        .spyOn(appClient.notes, 'updateMetadata')
+        .mockResolvedValue({ success: true });
+      const remove = vi.spyOn(appClient.notes, 'delete').mockResolvedValue({ success: true });
+      h.dispatch(updateNoteContent('ws', 'spec', 'private draft'));
+      h.dispatch(
+        kind === 'title'
+          ? updateNoteTitle('ws', 'spec', 'old title')
+          : kind === 'metadata'
+            ? updateNote('ws', 'spec', { tags: ['old'] })
+            : deleteNote('ws', 'spec'),
+      );
+      await settle();
+      h.dispatch(workspaceUnmounted('ws'));
+      vi.spyOn(appClient.notes, 'list').mockResolvedValue([row('remount')] as never);
+      vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('remount') as never);
+      h.dispatch(workspaceNotesHydrationRequested('ws', 2, false));
+      await settle();
+      finish({ success: true, newContent: 'private draft' });
+      await settle();
+      expect(metadata).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      expect(h.row()?.content).toBe('remount');
+    },
+  );
+});
+
+describe('newer push while ordinary read is pending', () => {
+  it('preserves one physical comment read when an accepted push supersedes its receipt', async () => {
+    const h = await harness();
+    const finishes: Array<(rows: any[]) => void> = [];
+    let active = 0,
+      peak = 0;
+    const read = vi.spyOn(appClient.comments, 'list').mockImplementation(() => {
+      peak = Math.max(peak, ++active);
+      return new Promise((done) =>
+        finishes.push((rows) => {
+          active--;
+          done(rows);
+        }),
+      );
+    });
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    h.dispatch(commentEventReceived('ws', 'spec', 'added'));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    finishes[0]([]);
+    await settle();
+    expect(read).toHaveBeenCalledTimes(2);
+    finishes[1]([]);
+    await settle();
+    expect(peak).toBe(1);
   });
 });

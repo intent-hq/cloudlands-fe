@@ -1,3 +1,4 @@
+import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
 import {
   actionChannel,
@@ -167,11 +168,11 @@ function* fetchNoteSlot(
   workspaceId: string,
   noteId: string,
   generation: number,
+  lifetime: RecoveryLifetime,
   after?: Task,
 ): SagaGenerator<ReadResult> {
   try {
-    if (!rendererEventRecovery.capture(notesRecoveryKey(workspaceId)).commit(() => undefined))
-      return { note: null };
+    if (!lifetime.commit(() => undefined)) return { note: null };
     if (after) {
       const { cleanup } = yield* race({
         previous: join(after),
@@ -179,8 +180,13 @@ function* fetchNoteSlot(
       });
       if (cleanup) return { note: null };
     }
+    if (!lifetime.commit(() => undefined)) return { note: null };
     const { found, cleanup } = yield* race({
-      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      found: call(() =>
+        runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', `get:${noteId}`, () =>
+          appClient.notes.get(noteId, workspaceId),
+        ),
+      ),
       cleanup: take((action: ObservedAction) => isNoteReadCleanup(action, workspaceId, noteId)),
     });
     if (cleanup || !found) return { note: null };
@@ -206,7 +212,16 @@ function* createReadSlot(
 ): SagaGenerator<ReadSlot> {
   const generation = ++coordinator.nextGeneration;
   const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
-  const task = yield* fork(fetchNoteSlot, coordinator, key, workspaceId, noteId, generation, after);
+  const task = yield* fork(
+    fetchNoteSlot,
+    coordinator,
+    key,
+    workspaceId,
+    noteId,
+    generation,
+    lifetime,
+    after,
+  );
   return {
     generation,
     task,
@@ -247,7 +262,7 @@ function* admitNoteRead(
   return admission.trailing;
 }
 
-function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
+function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation = 0) {
   const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
   ensureNotesRecovery(store, workspaceId);
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
@@ -263,8 +278,16 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     // fail the hydrate (its slim row, if any, is kept as-is).
     const fetchSlimListAndSpec = (id: string) =>
       Promise.all([
-        appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+        runRecoveryRead(notesRecoveryKey(id), lifetime, 'ordinary', `list:slim:${generation}`, () =>
+          appClient.notes.list(id, { projection: 'slim' }),
+        ),
+        runRecoveryRead(
+          notesRecoveryKey(id),
+          lifetime,
+          'ordinary',
+          `get:${SPEC_NOTE_ID}:hydrate:${generation}`,
+          () => appClient.notes.get(SPEC_NOTE_ID, id),
+        ).catch(() => null),
       ]);
     const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
       fetchSlimListAndSpec,
@@ -485,10 +508,14 @@ function* noteAttributionViewWorker(
         continue;
       }
       try {
-        const data = yield* call(
-          [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
-          workspaceId,
-          noteId,
+        const data = yield* call(() =>
+          runRecoveryRead(
+            attributionRecoveryKey(workspaceId, noteId),
+            lifetime,
+            'ordinary',
+            'load',
+            () => appClient.notes.lineAttribution.load(workspaceId, noteId),
+          ),
         );
         if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
         const valid =
@@ -664,10 +691,10 @@ function* paletteNoteSearchWorker(action: ReturnType<typeof paletteNoteSearchReq
 function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
   const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
   if (!lifetime.commit(() => undefined)) return [];
-  const comments: Awaited<ReturnType<typeof appClient.comments.list>> = yield* call(
-    [appClient.comments, appClient.comments.list],
-    noteId,
-    workspaceId,
+  const comments = yield* call(() =>
+    runRecoveryRead(commentsRecoveryKey(workspaceId, noteId), lifetime, 'ordinary', 'list', () =>
+      appClient.comments.list(noteId, workspaceId),
+    ),
   );
   if (
     apply &&
@@ -742,10 +769,10 @@ function* applyCommentEventWorker(action: ReturnType<typeof commentEventReceived
 }
 
 function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHydrationRequested>) {
-  const [workspaceId, , force] = action.payload;
+  const [workspaceId, generation, force] = action.payload;
   if (!workspaceId) return;
   yield* race({
-    hydrate: call(hydrateWorkspaceNotes, workspaceId, force),
+    hydrate: call(hydrateWorkspaceNotes, workspaceId, force, generation),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
