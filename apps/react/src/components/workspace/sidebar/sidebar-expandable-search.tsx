@@ -13,7 +13,7 @@ export interface SidebarExpandableSearchProps {
   /** React counterpart of bind:query; changes are reported in the originating handler. */
   onQueryChange?: (query: string) => void;
   placeholder: string;
-  scope: 'agents' | 'context' | 'files';
+  scope: 'agents' | 'context' | 'files' | 'workspaces';
   placement?: 'header' | 'toolbar';
   onKeydown?: (event: KeyboardEvent) => void;
 }

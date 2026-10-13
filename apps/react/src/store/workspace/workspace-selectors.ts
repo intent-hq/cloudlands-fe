@@ -1,6 +1,25 @@
 import { store } from '@/store';
+import { sidebarSearchMatches } from '$lib/components/workspace/sidebar/sidebar-search';
 import * as authority from '../../../../../src/store/renderer/slices/workspace/workspace-authority-projections';
 export const selectWorkspaceIds = store.createSelector((state) => state.workspace.workspaces.ids);
+export const selectWorkspaceNavigationIds = store.createSelector((state, query: string) => {
+  const ids = state.workspace.workspaces.ids;
+  if (!query.trim()) return ids;
+  return ids.filter((id) => {
+    const workspace = authority.getWorkspaceById(state, id);
+    return (
+      workspace &&
+      sidebarSearchMatches(query, [
+        workspace.id,
+        workspace.title,
+        workspace.repositoryName,
+        workspace.repositoryOwner,
+        workspace.branch,
+        workspace.statusMessage,
+      ])
+    );
+  });
+});
 export const selectWorkspaceListLoadedForBackend = store.createSelector(
   authority.getWorkspaceListLoadedForBackend,
 );

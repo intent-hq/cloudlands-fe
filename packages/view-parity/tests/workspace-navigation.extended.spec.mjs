@@ -23,6 +23,97 @@ function observeWorkspaces(page) {
   return { requests, rows };
 }
 
+test('workspace search filters real rows without leaving file content', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  const { workspaceId, url } = environment();
+  const wire = observeWorkspaces(page);
+  const errors = await observeErrors(page);
+  const navigation = page.getByTestId('workspace-navigation');
+  const search = page.locator('[data-sidebar-search="workspaces"]');
+  const rows = navigation.locator('[data-navigation-workspace]');
+  const current = navigation.locator(`[data-navigation-workspace="${workspaceId}"]`);
+  try {
+    await page.addInitScript(() => performance.setResourceTimingBufferSize(3000));
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.goto(url);
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible({ timeout: 60_000 });
+    await expect.poll(() => wire.rows.length).toBeGreaterThan(1);
+    await expect(rows).toHaveCount(wire.rows.length);
+    await search.getByRole('button').click();
+    const input = search.getByRole('searchbox');
+    await expect(input).toBeFocused();
+    const beforeSearch = wire.requests.filter(({ method }) => method === 'file.read').length;
+    await input.fill(workspaceId.toUpperCase());
+    await expect(current).toBeVisible();
+    await expect.poll(() => rows.count()).toBeLessThan(wire.rows.length);
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible();
+    await current.click();
+    await expect(page.getByTestId('workspace-file')).toHaveCount(0);
+    await expect(input).toHaveValue(workspaceId.toUpperCase());
+    await expect
+      .poll(async () => (await readWorkspaceState(page, workspaceId)).files?.files?.ids ?? [])
+      .toEqual([]);
+    await page.goBack();
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible();
+    await expect(input).toHaveValue(workspaceId.toUpperCase());
+    await input.fill('no-workspace-matches-8b2e6795');
+    await expect(rows).toHaveCount(0);
+    await expect(navigation.locator('output')).toBeVisible();
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible();
+    await search.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue('');
+    await expect(rows).toHaveCount(wire.rows.length);
+    const workspace = wire.rows.find((row) => row.id === workspaceId);
+    await input.fill(workspace.title.toUpperCase());
+    await expect(current).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const screenshot = info.outputPath('workspace-search.png');
+    await page.screenshot({ path: screenshot });
+    await info.attach('workspace-search', { path: screenshot, contentType: 'image/png' });
+    await page.keyboard.press('Escape');
+    await expect(input).toHaveCount(0);
+    await expect(search.getByRole('button')).toBeFocused();
+    await expect(rows).toHaveCount(wire.rows.length);
+    expect(wire.requests.filter(({ method }) => method === 'file.read').length).toBe(
+      beforeSearch + 1,
+    );
+    await page.setViewportSize({ width: 420, height: 900 });
+    await page.locator('[data-sidebar="trigger"]').click();
+    await search.getByRole('button').click();
+    await input.fill(workspaceId);
+    await expect(current).toBeVisible();
+    await expect(input).toBeInViewport();
+    await expect(
+      search.getByRole('button', { name: 'Clear search', exact: true }),
+    ).toBeInViewport();
+    await current.click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await page.locator('[data-sidebar="trigger"]').click();
+    await expect(input).toHaveValue(workspaceId);
+    await expect(current).toHaveAttribute('aria-current', 'page');
+    const mobileScreenshot = info.outputPath('workspace-search-mobile.png');
+    await page.screenshot({ path: mobileScreenshot });
+    await info.attach('workspace-search-mobile', {
+      path: mobileScreenshot,
+      contentType: 'image/png',
+    });
+    expect(
+      wire.requests.filter(({ method }) =>
+        /\.(write|create|delete|rename|mkdir|stage|unstage|commit|push|pull|update|setContent)$/.test(
+          method ?? '',
+        ),
+      ),
+    ).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await info.attach('workspace-search-wire', {
+      body: JSON.stringify({ ...wire, errors }, null, 2),
+      contentType: 'application/json',
+    });
+  }
+});
+
 function environment() {
   const { REACT_BASE_URL: base, REACT_WORKSPACE_ID: workspaceId } = process.env;
   if (!base || !workspaceId) throw new Error('Set the real daemon workspace environment');
@@ -61,6 +152,16 @@ for (const mode of ['desktop keyboard', 'mobile drawer']) {
     const navigation = page.getByTestId('workspace-navigation');
     const trigger = page.locator('[data-sidebar="trigger"]');
     const current = navigation.locator(`[data-navigation-workspace="${workspaceId}"]`);
+    const dismissDrawer = async () => {
+      const tooltip = page.getByRole('tooltip');
+      await expect(tooltip).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(tooltip).toBeHidden();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toBeHidden();
+      await expect(trigger).toBeFocused();
+    };
     try {
       await page.goto(url);
       await expect(page.getByTestId('workspace-file-content')).toBeVisible({ timeout: 60_000 });
@@ -69,9 +170,7 @@ for (const mode of ['desktop keyboard', 'mobile drawer']) {
         await expect(navigation).toBeHidden();
         await trigger.click();
         await expect(page.getByRole('dialog')).toBeVisible();
-        await page.keyboard.press('Escape');
-        await expect(page.getByRole('dialog')).toBeHidden();
-        await expect(trigger).toBeFocused();
+        await dismissDrawer();
         await trigger.click();
       }
       await expect(current).toHaveAttribute('aria-current', 'page');
@@ -134,8 +233,7 @@ for (const mode of ['desktop keyboard', 'mobile drawer']) {
       await page.screenshot({ path: screenshot });
       await info.attach('workspace-navigation', { path: screenshot, contentType: 'image/png' });
       if (mobile) {
-        await page.keyboard.press('Escape');
-        await expect(trigger).toBeFocused();
+        await dismissDrawer();
       } else {
         await trigger.click();
         await expect(navigation).not.toBeInViewport();
