@@ -134,13 +134,20 @@ export const formatCompiledViolation = ({ selector, wrapper }) => `${selector} <
 export async function compileMotionReduceProbe({ root = process.cwd(), source } = {}) {
   const appCss = path.resolve(root, APP_CSS);
   // `$lib/` is a Vite alias; plain postcss resolves imports relative to `from`.
-  const stylesheet = (source ?? fs.readFileSync(appCss, 'utf8'))
-    .replaceAll("'$lib/", "'./lib/")
-    .replace("@import 'tailwindcss';", "@import 'tailwindcss' source(none);");
-  const probes = PROBE_CANDIDATES.map((candidate) => `@source inline("${candidate}");`);
-  const result = await postcss([tailwindcss()]).process(`${stylesheet}\n${probes.join('\n')}\n`, {
-    from: appCss,
+  const stylesheet = postcss.parse(
+    (source ?? fs.readFileSync(appCss, 'utf8')).replaceAll("'$lib/", "'./lib/"),
+    { from: appCss },
+  );
+  stylesheet.walkAtRules('import', (rule) => {
+    if (/^(['"])tailwindcss\1(?:\s|$)/.test(rule.params)) {
+      rule.params = "'tailwindcss' source(none)";
+    }
   });
+  stylesheet.walkAtRules('source', (rule) => rule.remove());
+  for (const candidate of PROBE_CANDIDATES) {
+    stylesheet.append(postcss.atRule({ name: 'source', params: `inline("${candidate}")` }));
+  }
+  const result = await postcss([tailwindcss()]).process(stylesheet, { from: appCss });
   return result.css;
 }
 
