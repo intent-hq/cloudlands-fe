@@ -7,7 +7,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
-import { evaluatePackageMain } from './evaluate-package-main.mjs';
+import { evaluatePackageMain as evaluateMain } from './evaluate-package-main.mjs';
+import { createPackageProbe } from './isolated-package-probe.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
@@ -21,9 +22,17 @@ fs.mkdirSync(output, { recursive: false, mode: 0o700 });
 const work = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'intent-package-'));
 const mount = path.join(work, 'mount');
 fs.mkdirSync(mount);
-const command = (file, args) => execFileSync(file, args, { encoding: 'utf8', timeout: 120_000 });
+const command = (file, args) => {
+  probe.checkpoint(`command ${file}`, 'started');
+  const result = execFileSync(file, args, { encoding: 'utf8', timeout: 120_000 });
+  probe.checkpoint(`command ${file}`, 'completed');
+  return result;
+};
 const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const evidence = { dmgSha256: hash(dmg), backendSha, frontendSha, phases: [], passed: false };
+const probe = createPackageProbe(output, evidence);
+const evaluatePackageMain = (app, callback, argument) =>
+  probe.run('main-process inspection', () => evaluateMain(app, callback, argument));
 let application;
 let mounted = false;
 let normalServer;
@@ -73,7 +82,10 @@ async function closePackage(phase, originalStartedAt) {
     timer = setTimeout(() => reject(new Error('Original Electron child did not exit')), 15_000);
   });
   try {
-    const [, result] = await Promise.all([application.close(), exited]);
+    const [, result] = await Promise.all([
+      probe.run('Electron close', () => application.close(), 15_000),
+      exited,
+    ]);
     electronExits.push({ phase, pid: child.pid, ...result });
     application = undefined;
     assert.equal(result.code, 0);
@@ -92,7 +104,7 @@ async function eventually(read, accept, label, timeout = 60_000) {
   let last;
   while (Date.now() < deadline) {
     try {
-      last = await read();
+      last = await probe.run(label, read, Math.max(1, deadline - Date.now()));
       if (accept(last)) return last;
     } catch (error) {
       last = String(error);
@@ -231,7 +243,11 @@ try {
     GH_TOKEN: 'disposable-sentinel-not-a-credential',
   };
   const launch = () =>
-    electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 });
+    probe.run(
+      'Electron launch',
+      () => electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 }),
+      125_000,
+    );
   application = await launch();
   const initial = await eventually(() => inspect(application), Boolean, 'private startup');
   assert.equal(initial.root, expectedRoot);
@@ -395,6 +411,7 @@ try {
   evidence.error = String(error?.stack ?? error);
   process.exitCode = 1;
 } finally {
+  probe.persist();
   if (application) {
     try {
       await closePackage('failure-cleanup');
@@ -404,7 +421,19 @@ try {
       process.exitCode = 1;
     }
   }
-  if (normalServer) await new Promise((resolve) => normalServer.close(resolve));
+  if (normalServer) {
+    try {
+      await probe.run(
+        'normal sentinel close',
+        () => new Promise((resolve) => normalServer.close(resolve)),
+        5_000,
+      );
+    } catch (error) {
+      evidence.normalServerCleanupError = String(error);
+      evidence.passed = false;
+      process.exitCode = 1;
+    }
+  }
   if (mounted) {
     try {
       command('hdiutil', ['detach', mount]);
@@ -420,3 +449,7 @@ try {
   // Never relabel forced cleanup as a pass. This VM is retired by GitHub after the job.
   console.log(JSON.stringify({ passed: evidence.passed, output, error: evidence.error }));
 }
+
+// Failed inspection may leave an unresponsive Playwright transport open. The hosted VM
+// owns orphan cleanup; terminate only after persisting a failing result, never as proof.
+if (!evidence.passed) process.exit(1);
