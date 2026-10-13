@@ -7130,6 +7130,7 @@
   "home_status_complete": "工作區已標記為完成。",
   "home_status_unread": "有未讀的智慧體訊息，但目前未要求你採取行動。",
   "home_status_idle": "沒有智慧體正在工作或請求你關注。",
+  "home_status_waiting_description": "正在等待外部事件或委派的工作。",
   "home_integrations_org_scope_incomplete": "無法載入此組織的完整儲存庫清單。請嘗試選取一個儲存庫，或重新整理後再試。",
   "settings_aiBehavior_importedClaude_title": "從 Claude Code 匯入",
   "settings_agentSettings_ownerOnly_description": "只有執行個體擁有者可以編輯這些設定。",

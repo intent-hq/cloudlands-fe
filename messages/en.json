@@ -7126,6 +7126,7 @@
   "home_status_complete": "The workspace is marked complete.",
   "home_status_unread": "There are unread agent messages, but no action is currently requested.",
   "home_status_idle": "No agent is working or requesting your attention.",
+  "home_status_waiting_description": "Waiting for external events or delegated work.",
   "home_activity_content": "Conversation or note activity",
   "home_activity_workspace": "Workspace activity (includes metadata)",
   "home_activity_created": "Workspace created",

@@ -7130,6 +7130,7 @@
   "home_status_complete": "工作区已标记为完成。",
   "home_status_unread": "有未读的智能体消息，但目前未要求你采取行动。",
   "home_status_idle": "没有智能体正在工作或请求你关注。",
+  "home_status_waiting_description": "正在等待外部事件或委派的工作。",
   "home_integrations_org_scope_incomplete": "无法加载此组织的完整仓库列表。请尝试选择一个仓库，或刷新后重试。",
   "settings_aiBehavior_importedClaude_title": "从 Claude Code 导入",
   "settings_agentSettings_ownerOnly_description": "只有实例所有者可以编辑这些设置。",

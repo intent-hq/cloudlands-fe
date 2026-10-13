@@ -7130,6 +7130,7 @@
   "home_status_complete": "ワークスペースは完了としてマークされています。",
   "home_status_unread": "未読のエージェントメッセージがありますが、現在、対応は求められていません。",
   "home_status_idle": "作業中または対応を求めているエージェントはいません。",
+  "home_status_waiting_description": "外部イベントまたは委任した作業を待機しています。",
   "home_integrations_org_scope_incomplete": "この組織のリポジトリ一覧をすべて読み込めませんでした。リポジトリを選択するか、更新して再試行してください。",
   "settings_aiBehavior_importedClaude_title": "Claude Code からインポート",
   "settings_agentSettings_ownerOnly_description": "これらの設定を編集できるのはインスタンスの所有者のみです。",

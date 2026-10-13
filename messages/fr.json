@@ -7130,6 +7130,7 @@
   "home_status_complete": "L’espace de travail est marqué comme terminé.",
   "home_status_unread": "Des messages d’agents sont non lus, mais aucune action n’est actuellement demandée.",
   "home_status_idle": "Aucun agent ne travaille ni ne sollicite votre attention.",
+  "home_status_waiting_description": "En attente d’événements externes ou de tâches déléguées.",
   "home_integrations_org_scope_incomplete": "Impossible de charger la liste complète des dépôts de cette organisation. Essayez de sélectionner un dépôt ou actualisez la vue pour réessayer.",
   "settings_aiBehavior_importedClaude_title": "Importé depuis Claude Code",
   "settings_agentSettings_ownerOnly_description": "Seul le propriétaire de l’instance peut modifier ces paramètres.",
