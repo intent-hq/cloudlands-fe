@@ -258,6 +258,7 @@ describe('public definition writes and deletion', () => {
     expect(appClient.scripts.list).toHaveBeenCalledOnce();
     pending.resolve({ success: true });
     expect((await removing).success).toBe(true);
+    vi.mocked(appClient.scripts.list).mockResolvedValue([]);
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.create).not.toHaveBeenCalled();
   });
@@ -309,6 +310,7 @@ describe('public definition writes and deletion', () => {
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeUndefined(),
     );
     expect(removeRequest).toHaveBeenCalledExactlyOnceWith(WS, 'check');
+    vi.mocked(appClient.scripts.list).mockResolvedValue([]);
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.create).toHaveBeenCalledOnce();
   });
