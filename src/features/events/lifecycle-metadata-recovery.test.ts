@@ -979,3 +979,90 @@ it('keeps replacement task links after an old mutation returns a late referenced
   expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(0);
   expect(mutate).toHaveBeenCalledTimes(1);
 });
+
+it.each(['context', 'tokenUsage', 'taskAgentLinks'] as const)(
+  'keeps inactive %s recovery demand after an ordinary stale caller releases it',
+  async (domain) => {
+    const h = await harness(false);
+    h.loss();
+    await settle();
+    expect(h.request.mock.calls.filter((c) => !c[0].startsWith('events.'))).toHaveLength(0);
+    const release = acquireLifecycleMetadataDemand('ws', domain);
+    release();
+    await settle();
+    const method = {
+      context: 'workspace.getContext',
+      tokenUsage: 'workspace.getTokenUsage',
+      taskAgentLinks: 'task.listAgentLinks',
+    }[domain];
+    expect(h.request.mock.calls.filter((c) => c[0] === method)).toHaveLength(1);
+    if (domain === 'context')
+      expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual([
+        'fresh',
+      ]);
+    if (domain === 'tokenUsage')
+      expect(h.state.tokenUsage.byWorkspaceId.ws.totals.inputTokens).toBe(20);
+    if (domain === 'taskAgentLinks')
+      expect(h.state.taskAgentAssociations.byWorkspaceId.ws.byNoteId).toEqual({
+        note: { task: link },
+      });
+    h.loss('2');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.request.mock.calls.filter((c) => c[0] === method)).toHaveLength(1);
+  },
+);
+
+it('releases clean inactive metadata demand without starting a recovery', async () => {
+  const h = await harness(false);
+  const key = contextRecoveryKey('ws');
+  const release = acquireLifecycleMetadataDemand('ws', 'context');
+  expect(h.registry.capture(key).commit(() => undefined)).toBe(true);
+  release();
+  release();
+  await settle();
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(0);
+});
+
+it('releases retained metadata demand after the bounded recovery retry budget', async () => {
+  const h = await harness(false);
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'workspace.getContext') throw new Error('temporarily unavailable');
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireLifecycleMetadataDemand('ws', 'context');
+  release();
+  await settle();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(3);
+  expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual(['old']);
+});
+
+it('retiring a held metadata recovery cannot transfer released demand to its replacement', async () => {
+  const h = await harness(false);
+  let finish!: () => void;
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'workspace.getContext')
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireLifecycleMetadataDemand('ws', 'context');
+  await settle();
+  release();
+  h.registry.refreshAuthority();
+  h.dispatch(hydrateContextItems('ws', [item('replacement')] as never));
+  finish();
+  await settle();
+  expect(getItems(h.state.context.byWorkspaceId.ws.items).map((row) => row.id)).toEqual([
+    'replacement',
+  ]);
+  expect(h.registry.capture(contextRecoveryKey('ws')).isCurrent()).toBe(false);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'workspace.getContext')).toHaveLength(1);
+});

@@ -648,3 +648,70 @@ it('does not treat ordinary invalid parameters as a canonical disappearance', as
   ).rejects.toEqual({ rpcCode: -32602 });
   expect(h.registry.capture(readKey).commit(() => undefined)).toBe(true);
 });
+
+it('keeps inactive activity recovery demand after an ordinary stale caller releases it', async () => {
+  const h = await harness(false);
+  h.loss();
+  await settle();
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(0);
+  const release = acquireWorkspaceActivityDemand('ws');
+  release();
+  await settle();
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['2']);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(1);
+  h.loss('2');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(1);
+});
+
+it('releases clean inactive activity demand without querying history', async () => {
+  const h = await harness(false);
+  const release = acquireWorkspaceActivityDemand('ws');
+  expect(h.registry.capture(key).commit(() => undefined)).toBe(true);
+  release();
+  release();
+  await settle();
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(0);
+});
+
+it('releases retained activity demand after the bounded recovery retry budget', async () => {
+  const h = await harness(false);
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'event.query') throw new Error('temporarily unavailable');
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireWorkspaceActivityDemand('ws');
+  release();
+  await settle();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(3);
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['1']);
+});
+
+it('retiring held activity recovery cannot transfer released demand to its replacement', async () => {
+  const h = await harness(false);
+  let finish!: () => void;
+  const original = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    if (method === 'event.query')
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    return original(method, params);
+  });
+  h.loss();
+  const release = acquireWorkspaceActivityDemand('ws');
+  await settle();
+  release();
+  h.registry.refreshAuthority();
+  h.dispatch(eventsLoaded('ws', [event(99)], null));
+  finish();
+  await settle();
+  expect(h.state.workspaceEvents.byWorkspaceId.ws.events.map((row) => row.id)).toEqual(['99']);
+  expect(h.registry.capture(key).isCurrent()).toBe(false);
+  expect(h.request.mock.calls.filter((c) => c[0] === 'event.query')).toHaveLength(1);
+});
