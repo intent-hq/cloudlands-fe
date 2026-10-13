@@ -549,7 +549,7 @@ function* materialiseRow(fence: WorkspaceFence, row: BrowserTab): SagaGenerator<
     });
   }
   if (yield* isCurrent(fence)) return;
-  yield* call(unplaceRow, wsId, row.tabId);
+  yield* call(unplaceRow, wsId, row.tabId, lifetime);
   throw new FenceMoved(fence);
 }
 
@@ -558,10 +558,14 @@ function* materialiseRow(fence: WorkspaceFence, row: BrowserTab): SagaGenerator<
  * was never recorded as reported, so no removal follows from this; a cleared
  * layout has nothing to take out.
  */
-function* unplaceRow(wsId: string, tabId: string): SagaGenerator<void> {
+function* unplaceRow(wsId: string, tabId: string, lifetime: RecoveryLifetime): SagaGenerator<void> {
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (!collectBrowserTabs(layout).some((h) => h.tab.id === tabId)) return;
-  yield* put(closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
+  // A recovered row may now have this same id. Cleanup is a writer too: it
+  // cannot remove that successor using the obsolete placement's authority.
+  yield* put(
+    withRecoveryLifetime(closeTab(wsId, tabId, undefined, undefined, { destroy: true }), lifetime),
+  );
 }
 
 /**
@@ -888,8 +892,13 @@ function* recordRemovals(wsId: string): SagaGenerator<void> {
   const present = new Set(collectBrowserTabs(layout).map((h) => h.tab.id));
   const removed = reported.filter((tabId) => !present.has(tabId));
   if (removed.length === 0) return;
+  // This is synchronous local intent, not a read reply. A dirty recovery
+  // snapshot cannot prevent recording the close it must subsequently respect.
   yield* fenced(
-    effect(workspaceFence(wsId, registry.generation), registryRemovalsPending(wsId, removed)),
+    effect(
+      { kind: 'workspace', wsId, generation: registry.generation },
+      registryRemovalsPending(wsId, removed),
+    ),
   );
 }
 

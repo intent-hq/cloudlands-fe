@@ -45,12 +45,27 @@ export class BrowserClientRecovery {
         ],
         isCurrent: current,
         read: async ({ request }) => {
-          const [roster, selection] = await Promise.all([
+          const reads = [
             request<{ clients: unknown }>('client.list', workspaceId ? { workspaceId } : undefined),
             workspaceId
               ? request<{ browserClient: unknown }>('workspace.getBrowserClient', { workspaceId })
               : undefined,
-          ]);
+          ] as const;
+          // Keep the cycle occupied until every sibling settles. A fast failure
+          // must not start another roster read while this one is still live.
+          const results = await Promise.allSettled(reads);
+          const failures = results.filter((result) => result.status === 'rejected');
+          const denied = failures.find(({ reason }) => {
+            const error = reason as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+            return (
+              error?.rpcCode === -32003 ||
+              error?.rpcCode === -32001 ||
+              (error?.rpcCode === -32602 && error.data?.code === 'not-found')
+            );
+          });
+          if (denied) throw denied.reason;
+          if (failures.length) throw failures[0].reason;
+          const [roster, selection] = await Promise.all(reads);
           if (
             !Array.isArray(roster.clients) ||
             !roster.clients.every(isLiveClient) ||

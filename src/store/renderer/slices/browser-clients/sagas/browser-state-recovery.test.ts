@@ -694,3 +694,177 @@ it('rejects a read across principal invalidation even when the same principal is
   await settle();
   expect(view().pinnedClientId).toBe('readmitted');
 });
+
+it('a failed selection waits for a held sibling roster before retrying', async () => {
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  const roster = deferred<unknown>();
+  const normal = rpc.request.getMockImplementation()!;
+  let active = 0,
+    peak = 0;
+  rpc.request.mockClear();
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'client.list') {
+      active++;
+      peak = Math.max(peak, active);
+      return roster.promise.finally(() => active--);
+    }
+    if (method === 'workspace.getBrowserClient') return Promise.reject(new Error('transient'));
+    return normal(method, params);
+  });
+  lose();
+  await settle();
+  await vi.advanceTimersByTimeAsync(6000);
+  await settle();
+  const observed = { active, peak, reads: calls('client.list').length };
+  roster.resolve({ clients: [] });
+  await settle();
+  expect(observed).toEqual({ active: 1, peak: 1, reads: 1 });
+  await vi.advanceTimersByTimeAsync(12000);
+  await settle();
+  expect({ active, peak, reads: calls('client.list').length }).toEqual({
+    active: 0,
+    peak: 1,
+    reads: 3,
+  });
+});
+
+it.each([false, true])(
+  'user close with recovery pending=%s stays closed and sends one removal',
+  async (pending) => {
+    const { connectionStatusChanged } = await import('../../daemon-health/daemon-health-slice');
+    const { closeTab } = await import('../../panel-layout/panel-layout-slice');
+    let server = [{ ...row('hosted'), hostClientId: 'desktop', displayed: true }];
+    const held = deferred<{ tabs: BrowserTabListing[] }>();
+    let holdNext = pending;
+    const beforeClose = [...server];
+    await startTabs(server);
+    store.dispatch(connectionStatusChanged('connected'));
+    await settle();
+    loseTabs();
+    await settle();
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) => {
+      if (method === 'browser.listTabs') {
+        if (holdNext) {
+          holdNext = false;
+          return held.promise;
+        }
+        return Promise.resolve({ tabs: server });
+      }
+      if (method === 'browser.removeTab') {
+        server = [];
+        return Promise.resolve({ ok: true });
+      }
+      return normal(method, params);
+    });
+    rpc.request.mockClear();
+    if (pending) {
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'browser-2', generation: '2', scope: { workspaceId: WS } },
+      });
+      await vi.advanceTimersByTimeAsync(250);
+      await settle();
+    }
+    store.dispatch(closeTab(WS, 'hosted', undefined, undefined, { destroy: true }));
+    await vi.advanceTimersByTimeAsync(300);
+    await settle();
+    if (pending) {
+      held.resolve({ tabs: beforeClose });
+      await vi.advanceTimersByTimeAsync(300);
+      await settle();
+    }
+    expect({ tabs: tabs().map((t) => t.id), removes: calls('browser.removeTab').length }).toEqual({
+      tabs: [],
+      removes: 1,
+    });
+  },
+);
+
+it('prefers a denied selection over a transient roster failure after both settle', async () => {
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  const normal = rpc.request.getMockImplementation()!;
+  rpc.request.mockClear();
+  rpc.request.mockImplementation((method, params) => {
+    if (method === 'client.list') return Promise.reject(new Error('transient'));
+    if (method === 'workspace.getBrowserClient') return Promise.reject({ rpcCode: -32003 });
+    return normal(method, params);
+  });
+  lose();
+  await settle();
+  await vi.advanceTimersByTimeAsync(12000);
+  await settle();
+  expect(calls('client.list')).toHaveLength(1);
+  expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  expect(view().eligibleClients).toEqual([]);
+});
+
+it('cancelled old placement cannot delete the recovered row with the same id', async () => {
+  const { browserTabRecoveryKey } = await import('../../panel-layout/sagas/browser-tab-recovery');
+  const { browserTabUpserted } = await import('../browser-clients-slice');
+  const { registryLoading, registryApplied } =
+    await import('../../browser-tab-registry/browser-tab-registry-slice');
+  const { openTabInRightmostColumnRequested, openTabInRightmostColumn, closeTab } =
+    await import('../../panel-layout/panel-layout-slice');
+  const { getRecoveryLifetime, withRecoveryLifetime } =
+    await import('../../../middlewares/event-recovery');
+  const { dispatchBrowserTabEvent } =
+    await import('../../panel-layout/sagas/browser-tab-event-receipt');
+  const { take, put, call } = await import('typed-redux-saga');
+  await startTabs([row('keep')]);
+  store.dispatch(registryLoading(WS));
+  store.dispatch(
+    registryApplied(WS, store.state.browserTabRegistry.byWorkspaceId[WS].generation, {}),
+  );
+  const hold = deferred<void>();
+  let placementStarted = false;
+  const stopRouter = store.runSaga(function* () {
+    const action = yield* take(openTabInRightmostColumnRequested);
+    placementStarted = true;
+    yield* call(() => hold.promise);
+    yield* put(
+      withRecoveryLifetime(
+        openTabInRightmostColumn(WS, action.payload.tab, {
+          newTabId: action.payload.newTabId,
+          allowDuplicate: true,
+        }),
+        getRecoveryLifetime(action)!,
+      ),
+    );
+  });
+  try {
+    rendererEventRecovery.push(browserTabRecoveryKey(WS));
+    const done = dispatchBrowserTabEvent(
+      browserTabUpserted(WS, row('placed', 'https://obsolete.test/')),
+      rendererEventRecovery.capture(browserTabRecoveryKey(WS)),
+    );
+    await settle();
+    expect(placementStarted).toBe(true);
+    const normal = rpc.request.getMockImplementation()!;
+    rpc.request.mockImplementation((method, params) =>
+      method === 'browser.listTabs'
+        ? Promise.resolve({ tabs: [row('keep'), row('placed', 'https://current.test/')] })
+        : normal(method, params),
+    );
+    loseTabs();
+    await settle();
+    expect(tabs().find((t) => t.id === 'placed')?.browserUrl).toBe('https://current.test/');
+    const closes: unknown[] = [];
+    const stopCloseObserver = store.runSaga(function* () {
+      while (true) closes.push(yield* take(closeTab));
+    });
+    hold.resolve();
+    await vi.advanceTimersByTimeAsync(5500);
+    await settle();
+    await done;
+    stopCloseObserver();
+    expect(closes).toEqual([]);
+    expect(tabs().find((t) => t.id === 'placed')?.browserUrl).toBe('https://current.test/');
+  } finally {
+    stopRouter();
+  }
+});
