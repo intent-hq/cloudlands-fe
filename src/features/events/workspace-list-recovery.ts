@@ -11,18 +11,25 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 
 export const WORKSPACE_LIST_RECOVERY_KEY = 'workspace-list';
+let captureProjectionFailure: ((workspaceId: string) => (error: unknown) => void) | undefined;
 export function runWorkspaceListRead<T>(receipt: RecoveryLifetime, read: () => Promise<T>) {
   return runRecoveryRead(WORKSPACE_LIST_RECOVERY_KEY, receipt, 'ordinary', 'list', read);
 }
 export function runWorkspaceProjectionRead<T>(
   receipt: RecoveryLifetime,
-  requestKey: string,
+  workspaceId: string,
   read: () => Promise<T>,
+  requestKey = `get:${workspaceId}`,
 ) {
-  return runRecoveryRead(WORKSPACE_LIST_RECOVERY_KEY, receipt, 'ordinary', requestKey, read);
+  return runRecoveryRead(WORKSPACE_LIST_RECOVERY_KEY, receipt, 'ordinary', requestKey, read, {
+    retireOnDenied: false,
+    retireOnNotFound: false,
+    onFailure: captureProjectionFailure?.(workspaceId),
+  });
 }
 interface RecoveryStore {
   getState(): StoreState;
+  subscribe(listener: () => void): () => void;
   dispatch(action: { type: string }): unknown;
 }
 /** An authoritative missing row revokes its entire workspace projection. */
@@ -40,6 +47,49 @@ export function installWorkspaceListRecovery(
       const ids = store.getState().agentSessions.agentIdsByWorkspace[workspaceId] ?? [];
       store.dispatch(workspaceDeleted(workspaceId, [...ids], 'unshared'));
     });
+  let active = true;
+  const incarnations = new Map<string, { authority: string }>();
+  const current = () =>
+    active &&
+    scope.isCurrent() &&
+    !!context &&
+    selectPrincipalActionContext.select(store.getState()) === context &&
+    store.getState().connections.windowBackendId === backendId;
+  const observe = () => {
+    if (!current()) {
+      active = false;
+      incarnations.clear();
+      return;
+    }
+    const workspace = store.getState().workspace;
+    const present = new Set<string>(workspace.workspaces.ids);
+    for (const id of incarnations.keys()) if (!present.has(id)) incarnations.delete(id);
+    for (const id of present) {
+      const row = workspace.workspaces.map[id];
+      const authority = JSON.stringify([
+        row.myRole,
+        row.canManage,
+        workspace.capabilityContext,
+        workspace.deletionTokens[id],
+      ]);
+      if (incarnations.get(id)?.authority !== authority) incarnations.set(id, { authority });
+    }
+  };
+  observe();
+  const unsubscribe = store.subscribe(observe);
+  const capture = (workspaceId: string) => {
+    const incarnation = incarnations.get(workspaceId);
+    return (error: unknown) => {
+      const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+      const canonical =
+        failure?.rpcCode === -32003 ||
+        failure?.rpcCode === -32001 ||
+        (failure?.rpcCode === -32602 && failure.data?.code === 'not-found');
+      if (canonical && current() && incarnation && incarnations.get(workspaceId) === incarnation)
+        purge(workspaceId);
+    };
+  };
+  captureProjectionFailure = capture;
   const owner = scope.registerResource({
     key: WORKSPACE_LIST_RECOVERY_KEY,
     workspaceId: null,
@@ -90,9 +140,17 @@ export function installWorkspaceListRecovery(
     },
     invalidate: () => {},
     retire: () => {
+      active = false;
+      incarnations.clear();
       for (const id of [...store.getState().workspace.workspaces.ids]) purge(id);
       store.dispatch(setWorkspaceHasLoaded(false, backendId, null));
     },
   });
-  return () => owner.dispose();
+  return () => {
+    active = false;
+    unsubscribe();
+    incarnations.clear();
+    if (captureProjectionFailure === capture) captureProjectionFailure = undefined;
+    owner.dispose();
+  };
 }

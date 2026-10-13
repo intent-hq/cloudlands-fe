@@ -480,8 +480,11 @@ function* refreshMembershipSummary(
   const context = yield* selectPrincipalActionContext.effect();
   const previous = yield* selectWorkspaceById.effect(workspaceId);
   const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(() =>
-    runWorkspaceProjectionRead(receipt, `normalized-get:${workspaceId}`, () =>
-      appClient.workspaces.get(workspaceId),
+    runWorkspaceProjectionRead(
+      receipt,
+      workspaceId,
+      () => appClient.workspaces.get(workspaceId),
+      `normalized-get:${workspaceId}`,
     ),
   );
   if (

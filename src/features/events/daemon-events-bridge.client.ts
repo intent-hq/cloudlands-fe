@@ -2552,7 +2552,7 @@ async function runHydrateMissingWorkspaceEntityFetch(
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     if (!receipt.commit(() => undefined)) return;
-    const response = (await runWorkspaceProjectionRead(receipt, `get:${workspaceId}`, () =>
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
       backendRequest('workspace.get', { workspaceId }),
     )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
@@ -2632,7 +2632,7 @@ async function runReconcileWorkspaceActivityFetch(
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     if (!receipt.commit(() => undefined)) return;
-    const response = (await runWorkspaceProjectionRead(receipt, `get:${workspaceId}`, () =>
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
       backendRequest('workspace.get', { workspaceId }),
     )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
@@ -2716,7 +2716,7 @@ async function runReconcileWorkspaceAggregatesFetch(
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     if (!receipt.commit(() => undefined)) return;
-    const response = (await runWorkspaceProjectionRead(receipt, `get:${workspaceId}`, () =>
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
       backendRequest('workspace.get', { workspaceId }),
     )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
