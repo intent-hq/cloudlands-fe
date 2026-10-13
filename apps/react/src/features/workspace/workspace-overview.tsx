@@ -9,7 +9,17 @@ import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
-import { Screen, ScreenHeader, ScreenBody, LoadingState } from '@/components/patterns/screen';
+import {
+  Screen,
+  ScreenHeader,
+  ScreenBody,
+  LoadingState,
+  EmptyState,
+} from '@/components/patterns/screen';
+import {
+  selectDaemonHealth,
+  selectHasEverConnected,
+} from '@/store/daemon-health/daemon-health-selectors';
 import { buttonVariants } from '@/components/ui/button';
 import { selectCurrentConnectionId } from '@/store/connections/connections-selectors';
 import {
@@ -29,6 +39,22 @@ import {
 } from '../../../../../src/store/renderer/slices/files/files-slice';
 
 let nextHydrationGeneration = 0;
+
+function WorkspaceReadiness() {
+  const health = selectDaemonHealth();
+  const connectedBefore = selectHasEverConnected();
+  if (health.value === 'down' && connectedBefore.value)
+    return (
+      <EmptyState
+        title={m.layout_daemonStatus_notConnected_description()}
+        description={m.daemonStatus_overlay_retrying_label()}
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Shared screen state renders a section; status announces connection recovery.
+        role="status"
+        data-testid="workspace-connection-lost"
+      />
+    );
+  return <LoadingState label="Waiting for the daemon workspace list" />;
+}
 
 function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   const workspace = selectWorkspaceById(workspaceId);
@@ -72,7 +98,7 @@ export function WorkspaceList() {
       />
       <ScreenBody>
         {!loaded.value ? (
-          <LoadingState label="Waiting for the daemon workspace list" />
+          <WorkspaceReadiness />
         ) : ids.value.length === 0 ? (
           <p>No workspaces on this daemon.</p>
         ) : (
@@ -151,7 +177,7 @@ export function WorkspaceOverview({
       />
       <ScreenBody className="grid content-start gap-6">
         {!loaded.value ? (
-          <LoadingState label="Waiting for the daemon workspace list" />
+          <WorkspaceReadiness />
         ) : !row ? (
           <p>This workspace is not available on the connected daemon.</p>
         ) : (
