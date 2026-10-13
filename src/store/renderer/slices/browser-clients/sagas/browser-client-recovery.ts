@@ -34,7 +34,7 @@ export class BrowserClientRecovery {
         authority === selectPrincipalActionContext.select(store.state);
       const handle = scope.registerResource({
         key: browserClientRecoveryKey(workspaceId),
-        // Client presence and default routing settings are global. Workspace-only
+        // Client presence is global. Workspace-only
         // matching would silently miss the loss that changes this resolution.
         workspaceId: null,
         eventTypes: [
@@ -42,8 +42,22 @@ export class BrowserClientRecovery {
           'client:disconnected',
           'client:updated',
           'workspace:updated',
-          'settings:changed',
         ],
+        acceptsEvent: ({ params }) => {
+          const event = (
+            params as {
+              event?: {
+                type?: unknown;
+                workspaceId?: unknown;
+                data?: { changes?: { browserClientId?: unknown } };
+              };
+            } | null
+          )?.event;
+          if (event?.type !== 'workspace:updated') return true;
+          if (!workspaceId || event.workspaceId !== workspaceId) return false;
+          const pin = event.data?.changes?.browserClientId;
+          return typeof pin === 'string' || pin === null;
+        },
         isCurrent: current,
         read: async ({ request }) => {
           const reads = [

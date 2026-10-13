@@ -1054,3 +1054,98 @@ it('legacy broad refresh still fans out into mounted workspace reads', async () 
     ['workspace.getBrowserClient', { workspaceId: WS }],
   ]);
 });
+
+it.each([
+  { type: 'settings:changed', data: { key: 'appearance.theme' } },
+  {
+    type: 'workspace:updated',
+    workspaceId: 'other',
+    data: { changes: { browserClientId: 'other-host' } },
+  },
+  { type: 'workspace:updated', workspaceId: WS, data: { changes: { title: 'Renamed' } } },
+  { type: 'workspace:updated', workspaceId: WS, data: { changes: { browserClientId: false } } },
+])(
+  'keeps a held browser read current across unrelated event $type $workspaceId $data',
+  async (event) => {
+    await attach();
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const held = deferred<unknown>();
+    rpc.request.mockClear();
+    rpc.request.mockImplementationOnce(() => held.promise);
+    store.dispatch(fetchWorkspaceBrowserClientRequested(WS));
+    await settle();
+    receive({ method: 'events.event', params: { subscriptionId: 'browser-1', event } });
+    await settle();
+    held.resolve({
+      browserClient: { source: 'workspace', clientId: 'held-current', resolved: null },
+    });
+    await settle();
+    expect(view().pinnedClientId).toBe('held-current');
+    expect(rpc.request.mock.calls.map(([method, params]) => [method, params])).toEqual([
+      ['workspace.getBrowserClient', { workspaceId: WS }],
+    ]);
+  },
+);
+
+it.each(['new-pin', null])(
+  'admits a browser pin update only for its workspace: %s',
+  async (browserClientId) => {
+    const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
+    const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+    const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+    const admittedKeys: string[] = [];
+    await attach(true, async (_event, lifetimes) => {
+      await Promise.all(
+        [undefined, WS, 'other'].map(async (workspaceId) => {
+          const key = browserClientRecoveryKey(workspaceId);
+          const token = lifetimes.get(key);
+          if (!token) return;
+          admittedKeys.push(key);
+          await dispatchBrowserClientEvent(workspaceId, token, false);
+        }),
+      );
+    });
+    pin = 'original';
+    store.dispatch(hydrateBrowserClientsRequested());
+    await settle();
+    store.dispatch(workspaceMounted(WS));
+    store.dispatch(workspaceMounted('other'));
+    await settle();
+    pin = browserClientId;
+    rpc.request.mockClear();
+    receive({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'browser-1',
+        event: {
+          type: 'workspace:updated',
+          workspaceId: WS,
+          data: { changes: { browserClientId } },
+        },
+      },
+    });
+    await settle();
+    expect(admittedKeys).toEqual([browserClientRecoveryKey(WS)]);
+    expect(view().pinnedClientId).toBe(browserClientId);
+    expect(selectWorkspaceDrivingClient.select(store.state, 'other').pinnedClientId).toBe(
+      'original',
+    );
+    expect(rpc.request.mock.calls.map(([method, params]) => [method, params])).toEqual([
+      ['workspace.getBrowserClient', { workspaceId: WS }],
+    ]);
+  },
+);
+
+it('does not recover browser state for a settings-only loss', async () => {
+  await attach();
+  store.dispatch(workspaceMounted(WS));
+  await settle();
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  const previous = view();
+  rpc.request.mockClear();
+  lose('1', 'browser-2');
+  await settle();
+  expect(view()).toEqual(previous);
+  expect(rpc.request.mock.calls).toEqual([]);
+});
