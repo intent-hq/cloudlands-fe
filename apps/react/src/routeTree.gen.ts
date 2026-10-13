@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspacesRouteImport } from './routes/workspaces'
 import { Route as SandboxIndexRouteImport } from './routes/sandbox.index'
 import { Route as SandboxSplatRouteImport } from './routes/sandbox.$'
 import { Route as WorkspacesIndexRouteImport } from './routes/workspaces.index'
@@ -18,6 +19,11 @@ import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesRoute = WorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SandboxIndexRoute = SandboxIndexRouteImport.update({
@@ -31,18 +37,19 @@ const SandboxSplatRoute = SandboxSplatRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
-  id: '/workspaces/',
-  path: '/workspaces/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkspacesRoute,
 } as any)
 const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
-  id: '/workspaces/$workspaceId',
-  path: '/workspaces/$workspaceId',
-  getParentRoute: () => rootRouteImport,
+  id: '/$workspaceId',
+  path: '/$workspaceId',
+  getParentRoute: () => WorkspacesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/sandbox/$': typeof SandboxSplatRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/sandbox/': typeof SandboxIndexRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/sandbox/$': typeof SandboxSplatRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/sandbox/': typeof SandboxIndexRoute
@@ -67,6 +75,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/workspaces'
     | '/sandbox/$'
     | '/workspaces/$workspaceId'
     | '/sandbox/'
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/workspaces'
     | '/sandbox/$'
     | '/workspaces/$workspaceId'
     | '/sandbox/'
@@ -85,10 +95,9 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  WorkspacesRoute: typeof WorkspacesRouteWithChildren
   SandboxSplatRoute: typeof SandboxSplatRoute
-  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
   SandboxIndexRoute: typeof SandboxIndexRoute
-  WorkspacesIndexRoute: typeof WorkspacesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -98,6 +107,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspaces': {
+      id: '/workspaces'
+      path: '/workspaces'
+      fullPath: '/workspaces'
+      preLoaderRoute: typeof WorkspacesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sandbox/': {
@@ -116,27 +132,40 @@ declare module '@tanstack/react-router' {
     }
     '/workspaces/': {
       id: '/workspaces/'
-      path: '/workspaces'
+      path: '/'
       fullPath: '/workspaces/'
       preLoaderRoute: typeof WorkspacesIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof WorkspacesRoute
     }
     '/workspaces/$workspaceId': {
       id: '/workspaces/$workspaceId'
-      path: '/workspaces/$workspaceId'
+      path: '/$workspaceId'
       fullPath: '/workspaces/$workspaceId'
       preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof WorkspacesRoute
     }
   }
 }
 
+interface WorkspacesRouteChildren {
+  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
+  WorkspacesIndexRoute: typeof WorkspacesIndexRoute
+}
+
+const WorkspacesRouteChildren: WorkspacesRouteChildren = {
+  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRoute,
+  WorkspacesIndexRoute: WorkspacesIndexRoute,
+}
+
+const WorkspacesRouteWithChildren = WorkspacesRoute._addFileChildren(
+  WorkspacesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  WorkspacesRoute: WorkspacesRouteWithChildren,
   SandboxSplatRoute: SandboxSplatRoute,
-  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRoute,
   SandboxIndexRoute: SandboxIndexRoute,
-  WorkspacesIndexRoute: WorkspacesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -16,7 +16,7 @@ function observeFileReads(page) {
       const response = JSON.parse(String(payload));
       const request = pending.get(response.id);
       pending.delete(response.id);
-      if (request?.method === 'file.read' || request?.method === 'search.fileNames')
+      if (['file.read', 'search.fileNames', 'git.status'].includes(request?.method))
         replies.push({ request, response });
     });
   });
@@ -45,7 +45,8 @@ test('real file contents survive navigation and release their read lifetime', as
 }, info) => {
   test.setTimeout(120_000);
   const { workspaceId, url } = environment();
-  const file = 'apps/react/src/features/workspace/workspace-git-status.tsx';
+  const noteFile = 'apps/react/src/features/workspace/workspace-git-status.tsx';
+  let file = noteFile;
   const noteId = 'e5250bf8-08d9-445d-8a1d-d195c59ca4b2';
   const wire = observeFileReads(page);
   const errors = await observeErrors(page);
@@ -71,6 +72,26 @@ test('real file contents survive navigation and release their read lifetime', as
     await page.addInitScript(() => performance.setResourceTimingBufferSize(3000));
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto(url);
+    await expect
+      .poll(
+        () =>
+          wire.replies.some(
+            ({ request, response }) => request.method === 'git.status' && response.result,
+          ),
+        { timeout: 60_000 },
+      )
+      .toBe(true);
+    const status = wire.replies.find(
+      ({ request, response }) => request.method === 'git.status' && response.result,
+    ).response.result;
+    const changed = status.files.find(
+      (entry) => entry.status !== 'D' && /\.(tsx?|svelte|json|md)$/.test(entry.path),
+    );
+    if (!changed)
+      throw new Error(
+        'The changed-file journey requires an existing changed text file on the real workspace',
+      );
+    file = changed.path;
     const opener = page.locator(`a[data-file-path="${file}"]`);
     await expect(opener).toBeVisible({ timeout: 60_000 });
     await opener.focus();
@@ -97,6 +118,7 @@ test('real file contents survive navigation and release their read lifetime', as
     await expect(opener).toBeFocused();
     await expect.poll(() => readFileState(page, workspaceId)).toEqual({});
     await page.goto(`${url}?note=${noteId}&q=${noteId}`);
+    file = noteFile;
     await page
       .getByTestId('workspace-note')
       .getByRole('link', { name: 'React Git list', exact: true })

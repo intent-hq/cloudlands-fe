@@ -6,7 +6,7 @@ import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/
 import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
-import { Logo } from '@/components/logo';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Screen, ScreenHeader, ScreenBody, LoadingState } from '@/components/patterns/screen';
 import { buttonVariants } from '@/components/ui/button';
 import { selectCurrentConnectionId } from '@/store/connections/connections-selectors';
@@ -55,7 +55,7 @@ export function WorkspaceList() {
   return (
     <Screen className="min-h-screen" data-testid="workspace-list">
       <ScreenHeader
-        leading={<Logo />}
+        leading={<SidebarTrigger />}
         title={<h1>{m.lib_commandPalette_workspaces_label()}</h1>}
         description="Internal React preview · unreleased · read-only"
         actions={
@@ -101,17 +101,17 @@ export function WorkspaceOverview({
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
   const content = useRef<HTMLDivElement>(null);
-  const previousFile = useRef(filePath);
+  const previousFile = useRef({ workspaceId, filePath });
   useLayoutEffect(() => {
     const previous = previousFile.current;
-    previousFile.current = filePath;
-    if (previous && !filePath && !noteId) {
+    previousFile.current = { workspaceId, filePath };
+    if (previous.workspaceId === workspaceId && previous.filePath && !filePath && !noteId) {
       const opener = content.current?.querySelector<HTMLAnchorElement>(
-        `a[data-file-path="${CSS.escape(previous)}"]`,
+        `a[data-file-path="${CSS.escape(previous.filePath)}"]`,
       );
       (opener ?? content.current?.querySelector<HTMLElement>('h2'))?.focus();
     }
-  }, [filePath, noteId]);
+  }, [workspaceId, filePath, noteId]);
   useLayoutEffect(() => {
     if (!connection) return;
     store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
@@ -134,7 +134,7 @@ export function WorkspaceOverview({
       data-workspace-id={workspaceId}
     >
       <ScreenHeader
-        leading={<Logo />}
+        leading={<SidebarTrigger />}
         title={<h1>{row?.title}</h1>}
         description="Internal React preview · unreleased · read-only"
         actions={
@@ -169,7 +169,7 @@ export function WorkspaceOverview({
                 <dd data-testid="workspace-status">{row.status}</dd>
               </div>
             </dl>
-            <div ref={content} className="grid min-w-0 gap-6">
+            <div key={workspaceId} ref={content} className="grid min-w-0 gap-6">
               {filePath ? (
                 <WorkspaceFile
                   key={filePath}
