@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -583,7 +584,9 @@ describe('manual Mac architecture selection', () => {
           expect(
             JSON.parse(
               render(jobs[name].if!, {
-                'inputs.build_macos || inputs.isolated_test': String(enabled || isolated),
+                '!inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test)': String(
+                  enabled || isolated,
+                ),
               }),
             ),
           ).toBe(enabled || isolated);
@@ -602,7 +605,7 @@ describe('manual Mac architecture selection', () => {
       );
       const smoke = jobs['smoke-macos'];
       expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
-      expect(smoke.if).toBe('${{ inputs.smoke_macos }}');
+      expect(smoke.if).toBe('${{ !inputs.isolated_replay && inputs.smoke_macos }}');
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
@@ -620,7 +623,7 @@ describe('manual Mac architecture selection', () => {
     [false, false, false],
   ])('requires a built and signed smoke artifact: build=%s sign=%s', (build, sign, valid) => {
     const gate = workflow('manual-signed-build').jobs['smoke-inputs'];
-    expect(gate.if).toBe('${{ inputs.smoke_macos }}');
+    expect(gate.if).toBe('${{ !inputs.isolated_replay && inputs.smoke_macos }}');
     const check = step('manual-signed-build', 'smoke-inputs', 'Require a signed macOS artifact');
     const env = Object.fromEntries(
       Object.entries(check.env!).map(([key, value]) => [
@@ -818,4 +821,53 @@ describe('release tag capability routing', () => {
     rmSync(join(dir, 'scripts', missing));
     expect(() => releasePlan(dir)).toThrow('Incomplete native Mac release tooling');
   });
+});
+
+it('rejects replay inputs that would build or select another backend', () => {
+  const code = step(
+    'manual-signed-build',
+    'replay-isolated-macos',
+    'Require proof-only inputs',
+  ).run!;
+  const env = {
+    BUILD_MACOS: 'false',
+    BUILD_WINDOWS: 'false',
+    BUILD_LINUX: 'false',
+    ISOLATED_TEST: 'false',
+    SMOKE_MACOS: 'false',
+    INTENTD_REF: '',
+    SIGN: 'true',
+  };
+  const dir = temp();
+  expect(shell(dir, code, env).status).toBe(0);
+  for (const key of ['BUILD_MACOS', 'BUILD_WINDOWS', 'BUILD_LINUX', 'ISOLATED_TEST', 'SMOKE_MACOS'])
+    expect(shell(dir, code, { ...env, [key]: 'true' }).status).not.toBe(0);
+  expect(shell(dir, code, { ...env, INTENTD_REF: 'main' }).status).not.toBe(0);
+  expect(shell(dir, code, { ...env, SIGN: 'false' }).status).not.toBe(0);
+});
+
+it('never allocates ordinary build or smoke jobs for a proof-only replay', () => {
+  const jobs = workflow('manual-signed-build').jobs;
+  for (const isolated_test of [false, true]) {
+    const inputs = {
+      isolated_replay: true,
+      isolated_test,
+      build_macos: true,
+      build_windows: true,
+      build_linux: true,
+      smoke_macos: true,
+    };
+    for (const name of [
+      'select-macos',
+      'build-macos',
+      'build-windows',
+      'build-linux',
+      'smoke-inputs',
+      'smoke-macos',
+      'verify-isolated-macos',
+    ]) {
+      const expression = jobs[name].if!.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+      expect(runInNewContext(expression, { inputs }), name).toBe(false);
+    }
+  }
 });

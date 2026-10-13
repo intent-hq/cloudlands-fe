@@ -9,6 +9,7 @@ import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 import { evaluatePackageMain as evaluateMain } from './evaluate-package-main.mjs';
 import { createPackageProbe } from './isolated-package-probe.mjs';
+import { createPackageDiagnostics } from './isolated-package-diagnostics.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
@@ -34,6 +35,8 @@ const probe = createPackageProbe(output, evidence);
 const evaluatePackageMain = (app, callback, argument) =>
   probe.run('main-process inspection', () => evaluateMain(app, callback, argument));
 let application;
+let diagnostics;
+const diagnosticDisposers = [];
 let mounted = false;
 let normalServer;
 let normalConnections = 0;
@@ -219,6 +222,8 @@ try {
   assert.equal(plist.CFBundleIdentifier, 'app.cloudlands.intent.gitlab-test');
   assert.equal(plist.IntentIsolatedTestBackend, backendSha);
   assert.match(plist.IntentIsolatedTestBuild, /^manual-[1-9][0-9]*-[1-9][0-9]*$/);
+  if (process.env.ISOLATED_REPLAY_BUILD_ID)
+    assert.equal(plist.IntentIsolatedTestBuild, process.env.ISOLATED_REPLAY_BUILD_ID);
   assert.ok(!plist.CFBundleURLTypes?.length, 'test package must not register intent://');
   assert.equal(fs.existsSync(path.join(bundle, 'Contents/Resources/keychain-helper')), false);
   evidence.signing = command('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
@@ -232,6 +237,7 @@ try {
   evidence.plist = { id: plist.CFBundleIdentifier, build: plist.IntentIsolatedTestBuild };
   const expectedRoot = path.join(os.homedir(), '.intent-tests', plist.IntentIsolatedTestBuild);
   assert.equal(fs.existsSync(expectedRoot), false);
+  diagnostics = createPackageDiagnostics(output, expectedRoot);
   const launchEnv = {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     HOME: os.homedir(),
@@ -242,12 +248,15 @@ try {
     INTENTD_BIN: '/normal/forbidden',
     GH_TOKEN: 'disposable-sentinel-not-a-credential',
   };
-  const launch = () =>
-    probe.run(
+  const launch = async () => {
+    const launched = await probe.run(
       'Electron launch',
       () => electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 }),
       125_000,
     );
+    diagnosticDisposers.push(diagnostics.attach(launched.process()));
+    return launched;
+  };
   application = await launch();
   const initial = await eventually(() => inspect(application), Boolean, 'private startup');
   assert.equal(initial.root, expectedRoot);
@@ -411,6 +420,7 @@ try {
   evidence.error = String(error?.stack ?? error);
   process.exitCode = 1;
 } finally {
+  diagnostics?.capture();
   probe.persist();
   if (application) {
     try {
@@ -443,6 +453,8 @@ try {
       process.exitCode = 1;
     }
   }
+  diagnostics?.capture();
+  for (const dispose of diagnosticDisposers) dispose();
   probe.finish();
   // Never relabel forced cleanup as a pass. This VM is retired by GitHub after the job.
   console.log(JSON.stringify({ passed: evidence.passed, output, error: evidence.error }));
