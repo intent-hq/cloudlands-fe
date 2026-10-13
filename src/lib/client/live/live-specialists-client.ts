@@ -4,12 +4,12 @@ import {
   type RendererRecoveryScope,
 } from '$features/events/renderer-event-recovery';
 
-const globalReads = new Map<Promise<unknown>, RecoveryLifetime>();
+type CatalogSource = RendererRecoveryScope | undefined;
+const globalReads = new Map<Promise<unknown>, CatalogSource>();
 /** Recovery waits for existing global reads to settle before starting a new snapshot. */
 export async function settleGlobalSpecialistReads(): Promise<void> {
-  const key = rendererEventRecovery.capture('global-specialists').key;
   await Promise.allSettled(
-    [...globalReads].filter(([, receipt]) => receipt.key === key).map(([read]) => read),
+    [...globalReads].filter(([, captured]) => captured?.isCurrent()).map(([read]) => read),
   );
 }
 /**
@@ -57,7 +57,8 @@ const REFETCH_DEBOUNCE_MS = 100;
 export class LiveSpecialistsClient implements SpecialistsClient {
   private scope: RendererRecoveryScope | undefined;
   private globalRead:
-    { receipt: RecoveryLifetime; promise: Promise<SpecialistCatalog> } | undefined;
+    | { receipt: RecoveryLifetime; source: CatalogSource; promise: Promise<SpecialistCatalog> }
+    | undefined;
   /**
    * Raw `specialist.list` fetch — throws on transport/daemon failure. The
    * public `list()` folds errors to an empty list (picker falls back to the
@@ -94,19 +95,21 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     if (provider || workspaceId || options?.includeProject)
       return this.fetchCatalog(provider, workspaceId, options);
     const receipt = rendererEventRecovery.capture('global-specialists');
+    // Lease changes invalidate commit receipts, but do not retire physical requests.
+    const source = this.scope;
     const previous = this.globalRead;
-    if (previous?.receipt.isCurrent()) return previous.promise;
+    if (previous?.source === source && previous?.receipt.isCurrent()) return previous.promise;
     const fetch = () => {
-      if (!receipt.isCurrent()) throw new Error('Specialist catalog lifetime retired');
+      if (!receipt.commit(() => undefined)) throw new Error('Specialist catalog lifetime retired');
       return this.fetchCatalog();
     };
     const read =
-      previous && previous.receipt.key === receipt.key
+      previous && previous.source === source
         ? previous.promise.catch(() => undefined).then(fetch)
         : fetch();
-    const pending = { receipt, promise: read };
+    const pending = { receipt, source, promise: read };
     this.globalRead = pending;
-    globalReads.set(read, receipt);
+    globalReads.set(read, source);
     try {
       return await read;
     } finally {

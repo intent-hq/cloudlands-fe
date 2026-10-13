@@ -65,11 +65,13 @@ async function attachRecovery(supported = true) {
     }),
   );
   await scope.subscribe(
-    { eventTypes: ['specialists:changed', 'skills:changed'] },
+    { eventTypes: ['specialists:changed', 'skills:changed', 'settings:changed'] },
     { recover: true },
   );
   return {
     wire,
+    scope,
+    receive,
     event: () =>
       receive({
         method: 'events.event',
@@ -234,4 +236,60 @@ it('rejects a held recovery when the principal changes while the transport remai
   release(catalog('old-owner-result'));
   await vi.advanceTimersByTimeAsync(0);
   expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('guest-view');
+});
+
+it('does not overlap an initial specialist read when a covering lease changes', async () => {
+  const { wire, receive, scope } = await attachRecovery();
+  let release!: (value: ReturnType<typeof catalog>) => void;
+  backend.onRequest(
+    'specialist.list',
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  stop = store.runSaga(specialistsSaga);
+  await vi.advanceTimersByTimeAsync(0);
+  await scope.subscribe(
+    {
+      eventTypes: ['specialists:changed', 'skills:changed', 'settings:changed'],
+      replaceGroup: 'replacement',
+    },
+    { recover: true },
+  );
+  receive({
+    method: 'events.lost',
+    params: { subscriptionId: 'specialists-3', generation: '1', scope: { workspaceId: null } },
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(1);
+  backend.onRequest('specialist.list', () => catalog('current'));
+  release(catalog('obsolete'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('current');
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(2);
+});
+
+it('ignores appearance settings but refreshes model-resolution settings from admitted events', async () => {
+  const { wire, receive } = await attachRecovery();
+  backend.onRequest('specialist.list', () => catalog('initial'));
+  stop = store.runSaga(specialistsSaga);
+  await vi.advanceTimersByTimeAsync(0);
+  wire.mockClear();
+  const settings = (path: string) =>
+    receive({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'specialists-1',
+        event: { type: 'settings:changed', data: { changes: [{ path, value: 'changed' }] } },
+      },
+    });
+  settings('appearance.theme');
+  await vi.advanceTimersByTimeAsync(250);
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(0);
+  backend.onRequest('specialist.list', () => catalog('current'));
+  settings('model.defaultProvider');
+  await vi.advanceTimersByTimeAsync(250);
+  expect(selectFileSpecialists.select(store.state)[0]?.name).toBe('current');
+  expect(wire.mock.calls.filter(([method]) => method === 'specialist.list')).toHaveLength(1);
 });
