@@ -34,6 +34,7 @@ function daemon(supported = true, connected = true) {
     ? { incarnation: {}, eventStreamRecovery: supported }
     : null;
   const feed = new Set<(event: RepositoryConnectionEvent) => void>();
+  const confirmed = new Set<() => void>();
   const values: Record<string, string> = {
     'workspace.branchPrefix': 'old/',
     'workspace.worktreesLocation': '/old',
@@ -75,6 +76,12 @@ function daemon(supported = true, connected = true) {
       return result;
     },
   } as unknown as JsonRpcClient;
+  Object.assign(client, {
+    onRepositoryIdentityConfirmed: (fn: () => void) => {
+      confirmed.add(fn);
+      return () => confirmed.delete(fn);
+    },
+  });
   mock.client = client;
   const emit = (method: string, params: unknown) => {
     const notification = { method, params };
@@ -88,10 +95,16 @@ function daemon(supported = true, connected = true) {
     values,
     request,
     feed,
+    confirmed,
     connect: (reconnect = false) => {
       connection = { incarnation: {}, eventStreamRecovery: supported };
       for (const fn of mock.statuses) fn('connected');
       if (reconnect) for (const fn of mock.reconnects) fn();
+    },
+    renewIdentity: () => {
+      // Same-socket hello confirms identity without status/reconnected events.
+      connection = { incarnation: {}, eventStreamRecovery: supported };
+      for (const fn of [...confirmed]) fn();
     },
     setPath: (value: string) => {
       workspacePath = value;
@@ -129,6 +142,86 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('main-process generic loss recovery', () => {
+  it('real JsonRpcClient rehello automatically restores settings', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { JsonRpcClient: RealClient } = await import('../json-rpc-client');
+    let value = 'old/';
+    let subscription = 0;
+    class Socket extends EventEmitter {
+      destroyed = false;
+      frames: Array<{ id: number; method: string }> = [];
+      write(line: string) {
+        const frame = JSON.parse(line);
+        this.frames.push(frame);
+        let result;
+        if (frame.method === 'client.hello')
+          result = { clientId: 'desktop', server: { capabilities: { eventStreamRecovery: 1 } } };
+        else if (frame.method === 'events.subscribe')
+          result = { subscriptionId: `s-${++subscription}`, lossRecovery: 1 };
+        else if (frame.method === 'settings.get') result = { value };
+        else result = {};
+        queueMicrotask(() =>
+          this.emit(
+            'data',
+            Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\n'),
+          ),
+        );
+        return true;
+      }
+      destroy() {
+        this.destroyed = true;
+      }
+    }
+    const socket = new Socket();
+    const client = new RealClient({
+      socketFactory: () => socket as unknown as import('node:stream').Duplex,
+      helloParams: () => ({ clientId: 'desktop' }),
+      heartbeatIntervalMs: 0,
+    });
+    mock.client = client;
+    client.on('status', (status) => {
+      for (const callback of mock.statuses) callback(status);
+    });
+    client.on('reconnected', () => {
+      for (const callback of mock.reconnects) callback();
+    });
+    try {
+      client.start();
+      socket.emit('connect');
+      await flush();
+      expect(client.getRepositoryConnection()).not.toBeNull();
+      await settings.initAppSettingsService();
+      await flush();
+      expect(settings.getBranchPrefix()).toBe('old/');
+      value = 'renewed/';
+      const renewing = client.request('client.hello', {});
+      await flush();
+      await renewing;
+      await flush();
+      expect(client.getStatus()).toBe('connected');
+      expect(settings.getBranchPrefix()).toBe('renewed/');
+      expect(socket.frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(2);
+    } finally {
+      client.dispose();
+    }
+  });
+
+  it('active settings restore on a replacement identity without explicit init', async () => {
+    const d = daemon();
+    await settings.initAppSettingsService();
+    await flush();
+    expect(settings.getBranchPrefix()).toBe('old/');
+    d.retire();
+    d.values['workspace.branchPrefix'] = 'renewed/';
+    d.renewIdentity();
+    await flush();
+    expect(settings.getBranchPrefix()).toBe('renewed/');
+    expect(calls(d, 'events.subscribe')).toHaveLength(2);
+    expect(calls(d, 'settings.get')).toHaveLength(6);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls(d, 'settings.get')).toHaveLength(6);
+  });
+
   it('explicit incomplete hydration must join an active loss recovery', async () => {
     const d = daemon();
     const original = d.request.getMockImplementation();
@@ -166,10 +259,11 @@ describe('main-process generic loss recovery', () => {
     await flush();
     d.retire();
     d.values['workspace.branchPrefix'] = 'renewed/';
-    d.connect(false);
+    d.renewIdentity();
     await settings.initAppSettingsService();
     await flush();
     expect(settings.getBranchPrefix()).toBe('renewed/');
+    expect(calls(d, 'settings.get')).toHaveLength(6);
   });
 
   it('transient partial settings failure must not overlap held path reads', async () => {
@@ -311,6 +405,43 @@ describe('main-process generic loss recovery', () => {
     resolve({ workspace: { path: '/secret' } });
     expect(await pending).toBeNull();
   });
+  it('renews path invalidation on demand after a silent identity replacement', async () => {
+    const d = daemon();
+    expect(await paths.getWorkspacePath('w')).toBe('/old');
+    await flush();
+    d.retire();
+    d.renewIdentity();
+    d.setPath('/renewed');
+    expect(await paths.getWorkspacePath('w')).toBe('/renewed');
+    await flush();
+    expect(calls(d, 'events.subscribe')).toHaveLength(2);
+    d.setPath('/after-loss');
+    d.loss();
+    await flush();
+    expect(await paths.getWorkspacePath('w')).toBe('/after-loss');
+  });
+  it('renews tunnel cleanup on provider demand after a silent identity replacement', async () => {
+    const d = daemon();
+    const registry = new ForwardOwnershipRegistry();
+    const closeForward = vi.fn();
+    registry.record(3000, 'w');
+    registry.record(4000);
+    const deps = { client: d.client, registry, closeForward };
+    ensureWorkspaceForwardCleanup(deps);
+    await flush();
+    d.retire();
+    expect(closeForward).toHaveBeenCalledExactlyOnceWith(3000);
+    d.renewIdentity();
+    registry.record(3001, 'w');
+    await flush();
+    expect(calls(d, 'events.subscribe')).toHaveLength(2);
+    d.setWorkspaces([]);
+    d.loss();
+    await flush();
+    expect(closeForward.mock.calls).toEqual([[3000], [3001]]);
+    resetWorkspaceForwardCleanup();
+    expect(d.confirmed.size).toBe(0);
+  });
   it('closes only retired workspace-owned forwards after a lost deletion', async () => {
     const d = daemon();
     const registry = new ForwardOwnershipRegistry();
@@ -435,6 +566,7 @@ describe('main-process generic loss recovery', () => {
     expect(settings.getBranchPrefix()).toBe('');
     expect(settings.getSshKeyPath()).toBe('');
     d.request.mockImplementation(original);
+    for (const fn of d.confirmed) fn();
     await settings.initAppSettingsService();
     await flush();
     expect(settings.getBranchPrefix()).toBe('');
@@ -513,6 +645,8 @@ describe('main-process generic loss recovery', () => {
       ['events.unsubscribe', { subscriptionId: 'own' }],
     ]);
     expect(d.feed.size).toBe(0);
+    expect(d.confirmed.size).toBe(0);
+    d.renewIdentity();
     d.loss();
     await flush();
     expect(calls(d, 'settings.get')).toHaveLength(3);

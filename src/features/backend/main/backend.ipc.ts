@@ -1949,7 +1949,6 @@ function createAdditionalBackendClient(
             recovery.resource.refresh();
             continue;
           }
-          const receipt = recovery?.resource.captureLifetime();
           const connection = instance.getRepositoryConnection?.();
           // Enduring admission follows principal/connection authority, not the
           // mutation receipt invalidated by each accepted workspace event.
@@ -1961,9 +1960,10 @@ function createAdditionalBackendClient(
               (!connection || instance.getRepositoryConnection?.() === connection),
             { credential: invitedCredential },
           );
-          const current = Object.assign(() => admitted() && (!receipt || receipt.isCurrent()), {
-            credential: invitedCredential,
-          });
+          // A workspace title push cannot supersede principal authority. Loss,
+          // membership revision and identity changes still invalidate admission;
+          // the subsequent workspace read owns its own mutation receipt.
+          const current = admitted;
           invitedConnectionGuards.delete(id);
           principalRead = poolRequest(owner, instance, 'principal.me');
           const principal = await principalRead;

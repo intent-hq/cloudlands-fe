@@ -1747,6 +1747,12 @@ describe('private repository connection evidence', () => {
 
   it('stamps notifications with the physical source and retires identity before re-hello', async () => {
     const { client, sockets, events } = await start();
+    const confirmed = vi.fn();
+    const stopConfirmed = client.onRepositoryIdentityConfirmed(confirmed);
+    const statuses = vi.fn();
+    const reconnected = vi.fn();
+    client.on('status', statuses);
+    client.on('reconnected', reconnected);
     const original = client.getRepositoryConnection()!;
     expect(original.repositoryContext).toBe(true);
     const notification = {
@@ -1774,6 +1780,11 @@ describe('private repository connection evidence', () => {
     await hello;
     expect(client.getRepositoryConnection()?.incarnation).toBe(original.incarnation);
     expect(client.getRepositoryConnection()).not.toBe(original);
+    expect(confirmed).toHaveBeenCalledExactlyOnceWith(client.getRepositoryConnection());
+    expect(statuses).not.toHaveBeenCalled();
+    expect(reconnected).not.toHaveBeenCalled();
+    stopConfirmed();
+
     expect(events.filter((event) => (event as { type: string }).type === 'opened')).toHaveLength(1);
   });
 

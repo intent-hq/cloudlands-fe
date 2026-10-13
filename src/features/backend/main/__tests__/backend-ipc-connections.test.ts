@@ -5614,6 +5614,73 @@ describe('guest-sessions:* IPC handlers', () => {
           { timeout: 300 },
         );
       });
+
+      it('guest title push during principal refresh cannot strand admission', async () => {
+        rpc.recovery = true;
+        const principal = {
+          id: GUEST.principalId,
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+          hostRole: 'guest',
+          hostMembershipRevision: 1,
+        };
+        rpc.principal = async () => principal;
+        let title = 'Before';
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list')
+            return { workspaces: [{ id: 'ws-guest', title, myRole: 'collaborator' }] };
+          return {};
+        };
+        installGuest();
+        guestStore.setWorkspaces.mockResolvedValue(true);
+        installWindow();
+        const { mod } = await loadModule();
+        mod.registerBackendHandlers();
+        const guest = await mod.connectBackendClient(GUEST.id);
+        guest.hello({ server: { ...hello.server, capabilities: { hostMembership: 1 } } });
+        await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1));
+        guestStore.setWorkspaces.mockClear();
+        let release!: (value: unknown) => void;
+        const held = new Promise((resolve) => {
+          release = resolve;
+        });
+        rpc.principal = () => held;
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'host:members-changed', {
+            principalId: GUEST.principalId,
+            hostRole: 'guest',
+            action: 'removed',
+            revision: 2,
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(rpc.calls.filter((m) => m === 'principal.me')).toHaveLength(2),
+        );
+        title = 'Renamed';
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'workspace:updated', {
+            workspaceId: 'ws-guest',
+            changes: { title },
+          }),
+        );
+        rpc.principal = async () => principal;
+        release(principal);
+        await vi.waitFor(
+          () =>
+            expect(guestStore.setWorkspaces).toHaveBeenCalledWith(
+              GUEST.id,
+              [{ id: 'ws-guest', title: 'Renamed' }],
+              expect.any(Function),
+            ),
+          { timeout: 400 },
+        );
+      });
       it('recovers the final lost guest title and membership from fenced authority reads', async () => {
         rpc.recovery = true;
         let rows = [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }];

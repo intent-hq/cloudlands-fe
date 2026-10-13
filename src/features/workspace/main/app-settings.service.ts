@@ -61,7 +61,11 @@ import {
   onBackendStatus,
 } from '../../backend/main/backend.ipc';
 import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
-import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import type {
+  ConnectionStatus,
+  JsonRpcClient,
+  JsonRpcNotification,
+} from '../../backend/main/json-rpc-client';
 
 const logger = new Logger({ category: 'AppSettingsService' });
 
@@ -87,6 +91,8 @@ let recovery: ReturnType<typeof captureMainEventRecovery>;
 let recoveryResource:
   ReturnType<NonNullable<typeof recovery>['coordinator']['registerResource']> | undefined;
 let authorityRetired = false;
+let identityClient: JsonRpcClient | undefined;
+let identityDisposer: (() => void) | undefined;
 let ordinaryRefresh: Promise<void> | undefined;
 let hydrationPromise: Promise<void> | null = null;
 /** One-time guard for the notification / reconnect listeners. */
@@ -262,8 +268,17 @@ function retireSettings(): void {
 }
 
 function captureSettingsRecovery(): void {
+  const client = getLocalBackendClient();
+  if (identityClient !== client) {
+    identityDisposer?.();
+    identityClient = client;
+    identityDisposer = client.onRepositoryIdentityConfirmed?.(() => {
+      if (recovery?.session.isCurrent()) return;
+      void initAppSettingsService();
+    });
+  }
   if (recovery?.session.isCurrent()) return;
-  recovery = captureMainEventRecovery(getLocalBackendClient(), retireSettings);
+  recovery = captureMainEventRecovery(client, retireSettings);
   if (!recovery) return;
   authorityRetired = false;
   recoveryResource = recovery.coordinator.registerResource({
@@ -511,6 +526,9 @@ export function __resetAppSettingsForTesting(): void {
   recovery = undefined;
   recoveryResource = undefined;
   authorityRetired = false;
+  identityDisposer?.();
+  identityDisposer = undefined;
+  identityClient = undefined;
   cachedBranchPrefix = null;
   cachedWorktreesLocation = null;
   cachedSshKeyPath = null;

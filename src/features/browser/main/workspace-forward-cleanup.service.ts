@@ -73,6 +73,7 @@ class WorkspaceForwardCleanupState {
   private disposed = false;
   private readonly disposeNotification: () => void;
   private readonly disposeReconnect: () => void;
+  private readonly disposeIdentity: (() => void) | undefined;
   private readonly onStatus = (status: string) => {
     if (status === 'connected') this.ensure();
   };
@@ -80,6 +81,7 @@ class WorkspaceForwardCleanupState {
   constructor(private readonly deps: WorkspaceForwardCleanupDeps & { client: JsonRpcClient }) {
     if (deps.provider) this.providers.add(deps.provider);
     deps.client.on?.('status', this.onStatus);
+    this.disposeIdentity = deps.client.onRepositoryIdentityConfirmed?.(() => this.ensure());
     const backendId = deps.backendId ?? LOCAL_CONNECTION_ID;
     this.disposeNotification = onBackendNotification(
       (notification) => this.handleBackendNotification(notification),
@@ -102,6 +104,7 @@ class WorkspaceForwardCleanupState {
     this.recovery?.coordinator.dispose();
     this.disposeNotification();
     this.disposeReconnect();
+    this.disposeIdentity?.();
     this.deps.client.off?.('status', this.onStatus);
   }
 

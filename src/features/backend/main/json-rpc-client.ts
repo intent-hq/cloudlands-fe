@@ -202,6 +202,9 @@ export class JsonRpcClient extends EventEmitter {
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
+  private readonly identityConfirmedObservers = new Set<
+    (connection: RepositoryConnection) => void
+  >();
   private helloAttempt: object | null = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
@@ -495,6 +498,20 @@ export class JsonRpcClient extends EventEmitter {
     return () => this.repositoryObservers.delete(listener);
   }
 
+  /** Main-only readiness signal, including a new identity on the existing socket. */
+  onRepositoryIdentityConfirmed(listener: (connection: RepositoryConnection) => void): () => void {
+    this.identityConfirmedObservers.add(listener);
+    return () => {
+      this.identityConfirmedObservers.delete(listener);
+    };
+  }
+
+  private emitIdentityConfirmed(): void {
+    const connection = this.getRepositoryConnection();
+    if (connection)
+      for (const listener of [...this.identityConfirmedObservers]) listener(connection);
+  }
+
   private emitRepositoryEvent(event: RepositoryConnectionEvent): void {
     for (const listener of this.repositoryObservers) listener(event);
   }
@@ -599,6 +616,7 @@ export class JsonRpcClient extends EventEmitter {
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
     });
+    this.emitIdentityConfirmed();
   }
 
   /**
@@ -711,6 +729,7 @@ export class JsonRpcClient extends EventEmitter {
     this.failWaiters(new Error('JSON-RPC client disposed'));
     this.teardownSocket();
     this.repositoryObservers.clear();
+    this.identityConfirmedObservers.clear();
     this.setStatus('disconnected');
     this.removeAllListeners();
     this.finishConnectionOwner();
@@ -1436,5 +1455,6 @@ export class JsonRpcClient extends EventEmitter {
     if (this.status === status) return;
     this.status = status;
     this.emit('status', status);
+    if (status === 'connected') this.emitIdentityConfirmed();
   }
 }
