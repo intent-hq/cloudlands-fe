@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   offById: vi.fn(),
   callbacks: {} as Record<string, (data?: any) => void>,
 }));
-vi.mock('$lib/utils/platform-capabilities', () => ({ getPlatform: mocks.platform }));
+vi.mock('$lib/utils/platform-capabilities', () => ({
+  getPlatform: mocks.platform,
+  isElectronPlatform: () => mocks.platform() === 'electron',
+}));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backend,
