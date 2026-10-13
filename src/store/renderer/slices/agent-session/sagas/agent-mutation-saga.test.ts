@@ -1994,3 +1994,62 @@ describe('agentMutationSaga', () => {
     expect(listPendingAgentDeletions()).toEqual([]);
   });
 });
+
+it.each(['push', 'loss', 'retired'] as const)(
+  'keeps retirement command authority separate from %s during capability loading',
+  async (transition) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+    appStore.init();
+    mocks.retire.mockClear();
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    scope.registerResource({
+      key: agentMetadataRecoveryKey(WS),
+      workspaceId: WS,
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    const pending = Promise.withResolvers<boolean>();
+    mocks.supportsRetirement.mockReturnValueOnce(pending.promise);
+    mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-10-13T00:00:00Z' });
+    const h = start(undefined, { live: true });
+    const action = retireAgentRequested(WS, A1);
+    const outcome = action.promise.then(
+      () => true,
+      () => false,
+    );
+    try {
+      h.channel.put(action);
+      await settle();
+      if (transition === 'push')
+        expect(rendererEventRecovery.push(agentMetadataRecoveryKey(WS))).toBe(true);
+      else if (transition === 'loss')
+        rendererEventRecovery.invalidate(agentMetadataRecoveryKey(WS));
+      else rendererEventRecovery.retireWorkspace(WS);
+      h.dispatch(updateSession(A1, { name: 'Current metadata', retiredAt: 'newer' }));
+      pending.resolve(true);
+      expect(await outcome).toBe(transition !== 'retired');
+      if (transition === 'retired') expect(mocks.retire).not.toHaveBeenCalled();
+      else expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+      expect(selectAgentSession.select(h.getState() as never, A1)).toMatchObject({
+        name: 'Current metadata',
+        retiredAt: 'newer',
+      });
+    } finally {
+      await stop(h.task);
+      rendererEventRecovery.dispose();
+    }
+  },
+);

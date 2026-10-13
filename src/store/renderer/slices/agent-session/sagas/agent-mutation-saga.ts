@@ -240,6 +240,7 @@ function* loadRetirementSupport(
 function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
+  const authority = rendererEventRecovery.captureAuthority(agentMetadataRecoveryKey(wsId));
   const initial = yield* selectAgentSession.effect(agentId);
   // A stale workspace action may still settle its RPC, but cannot claim or
   // publish into a row now owned by another workspace.
@@ -251,7 +252,7 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
   try {
     const generation = yield* selectDaemonConnectionGeneration.effect();
     if (
-      !(yield* guardedAgentMutation(recovery, () =>
+      !(yield* guardedAgentMutation(authority, () =>
         appClient.agents.supportsRetirement(generation),
       )) ||
       generation !== (yield* selectDaemonConnectionGeneration.effect())
@@ -259,7 +260,7 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
       throw new Error(m.agent_mutation_retireUnavailable_error());
     }
     const beforeRetire = yield* selectAgentSession.effect(agentId);
-    const result = yield* guardedAgentMutation(recovery, () =>
+    const result = yield* guardedAgentMutation(authority, () =>
       appClient.agents.retire(agentId, wsId),
     );
     if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
