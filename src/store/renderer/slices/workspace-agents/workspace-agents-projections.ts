@@ -1,4 +1,5 @@
 import type { AgentSession } from '$shared/types/agent-session';
+import type { AgentId } from '$shared/types';
 import { getAgentSession } from '../agent-session/agent-session-projections';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
 import type { WorkspaceAgentsProjectionState } from './workspace-agents-types';
@@ -34,6 +35,31 @@ export const getAllWorkspaceAgents = (
     if (session) result.push(session);
   }
   return result;
+};
+
+export const getWorkspaceForegroundAgentIds = (
+  state: WorkspaceAgentsProjectionState,
+  wsId?: string,
+): AgentId[] => {
+  if (!wsId) return [];
+  return getWorkspaceAgentState(state, wsId).foregroundAgentIds;
+};
+
+export const getForegroundWorkspaceAgents = (
+  state: WorkspaceAgentsProjectionState,
+  wsId: string,
+) => {
+  const foregroundAgentIds = getWorkspaceForegroundAgentIds(state, wsId);
+  const result: AgentSession[] = [];
+  for (const id of foregroundAgentIds) {
+    const session = getAgentSession(state, String(id));
+    if (session) result.push(session);
+  }
+  return result;
+};
+
+export const getAgentsLoaded = (state: WorkspaceAgentsProjectionState, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).agentsLoaded;
 };
 
 export const getRetiredAgentsLoaded = (state: WorkspaceAgentsProjectionState, wsId: string) => {

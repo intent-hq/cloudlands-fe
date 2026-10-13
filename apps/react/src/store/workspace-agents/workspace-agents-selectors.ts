@@ -4,6 +4,10 @@ import * as projections from '../../../../../src/store/renderer/slices/workspace
 export const selectActiveAgentId = store.createSelector(projections.getActiveAgentId);
 export const selectWorkspaceAgentIds = store.createSelector(projections.getWorkspaceAgentIds);
 export const selectAllWorkspaceAgents = store.createSelector(projections.getAllWorkspaceAgents);
+export const selectForegroundWorkspaceAgents = store.createSelector(
+  projections.getForegroundWorkspaceAgents,
+);
+export const selectAgentsLoaded = store.createSelector(projections.getAgentsLoaded);
 export const selectRetiredAgentsLoaded = store.createSelector(projections.getRetiredAgentsLoaded);
 export const selectIsLoadingRetiredAgents = store.createSelector(
   projections.getIsLoadingRetiredAgents,

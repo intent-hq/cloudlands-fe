@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import type { AgentId, AgentSession } from '$shared/types';
+import type { AgentSession } from '$shared/types';
 import { classifyAgentScope } from '$shared/utils/agent-scope';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 // Svelte compatibility bindings remain until the renderer cutover; shared bodies have one owner.
@@ -8,6 +8,9 @@ import {
   getActiveAgentId,
   getWorkspaceAgentIds,
   getAllWorkspaceAgents,
+  getWorkspaceForegroundAgentIds,
+  getForegroundWorkspaceAgents,
+  getAgentsLoaded,
   getRetiredAgentsLoaded,
   getIsLoadingRetiredAgents,
   getDelegatedAgentsLoaded,
@@ -48,10 +51,7 @@ export const selectAllWorkspaceAgents = store.createSelector(getAllWorkspaceAgen
 
 /** Get reducer-maintained foreground agent IDs for a workspace. */
 export const selectWorkspaceForegroundAgentIds = store.createSelector(
-  (state, wsId?: string): AgentId[] => {
-    if (!wsId) return [];
-    return getWorkspaceAgentState(state, wsId).foregroundAgentIds;
-  },
+  getWorkspaceForegroundAgentIds,
 );
 
 /** Get background agent sessions for a workspace. */
@@ -71,15 +71,7 @@ export const selectBackgroundWorkspaceAgents = store.createSelector(
   },
 );
 
-export const selectForegroundWorkspaceAgents = store.createSelector((state, wsId: string) => {
-  const foregroundAgentIds = selectWorkspaceForegroundAgentIds.select(state, wsId);
-  const result: AgentSession[] = [];
-  for (const id of foregroundAgentIds) {
-    const session = selectAgentSession.select(state, String(id));
-    if (session) result.push(session);
-  }
-  return result;
-});
+export const selectForegroundWorkspaceAgents = store.createSelector(getForegroundWorkspaceAgents);
 
 /** True when any non-retired foreground (top-level) agent session has unread messages. */
 export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
@@ -90,9 +82,7 @@ export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
   },
 );
 
-export const selectAgentsLoaded = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).agentsLoaded;
-});
+export const selectAgentsLoaded = store.createSelector(getAgentsLoaded);
 
 export const selectIsLoadingAgents = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;

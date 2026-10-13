@@ -34,6 +34,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceNotes } from './workspace-notes';
 import { WorkspaceProgress } from './workspace-progress';
+import { WorkspaceAgents } from './workspace-agents';
 import { WorkspaceGitStatus } from './workspace-git-status';
 import { WorkspaceFile } from './workspace-file';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
@@ -243,6 +244,7 @@ export function WorkspaceOverview({
               ) : (
                 <>
                   {!noteId && <WorkspaceProgress workspaceId={workspaceId} query={query} />}
+                  {!noteId && <WorkspaceAgents workspaceId={workspaceId} />}
                   {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} query={query} />}
                   <WorkspaceNotes
                     workspaceId={workspaceId}
