@@ -6,6 +6,7 @@ import {
   GLOBAL_MCP_RECOVERY_KEY,
 } from '$features/settings/settings-recovery-lifetime';
 import { settingsWorkScope } from '../../settings-events/sagas/settings-work-scope';
+import { trackWorkspaceCatalogRead } from '../../provider-catalog/workspace-catalog-read-flight';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -528,15 +529,23 @@ function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   );
   const work = { isCurrent: () => receipt.commit(() => {}) };
   if (!work.isCurrent()) return;
-  const keys: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerKeys>> =
-    yield* call(
-      [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerKeys],
-      workspaceId,
+  try {
+    const keys: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerKeys>> =
+      yield* call(() =>
+        trackWorkspaceCatalogRead(workspaceId, () =>
+          appClient.settings.getWorkspaceDisabledMcpServerKeys(workspaceId),
+        ),
+      );
+    if (!work.isCurrent() || keys === null) return;
+    const disabled: Record<string, true> = {};
+    for (const key of keys) disabled[key] = true;
+    yield* put(
+      withRecoveryLifetime(setWorkspaceDisabledMcpServers(workspaceId, disabled), receipt),
     );
-  if (!work.isCurrent() || keys === null) return;
-  const disabled: Record<string, true> = {};
-  for (const key of keys) disabled[key] = true;
-  yield* put(withRecoveryLifetime(setWorkspaceDisabledMcpServers(workspaceId, disabled), receipt));
+  } catch (error) {
+    if (work.isCurrent())
+      logger.warn('Workspace MCP disabled map read failed', { workspaceId, error });
+  }
 }
 
 function* toggleFeature(): SagaGenerator<void> {
@@ -778,5 +787,5 @@ function* mcpSettingsSagaWork(): SagaGenerator<void> {
 }
 
 export function* mcpSettingsSaga() {
-  yield* settingsWorkScope(mcpSettingsSagaWork);
+  yield* settingsWorkScope(mcpSettingsSagaWork, 'mcp');
 }

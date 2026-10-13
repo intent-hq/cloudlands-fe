@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./settings-recovery', () => ({
   installSettingsRecovery: () => () => {},
+  retireSettingsAuthority: () => {},
   recordSettingsSnapshotRevision: () => {},
   getSettingsSnapshotRevision: () => -1,
 }));

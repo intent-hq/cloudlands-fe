@@ -39,5 +39,22 @@ export function captureSettingsWork(key = GLOBAL_SETTINGS_RECOVERY_KEY) {
   const receipt = rendererEventRecovery.capture(key);
   return {
     isCurrent: () => admitted && epoch === generation && receipt.commit(() => {}),
+    // Form snapshots merge intervening field pushes, but never cross loss or authority.
+    isSameScope: () => {
+      const current = rendererEventRecovery.capture(key);
+      return (
+        admitted && epoch === generation && receipt.key === current.key && current.commit(() => {})
+      );
+    },
   };
+}
+
+/** Only canonical protocol authority/absence errors may clear protected state. */
+export function isSettingsAuthorityError(error: unknown): boolean {
+  const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+  return (
+    failure?.rpcCode === -32003 ||
+    failure?.rpcCode === -32001 ||
+    (failure?.rpcCode === -32602 && failure.data?.code === 'not-found')
+  );
 }

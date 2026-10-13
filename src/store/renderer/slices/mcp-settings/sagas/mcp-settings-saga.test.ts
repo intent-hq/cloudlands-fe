@@ -951,7 +951,7 @@ describe('mcpSettingsSaga', () => {
       { 'ws-1': [remote] },
     );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
-    await settle();
+    await vi.waitFor(() => expect(run.dispatched).toHaveLength(1));
 
     expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(getRecoveryLifetime(run.dispatched[0] as object)).toBeDefined();
@@ -977,7 +977,7 @@ describe('mcpSettingsSaga', () => {
       { 'ws-1': [remote] },
     );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
-    await settle();
+    await vi.waitFor(() => expect(run.dispatched).toHaveLength(1));
 
     expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(run.dispatched).toEqual([

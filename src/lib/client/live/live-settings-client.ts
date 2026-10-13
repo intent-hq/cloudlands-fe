@@ -3,6 +3,7 @@ import {
   GLOBAL_SETTINGS_RECOVERY_KEY,
   GLOBAL_MCP_RECOVERY_KEY,
   trackSettingsRead,
+  isSettingsAuthorityError,
 } from '$features/settings/settings-recovery-lifetime';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { validateMcpServerIdentities } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
@@ -93,6 +94,11 @@ function captureSettings(workspaceId?: string) {
 }
 function assertSettingsCurrent(receipt: SettingsReceipt): void {
   if (!receipt.commit(() => {})) throw new Error('Settings request lifetime retired');
+}
+function assertSettingsScopeCurrent(receipt: SettingsReceipt, workspaceId?: string): void {
+  const current = captureSettings(workspaceId);
+  if (current.key !== receipt.key) throw new Error('Settings request scope retired');
+  assertSettingsCurrent(current);
 }
 const pendingSnapshots = new Map<
   string,
@@ -197,16 +203,23 @@ export function readSetting(
   }
 
   const generation = settingsGeneration;
-  const run = backendRequest<{
-    value?: unknown;
-    definition?: Omit<SettingDefinitionWithValue, 'value'>;
-    origin?: SettingDefinitionWithValue['origin'];
-    revision?: unknown;
-  }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) })
+  const run = trackSettingsRead(
+    workspaceId
+      ? `workspace-catalog:${JSON.stringify([workspaceId])}`
+      : GLOBAL_SETTINGS_RECOVERY_KEY,
+    () =>
+      backendRequest<{
+        value?: unknown;
+        definition?: Omit<SettingDefinitionWithValue, 'value'>;
+        origin?: SettingDefinitionWithValue['origin'];
+        revision?: unknown;
+      }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) }),
+  )
     .then(parseSettingResult)
     .then((setting) => {
-      assertSettingsCurrent(receipt);
-      if (generation === settingsGeneration) settingCache.set(key, { value: setting, receipt });
+      assertSettingsScopeCurrent(receipt, workspaceId);
+      if (generation === settingsGeneration && receipt.commit(() => {}))
+        settingCache.set(key, { value: setting, receipt });
       return setting;
     })
     .finally(() => {
@@ -270,7 +283,10 @@ export class LiveSettingsClient implements SettingsClient {
           assertSettingsCurrent(receipt);
           return this.readSnapshot(workspaceId);
         })
-        .catch(() => ({ settings: [], revision: 0 }))
+        .catch((error) => {
+          if (isSettingsAuthorityError(error)) throw error;
+          return { settings: [], revision: 0 };
+        })
         .finally(() => {
           if (pendingSnapshots.get(key)?.promise === promise) pendingSnapshots.delete(key);
         });
@@ -300,19 +316,20 @@ export class LiveSettingsClient implements SettingsClient {
             ...(workspaceId ? [{ workspaceId }] : []),
           ),
       );
-      assertSettingsCurrent(receipt);
+      assertSettingsScopeCurrent(receipt, workspaceId);
       const snapshot = {
         settings: Array.isArray(result?.settings)
           ? (result.settings as SettingDefinitionWithValue[])
           : [],
         revision: typeof result?.revision === 'number' ? result.revision : 0,
       };
-      if (generation === settingsGeneration) {
+      if (generation === settingsGeneration && receipt.commit(() => {})) {
         for (const setting of snapshot.settings)
           settingCache.set(settingKey(setting.path, workspaceId), { value: setting, receipt });
       }
       return snapshot;
-    } catch {
+    } catch (error) {
+      if (isSettingsAuthorityError(error)) throw error;
       return { settings: [], revision: 0 };
     }
   }

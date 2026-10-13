@@ -62,7 +62,9 @@ function* waitForClose(request: SettingsFormRequest): SagaGenerator<void> {
 
 function* publication(
   operation: Parameters<typeof selfPublicationRequested>[0],
+  work: ReturnType<typeof captureSettingsWork>,
 ): SagaGenerator<void> {
+  if (!work.isCurrent()) return;
   const action = selfPublicationRequested(operation);
   // Attach rejection handling before dispatch: publication failures are fail-soft.
   const completion = action.promise.catch(() => {});
@@ -73,8 +75,8 @@ function* publication(
 async function pairing(
   client: typeof localMachineClient,
   request: SettingsFormRequest,
+  work: ReturnType<typeof captureSettingsWork>,
 ): Promise<Omit<ServerPairingInfo, 'token'>> {
-  const work = captureSettingsWork();
   // Credential-bearing results never cross a saga effect/result diagnostic boundary.
   try {
     const { token, ...info } = await client.server.pairingInfo();
@@ -88,10 +90,12 @@ async function pairing(
 function* loadSnapshot(
   client: typeof localMachineClient,
   request: SettingsFormRequest,
-  completeMutation = false,
+  completeMutation: boolean,
+  work: ReturnType<typeof captureSettingsWork>,
 ): SagaGenerator<WebSocketApiSnapshot> {
   const previous = yield* selectWebsocketApiSnapshot.effect(request);
   const settings = yield* call([client.settings, client.settings.list]);
+  if (!work.isCurrent()) return previous;
   const value = (path: string) => settings.find((entry) => entry.path === path)?.value;
   const bindAddress = value('server.bindAddress');
   const persistedPort = value('server.wsApi.port');
@@ -116,7 +120,8 @@ function* loadSnapshot(
     return snapshot;
   yield* put(settingsFormRequestProgressed(request, { ...snapshot }));
   if (snapshot.enabled) {
-    const info = yield* call(pairing, client, request);
+    const info = yield* call(pairing, client, request, work);
+    if (!work.isCurrent()) return snapshot;
     Object.assign(snapshot, {
       port: info.port,
       certFingerprint: info.certFingerprint,
@@ -125,7 +130,7 @@ function* loadSnapshot(
       tcAddress: info.tcAddress ?? '',
     });
     if (completeMutation || (yield* selectSettingsFormRequestCurrent.effect(request)))
-      yield* publication('load');
+      yield* publication('load', work);
   } else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '' });
   return snapshot;
 }
@@ -153,12 +158,13 @@ function* requestCurrent(request: SettingsFormRequest, context?: string): SagaGe
 function* loadMobile(
   request: SettingsFormRequest,
   context: string,
+  work: ReturnType<typeof captureSettingsWork>,
 ): SagaGenerator<{ enabled: boolean }> {
   const principal = yield* selectPrincipalSnapshot.effect();
   if (!(yield* selectCanAdministerHost.effect()) || !principal)
     throw new Error(m.settings_personalDevices_pairing_error());
   const settings = yield* call([appClient.settings, appClient.settings.list]);
-  if (!(yield* requestCurrent(request, context))) return { enabled: false };
+  if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return { enabled: false };
   const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
   if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
   yield* put(settingsFormRequestProgressed(request, { enabled }));
@@ -173,7 +179,7 @@ function* loadMobile(
         throw new Error(m.settings_personalDevices_pairing_error());
       }
     });
-    if (yield* requestCurrent(request, context))
+    if (work.isCurrent() && (yield* requestCurrent(request, context)))
       receiveWebsocketCredentials(request, { pairingUri: uri });
   } else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
   return { enabled };
@@ -181,7 +187,8 @@ function* loadMobile(
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
-  if (!captureSettingsWork().isCurrent()) {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) {
     yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
     return;
   }
@@ -191,9 +198,9 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
   let values: Record<string, SettingsFormValue> = {};
   let error: string | undefined;
   try {
-    if (!(yield* requestCurrent(request, context))) return;
+    if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return;
     if (intent.kind === 'loadMobile') {
-      values = yield* loadMobile(request, intent.context);
+      values = yield* loadMobile(request, intent.context, work);
     } else if (intent.kind === 'toggle' && context) {
       if (!(yield* selectCanAdministerHost.effect()))
         throw new Error(m.settings_personalDevices_pairing_error());
@@ -201,22 +208,23 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         [appClient.settings, appClient.settings.update],
         [{ path: 'server.wsApi.enabled', value: intent.enabled }],
       );
-      if (!(yield* requestCurrent(request, context))) return;
+      if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return;
       const enabled = result.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
       if (typeof enabled !== 'boolean') throw new Error(m.settings_wsApi_startListenerError());
       if (enabled !== intent.enabled) error = m.settings_wsApi_startListenerError();
       values = { enabled };
       yield* put(settingsFormRequestProgressed(request, values));
-      if (enabled) values = yield* loadMobile(request, context);
+      if (enabled) values = yield* loadMobile(request, context, work);
       else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
     } else if (intent.kind === 'load') {
-      snapshot = yield* call(loadSnapshot, client, request);
+      snapshot = yield* call(loadSnapshot, client, request, false, work);
       values = { ...snapshot, portResetId: request.requestId };
     } else if (intent.kind === 'toggle') {
       const result = yield* call(
         [client.settings, client.settings.update],
         [{ path: 'server.wsApi.enabled', value: intent.enabled }],
       );
+      if (!work.isCurrent()) return;
       const applied = result.find((entry) => entry.path === 'server.wsApi.enabled');
       if (applied && applied.value !== intent.enabled) {
         values.enabled = applied.value === true;
@@ -224,7 +232,8 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       } else {
         snapshot.enabled = intent.enabled;
         if (intent.enabled) {
-          snapshot = yield* call(loadSnapshot, client, request, true);
+          snapshot = yield* call(loadSnapshot, client, request, true, work);
+          if (!work.isCurrent()) return;
           if (
             snapshot.bindAddressSupported &&
             !snapshot.tunnelOnly &&
@@ -235,10 +244,10 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
                 [client.settings, client.settings.update],
                 [{ path: 'server.bindAddress', value: ['0.0.0.0'] }],
               );
-              yield* publication('refresh');
-              snapshot = yield* call(loadSnapshot, client, request, true);
+              yield* publication('refresh', work);
+              snapshot = yield* call(loadSnapshot, client, request, true, work);
             } catch (cause) {
-              if (yield* selectSettingsFormRequestCurrent.effect(request))
+              if (work.isCurrent() && (yield* selectSettingsFormRequestCurrent.effect(request)))
                 yield* call(
                   notify.error,
                   m.settings_listenTargets_saveError({
@@ -247,11 +256,11 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
                 );
             }
           }
-          yield* publication('autoPublish');
+          yield* publication('autoPublish', work);
           values.enabledAcknowledged = request.requestId;
         } else {
           receiveWebsocketCredentials(request, { token: '', qrDataUrl: '' });
-          yield* publication('autoUnpublish');
+          yield* publication('autoUnpublish', work);
         }
         values = { ...values, ...snapshot, portResetId: request.requestId };
       }
@@ -269,6 +278,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         [client.settings, client.settings.update],
         [{ path: 'server.wsApi.port', value: intent.port }],
       );
+      if (!work.isCurrent()) return;
       const applied = result.find((entry) => entry.path === 'server.wsApi.port');
       if (applied && applied.value !== intent.port) {
         values.persistedPort =
@@ -278,14 +288,15 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         values.persistedPort = intent.port;
         if (snapshot.enabled) {
           try {
-            values.port = (yield* call(pairing, client, request)).port;
+            values.port = (yield* call(pairing, client, request, work)).port;
           } catch {
             /* Saved successfully; pairing refresh is fail-soft. */
           }
-          yield* publication('refresh');
-          if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+          yield* publication('refresh', work);
+          if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request)))
+            return;
           yield* call(notify.success, m.settings_wsApi_portChanged({ port: String(intent.port) }));
-        } else if (yield* selectSettingsFormRequestCurrent.effect(request))
+        } else if (work.isCurrent() && (yield* selectSettingsFormRequestCurrent.effect(request)))
           yield* call(notify.success, m.settings_wsApi_portSaved());
       }
       values.portResetId = request.requestId;
@@ -307,21 +318,22 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         );
       try {
         yield* call([client.settings, client.settings.update], changes);
-        if (yield* selectSettingsFormRequestCurrent.effect(request))
+        if (work.isCurrent() && (yield* selectSettingsFormRequestCurrent.effect(request)))
           yield* call(notify.success, m.settings_listenTargets_saved());
-        yield* publication('refresh');
+        yield* publication('refresh', work);
       } catch (cause) {
         error = m.settings_listenTargets_saveError({
           error: cause instanceof Error ? cause.message : String(cause),
         });
       }
-      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
-      values = { ...(yield* call(loadSnapshot, client, request)) };
+      if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      values = { ...(yield* call(loadSnapshot, client, request, false, work)) };
     } else if (intent.kind === 'rotate') {
       // Neither the resolved token nor an error echoing it may enter saga diagnostics.
       const fixed = yield* call(async () => {
         try {
           const result = await client.server.rotateToken();
+          if (!work.isCurrent()) return false;
           receiveWebsocketCredentials(request, { token: result.token, qrDataUrl: '' });
           return false;
         } catch (cause) {
@@ -335,11 +347,11 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       });
       if (fixed) error = m.settings_wsApi_tokenRotateFixedError();
       else {
-        yield* publication('refresh');
-        if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+        yield* publication('refresh', work);
+        if (!work.isCurrent() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
         yield* call(notify.success, m.settings_wsApi_tokenRegenerated());
       }
-    } else if (intent.kind === 'publish') yield* publication('publish');
+    } else if (intent.kind === 'publish') yield* publication('publish', work);
     else if (intent.kind === 'copy') {
       if (intent.target === 'share' && !snapshot.port && !context)
         throw new Error(m.settings_wsApi_serverNotRunning());
@@ -358,7 +370,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
           throw new Error(m.settings_wsApi_tokenCopyError());
         }
       });
-      if (!(yield* requestCurrent(request, context))) return;
+      if (!work.isCurrent() || !(yield* requestCurrent(request, context))) return;
       yield* call(
         notify.success,
         intent.target === 'token'
@@ -384,12 +396,12 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
           throw new Error(m.settings_wsApi_qrGenerateError());
         }
       });
-      if (yield* requestCurrent(request, context)) {
+      if (work.isCurrent() && (yield* requestCurrent(request, context))) {
         receiveWebsocketCredentials(request, { qrDataUrl });
         yield* put(websocketApiQrOpened(request));
       }
     }
-    if (yield* requestCurrent(request, context)) {
+    if (work.isCurrent() && (yield* requestCurrent(request, context))) {
       if (error) yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
@@ -400,7 +412,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } catch (cause) {
-    if (yield* requestCurrent(request, context)) {
+    if (work.isCurrent() && (yield* requestCurrent(request, context))) {
       const message = cause instanceof Error ? cause.message : String(cause);
       error =
         intent.kind === 'loadMobile'
@@ -432,7 +444,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } finally {
-    if (yield* cancelled())
+    if ((yield* cancelled()) || !work.isCurrent())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

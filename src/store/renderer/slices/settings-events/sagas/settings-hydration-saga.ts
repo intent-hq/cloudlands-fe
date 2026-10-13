@@ -1,8 +1,12 @@
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { GLOBAL_SETTINGS_RECOVERY_KEY } from '$features/settings/settings-recovery-lifetime';
-import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
+import {
+  captureSettingsWork,
+  isSettingsAuthorityError,
+} from '$features/settings/settings-recovery-lifetime';
 import {
   installSettingsRecovery,
+  retireSettingsAuthority,
   recordSettingsSnapshotRevision,
   getSettingsSnapshotRevision,
 } from './settings-recovery';
@@ -43,7 +47,7 @@ const logger = createLogger('SettingsHydrationSaga');
  * `enabledProviders: {}` — everything disabled) until a settings:changed
  * event happens to arrive (monorepo#1986).
  *
- * `LiveSettingsClient.list()` folds every transport failure into an EMPTY
+ * `LiveSettingsClient.list()` folds transient transport failures into an EMPTY
  * result, so in the live renderer the failure signal is an empty snapshot,
  * not a throw — the daemon always reports its setting catalog, making empty
  * unambiguous (the same convention the settings panels use). Both signals are
@@ -61,9 +65,9 @@ function* readSettingsSnapshotSaga() {
     attempt <= SETTINGS_HYDRATION_RETRY_DELAYS_MS.length &&
     (yield* selectCanAdministerHost.effect())
   ) {
+    const receipt = captureSettingsWork();
+    if (!receipt.isCurrent()) return;
     try {
-      const receipt = captureSettingsWork();
-      if (!receipt.isCurrent()) return;
       const snapshot = yield* call(readSettingsSnapshot);
       if (!receipt.isCurrent()) {
         rendererEventRecovery.invalidate(GLOBAL_SETTINGS_RECOVERY_KEY);
@@ -88,6 +92,12 @@ function* readSettingsSnapshotSaga() {
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
     } catch (error) {
+      if (!receipt.isCurrent()) return;
+      if (isSettingsAuthorityError(error)) {
+        logger.error('settings hydration authority retired', error);
+        retireSettingsAuthority();
+        return;
+      }
       if (isDaemonErrorResponse(error)) {
         logger.error('settings hydration rejected by daemon', error);
         return;

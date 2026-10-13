@@ -19,8 +19,10 @@ import {
   GLOBAL_MCP_RECOVERY_KEY,
   retireSettingsWork,
   waitForSettingsReads,
+  isSettingsAuthorityError,
 } from '$features/settings/settings-recovery-lifetime';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import {
   fromWireMcpConfig,
   fromWireMcpStatus,
@@ -38,7 +40,16 @@ import {
   settingsAuthorityRetired,
   settingsRecoveryInvalidated,
   settingsSnapshotReplacing,
+  mcpRecoveryInvalidated,
 } from '../settings-events-slice';
+
+let retireCurrentOwners: (() => void) | undefined;
+export function retireSettingsAuthority(): void {
+  retireCurrentOwners?.();
+  retireSettingsWork(false);
+  resetSettingsConnectionCache();
+  store.dispatch(settingsAuthorityRetired());
+}
 
 let snapshotRevision = -1;
 const pathRevisions = new Map<string, number>();
@@ -81,7 +92,7 @@ export function installSettingsRecovery() {
         pathRevisions.clear();
         invalidateSettingsReadCache();
         store.dispatch(settingsSnapshotReplacing());
-        applySettingsChanges(snapshot.settings, snapshot.revision, true);
+        applySettingsChanges(snapshot.settings, snapshot.revision, true, true);
         store.dispatch(
           fastModeSupportReceived(
             snapshot.settings.some((s) => s.path === 'providers.fastMode' && s.type === 'object'),
@@ -137,7 +148,7 @@ export function installSettingsRecovery() {
           const config = fromWireMcpConfig(server);
           return config ? [copyServerForState(config)] : [];
         });
-        const statuses = await Promise.all(
+        const results = await Promise.allSettled(
           servers.flatMap((server) => {
             const serverId = server.id;
             if (!serverId) return [];
@@ -148,6 +159,22 @@ export function installSettingsRecovery() {
               ).then(({ status }) => fromWireMcpStatus(serverId, status)),
             ];
           }),
+        );
+        const rejected = results.filter(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+        // Deadline failures still own physical driver work. Drain every timed-out
+        // sibling before selecting an error, even when an earlier sibling failed.
+        await Promise.all(
+          rejected.flatMap(({ reason }) =>
+            reason instanceof RecoveryRequestTimeoutError ? [reason.drained] : [],
+          ),
+        );
+        const failure =
+          rejected.find((result) => isSettingsAuthorityError(result.reason)) ?? rejected[0];
+        if (failure) throw failure.reason;
+        const statuses = results.flatMap((result) =>
+          result.status === 'fulfilled' ? [result.value] : [],
         );
         return { servers, statuses };
       },
@@ -166,7 +193,7 @@ export function installSettingsRecovery() {
         store.dispatch(bulkSetServerStatus(mapped));
       },
       invalidate: () => {
-        store.dispatch(settingsRecoveryInvalidated());
+        store.dispatch(mcpRecoveryInvalidated());
       },
       retire: () => {
         store.dispatch(mcpGlobalStateRetired());
@@ -197,9 +224,14 @@ export function installSettingsRecovery() {
         });
       },
     });
-    return () => {
+    const disposeOwners = () => {
       owner.dispose();
       mcp.dispose();
+    };
+    retireCurrentOwners = disposeOwners;
+    return () => {
+      if (retireCurrentOwners === disposeOwners) retireCurrentOwners = undefined;
+      disposeOwners();
     };
   });
   return () => {

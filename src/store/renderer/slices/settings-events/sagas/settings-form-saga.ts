@@ -1,3 +1,4 @@
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { collaborationMachineNameClient } from '$lib/components/settings/collaboration-machine-name.client';
 import { validCollaborationMachineName } from '$shared/collaboration-machine-name';
@@ -96,7 +97,7 @@ function* optionalSetting(path: string): SagaGenerator<SettingDefinitionWithValu
 
 function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
   const work = captureSettingsWork();
-  if (!work.isCurrent()) {
+  if (!work.isSameScope()) {
     yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
     return;
   }
@@ -109,7 +110,7 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
     let settings: SettingDefinitionWithValue[];
     if (form.kind === 'collaboration-machine-name') {
       const result = yield* call(collaborationMachineNameClient.read);
-      if (!work.isCurrent()) return;
+      if (!work.isSameScope()) return;
       if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       yield* put(
         settingsFormRequestSettled(request, {
@@ -128,16 +129,29 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
             : call(optionalSetting, path),
         ),
       );
-      if (!work.isCurrent()) return;
+      if (!work.isSameScope()) return;
       if (!entries[0]) throw new Error('Settings unavailable');
       settings = entries.filter((entry): entry is SettingDefinitionWithValue => entry !== null);
     } else {
       settings = yield* call([appClient.settings, appClient.settings.list]);
-      if (!work.isCurrent()) return;
+      if (!work.isSameScope()) return;
       if (settings.length === 0) throw new Error('Settings unavailable');
     }
-    const entries = settings.filter((entry) => wanted.includes(entry.path)).map(catalogEntry);
     const values: Record<string, SettingsFormValue> = {};
+    if (form.kind === 'git-workspace') {
+      const caps = yield* call([appClient.system, appClient.system.capabilities]);
+      if (!work.isSameScope()) return;
+      values.cowSupported = caps.cowSupported === true;
+    }
+    const currentForm = yield* selectSettingsForm.effect(request);
+    const entries = settings
+      .filter((entry) => wanted.includes(entry.path))
+      .map((entry) => {
+        const current = currentForm && getItem(currentForm.entries, entry.path);
+        return current && current !== getItem(form.entries, entry.path)
+          ? current
+          : catalogEntry(entry);
+      });
     if (form.kind === 'agent-backend') {
       for (const entry of entries)
         values[`${entry.path}:loadedValue`] = entry.value ?? entry.defaultValue ?? 0;
@@ -149,22 +163,17 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
             ? idle.defaultValue
             : 1;
     }
-    if (form.kind === 'git-workspace') {
-      const caps = yield* call([appClient.system, appClient.system.capabilities]);
-      if (!work.isCurrent()) return;
-      values.cowSupported = caps.cowSupported === true;
-    }
     yield* put(settingsFormRequestSettled(request, { status: 'succeeded', entries, values }));
   } catch (error) {
-    if (!work.isCurrent()) return;
+    if (!work.isSameScope()) return;
     if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
     const message = loadError(form.kind, error instanceof Error ? error.message : String(error));
     yield* put(settingsFormRequestSettled(request, { status: 'failed', error: message }));
     if (form.kind === 'agent-features' || form.kind === 'workspace-api')
       yield* call(notify.error, message);
-    if (!work.isCurrent()) return;
+    if (!work.isSameScope()) return;
   } finally {
-    if ((yield* cancelled()) || !work.isCurrent())
+    if ((yield* cancelled()) || !work.isSameScope())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

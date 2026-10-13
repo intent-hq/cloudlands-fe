@@ -41,10 +41,12 @@ import type {
  */
 /** Retire all queued settings work before authoritative reconciliation. */
 export const settingsRecoveryInvalidated = createAction('settings/recoveryInvalidated');
+export const mcpRecoveryInvalidated = createAction('settings/mcpRecoveryInvalidated');
 export const settingsAuthorityRetired = createAction('settings/authorityRetired');
 export const settingsSnapshotReplacing = createAction('settings/snapshotReplacing');
 
-export const settingsChanged = createAction<[changes: AppliedSettingChange[]]>('settings/changed');
+export const settingsChanged =
+  createAction<[changes: AppliedSettingChange[], completeSnapshot?: boolean]>('settings/changed');
 
 /** Raw daemon notification routed by daemonEventsSaga and consumed in order. */
 export const settingsChangesReceived = createAction<
@@ -290,7 +292,7 @@ settingsEventsReducer.with(settingsRecoveryInvalidated, (state) => ({
 }));
 
 // Pushes and recovered snapshots refresh loaded form entries without persisting them.
-settingsEventsReducer.with(settingsChanged, (state, { payload: [changes] }) => ({
+settingsEventsReducer.with(settingsChanged, (state, { payload: [changes, completeSnapshot] }) => ({
   ...state,
   forms: getItems(state.forms).reduce((forms, form) => {
     let entries = form.entries;
@@ -335,7 +337,7 @@ settingsEventsReducer.with(settingsChanged, (state, { payload: [changes] }) => (
       ...form,
       entries,
       values,
-      loaded: form.loaded || entries.ids.length > 0,
+      loaded: form.loaded || (completeSnapshot === true && entries.ids.length > 0),
     });
   }, createCollection<SettingsForm, 'formId'>('formId')),
 }));

@@ -223,6 +223,7 @@ export function applySettingsChanges(
   changes: readonly AppliedSettingChange[],
   revision?: number,
   authoritative = false,
+  completeSnapshot = false,
 ): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
@@ -238,5 +239,7 @@ export function applySettingsChanges(
   if (hasBackgroundAgentPaths) {
     applyBackgroundAgentBundle(bundle, revision, authoritative);
   }
-  appStore.dispatch(settingsChanged([...changes]));
+  appStore.dispatch(
+    completeSnapshot ? settingsChanged([...changes], true) : settingsChanged([...changes]),
+  );
 }
