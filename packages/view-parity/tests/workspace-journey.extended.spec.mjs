@@ -94,7 +94,8 @@ test('real workspace notes survive navigation and release view state and browser
     const listedNote = noteLists[0].response.result.notes.find((note) => note.id === noteId);
     expect(listedNote).toBeTruthy();
     await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toHaveText(listedNote.title);
-    await notes.locator(`a[data-note-id="${noteId}"]`).click();
+    await notes.locator(`a[data-note-id="${noteId}"]`).focus();
+    await page.keyboard.press('Enter');
     await expect.poll(() => noteReads.length).toBeGreaterThan(0);
     expect(noteReads[0].request.params).toEqual({ workspaceId, noteId });
     const note = noteReads[0].response.result.note;
@@ -102,6 +103,7 @@ test('real workspace notes survive navigation and release view state and browser
     const content = page.getByTestId('note-content');
     await expect.poll(() => content.textContent()).toBe(note.content);
     await expect(page.getByTestId('workspace-note').getByRole('heading')).toHaveText(note.title);
+    await expect(page.getByTestId('workspace-note').getByRole('heading')).toBeFocused();
     await expect(page.locator('[contenteditable="true"], textarea')).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: info.outputPath('real-note.png') });
@@ -134,6 +136,7 @@ test('real workspace notes survive navigation and release view state and browser
     await expect.poll(async () => (await readState())?.views.length).toBe(1);
     await page.getByRole('link', { name: 'All notes', exact: true }).click();
     await expect(content).toHaveCount(0);
+    await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toBeFocused();
     await expect.poll(async () => (await readState())?.views).toEqual([]);
     await page.goBack();
     await expect.poll(() => content.textContent()).toBe(note.content);

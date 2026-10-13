@@ -1,6 +1,6 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link } from '@tanstack/react-router';
-import { useId, useLayoutEffect } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import { LoadingState } from '@/components/patterns/screen';
 import { NoteContentSurface } from '@/features/layout/tab-types/note-content-surface';
 import { store } from '@/store';
@@ -24,6 +24,7 @@ let nextHydrationGeneration = 0;
 
 function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: string }) {
   const consumerId = useId();
+  const title = useRef<HTMLHeadingElement>(null);
   const authority = selectPrincipalConnectionContext();
   const note = selectNoteById(workspaceId, noteId);
   const view = selectNoteContentView(workspaceId, consumerId);
@@ -39,6 +40,9 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
   const current = view.value?.noteId === noteId ? view.value : undefined;
   const ready = current?.status === 'ready' && current.authority === connection;
   const failed = current?.status === 'error' && current.authority === connection;
+  useLayoutEffect(() => {
+    if (ready) title.current?.focus();
+  }, [ready]);
   return (
     <NoteContentSurface state={failed ? 'error' : !ready ? 'loading' : 'read-only'}>
       {failed ? (
@@ -48,7 +52,9 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
       ) : (
         <article className="grid min-w-0 gap-4" data-testid="workspace-note" data-note-id={noteId}>
           <header className="grid gap-1">
-            <h2 className="type-heading-sm">{note.value?.title}</h2>
+            <h2 ref={title} tabIndex={-1} className="type-heading-sm">
+              {note.value?.title}
+            </h2>
             <p className="type-caption text-muted-foreground">Read-only Markdown source</p>
           </header>
           <pre
@@ -67,6 +73,8 @@ export function WorkspaceNotes({ workspaceId, noteId }: { workspaceId: string; n
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const state = selectWorkspaceNotesState(workspaceId);
   const notes = selectAllNotes(workspaceId);
+  const list = useRef<HTMLUListElement>(null);
+  const previousNoteId = useRef(noteId);
   const connection = authority.value;
   useLayoutEffect(() => {
     if (!connection) return;
@@ -75,6 +83,15 @@ export function WorkspaceNotes({ workspaceId, noteId }: { workspaceId: string; n
       store.dispatch(workspaceUnmounted(workspaceId));
     };
   }, [workspaceId, connection]);
+  useLayoutEffect(() => {
+    const previous = previousNoteId.current;
+    previousNoteId.current = noteId;
+    if (!noteId && previous) {
+      list.current
+        ?.querySelector<HTMLAnchorElement>(`a[data-note-id="${CSS.escape(previous)}"]`)
+        ?.focus();
+    }
+  }, [noteId]);
   if (!connection) return <p>Notes are not available for the current connection.</p>;
   if (state.value.error) return <p role="alert">{state.value.error}</p>;
   if (!state.value.initialized) return <LoadingState label="Loading notes" />;
@@ -96,7 +113,7 @@ export function WorkspaceNotes({ workspaceId, noteId }: { workspaceId: string; n
       ) : (
         <>
           <h2 className="type-heading-sm">Notes</h2>
-          <ul className="grid gap-1">
+          <ul ref={list} className="grid gap-1">
             {notes.value.map((note) => (
               <li key={note.id}>
                 <Link
