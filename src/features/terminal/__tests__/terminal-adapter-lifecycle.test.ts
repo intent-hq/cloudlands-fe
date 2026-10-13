@@ -1077,6 +1077,12 @@ it('ignores a held health response after metadata recovery and does not create a
 });
 
 it('reattaches after the last terminal consumer retired its workspace owner', async () => {
+  const observer = class {
+    observe = vi.fn();
+    disconnect = vi.fn();
+  };
+  vi.stubGlobal('IntersectionObserver', observer);
+  vi.stubGlobal('ResizeObserver', observer);
   const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
   const { subscribeTerminalRuntime } = await import('$lib/client/live/terminal-runtime-recovery');
   let lease = 0;
@@ -1124,5 +1130,6 @@ it('reattaches after the last terminal consumer retired its workspace owner', as
   } finally {
     adapter.dispose();
     rendererEventRecovery.dispose();
+    vi.unstubAllGlobals();
   }
 });

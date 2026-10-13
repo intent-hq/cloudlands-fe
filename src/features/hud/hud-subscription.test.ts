@@ -1760,3 +1760,108 @@ describe('HUD subscription (mock backend, real store)', () => {
     }
   });
 });
+async function heldHudStatsHarness(first: () => Promise<unknown>) {
+  appStore.dispose();
+  appStore.init();
+  const backend = installMockBackend();
+  scriptHappyBackend(backend);
+  const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
+  let reads = 0;
+  const request = vi.fn(async (method: string) => {
+    if (method === 'events.subscribe') return { subscriptionId: 'hud-verifier', lossRecovery: 1 };
+    if (method === 'stats.getUsage') return ++reads === 1 ? first() : usageResult();
+    if (method === 'stats.getRateHistory') return rateHistoryResult();
+    if (method === 'agent.listActive') return { streams: [] };
+    return {};
+  });
+  rendererEventRecovery.attach({
+    supported: true,
+    isCurrent: () => true,
+    request: request as EventRecoverySession['request'],
+    fence: async (_ids, observe) => {
+      observe();
+    },
+    dispose: () => {},
+    onRetired: () => () => {},
+    onNotification: (fn) => {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+  });
+  const stop = startHudSubscription();
+  await flush();
+  return {
+    request,
+    emit: (n: RecoveryNotification) => {
+      for (const f of listeners) void f(n);
+    },
+    stop: () => {
+      stop();
+      rendererEventRecovery.dispose();
+      resetMockBackend();
+      appStore.dispose();
+    },
+  };
+}
+it('HUD ordinary attention push cannot discard initial usage hydration', async () => {
+  let finish!: (v: any) => void;
+  const h = await heldHudStatsHarness(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  try {
+    for (let i = 0; i < 20; i++)
+      h.emit({
+        method: 'events.event',
+        params: {
+          subscriptionId: 'hud-verifier',
+          event: {
+            id: 'live-attention-' + i,
+            type: 'workspace:attention-changed',
+            workspaceId: WS_ID,
+            timestamp: '2026-10-13T09:00:00Z',
+            data: { attention: 'none' },
+          },
+        },
+      });
+    expect(h.request.mock.calls.filter(([method]) => method === 'stats.getUsage')).toHaveLength(1);
+    finish(usageResult());
+    await flush();
+    await flush();
+    expect(selectHudUsage.select(appStore.state)?.runs).toBe(3);
+    expect(h.request.mock.calls.filter(([method]) => method === 'stats.getUsage')).toHaveLength(2);
+  } finally {
+    h.stop();
+  }
+});
+
+it('drops an ordinary stats retry when its HUD subscription stops', async () => {
+  let finish!: (value: unknown) => void;
+  const h = await heldHudStatsHarness(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  h.emit({
+    method: 'events.event',
+    params: {
+      subscriptionId: 'hud-verifier',
+      event: {
+        id: 'stop-attention',
+        type: 'workspace:attention-changed',
+        workspaceId: WS_ID,
+        timestamp: '2026-10-13T09:00:00Z',
+        data: { attention: 'none' },
+      },
+    },
+  });
+  h.stop();
+  finish(usageResult());
+  await flush();
+  expect(h.request.mock.calls.filter(([method]) => method === 'stats.getUsage')).toHaveLength(1);
+});

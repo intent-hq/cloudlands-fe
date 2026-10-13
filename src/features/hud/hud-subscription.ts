@@ -703,13 +703,17 @@ export function startHudSubscription(): () => void {
   let reconcileRecoveryWorkspaces = () => {};
   let statsOwner: RendererRecoveryHandle | undefined;
   const pendingStats = new Map<string, Promise<void>>();
+  const queuedStats = new Set<string>();
   const refreshStats = (kind: 'usage' | 'rates') => {
-    if (pendingStats.has(kind) || statsOwner?.status.stale) return;
+    if (disposed || pendingStats.has(kind) || statsOwner?.status.stale) return;
     const pending = (kind === 'usage' ? loadUsage : loadRateHistory)(
       capture(),
       recoveryScope,
     ).finally(() => {
-      if (pendingStats.get(kind) === pending) pendingStats.delete(kind);
+      if (pendingStats.get(kind) === pending) {
+        pendingStats.delete(kind);
+        if (queuedStats.delete(kind)) refreshStats(kind);
+      }
     });
     pendingStats.set(kind, pending);
   };
@@ -788,6 +792,7 @@ export function startHudSubscription(): () => void {
     generation++;
     const live = capture();
     pendingStats.clear();
+    queuedStats.clear();
     appStore.dispatch(hudActivated());
     hydratedAgentWorkspaceIds.clear();
     pendingAgentHydrationByWorkspaceId.clear();
@@ -810,6 +815,11 @@ export function startHudSubscription(): () => void {
       workspaceId: null,
       eventTypes: HUD_SUBSCRIBE_EVENT_TYPES,
       isCurrent: live,
+      onEvent: () => {
+        // Accepted events expire ordinary read receipts too. Coalesce a fresh
+        // seed after any held reads settle without entering recovery mode.
+        for (const kind of pendingStats.keys()) queuedStats.add(kind);
+      },
       read: (reader) =>
         trackRuntimeRead('hud-stats', async () => {
           return {
