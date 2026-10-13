@@ -69,3 +69,34 @@ it.each(['ordinary', 'recovery'] as const)(
     expect(next).toHaveBeenCalledTimes(1);
   },
 );
+
+it('allows a new physical session without waiting for an old workspace read', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const session = () => ({
+    supported: true,
+    isCurrent: () => true,
+    onRetired: () => () => {},
+    dispose: () => {},
+    onNotification: () => () => {},
+    request: async () => ({}),
+    fence: async (_ids: unknown, observe: () => void) => observe(),
+  });
+  rendererEventRecovery.attach(session() as never);
+  const held = Promise.withResolvers<void>();
+  const first = trackAgentMetadataRead('transport', () => held.promise, 'recovery');
+  rendererEventRecovery.refreshAuthority();
+  const next = vi.fn(async () => 'same session');
+  const same = trackAgentMetadataRead('transport', next);
+  await Promise.resolve();
+  expect(next).not.toHaveBeenCalled();
+  rendererEventRecovery.attach(session() as never);
+  const replacement = vi.fn(async () => 'new session');
+  const other = trackAgentMetadataRead('transport', replacement);
+  await Promise.resolve();
+  expect(replacement).toHaveBeenCalledTimes(1);
+  held.resolve();
+  await first;
+  await same;
+  expect(await other).toBe('new session');
+  rendererEventRecovery.dispose();
+});

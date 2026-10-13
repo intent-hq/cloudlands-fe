@@ -1,14 +1,18 @@
 import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 
 /** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
 type MetadataLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
-const lanes = new Map<string, MetadataLane>();
+const sessions = new WeakMap<object, Map<string, MetadataLane>>();
 
 export function trackAgentMetadataRead<T>(
   workspaceId: string,
   read: () => Promise<T>,
   mode: 'ordinary' | 'recovery' = 'ordinary',
 ): Promise<T> {
+  const identity = rendererEventRecovery.capturePhysicalSessionIdentity();
+  const lanes = sessions.get(identity) ?? new Map<string, MetadataLane>();
+  sessions.set(identity, lanes);
   const lane: MetadataLane = lanes.get(workspaceId) ?? { active: new Set<Promise<void>>() };
   lanes.set(workspaceId, lane);
   const previous =
