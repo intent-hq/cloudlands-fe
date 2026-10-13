@@ -40,7 +40,7 @@ export async function inspectIsolatedTestPackage(
     };
   }>('client.hello');
   assert.ok(typeof hello?.clientId === 'string' && hello.clientId.length > 0);
-  assert.equal(hello.server?.protocolVersion, '13.3'); // protocol-version-ok: integrated GitLab candidate contract
+  assert.equal(hello.server?.protocolVersion, '14.0'); // protocol-version-ok: selected daemon package contract
   assert.equal(hello.server?.locality, 'local');
   for (const capability of [
     'collaborationIdentity',
