@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, QueuedMessage } from '$shared/types';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -387,4 +388,20 @@ it('does not let another workspace invalidate a pending queue snapshot', async (
   await pending;
   expect(messagesOf(AGENT).map((row) => row.id)).toEqual(['b']);
   expect(getAgentQueueEventSnapshotSeq(AGENT, 'workspace-b')).toBe(1);
+});
+
+it('rejects an in-flight queue reply after the recovery authority retires', async () => {
+  let resolve!: (rows: QueuedMessage[]) => void;
+  getQueueMock.mockReturnValueOnce(
+    new Promise<QueuedMessage[]>((done) => {
+      resolve = done;
+    }),
+  );
+  const pending = hydrateAgentQueue(AGENT, 'ws-1');
+  rendererEventRecovery.dispose();
+  appStore.dispatch(clearAgentQueue(AGENT));
+  resolve([queued('retired-reply', 0)]);
+  await pending;
+  expect(entryOf(AGENT)).toBeUndefined();
+  expect(getQueueMock).toHaveBeenCalledTimes(1);
 });

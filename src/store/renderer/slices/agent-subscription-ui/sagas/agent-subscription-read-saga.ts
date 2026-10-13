@@ -1,3 +1,11 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  agentSubscriptionsRecoveryKey,
+  agentMetadataRecoveryKey,
+} from '$features/agent/agent-recovery-keys';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { mapResult, type WireResult } from './agent-subscription-snapshot';
 import type { Task } from 'redux-saga';
 import { createChannelFromSelector } from '@themislib/themis/saga';
 import {
@@ -20,13 +28,7 @@ import type { AgentSession } from '$shared/types';
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
-import type {
-  AgentStatus,
-  DelegationGroupStatus,
-  Subscription,
-  EventSubscription,
-  WaitingState,
-} from '../agent-subscription-ui-types';
+import type { WaitingState } from '../agent-subscription-ui-types';
 import {
   deleteSubscriptionUI,
   makeKey,
@@ -60,23 +62,6 @@ import {
 export const COMPLETED_DISPLAY_DURATION_MS = 3000;
 const logger = createLogger('AgentSubscriptionReadSaga');
 
-type WireSubscription = Omit<Subscription, 'delegationGroup'> & {
-  delegationGroup?: Subscription['delegationGroup'] | null;
-};
-
-type WireDelegationGroup = Omit<DelegationGroupStatus, 'agentStatuses'> & {
-  parentAgentId?: string;
-};
-
-interface WireResult {
-  /** Optional for daemons predating bundled slim agent.list projections. */
-  agents?: Record<string, unknown>[];
-  subscriptions?: WireSubscription[];
-  eventSubscriptions?: EventSubscription[];
-  delegationGroups?: WireDelegationGroup[];
-  agentStatuses?: Record<string, AgentStatus>;
-}
-
 interface ReadCoordinator {
   displayed: Set<string>;
   contexts: Map<string, { wsId: string; agentId: string }>;
@@ -95,46 +80,11 @@ function matchesWorkspaceCleanup(wsId: string) {
     action.payload[0] === wsId;
 }
 
-function mapResult(result: WireResult) {
-  const agentStatuses = result.agentStatuses ?? {};
-  const subscriptions: Subscription[] = (result.subscriptions ?? []).map((item) => ({
-    id: item.id,
-    agentId: item.agentId,
-    eventTypes: item.eventTypes,
-    actorIds: item.actorIds,
-    createdAt: item.createdAt,
-    description: item.description,
-    ...(item.delegationGroup ? { delegationGroup: item.delegationGroup } : {}),
-  }));
-  const delegationGroups: DelegationGroupStatus[] = (result.delegationGroups ?? []).map(
-    (group) => ({
-      groupId: group.groupId,
-      awaitMode: group.awaitMode,
-      expectedAgentIds: group.expectedAgentIds,
-      completedAgentIds: group.completedAgentIds,
-      deletedAgentIds: group.deletedAgentIds,
-      agentStatuses: Object.fromEntries(
-        group.expectedAgentIds
-          .filter((id) => agentStatuses[id] !== undefined)
-          .map((id) => [id, agentStatuses[id]]),
-      ),
-      delivered: group.delivered,
-    }),
-  );
-  return {
-    subscriptions,
-    delegationGroups,
-    agentStatuses,
-    ...(result.eventSubscriptions !== undefined
-      ? { eventSubscriptions: result.eventSubscriptions }
-      : {}),
-  };
-}
-
 /** Publish participant rows before readiness can mount missing-session AgentCards. */
 function* ingestBundledAgents(
   result: WireResult,
   beforeRead: Readonly<Record<string, AgentSession>>,
+  recovery: RecoveryLifetime,
 ) {
   const agents: AgentSession[] = [];
   const current = yield* selectAgentSessionsById.effect();
@@ -154,17 +104,24 @@ function* ingestBundledAgents(
         : session,
     );
   }
-  if (agents.length > 0) yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+  if (agents.length > 0)
+    yield* put(
+      withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), recovery),
+    );
 }
 
 function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
+  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
+  const metadata = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
+  if (!recovery.commit(() => undefined)) return;
   try {
     const beforeRead = yield* selectAgentSessionsById.effect();
     const fresh: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
       workspaceId: wsId,
       agentId,
     });
-    yield* ingestBundledAgents(fresh, beforeRead);
+    if (!recovery.commit(() => undefined)) return;
+    yield* ingestBundledAgents(fresh, beforeRead, metadata);
     const mapped = mapResult(fresh);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -172,23 +129,30 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
       (mapped.eventSubscriptions?.length ?? 0) > 0;
     // A view arriving during this read joins it, including an authoritative empty response.
     yield* put(
-      setSubscriptionSnapshot(wsId, agentId, {
-        ...mapped,
-        waitingState: hasData ? 'waiting' : 'idle',
-      }),
+      withRecoveryLifetime(
+        setSubscriptionSnapshot(wsId, agentId, {
+          ...mapped,
+          waitingState: hasData ? 'waiting' : 'idle',
+        }),
+        recovery,
+      ),
     );
     if (hasData) return;
   } catch {
+    if (!recovery.commit(() => undefined)) return;
     // Keep the prior empty snapshot for background cleanup, but a joined view
     // must settle as failed rather than remaining loading or claiming freshness.
     if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'loading') {
-      yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
+      yield* put(withRecoveryLifetime(subscriptionSnapshotFetchFailed(wsId, agentId), recovery));
     }
   }
-  yield* put(resetSubscriptionUI(wsId, agentId));
+  yield* put(withRecoveryLifetime(resetSubscriptionUI(wsId, agentId), recovery));
 }
 
 function* fetchSnapshotSaga(wsId: string, agentId: string) {
+  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
+  const metadata = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
+  if (!recovery.commit(() => undefined)) return;
   const key = makeKey(wsId, agentId);
   try {
     const previous: WaitingState = yield* selectWaitingState.effect(wsId, agentId);
@@ -197,7 +161,8 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
       workspaceId: wsId,
       agentId,
     });
-    yield* ingestBundledAgents(result, beforeRead);
+    if (!recovery.commit(() => undefined)) return;
+    yield* ingestBundledAgents(result, beforeRead, metadata);
     const mapped = mapResult(result);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -205,16 +170,20 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
       (mapped.eventSubscriptions?.length ?? 0) > 0;
     const completed = !hasData && (previous === 'waiting' || previous === 'woken');
     yield* put(
-      setSubscriptionSnapshot(wsId, agentId, {
-        ...mapped,
-        waitingState: completed ? 'completed' : hasData ? 'waiting' : 'idle',
-      }),
+      withRecoveryLifetime(
+        setSubscriptionSnapshot(wsId, agentId, {
+          ...mapped,
+          waitingState: completed ? 'completed' : hasData ? 'waiting' : 'idle',
+        }),
+        recovery,
+      ),
     );
     return completed;
   } catch (error) {
+    if (!recovery.commit(() => undefined)) return false;
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
     // Preserve cached rows and let the footer surface this failure independently.
-    yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
+    yield* put(withRecoveryLifetime(subscriptionSnapshotFetchFailed(wsId, agentId), recovery));
     return false;
   }
 }
@@ -225,12 +194,14 @@ function* completedCleanupTask(
   agentId: string,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
+  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
   try {
     const { elapsed } = yield* race({
       elapsed: delay(COMPLETED_DISPLAY_DURATION_MS, true),
       cleanup: take(matchesWorkspaceCleanup(wsId)),
     });
-    if (elapsed) yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+    if (elapsed && recovery.commit(() => undefined))
+      yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
   } finally {
     coordinator.completedCleanups.delete(key);
   }
@@ -254,6 +225,7 @@ function* readSnapshotTask(
   mode: ReadMode,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
+  const recovery = rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId));
   let completed = false;
   let invalidated = false;
   try {
@@ -273,7 +245,7 @@ function* readSnapshotTask(
     const taskCancelled = yield* cancelled();
     const snapshotPending = coordinator.pendingSnapshots.delete(key);
     const confirmationPending = coordinator.pendingConfirmations.delete(key);
-    if (!taskCancelled && !invalidated) {
+    if (!taskCancelled && !invalidated && recovery.commit(() => undefined)) {
       if (confirmationPending) {
         yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
       } else if (snapshotPending) {

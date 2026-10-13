@@ -1,3 +1,4 @@
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -226,7 +227,7 @@ function start(
     agentSessions: { ...agentSessionInitialState, byAgentId: sessions },
     agentMutationUi: agentMutationUiReducer.initialState,
   };
-  const dispatch = (action: any) => {
+  const dispatch = createEventRecoveryMiddleware()({} as never)((action: any) => {
     if (live) {
       state = {
         ...state,
@@ -239,7 +240,7 @@ function start(
     dispatched.push(action);
     channel.put(action);
     return action;
-  };
+  });
   const task = runSaga({ channel, getState: () => state, dispatch }, agentMutationSaga);
   return { channel, dispatched, dispatch, task, getState: () => state };
 }
@@ -262,6 +263,38 @@ describe('agentMutationSaga', () => {
     clearPendingAgentDeletions();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('does not roll back muted state into a replacement lifetime after a held failure', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.setNotificationsMuted.mockReturnValueOnce(pending.promise);
+    const h = start({ [A1]: session(A1) }, { live: true });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    h.channel.put(action);
+    await settle();
+    rendererEventRecovery.dispose();
+    h.dispatch(updateSession(A1, { name: 'New lifetime', notificationsMuted: true }));
+    pending.resolve({ success: false, error: 'old failure' });
+    await expect(action.promise).rejects.toThrow();
+    expect(selectAgentSession.select(h.getState() as never, A1)?.notificationsMuted).toBe(true);
+    await stop(h.task);
+  });
+
+  it('does not restore a soft-hidden session after its failed delete outlives recovery authority', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.deleteAgent.mockReturnValueOnce(pending.promise);
+    const h = start({ [A1]: session(A1) }, { live: true });
+    const action = deleteAgentSessionRequested(WS, A1);
+    h.channel.put(action);
+    await settle();
+    expect(selectAgentSession.select(h.getState() as never, A1)).toBeUndefined();
+    rendererEventRecovery.dispose();
+    pending.resolve({ success: false, error: 'old delete failure' });
+    await expect(action.promise).rejects.toThrow();
+    expect(selectAgentSession.select(h.getState() as never, A1)).toBeUndefined();
+    await stop(h.task);
   });
 
   it.each(['background', 'specialist rollback'] as const)(

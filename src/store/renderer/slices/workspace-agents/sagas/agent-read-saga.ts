@@ -1,3 +1,7 @@
+import { acquireAgentMetadataDemand } from '$features/agent/agent-metadata-demand';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { readAgentSession } from '$features/agent/agent-read-service';
@@ -19,9 +23,13 @@ const logger = createLogger('AgentReadSaga');
 
 function* loadAgentSessionSaga(wsId: string, agentId: string) {
   if (yield* call(isAgentDeletionPending, agentId)) return;
+  const release = acquireAgentMetadataDemand(wsId, { agentId });
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId));
   try {
+    if (!recovery.commit(() => undefined)) return;
     const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
-    if (!session || String(session.workspaceId) !== wsId) return;
+    if (!recovery.commit(() => undefined) || !session || String(session.workspaceId) !== wsId)
+      return;
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
     // §5.5 `pendingDeleteAt`) — the deletion is pending daemon-side.
     if (session.pendingDeleteAt) return;
@@ -29,10 +37,11 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
 
     const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
     const merged = existing ? { ...session, messages: existing.messages } : session;
-    yield* put(bulkUpsertSessions([merged]));
-    yield* put(upsertSession(merged));
-    yield* put(markAgentDetailHydrated(agentId));
+    yield* put(withRecoveryLifetime(bulkUpsertSessions([merged]), recovery));
+    yield* put(withRecoveryLifetime(upsertSession(merged), recovery));
+    yield* put(withRecoveryLifetime(markAgentDetailHydrated(agentId), recovery));
   } catch (error) {
+    if (!recovery.commit(() => undefined)) return;
     if (isAgentNotFoundError(error)) {
       // Expected after deletion: a stale tab/route still references the
       // agent (monorepo#1753) — close it instead of erroring.
@@ -40,6 +49,8 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
       return;
     }
     logger.error('Failed to load agent session', error);
+  } finally {
+    release();
   }
 }
 

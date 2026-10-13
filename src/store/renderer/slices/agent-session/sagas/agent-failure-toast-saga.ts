@@ -1,3 +1,6 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { AGENT_FAILURES_RECOVERY_KEY } from '$features/agent/agent-recovery-keys';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 /**
  * Agent-failure toast saga — renders one persistent bottom-left toast per
  * FAILED AGENT from the agent-failure registry, with Retry and Switch To
@@ -197,8 +200,12 @@ function* renderEntry(
   state: AgentToastState,
   emit: FailureEmitter,
 ): SagaGenerator<void> {
+  const recovery = rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY);
+  if (!recovery.commit(() => undefined) || getAgentFailureEntry(entry.agentId) !== entry) return;
   const notify = yield* call(loadToastArtifacts);
+  if (!recovery.commit(() => undefined)) return;
   const { componentProps, authGuidance } = yield* call(buildToastProps, entry, state, emit);
+  if (!recovery.commit(() => undefined) || getAgentFailureEntry(entry.agentId) !== entry) return;
   notify.agentFailure(componentProps, {
     id: toastId(entry.agentId),
     duration: Number.POSITIVE_INFINITY,
@@ -217,7 +224,9 @@ function* renderEntry(
     // them all.
     const loadingMap = yield* selectProviderLoadingMap.effect();
     if (!loadingMap[authGuidance.providerId]) {
-      yield* put(checkSingleProviderRequested(authGuidance.providerId));
+      yield* put(
+        withRecoveryLifetime(checkSingleProviderRequested(authGuidance.providerId), recovery),
+      );
     }
   }
 }
@@ -280,15 +289,22 @@ function* renderSnapshot(
  * logged.
  */
 function* navigateToFailedAgent(entry: AgentFailureEntry): SagaGenerator<void> {
+  const recovery = rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY);
+  if (!recovery.commit(() => undefined)) return;
   try {
     if (entry.workspaceId === CHIEF_WORKSPACE_ID) {
-      yield* put(setChiefActiveAgentId(entry.agentId));
-      yield* put(openPanel('chief'));
+      yield* put(withRecoveryLifetime(setChiefActiveAgentId(entry.agentId), recovery));
+      yield* put(withRecoveryLifetime(openPanel('chief'), recovery));
       yield* call(navigateToRoute, '/');
       return;
     }
     yield* call(navigateToRoute, `/workspace/${entry.workspaceId}`);
-    yield* put(openAgentTabRequested(entry.workspaceId, { agentId: entry.agentId }));
+    yield* put(
+      withRecoveryLifetime(
+        openAgentTabRequested(entry.workspaceId, { agentId: entry.agentId }),
+        recovery,
+      ),
+    );
   } catch (error) {
     logger.warn('Failed to navigate to failed agent', {
       agentId: entry.agentId,
@@ -317,6 +333,8 @@ function* retryAgent(
   const entry = getAgentFailureEntry(agentId);
   const state = states.get(agentId);
   if (!entry || !state || state.retrying) return;
+  const recovery = rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY);
+  if (!recovery.commit(() => undefined)) return;
   state.retrying = true;
   state.retryNote = undefined;
   yield* call(renderEntry, entry, state, emit);
@@ -327,16 +345,19 @@ function* retryAgent(
     let ok = false;
     let notFound = false;
     try {
+      if (!recovery.commit(() => undefined)) return;
       const result = yield* call(
         [appClient.agents, appClient.agents.retry],
         entry.agentId,
         entry.workspaceId,
       );
+      if (!recovery.commit(() => undefined)) return;
       ok = result.ok === true;
       notFound = result.ok === false && result.notFound === true;
     } catch (error) {
       logger.error('agent.retry threw', { agentId: entry.agentId, error });
     }
+    if (!recovery.commit(() => undefined)) return;
     state.retrying = false;
     if (notFound) {
       logger.warn('agent.retry target no longer exists — dropping stale failure entry', {
@@ -368,7 +389,7 @@ function* retryAgent(
       yield* call(renderEntry, current, state, emit);
     }
   } finally {
-    if (yield* cancelled()) state.retrying = false;
+    if ((yield* cancelled()) || !recovery.commit(() => undefined)) state.retrying = false;
   }
 }
 
