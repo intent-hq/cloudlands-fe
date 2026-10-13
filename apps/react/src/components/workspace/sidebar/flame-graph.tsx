@@ -110,15 +110,30 @@ export function FlameGraph({
           className={cn('w-full', specNoteId && onTaskClick && 'cursor-pointer')}
           onClick={() => specNoteId && onTaskClick?.(specNoteId)}
           showArrow
-        >
-          <TaskStatusProgress
-            statuses={taskStatuses}
-            progress={progress}
-            loading={false}
-            animationKey={animationKey}
-            ariaLabel={m.workspace_flameGraph_taskProgress_ariaLabel()}
-          />
-        </Tooltip>
+          trigger={
+            <Button
+              variant="ghost"
+              wrapContent={false}
+              className="h-5 w-full p-0"
+              aria-label={
+                specNoteId && onTaskClick
+                  ? m.workspace_flameGraph_openSpecProgress_ariaLabel({
+                      completed: formatInteger(completedCount),
+                      total: formatInteger(taskCount),
+                    })
+                  : m.workspace_flameGraph_taskProgress_ariaLabel()
+              }
+            >
+              <TaskStatusProgress
+                statuses={taskStatuses}
+                progress={progress}
+                loading={false}
+                animationKey={animationKey}
+                ariaLabel={m.workspace_flameGraph_taskProgress_ariaLabel()}
+              />
+            </Button>
+          }
+        />
       )}
     </Fragment>
   );

@@ -2,6 +2,8 @@
 import {
   getDemandedTaskWorkspaceIds,
   getWorkspaceTasksShouldLoad,
+  getWorkspaceTasksInitialized,
+  getWorkspaceTaskProgress,
 } from './workspace-tasks-projections';
 /**
  * Workspace Tasks Selectors
@@ -15,8 +17,8 @@ import { store } from '../../store';
 import type { WorkspaceTask } from '$shared/types';
 import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from '$shared/utils/task-stats';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from './workspace-tasks-slice';
-import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
+import { emptyWorkspaceTasksState } from './workspace-tasks-slice';
+import type { WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
 
 // ============================================================================
 // Per-workspace base selector
@@ -41,10 +43,7 @@ export const selectWorkspaceTasksError = store.createSelector(
     state.workspaceTasks.byWorkspaceId[workspaceId]?.error ?? null,
 );
 
-export const selectWorkspaceTasksInitialized = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    state.workspaceTasks.byWorkspaceId[workspaceId]?.initialized ?? false,
-);
+export const selectWorkspaceTasksInitialized = store.createSelector(getWorkspaceTasksInitialized);
 
 /** Reconnect recovery considers only workspaces with displayed task consumers. */
 export const selectDemandedTaskWorkspaceIds = store.createSelector(getDemandedTaskWorkspaceIds);
@@ -72,10 +71,7 @@ export const selectWorkspaceTasks = store.createSelector(
  * value with no client-side classification. Unknown workspaces fall back to
  * the zero aggregate so callers can render a sparser card without a null check.
  */
-export const selectWorkspaceTaskProgress = store.createSelector(
-  (state, workspaceId: string): WorkspaceTaskProgress =>
-    state.workspaceTasks.byWorkspaceId[workspaceId]?.stats ?? emptyWorkspaceTaskStats,
-);
+export const selectWorkspaceTaskProgress = store.createSelector(getWorkspaceTaskProgress);
 
 /**
  * Tasks ordered for display (in-progress first, then pending, then complete),
