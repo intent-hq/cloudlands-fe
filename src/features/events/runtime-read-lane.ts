@@ -1,14 +1,24 @@
 import { rendererEventRecovery } from './renderer-event-recovery';
-import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import {
+  getPhysicalRequestCompletion,
+  type RecoveryRequestCompletion,
+} from '$shared/event-recovery/session';
 
 const sessions = new WeakMap<object, Map<string, Promise<void>>>();
 
 /** Logical timeouts reject promptly, but their physical requests still own the lane. */
-export function runtimeReadDrained(result: Promise<unknown>): Promise<void> {
+export function runtimeReadDrained(
+  result: Promise<unknown>,
+  onCompletion?: (outcome: RecoveryRequestCompletion) => void | Promise<void>,
+): Promise<void> {
   return result.then(
     () => {},
     async (error) => {
-      await getPhysicalRequestCompletion(error);
+      const completion = getPhysicalRequestCompletion(error);
+      if (completion) {
+        const outcome = await completion;
+        await onCompletion?.(outcome);
+      }
     },
   );
 }
