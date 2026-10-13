@@ -867,7 +867,11 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     );
     run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-question'));
     await settle();
-    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: '' } }));
+    run.dispatch(
+      updateSession(AGENT, {
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: '' } },
+      }),
+    );
     resolvePage(page([message('m-question', 10)]));
     await settle();
 
@@ -956,7 +960,11 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
 
     run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-old'));
     await settle();
-    run.dispatch(updateSession(AGENT, { metadata: { pendingQuestionsMessageId: 'm-new' } }));
+    run.dispatch(
+      updateSession(AGENT, {
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'm-new' } },
+      }),
+    );
     run.dispatch(pendingQuestionRecoveryRequested(AGENT, 'm-new'));
     await settle();
     resolveOld(page([questionMessage('m-old', 10)]));
@@ -1086,7 +1094,9 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     );
     run.dispatch(pendingProposalRecoveryRequested(AGENT, 'm-proposal'));
     await settle();
-    run.dispatch(updateSession(AGENT, { metadata: { pendingProposals: [] } }));
+    run.dispatch(
+      updateSession(AGENT, { metadataPatch: { pendingProposals: { op: 'set', value: [] } } }),
+    );
     run.dispatch(pendingProposalRecoveryPruned(AGENT, []));
     resolvePage(page([proposalMessage('m-proposal', 10, [proposal('toolu-1')])]));
     await settle();

@@ -133,11 +133,28 @@ function preserveLocalUpdates(
     ...Object.keys(current.metadata ?? {}),
     ...Object.keys(projected?.metadata ?? {}),
   ])) {
-    if (
-      current.metadata?.[key] !== before.metadata?.[key] ||
-      projected?.metadata[key] !== beforeProjection?.metadata[key]
-    )
-      metadata[key] = current.metadata?.[key];
+    // Extension keys can name Object.prototype members. Only own values and
+    // revisions represent metadata; a missing own key is an explicit deletion.
+    const hasCurrent = Object.hasOwn(current.metadata ?? {}, key);
+    const hasBefore = Object.hasOwn(before.metadata ?? {}, key);
+    const currentValue = hasCurrent ? current.metadata?.[key] : undefined;
+    const beforeValue = hasBefore ? before.metadata?.[key] : undefined;
+    const revision = Object.hasOwn(projected?.metadata ?? {}, key)
+      ? projected?.metadata[key]
+      : undefined;
+    const beforeRevision = Object.hasOwn(beforeProjection?.metadata ?? {}, key)
+      ? beforeProjection?.metadata[key]
+      : undefined;
+    if (hasCurrent !== hasBefore || currentValue !== beforeValue || revision !== beforeRevision) {
+      if (hasCurrent) {
+        Object.defineProperty(metadata, key, {
+          value: currentValue,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else delete metadata[key];
+    }
   }
   merged.metadata = metadata;
   return merged;

@@ -143,15 +143,11 @@ describe('createAgentModelMutator — unlocked', () => {
     expect(mutator.setSessionModel(AGENT, 'auggie:sonnet4.6', 'auggie')).toBe(true);
     expect(mocks.dispatch).toHaveBeenCalledTimes(1);
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      updateSession(
-        AGENT,
-        {
-          model: 'auggie:sonnet4.6',
-          provider: 'auggie',
-          metadata: { provider: 'auggie' },
-        },
-        { projectedMetadataKeys: ['provider'] },
-      ),
+      updateSession(AGENT, {
+        model: 'auggie:sonnet4.6',
+        provider: 'auggie',
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
+      }),
     );
     expect(mocks.setModel).not.toHaveBeenCalled();
   });
