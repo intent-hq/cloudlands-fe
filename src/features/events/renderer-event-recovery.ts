@@ -259,6 +259,18 @@ export class RendererEventRecovery {
     return !!this.attachment && this.entries.has(key);
   }
 
+  /** Late failures may retire only the resource authority captured before the read. */
+  captureRetirement(key: string): (error: unknown) => boolean {
+    const epoch = this.epoch;
+    const row = this.entries.get(key);
+    return (error) => {
+      if (!row || epoch !== this.epoch || this.entries.get(key) !== row || !row.current())
+        return false;
+      row.retire(error);
+      return true;
+    };
+  }
+
   /** User commands retain caller authority across unrelated snapshot mutations. */
   captureAuthority(key: string): RecoveryLifetime {
     const epoch = this.epoch;

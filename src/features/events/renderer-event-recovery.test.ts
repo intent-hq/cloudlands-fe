@@ -464,3 +464,56 @@ describe('data receipts selected after asynchronous child discovery', () => {
     },
   );
 });
+
+describe('captured resource retirement', () => {
+  it.each([
+    'current',
+    'push',
+    'loss',
+    'missing',
+    'replaced',
+    'retired',
+    'authority',
+    'revoked',
+  ] as const)('retires only the original authority after %s', (change) => {
+    const registry = new RendererEventRecovery();
+    const scope = registry.attach(harness().session);
+    let current = true;
+    const retire = vi.fn();
+    const owner = {
+      key: 'captured-retirement',
+      workspaceId: 'ws',
+      eventTypes: ['agent:*'],
+      isCurrent: () => current,
+      read: async () => null,
+      apply: () => undefined,
+      invalidate: () => undefined,
+      retire,
+    };
+    const handle = change === 'missing' ? undefined : scope.registerResource(owner);
+    const captured = registry.captureRetirement(owner.key);
+    const denial = Object.assign(new Error('denied'), { rpcCode: -32003 });
+    if (change === 'missing') scope.registerResource(owner);
+    if (change === 'push') registry.push(owner.key);
+    if (change === 'loss') registry.invalidate(owner.key);
+    if (change === 'replaced') {
+      handle?.dispose();
+      scope.registerResource(owner);
+    }
+    if (change === 'retired') registry.retireWorkspace('ws');
+    if (change === 'authority') {
+      registry.refreshAuthority();
+      scope.registerResource(owner);
+    }
+    if (change === 'revoked') current = false;
+    const allowed = ['current', 'push', 'loss'].includes(change);
+    expect(captured(denial)).toBe(allowed);
+    expect(retire.mock.calls.some(([error]) => error === denial)).toBe(allowed);
+    if (allowed) {
+      expect(registry.captureAuthority(owner.key).isCurrent()).toBe(false);
+      expect(captured(denial)).toBe(false);
+      expect(retire).toHaveBeenCalledTimes(1);
+    }
+    registry.dispose();
+  });
+});
