@@ -11,8 +11,11 @@ describe('principal discovery through browser startup', () => {
   let malformed = false;
   let recoverySupported = false;
   let holdPrincipal = false;
+  let heldMethod: string | undefined;
+  const heldReplies: Array<() => void> = [];
   const principalReplies: Array<() => void> = [];
   let receive: (event: { data: string }) => void;
+  let wireReply: ((frame: { method: string; params?: unknown }) => unknown) | undefined;
   const frames: { id: number; method: string; params?: unknown }[] = [];
 
   class Socket {
@@ -30,8 +33,8 @@ describe('principal discovery through browser startup', () => {
       frames.push(frame);
       // Bound a regressed handshake loop so the real startup test fails instead of starving timers.
       if (
-        frame.method === 'client.hello' &&
-        frames.filter((item) => item.method === 'client.hello').length > 3
+        ['client.hello', 'events.subscribe'].includes(frame.method) &&
+        frames.filter((item) => item.method === frame.method).length > 3
       ) {
         queueMicrotask(() =>
           this.onmessage?.({
@@ -74,6 +77,9 @@ describe('principal discovery through browser startup', () => {
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
         };
       if (frame.method === 'events.fence') result = frame.params;
+      if (frame.method === 'workspace.list') result = { workspaces: [] };
+      if (frame.method === 'agent.listActive') result = { streams: [] };
+      if (frame.method === 'agent.pendingPermissions') result = { requests: [] };
       if (frame.method === 'git.status')
         result = {
           branch: 'recovered',
@@ -86,9 +92,12 @@ describe('principal discovery through browser startup', () => {
           subscriptionId: `subscription-${frame.id}`,
           ...(recoverySupported ? { lossRecovery: 1 } : {}),
         };
+      const override = wireReply?.(frame);
+      if (override !== undefined) result = override;
       const reply = () =>
         this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) });
       if (frame.method === 'principal.me' && holdPrincipal) principalReplies.push(reply);
+      else if (frame.method === heldMethod) heldReplies.push(reply);
       else queueMicrotask(reply);
     }
   }
@@ -102,10 +111,13 @@ describe('principal discovery through browser startup', () => {
     vi.stubGlobal('WebSocket', Socket);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     frames.length = 0;
+    wireReply = undefined;
     role = 'owner';
     malformed = false;
     recoverySupported = false;
     holdPrincipal = false;
+    heldMethod = undefined;
+    heldReplies.length = 0;
     principalReplies.length = 0;
     await import('$lib/browser-mock');
   });
@@ -272,6 +284,61 @@ describe('principal discovery through browser startup', () => {
     expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(2);
   });
 
+  it('applies an authoritative empty workspace envelope after global loss through production owners', async () => {
+    recoverySupported = true;
+    const store = await boot();
+    const { selectPrincipalActionContext } = await import('../principal-selectors');
+    await vi.waitFor(() => expect(selectPrincipalActionContext.select(store.state)).not.toBeNull());
+    const { replaceWorkspaceList, setWorkspaceHasLoaded } =
+      await import('../../workspace/workspace-slice');
+    const { WorkspaceId, AgentId } = await import('$shared/types/branded-ids');
+    const { bulkUpsertSessions } = await import('../../agent-session/agent-session-slice');
+    const { createTestAgent } = await import('../../../../../test/factories/agent.factory');
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          id: WorkspaceId('removed-space'),
+          title: 'Removed',
+          myRole: 'owner',
+          canManage: true,
+        } as import('$shared/types').Workspace,
+      ]),
+    );
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        'browser-websocket',
+        selectPrincipalActionContext.select(store.state),
+      ),
+    );
+    store.dispatch(
+      bulkUpsertSessions([
+        createTestAgent({
+          id: AgentId('removed-agent'),
+          workspaceId: WorkspaceId('removed-space'),
+        }),
+      ]),
+    );
+    expect(store.state.agentSessions.byAgentId['removed-agent']).toBeDefined();
+    const global = frames.find((frame) => frame.method === 'events.subscribe')!;
+    receive({
+      data: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'events.lost',
+        params: {
+          subscriptionId: `subscription-${global.id}`,
+          generation: '1',
+          scope: { workspaceId: null },
+        },
+      }),
+    });
+    await vi.waitFor(() => expect(store.state.workspace.workspaces.ids).toEqual([]));
+    expect(store.state.agentSessions.byAgentId['removed-agent']).toBeUndefined();
+    expect(store.state.workspace.hasLoaded).toBe(true);
+    expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+    expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(1);
+  });
+
   it('does not confer owner authority when the actual browser principal is malformed', async () => {
     malformed = true;
     const store = await boot();
@@ -302,4 +369,196 @@ describe('principal discovery through browser startup', () => {
     expect(selectHostRole.select(store.state)).toBeNull();
     expect(frames).toEqual([]);
   });
+
+  async function bootLifecycle() {
+    recoverySupported = true;
+    const store = await boot();
+    const { selectPrincipalActionContext } = await import('../principal-selectors');
+    await vi.waitFor(() => expect(selectPrincipalActionContext.select(store.state)).not.toBeNull());
+    const { replaceWorkspaceList, setWorkspaceHasLoaded } =
+      await import('../../workspace/workspace-slice');
+    const row = { id: 'lifecycle-probe', title: 'Old workspace', myRole: 'owner', canManage: true };
+    store.dispatch(replaceWorkspaceList([row] as never));
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        'browser-websocket',
+        selectPrincipalActionContext.select(store.state),
+      ),
+    );
+    const { lifecycleReadSaga } =
+      await import('../../workspace-lifecycle/sagas/lifecycle-read-saga');
+    cancel.push(store.runSaga(lifecycleReadSaga));
+    await vi.waitFor(() =>
+      expect(frames.filter((f) => f.method === 'events.subscribe')).toHaveLength(1),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { store, row, workspaceId: row.id };
+  }
+  async function globalLoss() {
+    const sub = frames.find((f) => f.method === 'events.subscribe')!;
+    receive({
+      data: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'events.lost',
+        params: {
+          subscriptionId: `subscription-${sub.id}`,
+          generation: '1',
+          scope: { workspaceId: null },
+        },
+      }),
+    });
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  const contextItem = (id: string) => ({
+    id,
+    type: 'browser-url',
+    title: id,
+    provider: 'browser',
+    url: 'https://example.test',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  });
+  it.each([false, true])(
+    'cached inactive context recovers on next demand force=%s',
+    async (force) => {
+      const { store, row, workspaceId } = await bootLifecycle();
+      let current = 'old';
+      wireReply = (frame) =>
+        frame.method === 'workspace.getContext'
+          ? { items: [contextItem(current)] }
+          : frame.method === 'workspace.list'
+            ? { workspaces: [row] }
+            : undefined;
+      const { initContextForWorkspace } = await import('../../context/context-slice');
+      store.dispatch(initContextForWorkspace(workspaceId));
+      await vi.waitFor(() =>
+        expect(store.state.context.byWorkspaceId[workspaceId]?.items.ids).toEqual(['old']),
+      );
+      expect(frames.filter((f) => f.method === 'workspace.getContext')).toHaveLength(1);
+      expect(store.state.workspaceLifecycle.sessionPhaseByWorkspaceId[workspaceId]).toBeUndefined();
+      current = 'new';
+      await globalLoss();
+      expect(frames.filter((f) => f.method === 'workspace.getContext')).toHaveLength(1);
+      const fences = frames.filter((f) => f.method === 'events.fence').length;
+      store.dispatch(initContextForWorkspace(workspaceId, force));
+      await vi.waitFor(() =>
+        expect(store.state.context.byWorkspaceId[workspaceId]?.items.ids).toEqual(['new']),
+      );
+      expect(frames.filter((f) => f.method === 'workspace.getContext')).toHaveLength(2);
+      expect(frames.filter((f) => f.method === 'events.fence')).toHaveLength(fences + 2);
+      expect(frames.filter((f) => f.method === 'client.hello')).toHaveLength(1);
+    },
+  );
+  it('inactive activity recovers on next ordinary load request', async () => {
+    const { store, row, workspaceId } = await bootLifecycle();
+    let current = 'old';
+    wireReply = (frame) =>
+      frame.method === 'event.query'
+        ? {
+            items: [
+              {
+                id: current,
+                type: 'agent:idle',
+                workspaceId,
+                timestamp: '2026-01-01T00:00:00Z',
+                actor: { type: 'agent', id: 'agent' },
+                data: { agentId: 'agent' },
+              },
+            ],
+            nextToken: null,
+          }
+        : frame.method === 'workspace.list'
+          ? { workspaces: [row] }
+          : undefined;
+    const { loadEventsRequested } = await import('../../workspace-events/workspace-events-slice');
+    store.dispatch(loadEventsRequested(workspaceId));
+    await vi.waitFor(() =>
+      expect(
+        store.state.workspaceEvents.byWorkspaceId[workspaceId]?.events.map((e) => e.id),
+      ).toEqual(['old']),
+    );
+    expect(frames.filter((f) => f.method === 'event.query')).toHaveLength(1);
+    current = 'new';
+    await globalLoss();
+    const fences = frames.filter((f) => f.method === 'events.fence').length;
+    expect(frames.filter((f) => f.method === 'event.query')).toHaveLength(1);
+    store.dispatch(loadEventsRequested(workspaceId));
+    await vi.waitFor(() =>
+      expect(
+        store.state.workspaceEvents.byWorkspaceId[workspaceId]?.events.map((e) => e.id),
+      ).toEqual(['new']),
+    );
+    expect(frames.filter((f) => f.method === 'event.query')).toHaveLength(2);
+    expect(frames.filter((f) => f.method === 'events.fence')).toHaveLength(fences + 2);
+  });
+  it('workspace list accepts the actual daemon response envelope', async () => {
+    const { store, row, workspaceId } = await bootLifecycle();
+    wireReply = (frame) =>
+      frame.method === 'workspace.list'
+        ? { workspaces: [{ ...row, title: 'Recovered workspace' }] }
+        : undefined;
+    await globalLoss();
+    await vi.waitFor(() =>
+      expect(store.state.workspace.workspaces.map[workspaceId]?.title).toBe('Recovered workspace'),
+    );
+    // Workspace projection and the independent failure registry each own one read.
+    expect(frames.filter((f) => f.method === 'workspace.list')).toHaveLength(2);
+  });
+
+  it.each(['context', 'activity'] as const)(
+    'retires a held next-demand %s recovery without applying its late reply',
+    async (domain) => {
+      const { store, row, workspaceId } = await bootLifecycle();
+      const { initContextForWorkspace } = await import('../../context/context-slice');
+      const { loadEventsRequested } = await import('../../workspace-events/workspace-events-slice');
+      const method = domain === 'context' ? 'workspace.getContext' : 'event.query';
+      const demand = () =>
+        store.dispatch(
+          domain === 'context'
+            ? initContextForWorkspace(workspaceId)
+            : loadEventsRequested(workspaceId),
+        );
+      const ids = () =>
+        domain === 'context'
+          ? (store.state.context.byWorkspaceId[workspaceId]?.items.ids ?? [])
+          : (store.state.workspaceEvents.byWorkspaceId[workspaceId]?.events.map((e) => e.id) ?? []);
+      let current = 'old';
+      wireReply = (frame) =>
+        frame.method === 'workspace.list'
+          ? { workspaces: [row] }
+          : frame.method === method
+            ? domain === 'context'
+              ? { items: [contextItem(current)] }
+              : {
+                  items: [
+                    {
+                      id: current,
+                      type: 'agent:idle',
+                      workspaceId,
+                      timestamp: '2026-01-01T00:00:00Z',
+                      actor: { type: 'agent', id: 'agent' },
+                      data: { agentId: 'agent' },
+                    },
+                  ],
+                  nextToken: null,
+                }
+            : undefined;
+      demand();
+      await vi.waitFor(() => expect(ids()).toEqual(['old']));
+      await globalLoss();
+      current = 'late';
+      heldMethod = method;
+      demand();
+      await vi.waitFor(() => expect(heldReplies).toHaveLength(1));
+      expect(frames.filter((frame) => frame.method === method)).toHaveLength(2);
+      transport?.dispose?.();
+      await vi.waitFor(() => expect(ids()).toEqual([]));
+      heldReplies.shift()!();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ids()).toEqual([]);
+      expect(frames.filter((frame) => frame.method === method)).toHaveLength(2);
+    },
+  );
 });

@@ -2317,12 +2317,15 @@ function* contextWorker(
   action: ReturnType<typeof initContextForWorkspace>,
 ) {
   const [workspaceId, force] = action.payload;
-  if (!workspaceId || (!force && initializedContexts.get(workspaceId)?.isCurrent())) return;
+  if (!workspaceId) return;
   const release = acquireLifecycleMetadataDemand(workspaceId, 'context');
   const key = contextRecoveryKey(workspaceId);
   if (force) rendererEventRecovery.push(key);
   const receipt = rendererEventRecovery.capture(key);
   try {
+    // Cached data still acquires demand: loss may have dirtied its inactive owner.
+    // Releasing this demand keeps any admitted recovery alive through its fence.
+    if (!force && initializedContexts.get(workspaceId)?.isCurrent()) return;
     if (!receipt.commit(() => undefined)) return;
     yield* race({
       read: call(function* () {

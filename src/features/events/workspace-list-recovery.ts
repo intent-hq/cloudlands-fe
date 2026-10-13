@@ -153,7 +153,10 @@ export function installWorkspaceListRecovery(
         'list',
         async () => {
           const deletionTokens = { ...store.getState().workspace.deletionTokens };
-          const raw = await reader.request<unknown>('workspace.list', { includeArchived: true });
+          const result = await reader.request<{ workspaces?: unknown } | null>('workspace.list', {
+            includeArchived: true,
+          });
+          const raw = result?.workspaces;
           if (
             !Array.isArray(raw) ||
             raw.some((row) => !row || typeof row !== 'object' || typeof row.id !== 'string')
