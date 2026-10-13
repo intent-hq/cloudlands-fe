@@ -140,18 +140,40 @@ async function previousActionState(source: Locator) {
   });
 }
 
-async function hoverPreviousMessage(source: Locator, afterHover: () => Promise<void>) {
-  await source.hover();
-  await afterHover();
+async function waitForPreviousMessageReady(source: Locator) {
   // Follow-bottom can move the row after hover resolves. Reposition only the
   // pointer until the real action receives hits; never retry a navigation click.
   await expect
     .poll(async () => {
       await source.hover();
       const state = await previousActionState(source);
-      return state.hovered && state.actionHit;
+      if (!state.hovered || !state.actionHit) return false;
+      // A pending layout frame can invalidate a successful hit test. Observe
+      // geometry and hits across frames before handing the pointer to the click.
+      for (let frame = 0; frame < 2; frame++) {
+        await source.evaluate(
+          () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+        );
+        const next = await previousActionState(source);
+        if (
+          !next.hovered ||
+          !next.actionHit ||
+          next.top !== state.top ||
+          next.centerX !== state.centerX ||
+          next.centerY !== state.centerY
+        )
+          return false;
+      }
+      return true;
     })
     .toBe(true);
+}
+
+async function hoverPreviousMessage(source: Locator, afterHover: () => Promise<void>) {
+  await waitForPreviousMessageReady(source);
+  await afterHover();
+  // The one-time update can move a previously ready row away from the pointer.
+  await waitForPreviousMessageReady(source);
 }
 
 for (const shiftAfterHover of [false, true]) {
