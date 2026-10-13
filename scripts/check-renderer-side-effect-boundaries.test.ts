@@ -5,12 +5,14 @@ const registry = {
   path: 'src/store/renderer/middleware.ts',
   content: [
     "import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';",
+    "import { createEventRecoveryMiddleware } from './middlewares/event-recovery';",
     "import { createBatchingMiddleware } from './middlewares/batch';",
     "import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';",
     "import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';",
     "import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';",
     'createStoreGuardMiddleware()',
     'createBatchingMiddleware()',
+    'createEventRecoveryMiddleware()',
     'createActionRingBufferMiddleware()',
     'createReferenceChangeDetectorMiddleware()',
     'createStructuredCloneCheckerMiddleware()',
@@ -29,7 +31,7 @@ const configuredStore = {
 };
 
 describe('renderer side-effect boundary guard', () => {
-  it('allows the five approved middleware and reusable non-middleware utilities', () => {
+  it('allows the six approved middleware and reusable non-middleware utilities', () => {
     const files = [
       registry,
       {
@@ -53,6 +55,30 @@ describe('renderer side-effect boundary guard', () => {
       },
     ];
     expect(findRendererSideEffectBoundaryViolations(files)).toEqual([]);
+  });
+
+  it('allows recovery admission only at its reviewed infrastructure path', () => {
+    const content = [
+      "import type { StoreMiddleware } from '@themislib/themis/types';",
+      'export function createEventRecoveryMiddleware(): StoreMiddleware { return () => next => action => next(action); }',
+    ].join('\n');
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        { path: 'src/store/renderer/middlewares/event-recovery.ts', content },
+      ]),
+    ).toEqual([]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        { path: 'src/features/events/recovery-effects.ts', content },
+      ]),
+    ).toEqual([
+      expect.stringContaining(
+        'StoreMiddleware is restricted to approved infrastructure middleware',
+      ),
+      expect.stringContaining('unapproved side-effect factory createEventRecoveryMiddleware'),
+    ]);
   });
 
   it('allows the configured Store to consume the central middleware registry exactly once', () => {
@@ -403,7 +429,7 @@ describe('renderer side-effect boundary guard', () => {
       { ...registry, content: `${registry.content}\ninstallTaskEffects()` },
     ]);
     expect(violations).toEqual([
-      expect.stringContaining('registry must contain exactly the 5 approved middleware factories'),
+      expect.stringContaining('registry must contain exactly the 6 approved middleware factories'),
     ]);
   });
 
@@ -417,7 +443,7 @@ describe('renderer side-effect boundary guard', () => {
   ])('rejects an approved factory that is %s in the registry', (_change, content) => {
     expect(findRendererSideEffectBoundaryViolations([{ ...registry, content }])).toEqual([
       expect.stringContaining(
-        'src/store/renderer/middleware.ts: registry must contain exactly the 5 approved middleware factories',
+        'src/store/renderer/middleware.ts: registry must contain exactly the 6 approved middleware factories',
       ),
     ]);
   });
