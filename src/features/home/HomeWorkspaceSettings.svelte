@@ -16,7 +16,8 @@
     { value: 'month', label: m.home_updated_month() },
   ]);
   const groupingOptions = $derived([
-    { value: 'status', label: m.layout_allCard_status_label() },
+    { value: 'status', label: m.workspace_resizablePanels_activity_label() },
+    { value: 'workspace-status', label: m.layout_allCard_status_label() },
     { value: 'repository', label: m.home_repository() },
     { value: 'none', label: m.settings_mcp_form_auth_none() },
   ]);
@@ -52,7 +53,12 @@
   <Select.Root
     value={view.groupBy}
     onchange={(value) => {
-      if (value === 'status' || value === 'repository' || value === 'none')
+      if (
+        value === 'status' ||
+        value === 'workspace-status' ||
+        value === 'repository' ||
+        value === 'none'
+      )
         onchange({ groupBy: value });
     }}
   >
