@@ -5505,14 +5505,12 @@ describe.each(['workspace-a', 'workspace-b'])(
         'agent-a',
         {
           model,
-          metadata: {
-            ...metadata,
-            specialist: c.selection ?? undefined,
-            behaviorPrompt: selected ? `Prompt ${workspaceId}` : '',
-            specialistName: selected ? `Specialist ${workspaceId}` : '',
+          metadataPatch: {
+            specialist: c.selection === null ? { op: 'clear' } : { op: 'set', value: c.selection },
+            behaviorPrompt: { op: 'set', value: selected ? `Prompt ${workspaceId}` : '' },
+            specialistName: { op: 'set', value: selected ? `Specialist ${workspaceId}` : '' },
           },
         },
-        { projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'] },
       ]);
       expect(save.payload).toEqual([
         workspaceId,
@@ -5528,7 +5526,14 @@ describe.each(['workspace-a', 'workspace-b'])(
                   model,
                   ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
                 },
-          specialistRollback: { metadata, model: 'session-model' },
+          specialistRollback: {
+            model: 'session-model',
+            metadataPatch: {
+              specialist: { op: 'set', value: metadata.specialist },
+              behaviorPrompt: { op: 'set', value: metadata.behaviorPrompt },
+              specialistName: { op: 'clear' },
+            },
+          },
         },
       ]);
     });

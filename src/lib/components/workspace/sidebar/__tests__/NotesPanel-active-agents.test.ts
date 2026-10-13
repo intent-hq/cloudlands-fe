@@ -139,7 +139,7 @@ describe('NotesPanel active-agent row', () => {
         status: AgentStatus.Active,
         isResponding: true,
         messages: [questionMessage],
-        metadata: { pendingQuestionsMessageId: questionMessage.id },
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: questionMessage.id } },
       }),
     );
 

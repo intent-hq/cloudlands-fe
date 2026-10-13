@@ -303,7 +303,14 @@ describe('agentMutationSaga', () => {
           mocks.updateSpecialist.mockResolvedValue({ success: false, error: 'rejected' });
           const action = saveAgentSessionRequested(WS, A1, true, {
             specialistUpdate: { specialist: 'optimistic', rememberSpecialist: true },
-            specialistRollback: { metadata: { provider: 'before' }, model: prior.model },
+            specialistRollback: {
+              metadataPatch: {
+                specialist: { op: 'clear' },
+                behaviorPrompt: { op: 'clear' },
+                specialistName: { op: 'clear' },
+              },
+              model: prior.model,
+            },
           });
           const failed = expect(action.promise).rejects.toThrow('rejected');
           appStore.dispatch(action);
@@ -730,25 +737,27 @@ describe('agentMutationSaga', () => {
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
-      specialistRollback: { metadata: previousMetadata, model: 'default-model' },
+      specialistRollback: {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
+        },
+        model: 'default-model',
+      },
     });
     channel.put(action);
 
     await expect(action.promise).rejects.toThrow('update rejected');
     expect(dispatched).toContainEqual(
-      updateSession(
-        A1,
-        {
-          metadata: {
-            ...previousMetadata,
-            specialist: undefined,
-            behaviorPrompt: undefined,
-            specialistName: undefined,
-          },
-          model: 'default-model',
+      updateSession(A1, {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
         },
-        { projectedMetadataKeys: ['specialist', 'behaviorPrompt', 'specialistName'] },
-      ),
+        model: 'default-model',
+      }),
     );
     expect(mocks.error).toHaveBeenCalledWith('update rejected');
     await stop(task);
@@ -1212,7 +1221,9 @@ describe('agentMutationSaga', () => {
     await settle();
     expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
 
-    dispatch(updateSession(A1, { metadata: { lastSeenMessageId: 'm-9' } }));
+    dispatch(
+      updateSession(A1, { metadataPatch: { lastSeenMessageId: { op: 'set', value: 'm-9' } } }),
+    );
     pending.resolve({ success: false, error: 'mute rejected' });
 
     await expect(action.promise).rejects.toThrow('mute rejected');

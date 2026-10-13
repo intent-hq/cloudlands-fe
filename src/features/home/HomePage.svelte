@@ -894,6 +894,8 @@
                             {@const displayTitle = item.title.trim()
                               ? item.title
                               : m.workspace_links_untitled_label()}
+                            {@const pullRequestCount =
+                              item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
@@ -959,10 +961,10 @@
                                     class="home-row-description flex min-w-0 items-center gap-2"
                                   >
                                     <HomeWorkspacePullBadge workspace={item} />
-                                    {#if item.pullRequests && item.pullRequests.length > 1}
+                                    {#if pullRequestCount > 1}
                                       <span
                                         class="shrink-0 rounded-full border border-border px-2 py-0.5 type-caption tabular-nums"
-                                        >+{formatInteger(item.pullRequests.length - 1)}</span
+                                        >+{formatInteger(pullRequestCount - 1)}</span
                                       >
                                     {/if}
                                     <Tooltip.Provider
