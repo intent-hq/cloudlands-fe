@@ -319,6 +319,11 @@ class WorkspaceForwardCleanupState {
   }
 
   private handleReconnect(): void {
+    // The connected status may already have captured this replacement socket.
+    if (this.recovery?.session.isCurrent()) {
+      this.ensure();
+      return;
+    }
     this.recovery?.coordinator.dispose();
     this.recovery = undefined;
     this.recoveryResource = undefined;
