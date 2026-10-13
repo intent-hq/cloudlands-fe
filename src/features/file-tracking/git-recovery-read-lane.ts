@@ -125,6 +125,7 @@ export function captureGitRead(key: string): {
   run<T>(read: () => Promise<T>): Promise<T>;
 } {
   const receipt = rendererEventRecovery.capture(key);
+  const authority = rendererEventRecovery.captureAuthority(key);
   const bound = transports.get(key);
   const failed = failures.get(key);
   const physicalReads = new Set<Promise<void>>();
@@ -134,7 +135,7 @@ export function captureGitRead(key: string): {
       if (!receipt.isCurrent())
         return Promise.reject(new Error('Git read authority expired before request'));
       const result = observeGitReadFailure(bound.request<T>(method, params), (error) => {
-        if (receipt.isCurrent()) failed?.(error);
+        if (authority.isCurrent()) failed?.(error);
       });
       const drained = gitReadDrained(result);
       physicalReads.add(drained);
@@ -144,7 +145,7 @@ export function captureGitRead(key: string): {
       return result;
     },
     onFailure: (error: unknown) => {
-      if (receipt.isCurrent()) failed?.(error);
+      if (authority.isCurrent()) failed?.(error);
     },
   };
   return {

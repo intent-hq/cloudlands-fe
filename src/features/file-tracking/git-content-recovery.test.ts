@@ -729,3 +729,35 @@ it.each([false, true])(
     );
   },
 );
+
+it.each(['push', 'loss'] as const)(
+  'retires late ordinary denial across %s before queued reads can run',
+  async (change) => {
+    const h = await setup();
+    const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+    const timeout = new BackendError(
+      { code: 'TIMEOUT', message: 'ordinary deadline' },
+      completion.promise,
+    );
+    const normal = h.request.getMockImplementation()!;
+    let calls = 0;
+    h.request.mockImplementation((method, params) =>
+      method === 'git.showFile' && ++calls === 1 ? Promise.reject(timeout) : normal(method, params),
+    );
+    const key = gitContentRecoveryKey('ws', h.key);
+    const lane = captureGitRead(key);
+    await expect(
+      lane.run(() =>
+        readGitContent('ws', h.read, lane.transport!, new AbortController().signal, () => true),
+      ),
+    ).rejects.toBe(timeout);
+    if (change === 'push') h.event();
+    else h.loss();
+    await settle();
+    completion.resolve({ retired: false, errors: [{ rpcCode: -32003 }] });
+    await settle();
+    expect(h.entry().result).toBeNull();
+    expect(rendererEventRecovery.captureAuthority(key).isCurrent()).toBe(false);
+    expect(h.request.mock.calls.filter(([method]) => method === 'git.showFile')).toHaveLength(1);
+  },
+);

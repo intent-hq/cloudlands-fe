@@ -13,7 +13,7 @@ import type { WorktreeRecoveryStore } from './worktree-snapshots-recovery';
 import {
   captureGitAuthority,
   gitEventMatchesRoot,
-  gitReadAuthorityDenied,
+  captureGitReadRetirement,
 } from './git-recovery-authority';
 import {
   bindGitReadTransport,
@@ -122,14 +122,11 @@ export function installGitContentRecovery(
             store.dispatch(gitReadStarted(workspaceId, entry.readKey, generation));
             store.dispatch(gitReadCompleted(workspaceId, entry.readKey, generation, result, null));
           };
-          const retireDenied = (error: unknown) => {
-            if (!current() || !gitReadAuthorityDenied(error)) return;
-            live = false;
-            owner.dispose();
-            clear();
-          };
-          const ordinary = (lifetime: import('$shared/event-recovery/resource').RecoveryLifetime) =>
-            observeGitReadFailure(
+          const ordinary = (
+            lifetime: import('$shared/event-recovery/resource').RecoveryLifetime,
+          ) => {
+            const retireDenied = captureGitReadRetirement(key);
+            return observeGitReadFailure(
               trackGitRead(
                 capturedRoot.transport,
                 serializeGitRead(
@@ -145,9 +142,7 @@ export function installGitContentRecovery(
                     ),
                 ),
               ),
-              (error) => {
-                if (lifetime.isCurrent()) retireDenied(error);
-              },
+              retireDenied,
             )
               .then((result) => {
                 lifetime.commit(() => {
@@ -157,6 +152,7 @@ export function installGitContentRecovery(
               .catch(() => {
                 /* Keep ordinary cache on transient failures; the observer retires canonical denials. */
               });
+          };
           const owner = scope.registerResource({
             key,
             workspaceId,
@@ -206,7 +202,11 @@ export function installGitContentRecovery(
             },
             onEvent: (_notification, lifetime) => ordinary(lifetime),
           });
-          const unbind = bindGitReadTransport(key, rootTransport.transport, retireDenied);
+          const unbind = bindGitReadTransport(
+            key,
+            rootTransport.transport,
+            captureGitReadRetirement(key),
+          );
           rows.set(key, {
             owner,
             current: authority,

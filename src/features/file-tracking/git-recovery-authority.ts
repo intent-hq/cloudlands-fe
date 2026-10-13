@@ -1,5 +1,8 @@
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-import type { RendererRecoveryScope } from '$features/events/renderer-event-recovery';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryScope,
+} from '$features/events/renderer-event-recovery';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
   selectWorkspaceParticipationContext,
@@ -67,4 +70,12 @@ export function gitReadAuthorityDenied(error: unknown): boolean {
     value?.rpcCode === -32001 ||
     (value?.rpcCode === -32602 && value.data?.code === 'not-found')
   );
+}
+
+/** Domain classification with a retirement callback captured before any asynchronous read. */
+export function captureGitReadRetirement(key: string): (error: unknown) => void {
+  const retire = rendererEventRecovery.captureRetirement(key);
+  return (error) => {
+    if (gitReadAuthorityDenied(error)) retire(error);
+  };
 }

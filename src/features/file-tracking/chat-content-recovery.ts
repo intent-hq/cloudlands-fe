@@ -36,6 +36,7 @@ import {
   captureGitAuthority,
   gitEventMatchesRoot,
   gitReadAuthorityDenied,
+  captureGitReadRetirement,
 } from './git-recovery-authority';
 import type { WorktreeRecoveryStore } from './worktree-snapshots-recovery';
 
@@ -131,7 +132,7 @@ export function installChatChangesRecovery(
       dispose(): void;
       owner: RendererRecoveryHandle;
       rootKey: string;
-      retire(): void;
+      retire(error: unknown): void;
     }
   >();
   const roots = new Map<
@@ -201,7 +202,7 @@ export function installChatChangesRecovery(
                     }),
                     (error) => {
                       if (rootCurrent() && gitReadAuthorityDenied(error))
-                        for (const row of consumers) if (row.current()) row.retire();
+                        for (const row of consumers) if (row.current()) row.retire(error);
                     },
                   ),
                 );
@@ -286,12 +287,7 @@ export function installChatChangesRecovery(
           rows.set(key, {
             owner,
             rootKey,
-            retire: () => {
-              if (!live) return;
-              live = false;
-              owner.dispose();
-              store.dispatch(chatChangesRecovered(wsId, id, requestId, resourceKey, [], true));
-            },
+            retire: captureGitReadRetirement(key),
             current: valid,
             dispose: () => {
               live = false;

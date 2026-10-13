@@ -23,7 +23,7 @@ import type { WorktreeRecoveryStore } from './worktree-snapshots-recovery';
 import {
   captureGitAuthority,
   gitEventMatchesRoot,
-  gitReadAuthorityDenied,
+  captureGitReadRetirement,
 } from './git-recovery-authority';
 import {
   bindGitReadTransport,
@@ -233,12 +233,6 @@ export function installSecondaryRootRecovery(
               return result;
             },
           };
-          const retireDenied = (error: unknown) => {
-            if (!current() || !gitReadAuthorityDenied(error)) return;
-            live = false;
-            owner.dispose();
-            clear();
-          };
           const snapshot = (reader: GitReadTransport) => {
             const previous =
               store.getState().git.byWorkspaceId[workspaceId]?.secondaryRoots[rootId];
@@ -266,16 +260,15 @@ export function installSecondaryRootRecovery(
           const apply = (data: SecondaryRootGitData): undefined => {
             store.dispatch(setSecondaryRootGit(workspaceId, rootId, data));
           };
-          const ordinary = (lifetime: RecoveryLifetime) =>
-            serializeGitRead(
+          const ordinary = (lifetime: RecoveryLifetime) => {
+            const retireDenied = captureGitReadRetirement(key);
+            return serializeGitRead(
               key,
               () => current() && lifetime.commit(() => undefined),
               () =>
                 snapshot({
                   key: transport.key,
-                  onFailure: (error) => {
-                    if (lifetime.isCurrent()) retireDenied(error);
-                  },
+                  onFailure: retireDenied,
                   request: async <T>(method: string, params?: unknown): Promise<T> => {
                     if (!lifetime.commit(() => undefined))
                       throw new Error('Git root receipt expired');
@@ -288,14 +281,8 @@ export function installSecondaryRootRecovery(
                   apply(data);
                 });
               })
-              .catch((error) => {
-                if (gitReadAuthorityDenied(error))
-                  lifetime.commit(() => {
-                    live = false;
-                    owner.dispose();
-                    clear();
-                  });
-              });
+              .catch(() => {});
+          };
           const owner = scope.registerResource({
             key,
             workspaceId,
@@ -303,19 +290,19 @@ export function installSecondaryRootRecovery(
             active,
             isCurrent: current,
             acceptsEvent: (notification) => gitEventMatchesRoot(notification, rootId),
-            read: (reader) =>
-              serializeGitRead(
+            read: (reader) => {
+              const retireDenied = captureGitReadRetirement(key);
+              return serializeGitRead(
                 key,
                 () => current() && reader.lifetime.isCurrent(),
                 () =>
                   snapshot({
                     key: reader.lifetime.key,
                     request: reader.request,
-                    onFailure: (error) => {
-                      if (reader.lifetime.isCurrent()) retireDenied(error);
-                    },
+                    onFailure: retireDenied,
                   }),
-              ),
+              );
+            },
             apply,
             invalidate: () => {},
             retire: () => {
@@ -324,7 +311,7 @@ export function installSecondaryRootRecovery(
             },
             onEvent: (_notification, lifetime) => ordinary(lifetime),
           });
-          const unbind = bindGitReadTransport(key, transport, retireDenied);
+          const unbind = bindGitReadTransport(key, transport, captureGitReadRetirement(key));
           rows.set(key, {
             owner,
             current: authority,
