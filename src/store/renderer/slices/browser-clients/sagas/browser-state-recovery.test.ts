@@ -1192,3 +1192,66 @@ it('refreshes the unmounted global roster on its next demand after principal rea
     'current-global-client',
   ]);
 });
+
+it.each([undefined, WS])(
+  'settles an event receipt displaced by an ordinary read for %s',
+  async (workspaceId) => {
+    const { hydrateBrowserClientsRequested, refreshLiveClientsRequested } =
+      await import('../browser-clients-slice');
+    const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+    const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+    await attach();
+    if (workspaceId) store.dispatch(workspaceMounted(workspaceId));
+    else store.dispatch(hydrateBrowserClientsRequested());
+    await settle();
+    const roster = deferred<unknown>(),
+      selection = deferred<unknown>();
+    const normal = rpc.request.getMockImplementation()!;
+    let firstRoster = true,
+      firstSelection = true;
+    rpc.request.mockImplementation((method, params) => {
+      if (method === 'client.list' && firstRoster) {
+        firstRoster = false;
+        return roster.promise;
+      }
+      if (method === 'workspace.getBrowserClient' && firstSelection) {
+        firstSelection = false;
+        return selection.promise;
+      }
+      return normal(method, params);
+    });
+    rpc.request.mockClear();
+    const key = browserClientRecoveryKey(workspaceId);
+    rendererEventRecovery.push(key);
+    const activeDone = vi.fn();
+    const active = dispatchBrowserClientEvent(workspaceId, rendererEventRecovery.capture(key)).then(
+      activeDone,
+    );
+    await settle();
+    rendererEventRecovery.push(key);
+    const queuedDone = vi.fn();
+    const queued = dispatchBrowserClientEvent(workspaceId, rendererEventRecovery.capture(key)).then(
+      queuedDone,
+    );
+    store.dispatch(refreshLiveClientsRequested(workspaceId));
+    if (workspaceId) store.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
+    await settle();
+    expect(queuedDone).toHaveBeenCalledOnce();
+    expect(activeDone).not.toHaveBeenCalled();
+    expect(calls('client.list')).toHaveLength(1);
+    expect(calls('workspace.getBrowserClient')).toHaveLength(workspaceId ? 1 : 0);
+    clients = [];
+    pin = 'ordinary-current';
+    roster.resolve({ clients: [client] });
+    selection.resolve({ browserClient: { source: 'default', resolved: null } });
+    await Promise.all([active, queued]);
+    await settle();
+    expect(calls('client.list')).toHaveLength(2);
+    // Ordinary roster completion also refreshes resolution, preserving its existing follow-up.
+    expect(calls('workspace.getBrowserClient')).toHaveLength(workspaceId ? 3 : 0);
+    if (workspaceId) {
+      expect(view().eligibleClients).toEqual([]);
+      expect(view().pinnedClientId).toBe('ordinary-current');
+    } else expect(selectLiveClients.select(store.state)).toEqual([]);
+  },
+);

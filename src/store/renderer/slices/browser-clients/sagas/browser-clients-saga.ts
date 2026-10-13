@@ -115,6 +115,7 @@ type BrowserClientReadAction =
  */
 function browserClientReadContext(action: BrowserClientReadAction) {
   const wsId = action.payload[0];
+  if (action.type === fetchWorkspaceBrowserClientRequested.type) queueBrowserClientEvent(action);
   return action.type === fetchWorkspaceBrowserClientRequested.type
     ? wsId
     : { context: wsId, cancel: true as const };
@@ -460,12 +461,6 @@ export function* browserClientsSaga(): SagaGenerator<void> {
   const recovery = new BrowserClientRecovery();
   try {
     const pinWriteEpochs: PinWriteEpochs = {};
-    yield* takeEvery(
-      [refreshLiveClientsRequested, fetchWorkspaceBrowserClientRequested],
-      function* (action) {
-        queueBrowserClientEvent(action);
-      },
-    );
     // A committed server event wins over reads and write echoes already in flight.
     yield* takeEvery(workspaceBrowserClientPinReceived, function* (action) {
       const [wsId] = action.payload;
@@ -533,10 +528,13 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     );
     yield* takeSingleFlightInContext(
       [refreshLiveClientsRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
-      (action) =>
-        action.type === refreshLiveClientsRequested.type
+      (action) => {
+        // Account for every arrival before this lane coalesces its trailing read.
+        if (action.type === refreshLiveClientsRequested.type) queueBrowserClientEvent(action);
+        return action.type === refreshLiveClientsRequested.type
           ? (action.payload[0] ?? LIVE_CLIENTS_CONTEXT)
-          : { context: action.payload[0] ?? LIVE_CLIENTS_CONTEXT, cancel: true as const },
+          : { context: action.payload[0] ?? LIVE_CLIENTS_CONTEXT, cancel: true as const };
+      },
       readLiveClients,
       connection,
     );
