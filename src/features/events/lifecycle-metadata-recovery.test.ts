@@ -854,3 +854,52 @@ it('does not carry a legacy mutation barrier into a newly installed physical ses
     await pending;
   }
 });
+
+it.each([false, true])(
+  'a denied referenced agent cannot retire accessible task links (late=%s)',
+  async (late) => {
+    const h = await harness();
+    const key = 'task-agent-links:["ws"]';
+    h.dispatch(hydrateTaskAgentAssociations('ws', { note: { task: link } }));
+    const lease = beginLifecycleMetadataMutation(
+      addTaskAgentAssociation('ws', 'note', { ...link, agentId: 'foreign-private-agent' }),
+    )!;
+    const forbidden = new BackendError({
+      rpcCode: -32003,
+      code: 'forbidden',
+      message: 'Referenced agent workspace denied',
+    });
+    let release!: () => void;
+    const completion = new Promise<{ errors: readonly unknown[]; retired: boolean }>((resolve) => {
+      release = () => resolve({ errors: [forbidden], retired: false });
+    });
+    const error = late
+      ? new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion)
+      : forbidden;
+    const mutate = vi.fn(async () => {
+      throw error;
+    });
+    await expect(lease.run(mutate)).rejects.toBe(error);
+    lease.finish();
+    h.loss();
+    if (late) {
+      await settle();
+      expect(h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks')).toHaveLength(0);
+      release();
+    }
+    await settle();
+    expect(
+      h.registry.capture(key).commit(() => undefined),
+      'target workspace still permits task.listAgentLinks',
+    ).toBe(true);
+    expect(
+      h.state.taskAgentAssociations.byWorkspaceId.ws?.byNoteId.note?.task?.agentId,
+      'existing accessible association survives a different agent denial',
+    ).toBe('agent');
+    expect(
+      h.request.mock.calls.filter((c) => c[0] === 'task.listAgentLinks'),
+      'authoritative workspace-wide read decides its own access',
+    ).toHaveLength(1);
+    expect(mutate).toHaveBeenCalledTimes(1);
+  },
+);

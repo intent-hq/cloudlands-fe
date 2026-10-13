@@ -186,7 +186,8 @@ export function beginLifecycleMetadataMutation(
         },
         (error) => {
           // The caller deadline does not release an already-sent mutation.
-          // A missing note/task target is not proof that its workspace disappeared.
+          // Task-link errors can concern the referenced agent or note instead of
+          // the target workspace; only its authoritative read may retire that owner.
           void drainMetadataFailure(key, owner, error, !key.startsWith('task-agent-links:')).then(
             () => {
               physical--;
@@ -235,17 +236,18 @@ async function drainMetadataFailure(
   key: string,
   owner: MutationOwner | undefined,
   error: unknown,
-  workspaceNotFound = true,
+  workspaceAuthority = true,
 ): Promise<void> {
   const observe = (failure: unknown) => {
     const e = failure as { rpcCode?: number; data?: { code?: string } } | undefined;
     if (
+      workspaceAuthority &&
       owner &&
       mutationOwners.get(key) === owner &&
       owner.isCurrent() &&
       (e?.rpcCode === -32003 ||
         e?.rpcCode === -32001 ||
-        (workspaceNotFound && e?.rpcCode === -32602 && e.data?.code === 'not-found'))
+        (e?.rpcCode === -32602 && e.data?.code === 'not-found'))
     )
       owner.retire(failure);
   };
