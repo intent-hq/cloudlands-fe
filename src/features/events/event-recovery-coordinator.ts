@@ -22,7 +22,8 @@ interface ResourceOwner<T> extends RecoveryScope {
   /** Atomic store commit inside the end barrier; async preparation belongs in read. */
   apply(value: T): undefined;
   invalidate(): void;
-  retire(error: unknown): void;
+  /** Synchronously clear protected state; terminal owners must be re-registered. */
+  retire(error: unknown): undefined;
   /**
    * Own ALL mutations for this resource (including overlapping legacy leases).
    * After awaiting work, write via lifetime.commit. Return the entire processing

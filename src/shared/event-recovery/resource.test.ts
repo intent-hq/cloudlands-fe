@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import corpus from './__fixtures__/contract.json';
 import { RecoveryResource } from './resource';
 
@@ -279,5 +280,55 @@ describe('adapter lifetime and source ordering', () => {
     expect(read).toHaveBeenCalledTimes(2);
     expect(resource.push()).toBe(false);
     resource.dispose();
+  });
+});
+
+describe('canonical authority failures', () => {
+  for (const [rpcCode, code] of [
+    [-32602, 'not-found'],
+    [-32003, 'forbidden'],
+    [-32001, 'unauthorized'],
+  ] as const)
+    for (const phase of ['begin', 'read', 'end'] as const)
+      it(`retires exactly once on canonical ${code} during ${phase}`, async () => {
+        const h = setup();
+        const error = new BackendError({ rpcCode, code, message: 'Unavailable', data: { code } });
+        if (phase === 'read') h.read.mockRejectedValue(error);
+        else if (phase === 'begin') h.fence.mockRejectedValue(error);
+        else
+          h.fence
+            .mockImplementationOnce(async (_ids, observe) => observe())
+            .mockRejectedValue(error);
+        const token = h.resource.captureLifetime();
+        h.resource.invalidate();
+        await settle();
+        expect(h.retired).toHaveBeenCalledExactlyOnceWith(error);
+        expect(token.isCurrent()).toBe(false);
+        expect(h.resource.status).toMatchObject({ stale: false, suspended: true });
+        h.resource.refresh();
+        h.resource.changeLifetime();
+        h.resource.invalidate();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(h.retired).toHaveBeenCalledOnce();
+        expect(h.fence.mock.calls.length + h.read.mock.calls.length).toBe(
+          phase === 'begin' ? 1 : phase === 'read' ? 2 : 3,
+        );
+        expect(h.applied).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+  it.each([
+    { rpcCode: -32602, code: 'invalid-params', data: { code: 'invalid-params' } },
+    { rpcCode: -32602, code: 'not-found' },
+    { rpcCode: -32603, code: 'not-found', data: { code: 'not-found' } },
+    { code: 'forbidden' },
+    { code: 'unauthorized' },
+  ])('does not infer deletion or authorization from a noncanonical lookalike %j', async (shape) => {
+    const h = setup();
+    h.read.mockRejectedValue(new BackendError({ ...shape, message: 'not found' }));
+    h.resource.invalidate();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.retired).not.toHaveBeenCalled();
+    expect(h.read).toHaveBeenCalledTimes(3);
+    expect(h.resource.status).toMatchObject({ stale: true, suspended: true });
   });
 });

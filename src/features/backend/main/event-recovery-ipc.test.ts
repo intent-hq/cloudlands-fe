@@ -1,3 +1,4 @@
+import { RecoveryResource } from '$shared/event-recovery/resource';
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
@@ -433,4 +434,51 @@ it('retires a capture when pre-ack staging overflows and cleans up its late subs
     method: 'events.unsubscribe',
     params: { subscriptionId: 'late' },
   });
+});
+
+it.each([
+  [-32602, 'not-found'],
+  [-32003, 'forbidden'],
+  [-32001, 'unauthorized'],
+] as const)('retires a recovery resource on canonical IPC error %s/%s', async (rpcCode, code) => {
+  const h = await harness();
+  const session = await h.capture();
+  cleanup.push(() => session.dispose());
+  const subscribe = session.request('events.subscribe', {
+    eventTypes: ['file:*'],
+    lossRecovery: 1,
+  });
+  h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionId: 'a', lossRecovery: 1 });
+  await subscribe;
+  const retired = vi.fn(),
+    apply = vi.fn();
+  const resource = new RecoveryResource({
+    read: () => session.request('file.read', { workspaceId: 'ws-a' }),
+    fence: (ids, observe) => session.fence(ids, observe),
+    apply,
+    invalidate: vi.fn(),
+    retire: retired,
+  });
+  cleanup.push(() => resource.dispose());
+  resource.setLeases([{ id: 'a', lifetime: {} }]);
+  resource.invalidate();
+  expect(h.socket.frames.at(-1)!.method).toBe('events.fence');
+  h.socket.reply(h.socket.frames.at(-1)!.id, { subscriptionIds: ['a'] });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(h.socket.frames.at(-1)!.method).toBe('file.read');
+  h.socket.batch([
+    {
+      id: h.socket.frames.at(-1)!.id,
+      error: { code: rpcCode, message: 'Unavailable', data: { code } },
+    },
+  ]);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(retired).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ rpcCode, code, data: { code } }),
+  );
+  expect(resource.status).toMatchObject({ stale: false, suspended: true });
+  expect(apply).not.toHaveBeenCalled();
+  expect(
+    h.socket.frames.filter((f) => ['file.read', 'events.fence'].includes(f.method)),
+  ).toHaveLength(2);
 });

@@ -18,7 +18,8 @@ interface Owner<T> {
   fence(ids: readonly string[], observe: () => void): Promise<void>;
   apply(value: T): undefined;
   invalidate(): void;
-  retire(error: unknown): void;
+  /** Synchronously clear protected state when authority is gone. */
+  retire(error: unknown): undefined;
 }
 
 /** One owner per authoritative read key. Timers and promises are not domain state. */
@@ -109,6 +110,7 @@ export class RecoveryResource<T> {
   }
   /** Call at each workspace/entity ownership transition, including A→B→A. */
   changeLifetime() {
+    if (this.disposed) return;
     this.epoch = {};
     this.cancelTimer();
     this.stale = false;
@@ -187,10 +189,20 @@ export class RecoveryResource<T> {
     } catch (error) {
       if (!current()) return;
       this.failures++;
-      const code = (error as { rpcCode?: number; code?: string } | null)?.rpcCode;
-      const name = (error as { code?: string } | null)?.code;
-      if (code === -32003 || name === 'NOT_FOUND' || name === 'FORBIDDEN') {
+      const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
+      const data = (error as { data?: unknown } | null)?.data;
+      // Protocol §9: -32602 alone is invalid-params, never proof of deletion.
+      // Only the structured not-found pair may clear an absent/invisible entity.
+      const absent =
+        code === -32602 &&
+        data !== null &&
+        typeof data === 'object' &&
+        (data as { code?: unknown }).code === 'not-found';
+      if (absent || code === -32003 || code === -32001) {
         this.suspended = true;
+        this.stale = false;
+        this.dispose();
+        // The owner clears protected domain state; this resource cannot resume.
         this.owner.retire(error);
       } else if (this.failures > FAILURE_RETRY_DELAYS_MS.length) this.suspended = true;
       else this.retryAt = Date.now() + FAILURE_RETRY_DELAYS_MS[this.failures - 1];

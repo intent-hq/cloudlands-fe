@@ -1,3 +1,4 @@
+import { RecoveryResource } from '$shared/event-recovery/resource';
 /**
  * Unit tests for the browser WebSocket `BackendTransport`.
  *
@@ -1136,3 +1137,47 @@ it('cleans up a captured recovery lease whose ack arrives after disposal', async
   });
   h.transport.dispose();
 });
+
+it.each([
+  [-32602, 'not-found'],
+  [-32003, 'forbidden'],
+  [-32001, 'unauthorized'],
+] as const)(
+  'retires a recovery resource on canonical browser error %s/%s',
+  async (rpcCode, code) => {
+    const h = createHarness();
+    const boot = h.transport.request('ping');
+    await connect(h.socket(), true);
+    h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+    await boot;
+    const session = await h.transport.captureEventRecovery();
+    const retired = vi.fn(),
+      apply = vi.fn();
+    const resource = new RecoveryResource({
+      read: () => session.request('file.read', { workspaceId: 'ws-a' }),
+      fence: (ids, observe) => session.fence(ids, observe),
+      apply,
+      invalidate: vi.fn(),
+      retire: retired,
+    });
+    resource.setLeases([{ id: 'a', lifetime: {} }]);
+    resource.invalidate();
+    expect(h.socket().lastFrame().method).toBe('events.fence');
+    h.socket().receive({ id: h.socket().lastFrame().id, result: { subscriptionIds: ['a'] } });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(h.socket().lastFrame().method).toBe('file.read');
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      error: { code: rpcCode, message: 'Unavailable', data: { code } },
+    });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(retired).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ rpcCode, code, data: { code } }),
+    );
+    expect(resource.status).toMatchObject({ stale: false, suspended: true });
+    expect(apply).not.toHaveBeenCalled();
+    resource.dispose();
+    session.dispose();
+    h.transport.dispose();
+  },
+);
