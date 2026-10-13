@@ -1,5 +1,6 @@
 import { store } from '@/store';
 import * as authority from '../../../../../src/store/renderer/slices/workspace/workspace-authority-projections';
+export const selectWorkspaceIds = store.createSelector((state) => state.workspace.workspaces.ids);
 export const selectWorkspaceListLoadedForBackend = store.createSelector(
   authority.getWorkspaceListLoadedForBackend,
 );
