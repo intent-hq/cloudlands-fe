@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.3...v2.216.4) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* remove Figma MCP presets from settings ([#3394](https://github.com/intent-hq/cloudlands-fe/issues/3394)) ([b7b6650](https://github.com/intent-hq/cloudlands-fe/commit/b7b665083b0b0417615f5a71d4dc291684986811))
+
 ## [2.216.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.2...v2.216.3) (2026-10-13)
 
 
