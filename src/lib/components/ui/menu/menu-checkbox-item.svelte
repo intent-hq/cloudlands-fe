@@ -36,7 +36,7 @@
   {#if leading || reserveIcon()}
     <span
       data-slot="menu-item-leading"
-      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      class="first-line-icon w-(--menu-icon-size)"
       aria-hidden="true"
     >
       {@render leading?.()}
