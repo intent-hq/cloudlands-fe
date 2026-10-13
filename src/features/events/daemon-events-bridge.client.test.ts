@@ -14860,3 +14860,300 @@ describe('admitted task event processing completion', () => {
     }
   });
 });
+
+describe('workspace point denial actual callers', () => {
+  async function setupPoint(kind: string, code: number, late = false) {
+    const { rendererEventRecovery: registry } = await import('./renderer-event-recovery');
+    const { installWorkspaceListRecovery, WORKSPACE_LIST_RECOVERY_KEY: key } =
+      await import('./workspace-list-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { normalizeWorkspace } = await import('$lib/client/live/live-workspaces-client');
+    const {
+      replaceWorkspaceList,
+      bulkUpdateWorkspaceEntities,
+      updateWorkspaceEntity,
+      refreshWorkspaceMembershipRequested,
+    } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { retireWorkspaceAfterRecovery } = await import('./daemon-events-bridge.client');
+    registry.dispose();
+    __resetDaemonEventsBridgeForTests();
+    backendRequestSpy.mockReset();
+    appStore.dispatch(clearAllSessions());
+    admitLegacyPrincipal();
+    const ws = 'one-space';
+    const sibling = 'two-space';
+    const seed = () => {
+      appStore.dispatch(
+        replaceWorkspaceList(
+          [ws, sibling].map((id) =>
+            normalizeWorkspace({
+              id,
+              title: id,
+              myRole: 'owner',
+              canManage: true,
+              activity: 'idle',
+            }),
+          ),
+          { complete: true, deletionTokens: {} },
+        ),
+      );
+    };
+    seed();
+    if (kind === 'missing') {
+      const { removeWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(removeWorkspaceEntity(ws));
+    }
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'point-review-agent',
+          workspaceId: ws,
+          backendSessionId: null,
+          name: 'original',
+          status: 'idle',
+          createdAt: '2026-10-13T10:00:00Z',
+          updatedAt: '2026-10-13T10:00:00Z',
+          messages: [],
+        },
+        {
+          id: 'point-review-sibling-agent',
+          workspaceId: sibling,
+          backendSessionId: null,
+          name: 'sibling',
+          status: 'idle',
+          createdAt: '2026-10-13T10:00:00Z',
+          updatedAt: '2026-10-13T10:00:00Z',
+          messages: [],
+        },
+      ] as never),
+    );
+    expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeDefined();
+    expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+    const newScope = () =>
+      registry.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: () => () => {},
+          dispose: () => {},
+          request: async () => ({}),
+        }),
+      );
+    let scope = newScope();
+    const install = () =>
+      installWorkspaceListRecovery(
+        scope,
+        {
+          getState: () => appStore.state,
+          dispatch: (action) => appStore.dispatch(action),
+          subscribe: (listener) => appStore.getReadableState().subscribe(() => listener()),
+        },
+        retireWorkspaceAfterRecovery,
+      );
+    let stopOwner = install();
+    let finish!: (outcome: { errors: unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: unknown[]; retired: boolean }>((resolve) => {
+      finish = resolve;
+    });
+    const denial = Object.assign(new Error('workspace denied'), {
+      rpcCode: code,
+      data: { code: code === -32602 ? 'not-found' : 'forbidden' },
+    });
+    const error = late ? Object.assign(new Error('logical timeout'), { completion }) : denial;
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.get' ? Promise.reject(error) : Promise.resolve({}),
+    );
+    const trigger = (which = kind) => {
+      if (which === 'normalized') {
+        appStore.dispatch(refreshWorkspaceMembershipRequested(ws));
+        return;
+      }
+      const type =
+        which === 'missing'
+          ? 'workspace:waiting-changed'
+          : which === 'activity'
+            ? 'agent:idle'
+            : 'agent:deleted';
+      const data =
+        which === 'missing'
+          ? { workspaceId: ws, waiting: true }
+          : { agentId: 'point-review-trigger-agent', status: 'idle', isActive: false };
+      return routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'point-review',
+          event: {
+            id: 'point-review-event',
+            type,
+            workspaceId: ws,
+            timestamp: '2026-10-13T10:00:00Z',
+            data,
+          },
+        },
+        'point-review',
+      );
+    };
+    const reads = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+    const flushPoint = async () => {
+      await flush();
+      await flush();
+      await settle();
+    };
+    return {
+      registry,
+      key,
+      ws,
+      sibling,
+      seed,
+      trigger,
+      reads,
+      flushPoint,
+      finish,
+      denial,
+      push: () => {
+        registry.push(key);
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([updateWorkspaceEntity(ws, { title: 'newer title' })]),
+        );
+      },
+      authorityABA: () => {
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([
+            updateWorkspaceEntity(ws, { myRole: 'collaborator', canManage: false }),
+          ]),
+        );
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([
+            updateWorkspaceEntity(ws, { myRole: 'owner', canManage: true }),
+          ]),
+        );
+      },
+      principalABA: async () => {
+        appStore.dispatch(principalContextChanged(null));
+        admitLegacyPrincipal();
+      },
+      replaceSession: () => {
+        stopOwner();
+        scope = newScope();
+        seed();
+        stopOwner = install();
+      },
+      close: () => {
+        finish({ errors: [], retired: true });
+        stopOwner();
+        registry.dispose();
+        backendRequestSpy.mockReset();
+      },
+    };
+  }
+  it.each(
+    ['missing', 'activity', 'aggregate', 'normalized'].flatMap((kind) =>
+      [-32003, -32001, -32602].map((code) => ({ kind, code })),
+    ),
+  )(
+    'point denial: $kind canonical $code preserves sibling and global authority',
+    async ({ kind, code }) => {
+      const h = await setupPoint(kind, code);
+      try {
+        await h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toEqual([['workspace.get', { workspaceId: h.ws }]]);
+        expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+        expect(appStore.state.workspace.workspaces.map[h.ws]).toBeUndefined();
+        expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+        expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeUndefined();
+        expect(h.registry.captureAuthority(h.key).isCurrent()).toBe(true);
+      } finally {
+        h.close();
+      }
+    },
+  );
+  it.each(['push', 'authorityABA', 'principalABA', 'replaceSession'])(
+    'point denial: normalized late denial respects %s',
+    async (change) => {
+      const h = await setupPoint('normalized', -32003, true);
+      try {
+        h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toHaveLength(1);
+        expect(appStore.state.workspace.workspaces.map[h.ws]).toBeDefined();
+        await h[change]();
+        h.finish({ errors: [h.denial], retired: false });
+        await h.flushPoint();
+        expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+        if (change === 'push')
+          expect(appStore.state.workspace.workspaces.map[h.ws]).toBeUndefined();
+        else expect(appStore.state.workspace.workspaces.map[h.ws]).toBeDefined();
+        expect(h.reads()).toHaveLength(1);
+      } finally {
+        h.close();
+      }
+    },
+  );
+  it('point denial: normalized and raw callers retain separate response keys', async () => {
+    const h = await setupPoint('aggregate', -32003);
+    const releases: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.get'
+        ? new Promise((resolve) => releases.push(resolve))
+        : Promise.resolve({}),
+    );
+    try {
+      const raw = h.trigger();
+      h.trigger('normalized');
+      await h.flushPoint();
+      const count = h.reads().length;
+      for (const resolve of releases)
+        resolve({
+          workspace: {
+            id: h.ws,
+            title: 'fresh',
+            myRole: 'owner',
+            canManage: true,
+            memberCount: 3,
+            openInviteCount: 2,
+          },
+        });
+      await raw;
+      await h.flushPoint();
+      expect(count).toBe(2);
+      expect(appStore.state.workspace.workspaces.map[h.ws].memberCount).toBe(3);
+      expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+      expect(h.reads()).toHaveLength(2);
+    } finally {
+      for (const resolve of releases) resolve({});
+      h.close();
+    }
+  });
+  it.each(['late', 'push', 'readd', 'readdRemoved', 'replaceSession'])(
+    'point denial: absent workspace retains only original authority after %s',
+    async (change) => {
+      const h = await setupPoint('missing', -32003, true);
+      try {
+        await h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toHaveLength(1);
+        if (change === 'push') h.push();
+        if (change === 'readd' || change === 'readdRemoved') h.seed();
+        if (change === 'readdRemoved') {
+          const { removeWorkspaceEntity } =
+            await import('$store/renderer/slices/workspace/workspace-slice');
+          appStore.dispatch(removeWorkspaceEntity(h.ws));
+        }
+        if (change === 'replaceSession') h.replaceSession();
+        h.finish({ errors: [h.denial], retired: false });
+        await h.flushPoint();
+        expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+        if (change === 'late' || change === 'push')
+          expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeUndefined();
+        else expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeDefined();
+        expect(h.reads()).toHaveLength(1);
+      } finally {
+        h.close();
+      }
+    },
+  );
+});

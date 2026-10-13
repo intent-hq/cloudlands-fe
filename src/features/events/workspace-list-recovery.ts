@@ -1,4 +1,5 @@
 import type { RendererRecoveryScope } from './renderer-event-recovery';
+import { runtimeReadDrained } from './runtime-read-lane';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { StoreState } from '$store/renderer/types';
 import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
@@ -11,7 +12,11 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 
 export const WORKSPACE_LIST_RECOVERY_KEY = 'workspace-list';
-let captureProjectionFailure: ((workspaceId: string) => (error: unknown) => void) | undefined;
+interface ProjectionFailure {
+  onFailure(error: unknown): void;
+  release(): void;
+}
+let captureProjectionFailure: ((workspaceId: string) => ProjectionFailure) | undefined;
 export function runWorkspaceListRead<T>(receipt: RecoveryLifetime, read: () => Promise<T>) {
   return runRecoveryRead(WORKSPACE_LIST_RECOVERY_KEY, receipt, 'ordinary', 'list', read);
 }
@@ -21,11 +26,21 @@ export function runWorkspaceProjectionRead<T>(
   read: () => Promise<T>,
   requestKey = `get:${workspaceId}`,
 ) {
-  return runRecoveryRead(WORKSPACE_LIST_RECOVERY_KEY, receipt, 'ordinary', requestKey, read, {
-    retireOnDenied: false,
-    retireOnNotFound: false,
-    onFailure: captureProjectionFailure?.(workspaceId),
-  });
+  const failure = captureProjectionFailure?.(workspaceId);
+  const result = runRecoveryRead(
+    WORKSPACE_LIST_RECOVERY_KEY,
+    receipt,
+    'ordinary',
+    requestKey,
+    read,
+    {
+      retireOnDenied: false,
+      retireOnNotFound: false,
+      onFailure: failure?.onFailure,
+    },
+  );
+  if (failure) void runtimeReadDrained(result).then(failure.release, failure.release);
+  return result;
 }
 interface RecoveryStore {
   getState(): StoreState;
@@ -49,6 +64,7 @@ export function installWorkspaceListRecovery(
     });
   let active = true;
   const incarnations = new Map<string, { authority: string }>();
+  const pendingPoints = new Map<string, number>();
   const current = () =>
     active &&
     scope.isCurrent() &&
@@ -63,12 +79,17 @@ export function installWorkspaceListRecovery(
     }
     const workspace = store.getState().workspace;
     const present = new Set<string>(workspace.workspaces.ids);
-    for (const id of incarnations.keys()) if (!present.has(id)) incarnations.delete(id);
-    for (const id of workspace.workspaces.ids) {
-      const row = workspace.workspaces.map[id];
+    for (const id of incarnations.keys())
+      if (!present.has(id) && !pendingPoints.has(id)) incarnations.delete(id);
+    const rows = new Map(
+      workspace.workspaces.ids.map((id) => [String(id), workspace.workspaces.map[id]]),
+    );
+    for (const id of new Set([...present, ...pendingPoints.keys()])) {
+      const row = rows.get(id);
       const authority = JSON.stringify([
-        row.myRole,
-        row.canManage,
+        !!row,
+        row?.myRole,
+        row?.canManage,
         workspace.capabilityContext,
         workspace.deletionTokens[id],
       ]);
@@ -77,16 +98,26 @@ export function installWorkspaceListRecovery(
   };
   observe();
   const unsubscribe = store.subscribe(observe);
-  const capture = (workspaceId: string) => {
+  const capture = (workspaceId: string): ProjectionFailure => {
+    pendingPoints.set(workspaceId, (pendingPoints.get(workspaceId) ?? 0) + 1);
+    observe();
     const incarnation = incarnations.get(workspaceId);
-    return (error: unknown) => {
-      const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
-      const canonical =
-        failure?.rpcCode === -32003 ||
-        failure?.rpcCode === -32001 ||
-        (failure?.rpcCode === -32602 && failure.data?.code === 'not-found');
-      if (canonical && current() && incarnation && incarnations.get(workspaceId) === incarnation)
-        purge(workspaceId);
+    return {
+      onFailure: (error: unknown) => {
+        const failure = error as { rpcCode?: unknown; data?: { code?: unknown } } | null;
+        const canonical =
+          failure?.rpcCode === -32003 ||
+          failure?.rpcCode === -32001 ||
+          (failure?.rpcCode === -32602 && failure.data?.code === 'not-found');
+        if (canonical && current() && incarnation && incarnations.get(workspaceId) === incarnation)
+          purge(workspaceId);
+      },
+      release: () => {
+        const remaining = (pendingPoints.get(workspaceId) ?? 1) - 1;
+        if (remaining) pendingPoints.set(workspaceId, remaining);
+        else pendingPoints.delete(workspaceId);
+        observe();
+      },
     };
   };
   captureProjectionFailure = capture;
