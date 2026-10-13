@@ -526,4 +526,70 @@ describe('sidecar gave-up notifier (crash-loop surfacing)', () => {
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     expect(getConnectionMode()).toBe('external');
   });
+
+  it.each([
+    ['restart', 'absent', 'absent'],
+    ['restart', 'starting', 'absent'],
+    ['on-demand', 'absent', 'absent'],
+    ['on-demand', 'starting', 'absent'],
+    ['restart', 'absent', 'starting'],
+    ['on-demand', 'absent', 'starting'],
+  ])(
+    'ignores a late %s probe reporting %s after the winning probe reports %s',
+    async (late, response, winnerResponse) => {
+      mockProbeSocket(null);
+      const exits: Array<(code: number, signal: null) => void> = [];
+      mockSpawnCapturingExit(exits);
+      await spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd');
+      vi.useFakeTimers();
+      const probes: Array<{ finish(response: string): void }> = [];
+      mockConnect.mockImplementation(() => {
+        const handlers = new Map<string, (arg?: unknown) => void>();
+        probes.push({
+          finish(response) {
+            if (response === 'absent') handlers.get('error')?.(new Error('connection refused'));
+            else
+              handlers.get('data')?.(
+                Buffer.from(
+                  JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    error: { code: -32012 },
+                  }) + '\n',
+                ),
+              );
+          },
+        });
+        return {
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event, handler) => {
+            handlers.set(event, handler);
+          }),
+        } as never;
+      });
+      exits[0](1, null);
+      await vi.advanceTimersByTimeAsync(1001);
+      const recovery = spawnSidecarOnDemand(
+        { INTENTD_BIN: '/fake/intentd' },
+        false,
+        '/resources',
+        '/cwd',
+      );
+      expect(probes).toHaveLength(2);
+      const lateIndex = late === 'restart' ? 0 : 1;
+      const spawned = winnerResponse === 'absent';
+      probes[1 - lateIndex].finish(winnerResponse);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockSpawn).toHaveBeenCalledTimes(spawned ? 2 : 1);
+      probes[lateIndex].finish(response);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await recovery).toMatchObject({
+        ok: spawned || late === 'restart',
+        spawned: spawned && late === 'restart',
+      });
+      expect(mockSpawn).toHaveBeenCalledTimes(spawned ? 2 : 1);
+      expect(getConnectionMode()).toBe(spawned ? 'sidecar' : 'external');
+    },
+  );
 });

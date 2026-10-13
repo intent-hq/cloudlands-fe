@@ -106,8 +106,9 @@ const SIDECAR_PROBE_TIMEOUT_MS = 3000;
 const SIDECAR_STEADY_PROBE_INTERVAL_MS = 10_000;
 
 /**
- * Per-spawn identity token, bumped whenever the process we supervise changes
- * (spawn, exit, stop, test reset).
+ * Ownership identity token, bumped whenever the process we supervise changes
+ * (spawn, exit, stop, adoption, test reset). Acquisition probes use the same
+ * token so late results cannot spawn over or relabel a replacement.
  *
  * A readiness probe can still be in flight (up to 3s) when the daemon crashes
  * and the restart backoff spawns a replacement. Without an identity check, that
@@ -129,7 +130,7 @@ let readyStartedAt = 0;
 
 /**
  * Arm a fresh startup readiness window and invalidate in-flight probes from the
- * previous process (called per spawn, and on exit/stop/test reset).
+ * previous owner (called per spawn/adoption, and on exit/stop/test reset).
  */
 function resetReadinessState(): void {
   sidecarGeneration++;
@@ -1013,18 +1014,20 @@ async function spawnSidecarProcess(
       reason: decision.reason,
     });
 
-    // Schedule restart after backoff delay
+    // Capture at scheduling time: recovery may acquire an owner during backoff.
+    const restartGeneration = sidecarGeneration;
     restartTimer = setTimeout(async () => {
       restartTimer = null;
-      if (isShuttingDown) {
-        logger.info('Skipping restart; shutdown in progress');
+      if (isShuttingDown || sidecarGeneration !== restartGeneration || sidecarProcess) {
+        logger.info('Skipping restart; shutdown or daemon ownership changed');
         return;
       }
       // A different daemon may have acquired the socket during backoff. Any
       // response (including startup/failed admission) still owns its data dir.
       const probe = await probeDaemonVersion(socketPath);
-      if (isShuttingDown) return;
+      if (isShuttingDown || sidecarGeneration !== restartGeneration || sidecarProcess) return;
       if (probe.alive) {
+        resetReadinessState();
         if (!isIsolatedTestBuild()) {
           setConnectionMode('external');
           refreshLocalUpdateSupportedAfterModeResolution();
@@ -1103,7 +1106,10 @@ export async function startIntentdSidecar(
   }
 
   const socketPath = resolveSocketPath(env);
+  if (isSidecarRunning()) return;
+  const acquisitionGeneration = sidecarGeneration;
   const probe = await probeDaemonVersion(socketPath);
+  if (sidecarGeneration !== acquisitionGeneration || isSidecarRunning()) return;
   // Record the local daemon's protocolVersion as the stable baseline for the
   // multi-backend protocol-compat check (survives renderer client disposal;
   // see [[localDaemonProtocolVersion]]). Only a live daemon reports a version —
@@ -1117,6 +1123,7 @@ export async function startIntentdSidecar(
     // A live daemon owns the socket (and the data dir behind it): ALWAYS
     // adopt it — never spawn a second daemon alongside. Version mismatch is
     // warn-only, surfaced to the renderer via the transport payload.
+    resetReadinessState();
     setConnectionMode('external');
     const pinnedVersion = readPinnedVersion({ isPackaged, resourcesPath });
     const comparison =
@@ -1334,10 +1341,19 @@ async function doSpawnSidecarOnDemand(
   // Readiness is deliberately false while indexing; ownership is not. Match
   // initial acquisition and preserve every responding daemon, even when its
   // startup snapshot is failed or from an unknown schema version.
-  if ((await probeDaemonVersion(socketPath)).alive) {
+  const acquisitionGeneration = sidecarGeneration;
+  const probe = await probeDaemonVersion(socketPath);
+  if (isSidecarRunning()) {
+    return { ok: true, spawned: false, reason: 'sidecar already running' };
+  }
+  if (sidecarGeneration !== acquisitionGeneration) {
+    return { ok: false, spawned: false, reason: 'daemon ownership changed during acquisition' };
+  }
+  if (probe.alive) {
     if (isIsolatedTestBuild()) {
       return { ok: false, spawned: false, reason: 'isolated test socket is already owned' };
     }
+    resetReadinessState();
     setConnectionMode('external');
     // The client hello that reconnected to this revived socket may have fired
     // while the mode was still 'sidecar' (clearing the flag) — re-run the
