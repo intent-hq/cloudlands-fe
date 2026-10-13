@@ -1,3 +1,5 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { getRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -1243,6 +1245,54 @@ describe('lifecycleReadSaga', () => {
     return { task, dispatch, actions, getState: () => current.scripts };
   }
 
+  it('rejects a held script page after its recovery lifetime is superseded', async () => {
+    let current = state();
+    let live = true;
+    let resolve!: (page: unknown) => void;
+    const capture = vi.spyOn(rendererEventRecovery, 'capture').mockReturnValue({
+      isCurrent: () => live,
+      commit: (apply) => {
+        if (!live) return false;
+        apply();
+        return true;
+      },
+    });
+    mocks.scripts.listPage.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const channel = stdChannel();
+    const dispatch = (action: { type: string }) => {
+      const apply = () => {
+        current = { ...current, scripts: scriptsReducer(current.scripts, action) };
+      };
+      const receipt = getRecoveryLifetime(action);
+      if (receipt) receipt.commit(apply);
+      else apply();
+      return action;
+    };
+    const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
+    runningTasks.push(task);
+    try {
+      channel.put(refreshScripts(WS));
+      await settle();
+      live = false;
+      current.scripts = scriptsReducer(
+        current.scripts,
+        setActiveScriptsData(WS, [{ id: 'fresh' }] as never),
+      );
+      resolve({ scripts: [{ id: 'old' }], view: 'summary', nextCursor: 'old-cursor' });
+      await settle();
+      await settle();
+      expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['fresh']);
+      expect(current.scripts.byWorkspaceId[WS].nextCursor).not.toBe('old-cursor');
+    } finally {
+      capture.mockRestore();
+      await stop(task);
+    }
+  });
+
   it('exposes a supporting daemon load failure as retryable, not an empty list', async () => {
     mocks.scripts.supportsLifecycle = async () => true;
     mocks.scripts.list.mockRejectedValueOnce(new Error('history offline'));
@@ -1459,6 +1509,18 @@ describe('lifecycleReadSaga', () => {
       { type: 'context/hydrateContextItems', payload: [WS, []] },
       { type: 'context/hydrateContextItems', payload: [WS, []] },
     ]);
+    await stop(run.task);
+  });
+
+  it('rehydrates initialized context after its captured session retires', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const run = start();
+    run.channel.put(initContextForWorkspace(WS));
+    await settle();
+    rendererEventRecovery.dispose();
+    run.channel.put(initContextForWorkspace(WS));
+    await settle();
+    expect(mocks.workspaces.getContext.mock.calls).toEqual([[WS], [WS]]);
     await stop(run.task);
   });
 
@@ -2519,6 +2581,40 @@ describe('lifecycleReadSaga', () => {
       { type: 'changes/setLoadingOlderCommits', payload: [WS, false] },
     ]);
     await stop(run.task);
+  });
+
+  it('keeps ordinary agent metrics behind the captured recovery read lane', async () => {
+    const { trackAgentMetadataRead } = await import('$features/agent/agent-metadata-recovery');
+    const current = state();
+    current.agentSessions.byAgentId['agent-1'] = agent('agent-1');
+    let release!: () => void;
+    const recovery = trackAgentMetadataRead(
+      WS,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      'recovery',
+    );
+    const owner = vi.spyOn(rendererEventRecovery, 'hasOwner').mockReturnValue(true);
+    const run = start(current);
+    try {
+      run.channel.put(requestAgentLineStats('agent-1'));
+      await settle();
+      expect(mocks.getAgentLineStats).not.toHaveBeenCalled();
+      release();
+      await recovery;
+      await settle();
+      expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1', WS]]);
+      expect(run.actions).toContainEqual({
+        type: 'changes/clearAgentLineStats',
+        payload: { agentId: 'agent-1' },
+      });
+    } finally {
+      release();
+      owner.mockRestore();
+      await stop(run.task);
+    }
   });
 
   it('covers agent line-stat success, cache no-op, force, and failure', async () => {

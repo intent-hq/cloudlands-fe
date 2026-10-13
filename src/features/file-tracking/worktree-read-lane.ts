@@ -1,0 +1,39 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+/** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
+type SnapshotLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
+const lanes = new Map<string, SnapshotLane>();
+
+export function trackWorktreeSnapshotRead<T>(
+  key: string,
+  read: () => Promise<T>,
+  mode: 'ordinary' | 'recovery' = 'ordinary',
+): Promise<T> {
+  const lane: SnapshotLane = lanes.get(key) ?? { active: new Set<Promise<void>>() };
+  lanes.set(key, lane);
+  const previous =
+    mode === 'recovery'
+      ? lane.active.size
+        ? Promise.all([...lane.active])
+        : undefined
+      : lane.barrier;
+  const invoke = () => {
+    try {
+      return Promise.resolve(read());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+  const result = previous ? previous.then(invoke) : invoke();
+  const settled = result.then(
+    () => undefined,
+    (error) => (error instanceof RecoveryRequestTimeoutError ? error.drained : undefined),
+  );
+  lane.active.add(settled);
+  if (mode === 'recovery') lane.barrier = settled;
+  void settled.then(() => {
+    lane.active.delete(settled);
+    if (lane.barrier === settled) lane.barrier = undefined;
+    if (!lane.active.size && lanes.get(key) === lane) lanes.delete(key);
+  });
+  return result;
+}

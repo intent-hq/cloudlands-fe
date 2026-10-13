@@ -95,9 +95,14 @@ function mergeEventPage(
 // Actions
 // ---------------------------------------------------------------------------
 
-export const eventReceived = createAction<[workspaceId: string, event: WorkspaceEvent]>(
-  'workspaceEvents/eventReceived',
-);
+export const eventReceived = createAction<
+  [
+    workspaceId: string,
+    event: WorkspaceEvent,
+    applyAgentMetadata?: boolean,
+    applyActivity?: boolean,
+  ]
+>('workspaceEvents/eventReceived');
 export const bulkEventsReceived = createAction<[workspaceId: string, events: WorkspaceEvent[]]>(
   'workspaceEvents/bulkEventsReceived',
 );
@@ -164,31 +169,37 @@ workspaceEventsReducer.with(daemonEventsSubscribed, (state, { payload: [attempt]
         subscriptionGeneration: state.subscriptionGeneration + 1,
       },
 );
-workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, event] }) => {
-  const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
-  if (!safeEvent) return state;
-  const wsState = getWorkspaceState(state, workspaceId);
-  // Dedup by id against the current buffer: `eventsLoaded` seeds a boot
-  // snapshot from `event.query`, and a subsequent live push carrying the
-  // same id (fan-out gate notwithstanding) must not double-append.
-  if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
-  // STAB-2: Insert the new event in timestamp-sorted order (oldest→newest)
-  // instead of blindly appending. The boot snapshot from `eventsLoaded` is
-  // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
-  // order when live events arrive from the daemon-events-bridge.
-  const combined = [...wsState.events, safeEvent].sort((a, b) => {
-    const timeA = new Date(a.timestamp).getTime();
-    const timeB = new Date(b.timestamp).getTime();
-    return timeA - timeB;
-  });
-  const nextEvents = wsState.historyExpanded ? combined : combined.slice(-MAX_EVENTS);
-  return setWorkspaceState(state, workspaceId, {
-    ...wsState,
-    events: nextEvents,
-    pendingLiveEventIds:
-      wsState.pendingLiveEventIds === null ? null : [...wsState.pendingLiveEventIds, safeEvent.id],
-  });
-});
+workspaceEventsReducer.with(
+  eventReceived,
+  (state, { payload: [workspaceId, event, , applyActivity = true] }) => {
+    if (!applyActivity) return state;
+    const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
+    if (!safeEvent) return state;
+    const wsState = getWorkspaceState(state, workspaceId);
+    // Dedup by id against the current buffer: `eventsLoaded` seeds a boot
+    // snapshot from `event.query`, and a subsequent live push carrying the
+    // same id (fan-out gate notwithstanding) must not double-append.
+    if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
+    // STAB-2: Insert the new event in timestamp-sorted order (oldest→newest)
+    // instead of blindly appending. The boot snapshot from `eventsLoaded` is
+    // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
+    // order when live events arrive from the daemon-events-bridge.
+    const combined = [...wsState.events, safeEvent].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
+    const nextEvents = wsState.historyExpanded ? combined : combined.slice(-MAX_EVENTS);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      events: nextEvents,
+      pendingLiveEventIds:
+        wsState.pendingLiveEventIds === null
+          ? null
+          : [...wsState.pendingLiveEventIds, safeEvent.id],
+    });
+  },
+);
 workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
   const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
   if (safeEvents.length === 0) return state;

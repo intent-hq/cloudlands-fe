@@ -165,3 +165,44 @@ describe('M workspace lock caller fences', () => {
     },
   );
 });
+
+describe('lock recovery ordinary writer guard', () => {
+  it('rejects a held hydration after a newer owner push', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      onNotification: () => () => {},
+      request: async () => ({}) as never,
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      dispose: () => {},
+    });
+    scope.registerResource({
+      key: 'agent-locks:["ws-abc"]',
+      workspaceId: 'ws-abc',
+      eventTypes: ['changes:agent-locks'],
+      isCurrent: () => true,
+      read: async () => ({}),
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    let release!: (value: unknown) => void;
+    mockedRequest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    dispatchSpy.mockClear();
+    const pending = hydrateAgentLocks('ws-abc');
+    rendererEventRecovery.push('agent-locks:["ws-abc"]');
+    release({ lockedAgentIds: ['old'], lockedFilePaths: [] });
+    await pending;
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    rendererEventRecovery.dispose();
+  });
+});

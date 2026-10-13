@@ -56,6 +56,48 @@ const loss = (id = 'a', generation = '1'): RecoveryNotification => ({
   params: { subscriptionId: id, generation, scope: { workspaceId: 'ws-a' } },
 });
 describe('recovery coordinator', () => {
+  it('filters irrelevant payloads before push while preserving lease loss recovery', async () => {
+    const h = harness();
+    const read = vi.fn(async () => 'fresh');
+    const apply = vi.fn();
+    const owner = h.coordinator.registerResource({
+      key: 'filtered',
+      workspaceId: 'ws-a',
+      eventTypes: ['file:*'],
+      acceptsEvent: (n) =>
+        (n.params as { event: { data?: { relevant?: boolean } } }).event.data?.relevant === true,
+      read,
+      apply,
+      invalidate: () => {},
+      retire: () => {},
+    });
+    await h.coordinator.subscribe(params, { recover: true });
+    const before = owner.captureLifetime();
+    h.receive({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'a',
+        event: { type: 'file:changed', workspaceId: 'ws-a', data: { relevant: false } },
+      },
+    });
+    expect(before.commit(() => {})).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    h.receive(loss());
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith('fresh');
+    h.receive({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'a',
+        event: { type: 'file:changed', workspaceId: 'ws-a', data: { relevant: false } },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(read).toHaveBeenCalledTimes(1);
+    h.coordinator.dispose();
+  });
+
   for (const fixture of corpus.negotiation)
     it(`negotiation ${fixture.id}`, async () => {
       const h = harness(fixture.capability === 1);

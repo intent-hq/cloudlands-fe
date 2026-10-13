@@ -1,3 +1,4 @@
+import { getRecoveryAdmission } from '$store/renderer/middlewares/event-recovery';
 import { presenceMembershipChanged } from '$store/renderer/slices/presence/presence-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
@@ -834,6 +835,41 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('uses independent activity admission while rejecting missing agent metadata', async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const envelope = notification('agent:idle', { agentId: AGENT, status: 'idle' });
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { workspaceActivityRecoveryKey } = await import('./workspace-activity-recovery');
+    const key = workspaceActivityRecoveryKey(WS);
+    routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+      lifetimes: new Map([[key, rendererEventRecovery.capture(key)]]),
+    });
+    expect(readSession()?.status).toBe(AgentStatus.Active);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    expect(appStore.state.workspaceEvents.byWorkspaceId[WS]?.events.map((row) => row.id)).toContain(
+      envelope.params.event.id,
+    );
+    routeDaemonEventsNotification(envelope.method, envelope.params);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it('never restores the legacy settings writer for an empty integrated admission map', async () => {
+    await primeBridge();
+    const envelope = {
+      event: {
+        id: 'retired-settings',
+        type: 'settings:changed',
+        data: { changes: [{ path: 'mcp.enableUserServers', value: true }] },
+      },
+    };
+    const initial = appStore.state.mcpSettings.enabled;
+    routeDaemonEventsNotification('events.event', envelope, undefined, { lifetimes: new Map() });
+    expect(appStore.state.mcpSettings.enabled).toBe(initial);
+    routeDaemonEventsNotification('events.event', envelope);
+    expect(appStore.state.mcpSettings.enabled).toBe(true);
   });
 
   it('routes settings:changed (workspace-less) through applySettingsChanges into the mcp-settings slice', async () => {
@@ -4344,6 +4380,35 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     dispatch.mockRestore();
   });
 
+  it('carries rejected recovery admission to note and comment workers', async () => {
+    await primeBridge();
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    try {
+      for (const type of ['note:updated', 'comment:added']) {
+        const key = type.startsWith('note:')
+          ? `notes:${JSON.stringify([WS])}`
+          : `comments:${JSON.stringify([WS, 'n'])}`;
+        const envelope = notificationWithSub(type, { noteId: 'n' }, 'sub-1');
+        routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
+          lifetimes: new Map([[key, null]]),
+        });
+        const action = dispatch.mock.calls
+          .map(([action]) => action)
+          .find(
+            (action) =>
+              action.type ===
+              (type.startsWith('note:')
+                ? 'workspaceNotes/noteEventReceived'
+                : 'workspaceNotes/commentEventReceived'),
+          );
+        expect(action).toBeDefined();
+        expect(getRecoveryAdmission(action!, key)).toBeNull();
+      }
+    } finally {
+      dispatch.mockRestore();
+    }
+  });
+
   it('leaves adopted leases to ordered recovery ingress and never routes a loss as activity', async () => {
     await primeBridge();
     const envelope = notificationWithSub(
@@ -4361,6 +4426,10 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     );
     routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
       recovery: { ownsSubscription: (id) => id === 'sub-1' },
+    });
+    const { subscriptionId: _id, ...flat } = envelope.params;
+    routeDaemonEventsNotification(envelope.method, flat, ['sub-1'], {
+      recovery: { ownsSubscription: () => false },
     });
     routeDaemonEventsNotification(
       'events.lost',
@@ -13958,6 +14027,101 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     }
   });
 
+  it('integrated browser ingress rejects missing owners without legacy reads or tab writes', async () => {
+    const { selectWorkspaceBrowserTabsRevision } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    const revision = selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC);
+    backendRequestSpy.mockResolvedValue({ clients: [DESK_ROW] });
+    for (const notification of [
+      globalNotification('client:connected', { clientId: 'cli-desk', capabilities: {} }),
+      tabNotification('browser:tab-opened', { tab: TAB }),
+    ]) {
+      await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+        lifetimes: new Map(),
+      });
+    }
+    await flush();
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(revision);
+  });
+
+  it('integrated browser ingress awaits its original global roster receipt', async () => {
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { browserClientRecoveryKey } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-client-recovery');
+    let finish!: (value: unknown) => void;
+    backendRequestSpy.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const notification = globalNotification('client:updated', {
+      clientId: 'cli-desk',
+      capabilities: {},
+    });
+    const receipt = rendererEventRecovery.capture(browserClientRecoveryKey());
+    let settled = false;
+    const completion = Promise.resolve(
+      routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+        lifetimes: new Map([[browserClientRecoveryKey(), receipt]]),
+      }),
+    ).then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+    expect(backendRequestSpy.mock.calls).toEqual([['client.list', undefined]]);
+    finish({ clients: [DESK_ROW] });
+    await completion;
+    expect(receipt.commit(() => undefined)).toBe(true);
+  });
+
+  it('integrated browser pin uses its own admission independently of workspace-list', async () => {
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { browserClientRecoveryKey } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-client-recovery');
+    const { selectWorkspaceBrowserClient } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BC,
+        title: 'Browser pin',
+        status: 'active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as never),
+    );
+    const notification = tabNotification('workspace:updated', {
+      workspaceId: WS_BC,
+      changes: { browserClientId: 'cli-desk' },
+    });
+    const before = selectWorkspaceBrowserClient.select(appStore.state, WS_BC);
+    const pinned = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    backendRequestSpy.mockResolvedValue({ browserClient: pinned });
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([['workspace-list', rendererEventRecovery.capture('workspace-list')]]),
+    });
+    await flush();
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(before);
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    const receipt = rendererEventRecovery.capture(browserClientRecoveryKey(WS_BC));
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([[browserClientRecoveryKey(WS_BC), receipt]]),
+    });
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(pinned);
+    expect(backendRequestSpy.mock.calls).toEqual([
+      ['workspace.getBrowserClient', { workspaceId: WS_BC }],
+    ]);
+    expect(receipt.commit(() => undefined)).toBe(true);
+  });
+
   it.each(['client:connected', 'client:updated'])(
     '%s (global, no workspaceId) re-reads client.list and stores the rows',
     async (eventType) => {
@@ -14286,3 +14450,106 @@ it.each([
     }
   },
 );
+
+describe('production recovery owner installation', () => {
+  it('recovers final locks and Git state through the full installer with exact reads', async () => {
+    const { installRendererRecoveryOwners } = await import('./renderer-recovery-owners');
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { selectPrincipalActionContext } =
+      await import('$store/renderer/slices/principal/principal-selectors');
+    const { setWorkspaceEntity, setWorkspaceHasLoaded } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    const { setAgentLockState } =
+      await import('$store/renderer/slices/agent-lock/agent-lock-slice');
+    appStore.init();
+    admitLegacyPrincipal();
+    const ws = 'integrated-final-loss';
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: ws,
+        title: 'Integration',
+        status: 'active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as never),
+    );
+    appStore.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        appStore.state.connections.windowBackendId,
+        selectPrincipalActionContext.select(appStore.state),
+      ),
+    );
+    appStore.dispatch(openWorkspaceTab(ws));
+    appStore.dispatch(setAgentLockState(ws, { old: true }, { 'old.ts': true }));
+    let receive!: (notification: any) => void;
+    const request = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
+      if (method === 'events.subscribe') return { subscriptionId: 'integrated', lossRecovery: 1 };
+      if (method === 'events.fence') return params;
+      if (method === 'events.unsubscribe') return {};
+      if (method === 'file-tracking.getAgentLocks')
+        return { lockedAgentIds: ['new'], lockedFilePaths: ['new.ts'] };
+      if (method === 'git.status')
+        return {
+          branch: 'current',
+          ahead: 0,
+          behind: 0,
+          files: [{ path: 'new.ts', status: 'modified', staged: true }],
+        };
+      throw new Error(method);
+    });
+    const stopOwners = rendererEventRecovery.onSession((scope) =>
+      installRendererRecoveryOwners(scope, {
+        getState: () => appStore.state,
+        dispatch: (action) => appStore.dispatch(action),
+        subscribe: (listener) => appStore.getReadableState().subscribe(() => listener()),
+      }),
+    );
+    try {
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: (fn) => {
+            receive = fn;
+            return () => {};
+          },
+          dispose: () => {},
+          request: async (method, params, observe) => {
+            const result = await request(method, params);
+            observe?.(result);
+            return result;
+          },
+        }),
+        (notification, lifetimes) =>
+          routeDaemonEventsNotification(notification.method, notification.params, ['integrated'], {
+            lifetimes,
+          }),
+      );
+      await scope.subscribe(
+        { workspaceId: ws, eventTypes: ['changes:agent-locks', 'changes:git-status'] },
+        { recover: true },
+      );
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'integrated', generation: '1', scope: { workspaceId: ws } },
+      });
+      for (let i = 0; i < 200; i++) await Promise.resolve();
+      expect(appStore.state.agentLock.byWorkspaceId[ws].lockedAgentIds).toEqual({ new: true });
+      expect(appStore.state.git.byWorkspaceId[ws].status?.branch).toBe('current');
+      expect(
+        request.mock.calls.filter(([method]) => method === 'file-tracking.getAgentLocks'),
+      ).toHaveLength(1);
+      expect(request.mock.calls.filter(([method]) => method === 'git.status')).toHaveLength(1);
+      expect(request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(4);
+    } finally {
+      stopOwners();
+      rendererEventRecovery.dispose();
+    }
+  });
+});

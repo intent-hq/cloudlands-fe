@@ -1,3 +1,7 @@
+import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { agentLocksRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { takeEveryFromSelector } from '@themislib/themis/saga';
 import { channel, buffers } from 'redux-saga';
 import { call, fork, join, put, type SagaGenerator } from 'typed-redux-saga';
@@ -17,14 +21,18 @@ import {
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 
 function* hydrate(workspaceId: string): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(agentLocksRecoveryKey(workspaceId));
   yield* put(syncWorkspaceSettings(workspaceId));
   const agents = yield* selectLockedAgentIds.effect(workspaceId);
   const files = yield* selectLockedFilePaths.effect(workspaceId);
   let result = { lockedAgentIds: [] as string[], lockedFilePaths: [] as string[] };
   try {
-    result = yield* call(backendRequest<typeof result>, 'file-tracking.getAgentLocks', {
-      workspaceId,
-    });
+    result = yield* call(() =>
+      trackWorktreeSnapshotRead(agentLocksRecoveryKey(workspaceId), () => {
+        if (!receipt.commit(() => undefined)) throw new Error('Lock authority expired');
+        return backendRequest<typeof result>('file-tracking.getAgentLocks', { workspaceId });
+      }),
+    );
   } catch {
     // Preserve the existing unlocked fallback; a live event always wins over this read.
   }
@@ -33,10 +41,13 @@ function* hydrate(workspaceId: string): SagaGenerator<void> {
     files === (yield* selectLockedFilePaths.effect(workspaceId))
   ) {
     yield* put(
-      setAgentLockState(
-        workspaceId,
-        toLockRecord(result.lockedAgentIds),
-        toLockRecord(result.lockedFilePaths),
+      withRecoveryLifetime(
+        setAgentLockState(
+          workspaceId,
+          toLockRecord(result.lockedAgentIds),
+          toLockRecord(result.lockedFilePaths),
+        ),
+        receipt,
       ),
     );
   }

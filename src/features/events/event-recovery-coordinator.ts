@@ -6,16 +6,24 @@ import {
 import { RecoveryResource, type RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
 
-interface RecoveryReader {
+export interface RecoveryReader {
   readonly lifetime: RecoveryLifetime;
   request<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
-interface ResourceOwner<T> extends RecoveryScope {
+/** Null means the matching owner's push was rejected; absence means no matching owner. */
+export type AdmittedEventLifetimes = ReadonlyMap<string, RecoveryLifetime | null>;
+export type AdmittedEventObserver = (
+  notification: RecoveryNotification,
+  lifetimes: AdmittedEventLifetimes,
+) => void | Promise<void>;
+export interface ResourceOwner<T> extends RecoveryScope {
   /** Workspace/entity/read key local to this captured backend/principal session.
    * Use reader.lifetime.key (opaque object), never this string, for shared read caches.
    */
   key: string;
   active?: boolean;
+  /** Filter irrelevant payloads without weakening lease loss coverage. */
+  acceptsEvent?(notification: RecoveryNotification): boolean;
   /** Opt in only with source revisions or proven commit/publication serialization. */
   sourceOrdered?: boolean;
   read(reader: RecoveryReader): Promise<T>;
@@ -38,6 +46,7 @@ interface Registration {
     'setLeases' | 'invalidate' | 'push' | 'dispose' | 'captureLifetime'
   >;
   onEvent?: ResourceOwner<unknown>['onEvent'];
+  acceptsEvent?: ResourceOwner<unknown>['acceptsEvent'];
 }
 interface SubscribeParams {
   eventTypes: readonly string[];
@@ -67,6 +76,7 @@ export class EventRecoveryCoordinator {
   constructor(
     private readonly session: EventRecoverySession,
     private readonly unhandled?: (notification: RecoveryNotification) => void | Promise<void>,
+    private readonly admitted?: AdmittedEventObserver,
   ) {
     this.admission = new RecoveryAdmission(this.context, (lease) => {
       if (this.admitting) this.deferredLoss.add(lease);
@@ -106,6 +116,7 @@ export class EventRecoveryCoordinator {
       scope: { workspaceId: owner.workspaceId, eventTypes: [...owner.eventTypes] },
       resource,
       onEvent: owner.onEvent,
+      acceptsEvent: owner.acceptsEvent,
     };
     this.resources.set(owner.key, row);
     this.updateLeaseSets();
@@ -117,6 +128,7 @@ export class EventRecoveryCoordinator {
       setActive: (active: boolean) => resource.setActive(active),
       changeLifetime: () => resource.changeLifetime(),
       refresh: () => resource.refresh(),
+      invalidate: () => resource.invalidate(),
       /** Use for additional mutation owners which participate in this same lifetime. */
       push: () => resource.push(),
       captureLifetime: () => resource.captureLifetime(),
@@ -249,21 +261,32 @@ export class EventRecoveryCoordinator {
     let handled = false;
     let blocked = false;
     const pending: Promise<void>[] = [];
-    for (const row of this.resources.values()) {
+    const lifetimes = new Map<string, RecoveryLifetime | null>();
+    for (const [key, row] of this.resources) {
       if (
         !overlaps(row.scope, lease) ||
         !row.scope.eventTypes.some((pattern) => matches(pattern, event.type as string))
       )
         continue;
       if (row.scope.workspaceId !== null && event.workspaceId !== row.scope.workspaceId) continue;
+      if (row.acceptsEvent && !row.acceptsEvent(notification)) {
+        lifetimes.set(key, null);
+        blocked = true;
+        continue;
+      }
+      const accepted = row.resource.push();
+      const lifetime = accepted ? row.resource.captureLifetime() : null;
+      lifetimes.set(key, lifetime);
       if (row.onEvent) {
         handled = true;
-        if (row.resource.push()) {
-          const result = row.onEvent(notification, row.resource.captureLifetime());
+        if (lifetime) {
+          const result = row.onEvent(notification, lifetime);
           if (result) pending.push(result);
         }
-      } else if (!row.resource.push()) blocked = true;
+      } else if (!accepted) blocked = true;
     }
+    const receipt = this.admitted?.(notification, lifetimes);
+    if (receipt) pending.push(receipt);
     if (!handled && !blocked) {
       const result = this.unhandled?.(notification);
       if (result) pending.push(result);
