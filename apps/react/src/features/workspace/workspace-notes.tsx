@@ -1,6 +1,8 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
-import { Link } from '@tanstack/react-router';
-import { useId, useLayoutEffect, useRef } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { MarkdownViewer } from '@/components/markdown/markdown-viewer';
+import { Button } from '@/components/ui/button';
 import { LoadingState } from '@/components/patterns/screen';
 import { NoteContentSurface } from '@/features/layout/tab-types/note-content-surface';
 import { store } from '@/store';
@@ -19,12 +21,18 @@ import {
   workspaceNotesHydrationRequested,
 } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { parseIntentLink } from '$shared/utils/intent-link-parser';
+import type { LinkHandlerOptions } from '$shared/utils/link-helpers';
+import { WorkspaceId } from '$shared/types/branded-ids';
 
 let nextHydrationGeneration = 0;
 
 function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: string }) {
   const consumerId = useId();
   const title = useRef<HTMLHeadingElement>(null);
+  const navigate = useNavigate();
+  const [showSource, setShowSource] = useState(false);
+  const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const authority = selectPrincipalConnectionContext();
   const note = selectNoteById(workspaceId, noteId);
   const view = selectNoteContentView(workspaceId, consumerId);
@@ -43,6 +51,43 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
   useLayoutEffect(() => {
     if (ready) title.current?.focus();
   }, [ready]);
+  function openNote(targetWorkspaceId: string, targetNoteId: string) {
+    void navigate({
+      to: '/workspaces/$workspaceId',
+      params: { workspaceId: targetWorkspaceId },
+      search: { note: targetNoteId },
+    });
+  }
+  function unsupportedLink() {
+    setNavigationMessage(
+      'This preview supports note links and web links. File and chat navigation are not connected yet.',
+    );
+  }
+  function openLink(url: string, options: LinkHandlerOptions): boolean {
+    const target = options.rawHref ?? url;
+    setNavigationMessage(null);
+    if (target.startsWith('intent://')) {
+      const link = parseIntentLink(target);
+      if (!link.valid) {
+        setNavigationMessage(link.error ?? 'This link is not valid.');
+      } else if (link.type === 'note' || link.type === 'task') {
+        openNote(link.workspaceId ?? workspaceId, link.resourceId);
+      } else {
+        unsupportedLink();
+      }
+      return true;
+    }
+    if (/^https?:\/\//.test(target)) {
+      window.open(target, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+    if (target.startsWith('#')) {
+      document.getElementById(target.slice(1))?.scrollIntoView();
+      return true;
+    }
+    unsupportedLink();
+    return true;
+  }
   return (
     <NoteContentSurface state={failed ? 'error' : !ready ? 'loading' : 'read-only'}>
       {failed ? (
@@ -51,18 +96,47 @@ function NoteContent({ workspaceId, noteId }: { workspaceId: string; noteId: str
         <LoadingState label="Loading note content" />
       ) : (
         <article className="grid min-w-0 gap-4" data-testid="workspace-note" data-note-id={noteId}>
-          <header className="grid gap-1">
-            <h2 ref={title} tabIndex={-1} className="type-heading-sm">
+          <header className="flex min-w-0 items-start gap-4">
+            <h2 ref={title} tabIndex={-1} className="type-heading-sm min-w-0 flex-1">
               {note.value?.title}
             </h2>
-            <p className="type-caption text-muted-foreground">Read-only Markdown source</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={showSource}
+              onClick={() => setShowSource(!showSource)}
+            >
+              Source
+            </Button>
           </header>
-          <pre
-            className="min-w-0 whitespace-pre-wrap break-words font-sans"
-            data-testid="note-content"
-          >
-            {note.value?.content}
-          </pre>
+          {navigationMessage && (
+            <output className="type-caption text-muted-foreground">{navigationMessage}</output>
+          )}
+          {showSource ? (
+            <pre
+              className="min-w-0 whitespace-pre-wrap break-words font-sans"
+              data-testid="note-content"
+            >
+              {note.value?.content}
+            </pre>
+          ) : (
+            <div className="min-w-0" data-testid="note-rendered-content">
+              <MarkdownViewer
+                content={note.value?.content ?? ''}
+                workspaceContext={{ workspaceId: WorkspaceId(workspaceId) }}
+                canOpenFile={() => false}
+                allowFileMedia={false}
+                canLoadMedia={(url) => /^(?:https?:|data:|blob:)/i.test(url.trim())}
+                taskBlockRenderMode="content"
+                renderRichFencesAsCode
+                renderDiagrams
+                forceExternalLinks
+                onOpenLink={openLink}
+                onOpenNote={openNote}
+                onOpenFile={unsupportedLink}
+              />
+            </div>
+          )}
         </article>
       )}
     </NoteContentSurface>

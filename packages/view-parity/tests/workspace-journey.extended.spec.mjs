@@ -42,6 +42,7 @@ test('real workspace notes survive navigation and release view state and browser
   let workspace;
   const noteLists = [];
   const noteReads = [];
+  const notesById = new Map();
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname !== '/intentd/ws') return;
     sockets.push(socket);
@@ -62,6 +63,12 @@ test('real workspace notes survive navigation and release view state and browser
         noteLists.push({ request, response });
       if (request.method === 'note.get' && request.params.noteId === noteId)
         noteReads.push({ request, response });
+      if (
+        request.method === 'note.get' &&
+        request.params.workspaceId === workspaceId &&
+        response.result?.note
+      )
+        notesById.set(request.params.noteId, response.result.note);
     });
   });
   try {
@@ -101,9 +108,32 @@ test('real workspace notes survive navigation and release view state and browser
     const note = noteReads[0].response.result.note;
     expect(note.id).toBe(noteId);
     const content = page.getByTestId('note-content');
-    await expect.poll(() => content.textContent()).toBe(note.content);
-    await expect(page.getByTestId('workspace-note').getByRole('heading')).toHaveText(note.title);
-    await expect(page.getByTestId('workspace-note').getByRole('heading')).toBeFocused();
+    const rendered = page.getByTestId('note-rendered-content');
+    const sourceToggle = page.getByRole('button', { name: 'Source', exact: true });
+    const assertSource = async (expected) => {
+      await sourceToggle.click();
+      await expect.poll(() => content.textContent()).toBe(expected);
+      await sourceToggle.click();
+      await expect(content).toHaveCount(0);
+    };
+    await expect(
+      page
+        .getByTestId('workspace-note')
+        .getByRole('heading', { name: note.title, exact: true })
+        .first(),
+    ).toBeFocused();
+    await assertSource(note.content);
+    const firstHeading = note.content.match(/^#{1,6} (.+)$/m)?.[1];
+    if (!firstHeading)
+      throw new Error('Choose a real Markdown note with a heading for this journey');
+    await expect(rendered.getByRole('heading', { name: firstHeading, exact: true })).toBeVisible();
+    if (note.content.includes('workspace-asset://')) {
+      await expect(rendered.getByTestId('media-unavailable').first()).toHaveAttribute(
+        'data-reason',
+        'unsupported',
+      );
+      await expect(rendered.locator('[src^="workspace-asset:"]')).toHaveCount(0);
+    }
     await expect(page.locator('[contenteditable="true"], textarea')).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: info.outputPath('real-note.png') });
@@ -113,7 +143,7 @@ test('real workspace notes survive navigation and release view state and browser
     });
     await page.setViewportSize({ width: 420, height: 900 });
     await expect
-      .poll(() => content.evaluate((element) => element.scrollWidth - element.clientWidth), {
+      .poll(() => rendered.evaluate((element) => element.scrollWidth - element.clientWidth), {
         message: 'Long saved note content must wrap within a narrow viewport',
       })
       .toBeLessThanOrEqual(1);
@@ -135,11 +165,11 @@ test('real workspace notes survive navigation and release view state and browser
       }, workspaceId);
     await expect.poll(async () => (await readState())?.views.length).toBe(1);
     await page.getByRole('link', { name: 'All notes', exact: true }).click();
-    await expect(content).toHaveCount(0);
+    await expect(page.getByTestId('workspace-note')).toHaveCount(0);
     await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toBeFocused();
     await expect.poll(async () => (await readState())?.views).toEqual([]);
     await page.goBack();
-    await expect.poll(() => content.textContent()).toBe(note.content);
+    await assertSource(note.content);
     await overview.getByRole('link', { name: 'Workspaces', exact: true }).click();
     await expect(overview).toHaveCount(0);
     await expect.poll(readState).toBeNull();
@@ -148,9 +178,18 @@ test('real workspace notes survive navigation and release view state and browser
     await expect(notes.locator(`a[data-note-id="${noteId}"]`)).toBeVisible();
     await notes.locator(`a[data-note-id="${noteId}"]`).click();
     await expect.poll(() => noteReads.length).toBeGreaterThan(1);
-    await expect
-      .poll(() => content.textContent())
-      .toBe(noteReads.at(-1).response.result.note.content);
+    await assertSource(noteReads.at(-1).response.result.note.content);
+    await page.getByRole('link', { name: 'All notes', exact: true }).click();
+    await notes.locator('a[data-note-id="spec"]').click();
+    const noteLink = rendered.locator('a[href^="intent://local/note/"]').first();
+    await expect(noteLink).toBeVisible();
+    const targetNoteId = new URL(await noteLink.getAttribute('href')).pathname.split('/').at(-1);
+    expect(noteLists[0].response.result.notes.some((row) => row.id === targetNoteId)).toBe(true);
+    await noteLink.click();
+    await expect.poll(() => notesById.get(targetNoteId)).toBeTruthy();
+    await expect(page.getByTestId('workspace-note')).toHaveAttribute('data-note-id', targetNoteId);
+    await assertSource(notesById.get(targetNoteId).content);
+    await expect.poll(async () => (await readState())?.views.length).toBe(1);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: info.outputPath('real-workspace.png') });
     await info.attach('real-workspace', {
@@ -200,4 +239,70 @@ test('real workspace notes survive navigation and release view state and browser
       contentType: 'application/json',
     });
   }
+});
+
+test('direct note links reload and recover from a missing note', async ({ page }, info) => {
+  const baseUrl = process.env.REACT_BASE_URL;
+  const workspaceId = process.env.REACT_WORKSPACE_ID;
+  const noteId = process.env.REACT_NOTE_ID;
+  if (!baseUrl || !workspaceId || !noteId)
+    throw new Error('Set the real daemon workspace journey environment');
+  const errors = await observeErrors(page);
+  const pending = new Map();
+  const reads = [];
+  const lists = [];
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname !== '/intentd/ws') return;
+    socket.on('framesent', ({ payload }) => {
+      const request = JSON.parse(String(payload));
+      if (request.method === 'note.get' || request.method === 'note.list')
+        pending.set(request.id, request);
+    });
+    socket.on('framereceived', ({ payload }) => {
+      const response = JSON.parse(String(payload));
+      const request = pending.get(response.id);
+      if (!request) return;
+      pending.delete(response.id);
+      (request.method === 'note.list' ? lists : reads).push({ request, response });
+    });
+  });
+  const directUrl = `${baseUrl}/workspaces/${encodeURIComponent(workspaceId)}?note=${encodeURIComponent(noteId)}`;
+  await page.goto(directUrl);
+  const note = page.getByTestId('workspace-note');
+  await expect(note).toHaveAttribute('data-note-id', noteId, { timeout: 60_000 });
+  await expect.poll(() => reads.length).toBeGreaterThan(0);
+  const first = reads.find((read) => read.request.params.noteId === noteId);
+  expect(first.request.params).toEqual({ workspaceId, noteId });
+  await expect(
+    note.getByRole('heading', { name: first.response.result.note.title, exact: true }).first(),
+  ).toBeFocused();
+  await page.reload();
+  await expect(note).toHaveAttribute('data-note-id', noteId, { timeout: 60_000 });
+  await expect
+    .poll(() => reads.filter((read) => read.request.params.noteId === noteId).length)
+    .toBeGreaterThan(1);
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await expect
+    .poll(() => page.getByTestId('note-content').textContent())
+    .toBe(
+      reads.filter((read) => read.request.params.noteId === noteId).at(-1).response.result.note
+        .content,
+    );
+  const missingId = `missing-note-${crypto.randomUUID()}`;
+  const listCount = lists.length;
+  await page.goto(`${baseUrl}/workspaces/${encodeURIComponent(workspaceId)}?note=${missingId}`);
+  await expect.poll(() => lists.length).toBeGreaterThan(listCount);
+  expect(lists.at(-1).request.params).toEqual({ workspaceId, projection: 'slim' });
+  expect(lists.at(-1).response.result.notes.some((row) => row.id === missingId)).toBe(false);
+  await expect(page.getByTestId('workspace-notes').getByRole('alert')).toBeVisible();
+  await expect(note).toHaveCount(0);
+  await page.getByRole('link', { name: 'All notes', exact: true }).click();
+  await page.locator(`a[data-note-id="${noteId}"]`).click();
+  await expect(note).toHaveAttribute('data-note-id', noteId);
+  await expect(page.getByTestId('note-rendered-content')).toBeVisible();
+  expect(errors).toEqual([]);
+  await info.attach('direct-note-wire', {
+    body: JSON.stringify({ reads, lists, errors }, null, 2),
+    contentType: 'application/json',
+  });
 });

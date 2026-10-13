@@ -24,6 +24,7 @@ interface MarkdownViewerDomProps {
   html: string;
   workspaceId?: string;
   allowFileMedia: boolean;
+  canLoadMedia?: MarkdownViewerProps['canLoadMedia'];
   canOpenFile?: () => boolean;
   renderDiagrams: boolean;
   onOpenLink: MarkdownViewerProps['onOpenLink'];
@@ -55,6 +56,7 @@ export function MarkdownViewerDom({
   html,
   workspaceId,
   allowFileMedia,
+  canLoadMedia,
   canOpenFile,
   renderDiagrams,
   onOpenLink,
@@ -111,7 +113,11 @@ export function MarkdownViewerDom({
   useLayoutEffect(() => {
     const target = range.current;
     if (!node || !target) return;
-    const admitted = filterFileMedia(html, allowFileMedia && canOpenFile?.() !== false);
+    const admitted = filterFileMedia(
+      html,
+      allowFileMedia && canOpenFile?.() !== false,
+      canLoadMedia,
+    );
     if (target.html === admitted) return;
     const template = document.createElement('template');
     template.innerHTML = admitted;

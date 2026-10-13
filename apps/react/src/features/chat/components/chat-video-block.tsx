@@ -14,6 +14,7 @@ export interface ChatVideoBlockProps {
   name?: string;
   poster?: string;
   allowFileMedia?: boolean;
+  canLoadMedia?: (url: string) => boolean;
   canOpenFile?: () => boolean;
   /** The host supplies real workspace file navigation for unavailable media. */
   onOpenLink: MediaUnavailableProps['onOpenLink'];
@@ -24,6 +25,7 @@ export function ChatVideoBlock({
   name = m.chat_videoBlock_fromAgent_label(),
   poster,
   allowFileMedia = true,
+  canLoadMedia,
   canOpenFile,
   onOpenLink,
 }: ChatVideoBlockProps) {
@@ -36,7 +38,10 @@ export function ChatVideoBlock({
   const videoUrl =
     source.kind === 'inline' ? `data:${source.mimeType};base64,${source.data}` : source.url;
   function canUseMedia(url: string) {
-    return canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false);
+    return (
+      canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false) &&
+      canLoadMedia?.(url) !== false
+    );
   }
   const blocked = !canUseMedia(videoUrl);
   const workspaceFile = parseWorkspaceFileImageUrl(videoUrl);
@@ -64,7 +69,11 @@ export function ChatVideoBlock({
     <>
       <div className="my-2 min-w-0 max-w-2xl" data-chat-video="">
         {blocked ? (
-          <MediaUnavailable name={name} reason="load-failed" onOpenLink={onOpenLink} />
+          <MediaUnavailable
+            name={name}
+            reason={canLoadMedia?.(videoUrl) === false ? 'unsupported' : 'load-failed'}
+            onOpenLink={onOpenLink}
+          />
         ) : frameUnavailable ? (
           <div className="flex items-center gap-2">
             <MediaUnavailable

@@ -34,6 +34,8 @@ export interface MarkdownViewerProps {
   canOpenFile?: () => boolean;
   /** Reactive authority for automatically loaded file media. */
   allowFileMedia?: boolean;
+  /** Host capability check, applied in addition to file provenance. */
+  canLoadMedia?: (url: string) => boolean;
   onFileClick?: (
     path: string,
     options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
@@ -81,6 +83,7 @@ export function MarkdownViewer({
   onFileClick,
   canOpenFile,
   allowFileMedia = true,
+  canLoadMedia,
   taskBlockRenderMode = 'placeholder',
   chatImageThumbnails = false,
   forceExternalLinks = false,
@@ -204,7 +207,10 @@ export function MarkdownViewer({
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
 
   function canUseMedia(url: string) {
-    return canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false);
+    return (
+      canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false) &&
+      canLoadMedia?.(url) !== false
+    );
   }
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
     if (
@@ -386,6 +392,7 @@ export function MarkdownViewer({
               <ChatVideoBlock
                 key={index}
                 allowFileMedia={allowFileMedia}
+                canLoadMedia={canLoadMedia}
                 canOpenFile={canOpenFile}
                 source={segment.source}
                 name={segment.name}
@@ -403,6 +410,7 @@ export function MarkdownViewer({
                 onFileClick={onFileClick}
                 canOpenFile={canOpenFile}
                 allowFileMedia={allowFileMedia}
+                canLoadMedia={canLoadMedia}
                 taskBlockRenderMode={taskBlockRenderMode}
                 chatImageThumbnails={chatImageThumbnails}
                 forceExternalLinks={forceExternalLinks}
@@ -428,6 +436,7 @@ export function MarkdownViewer({
           html={processedContent}
           workspaceId={workspaceId}
           allowFileMedia={allowFileMedia}
+          canLoadMedia={canLoadMedia}
           canOpenFile={canOpenFile}
           renderDiagrams={renderDiagrams}
           onOpenLink={onOpenLink}

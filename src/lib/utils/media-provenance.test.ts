@@ -36,4 +36,24 @@ describe('file media provenance', () => {
       '<img src="workspace-file://ws/image.png"><video src="workspace-file://ws/video.mp4"></video>';
     expect(filterFileMedia(html, true)).toBe(html);
   });
+  it('applies host capabilities to images, nested video sources and posters before mounting', () => {
+    const html = filterFileMedia(
+      '<img src="workspace-asset://ws/image.png" alt="Saved image"><video><source src="workspace-asset://ws/video.mp4"></video><video src="https://example.com/video.mp4" poster="workspace-asset://ws/poster.png"></video>',
+      true,
+      (url) => /^https?:/.test(url),
+    );
+    const inert = document.createElement('template');
+    inert.innerHTML = html;
+    expect(inert.content.querySelectorAll('[data-media-unsupported]')).toHaveLength(2);
+    expect(inert.content.querySelector('img')?.getAttribute('alt')).toBe('Saved image');
+    expect(inert.content.querySelector('video')?.getAttribute('src')).toBe(
+      'https://example.com/video.mp4',
+    );
+    expect(inert.content.querySelectorAll('[poster], source')).toHaveLength(0);
+    expect(html).not.toContain('workspace-asset:');
+  });
+  it('cannot override file provenance with a permissive host capability', () => {
+    const html = filterFileMedia('<img src="workspace-file://ws/image.png">', false, () => true);
+    expect(html).not.toContain('workspace-file:');
+  });
 });
