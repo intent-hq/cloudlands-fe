@@ -110,7 +110,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
 }));
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   replaceWorkspaceList: (workspaces: unknown) => ({
     type: 'workspace/replace',
     payload: workspaces,

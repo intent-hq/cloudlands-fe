@@ -69,7 +69,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   setWorkspaceEntity: vi.fn((entity: unknown) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: entity,
