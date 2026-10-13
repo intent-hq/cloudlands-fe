@@ -1382,6 +1382,7 @@ describe('captured repository socket dispatch', () => {
       },
     });
     const connection = client.getRepositoryConnection();
+    expect(client.getConfirmedClientId()).toBe('confirmed-client');
     expect(client.getNodeCapabilities()).toEqual({
       hostMembership: 1,
       personalPairing: 1,
@@ -1396,11 +1397,13 @@ describe('captured repository socket dispatch', () => {
     expect(sockets[0].writes).toHaveLength(1);
     const hello = client.request('client.hello');
     expect(client.getNodeCapabilities()).toBeNull();
+    expect(client.getConfirmedClientId()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
       '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
     );
     await hello;
+    expect(client.getConfirmedClientId()).toBe('confirmed-client');
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 0,
       localNodeIsolation: 0,
@@ -1409,6 +1412,7 @@ describe('captured repository socket dispatch', () => {
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();
+    expect(client.getConfirmedClientId()).toBeNull();
   });
   it('requires a positive current hello and sends synchronously on the first connection', async () => {
     const { client, sockets } = await connected();
@@ -1915,6 +1919,7 @@ describe('private repository connection evidence', () => {
     );
     await first;
     expect(client.getRepositoryConnection()).toBe(current);
+    expect(client.getConfirmedClientId()).toBe('current');
     expect(onHelloResult).toHaveBeenCalledTimes(2);
     expect(onHelloResult).toHaveBeenLastCalledWith({
       clientId: 'current',

@@ -254,6 +254,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     reject: (e: Error) => void;
   }> = [];
   private clientId: string | undefined;
+  private confirmedClientId: string | null = null;
   private helloConfirmed = false;
   private nodeCapabilities: Readonly<Record<string, unknown>> | null = null;
   private capabilityHelloGeneration = 0;
@@ -295,9 +296,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
     const socket = await this.ensureConnected();
     if (this.disposed || !this.connected || this.socket !== socket)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
-    if (!this.nodeCapabilities)
+    if (!this.nodeCapabilities || !this.confirmedClientId)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' });
-    return { server: { capabilities: this.nodeCapabilities } };
+    return { clientId: this.confirmedClientId, server: { capabilities: this.nodeCapabilities } };
   }
 
   private readonly recoveryReadyHandlers = new Set<() => void>();
@@ -513,6 +514,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
         if (method === 'client.hello') {
           this.nodeCapabilities = null;
+          this.confirmedClientId = null;
           this.checkRecoveryReady();
           for (const retire of [...this.recoveryRetired]) retire();
         }
@@ -533,6 +535,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                 const capabilities = (
                   result as { server?: { capabilities?: Record<string, unknown> } }
                 ).server?.capabilities;
+                this.confirmedClientId = clientId;
                 this.nodeCapabilities = Object.freeze({
                   ...capabilities,
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
@@ -844,6 +847,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private teardownSocket(): void {
     for (const retire of [...this.recoveryRetired]) retire();
     this.nodeCapabilities = null;
+    this.confirmedClientId = null;
     this.capabilityHelloGeneration += 1;
     this.checkRecoveryReady();
     this.protocolVersion = undefined;

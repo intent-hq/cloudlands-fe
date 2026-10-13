@@ -958,6 +958,7 @@ describe('observational node capabilities', () => {
       },
     });
     await expect(observing).resolves.toEqual({
+      clientId: 'A',
       server: {
         capabilities: {
           hostMembership: 1,
@@ -998,6 +999,7 @@ describe('observational node capabilities', () => {
       },
     });
     await expect(reconnecting).resolves.toEqual({
+      clientId: 'B',
       server: {
         capabilities: {
           agentNodes: 0,
@@ -1035,6 +1037,7 @@ describe('observational node capabilities', () => {
     });
     await older;
     await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      clientId: 'new',
       server: {
         capabilities: {
           agentNodes: 0,

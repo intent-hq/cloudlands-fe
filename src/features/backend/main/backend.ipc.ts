@@ -4630,12 +4630,13 @@ export function registerBackendHandlers(): void {
     try {
       const { client } = getBackendClientForIpcEvent(event);
       const capabilities = client.getNodeCapabilities();
-      if (!capabilities)
+      const clientId = client.getConfirmedClientId();
+      if (!capabilities || !clientId)
         return {
           ok: false,
           error: { code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' },
         };
-      return { ok: true, result: { server: { capabilities } } };
+      return { ok: true, result: { clientId, server: { capabilities } } };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }

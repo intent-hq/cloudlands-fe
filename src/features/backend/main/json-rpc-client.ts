@@ -289,6 +289,7 @@ export class JsonRpcClient extends EventEmitter {
     (connection: RepositoryConnection) => void
   >();
   private helloAttempt: object | null = null;
+  private confirmedClientId: string | null = null;
   private nodeCapabilities: Readonly<Record<string, unknown>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
@@ -575,6 +576,11 @@ export class JsonRpcClient extends EventEmitter {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
   }
 
+  /** Identity from the same positively acknowledged hello as getNodeCapabilities. */
+  getConfirmedClientId(): string | null {
+    return this.getRepositoryConnection() ? this.confirmedClientId : null;
+  }
+
   /** Subscribe before start: no replay can establish a missed physical feed. */
   onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
     this.repositoryObservers.add(listener);
@@ -603,6 +609,7 @@ export class JsonRpcClient extends EventEmitter {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
     this.nodeCapabilities = null;
+    this.confirmedClientId = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
 
@@ -670,6 +677,7 @@ export class JsonRpcClient extends EventEmitter {
       return;
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
+    this.confirmedClientId = result.clientId;
     this.nodeCapabilities = Object.freeze({
       ...capabilities,
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,

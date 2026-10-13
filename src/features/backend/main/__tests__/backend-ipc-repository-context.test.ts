@@ -329,7 +329,7 @@ it('production capability observation preserves full confirmed capabilities with
   const observed = await call(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, a.event, undefined);
   expect(observed).toMatchObject({
     ok: true,
-    result: { server: { capabilities: { repositoryContext: 1 } } },
+    result: { clientId: 'confirmed', server: { capabilities: { repositoryContext: 1 } } },
   });
   expect(count()).toBe(before);
   expect(remote.getRepositoryConnection()).toBe(connection);
@@ -349,7 +349,7 @@ it('production capability observation preserves full confirmed capabilities with
       JSON.stringify({
         id: frame.id,
         result: {
-          clientId: 'confirmed',
+          clientId: 'renewed',
           server: { capabilities: { hostMembership: 1, liveState: true } },
         },
       }) + '\n',
@@ -358,7 +358,10 @@ it('production capability observation preserves full confirmed capabilities with
   await renewing;
   expect(await call(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, a.event, undefined)).toMatchObject({
     ok: true,
-    result: { server: { capabilities: { hostMembership: 1, liveState: true } } },
+    result: {
+      clientId: 'renewed',
+      server: { capabilities: { hostMembership: 1, liveState: true } },
+    },
   });
   expect(count()).toBe(before + 1);
 });
