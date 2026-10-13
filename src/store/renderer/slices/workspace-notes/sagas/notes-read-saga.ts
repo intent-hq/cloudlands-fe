@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
 import {
@@ -268,6 +269,7 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (current.loading || (!force && current.initialized)) return;
   const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  const authority = rendererEventRecovery.captureAuthority(notesRecoveryKey(workspaceId));
   if (!lifetime.commit(() => undefined)) return;
   try {
     // Slim projection (§5.2): the initial hydrate does not need full bodies —
@@ -301,8 +303,14 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
         lifetime,
         loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }),
       ))
-    )
+    ) {
+      // A partial push cannot stand in for a whole-workspace snapshot. Keep
+      // convergence in the shared bounded recovery lane, under the original owner.
+      authority.commit(() => {
+        rendererEventRecovery.invalidate(notesRecoveryKey(workspaceId));
+      });
       return;
+    }
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
   } catch (error) {
@@ -688,8 +696,18 @@ function* paletteNoteSearchWorker(action: ReturnType<typeof paletteNoteSearchReq
   }
 }
 
-function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
-  const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
+function* loadNoteComments(
+  workspaceId: string,
+  noteId: string,
+  apply = true,
+  lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId)),
+) {
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
+  const authority = selectPrincipalConnectionContext.select(store.state);
+  const consumers = getItems(store.state.comments.loadsByConsumer).filter(
+    (view) =>
+      view.workspaceId === workspaceId && view.noteId === noteId && view.status === 'loading',
+  );
   if (!lifetime.commit(() => undefined)) return [];
   const comments = yield* call(() =>
     runRecoveryRead(commentsRecoveryKey(workspaceId, noteId), lifetime, 'ordinary', 'list', () =>
@@ -702,6 +720,16 @@ function* loadNoteComments(workspaceId: string, noteId: string, apply = true) {
   )
     return [];
   if (!lifetime.isCurrent()) return [];
+  // A fresh event read may supersede the view's initial read. Settle only the
+  // requests observed at admission; the reducer rejects released/replaced views.
+  if (apply && authority === selectPrincipalConnectionContext.select(store.state)) {
+    for (const view of consumers) {
+      yield* commitNoteAction(
+        lifetime,
+        commentLoadFinished(view.consumerId, view.requestId, workspaceId, authority),
+      );
+    }
+  }
   return comments;
 }
 
@@ -762,7 +790,7 @@ function* applyCommentEventWorker(action: ReturnType<typeof commentEventReceived
   const lifetime = admittedNoteEvent(action, commentsRecoveryKey(workspaceId, noteId));
   if (!lifetime?.commit(() => {})) return;
   try {
-    yield* call(loadNoteComments, workspaceId, noteId);
+    yield* call(loadNoteComments, workspaceId, noteId, true, lifetime);
   } catch (error) {
     logger.error('Failed to apply comment event', error);
   }

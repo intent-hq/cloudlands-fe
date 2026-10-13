@@ -1,3 +1,4 @@
+import { commentsReducer } from '../../comments/comments-slice';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -83,6 +84,7 @@ function harness(seed: Note[] = []) {
   let palette = paletteReducer(undefined, { type: '@@init' });
   const state = () => ({
     workspaceNotes,
+    comments: commentsReducer(undefined, { type: '@@init' }),
     palette,
     connections: { hasReceivedList: true, windowBackendId },
     daemonHealth: { health: 'up', connectionGeneration: 1 },

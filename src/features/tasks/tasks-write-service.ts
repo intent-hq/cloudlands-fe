@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 /**
  * Tasks write service — the sanctioned post-saga task-mutation mechanism.
  *
@@ -33,6 +34,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('TasksWriteService');
+const statusCommands = new Map<string, object>();
 
 /** Dispatch the optimistic status into both the notes and tasks slices. */
 function applyStatus(workspaceId: string, noteId: string, status: TaskStatus): void {
@@ -96,21 +98,40 @@ export async function updateTaskNoteStatus(
   noteId: string,
   status: TaskStatus,
 ): Promise<void> {
+  const commandKey = JSON.stringify([workspaceId, noteId]);
+  const command = {};
+  // These are the notesRecoveryKey/tasksRecoveryKey domains; keep this command
+  // service independent of the read sagas and live-client adapters.
+  const receipts = ['notes', 'tasks']
+    .map((domain) => `${domain}:${JSON.stringify([workspaceId])}`)
+    .map((key) => ({
+      authority: rendererEventRecovery.captureAuthority(key),
+      mutation: rendererEventRecovery.capture(key),
+    }));
+  statusCommands.set(commandKey, command);
+  const current = () =>
+    statusCommands.get(commandKey) === command &&
+    receipts.every(({ authority, mutation }) => authority.isCurrent() && mutation.commit(() => {}));
   const previous = readCurrentStatus(workspaceId, noteId);
   // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
   // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
   const rev = readCurrentRev(workspaceId, noteId);
   applyStatus(workspaceId, noteId, status);
 
-  const result =
-    rev !== undefined
-      ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
-      : await appClient.tasks.updateNoteStatus(noteId, status);
-  if (!result.success) {
-    if (reconcileTaskConflict(workspaceId, noteId, result)) return;
-    if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
-    logger.error('Failed to update task status', result.error);
-    notify.error(m.notes_writeService_updateFailed_error());
+  try {
+    const result =
+      rev !== undefined
+        ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
+        : await appClient.tasks.updateNoteStatus(noteId, status);
+    if (!current()) return;
+    if (!result.success) {
+      if (reconcileTaskConflict(workspaceId, noteId, result)) return;
+      if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
+      logger.error('Failed to update task status', result.error);
+      notify.error(m.notes_writeService_updateFailed_error());
+    }
+  } finally {
+    if (statusCommands.get(commandKey) === command) statusCommands.delete(commandKey);
   }
 }
 

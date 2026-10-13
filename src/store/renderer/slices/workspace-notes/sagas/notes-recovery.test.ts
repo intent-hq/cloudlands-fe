@@ -518,3 +518,86 @@ describe('newer push while ordinary read is pending', () => {
     expect(peak).toBe(1);
   });
 });
+
+describe('settlement after an admitted push supersedes an ordinary read', () => {
+  it('settles comment view loading after the fresh trailing list completes', async () => {
+    const h = await harness();
+    const finishes: Array<(rows: Awaited<ReturnType<typeof appClient.comments.list>>) => void> = [];
+    const read = vi
+      .spyOn(appClient.comments, 'list')
+      .mockImplementation(() => new Promise((done) => finishes.push(done)));
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    h.dispatch(commentEventReceived('ws', 'spec', 'added'));
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    finishes[0]([]);
+    await settle();
+    expect(read).toHaveBeenCalledTimes(2);
+    finishes[1]([]);
+    await settle();
+    expect(getItem(h.store.state.comments.loadsByConsumer, 'view')?.status).toBe('ready');
+  });
+  it('preserves full workspace hydration when a note event arrives before the list', async () => {
+    const h = await harness();
+    let finish!: (rows: ReturnType<typeof row>[]) => void;
+    const freshRows = [row('fresh event'), { ...row('untouched note'), id: 'sibling' }];
+    h.read.mockResolvedValue({ notes: freshRows } as never);
+    const list = vi
+      .spyOn(appClient.notes, 'list')
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            finish = (rows) => done(rows as never);
+          }),
+      )
+      .mockResolvedValue(freshRows as never);
+    vi.spyOn(appClient.notes, 'get').mockImplementation(
+      async (noteId: string) => ({ ...row('fresh event'), id: noteId }) as never,
+    );
+    h.dispatch(workspaceNotesHydrationRequested('ws', 2, true));
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    h.dispatch(noteEventReceived('ws', 'spec', 'note:updated'));
+    await settle();
+    finish([row('old snapshot'), { ...row('untouched note'), id: 'sibling' }]);
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(selectNoteById.select(h.store.state, 'ws', 'sibling')?.content).toBe('untouched note');
+    expect(h.row()?.content).toBe('fresh event');
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('comment view settlement ownership', () => {
+  it('does not finish a consumer that moved to a sibling note', async () => {
+    const h = await harness();
+    const finishes: Array<() => void> = [];
+    vi.spyOn(appClient.comments, 'list').mockImplementation(
+      (id) =>
+        new Promise((done) => {
+          if (id === 'spec') finishes.push(() => done([]));
+        }),
+    );
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    h.dispatch(commentLoadRequested('keeper', 'one', 'ws', 'spec'));
+    await settle();
+    h.dispatch(commentEventReceived('ws', 'spec', 'added'));
+    await settle();
+    h.dispatch(commentLoadRequested('view', 'two', 'ws', 'sibling'));
+    await settle();
+    finishes[0]();
+    await settle();
+    finishes[1]();
+    await settle();
+    expect(getItem(h.store.state.comments.loadsByConsumer, 'keeper')?.status).toBe('ready');
+    expect(getItem(h.store.state.comments.loadsByConsumer, 'view')).toMatchObject({
+      requestId: 'two',
+      noteId: 'sibling',
+      status: 'loading',
+    });
+  });
+});
