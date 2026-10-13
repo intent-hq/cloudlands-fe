@@ -3716,7 +3716,7 @@ function debouncedWorkspaceTasksRefresh(
       if (
         !receipt.commit(() => undefined) ||
         !row?.demandIds.length ||
-        (!row.loading && (!row.stale || row.error !== null))
+        (!row.loading && row.readRevision >= entry.revision && (!row.stale || row.error !== null))
       )
         pending.finish();
     };
