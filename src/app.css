@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source('.');
 /* CSS requires all @import rules to precede every other statement — anything
    else before them makes the later imports invalid and Vite drops them from
    the production bundle (intent-hq/monorepo#1909). Keep these imports first. */
@@ -10,12 +10,14 @@
 @import '$lib/styles/comments.css';
 @import '$lib/styles/resize-handles.css';
 
-/* Tailwind v4 auto-detects sources by scanning the whole package, so class-name
-   strings that only live in tests, scripts, and docs would otherwise reach the
-   production stylesheet. Exclude test code, tooling, and docs (including the
-   Markdown nested under src/); keep `.svelte`/`.html` fixtures (test/fixtures,
-   __tests__/*.svelte, playwright/) because the CT and Playwright harnesses
-   import this file and need their utilities. */
+/* Bound dependency discovery to product sources and browser harnesses. A package-wide
+   scan traverses ignored evidence checkouts while registering watch dependencies. */
+@source '../index.html';
+@source '../static';
+@source '../test';
+@source '../playwright';
+
+/* Exclude test code, tooling, and docs; retain Svelte/HTML browser fixtures. */
 @source not '**/*.test.ts';
 @source not '**/*.spec.ts';
 @source not '**/*.md';

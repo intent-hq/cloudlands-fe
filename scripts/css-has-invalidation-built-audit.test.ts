@@ -5,8 +5,8 @@
 // candidate in any scanned file, or a `group-has-*` variant, only becomes a
 // document-anchored or universal-subject `:has()` selector in the compiled
 // CSS. This suite compiles `src/app.css` the way the production build does
-// (Tailwind v4 via `@tailwindcss/postcss`, auto-detected sources rooted at the
-// package directory) and audits every emitted rule selector.
+// (Tailwind v4 via `@tailwindcss/postcss`, using its declared source roots)
+// and audits every emitted rule selector.
 import tailwindcss from '@tailwindcss/postcss';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
