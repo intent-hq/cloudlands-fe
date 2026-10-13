@@ -79,7 +79,7 @@ interface ReadCoordinator {
 type ReadMode = 'snapshot' | 'confirmation';
 interface ReadReceipts {
   recovery: RecoveryLifetime;
-  metadata: RecoveryLifetime | null;
+  metadata: (workspaceId: string) => RecoveryLifetime | null;
 }
 
 function matchesWorkspaceCleanup(wsId: string) {
@@ -93,9 +93,9 @@ function matchesWorkspaceCleanup(wsId: string) {
 function* ingestBundledAgents(
   result: WireResult,
   beforeRead: Readonly<Record<string, AgentSession>>,
-  recovery: RecoveryLifetime,
+  metadata: ReadReceipts['metadata'],
 ) {
-  const agents: AgentSession[] = [];
+  const groups = new Map<string, { agents: AgentSession[]; recovery: RecoveryLifetime }>();
   const current = yield* selectAgentSessionsById.effect();
   for (const raw of result.agents ?? []) {
     const id = String(raw.id);
@@ -104,16 +104,21 @@ function* ingestBundledAgents(
     if (current[id] !== beforeRead[id]) continue;
     const session = normalizeAgent(raw);
     if (session.pendingDeleteAt || isAgentDeletionPending(String(session.id))) continue;
+    const workspaceId = String(session.workspaceId);
+    const recovery = metadata(workspaceId);
+    if (!recovery?.commit(() => undefined)) continue;
+    const group = groups.get(workspaceId) ?? { agents: [], recovery };
+    groups.set(workspaceId, group);
     const existing = yield* selectAgentSession.effect(String(session.id));
     // Slim rows have no transcript. Keep history hydrated by the chat/detail
     // paths, but never carry it across workspace identities.
-    agents.push(
+    group.agents.push(
       existing?.workspaceId === session.workspaceId
         ? { ...session, messages: existing.messages }
         : session,
     );
   }
-  if (agents.length > 0)
+  for (const { agents, recovery } of groups.values())
     yield* put(
       withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), recovery),
     );
@@ -141,7 +146,7 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string, receipts: 
       ),
     );
     if (!recovery.commit(() => undefined)) return;
-    if (metadata) yield* ingestBundledAgents(fresh, beforeRead, metadata);
+    yield* ingestBundledAgents(fresh, beforeRead, metadata);
     const mapped = mapResult(fresh);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -193,7 +198,7 @@ function* fetchSnapshotSaga(wsId: string, agentId: string, receipts: ReadReceipt
       ),
     );
     if (!recovery.commit(() => undefined)) return;
-    if (metadata) yield* ingestBundledAgents(result, beforeRead, metadata);
+    yield* ingestBundledAgents(result, beforeRead, metadata);
     const mapped = mapResult(result);
     const hasData =
       mapped.subscriptions.length > 0 ||
@@ -311,10 +316,13 @@ function* startSnapshotRead(
     yield* put(subscriptionSnapshotFetchStarted(wsId, agentId));
     started = true;
   }
-  receipts ??= {
-    recovery: rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId)),
-    metadata: rendererEventRecovery.capture(agentMetadataRecoveryKey(wsId)),
-  };
+  if (!receipts) {
+    const captured = rendererEventRecovery.captureSelector();
+    receipts = {
+      recovery: rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId)),
+      metadata: (workspaceId) => captured(agentMetadataRecoveryKey(workspaceId)),
+    };
+  }
   if (!receipts.recovery.commit(() => undefined)) return;
   const key = makeKey(wsId, agentId);
   coordinator.contexts.set(key, { wsId, agentId });
@@ -421,6 +429,7 @@ function* refreshWorkspaceSubscriptionsWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
+  const captured = rendererEventRecovery.captureSelector();
   const [wsId, changedAgentId, watchedAgentId] = action.payload;
   if (!wsId) return;
   // Pending initial reads are demanded contexts even before Redux has a snapshot.
@@ -465,11 +474,11 @@ function* refreshWorkspaceSubscriptionsWorker(
           rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(targetWs, agentId)))
         : admission;
     if (!recovery?.commit(() => undefined)) continue;
-    const metadataAdmission = getRecoveryAdmission(action, agentMetadataRecoveryKey(targetWs));
-    const metadata =
-      metadataAdmission === undefined
-        ? rendererEventRecovery.capture(agentMetadataRecoveryKey(targetWs))
-        : metadataAdmission;
+    const metadata = (workspaceId: string) => {
+      const key = agentMetadataRecoveryKey(workspaceId);
+      const admission = getRecoveryAdmission(action, key);
+      return admission === undefined ? captured(key) : admission;
+    };
     yield* startSnapshotRead(coordinator, targetWs, agentId, 'snapshot', { recovery, metadata });
   }
 }

@@ -1,3 +1,6 @@
+import { normalizeAgent } from '$lib/client/live/live-agents-client';
+import { agentSessionReducer, bulkUpsertSessions } from '../../agent-session/agent-session-slice';
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -84,11 +87,15 @@ function harness(
     workspaceEvents: workspaceEventsInitialState,
     ...extraState,
   });
-  const dispatch = vi.fn((action) => {
+  const reduce = (action: any) => {
     state = agentSubscriptionUIReducer(state, action);
     listeners.forEach((listener) => listener());
     onDispatch?.();
-  });
+    if (extraState.agentSessions)
+      extraState.agentSessions = agentSessionReducer(extraState.agentSessions as never, action);
+    return action;
+  };
+  const dispatch = vi.fn(createEventRecoveryMiddleware()({} as never)(reduce));
   const reduxStore = {
     getState,
     subscribe: (listener: () => void) => {
@@ -774,3 +781,93 @@ it('refreshes a cached cross-workspace watching parent without prior saga contex
   expect(run.state().entries[makeKey(WS, AGENT)]?.snapshotStatus).toBe('ready');
   run.task.cancel();
 });
+
+it.each(['retired', 'aba', 'stale', 'current'] as const)(
+  'held parent snapshot honors original child workspace %s',
+  async (transition) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { agentMetadataRecoveryKey, agentSubscriptionsRecoveryKey } =
+      await import('$features/agent/agent-recovery-keys');
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      onRetired: () => () => {},
+      dispose: () => {},
+      onNotification: () => () => {},
+      request: async () => ({}),
+      fence: async (_ids: unknown, observe: () => void) => observe(),
+    } as never);
+    const childHome = 'child-private-home';
+    for (const [key, workspaceId] of [
+      [agentMetadataRecoveryKey(WS), WS],
+      [agentMetadataRecoveryKey(childHome), childHome],
+      [agentSubscriptionsRecoveryKey(WS, AGENT), WS],
+    ])
+      scope.registerResource({
+        key,
+        workspaceId,
+        eventTypes: ['agent:*'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      });
+    const parent = normalizeAgent({
+      id: AGENT,
+      workspaceId: WS,
+      status: 'idle',
+      name: 'Authorized parent',
+    });
+    const extra = { agentSessions: agentSessionReducer(undefined, bulkUpsertSessions([parent])) };
+    const held = deferred<any>();
+    mocks.request.mockClear();
+    mocks.request.mockReturnValueOnce(held.promise);
+    const run = harness(initialState, extra);
+    try {
+      run.channel.put(requestSubscriptionFetch(WS, AGENT));
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('agent.getSubscriptions', {
+        workspaceId: WS,
+        agentId: AGENT,
+      });
+      if (transition === 'stale')
+        rendererEventRecovery.invalidate(agentMetadataRecoveryKey(childHome));
+      else if (transition !== 'current') rendererEventRecovery.retireWorkspace(childHome);
+      if (transition === 'aba')
+        scope.registerResource({
+          key: agentMetadataRecoveryKey(childHome),
+          workspaceId: childHome,
+          eventTypes: ['agent:*'],
+          isCurrent: () => true,
+          read: async () => [],
+          apply: () => {},
+          invalidate: () => {},
+          retire: () => {},
+        });
+      expect(
+        rendererEventRecovery.capture(agentMetadataRecoveryKey(childHome)).commit(() => undefined),
+      ).toBe(transition === 'current' || transition === 'aba');
+      expect(
+        rendererEventRecovery.capture(agentMetadataRecoveryKey(WS)).commit(() => undefined),
+      ).toBe(true);
+      held.resolve({
+        ...active(),
+        agents: [
+          { id: CHILD, workspaceId: childHome, status: 'idle', name: 'Old private child' },
+          { id: 'safe-sibling', workspaceId: WS, status: 'idle', name: 'Authorized sibling' },
+        ],
+      });
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.state().entries[makeKey(WS, AGENT)]?.snapshotStatus).toBe('ready');
+      expect(extra.agentSessions.byAgentId[AGENT]?.name).toBe('Authorized parent');
+      if (transition === 'current')
+        expect(extra.agentSessions.byAgentId[CHILD]?.name).toBe('Old private child');
+      else expect(extra.agentSessions.byAgentId[CHILD]).toBeUndefined();
+      expect(extra.agentSessions.byAgentId['safe-sibling']?.name).toBe('Authorized sibling');
+    } finally {
+      run.task.cancel();
+      rendererEventRecovery.dispose();
+    }
+  },
+);
