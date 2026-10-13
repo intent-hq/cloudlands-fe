@@ -83,11 +83,15 @@ export function subscribeScriptMonitors(
     if (!['scriptMonitor.list', 'scriptMonitor.get', 'script.get'].includes(method))
       return invoke();
     const token = rendererEventRecovery.capture(key);
-    return trackRuntimeRead(key, () => {
-      if (disposed || recoveryScope !== scope || !token.commit(() => {}))
-        throw new Error('Script monitor read superseded');
-      return invoke();
-    });
+    return trackRuntimeRead(
+      key,
+      () => {
+        if (disposed || recoveryScope !== scope || !token.commit(() => {}))
+          throw new Error('Script monitor read superseded');
+        return invoke();
+      },
+      method === 'scriptMonitor.list',
+    );
   };
   let disposed = false;
   let epoch = 0;

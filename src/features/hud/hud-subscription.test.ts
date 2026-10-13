@@ -363,7 +363,9 @@ describe('HUD subscription (mock backend, real store)', () => {
           });
       await flush();
       expect(reads).toBe(1);
-      resolveOld({ ...usageResult(), runs: 999 });
+      resolveOld(
+        completion === 'reply' ? { ...usageResult(), runs: 999 } : { retired: false, errors: [] },
+      );
       await flush();
       await vi.waitFor(() => expect(selectHudUsage.select(appStore.state)?.runs).toBe(42));
       expect(reads).toBeLessThanOrEqual(3);
@@ -2116,3 +2118,91 @@ it.each(['reply', 'timeout', 'ordinary timeout'])(
     }
   },
 );
+
+it.each([
+  'busy late',
+  'point late',
+  'list late',
+  'workspace missing',
+  'immediate sibling',
+  'entity missing',
+])('HUD clears only captured workspace authority for %s while retaining siblings', async (mode) => {
+  let finish!: (value: any) => void;
+  const held = new Promise<any>((resolve) => {
+    finish = resolve;
+  });
+  let rejectList!: (error: unknown) => void;
+  const list = new Promise<unknown>((_resolve, reject) => {
+    rejectList = reject;
+  });
+  const denied = new BackendError({ code: 'FORBIDDEN', message: 'Denied', rpcCode: -32003 });
+  const timeout = new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, held);
+  const h = await hudMetadataBoundaryHarness(
+    mode === 'busy late'
+      ? () => Promise.reject(timeout)
+      : mode === 'immediate sibling'
+        ? () => held
+        : async () => ({ streams: [{ workspaceId: WS_ID, agentId: 'held-private-agent' }] }),
+    mode === 'immediate sibling'
+      ? () => list
+      : ['list late', 'workspace missing'].includes(mode)
+        ? () => Promise.reject(timeout)
+        : undefined,
+    () => Promise.reject(timeout),
+  );
+  try {
+    const id = 'private-before-denial';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        { id, workspaceId: WS_ID, name: 'Private', messages: [] } as unknown as AgentSession,
+      ]),
+    );
+    h.emit({
+      method: 'events.lost',
+      params: {
+        subscriptionId: 'hud-metadata-verifier',
+        generation: '1',
+        scope: { workspaceId: null },
+      },
+    });
+    await flush();
+    expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+    if (mode === 'immediate sibling') {
+      // The denied list clears immediately, but the busy sibling is still on the wire.
+      rejectList(denied);
+      await flush();
+      expect(appStore.state.agentSessions.byAgentId[id]).toBeUndefined();
+      await flush();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+      finish({ streams: [] });
+    } else {
+      finish({
+        retired: false,
+        errors: [
+          mode === 'entity missing' || mode === 'workspace missing'
+            ? new BackendError({
+                code: 'INVALID_PARAMS',
+                message: 'Missing agent',
+                rpcCode: -32602,
+                data: { code: 'not-found' },
+              })
+            : denied,
+        ],
+      });
+    }
+    await flush();
+    await flush();
+    if (mode !== 'entity missing') {
+      expect(appStore.state.agentSessions.byAgentId[id]).toBeUndefined();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(1);
+    } else {
+      expect(rendererEventRecovery.capture('agents:' + JSON.stringify([WS_ID])).isCurrent()).toBe(
+        true,
+      );
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.listActive')).toHaveLength(2);
+    }
+  } finally {
+    finish({ retired: false, errors: [], streams: [] });
+    h.stop();
+  }
+});

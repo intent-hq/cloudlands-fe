@@ -474,3 +474,63 @@ it.each(['recovery', 'ordinary'])(
     expect(request.mock.calls.filter(([method]) => method === 'terminal.list')).toHaveLength(1);
   },
 );
+
+it.each(['denied', 'retired', 'replacement'])(
+  'terminal ordinary late denial respects %s authority',
+  async (transition) => {
+    const request = vi.fn(async (method: string) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'late-terminal', lossRecovery: 1 }
+        : { terminals: [{ id: 'one', isExecutingCommand: true }] },
+    );
+    const h = session(request as EventRecoverySession['request']);
+    let state: unknown;
+    const onData = vi.fn(),
+      onExit = vi.fn();
+    cleanups.push(
+      subscribeTerminalRuntime(
+        'ws',
+        'one',
+        {
+          onMetadata: (value) => {
+            state = value;
+          },
+          onData,
+          onExit,
+        },
+        () => {},
+      ).dispose,
+    );
+    await settle();
+    let finish!: (
+      value: import('$shared/event-recovery/session').RecoveryRequestCompletion,
+    ) => void;
+    const completion = new Promise<
+      import('$shared/event-recovery/session').RecoveryRequestCompletion
+    >((resolve) => {
+      finish = resolve;
+    });
+    await verifierTrack('ws', () =>
+      Promise.reject(new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion)),
+    ).catch(() => {});
+    if (transition === 'replacement') rendererEventRecovery.refreshAuthority();
+    else
+      h.emit('events.lost', {
+        subscriptionId: 'late-terminal',
+        generation: '1',
+        scope: { workspaceId: 'ws' },
+      });
+    await settle();
+    finish({
+      retired: transition === 'retired',
+      errors: [new BackendError({ code: 'FORBIDDEN', message: 'Denied', rpcCode: -32003 })],
+    });
+    await settle();
+    expect(state).toMatchObject({ isConnected: transition !== 'denied' });
+    expect(request.mock.calls.filter(([m]) => m === 'terminal.list')).toHaveLength(
+      transition === 'denied' ? 0 : 1,
+    );
+    expect(onData).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
+  },
+);

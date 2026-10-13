@@ -269,15 +269,19 @@ export function subscribePrMonitors(
     refetchInFlight = true;
     const epoch = registerEpoch;
     const token = rendererEventRecovery.capture(key);
-    pendingRead = trackRuntimeRead(key, () => {
-      if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
-        throw new Error('Runtime read superseded');
-      return recoveryScope
-        ? recoveryScope
-            .request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', { workspaceId })
-            .then((result) => (Array.isArray(result?.monitors) ? result.monitors : []))
-        : listPrMonitors(workspaceId);
-    })
+    pendingRead = trackRuntimeRead(
+      key,
+      () => {
+        if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
+          throw new Error('Runtime read superseded');
+        return recoveryScope
+          ? recoveryScope
+              .request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', { workspaceId })
+              .then((result) => (Array.isArray(result?.monitors) ? result.monitors : []))
+          : listPrMonitors(workspaceId);
+      },
+      true,
+    )
       .then((fetched) => {
         if (disposed || epoch !== registerEpoch) return;
         token.commit(() => {
@@ -388,10 +392,13 @@ export function subscribePrMonitors(
       isCurrent: () => !disposed && epoch === registerEpoch,
       read: async (reader) => {
         if (pendingRead) await pendingRead;
-        const result = await trackRuntimeRead(key, () =>
-          reader.request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
-            workspaceId,
-          }),
+        const result = await trackRuntimeRead(
+          key,
+          () =>
+            reader.request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
+              workspaceId,
+            }),
+          true,
         );
         return Array.isArray(result?.monitors) ? result.monitors : [];
       },

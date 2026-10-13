@@ -1,3 +1,4 @@
+import { captureRuntimeReadAuthority } from '$features/events/runtime-read-authority';
 import { runtimeReadDrained } from '$features/events/runtime-read-lane';
 import {
   rendererEventRecovery,
@@ -23,6 +24,11 @@ export function trackTerminalRuntimeRead<T>(
   workspaceId: string,
   read: () => Promise<T>,
 ): Promise<T> {
+  // Both projections share terminal.list; retire only their original registered owners.
+  const authorities = [
+    captureRuntimeReadAuthority(terminalRuntimeKey(workspaceId), true),
+    captureRuntimeReadAuthority('terminals:' + JSON.stringify([workspaceId]), true),
+  ];
   const lifetime = rendererEventRecovery.capturePhysicalSessionIdentity();
   const previous = pendingReads.get(workspaceId);
   const invoke = () => {
@@ -32,8 +38,15 @@ export function trackTerminalRuntimeRead<T>(
       return Promise.reject(error);
     }
   };
-  const result = previous?.lifetime === lifetime ? previous.settled.then(invoke) : invoke();
-  const settled = runtimeReadDrained(result);
+  const result = (previous?.lifetime === lifetime ? previous.settled.then(invoke) : invoke()).catch(
+    (error: unknown) => {
+      authorities.forEach((authority) => authority.failed(error));
+      throw error;
+    },
+  );
+  const settled = runtimeReadDrained(result, (outcome) => {
+    authorities.forEach((authority) => authority.completed(outcome));
+  });
   const entry = { lifetime, settled };
   pendingReads.set(workspaceId, entry);
   void settled.then(() => {

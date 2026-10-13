@@ -202,19 +202,23 @@ function* refetchWorkspace(
   const token = rendererEventRecovery.capture('background-hooks:' + JSON.stringify([workspaceId]));
   const generation = entry.generation;
   try {
-    const request = trackRuntimeRead('background-hooks:' + JSON.stringify([workspaceId]), () => {
-      if (
-        active.get(workspaceId) !== entry ||
-        entry.generation !== generation ||
-        !token.commit(() => {})
-      )
-        throw new Error('Hook read superseded');
-      return entry.scope
-        ? entry.scope
-            .request<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId })
-            .then((result) => (Array.isArray(result?.hooks) ? result.hooks : []))
-        : listHooks(workspaceId);
-    });
+    const request = trackRuntimeRead(
+      'background-hooks:' + JSON.stringify([workspaceId]),
+      () => {
+        if (
+          active.get(workspaceId) !== entry ||
+          entry.generation !== generation ||
+          !token.commit(() => {})
+        )
+          throw new Error('Hook read superseded');
+        return entry.scope
+          ? entry.scope
+              .request<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId })
+              .then((result) => (Array.isArray(result?.hooks) ? result.hooks : []))
+          : listHooks(workspaceId);
+      },
+      true,
+    );
     entry.pendingRead = request;
     const hooks = yield* call(() => request);
     if (active.get(workspaceId) === entry && entry.generation === generation) {
@@ -311,6 +315,7 @@ function* handleSubscribe(
             reader.request<{ hooks?: BackgroundHook[] }>('hook.list', {
               workspaceId,
             }),
+          true,
         );
         return Array.isArray(result?.hooks) ? result.hooks : [];
       },

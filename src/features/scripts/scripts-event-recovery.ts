@@ -25,7 +25,7 @@ export const scriptsRecoveryKey = (workspaceId: string) =>
   'scripts:' + JSON.stringify([workspaceId]);
 
 function serial<T>(workspaceId: string, read: () => Promise<T>): Promise<T> {
-  return trackRuntimeRead(scriptsRecoveryKey(workspaceId), read);
+  return trackRuntimeRead(scriptsRecoveryKey(workspaceId), read, true);
 }
 
 /** Take a thunk: an already-started request cannot be serialized with recovery. */

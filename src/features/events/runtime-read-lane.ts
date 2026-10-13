@@ -1,3 +1,4 @@
+import { captureRuntimeReadAuthority } from './runtime-read-authority';
 import { rendererEventRecovery } from './renderer-event-recovery';
 import {
   getPhysicalRequestCompletion,
@@ -24,7 +25,12 @@ export function runtimeReadDrained(
 }
 
 /** Resource remounts share a physical lane; a replacement transport owns a new one. */
-export function trackRuntimeRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+export function trackRuntimeRead<T>(
+  key: string,
+  read: () => Promise<T>,
+  missingResource = false,
+): Promise<T> {
+  const authority = captureRuntimeReadAuthority(key, missingResource);
   const session = rendererEventRecovery.capturePhysicalSessionIdentity();
   const lanes = sessions.get(session) ?? new Map<string, Promise<void>>();
   sessions.set(session, lanes);
@@ -36,8 +42,11 @@ export function trackRuntimeRead<T>(key: string, read: () => Promise<T>): Promis
     }
   };
   const prior = lanes.get(key);
-  const result = prior ? prior.then(invoke) : invoke();
-  const tail = runtimeReadDrained(result);
+  const result = (prior ? prior.then(invoke) : invoke()).catch((error: unknown) => {
+    authority.failed(error);
+    throw error;
+  });
+  const tail = runtimeReadDrained(result, authority.completed);
   lanes.set(key, tail);
   void tail.then(() => {
     if (lanes.get(key) === tail) lanes.delete(key);

@@ -610,3 +610,63 @@ describe.each(cases)('$name physical transport replacement', (c) => {
     },
   );
 });
+
+describe.each(cases)('$name ordinary late authority denial', (c) => {
+  it.each(['denied', 'workspace missing', 'invalid params', 'retired', 'replacement'])(
+    'handles %s before releasing the physical lane',
+    async (transition) => {
+      const h = session();
+      h.request.mockImplementation(async (method) =>
+        method === 'events.subscribe'
+          ? { subscriptionId: 'authority-lease', lossRecovery: 1 }
+          : { [c.field]: [c.row] },
+      );
+      let rows: unknown[] = [];
+      const subscription = c.subscribe((value) => {
+        rows = value;
+      });
+      dispose = subscription.dispose;
+      await settle();
+      let finish!: (
+        value: import('$shared/event-recovery/session').RecoveryRequestCompletion,
+      ) => void;
+      const completion = new Promise<
+        import('$shared/event-recovery/session').RecoveryRequestCompletion
+      >((resolve) => {
+        finish = resolve;
+      });
+      h.request.mockRejectedValueOnce(
+        new BackendError({ code: 'TIMEOUT', message: 'Caller deadline' }, completion),
+      );
+      subscription.refetch();
+      await settle();
+      if (transition === 'replacement') rendererEventRecovery.refreshAuthority();
+      else
+        h.emit('events.lost', {
+          subscriptionId: 'authority-lease',
+          generation: '1',
+          scope: { workspaceId: 'ws' },
+        });
+      await settle();
+      const before = h.request.mock.calls.filter(([method]) => method === c.method).length;
+      finish({
+        retired: transition === 'retired',
+        errors: [
+          transition === 'workspace missing' || transition === 'invalid params'
+            ? new BackendError({
+                code: 'INVALID_PARAMS',
+                message: 'Missing',
+                rpcCode: -32602,
+                ...(transition === 'workspace missing' ? { data: { code: 'not-found' } } : {}),
+              })
+            : new BackendError({ code: 'FORBIDDEN', message: 'Denied', rpcCode: -32003 }),
+        ],
+      });
+      await settle();
+      if (transition === 'denied' || transition === 'workspace missing') {
+        expect(rows).toEqual([]);
+        expect(h.request.mock.calls.filter(([method]) => method === c.method)).toHaveLength(before);
+      } else expect(rows).toEqual([c.row]);
+    },
+  );
+});

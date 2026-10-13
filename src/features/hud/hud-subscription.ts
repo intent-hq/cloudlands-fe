@@ -1,3 +1,4 @@
+import { captureRuntimeReadAuthority } from '$features/events/runtime-read-authority';
 import { runtimeReadDrained, trackRuntimeRead } from '$features/events/runtime-read-lane';
 import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import {
@@ -296,7 +297,10 @@ function hydrateVisibleWorkspaceAgents(isLive: () => boolean, scope?: RendererRe
   }
   if (pending.length === 0) return;
   let busyAgentIds: Promise<BusyAgentIdsByWorkspaceId> | undefined;
-  const readBusy = () => (busyAgentIds ??= readBusyAgentIds(scope));
+  const busyAuthorities = pending.map(({ workspaceId }) =>
+    captureRuntimeReadAuthority('agents:' + JSON.stringify([workspaceId])),
+  );
+  const readBusy = () => (busyAgentIds ??= readBusyAgentIds(scope, busyAuthorities));
   let admitted = 0;
   let start!: () => void;
   const ready = new Promise<void>((resolve) => {
@@ -330,7 +334,10 @@ function hydrateVisibleWorkspaceAgents(isLive: () => boolean, scope?: RendererRe
  * top-level rows; only the busy non-top-level rows are missed until the next
  * event-driven hydration.
  */
-async function readBusyAgentIds(scope?: RendererRecoveryScope): Promise<BusyAgentIdsByWorkspaceId> {
+async function readBusyAgentIds(
+  scope: RendererRecoveryScope | undefined,
+  authorities: ReturnType<typeof captureRuntimeReadAuthority>[],
+): Promise<BusyAgentIdsByWorkspaceId> {
   const request = scope?.request ?? backendRequest;
   const byWorkspaceId = new Map<string, Set<string>>();
   try {
@@ -345,7 +352,9 @@ async function readBusyAgentIds(scope?: RendererRecoveryScope): Promise<BusyAgen
       ids.add(stream.agentId);
     }
   } catch (error) {
-    await getPhysicalRequestCompletion(error);
+    authorities.forEach((authority) => authority.failed(error));
+    const outcome = await getPhysicalRequestCompletion(error);
+    if (outcome) authorities.forEach((authority) => authority.completed(outcome));
     logger.warn('agent.listActive failed for HUD hydration; top-level rows only', { error });
   }
   return byWorkspaceId;
@@ -407,11 +416,20 @@ async function hydrateHudWorkspaceAgents(
   enter: () => Promise<void>,
 ): Promise<void> {
   const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
+  const authority = captureRuntimeReadAuthority('agents:' + JSON.stringify([workspaceId]));
+  const listAuthority = captureRuntimeReadAuthority(
+    'agents:' + JSON.stringify([workspaceId]),
+    true,
+  );
   return trackAgentMetadataRead(workspaceId, async () => {
     const physical: Promise<void>[] = [];
-    const tracked = <T>(read: Promise<T>): Promise<T> => {
-      physical.push(runtimeReadDrained(read));
-      return read;
+    const tracked = <T>(read: Promise<T>, observer = authority): Promise<T> => {
+      const observed = read.catch((error: unknown) => {
+        observer.failed(error);
+        throw error;
+      });
+      physical.push(runtimeReadDrained(observed, observer.completed));
+      return observed;
     };
     try {
       // Reserve every workspace before starting the one shared busy lookup.
@@ -427,6 +445,7 @@ async function hydrateHudWorkspaceAgents(
               })
               .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
           : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
+        listAuthority,
       );
       const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([list, busy]);
       if (!isLive() || !token.commit(() => {})) return;

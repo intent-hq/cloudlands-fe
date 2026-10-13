@@ -180,15 +180,19 @@ export function subscribeGitRoots(
     refetchInFlight = true;
     const epoch = registerEpoch;
     const token = rendererEventRecovery.capture(key);
-    pendingRead = trackRuntimeRead(key, () => {
-      if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
-        throw new Error('Runtime read superseded');
-      return recoveryScope
-        ? recoveryScope
-            .request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', { workspaceId })
-            .then((result) => (Array.isArray(result?.gitRoots) ? result.gitRoots : []))
-        : listGitRoots(workspaceId);
-    })
+    pendingRead = trackRuntimeRead(
+      key,
+      () => {
+        if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
+          throw new Error('Runtime read superseded');
+        return recoveryScope
+          ? recoveryScope
+              .request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', { workspaceId })
+              .then((result) => (Array.isArray(result?.gitRoots) ? result.gitRoots : []))
+          : listGitRoots(workspaceId);
+      },
+      true,
+    )
       .then((fetched) => {
         if (disposed || epoch !== registerEpoch) return;
         token.commit(() => {
@@ -288,10 +292,13 @@ export function subscribeGitRoots(
       isCurrent: () => !disposed && epoch === registerEpoch,
       read: async (reader) => {
         if (pendingRead) await pendingRead;
-        const result = await trackRuntimeRead(key, () =>
-          reader.request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', {
-            workspaceId,
-          }),
+        const result = await trackRuntimeRead(
+          key,
+          () =>
+            reader.request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', {
+              workspaceId,
+            }),
+          true,
         );
         return Array.isArray(result?.gitRoots) ? result.gitRoots : [];
       },
