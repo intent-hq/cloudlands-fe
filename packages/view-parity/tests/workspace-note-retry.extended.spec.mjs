@@ -1,57 +1,43 @@
 import { test, expect } from '@playwright/test';
 import { observeErrors } from '../lib/browser.mjs';
+import { isolatedRetryFixture, observeDaemonWire } from '../lib/isolated-retry.mjs';
 
 for (const method of ['note.get', 'note.list']) {
   test(`${method} failure retries in place and recovers real content`, async ({ page }, info) => {
-    const {
-      REACT_BASE_URL: base,
-      REACT_WORKSPACE_ID: workspaceId,
-      REACT_NOTE_ID: noteId,
-    } = process.env;
-    if (!base || !workspaceId || !noteId) throw new Error('Set the real note journey environment');
+    const fixture = await isolatedRetryFixture();
+    const { base, workspaceId, noteId } = fixture;
     const errors = await observeErrors(page);
-    const requests = [];
-    const replies = [];
-    let failReads = true;
-    const failure = `Temporary ${method} failure for retry coverage`;
-    await page.routeWebSocket('**/intentd/ws', (socket) => {
-      const server = socket.connectToServer();
-      const pending = new Map();
-      socket.onMessage((message) => {
-        const request = JSON.parse(String(message));
-        requests.push(request);
-        pending.set(request.id, request);
-        server.send(message);
-      });
-      server.onMessage((message) => {
-        const response = JSON.parse(String(message));
-        const request = pending.get(response.id);
-        pending.delete(response.id);
-        if (
-          request?.method === method &&
+    const wire = observeDaemonWire(page);
+    const requests = wire.requests;
+    const reads = () =>
+      wire.replies.filter(
+        ({ request }) =>
+          request.method === method &&
           request.params.workspaceId === workspaceId &&
-          (method === 'note.list' || request.params.noteId === noteId)
-        ) {
-          const delivered = failReads
-            ? { jsonrpc: '2.0', id: response.id, error: { code: -32603, message: failure } }
-            : response;
-          replies.push({ request, response: delivered });
-          socket.send(JSON.stringify(delivered));
-        } else socket.send(message);
-      });
-    });
+          (method === 'note.list' || request.params.noteId === noteId),
+      );
+    let restore;
     const url = `${base}/workspaces/${encodeURIComponent(workspaceId)}?note=${encodeURIComponent(noteId)}&q=${encodeURIComponent(noteId)}`;
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     try {
       await page.setViewportSize({ width: 1000, height: 700 });
-      await page.goto(url);
+      if (method === 'note.get') {
+        await page.goto(`${base}/workspaces/${encodeURIComponent(workspaceId)}?q=${noteId}`);
+        const opener = page.locator(`a[data-note-id="${noteId}"]`);
+        await expect(opener).toBeVisible({ timeout: 60_000 });
+        restore = await fixture.failNote();
+        await opener.click();
+      } else {
+        restore = await fixture.failNote();
+        await page.goto(url);
+      }
       await expect(retry).toBeVisible({ timeout: 60_000 });
-      const initialReads = replies.length;
+      const initialReads = reads().length;
       expect(initialReads).toBeGreaterThan(0);
       await expect(page.getByTestId('workspace-note')).toHaveCount(0);
       await expect(retry).toBeFocused();
       await retry.click();
-      await expect.poll(() => replies.length).toBe(initialReads + 1);
+      await expect.poll(() => reads().length).toBe(initialReads + 1);
       await expect(retry).toBeVisible();
       await expect(retry).toBeFocused();
       await expect(page.getByRole('alert')).toBeVisible();
@@ -60,20 +46,22 @@ for (const method of ['note.get', 'note.list']) {
       const failedScreenshot = info.outputPath('note-retry-error.png');
       await page.screenshot({ path: failedScreenshot });
       await info.attach('note-retry-error', { path: failedScreenshot, contentType: 'image/png' });
-      expect(replies.at(-1).response.error.message).toBe(failure);
-      failReads = false;
+      expect(reads().at(-1).response.error).toBeDefined();
+      expect(reads().at(-1).response.error.code).toBe(-32603);
+      expect(reads().at(-1).response.error.data).toContain('column created_at');
+      await restore();
       await page.keyboard.press('Enter');
       const note = page.getByTestId('workspace-note');
       await expect(note).toHaveAttribute('data-note-id', noteId);
-      expect(replies).toHaveLength(initialReads + 2);
-      for (const { request } of replies) {
+      expect(reads()).toHaveLength(initialReads + 2);
+      for (const { request } of reads()) {
         expect(request.method).toBe(method);
         expect(request.params).toEqual(
           method === 'note.get' ? { workspaceId, noteId } : { workspaceId, projection: 'slim' },
         );
       }
-      expect(replies.at(-1).response.error).toBeUndefined();
-      const result = replies.at(-1).response.result;
+      expect(reads().at(-1).response.error).toBeUndefined();
+      const result = reads().at(-1).response.result;
       const title =
         method === 'note.get'
           ? result.note.title
@@ -87,7 +75,7 @@ for (const method of ['note.get', 'note.list']) {
       if (method === 'note.get') {
         await note.getByRole('button', { name: 'Source', exact: true }).click();
         await expect(page.getByTestId('note-content')).toHaveText(
-          replies.at(-1).response.result.note.content,
+          reads().at(-1).response.result.note.content,
         );
       } else await expect(page.getByTestId('note-rendered-content')).toBeVisible();
       const recoveredScreenshot = info.outputPath('note-retry-recovered.png');
@@ -106,10 +94,32 @@ for (const method of ['note.get', 'note.list']) {
           ),
         ),
       ).toEqual([]);
-      expect(errors.filter((error) => !error.includes(failure))).toEqual([]);
+      const expectedLogs =
+        method === 'note.list'
+          ? errors.filter(
+              (error) =>
+                error.startsWith('console: ') &&
+                error.includes('[NotesReadSaga] Failed to hydrate workspace notes') &&
+                error.includes('"name":"BackendError"') &&
+                error.includes('"message":"Internal error"'),
+            )
+          : [];
+      const failures = reads().filter(({ response }) => response.error);
+      for (const { response } of failures)
+        expect(response.error.data).toContain('column created_at');
+      if (method === 'note.list') {
+        expect(expectedLogs.length).toBeGreaterThan(0);
+        expect(expectedLogs.length).toBeLessThanOrEqual(failures.length);
+      }
+      expect(errors.filter((error) => !expectedLogs.includes(error))).toEqual([]);
     } finally {
+      await restore?.();
       await info.attach('note-retry-wire', {
-        body: JSON.stringify({ requests, replies, errors }, null, 2),
+        body: JSON.stringify(
+          { ...wire, errors, failure: 'Real database type error in disposable workspace' },
+          null,
+          2,
+        ),
         contentType: 'application/json',
       });
     }
