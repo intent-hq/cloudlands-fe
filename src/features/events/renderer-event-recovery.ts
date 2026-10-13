@@ -49,6 +49,7 @@ const unavailable = () =>
 export class RendererEventRecovery {
   private attachment: Attachment | undefined;
   private epoch: object = {};
+  private physicalSessionIdentity: object = {};
   private readonly factories = new Set<Factory>();
   // Keep disposed entries as tombstones until session replacement: an old writer
   // must not regain the permissive legacy path after its owner is removed.
@@ -69,6 +70,7 @@ export class RendererEventRecovery {
   attach(session: EventRecoverySession, admitted?: AdmittedEventObserver): RendererRecoveryScope {
     this.detach();
     if (!session.isCurrent()) throw unavailable();
+    this.physicalSessionIdentity = session;
     const coordinator = new EventRecoveryCoordinator(session, undefined, (event, lifetimes) => {
       const guarded = new Map(lifetimes);
       for (const [key, token] of lifetimes) {
@@ -241,6 +243,15 @@ export class RendererEventRecovery {
         handle.dispose();
       },
     };
+  }
+
+  /** Accounting only: never a permission or freshness receipt. Retirement keeps
+   * the last token so draining physical work cannot gain a second lane. Before
+   * first attachment the registry has one stable legacy token; a new captured
+   * session replaces it, while resource/authority refreshes do not.
+   */
+  capturePhysicalSessionIdentity(): object {
+    return this.physicalSessionIdentity;
   }
 
   /** Every asynchronous ordinary read captures before dispatch, not after await. */

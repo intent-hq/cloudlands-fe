@@ -315,8 +315,12 @@ export function* daemonEventsSaga(enableRecovery = false) {
       logger.warn('Event recovery capture unavailable; awaiting readiness', error);
       return;
     }
-    if (!session?.supported) {
+    if (!session?.isCurrent()) {
       session?.dispose();
+      return;
+    }
+    if (!session.supported) {
+      session.dispose();
       rendererEventRecovery.dispose();
       leases.scope = undefined;
       leases.recoveryPending = false;

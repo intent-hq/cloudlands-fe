@@ -4960,3 +4960,203 @@ describe('M current workspace read admission', () => {
     await stop(run.task);
   });
 });
+
+import {
+  workspaceEventsReducer as verifierEventsReducer,
+  eventsLoaded as verifierEventsLoaded,
+} from '../../workspace-events/workspace-events-slice';
+import { installWorkspaceActivityRecovery as verifierInstallActivity } from '$features/events/workspace-activity-recovery';
+it('older activity page cannot commit after rows change with identical cursor', async () => {
+  appStore.dispose();
+  appStore.init();
+  rendererEventRecovery.dispose();
+  const ev = (id: string) => ({
+    id,
+    type: 'agent:idle',
+    workspaceId: WS,
+    timestamp: '2026-10-13T09:00:00Z',
+    actor: { type: 'agent', id: 'a' },
+    data: { agentId: 'a' },
+  });
+  const current = state(null, 'same-cursor') as any;
+  current.workspaceLifecycle = { sessionPhaseByWorkspaceId: { [WS]: 'live' } };
+  current.workspaceEvents = {
+    ...current.workspaceEvents,
+    ...verifierEventsReducer(
+      undefined,
+      verifierEventsLoaded(WS, [ev('initial') as never], 'same-cursor'),
+    ),
+  };
+  let release!: (v: any) => void;
+  mocks.events.queryPage.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const listeners = new Set<() => void>();
+  const channel = stdChannel();
+  const dispatch = (action: any) => {
+    const apply = () => {
+      current.workspaceEvents = verifierEventsReducer(current.workspaceEvents, action);
+      for (const f of listeners) f();
+      channel.put(action);
+    };
+    const receipt = getRecoveryLifetime(action);
+    if (receipt) receipt.commit(apply);
+    else apply();
+    return action;
+  };
+  const store = {
+    getState: () => current,
+    dispatch,
+    subscribe: (f: () => void) => {
+      listeners.add(f);
+      return () => {
+        listeners.delete(f);
+      };
+    },
+  };
+  const scope = rendererEventRecovery.attach({
+    supported: true,
+    isCurrent: () => true,
+    request: async <T>(_method: string) =>
+      ({ subscriptionId: 'activity-verifier', lossRecovery: 1 }) as T,
+    fence: async (_ids, observe) => {
+      observe();
+    },
+    onRetired: () => () => {},
+    onNotification: () => () => {},
+    dispose: () => {},
+  });
+  const uninstall = verifierInstallActivity(scope, store);
+  await scope.subscribe({ workspaceId: WS, eventTypes: ['*'] }, { recover: true });
+  const task = runSaga(
+    { channel, dispatch, getState: store.getState, context: { reduxStore: store } },
+    lifecycleReadSaga,
+  );
+  try {
+    dispatch(loadOlderEventsRequested(WS));
+    await settle();
+    expect(mocks.events.queryPage).toHaveBeenCalledOnce();
+    dispatch(verifierEventsLoaded(WS, [ev('replacement') as never], 'same-cursor'));
+    release({ items: [ev('old-page')], nextToken: null });
+    await settle();
+    await settle();
+    expect(current.workspaceEvents.byWorkspaceId[WS].events.map((e: any) => e.id)).toEqual([
+      'replacement',
+    ]);
+    expect(current.workspaceEvents.byWorkspaceId[WS].nextToken).toBe('same-cursor');
+  } finally {
+    await stop(task);
+    uninstall();
+    rendererEventRecovery.dispose();
+    appStore.dispose();
+    mocks.events.queryPage.mockReset();
+  }
+});
+
+import { installTaskListRecovery, tasksRecoveryKey } from '$features/events/task-list-recovery';
+import { createEventRecoverySession } from '$shared/event-recovery/session';
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
+const flushAll = async () => {
+  for (let i = 0; i < 100; i++) await Promise.resolve();
+};
+describe('actual lifecycle task read settles after an admitted task push', () => {
+  afterEach(() => {
+    rendererEventRecovery.dispose();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+  it.each([false, true])(
+    'settles the original consumer and bounded refresh, push=%s',
+    async (push) => {
+      vi.useFakeTimers();
+      let current = state();
+      current.workspaceTasks = workspaceTasksReducer(undefined, { type: '@@INIT' });
+      const channel = stdChannel();
+      const listeners = new Set<() => void>();
+      const reduce = (action: any) => {
+        current = {
+          ...current,
+          workspaceTasks: workspaceTasksReducer(current.workspaceTasks, action),
+        };
+        for (const fn of listeners) fn();
+        channel.put(action);
+        return action;
+      };
+      const dispatch = createEventRecoveryMiddleware()({} as never)(reduce);
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: () => () => {},
+          request: async (_method, params, observe) => {
+            observe?.(params);
+            return params;
+          },
+          dispose: () => {},
+        }),
+      );
+      const off = installTaskListRecovery(scope, {
+        getState: () => current as never,
+        dispatch,
+        subscribe: (fn) => {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
+      });
+      let finish!: (value: any) => void;
+      let active = 0,
+        peak = 0;
+      const value = (id: string) => ({
+        tasks: [{ id, title: id, status: 'complete' }],
+        stats: { total: 1, completed: 1, inProgress: 0 },
+      });
+      mocks.tasks.list.mockReset();
+      mocks.tasks.list
+        .mockImplementationOnce(() => {
+          peak = Math.max(peak, ++active);
+          return new Promise((done) => {
+            finish = (v) => {
+              active--;
+              done(v);
+            };
+          });
+        })
+        .mockImplementation(async () => {
+          peak = Math.max(peak, ++active);
+          active--;
+          return value('fresh');
+        });
+      const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
+      try {
+        dispatch(acquireWorkspaceTasksDemand(WS, 'view'));
+        await flushAll();
+        expect(mocks.tasks.list).toHaveBeenCalledTimes(1);
+        expect(current.workspaceTasks.byWorkspaceId[WS].loading).toBe(true);
+        if (push) {
+          expect(rendererEventRecovery.push(tasksRecoveryKey(WS))).toBe(true);
+          dispatch(invalidateWorkspaceTasks(WS));
+          dispatch(ensureWorkspaceTasksLoaded(WS));
+        }
+        finish(value(push ? 'obsolete' : 'fresh'));
+        await flushAll();
+        await vi.advanceTimersByTimeAsync(1000);
+        dispatch(ensureWorkspaceTasksLoaded(WS));
+        await flushAll();
+        expect.soft(current.workspaceTasks.byWorkspaceId[WS].loading).toBe(false);
+        expect.soft(current.workspaceTasks.byWorkspaceId[WS].tasks.ids).toEqual(['fresh']);
+        expect.soft(mocks.tasks.list).toHaveBeenCalledTimes(push ? 2 : 1);
+        expect.soft(peak).toBe(1);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+        off();
+      }
+    },
+  );
+});

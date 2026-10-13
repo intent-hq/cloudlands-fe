@@ -14,6 +14,8 @@ const MAX_EVENTS = 300;
 export type WorkspaceEventsWorkspaceState = {
   events: WorkspaceEvent[];
   historyExpanded: boolean;
+  /** Replacements invalidate older page reads even when the cursor is reused. */
+  historyGeneration: number;
   pendingLiveEventIds: string[] | null;
   loading: boolean;
   error: string | null;
@@ -40,6 +42,7 @@ export type WorkspaceEventsState = {
 export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
   events: [],
   historyExpanded: false,
+  historyGeneration: 0,
   pendingLiveEventIds: null,
   loading: false,
   error: null,
@@ -258,6 +261,7 @@ workspaceEventsReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       events: merged.events,
+      historyGeneration: (wsState.historyGeneration ?? 0) + 1,
       historyExpanded: merged.events.length > MAX_EVENTS,
       pendingLiveEventIds: null,
       loading: false,

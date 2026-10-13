@@ -60,6 +60,11 @@ export const workspaceTasksReadStarted = createAction<[workspaceId: string]>(
   'workspaceTasks/workspaceTasksReadStarted',
 );
 
+/** Settle an invalidated read without installing its stale result or error. */
+export const workspaceTasksReadAbandoned = createAction<
+  [workspaceId: string, readRevision: number]
+>('workspaceTasks/workspaceTasksReadAbandoned');
+
 /** Check missing/stale data for existing demand; this does not acquire demand. */
 export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
   'workspaceTasks/ensureWorkspaceTasksLoaded',
@@ -147,6 +152,14 @@ workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [worksp
     readRevision: ws.revision,
   });
 });
+workspaceTasksReducer.with(
+  workspaceTasksReadAbandoned,
+  (state, { payload: [workspaceId, revision] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws?.loading || ws.readRevision !== revision) return state;
+    return setWorkspaceState(state, workspaceId, { ...ws, loading: false, stale: true });
+  },
+);
 workspaceTasksReducer.with(
   loadWorkspaceTasksSucceeded,
   (state, { payload: [workspaceId, tasks, stats] }) => {

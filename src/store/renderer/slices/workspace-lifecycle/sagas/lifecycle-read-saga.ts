@@ -220,6 +220,7 @@ import {
   clearWorkspaceTasks,
   ensureWorkspaceTasksLoaded,
   workspaceTasksReadStarted,
+  workspaceTasksReadAbandoned,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
@@ -227,6 +228,7 @@ import {
 import {
   selectDemandedTaskWorkspaceIds,
   selectWorkspaceTasksShouldLoad,
+  selectWorkspaceTasksState,
 } from '../../workspace-tasks/workspace-tasks-selectors';
 import {
   bulkUpdateWorkspaceEntities,
@@ -382,9 +384,11 @@ function* refreshWorkspaces(): SagaGenerator<void> {
 
 function* refreshTasks(workspaceId: string): SagaGenerator<void> {
   if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
+  const authority = rendererEventRecovery.captureAuthority(tasksRecoveryKey(workspaceId));
   const receipt = rendererEventRecovery.capture(tasksRecoveryKey(workspaceId));
   if (!receipt.commit(() => undefined)) return;
   yield* put(withRecoveryLifetime(workspaceTasksReadStarted(workspaceId), receipt));
+  const { readRevision } = yield* selectWorkspaceTasksState.effect(workspaceId);
   try {
     const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(() =>
       rendererEventRecovery.hasOwner(tasksRecoveryKey(workspaceId))
@@ -400,6 +404,13 @@ function* refreshTasks(workspaceId: string): SagaGenerator<void> {
   } catch (error) {
     yield* put(withRecoveryLifetime(loadWorkspaceTasksFailed(workspaceId, String(error)), receipt));
     throw error;
+  } finally {
+    if (!receipt.isCurrent() && authority.isCurrent()) {
+      yield* put(
+        withRecoveryLifetime(workspaceTasksReadAbandoned(workspaceId, readRevision), authority),
+      );
+      yield* put(withRecoveryLifetime(ensureWorkspaceTasksLoaded(workspaceId), authority));
+    }
   }
 }
 
@@ -1816,8 +1827,11 @@ function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
   const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
   const redux = yield* getContext<{ getState(): StoreState } | undefined>('reduxStore');
   const initialState: StoreState = yield* select();
-  const cursorCurrent = () =>
-    selectOlderEventsNextToken.select(redux?.getState() ?? initialState, workspaceId) === nextToken;
+  const historyGeneration =
+    initialState.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration;
+  const cursorCurrent = (state: StoreState = redux?.getState() ?? initialState) =>
+    selectOlderEventsNextToken.select(state, workspaceId) === nextToken &&
+    state.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration === historyGeneration;
   try {
     if (!receipt.commit(() => undefined)) return;
     if (!nextToken) {
@@ -1830,7 +1844,7 @@ function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
         return appClient.events.queryPage(workspaceId, { limit: EVENTS_PAGE_LIMIT, nextToken });
       }),
     );
-    if ((yield* selectOlderEventsNextToken.effect(workspaceId)) !== nextToken) return;
+    if (!(yield* select(cursorCurrent))) return;
     yield* put(
       withRecoveryLifetime(
         olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken),
@@ -1838,7 +1852,7 @@ function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
       ),
     );
   } catch (error) {
-    if ((yield* selectOlderEventsNextToken.effect(workspaceId)) !== nextToken) return;
+    if (!(yield* select(cursorCurrent))) return;
     yield* put(
       withRecoveryLifetime(
         olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),

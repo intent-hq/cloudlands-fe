@@ -403,3 +403,26 @@ describe('authority selected after asynchronous workspace discovery', () => {
     },
   );
 });
+
+it('keeps physical accounting identity through authority refresh and retirement', () => {
+  const registry = new RendererEventRecovery();
+  const legacy = registry.capturePhysicalSessionIdentity();
+  registry.dispose();
+  expect(registry.capturePhysicalSessionIdentity()).toBe(legacy);
+  const first = harness();
+  registry.attach(first.session);
+  const physical = registry.capturePhysicalSessionIdentity();
+  const authority = registry.captureAuthority('accounting-control');
+  expect(physical).not.toBe(legacy);
+  registry.refreshAuthority();
+  expect(registry.capturePhysicalSessionIdentity()).toBe(physical);
+  expect(authority.isCurrent()).toBe(false);
+  first.retire();
+  expect(registry.capturePhysicalSessionIdentity()).toBe(physical);
+  registry.dispose();
+  expect(registry.capturePhysicalSessionIdentity()).toBe(physical);
+  const replacement = harness();
+  registry.attach(replacement.session);
+  expect(registry.capturePhysicalSessionIdentity()).not.toBe(physical);
+  registry.dispose();
+});
