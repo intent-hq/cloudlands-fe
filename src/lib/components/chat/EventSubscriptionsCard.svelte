@@ -46,7 +46,7 @@
   } from './agent-subscriptions-view-state';
   import { safeSubscriptionSlide } from './subscription-disclosure';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
-  import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectAgentReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectAgentSubscriptionLane } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
@@ -124,7 +124,7 @@
   const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
   const scriptPage$ = selectScriptMonitors(workspaceIdStore);
   const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor);
-  const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const monitors$ = selectAgentReviewMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
   const storedHookCount = $derived(

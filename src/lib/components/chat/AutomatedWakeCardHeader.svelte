@@ -12,6 +12,8 @@
    * nests interactive controls.
    */
   import Fa from 'svelte-fa';
+  import { faGitlab } from '@fortawesome/free-brands-svg-icons';
+  import { isMergeRequest, monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   import {
     faBolt,
     faChevronDown,
@@ -91,10 +93,11 @@
       onPinnedActivate();
       return;
     }
-    void handleLink(getPrMonitorWakeUrl(presentation.attribution), {
-      workspaceId: workspace?.id ? WorkspaceId(String(workspace.id)) : undefined,
-      forceExternal: true,
-    });
+    if (getPrMonitorWakeUrl(presentation.attribution))
+      void handleLink(getPrMonitorWakeUrl(presentation.attribution), {
+        workspaceId: workspace?.id ? WorkspaceId(String(workspace.id)) : undefined,
+        forceExternal: true,
+      });
   }
 
   function handleRowClick(event: MouseEvent) {
@@ -119,7 +122,9 @@
         ? faBolt
         : presentation.kind === 'script'
           ? faTerminal
-          : faCodePullRequest}
+          : presentation.kind === 'pr' && isMergeRequest(presentation.attribution)
+            ? faGitlab
+            : faCodePullRequest}
       size={16}
       class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
     />
@@ -154,9 +159,13 @@
         variant="plain"
         class="type-body h-auto! min-w-0 max-w-full justify-start overflow-hidden whitespace-nowrap p-0! text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
+        aria-label={monitorAccessibleLabel(chipLabel, presentation.attribution)}
+        disabled={!onPinnedActivate && !getPrMonitorWakeUrl(presentation.attribution)}
         title={onPinnedActivate
           ? m.chat_stickyMessageHeader_scrollToPrevious_title()
-          : m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
+          : m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({
+              label: monitorAccessibleLabel(chipLabel, presentation.attribution),
+            })}
         onclick={openPr}
       >
         <span class="min-w-0 truncate">

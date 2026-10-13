@@ -4,12 +4,17 @@
 
 import { store } from '../../store';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  isLegacyMonitorPresentation,
+  type ReviewMonitorRow,
+  type ReviewMonitoringSupport,
+} from '$shared/types/pr-monitor';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { PrMonitorSnapshotStatus } from './pr-monitor-slice';
 
 /** All live-subscribed monitors for a workspace (active + completed), in seed order. */
-export const selectPrMonitors = store.createSelector(
-  (state, workspaceId: string): PrMonitorRow[] => {
+export const selectReviewMonitors = store.createSelector(
+  (state, workspaceId: string): ReviewMonitorRow[] => {
     // Optional chain: cross-slice consumers (workspace-selectors) run
     // against partial test states without this slice.
     const ws = state.prMonitor?.byWorkspaceId?.[workspaceId];
@@ -18,19 +23,26 @@ export const selectPrMonitors = store.createSelector(
   },
 );
 
-/** Active monitors only — the "View PR" fallback and card "+N" sources. */
-export const selectActivePrMonitors = store.createSelector(
-  (state, workspaceId: string): PrMonitorRow[] =>
-    selectPrMonitors.select(state, workspaceId).filter((m) => m.state === 'active'),
+/** Legacy consumers remain isolated until every UI path supports qualified facts. */
+export const selectPrMonitors = store.createSelector((state, workspaceId: string): PrMonitorRow[] =>
+  selectReviewMonitors.select(state, workspaceId).filter(isLegacyMonitorPresentation),
 );
-
-/** One agent's monitors (active + completed) for the chat chip row. */
-export const selectAgentPrMonitors = store.createSelector(
-  (state, workspaceId: string, agentId: string): PrMonitorRow[] =>
-    selectPrMonitors.select(state, workspaceId).filter((m) => m.agentId === agentId),
+export const selectReviewMonitoringSupport = store.createSelector(
+  (state, workspaceId: string): ReviewMonitoringSupport =>
+    state.prMonitor?.byWorkspaceId?.[workspaceId]?.support ?? 'unsupported',
 );
 
 export const selectPrMonitorsSnapshotStatus = store.createSelector(
   (state, workspaceId: string): PrMonitorSnapshotStatus =>
     state.prMonitor?.byWorkspaceId?.[workspaceId]?.snapshotStatus ?? 'loading',
+);
+
+/** Qualified consumers preserve provider identity and nullable facts. */
+export const selectActiveReviewMonitors = store.createSelector(
+  (state, workspaceId: string): ReviewMonitorRow[] =>
+    selectReviewMonitors.select(state, workspaceId).filter((row) => row.state === 'active'),
+);
+export const selectAgentReviewMonitors = store.createSelector(
+  (state, workspaceId: string, agentId: string): ReviewMonitorRow[] =>
+    selectReviewMonitors.select(state, workspaceId).filter((row) => row.agentId === agentId),
 );

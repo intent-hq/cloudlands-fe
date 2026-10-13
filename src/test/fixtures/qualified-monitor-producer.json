@@ -1,0 +1,58 @@
+{
+  "monitorId": "d75ceadf-f2cd-4c4b-af1b-742b95555010",
+  "workspaceId": "9533a8ab-6bb5-403d-82ea-8c5236da5f30",
+  "agentId": "7b42b78e-7443-496e-91e5-4b9d62b53a91",
+  "repo": "group/project",
+  "prNumber": 4,
+  "state": "active",
+  "pendingChanges": [],
+  "hasPendingChanges": false,
+  "createdAt": "2026-10-09T19:57:03.547437104Z",
+  "updatedAt": "2026-10-09T19:57:03.547437104Z",
+  "lastPolledAt": "2026-10-09T19:57:03.547437104Z",
+  "resource": {
+    "repository": {
+      "provider": "gitlab",
+      "instanceBaseUrl": "https://gitlab.test/forge",
+      "projectPath": "group/project"
+    },
+    "kind": "merge-request",
+    "number": 4
+  },
+  "monitorAvailability": {
+    "state": "available"
+  },
+  "lastSnapshot": {
+    "state": "open",
+    "isDraft": false,
+    "hasConflicts": null,
+    "isBehind": null,
+    "checks": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "pending": 0,
+      "requiredKnown": true,
+      "failingRequired": 0,
+      "pendingRequired": 0
+    },
+    "approvals": {
+      "decision": null,
+      "have": null,
+      "changesRequested": null
+    },
+    "threads": {
+      "unresolved": 0,
+      "resolutionRequired": false
+    },
+    "rulesKnown": true,
+    "availability": {
+      "policy": "available",
+      "approvals": "restricted",
+      "checks": "available",
+      "discussions": "available"
+    }
+  },
+  "title": "actual review",
+  "url": "https://gitlab.test/forge/group/project/-/merge_requests/4"
+}

@@ -9,6 +9,8 @@
    * the PR in the external browser (metadata `url` first, GitHub fallback).
    */
   import Fa from 'svelte-fa';
+  import { faGitlab } from '@fortawesome/free-brands-svg-icons';
+  import { isMergeRequest, monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   import { Button } from '$lib/components/ui/button';
   import { faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -52,10 +54,11 @@
   function handleOpenPr(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    void handleLink(getPrMonitorWakeUrl(attribution), {
-      workspaceId: workspaceId as WorkspaceId | undefined,
-      forceExternal: true,
-    });
+    if (getPrMonitorWakeUrl(attribution))
+      void handleLink(getPrMonitorWakeUrl(attribution), {
+        workspaceId: workspaceId as WorkspaceId | undefined,
+        forceExternal: true,
+      });
   }
 </script>
 
@@ -65,7 +68,7 @@
 >
   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
     <Fa
-      icon={faCodePullRequest}
+      icon={isMergeRequest(attribution) ? faGitlab : faCodePullRequest}
       size={14}
       class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
     />
@@ -78,7 +81,11 @@
       variant="plain"
       class="type-body h-auto! min-w-0 max-w-full cursor-pointer justify-start truncate p-0! text-left font-normal text-muted-foreground hover:underline"
       data-testid="pr-monitor-wake-chip"
-      title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
+      disabled={!getPrMonitorWakeUrl(attribution)}
+      aria-label={monitorAccessibleLabel(chipLabel, attribution)}
+      title={isMergeRequest(attribution)
+        ? monitorAccessibleLabel(m.chat_prMonitorWakeAttribution_openMr_tooltip(), attribution)
+        : m.chat_prMonitorWakeAttribution_openPr_tooltip()}
       onclick={handleOpenPr}
     >
       {chipLabel}

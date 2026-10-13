@@ -124,6 +124,10 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  onMonitorReconnected?(handler: () => void): () => void;
+  capturePrMonitorSession?(
+    workspaceId: string,
+  ): Promise<import('$shared/types/pr-monitor').PrMonitorSession>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
   observeNodeCapabilities?(): Promise<unknown>;
   captureRepositoryCheckout?(

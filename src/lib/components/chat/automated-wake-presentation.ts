@@ -65,14 +65,23 @@ export function getAutomatedWakePresentation(
   let script: ScriptMonitorWakeAttribution | null = null;
   let hook: HookWakeAttribution | null = null;
   let pr: PrMonitorWakeAttribution | null = null;
-  for (const metadata of metadataCandidates(message)) {
+  const candidates = metadataCandidates(message);
+  const qualifiedMonitors = candidates.filter(
+    (metadata) =>
+      metadata !== null &&
+      typeof metadata === 'object' &&
+      'type' in metadata &&
+      metadata.type === 'pr_monitor_wake' &&
+      ('resource' in metadata || 'monitorAvailability' in metadata),
+  );
+  for (const metadata of qualifiedMonitors.length ? qualifiedMonitors : candidates) {
     script ??= getScriptMonitorWakeAttribution(metadata);
     hook ??= getHookWakeAttribution(metadata);
     pr ??= getPrMonitorWakeAttribution(metadata);
     if (hook || pr || script) break;
   }
   hook ??= getHookWakeAttribution(undefined, rawText);
-  pr ??= hook ? null : getPrMonitorWakeAttribution(undefined, rawText);
+  pr ??= hook || qualifiedMonitors.length ? null : getPrMonitorWakeAttribution(undefined, rawText);
 
   const queueInfo = getQueueInfo(message.metadata);
   const withoutQueueNote = queueInfo ? stripDequeueWaitNote(rawText) : rawText;
@@ -97,7 +106,7 @@ export function getAutomatedWakePresentation(
     return {
       kind: 'pr',
       attribution: pr,
-      bodyText: stripPrMonitorWakePrefix(withoutQueueNote).trim(),
+      bodyText: stripPrMonitorWakePrefix(withoutQueueNote, pr).trim(),
       queueInfo,
       state: 'delivered',
     };

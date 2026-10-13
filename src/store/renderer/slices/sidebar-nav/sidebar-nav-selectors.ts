@@ -13,7 +13,7 @@ import {
   selectBackgroundHooksSnapshotStatus,
 } from '../background-hooks/background-hooks-selectors';
 import {
-  selectAgentPrMonitors,
+  selectAgentReviewMonitors,
   selectPrMonitorsSnapshotStatus,
 } from '../pr-monitor/pr-monitor-selectors';
 import { selectScriptMonitors } from '../script-monitor/script-monitor-selectors';
@@ -130,7 +130,7 @@ export const selectAssistantThreadActivity = store.createSelector((state, agentI
       : (session.waitingOnHooks?.length ?? 0);
   const prs =
     selectPrMonitorsSnapshotStatus.select(state, CHIEF_WORKSPACE_ID) === 'ready'
-      ? selectAgentPrMonitors
+      ? selectAgentReviewMonitors
           .select(state, CHIEF_WORKSPACE_ID, agentId)
           .filter((monitor) => monitor.state === 'active').length
       : (session.waitingOnPrMonitors?.length ?? 0);

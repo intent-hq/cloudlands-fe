@@ -51,6 +51,7 @@
     "test/fixtures/repository-context-native/main.ts",
     "test/fixtures/repository-selection-native/main.ts",
     "test/fixtures/native-review-native/main.ts",
+    "test/fixtures/pr-monitor-native/main.ts",
     "test/fixtures/native-review-native/ui-renderer.svelte",
     // Substituted for production components through Vite alias/resolveId plugins inside
     // the specs' createServer() config (electron-browser-lifetime.spec.ts);
@@ -178,6 +179,7 @@
       "test/fixtures/repository-context-native/playwright.config.ts",
       "test/fixtures/repository-selection-native/playwright.config.ts",
       "test/fixtures/native-review-native/playwright.config.ts",
+      "test/fixtures/pr-monitor-native/playwright.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
       "test/**/*.spec.ts",
@@ -193,6 +195,7 @@
       "test/fixtures/repository-context-native/context.electron.ts",
       "test/fixtures/repository-selection-native/selection.electron.ts",
       "test/fixtures/native-review-native/review.electron.ts",
+      "test/fixtures/pr-monitor-native/monitor.electron.ts",
     ],
   },
   "playwright-ct": {

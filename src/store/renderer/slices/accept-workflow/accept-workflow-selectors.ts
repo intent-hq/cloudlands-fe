@@ -17,7 +17,7 @@ import {
   selectFileTrackingIsInitialized,
 } from '../changes/changes-selectors';
 import { selectGitHubAuthIsAuthenticated } from '../github-auth/github-auth-selectors';
-import { selectPrMonitors } from '../pr-monitor/pr-monitor-selectors';
+import { selectReviewMonitors } from '../pr-monitor/pr-monitor-selectors';
 import { selectGitRoots } from '../git-roots/git-roots-selectors';
 import { emptyAcceptWorkflowWorkspace } from './accept-workflow-slice';
 import type { AcceptOperationKind, MergeOptions } from './accept-workflow-types';
@@ -80,7 +80,7 @@ export const selectAcceptObservation = store.createSelector((state, workspaceId:
       getPRDisplayTitle,
       repo,
     ),
-    selectPrMonitors.select(state, workspaceId),
+    selectReviewMonitors.select(state, workspaceId),
     repo,
     selectGitRoots.select(state, workspaceId),
     getPRDisplayTitle,

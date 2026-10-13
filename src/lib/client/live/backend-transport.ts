@@ -244,3 +244,24 @@ export function captureBackendRepositoryCheckout(query: CheckoutCaptureQuery) {
     );
   return transport.captureRepositoryCheckout(query);
 }
+
+/** Capture monitor reads/controls on the actual main-process connection. */
+export function capturePrMonitorSession(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.capturePrMonitorSession)
+    return Promise.reject(
+      new BackendError({
+        code: 'PR_MONITOR_SESSION_UNAVAILABLE',
+        message: 'Monitor transport unavailable',
+      }),
+    );
+  return transport.capturePrMonitorSession(workspaceId);
+}
+
+/** Monitor sessions also retire on acknowledged identity renegotiation. */
+export function onMonitorReconnected(handler: () => void): () => void {
+  const transport = resolveBackendTransport();
+  return transport.onMonitorReconnected
+    ? transport.onMonitorReconnected(handler)
+    : transport.onReconnected(handler);
+}

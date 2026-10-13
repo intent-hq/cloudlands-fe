@@ -1,3 +1,4 @@
+import { monitorUrl, monitorChipLabel } from '$lib/utils/review-monitor-presentation';
 import { store } from '../../store';
 import {
   PullRequestStatus,
@@ -15,7 +16,7 @@ import {
 } from '../changes/changes-selectors';
 import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
-import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
+import { selectActiveReviewMonitors } from '../pr-monitor/pr-monitor-selectors';
 import {
   selectCanAdministerHost,
   selectCollaborationReady,
@@ -360,7 +361,7 @@ function activePrStatus(pr: PullRequestInfo): WorkspaceActivePrStatus {
 }
 
 /** Normalize a monitor snapshot's raw `state` string. */
-function monitorPrStatus(state: string, isDraft: boolean): WorkspaceActivePrStatus {
+function monitorPrStatus(state: string, isDraft: boolean | null): WorkspaceActivePrStatus {
   if (isDraft) return 'draft';
   const normalized = state.toLowerCase();
   if (normalized === 'open' || normalized === 'merged' || normalized === 'closed') {
@@ -378,11 +379,14 @@ function buildActivePrSummary(args: {
   chipLabel: string;
   title: string | undefined;
   status: WorkspaceActivePrStatus;
+  mergeRequest?: boolean;
 }): WorkspaceActivePrSummary {
-  const { number, url, repo, chipLabel, title, status } = args;
+  const { number, url, repo, chipLabel, title, status, mergeRequest } = args;
   const formattedNumber = formatInteger(number);
   // i18n-ignore (org/repo#number identifier and PR title, not user-facing prose)
-  const identity = repo ? `${repo}#${formattedNumber}` : `#${formattedNumber}`;
+  const identity = repo
+    ? `${repo}${mergeRequest ? '!' : '#'}${formattedNumber}`
+    : `${mergeRequest ? '!' : '#'}${formattedNumber}`;
   return {
     number,
     url,
@@ -392,7 +396,9 @@ function buildActivePrSummary(args: {
     status,
     // i18n-ignore (chip identifier + PR title, both i18n-exempt)
     actionLabel: title ? `${chipLabel}: ${title}` : chipLabel,
-    actionTooltip: m.workspace_progress_viewPrIdentity_tooltip({ identity }),
+    actionTooltip: (mergeRequest
+      ? m.workspace_progress_viewMrIdentity_tooltip
+      : m.workspace_progress_viewPrIdentity_tooltip)({ identity }),
   };
 }
 
@@ -426,14 +432,15 @@ export const selectWorkspaceActivePrSummary = store.createSelector<
     });
   }
 
-  const monitor = selectActivePrMonitors.select(state, wsId)[0];
+  const monitor = selectActiveReviewMonitors.select(state, wsId)[0];
   if (!monitor) return null;
   const snapshot = monitor.lastSnapshot;
   return buildActivePrSummary({
     number: monitor.prNumber,
-    url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
+    url: monitorUrl(monitor),
+    mergeRequest: monitor.resource?.repository.provider === 'gitlab',
     repo: monitor.repo,
-    chipLabel: getPrChipLabel(monitor.repo, monitor.prNumber, workspaceRepo),
+    chipLabel: monitorChipLabel(monitor, workspaceRepo),
     title: monitor.title || undefined,
     status: snapshot ? monitorPrStatus(snapshot.state, snapshot.isDraft) : 'unknown',
   });

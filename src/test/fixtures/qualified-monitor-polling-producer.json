@@ -1,0 +1,485 @@
+{
+  "evidence": "Final corrected source: actual MCP rows, stored typed wakes and admitted ACP prompts from controlled HTTP/runtime tests. Empty generic lifecycle events prove withholding only, not native delivery.",
+  "fixtures": [
+    {
+      "terminal": "merged",
+      "pendingRows": [
+        {
+          "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+          "workspaceId": "a29e0b15-2108-4870-8dd6-82c4b90545fe",
+          "agentId": "agent-b5b1a4c2-6506-4f55-a98e-90198fa79118",
+          "repo": "group/project",
+          "prNumber": 4,
+          "state": "active",
+          "pendingChanges": ["new commits pushed (head is now head-c)"],
+          "hasPendingChanges": true,
+          "createdAt": "2026-10-10T01:07:32.621468245Z",
+          "updatedAt": "2026-10-10T01:07:33.722303356Z",
+          "pendingSince": "2026-10-10T01:07:32.722303356Z",
+          "lastChangeAt": "2026-10-10T01:07:33.722303356Z",
+          "lastPolledAt": "2026-10-10T01:07:33.722303356Z",
+          "resource": {
+            "repository": {
+              "provider": "gitlab",
+              "instanceBaseUrl": "https://gitlab.test/forge",
+              "projectPath": "group/project"
+            },
+            "kind": "merge-request",
+            "number": 4
+          },
+          "monitorAvailability": {
+            "state": "available"
+          },
+          "lastSnapshot": {
+            "state": "open",
+            "isDraft": false,
+            "hasConflicts": null,
+            "isBehind": null,
+            "checks": {
+              "total": 0,
+              "passed": 0,
+              "failed": 0,
+              "pending": 0,
+              "requiredKnown": true,
+              "failingRequired": 0,
+              "pendingRequired": 0
+            },
+            "approvals": {
+              "decision": null,
+              "have": 0,
+              "changesRequested": 0,
+              "needed": 0
+            },
+            "threads": {
+              "unresolved": 0,
+              "resolutionRequired": false
+            },
+            "rulesKnown": true,
+            "availability": {
+              "policy": "available",
+              "approvals": "available",
+              "checks": "available",
+              "discussions": "available"
+            }
+          },
+          "title": "actual review",
+          "url": "https://gitlab.test/forge/group/project/-/merge_requests/4"
+        }
+      ],
+      "completedRows": [
+        {
+          "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+          "workspaceId": "a29e0b15-2108-4870-8dd6-82c4b90545fe",
+          "agentId": "agent-b5b1a4c2-6506-4f55-a98e-90198fa79118",
+          "repo": "group/project",
+          "prNumber": 4,
+          "state": "completed",
+          "pendingChanges": [],
+          "hasPendingChanges": false,
+          "createdAt": "2026-10-10T01:07:32.621468245Z",
+          "updatedAt": "2026-10-10T01:07:32.832996679Z",
+          "lastPolledAt": "2026-10-10T01:09:34.722303356Z",
+          "resource": {
+            "repository": {
+              "provider": "gitlab",
+              "instanceBaseUrl": "https://gitlab.test/forge",
+              "projectPath": "group/project"
+            },
+            "kind": "merge-request",
+            "number": 4
+          },
+          "monitorAvailability": {
+            "state": "available"
+          },
+          "lastSnapshot": {
+            "state": "merged",
+            "isDraft": false,
+            "hasConflicts": null,
+            "isBehind": null,
+            "checks": {
+              "total": 0,
+              "passed": 0,
+              "failed": 0,
+              "pending": 0,
+              "requiredKnown": true,
+              "failingRequired": 0,
+              "pendingRequired": 0
+            },
+            "approvals": {
+              "decision": null,
+              "have": 0,
+              "changesRequested": 0,
+              "needed": 0
+            },
+            "threads": {
+              "unresolved": 0,
+              "resolutionRequired": false
+            },
+            "rulesKnown": true,
+            "availability": {
+              "policy": "available",
+              "approvals": "available",
+              "checks": "available",
+              "discussions": "available"
+            }
+          },
+          "title": "actual review",
+          "url": "https://gitlab.test/forge/group/project/-/merge_requests/4"
+        }
+      ],
+      "wakes": [
+        {
+          "content": [
+            {
+              "type": "text",
+              "text": "[MR monitor group/project!4] 1 change detected on \"actual review\" (https://gitlab.test/forge/group/project/-/merge_requests/4):\n- new commits pushed (head is now head-c)\n\nWhere the MR stands now:\n- state: open\n- approvals: unknown (0/0 required)\n- checks: 0 passed, 0 failed, 0 pending (of 0)\n- unresolved threads: 0\n- branch ancestry: unknown\n- forge branch-update requirement: unknown",
+              "messageMetadata": {
+                "type": "pr_monitor_wake",
+                "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+                "repo": "group/project",
+                "prNumber": 4,
+                "reason": "changed",
+                "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+                "resource": {
+                  "repository": {
+                    "provider": "gitlab",
+                    "instanceBaseUrl": "https://gitlab.test/forge",
+                    "projectPath": "group/project"
+                  },
+                  "kind": "merge-request",
+                  "number": 4
+                },
+                "monitorAvailability": {
+                  "state": "available"
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "type": "pr_monitor_wake",
+            "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+            "repo": "group/project",
+            "prNumber": 4,
+            "reason": "changed",
+            "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+            "resource": {
+              "repository": {
+                "provider": "gitlab",
+                "instanceBaseUrl": "https://gitlab.test/forge",
+                "projectPath": "group/project"
+              },
+              "kind": "merge-request",
+              "number": 4
+            },
+            "monitorAvailability": {
+              "state": "available"
+            }
+          }
+        },
+        {
+          "content": [
+            {
+              "type": "text",
+              "text": "[MR monitor group/project!4] \"actual review\" was MERGED (https://gitlab.test/forge/group/project/-/merge_requests/4).\n\nMonitoring has STOPPED \u2014 this monitor is retired and will not report again.\n\nChanges since the last report:\n- state: open \u2192 merged",
+              "messageMetadata": {
+                "type": "pr_monitor_wake",
+                "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+                "repo": "group/project",
+                "prNumber": 4,
+                "reason": "completed",
+                "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+                "resource": {
+                  "repository": {
+                    "provider": "gitlab",
+                    "instanceBaseUrl": "https://gitlab.test/forge",
+                    "projectPath": "group/project"
+                  },
+                  "kind": "merge-request",
+                  "number": 4
+                },
+                "monitorAvailability": {
+                  "state": "available"
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "type": "pr_monitor_wake",
+            "monitorId": "460079a3-bb12-4cbc-8ec2-d30c5ff6e9d6",
+            "repo": "group/project",
+            "prNumber": 4,
+            "reason": "completed",
+            "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+            "resource": {
+              "repository": {
+                "provider": "gitlab",
+                "instanceBaseUrl": "https://gitlab.test/forge",
+                "projectPath": "group/project"
+              },
+              "kind": "merge-request",
+              "number": 4
+            },
+            "monitorAvailability": {
+              "state": "available"
+            }
+          }
+        }
+      ],
+      "prompts": [
+        [
+          {
+            "type": "text",
+            "text": "[MR monitor group/project!4] 1 change detected on \"actual review\" (https://gitlab.test/forge/group/project/-/merge_requests/4):\n- new commits pushed (head is now head-c)\n\nWhere the MR stands now:\n- state: open\n- approvals: unknown (0/0 required)\n- checks: 0 passed, 0 failed, 0 pending (of 0)\n- unresolved threads: 0\n- branch ancestry: unknown\n- forge branch-update requirement: unknown"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "text": "[MR monitor group/project!4] \"actual review\" was MERGED (https://gitlab.test/forge/group/project/-/merge_requests/4).\n\nMonitoring has STOPPED \u2014 this monitor is retired and will not report again.\n\nChanges since the last report:\n- state: open \u2192 merged"
+          }
+        ]
+      ],
+      "sharedLifecycleEvents": []
+    },
+    {
+      "terminal": "closed",
+      "pendingRows": [
+        {
+          "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+          "workspaceId": "1bbdc15b-acb0-43e2-b3b6-398200fbcd8f",
+          "agentId": "agent-226b459c-e798-4cda-a753-5918553b4843",
+          "repo": "group/project",
+          "prNumber": 4,
+          "state": "active",
+          "pendingChanges": ["new commits pushed (head is now head-c)"],
+          "hasPendingChanges": true,
+          "createdAt": "2026-10-10T01:07:33.718604247Z",
+          "updatedAt": "2026-10-10T01:07:34.820798869Z",
+          "pendingSince": "2026-10-10T01:07:33.820798869Z",
+          "lastChangeAt": "2026-10-10T01:07:34.820798869Z",
+          "lastPolledAt": "2026-10-10T01:07:34.820798869Z",
+          "resource": {
+            "repository": {
+              "provider": "gitlab",
+              "instanceBaseUrl": "https://gitlab.test/forge",
+              "projectPath": "group/project"
+            },
+            "kind": "merge-request",
+            "number": 4
+          },
+          "monitorAvailability": {
+            "state": "available"
+          },
+          "lastSnapshot": {
+            "state": "open",
+            "isDraft": false,
+            "hasConflicts": null,
+            "isBehind": null,
+            "checks": {
+              "total": 0,
+              "passed": 0,
+              "failed": 0,
+              "pending": 0,
+              "requiredKnown": true,
+              "failingRequired": 0,
+              "pendingRequired": 0
+            },
+            "approvals": {
+              "decision": null,
+              "have": 0,
+              "changesRequested": 0,
+              "needed": 0
+            },
+            "threads": {
+              "unresolved": 0,
+              "resolutionRequired": false
+            },
+            "rulesKnown": true,
+            "availability": {
+              "policy": "available",
+              "approvals": "available",
+              "checks": "available",
+              "discussions": "available"
+            }
+          },
+          "title": "actual review",
+          "url": "https://gitlab.test/forge/group/project/-/merge_requests/4"
+        }
+      ],
+      "completedRows": [
+        {
+          "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+          "workspaceId": "1bbdc15b-acb0-43e2-b3b6-398200fbcd8f",
+          "agentId": "agent-226b459c-e798-4cda-a753-5918553b4843",
+          "repo": "group/project",
+          "prNumber": 4,
+          "state": "completed",
+          "pendingChanges": [],
+          "hasPendingChanges": false,
+          "createdAt": "2026-10-10T01:07:33.718604247Z",
+          "updatedAt": "2026-10-10T01:07:33.94921196Z",
+          "lastPolledAt": "2026-10-10T01:09:35.820798869Z",
+          "resource": {
+            "repository": {
+              "provider": "gitlab",
+              "instanceBaseUrl": "https://gitlab.test/forge",
+              "projectPath": "group/project"
+            },
+            "kind": "merge-request",
+            "number": 4
+          },
+          "monitorAvailability": {
+            "state": "available"
+          },
+          "lastSnapshot": {
+            "state": "closed",
+            "isDraft": false,
+            "hasConflicts": null,
+            "isBehind": null,
+            "checks": {
+              "total": 0,
+              "passed": 0,
+              "failed": 0,
+              "pending": 0,
+              "requiredKnown": true,
+              "failingRequired": 0,
+              "pendingRequired": 0
+            },
+            "approvals": {
+              "decision": null,
+              "have": 0,
+              "changesRequested": 0,
+              "needed": 0
+            },
+            "threads": {
+              "unresolved": 0,
+              "resolutionRequired": false
+            },
+            "rulesKnown": true,
+            "availability": {
+              "policy": "available",
+              "approvals": "available",
+              "checks": "available",
+              "discussions": "available"
+            }
+          },
+          "title": "actual review",
+          "url": "https://gitlab.test/forge/group/project/-/merge_requests/4"
+        }
+      ],
+      "wakes": [
+        {
+          "content": [
+            {
+              "type": "text",
+              "text": "[MR monitor group/project!4] 1 change detected on \"actual review\" (https://gitlab.test/forge/group/project/-/merge_requests/4):\n- new commits pushed (head is now head-c)\n\nWhere the MR stands now:\n- state: open\n- approvals: unknown (0/0 required)\n- checks: 0 passed, 0 failed, 0 pending (of 0)\n- unresolved threads: 0\n- branch ancestry: unknown\n- forge branch-update requirement: unknown",
+              "messageMetadata": {
+                "type": "pr_monitor_wake",
+                "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+                "repo": "group/project",
+                "prNumber": 4,
+                "reason": "changed",
+                "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+                "resource": {
+                  "repository": {
+                    "provider": "gitlab",
+                    "instanceBaseUrl": "https://gitlab.test/forge",
+                    "projectPath": "group/project"
+                  },
+                  "kind": "merge-request",
+                  "number": 4
+                },
+                "monitorAvailability": {
+                  "state": "available"
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "type": "pr_monitor_wake",
+            "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+            "repo": "group/project",
+            "prNumber": 4,
+            "reason": "changed",
+            "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+            "resource": {
+              "repository": {
+                "provider": "gitlab",
+                "instanceBaseUrl": "https://gitlab.test/forge",
+                "projectPath": "group/project"
+              },
+              "kind": "merge-request",
+              "number": 4
+            },
+            "monitorAvailability": {
+              "state": "available"
+            }
+          }
+        },
+        {
+          "content": [
+            {
+              "type": "text",
+              "text": "[MR monitor group/project!4] \"actual review\" was CLOSED without merging (https://gitlab.test/forge/group/project/-/merge_requests/4).\n\nMonitoring has STOPPED \u2014 this monitor is retired and will not report again.\n\nChanges since the last report:\n- state: open \u2192 closed",
+              "messageMetadata": {
+                "type": "pr_monitor_wake",
+                "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+                "repo": "group/project",
+                "prNumber": 4,
+                "reason": "completed",
+                "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+                "resource": {
+                  "repository": {
+                    "provider": "gitlab",
+                    "instanceBaseUrl": "https://gitlab.test/forge",
+                    "projectPath": "group/project"
+                  },
+                  "kind": "merge-request",
+                  "number": 4
+                },
+                "monitorAvailability": {
+                  "state": "available"
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "type": "pr_monitor_wake",
+            "monitorId": "4f92eb7f-f78a-4321-846b-7755335505e7",
+            "repo": "group/project",
+            "prNumber": 4,
+            "reason": "completed",
+            "url": "https://gitlab.test/forge/group/project/-/merge_requests/4",
+            "resource": {
+              "repository": {
+                "provider": "gitlab",
+                "instanceBaseUrl": "https://gitlab.test/forge",
+                "projectPath": "group/project"
+              },
+              "kind": "merge-request",
+              "number": 4
+            },
+            "monitorAvailability": {
+              "state": "available"
+            }
+          }
+        }
+      ],
+      "prompts": [
+        [
+          {
+            "type": "text",
+            "text": "[MR monitor group/project!4] 1 change detected on \"actual review\" (https://gitlab.test/forge/group/project/-/merge_requests/4):\n- new commits pushed (head is now head-c)\n\nWhere the MR stands now:\n- state: open\n- approvals: unknown (0/0 required)\n- checks: 0 passed, 0 failed, 0 pending (of 0)\n- unresolved threads: 0\n- branch ancestry: unknown\n- forge branch-update requirement: unknown"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "text": "[MR monitor group/project!4] \"actual review\" was CLOSED without merging (https://gitlab.test/forge/group/project/-/merge_requests/4).\n\nMonitoring has STOPPED \u2014 this monitor is retired and will not report again.\n\nChanges since the last report:\n- state: open \u2192 closed"
+          }
+        ]
+      ],
+      "sharedLifecycleEvents": []
+    }
+  ]
+}

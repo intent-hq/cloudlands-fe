@@ -5,7 +5,7 @@
  */
 
 import type { LocalCommitInfo } from '$features/accept-changes/types';
-import type { PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
+import type { ReviewMonitorRow, ReviewMonitorExtension } from '$shared/types/pr-monitor';
 import { m } from '$shared/paraglide/messages.js';
 
 /** Agent attribution for file changes */
@@ -107,7 +107,8 @@ interface ChangeStats {
 type PRDisplayStatus = 'open' | 'merged' | 'closed' | 'draft';
 
 /** Pull request info for display */
-export interface PRInfo {
+export interface PRInfo extends ReviewMonitorExtension {
+  monitorIdentity?: string;
   number: number;
   title: string;
   url: string;
@@ -125,7 +126,7 @@ export interface PRInfo {
    * for row keys (see intent-hq/monorepo#1699). */
   crossRepoDisplay?: string;
   /** Monitor's last merge-requirements snapshot (PROTOCOL §6.9) for hover status. */
-  monitorSnapshot?: PrMonitorSnapshot;
+  monitorSnapshot?: ReviewMonitorRow['lastSnapshot'];
   /** Row exists only as a monitor (no matching workspace PR) — local
    * commit/file data does not apply to it. */
   monitorOnly?: boolean;

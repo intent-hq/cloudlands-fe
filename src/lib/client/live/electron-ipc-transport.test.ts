@@ -59,6 +59,25 @@ afterEach(() => {
 });
 
 describe('electron-ipc-transport onReconnected fan-out', () => {
+  it('resumes qualified document readers only after attachment readiness and removes listeners on disposal', () => {
+    const api = installFakeApi();
+    Object.assign(api, { reviewMonitoring: 1 });
+    const qualified = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
+    const legacy = createElectronIpcBackendTransport();
+    const capable = vi.fn(),
+      ordinary = vi.fn();
+    const stop = qualified.onReconnected(capable);
+    const stopLegacy = legacy.onReconnected(ordinary);
+    api.emit('backend:pr-monitor:ready', {});
+    expect(capable).not.toHaveBeenCalled();
+    api.emit('backend:pr-monitor:ready', { attachment: true });
+    expect(capable).toHaveBeenCalledOnce();
+    expect(ordinary).not.toHaveBeenCalled();
+    stop();
+    stopLegacy();
+    api.emit('backend:pr-monitor:ready', { attachment: true });
+    expect(capable).toHaveBeenCalledOnce();
+  });
   it('registers a single backend:status listener for many subscribers and fans out', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
@@ -980,5 +999,24 @@ describe('native review original renderer bridge', () => {
     expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toHaveLength(2);
     api.invoke.mockResolvedValue({ ok: true, result: { released: true } } as never);
     await parent.release();
+  });
+});
+
+describe('native document history recipient', () => {
+  it('intersects the renderer and preload receipts only for admitted history methods', async () => {
+    const api = installFakeApi();
+    Object.assign(api, { reviewMonitoring: 1 });
+    const transport = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
+    await transport.request('agent.getConversation', { agentId: 'agent' });
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      method: 'agent.getConversation',
+      params: { agentId: 'agent' },
+      reviewMonitoring: 1,
+    });
+    await transport.request('agent.getSession', { agentId: 'agent' });
+    expect(api.invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('reviewMonitoring');
+    Object.assign(api, { reviewMonitoring: undefined });
+    await transport.request('agent.getConversation', { agentId: 'agent' });
+    expect(api.invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('reviewMonitoring');
   });
 });

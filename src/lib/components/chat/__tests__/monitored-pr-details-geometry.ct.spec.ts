@@ -66,3 +66,27 @@ test('aligns expanded details with the PR label as plain muted sentences', async
     }
   }
 });
+
+for (const width of [360, 720]) {
+  test(`qualified MR details leave both controls accessible at ${width}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 520 });
+    const component = await mount(MonitoredPrsRowGeometryHost, {
+      props: { provider: 'gitlab', width, referenceState: 'restricted' },
+    });
+    const summary = component.getByTestId('monitored-pr-summary');
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(component.getByTestId('monitored-pr-details')).toBeVisible();
+    const kebab = component.getByTestId('monitored-pr-chip');
+    const chevron = component.getByTestId('monitored-pr-chevron');
+    const a = (await kebab.boundingBox())!;
+    const b = (await chevron.boundingBox())!;
+    expect(a.x + a.width).toBeLessThanOrEqual(b.x);
+    expect(b.x + b.width).toBeLessThanOrEqual(width);
+    await page.keyboard.press('Tab');
+    await expect(kebab).toBeFocused();
+  });
+}
