@@ -20,7 +20,9 @@ import {
   deleteNote,
   noteEventReceived,
   commentEventReceived,
+  refreshNoteFromEventRequested,
   noteAttributionViewRequested,
+  noteAttributionInvalidated,
   noteAttributionViewReleased,
 } from '../workspace-notes-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -29,6 +31,12 @@ import {
   commentLoadRequested,
   commentLoadReleased,
 } from '../../comments/comments-slice';
+import {
+  dispatchNoteRecoveryEvent,
+  dispatchNoteAttributionRecoveryEvent,
+} from './note-event-receipt';
+import { notesRecoveryKey, commentsRecoveryKey, attributionRecoveryKey } from './notes-recovery';
+import { withRecoveryAdmissions } from '../../../middlewares/event-recovery';
 import { notesReadSaga } from './notes-read-saga';
 import { noteVersionsSaga } from './note-versions-saga';
 import { notesWriteSaga } from './notes-write-saga';
@@ -50,7 +58,8 @@ const settle = async () => {
   for (let i = 0; i < 80; i++) await Promise.resolve();
 };
 const cleanups: Array<() => void> = [];
-async function harness() {
+async function harness(holdRefresh = false) {
+  const heldRefresh: any[] = [];
   vi.useFakeTimers();
   vi.setSystemTime(0);
   const channel = stdChannel();
@@ -70,7 +79,8 @@ async function harness() {
       workspaceNotes: workspaceNotesReducer(state.workspaceNotes, action),
       comments: commentsReducer(state.comments, action),
     };
-    channel.put(action);
+    if (holdRefresh && action.type === refreshNoteFromEventRequested.type) heldRefresh.push(action);
+    else channel.put(action);
     return action;
   };
   const store = {
@@ -155,6 +165,9 @@ async function harness() {
   await settle();
   return {
     dispatch,
+    releaseRefresh: () => {
+      for (const action of heldRefresh.splice(0)) channel.put(action);
+    },
     replace: () => {
       current = true;
       return rendererEventRecovery.attach(makeSession());
@@ -599,5 +612,274 @@ describe('comment view settlement ownership', () => {
       noteId: 'sibling',
       status: 'loading',
     });
+  });
+});
+
+describe('admitted note ingress completion', () => {
+  function admit(key: string) {
+    rendererEventRecovery.push(key);
+    return new Map([[key, rendererEventRecovery.capture(key)]]);
+  }
+  it('waits for the real note read and reducer commit', async () => {
+    const h = await harness();
+    let resolve!: (value: any) => void;
+    const read = vi.spyOn(appClient.notes, 'get').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    let completed = false;
+    const processing = dispatchNoteRecoveryEvent(
+      noteEventReceived('ws', 'spec', 'note:updated'),
+      admit(notesRecoveryKey('ws')),
+    ).then(() => {
+      completed = true;
+    });
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(false);
+    resolve(row('admitted'));
+    await processing;
+    expect(h.row()?.content).toBe('admitted');
+  });
+  it('rejects null, missing, and superseded original admissions without a fresh read', async () => {
+    await harness();
+    const read = vi.spyOn(appClient.notes, 'get');
+    const key = notesRecoveryKey('ws');
+    const old = admit(key);
+    rendererEventRecovery.push(key);
+    for (const admissions of [old, new Map(), new Map([[key, null]])]) {
+      await dispatchNoteRecoveryEvent(noteEventReceived('ws', 'spec', 'note:updated'), admissions);
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+  it('settles held processing on session retirement without resurrecting note data', async () => {
+    const h = await harness();
+    let resolve!: (value: any) => void;
+    vi.spyOn(appClient.notes, 'get').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    let completed = false;
+    const processing = dispatchNoteRecoveryEvent(
+      noteEventReceived('ws', 'spec', 'note:updated'),
+      admit(notesRecoveryKey('ws')),
+    ).then(() => {
+      completed = true;
+    });
+    await settle();
+    expect(completed).toBe(false);
+    h.retire();
+    await settle();
+    expect(completed).toBe(true);
+    resolve(row('retired'));
+    await processing;
+    expect(h.row()).toBeUndefined();
+  });
+  it('waits for comment read and settles coalesced event acknowledgments', async () => {
+    const h = await harness();
+    h.dispatch(commentLoadRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    let resolve!: (value: any) => void;
+    const read = vi
+      .spyOn(appClient.comments, 'list')
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue([]);
+    const key = commentsRecoveryKey('ws', 'spec');
+    let completed = 0;
+    const first = dispatchNoteRecoveryEvent(commentEventReceived('ws', 'spec'), admit(key)).then(
+      () => {
+        completed++;
+      },
+    );
+    await settle();
+    const second = dispatchNoteRecoveryEvent(commentEventReceived('ws', 'spec'), admit(key)).then(
+      () => {
+        completed++;
+      },
+    );
+    const third = dispatchNoteRecoveryEvent(commentEventReceived('ws', 'spec'), admit(key)).then(
+      () => {
+        completed++;
+      },
+    );
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(0);
+    resolve([]);
+    await Promise.all([first, second, third]);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(completed).toBe(3);
+  });
+  it('waits for attribution state', async () => {
+    const h = await harness();
+    vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
+    h.dispatch(noteAttributionViewRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    let resolve!: (value: any) => void;
+    const read = vi.spyOn(appClient.notes.lineAttribution, 'load').mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    let completed = false;
+    const processing = dispatchNoteAttributionRecoveryEvent(
+      { workspaceId: 'ws', noteId: 'spec' },
+      admit(attributionRecoveryKey('ws', 'spec')),
+    ).then(() => {
+      completed = true;
+    });
+    await settle();
+    expect(completed).toBe(false);
+    expect(read).toHaveBeenCalledTimes(2);
+    resolve({ workspaceId: 'ws', noteId: 'spec', lines: [], revision: 7 });
+    await processing;
+    expect(
+      getItem(h.store.state.workspaceNotes.byWorkspaceId.ws.attributionViews, 'view')?.data
+        ?.revision,
+    ).toBe(7);
+  });
+  it('retains the original receipt across a delayed refresh descendant and same-ID replacement', async () => {
+    const h = await harness(true);
+    const read = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('stale') as never);
+    h.dispatch(
+      withRecoveryAdmissions(
+        noteEventReceived('ws', 'spec', 'note:updated'),
+        admit(notesRecoveryKey('ws')),
+      ),
+    );
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    h.retire();
+    h.replace();
+    h.releaseRefresh();
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    expect(h.row()).toBeUndefined();
+  });
+  it('coalesces note bursts to one trailing physical read and acknowledges every event', async () => {
+    const h = await harness();
+    let resolve!: (value: any) => void;
+    let active = 0;
+    let peak = 0;
+    const read = vi
+      .spyOn(appClient.notes, 'get')
+      .mockImplementationOnce(() => {
+        peak = Math.max(peak, ++active);
+        return new Promise((done) => {
+          resolve = (value) => {
+            active--;
+            done(value);
+          };
+        });
+      })
+      .mockImplementation(async () => {
+        peak = Math.max(peak, ++active);
+        active--;
+        return row('latest') as never;
+      });
+    const event = () =>
+      dispatchNoteRecoveryEvent(
+        noteEventReceived('ws', 'spec', 'note:updated'),
+        admit(notesRecoveryKey('ws')),
+      );
+    const first = event();
+    await settle();
+    const others = [event(), event(), event()];
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    resolve(row('old'));
+    await Promise.all([first, ...others]);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(peak).toBe(1);
+    expect(h.row()?.content).toBe('latest');
+  });
+  it('acknowledges read failure, workspace cleanup, deletion, and an absent consumer', async () => {
+    const h = await harness();
+    const key = notesRecoveryKey('ws');
+    const read = vi.spyOn(appClient.notes, 'get').mockRejectedValueOnce(new Error('failed'));
+    await dispatchNoteRecoveryEvent(noteEventReceived('ws', 'spec', 'note:updated'), admit(key));
+    expect(h.row()?.content).toBe('old');
+    read.mockImplementation(() => new Promise(() => {}));
+    let completed = false;
+    const pending = dispatchNoteRecoveryEvent(
+      noteEventReceived('ws', 'spec', 'note:updated'),
+      admit(key),
+    ).then(() => {
+      completed = true;
+    });
+    await settle();
+    expect(completed).toBe(false);
+    h.dispatch(workspaceUnmounted('ws'));
+    await pending;
+    expect(completed).toBe(true);
+    h.task.cancel();
+    await dispatchNoteRecoveryEvent(noteEventReceived('ws', 'spec', 'note:deleted'), new Map());
+    await dispatchNoteAttributionRecoveryEvent({}, new Map());
+  });
+  it('acknowledges attribution with no view and does not recreate a released view', async () => {
+    const h = await harness();
+    const key = attributionRecoveryKey('ws', 'spec');
+    const read = vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
+    await dispatchNoteAttributionRecoveryEvent({ workspaceId: 'ws', noteId: 'spec' }, admit(key));
+    expect(read).not.toHaveBeenCalled();
+    h.dispatch(noteAttributionViewRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    let resolve!: (value: any) => void;
+    read.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    let completed = false;
+    const pending = dispatchNoteAttributionRecoveryEvent(
+      { workspaceId: 'ws', noteId: 'spec' },
+      admit(key),
+    ).then(() => {
+      completed = true;
+    });
+    await settle();
+    h.dispatch(noteAttributionViewReleased('ws', 'view'));
+    await settle();
+    expect(completed).toBe(true);
+    resolve({ workspaceId: 'ws', noteId: 'spec', lines: [], revision: 8 });
+    await pending;
+    expect(
+      getItem(h.store.state.workspaceNotes.byWorkspaceId.ws.attributionViews, 'view'),
+    ).toBeUndefined();
+  });
+  it('rejects missing integrated admissions on refresh, read, and attribution descendants', async () => {
+    const h = await harness();
+    const read = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('unadmitted') as never);
+    const attribution = vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
+    h.dispatch(noteAttributionViewRequested('view', 'one', 'ws', 'spec'));
+    await settle();
+    attribution.mockClear();
+    h.dispatch(
+      withRecoveryAdmissions(
+        refreshNoteFromEventRequested('ws', 'spec', 'note:updated'),
+        new Map(),
+      ),
+    );
+    const request = withRecoveryAdmissions(
+      readNoteRequested('ws', 'spec', 'note:updated'),
+      new Map(),
+    );
+    h.dispatch(request);
+    h.dispatch(withRecoveryAdmissions(noteAttributionInvalidated('ws', 'spec'), new Map()));
+    await settle();
+    expect(await request.promise).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    expect(attribution).not.toHaveBeenCalled();
   });
 });

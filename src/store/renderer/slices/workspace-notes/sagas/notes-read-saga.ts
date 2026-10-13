@@ -22,7 +22,12 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '../../../store';
 import type { RendererStoreBridge } from '../../../renderer-store-bridge';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { getRecoveryAdmission } from '../../../middlewares/event-recovery';
+import { installNoteRecoveryDispatcher, type NoteRecoveryEventJob } from './note-event-receipt';
+import {
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+  withRecoveryLifetime,
+} from '../../../middlewares/event-recovery';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import {
   notesRecoveryKey,
@@ -212,7 +217,8 @@ function* createReadSlot(
   after?: Task,
 ): SagaGenerator<ReadSlot> {
   const generation = ++coordinator.nextGeneration;
-  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  const lifetime =
+    getRecoveryLifetime(action) ?? rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   const task = yield* fork(
     fetchNoteSlot,
     coordinator,
@@ -249,7 +255,7 @@ function* admitNoteRead(
     return slot;
   }
   if (!eventType) return admission.current;
-  if (!admission.trailing) {
+  if (!admission.trailing || !admission.trailing.lifetime.commit(() => undefined)) {
     admission.trailing = yield* createReadSlot(
       coordinator,
       key,
@@ -325,9 +331,18 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
   }
 }
 
-function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
+function* applyNoteEvent(
+  workspaceId: string,
+  noteId: string,
+  eventType: NoteEventType,
+  lifetime?: RecoveryLifetime,
+) {
   try {
     const request = readNoteRequested(workspaceId, noteId, eventType);
+    if (lifetime) {
+      if (!lifetime.commit(() => undefined)) return;
+      withRecoveryLifetime(request, lifetime);
+    }
     yield* put(request);
     yield* call(() => request.promise);
   } catch (error) {
@@ -342,6 +357,13 @@ function* readNoteWorker(
   const [workspaceId, noteId, eventType] = action.payload;
   let settled = false;
   try {
+    const admission = getRecoveryAdmission(action, notesRecoveryKey(workspaceId));
+    if (admission === null) {
+      yield* put(action.success(null));
+      settled = true;
+      return;
+    }
+    if (admission) withRecoveryLifetime(action, admission);
     const authority = yield* selectPrincipalConnectionContext.effect();
     const slot = yield* call(admitNoteRead, coordinator, action, authority);
     const result = (yield* join(slot.task)) as ReadResult;
@@ -508,11 +530,18 @@ function* noteAttributionViewWorker(
       next.payload?.[1] === noteId,
     buffers.sliding(1),
   );
+  let invalidation: AttributionInvalidationAction | undefined;
   try {
     while (true) {
-      const lifetime = rendererEventRecovery.capture(attributionRecoveryKey(workspaceId, noteId));
-      if (!lifetime.commit(() => undefined)) {
-        yield* take(invalidations);
+      const key = attributionRecoveryKey(workspaceId, noteId);
+      const admission = invalidation ? getRecoveryAdmission(invalidation, key) : undefined;
+      const lifetime =
+        admission !== undefined
+          ? admission
+          : ((invalidation && getRecoveryLifetime(invalidation)) ??
+            rendererEventRecovery.capture(key));
+      if (!lifetime?.commit(() => undefined)) {
+        invalidation = yield* take(invalidations);
         continue;
       }
       try {
@@ -556,8 +585,8 @@ function* noteAttributionViewWorker(
       }
       // The channel is registered before each load so update events received while
       // it is pending produce exactly one trailing refresh rather than being lost.
-      if ((yield* flush(invalidations)).length > 0) continue;
-      yield* take(invalidations);
+      const buffered = yield* flush(invalidations);
+      invalidation = buffered.length ? buffered[buffered.length - 1] : yield* take(invalidations);
     }
   } finally {
     invalidations.close();
@@ -569,6 +598,8 @@ type LineAttributionUpdatedPayload = { workspaceId?: unknown; noteId?: unknown }
 function admittedNoteEvent(action: object, key: string): RecoveryLifetime | null {
   const admitted = getRecoveryAdmission(action, key);
   if (admitted !== undefined) return admitted;
+  const inherited = getRecoveryLifetime(action);
+  if (inherited) return inherited;
   return rendererEventRecovery.push(key) ? rendererEventRecovery.capture(key) : null;
 }
 
@@ -577,7 +608,11 @@ function* routeLineAttributionUpdated(payload: LineAttributionUpdatedPayload) {
   const noteId = typeof payload.noteId === 'string' ? payload.noteId : '';
   const key = attributionEventRecoveryKey(payload);
   const lifetime = key ? admittedNoteEvent(payload, key) : null;
-  if (lifetime) yield* commitNoteAction(lifetime, noteAttributionInvalidated(workspaceId, noteId));
+  if (lifetime)
+    yield* commitNoteAction(
+      lifetime,
+      withRecoveryLifetime(noteAttributionInvalidated(workspaceId, noteId), lifetime),
+    );
 }
 
 function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
@@ -808,8 +843,16 @@ function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHy
 function* applyNoteEventWorker(action: ReturnType<typeof refreshNoteFromEventRequested>) {
   const [workspaceId, noteId, eventType] = action.payload;
   if (!workspaceId || !noteId || eventType === 'note:deleted') return;
+  const admission = getRecoveryAdmission(action, notesRecoveryKey(workspaceId));
+  if (admission === null) return;
   yield* race({
-    apply: call(applyNoteEvent, workspaceId, noteId, eventType),
+    apply: call(
+      applyNoteEvent,
+      workspaceId,
+      noteId,
+      eventType,
+      getRecoveryLifetime(action) ?? admission,
+    ),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
@@ -822,12 +865,142 @@ function* routeNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
   if (eventType === 'note:deleted') {
     yield* commitNoteAction(lifetime, applyNoteDeleted(workspaceId, noteId));
   }
-  yield* commitNoteAction(lifetime, refreshNoteFromEventRequested(workspaceId, noteId, eventType));
+  yield* commitNoteAction(
+    lifetime,
+    withRecoveryLifetime(refreshNoteFromEventRequested(workspaceId, noteId, eventType), lifetime),
+  );
+}
+
+function* processAdmittedNote(
+  action: ReturnType<typeof noteEventReceived | typeof commentEventReceived>,
+) {
+  if (action.type === commentEventReceived.type) {
+    yield* call(applyCommentEventWorker, action as ReturnType<typeof commentEventReceived>);
+    return;
+  }
+  const [workspaceId, noteId, eventType] = (action as ReturnType<typeof noteEventReceived>).payload;
+  if (!workspaceId || !noteId) return;
+  const lifetime = getRecoveryAdmission(action, notesRecoveryKey(workspaceId));
+  if (!lifetime?.commit(() => undefined)) return;
+  if (eventType === 'note:deleted') {
+    yield* commitNoteAction(lifetime, applyNoteDeleted(workspaceId, noteId));
+    return;
+  }
+  const found = yield* call(() =>
+    runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', `get:${noteId}`, () =>
+      appClient.notes.get(noteId, workspaceId),
+    ),
+  );
+  if (!found || String(found.workspaceId) !== workspaceId || String(found.id) !== noteId) return;
+  const note = toRuntimeNote(found);
+  const existing = yield* selectNoteById.effect(workspaceId, noteId);
+  yield* commitNoteAction(
+    lifetime,
+    eventType === 'note:created' && !existing
+      ? applyNoteCreated(workspaceId, note)
+      : applyNoteUpdated(workspaceId, noteId, note),
+  );
+}
+
+function* processAdmittedAttribution(payload: LineAttributionUpdatedPayload) {
+  const key = attributionEventRecoveryKey(payload);
+  if (!key) return;
+  const lifetime = getRecoveryAdmission(payload, key);
+  if (!lifetime?.commit(() => undefined)) return;
+  const workspaceId = String(payload.workspaceId);
+  const noteId = String(payload.noteId);
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
+  const state = selectWorkspaceNotesState.select(store.state, workspaceId);
+  const consumers = getItems(state.attributionViews).filter((view) => view.noteId === noteId);
+  if (!consumers.length) return;
+  const authority = selectPrincipalConnectionContext.select(store.state);
+  let data: Awaited<ReturnType<typeof appClient.notes.lineAttribution.load>> = null;
+  let error: string | undefined;
+  try {
+    data = yield* call(() =>
+      runRecoveryRead(key, lifetime, 'ordinary', 'load', () =>
+        appClient.notes.lineAttribution.load(workspaceId, noteId),
+      ),
+    );
+    if (data && (String(data.workspaceId) !== workspaceId || String(data.noteId) !== noteId)) {
+      data = null;
+      error = 'Attribution response did not match the requested note';
+    }
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+  if (authority !== selectPrincipalConnectionContext.select(store.state)) return;
+  for (const view of consumers) {
+    yield* commitNoteAction(
+      lifetime,
+      noteAttributionViewFinished(
+        view.consumerId,
+        view.requestId,
+        workspaceId,
+        authority,
+        data,
+        error,
+      ),
+    );
+  }
+}
+
+function* processNoteRecoveryJob(job: NoteRecoveryEventJob) {
+  const workspaceId = job.kind === 'note' ? job.action.payload[0] : job.payload.workspaceId;
+  const noteId = job.kind === 'note' ? job.action.payload[1] : job.payload.noteId;
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
+  const isCleanup = (action: ObservedAction) => {
+    if (typeof workspaceId !== 'string' || typeof noteId !== 'string') return false;
+    if (isNoteReadCleanup(action, workspaceId, noteId)) return true;
+    if (job.kind === 'attribution' && action.type === noteAttributionViewReleased.type) {
+      return !getItems(
+        selectWorkspaceNotesState.select(store.state, workspaceId).attributionViews,
+      ).some((view) => view.noteId === noteId);
+    }
+    if (
+      job.kind === 'note' &&
+      job.action.type === commentEventReceived.type &&
+      action.type === commentLoadReleased.type
+    ) {
+      return !getItems(store.state.comments.loadsByConsumer).some(
+        (view) => view.workspaceId === workspaceId && view.noteId === noteId,
+      );
+    }
+    return false;
+  };
+  try {
+    yield* race({
+      process:
+        job.kind === 'note'
+          ? call(processAdmittedNote, job.action)
+          : call(processAdmittedAttribution, job.payload),
+      aborted: call(() => job.aborted),
+      cleanup: take(isCleanup),
+    });
+  } catch (error) {
+    logger.error('Failed to process admitted note event', error);
+  } finally {
+    job.complete();
+  }
+}
+
+function* noteRecoveryDispatcher() {
+  const channel = eventChannel<NoteRecoveryEventJob>(
+    (emit) => installNoteRecoveryDispatcher(emit),
+    buffers.expanding(),
+  );
+  try {
+    yield* takeEvery(channel, processNoteRecoveryJob);
+    yield* take(() => false);
+  } finally {
+    channel.close();
+  }
 }
 
 export function* notesReadSaga(store: RendererStoreBridge = appStore) {
   yield* setContext({ [NOTE_RECOVERY_STORE]: store });
   yield* fork(notesRecoverySaga, store);
+  yield* fork(noteRecoveryDispatcher);
   const coordinator: ReadCoordinator = { admissions: new Map(), nextGeneration: 0 };
   yield* takeEvery(readNoteRequested, readNoteWorker, coordinator);
   yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);
