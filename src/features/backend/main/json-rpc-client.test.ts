@@ -1318,6 +1318,53 @@ describe('captured repository socket dispatch', () => {
     await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
     return { client, sockets, factory };
   }
+  it('keeps recovery correlation past a logical deadline while ordinary requests still time out', async () => {
+    const { client, sockets } = await connected();
+    vi.useFakeTimers();
+    const connection = client.getRepositoryConnection()!;
+    const observed = vi.fn();
+    let completed = false;
+    const recovery = client
+      .requestOnCapturedConnection(
+        connection,
+        'data.read',
+        {},
+        {
+          waitForReply: true,
+          observe: observed,
+        },
+      )
+      .then((value) => {
+        completed = true;
+        return value;
+      });
+    const frame = JSON.parse(sockets[0].writes.at(-1)!);
+    const ordinary = client.request('ping', {}, { timeoutMs: 100 }).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await ordinary).toBeInstanceOf(Error);
+    expect(completed).toBe(false);
+    expect(observed).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    sockets[0].receive(JSON.stringify({ id: frame.id, result: 'late' }) + '\n');
+    expect(await recovery).toBe('late');
+    expect(observed).toHaveBeenCalledExactlyOnceWith('late');
+  });
+  it('settles a retained recovery request when its physical connection is disposed', async () => {
+    const { client } = await connected();
+    vi.useFakeTimers();
+    const recovery = client
+      .requestOnCapturedConnection(
+        client.getRepositoryConnection()!,
+        'data.read',
+        {},
+        { waitForReply: true },
+      )
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(60_000);
+    client.dispose();
+    expect(await recovery).toBeInstanceOf(Error);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
     const { client, sockets } = await connected({
       clientId: 'confirmed-client',

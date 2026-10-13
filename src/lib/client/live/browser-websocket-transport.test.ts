@@ -1181,3 +1181,159 @@ it.each([
     h.transport.dispose();
   },
 );
+
+describe('physical recovery timeout ownership', () => {
+  for (const phase of ['begin', 'read', 'end'] as const)
+    it(`keeps the real browser ${phase} request outstanding until reply and blocks replacement capture`, async () => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      const boot = h.transport.request('ping');
+      await connect(h.socket(), true);
+      h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+      await boot;
+      const socket = h.socket();
+      const capture = () => h.transport.captureEventRecovery();
+      const shutdown = () => h.transport.dispose();
+      const frames: Array<{ id: number; method: string; params: unknown }> = [];
+      const original = socket.send.bind(socket);
+      const install = (respond: (frame: (typeof frames)[number]) => void) => {
+        socket.send = (line) => {
+          original(line);
+          const frame = JSON.parse(line);
+          frames.push(frame);
+          respond(frame);
+        };
+      };
+      const reply = (id: number, result: unknown) => socket.receive({ id, result });
+
+      let fences = 0;
+      let reads = 0;
+      let held: (typeof frames)[number] | undefined;
+      install((frame) => {
+        if (frame.method === 'events.subscribe')
+          queueMicrotask(() => reply(frame.id, { subscriptionId: 'a', lossRecovery: 1 }));
+        else if (frame.method === 'events.fence') {
+          if ((phase === 'begin' && ++fences === 1) || (phase === 'end' && ++fences === 2))
+            held = frame;
+          else queueMicrotask(() => reply(frame.id, { subscriptionIds: ['a'] }));
+        } else if (frame.method === 'data.read') {
+          if (phase === 'read' && ++reads === 1) held = frame;
+          else queueMicrotask(() => reply(frame.id, 'fresh'));
+        } else queueMicrotask(() => reply(frame.id, {}));
+      });
+      const session = await capture();
+      await session.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
+      const apply = vi.fn();
+      const resource = new RecoveryResource({
+        read: () => session.request('data.read'),
+        fence: (ids, observe) => session.fence(ids, observe),
+        apply,
+        invalidate: () => {},
+        retire: () => {},
+      });
+      resource.setLeases([{ id: 'a', lifetime: {} }]);
+      resource.invalidate();
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      const requests = frames.length;
+      expect(held).toBeDefined();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(frames).toHaveLength(requests);
+      expect(resource.status).toMatchObject({ running: true, suspended: true, stale: true });
+      await expect(capture()).rejects.toThrow();
+      expect(vi.getTimerCount()).toBe(0);
+      reply(held!.id, phase === 'read' ? 'expired' : { subscriptionIds: ['a'] });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(frames).toHaveLength(requests + 3);
+      expect(apply).toHaveBeenCalledExactlyOnceWith('fresh');
+      resource.dispose();
+      session.dispose();
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      const next = await capture();
+      next.dispose();
+      shutdown();
+    });
+
+  it('keeps a released capture quarantined until its physical read completes', async () => {
+    vi.useFakeTimers();
+    const h = createHarness();
+    const boot = h.transport.request('ping');
+    await connect(h.socket(), true);
+    h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+    await boot;
+    const socket = h.socket();
+    const capture = () => h.transport.captureEventRecovery();
+    const shutdown = () => h.transport.dispose();
+    const frames: Array<{ id: number; method: string; params: unknown }> = [];
+    const original = socket.send.bind(socket);
+    const install = (respond: (frame: (typeof frames)[number]) => void) => {
+      socket.send = (line) => {
+        original(line);
+        const frame = JSON.parse(line);
+        frames.push(frame);
+        respond(frame);
+      };
+    };
+    const reply = (id: number, result: unknown) => socket.receive({ id, result });
+
+    let held: (typeof frames)[number] | undefined;
+    install((frame) => {
+      if (!held) held = frame;
+      else queueMicrotask(() => reply(frame.id, 'fresh'));
+    });
+    const session = await capture();
+    const pending = session.request('data.read').catch(() => {});
+    session.dispose();
+    await pending;
+    await expect(capture()).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(frames).toHaveLength(1);
+    await expect(capture()).rejects.toThrow();
+    reply(held!.id, 'expired');
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    const next = await capture();
+    expect(await next.request('data.read')).toBe('fresh');
+    expect(frames).toHaveLength(2);
+    expect(frames[1].id).not.toBe(held!.id);
+    next.dispose();
+    shutdown();
+  });
+});
+
+it('bounds outstanding recovery wire requests across captures without deadline churn', async () => {
+  vi.useFakeTimers();
+  const h = createHarness();
+  const boot = h.transport.request('ping');
+  await connect(h.socket(), true);
+  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
+  await boot;
+  const capture = () => h.transport.captureEventRecovery();
+  const frames: Array<{ id: number; method: string }> = [];
+  const socket = h.socket();
+  const send = socket.send.bind(socket);
+  socket.send = (line) => {
+    send(line);
+    frames.push(JSON.parse(line));
+  };
+  const reply = (id: number) => socket.receive({ id, result: 'expired' });
+  const shutdown = () => h.transport.dispose();
+  const a = await capture();
+  const b = await capture();
+  const before = frames.length;
+  const pending = Array.from({ length: 64 }, () => a.request('data.read').catch((error) => error));
+  await expect(b.request('data.read')).rejects.toThrow();
+  expect(frames.length - before).toBe(64);
+  await vi.advanceTimersByTimeAsync(60_000);
+  await Promise.all(pending);
+  expect(vi.getTimerCount()).toBe(0);
+  await expect(b.request('data.read')).rejects.toThrow();
+  expect(frames.length - before).toBe(64);
+  for (const frame of frames.slice(before)) reply(frame.id);
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  const next = b.request('data.read');
+  expect(frames.length - before).toBe(65);
+  reply(frames.at(-1)!.id);
+  expect(await next).toBe('expired');
+  a.dispose();
+  b.dispose();
+  shutdown();
+});

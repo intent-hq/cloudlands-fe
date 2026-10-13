@@ -121,15 +121,12 @@ export function createEventRecoveryTransport(getBridge: () => Window['electronAP
           const replyId = String(++sequence);
           return new Promise((resolve, reject) => {
             const finish = (error?: Error, result?: unknown) => {
-              clearTimeout(timer);
               pending.delete(replyId);
               if (error) reject(error);
               else resolve(result);
             };
-            const timer = setTimeout(
-              () => finish(new Error('Event recovery fence timed out')),
-              method === 'events.fence' ? 5000 : 30000,
-            );
+            // Session deadlines suspend recovery. Only an actual ordered reply,
+            // invoke failure or retirement settles this physical driver request.
             pending.set(replyId, {
               receive: (result) => {
                 try {

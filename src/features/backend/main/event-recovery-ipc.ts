@@ -23,6 +23,7 @@ const ownedUnsubscribeMethods = new Set([
 ]);
 const MAX_SESSIONS = 64;
 const MAX_REQUESTS_PER_SESSION = 64;
+const MAX_REQUESTS_PER_CONNECTION = 64;
 const channels = IPC_CHANNELS.BACKEND.EVENT_RECOVERY;
 const reference = z.object({ id: z.string().min(1).max(128) }).strict();
 const request = reference
@@ -58,6 +59,12 @@ export function registerEventRecoveryHandlers(
     requests: number;
   }
   const entries = new Map<string, Entry>();
+  // Released/expired captures still own their physical requests. A new capture
+  // cannot bypass their drain merely by obtaining a new renderer handle.
+  const outstanding = new WeakMap<
+    RepositoryConnection,
+    Set<{ id: string; entry: Entry; expired: boolean }>
+  >();
   let disposed = false;
   const current = (entry: Entry) =>
     !disposed &&
@@ -108,6 +115,12 @@ export function registerEventRecoveryHandlers(
     const client = deps.readBackend(binding.backendId),
       connection = client?.getRepositoryConnection();
     if (!client || !connection) return unavailable();
+    if (
+      [...(outstanding.get(connection) ?? [])].some(
+        (row) => row.expired || entries.get(row.id) !== row.entry,
+      )
+    )
+      return unavailable();
     const id = randomUUID();
     const entry: Entry = {
       sender: event.sender,
@@ -221,6 +234,17 @@ export function registerEventRecoveryHandlers(
           : {}),
       },
     });
+    const physical = outstanding.get(entry.connection) ?? new Set();
+    if (physical.size >= MAX_REQUESTS_PER_CONNECTION) return unavailable();
+    outstanding.set(entry.connection, physical);
+    const row = { id, entry, expired: false };
+    physical.add(row);
+    const deadline = setTimeout(
+      () => {
+        row.expired = true;
+      },
+      method === 'events.fence' ? 5000 : 30000,
+    );
     let leaseAdmitted = false;
     entry.requests++;
     try {
@@ -229,7 +253,7 @@ export function registerEventRecoveryHandlers(
         method,
         routedParams,
         {
-          timeoutMs: method === 'events.fence' ? 5000 : 30000,
+          waitForReply: true,
           observe: (result) => {
             if (!current(entry) || entries.get(id) !== entry) return;
             const subscriptionId = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
@@ -281,6 +305,8 @@ export function registerEventRecoveryHandlers(
         },
       };
     } finally {
+      clearTimeout(deadline);
+      physical.delete(row);
       entry.requests--;
     }
   });

@@ -84,7 +84,7 @@ interface PendingRequest {
   method: string;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: ReturnType<typeof setTimeout> | undefined;
 }
 
 export interface JsonRpcClientOptions {
@@ -536,7 +536,7 @@ export class JsonRpcClient extends EventEmitter {
     captured: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number; observe?: (result: unknown) => void },
+    options?: { timeoutMs?: number; observe?: (result: unknown) => void; waitForReply?: boolean },
     parent?: object,
   ): Promise<T> {
     const refused = this.refuseIndependent(parent);
@@ -550,7 +550,7 @@ export class JsonRpcClient extends EventEmitter {
     connection: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number; observe?: (result: unknown) => void },
+    options?: { timeoutMs?: number; observe?: (result: unknown) => void; waitForReply?: boolean },
   ): Promise<T> {
     if (!connection || connection !== this.getRepositoryConnection() || method === HELLO_METHOD) {
       return Promise.reject(new Error('Captured repository connection is unavailable'));
@@ -560,7 +560,13 @@ export class JsonRpcClient extends EventEmitter {
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
-    return this.sendNow<T>(method, params, timeout, options?.observe);
+    // Recovery owns its logical deadline; retain correlation until physical completion.
+    return this.sendNow<T>(
+      method,
+      params,
+      options?.waitForReply ? undefined : timeout,
+      options?.observe,
+    );
   }
 
   private beginHello(): object {
@@ -853,7 +859,7 @@ export class JsonRpcClient extends EventEmitter {
   private sendNow<T = unknown>(
     method: string,
     params: unknown,
-    timeoutMs: number,
+    timeoutMs: number | undefined,
     observe?: (result: unknown) => void,
   ): Promise<T> {
     const socket = this.socket;
@@ -862,16 +868,19 @@ export class JsonRpcClient extends EventEmitter {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
       const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
       this.observeOutboundRequest(id, method, payload);
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        this.observeFrame(() => ({
-          type: 'response',
-          key: `out:${id}`,
-          status: 'timeout',
-          payload: undefined,
-        }));
-        reject(new Error(`JSON-RPC request timed out: ${method}`));
-      }, timeoutMs);
+      const timeout =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              this.pending.delete(id);
+              this.observeFrame(() => ({
+                type: 'response',
+                key: `out:${id}`,
+                status: 'timeout',
+                payload: undefined,
+              }));
+              reject(new Error(`JSON-RPC request timed out: ${method}`));
+            }, timeoutMs);
       this.pending.set(id, {
         method,
         timeout,

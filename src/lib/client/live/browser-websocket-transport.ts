@@ -213,9 +213,10 @@ interface PendingRequest {
   method: string;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout: ReturnType<typeof setTimeout> | undefined;
 }
 
+const MAX_RECOVERY_WIRE_REQUESTS = 64;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_MS = 30_000;
@@ -257,6 +258,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
   private readonly recoveryRetired = new Set<() => void>();
+  private readonly recoveryRequests = new Set<{
+    socket: BrowserWebSocketLike;
+    generation: number;
+    expired: boolean;
+    released: () => boolean;
+  }>();
   private protocolVersion: unknown;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
@@ -307,6 +314,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
       this.socket === socket &&
       this.capabilityHelloGeneration === generation;
     if (!current()) throw new Error('Event recovery connection unavailable');
+    if (
+      [...this.recoveryRequests].some(
+        (row) =>
+          row.socket === socket && row.generation === generation && (row.expired || row.released()),
+      )
+    )
+      throw new Error('Event recovery requests still draining');
     return createEventRecoverySession({
       supported: this.nodeCapabilities?.eventStreamRecovery === 1,
       isCurrent: () => !released && current(),
@@ -320,25 +334,44 @@ export class BrowserWebSocketTransport implements BackendTransport {
       request: (method, params, observe) => {
         if (!current() || method === 'client.hello')
           return Promise.reject(new Error('Event recovery connection retired'));
-        return this.requestOnSocket(method, params, undefined, socket, observe).then((result) => {
-          if (method === 'events.subscribe') {
-            const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
-            if (typeof id === 'string') {
-              if (released && current())
-                void this.requestOnSocket(
-                  'events.unsubscribe',
-                  { subscriptionId: id },
-                  undefined,
-                  socket,
-                ).catch(() => {});
-              else leases.add(id);
+        if (
+          [...this.recoveryRequests].filter(
+            (row) => row.socket === socket && row.generation === generation,
+          ).length >= MAX_RECOVERY_WIRE_REQUESTS
+        )
+          return Promise.reject(new Error('Event recovery request limit reached'));
+        const row = { socket, generation, expired: false, released: () => released };
+        this.recoveryRequests.add(row);
+        const deadline = setTimeout(
+          () => {
+            row.expired = true;
+          },
+          method === 'events.fence' ? 5000 : 30000,
+        );
+        return this.requestOnSocket(method, params, undefined, socket, observe, true)
+          .then((result) => {
+            if (method === 'events.subscribe') {
+              const id = (result as { subscriptionId?: unknown } | null)?.subscriptionId;
+              if (typeof id === 'string') {
+                if (released && current())
+                  void this.requestOnSocket(
+                    'events.unsubscribe',
+                    { subscriptionId: id },
+                    undefined,
+                    socket,
+                  ).catch(() => {});
+                else leases.add(id);
+              }
+            } else if (method === 'events.unsubscribe') {
+              const id = (params as { subscriptionId?: unknown } | null)?.subscriptionId;
+              if (typeof id === 'string') leases.delete(id);
             }
-          } else if (method === 'events.unsubscribe') {
-            const id = (params as { subscriptionId?: unknown } | null)?.subscriptionId;
-            if (typeof id === 'string') leases.delete(id);
-          }
-          return result;
-        });
+            return result;
+          })
+          .finally(() => {
+            clearTimeout(deadline);
+            this.recoveryRequests.delete(row);
+          });
       },
       dispose: () => {
         if (released) return;
@@ -370,6 +403,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     options?: BackendRequestOptions,
     handshakeSocket?: BrowserWebSocketLike,
     observe?: (result: unknown) => void,
+    waitForReply = false,
   ): Promise<T> {
     if (options?.localMachine) {
       return Promise.reject(
@@ -395,17 +429,19 @@ export class BrowserWebSocketTransport implements BackendTransport {
       // bound also covers time spent waiting for the WebSocket handshake
       // (e.g. a stalled connect attempt that never fires `close`).
       let timedOut = false;
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        this.pending.delete(id);
-        reject(
-          new BackendError({
-            code: 'TIMEOUT',
-            message: `JSON-RPC request timed out: ${method}`,
-            data: { code: 'TIMEOUT' },
-          }),
-        );
-      }, timeoutMs);
+      const timeout = waitForReply
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            this.pending.delete(id);
+            reject(
+              new BackendError({
+                code: 'TIMEOUT',
+                message: `JSON-RPC request timed out: ${method}`,
+                data: { code: 'TIMEOUT' },
+              }),
+            );
+          }, timeoutMs);
       // Register the pending entry and send synchronously once connected, so a
       // response arriving immediately after the frame is correlated correctly.
       const fail = (error: unknown) => {
