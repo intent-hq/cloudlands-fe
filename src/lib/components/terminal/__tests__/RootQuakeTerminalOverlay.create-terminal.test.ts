@@ -6,14 +6,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
-const clientMocks = vi.hoisted(() => ({
-  mockTerminalsCreate: vi.fn(),
-}));
-
-vi.mock('$lib/client', () => ({
-  appClient: {
-    terminals: { create: clientMocks.mockTerminalsCreate },
-  },
+const sagaMocks = vi.hoisted(() => ({
+  createTerminal: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', () => {
@@ -26,6 +20,9 @@ vi.mock('$store/renderer/store', () => {
     },
     dispatch: (action: any) => {
       dispatched.push(action);
+      if (action.type === 'terminals/createOverlayTerminalRequested') {
+        return sagaMocks.createTerminal(action.payload[0]);
+      }
       return action;
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
@@ -106,7 +103,7 @@ describe('RootQuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
 
   it('issues a single terminal.create for a rapid double-invoke (in-flight guard)', async () => {
     let resolveCreate: (value: unknown) => void = () => {};
-    clientMocks.mockTerminalsCreate.mockReturnValue(
+    sagaMocks.createTerminal.mockReturnValue(
       new Promise((resolve) => {
         resolveCreate = resolve;
       }),
@@ -117,16 +114,21 @@ describe('RootQuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     fireCreateNewEvent();
     fireCreateNewEvent();
 
-    expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(1);
+    expect(sagaMocks.createTerminal).toHaveBeenCalledTimes(1);
+    expect(dispatchedTypes()).toContain('terminals/createOverlayTerminalRequested');
 
-    resolveCreate({ success: true, id: 'pty-root-1' });
+    resolveCreate('pty-root-1');
     await waitFor(() => {
       expect(dispatchedTypes()).toContain('terminals/addTerminal');
+      expect((appStore as any).__dispatched).toContainEqual({
+        type: 'terminals/open',
+        payload: [ROOT_WORKSPACE_ID, 'pty-root-1'],
+      });
     });
   });
 
   it('allows a new create after the previous one settles', async () => {
-    clientMocks.mockTerminalsCreate.mockResolvedValue({ success: true, id: 'pty-root-1' });
+    sagaMocks.createTerminal.mockResolvedValue('pty-root-1');
 
     render(RootQuakeTerminalOverlay);
 
@@ -137,7 +139,7 @@ describe('RootQuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     fireCreateNewEvent();
 
     await waitFor(() => {
-      expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(2);
+      expect(sagaMocks.createTerminal).toHaveBeenCalledTimes(2);
     });
   });
 });

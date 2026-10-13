@@ -20,11 +20,16 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: mocks.info, error: mocks.error }),
 }));
 
-import { createTerminalRequested, createPanelTerminalRequested } from '../terminals-slice';
+import {
+  createOverlayTerminalRequested,
+  createPanelTerminalRequested,
+  createTerminalRequested,
+} from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
 import { terminalCommandsSaga } from './terminal-commands-saga';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const settle = async () => {
   await Promise.resolve();
@@ -62,6 +67,58 @@ beforeEach(() => {
 });
 
 describe('terminalCreationSaga', () => {
+  it('returns the daemon-assigned id for an authorized overlay create', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-pty-1' });
+    const { channel, dispatched, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-pty-1');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+    });
+    expect(dispatched.map((action) => action.type)).toEqual([
+      createOverlayTerminalRequested.success.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('allows the root overlay to create without a workspace membership row', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-root-pty' });
+    const { channel, task } = startSaga();
+    const request = createOverlayTerminalRequested(ROOT_WORKSPACE_ID);
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-root-pty');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: ROOT_WORKSPACE_ID,
+      cols: 80,
+      rows: 24,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects a collaborator overlay create before terminal.create', async () => {
+    const { channel, dispatched, task } = startSaga('collaborator');
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).rejects.toThrow();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched.map((action) => action.type)).toEqual([
+      createOverlayTerminalRequested.failure.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('creates, reloads, and opens a terminal in the focused panel', async () => {
     mocks.create.mockResolvedValue({ success: true, id: 'term-1' });
     const { channel, dispatched, task } = startSaga();
