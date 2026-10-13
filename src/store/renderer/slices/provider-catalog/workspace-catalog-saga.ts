@@ -1,4 +1,8 @@
 import {
+  retireWorkspaceCatalogReads,
+  trackWorkspaceCatalogRead,
+} from './workspace-catalog-read-flight';
+import {
   getRecoveryAdmission,
   getRecoveryLifetime,
   withRecoveryLifetime,
@@ -81,7 +85,6 @@ type Reads = {
   pending: Map<string, WorkspaceCatalogUpdate[]>;
   receipts: Map<string, RecoveryLifetime>;
   recovery: Map<string, () => void>;
-  inflight: Map<string, Promise<unknown>>;
   handles: Map<string, RendererRecoveryHandle>;
 };
 type CatalogAction =
@@ -124,10 +127,8 @@ function ensureRecovery(reads: Reads, workspaceId: string) {
       isCurrent: () =>
         reads.recovery.has(workspaceId) &&
         authority === selectPrincipalActionContext.select(store.state),
-      read: async (reader) => {
-        await reads.inflight.get(workspaceId)?.catch(() => undefined);
-        return readRecoveryCatalog(workspaceId, reader);
-      },
+      read: (reader) =>
+        trackWorkspaceCatalogRead(workspaceId, () => readRecoveryCatalog(workspaceId, reader)),
       apply: (snapshot) => {
         store.dispatch(
           workspaceCatalogReceived(
@@ -191,7 +192,8 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
     const { patch } = yield* race({
       invalidated: take([workspaceCatalogInvalidated, hostExecutionConnectionChanged]),
       patch: call(async (): Promise<Partial<WorkspaceCatalogSnapshot>> => {
-        const work = (async () => {
+        return trackWorkspaceCatalogRead(workspaceId, async () => {
+          if (!active) throw new Error('Workspace catalog demand retired');
           const result: Partial<WorkspaceCatalogSnapshot> = {};
           await settleCatalogReads([
             resources.has('catalog') &&
@@ -266,13 +268,7 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
               }),
           ]);
           return result;
-        })();
-        reads.inflight.set(workspaceId, work);
-        try {
-          return await work;
-        } finally {
-          if (reads.inflight.get(workspaceId) === work) reads.inflight.delete(workspaceId);
-        }
+        });
       }),
     });
     if (!patch) return;
@@ -507,6 +503,7 @@ function* watchReconnects(seen: Set<string>) {
   try {
     while (true) {
       yield* take(channel);
+      retireWorkspaceCatalogReads();
       seen.clear();
       yield* put(workspaceCatalogInvalidated(true));
       yield* refreshMountedCatalogs();
@@ -522,7 +519,6 @@ export function* workspaceCatalogSaga() {
     pending: new Map(),
     receipts: new Map(),
     recovery: new Map(),
-    inflight: new Map(),
     handles: new Map(),
   };
   const seen = new Set<string>();
@@ -549,6 +545,7 @@ export function* workspaceCatalogSaga() {
   yield* takeEvery(ensureWorkspaceCatalogRequested, ensureCatalog, reads);
   yield* takeEvery(workspaceMounted, onMount);
   yield* takeEvery(hostExecutionConnectionChanged, function* () {
+    retireWorkspaceCatalogReads();
     const mounted = yield* selectMountedWorkspaceIds.effect();
     for (const workspaceId of mounted) yield* put(workspaceCatalogRequested(workspaceId));
   });
@@ -559,6 +556,7 @@ export function* workspaceCatalogSaga() {
   try {
     yield* take(() => false);
   } finally {
+    retireWorkspaceCatalogReads();
     for (const stop of reads.recovery.values()) stop();
     reads.recovery.clear();
   }

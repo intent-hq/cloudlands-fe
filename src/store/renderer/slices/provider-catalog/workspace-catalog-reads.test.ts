@@ -1,3 +1,5 @@
+import { mcpSettingsSaga } from '../mcp-settings/sagas/mcp-settings-saga';
+import { toggleWorkspaceMcpServer } from '../mcp-settings/mcp-settings-slice';
 import { withRecoveryAdmissions } from '../../middlewares/event-recovery';
 import { workspaceCatalogRecoveryKey } from './workspace-catalog-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
@@ -346,6 +348,52 @@ describe('workspace catalog host probes through live clients', () => {
     );
     await settle();
     expect(store.state.providerCatalog.byWorkspaceId?.other.settings[0]?.value).toBe('admitted');
+  });
+
+  it('serializes real MCP fallback hydration with catalog recovery across lease changes', async () => {
+    const { lose, wire, scope } = await attachRecovery();
+    const servers = [
+      { id: 'server', name: 'tools', transport: 'stdio', enabled: true, workspaceDisabled: false },
+    ];
+    backend.onRequest('mcp.servers.list', () => ({ servers }));
+    backend.onRequest('mcp.servers.getStatus', () => ({ status: { state: 'running' } }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    let release!: (value: { servers: typeof servers }) => void;
+    backend.onRequest(
+      'mcp.servers.list',
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    backend.onRequest('mcp.servers.toggle', () => {
+      throw new Error('transient failure');
+    });
+    const stopMcp = store.runSaga(mcpSettingsSaga);
+    try {
+      store.dispatch(toggleWorkspaceMcpServer(WS, 'server', false));
+      await settle();
+      expect(release).toBeDefined();
+      wire.mockClear();
+      await scope.subscribe(
+        { eventTypes: ['settings:changed'], workspaceId: WS },
+        { recover: true },
+      );
+      lose();
+      await settle();
+      expect(wire.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(0);
+      backend.onRequest('mcp.servers.list', () => ({ servers }));
+      release({ servers: [{ ...servers[0], workspaceDisabled: true }] });
+      await settle();
+      expect(wire.mock.calls.filter(([method]) => method === 'mcp.servers.list')).toHaveLength(1);
+      expect(store.state.mcpSettings.byWorkspaceId?.[WS]?.disabledServers?.server).toBeUndefined();
+      expect(
+        store.state.providerCatalog.byWorkspaceId?.[WS].mcpServers?.[0].workspaceDisabled,
+      ).toBe(false);
+    } finally {
+      stopMcp();
+    }
   });
 
   it('shares lifecycle and sidebar mount demand without a second MCP list', async () => {
