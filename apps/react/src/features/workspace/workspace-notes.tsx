@@ -25,6 +25,7 @@ import type { LinkHandlerOptions } from '$shared/utils/link-helpers';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { filterContextNotes } from '$lib/components/workspace/sidebar/sidebar-search';
 import { m } from '$shared/paraglide/messages.js';
+import { parseWorkspaceFileTarget } from './workspace-file-target';
 
 function NoteContent({
   workspaceId,
@@ -70,8 +71,25 @@ function NoteContent({
   }
   function unsupportedLink() {
     setNavigationMessage(
-      'This preview supports note links and web links. File and chat navigation are not connected yet.',
+      'This preview supports notes, workspace files and web links. Chat navigation is not connected yet.',
     );
+  }
+  function openFile(targetWorkspaceId: string, path: string, options?: { line?: number }) {
+    const target = parseWorkspaceFileTarget(path);
+    if (!target.valid) {
+      setNavigationMessage(target.error ?? m.ui_linkHandler_invalidFilePath_error());
+      return;
+    }
+    void navigate({
+      to: '/workspaces/$workspaceId',
+      params: { workspaceId: targetWorkspaceId },
+      search: {
+        file: target.resourceId,
+        line: options?.line,
+        note: targetWorkspaceId === workspaceId ? noteId : undefined,
+        q: targetWorkspaceId === workspaceId ? query || undefined : undefined,
+      },
+    });
   }
   function openLink(url: string, options: LinkHandlerOptions): boolean {
     const target = options.rawHref ?? url;
@@ -82,6 +100,8 @@ function NoteContent({
         setNavigationMessage(link.error ?? 'This link is not valid.');
       } else if (link.type === 'note' || link.type === 'task') {
         openNote(link.workspaceId ?? workspaceId, link.resourceId);
+      } else if (link.type === 'file') {
+        openFile(link.workspaceId ?? workspaceId, link.resourceId, { line: link.line });
       } else {
         unsupportedLink();
       }
@@ -134,7 +154,7 @@ function NoteContent({
               <MarkdownViewer
                 content={note.value?.content ?? ''}
                 workspaceContext={{ workspaceId: WorkspaceId(workspaceId) }}
-                canOpenFile={() => false}
+                canOpenFile={() => ready}
                 allowFileMedia={false}
                 canLoadMedia={(url) => /^(?:https?:|data:|blob:)/i.test(url.trim())}
                 taskBlockRenderMode="content"
@@ -143,7 +163,7 @@ function NoteContent({
                 forceExternalLinks
                 onOpenLink={openLink}
                 onOpenNote={openNote}
-                onOpenFile={unsupportedLink}
+                onOpenFile={openFile}
               />
             </div>
           )}

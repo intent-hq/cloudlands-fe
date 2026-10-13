@@ -10,84 +10,25 @@
  * directory listing is not a `FileContentEntry` collection). File-event
  * subscription is owned by daemon-events-saga's scoped `file:*` lease.
  */
-import { detectBinaryContent } from '$shared/binary-file-extensions';
 import type { FileGitStatus, FileNode } from '$shared/types';
-import { fileContentData, editableText } from '$features/file/utils/file-content';
 import type {
   EditableText,
   RestorableSnapshot,
-  FileContent,
   FileContentEntry,
 } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
+import { createFileRead } from './backend-file-read';
+import { createFileListDirectory, toFileNodes } from './backend-file-list-directory';
 import { backendRequest } from './backend-transport';
-import { BackendError } from './backend-transport-types';
-import { mutationErrorMessage, newIdempotencyKey, runMutation } from './live-support';
+import { newIdempotencyKey, runMutation } from './live-support';
 
-/** Non-text controls identify binary payloads even when printable bytes dominate. */
-function hasBinaryControls(content: string): boolean {
-  for (let index = 0; index < content.length; index++) {
-    const code = content.charCodeAt(index);
-    // Preserve text whitespace (TAB/LF/VT/FF/CR) and ESC used in terminal logs.
-    if (code <= 8 || (code >= 14 && code <= 26) || (code >= 28 && code <= 31) || code === 127) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Map raw daemon file content into a `FileContentEntry`. */
-function toFileContentEntry(path: string, content: FileContent): FileContentEntry {
-  return {
-    path,
-    absolutePath: null,
-    ...fileContentData(content),
-    lastUpdated: Date.now(),
-    loading: false,
-    saving: false,
-    error: null,
-    truncated: false,
-  };
-}
-
-/**
- * Map a raw daemon `file.list` payload into `FileNode[]`. Tolerant of the shape
- * the directory listing arrives in: a bare array, or wrapped under `entries` /
- * `files`. Children are left unset (lazy) — the explorer fetches deeper levels
- * on demand. Entries missing both a name and a path are skipped.
- */
-function toFileNodes(result: unknown): FileNode[] {
-  const raw = result as { entries?: unknown[]; files?: unknown[] } | unknown[] | null;
-  const entries = Array.isArray(raw)
-    ? raw
-    : Array.isArray(raw?.entries)
-      ? raw.entries
-      : Array.isArray(raw?.files)
-        ? raw.files
-        : [];
-
-  const nodes: FileNode[] = [];
-  for (const candidate of entries) {
-    if (!candidate || typeof candidate !== 'object') continue;
-    const entry = candidate as Record<string, unknown>;
-    const name = typeof entry.name === 'string' ? entry.name : undefined;
-    const rawPath = typeof entry.path === 'string' ? entry.path : undefined;
-    const path = rawPath ?? name;
-    if (!path) continue;
-    const isDirectory =
-      entry.type === 'directory' || entry.type === 'dir' || entry.isDirectory === true;
-    const node: FileNode = {
-      name: name ?? path.split('/').pop() ?? path,
-      path,
-      type: isDirectory ? 'directory' : 'file',
-    };
-    if (typeof entry.size === 'number') node.size = entry.size;
-    if (typeof entry.modified === 'string') node.modified = entry.modified;
-    if (typeof entry.isGitignored === 'boolean') node.isGitignored = entry.isGitignored;
-    nodes.push(node);
-  }
-  return nodes;
-}
+// Source transport lookup stays lazy for runtime and test replacements.
+const readFile = createFileRead(<T>(...args: Parameters<typeof backendRequest>) =>
+  backendRequest<T>(...args),
+);
+const listFileDirectory = createFileListDirectory(<T>(...args: Parameters<typeof backendRequest>) =>
+  backendRequest<T>(...args),
+);
 
 /** Build a two-char porcelain-style status code from a daemon single-char code. */
 function toPorcelain(status: string, staged: boolean): string {
@@ -109,43 +50,7 @@ export class LiveFilesClient implements FilesClient {
     path: string,
     options?: { gitRootId: string },
   ): Promise<FileContentEntry | null> {
-    try {
-      const result = await backendRequest<unknown>('file.read', {
-        workspaceId,
-        path,
-        ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
-      });
-      const content =
-        typeof result === 'string'
-          ? result
-          : typeof (result as { content?: unknown })?.content === 'string'
-            ? (result as { content: string }).content
-            : null;
-      if (content === null) return null;
-      // Binary controls survive UTF-8 decoding, including in mostly printable
-      // payloads or past the shared detector's sample. Keep its other heuristics.
-      const isBinary =
-        hasBinaryControls(content) ||
-        detectBinaryContent(new TextEncoder().encode(content.slice(0, 8192)));
-      return toFileContentEntry(
-        path,
-        isBinary ? { kind: 'restorable-snapshot', content, isBinary: true } : editableText(content),
-      );
-    } catch (error) {
-      // file.read uses Rust read_to_string. Its decoding failure proves that
-      // the file exists but cannot be read as text. Cache only a binary marker;
-      // downloads must fetch the original bytes through the workspace route.
-      if (error instanceof BackendError && error.rpcCode === -32603) {
-        const message = mutationErrorMessage(error);
-        if (message.endsWith('stream did not contain valid UTF-8')) {
-          return toFileContentEntry(path, { kind: 'preview-only', isBinary: true });
-        }
-        // File I/O currently has no structured not-found discriminator. Keep
-        // suffix recovery for ENOENT (and Windows PATH_NOT_FOUND) only.
-        if (!options?.gitRootId && /\(os error [23]\)$/.test(message)) return null;
-      }
-      throw error;
-    }
+    return readFile(workspaceId, path, options);
   }
 
   // `file.tree` (PROTOCOL §5.9) returns the immediate entries under the given
@@ -166,12 +71,7 @@ export class LiveFilesClient implements FilesClient {
   // a directory's children on expand/refresh. Errors resolve to `[]` so a failed
   // read leaves the existing rows intact rather than throwing into the store.
   async listDirectory(workspaceId: string, path: string): Promise<FileNode[]> {
-    try {
-      const result = await backendRequest<unknown>('file.list', { workspaceId, path });
-      return toFileNodes(result);
-    } catch {
-      return [];
-    }
+    return listFileDirectory(workspaceId, path);
   }
 
   async gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>> {

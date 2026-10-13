@@ -1,6 +1,6 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link } from '@tanstack/react-router';
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { store } from '@/store';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
@@ -18,6 +18,12 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceNotes } from './workspace-notes';
 import { WorkspaceGitStatus } from './workspace-git-status';
+import { WorkspaceFile } from './workspace-file';
+import { parseWorkspaceFileTarget } from './workspace-file-target';
+import {
+  loadFileContentRequested,
+  removeFileContentEntry,
+} from '../../../../../src/store/renderer/slices/files/files-slice';
 
 let nextHydrationGeneration = 0;
 
@@ -79,10 +85,14 @@ export function WorkspaceOverview({
   workspaceId,
   noteId,
   query,
+  filePath,
+  line,
 }: {
   workspaceId: string;
   noteId?: string;
   query?: string;
+  filePath?: string;
+  line?: number;
 }) {
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
@@ -90,6 +100,18 @@ export function WorkspaceOverview({
   const row = loaded.value ? workspace.value : undefined;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
+  const content = useRef<HTMLDivElement>(null);
+  const previousFile = useRef(filePath);
+  useLayoutEffect(() => {
+    const previous = previousFile.current;
+    previousFile.current = filePath;
+    if (previous && !filePath && !noteId) {
+      const opener = content.current?.querySelector<HTMLAnchorElement>(
+        `a[data-file-path="${CSS.escape(previous)}"]`,
+      );
+      (opener ?? content.current?.querySelector<HTMLElement>('h2'))?.focus();
+    }
+  }, [filePath, noteId]);
   useLayoutEffect(() => {
     if (!connection) return;
     store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
@@ -98,6 +120,13 @@ export function WorkspaceOverview({
       store.dispatch(workspaceUnmounted(workspaceId));
     };
   }, [workspaceId, connection]);
+  useLayoutEffect(() => {
+    if (!connection || !filePath || !parseWorkspaceFileTarget(filePath).valid) return;
+    store.dispatch(loadFileContentRequested(workspaceId, filePath, ''));
+    return () => {
+      store.dispatch(removeFileContentEntry(workspaceId, filePath));
+    };
+  }, [workspaceId, filePath, connection]);
   return (
     <Screen
       className="min-h-screen"
@@ -121,10 +150,10 @@ export function WorkspaceOverview({
           <p>This workspace is not available on the connected daemon.</p>
         ) : (
           <>
-            {!noteId && row.statusMessage && (
+            {!noteId && !filePath && row.statusMessage && (
               <p data-testid="workspace-status-message">{row.statusMessage}</p>
             )}
-            <dl className={noteId ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'}>
+            <dl className={noteId || filePath ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'}>
               <div>
                 <dt className="type-caption text-muted-foreground">Repository</dt>
                 <dd data-testid="workspace-repository">{row.repositoryName}</dd>
@@ -140,8 +169,23 @@ export function WorkspaceOverview({
                 <dd data-testid="workspace-status">{row.status}</dd>
               </div>
             </dl>
-            {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} />}
-            <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} query={query} />
+            <div ref={content} className="grid min-w-0 gap-6">
+              {filePath ? (
+                <WorkspaceFile
+                  key={filePath}
+                  workspaceId={workspaceId}
+                  path={filePath}
+                  line={line}
+                  noteId={noteId}
+                  query={query}
+                />
+              ) : (
+                <>
+                  {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} query={query} />}
+                  <WorkspaceNotes workspaceId={workspaceId} noteId={noteId} query={query} />
+                </>
+              )}
+            </div>
           </>
         )}
       </ScreenBody>

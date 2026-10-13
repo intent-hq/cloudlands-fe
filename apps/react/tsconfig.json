@@ -21,11 +21,15 @@
       "$features/context/types": ["../../src/features/context/types.ts"],
       "$features/file-tracking/types": ["../../src/features/file-tracking/types.ts"],
       "$features/accept-changes/types": ["../../src/features/accept-changes/types.ts"],
+      "$features/file/utils/file-content": ["../../src/features/file/utils/file-content.ts"],
       "$store/renderer/slices/guest-sessions/guest-sessions-types": [
         "../../src/store/renderer/slices/guest-sessions/guest-sessions-types.ts"
       ],
       "$store/renderer/slices/presence/presence-types": [
         "../../src/store/renderer/slices/presence/presence-types.ts"
+      ],
+      "$store/renderer/slices/files/files-types": [
+        "../../src/store/renderer/slices/files/files-types.ts"
       ],
       "$store/renderer/slices/directory-picker/directory-picker-slice": [
         "../../src/store/renderer/slices/directory-picker/directory-picker-slice.ts"

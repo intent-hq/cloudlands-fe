@@ -1,6 +1,7 @@
 import { store } from '../../store';
-import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyFilesWorkspaceState } from './files-slice';
+import { getFileContentEntry } from './files-projections';
 import type { FileContentEntry, FilesWorkspaceState } from './files-types';
 
 const selectFilesWorkspaceState = store.createSelector(
@@ -14,12 +15,7 @@ export const selectAllFileContentEntries = store.createSelector(
   },
 );
 
-export const selectFileContentEntry = store.createSelector(
-  (state, wsId: string, path: string | null | undefined): FileContentEntry | undefined => {
-    if (!path) return undefined;
-    return getItem(selectFilesWorkspaceState.select(state, wsId).files, path);
-  },
-);
+export const selectFileContentEntry = store.createSelector(getFileContentEntry);
 
 export const selectFileContent = store.createSelector(
   (state, wsId: string, path: string | null | undefined): string | null =>

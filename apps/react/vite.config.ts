@@ -61,6 +61,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
         '$features/agent/services/node-execution': fileURLToPath(
           new URL('../../src/features/agent/services/node-execution.ts', import.meta.url),
         ),
+        '$features/file/utils/file-content': fileURLToPath(
+          new URL('../../src/features/file/utils/file-content.ts', import.meta.url),
+        ),
       },
       dedupe: ['react', 'react-dom', '@preact/signals-react'],
     },

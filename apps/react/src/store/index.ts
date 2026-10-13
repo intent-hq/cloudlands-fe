@@ -39,6 +39,7 @@ import { permissionReducer } from '../../../../src/store/renderer/slices/permiss
 import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 import { workspaceNotesReducer } from '../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { gitReducer } from '../../../../src/store/renderer/slices/git/git-slice';
+import { filesReducer } from '../../../../src/store/renderer/slices/files/files-slice';
 
 export const store = new ReactStore({
   githubRepos: githubReposReducer,
@@ -79,5 +80,6 @@ export const store = new ReactStore({
   permission: permissionReducer,
   workspaceNotes: workspaceNotesReducer,
   git: gitReducer,
+  files: filesReducer,
 });
 export type AppState = StoreState<typeof store>;
