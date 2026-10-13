@@ -82,6 +82,18 @@ interface ReadReceipts {
   metadata: (workspaceId: string) => RecoveryLifetime | null;
 }
 
+function withWorkspaceAuthority(
+  metadata: RecoveryLifetime | null,
+  authority: RecoveryLifetime,
+): RecoveryLifetime | null {
+  if (!metadata) return null;
+  return {
+    key: metadata.key,
+    isCurrent: () => authority.isCurrent() && metadata.isCurrent(),
+    commit: (write) => authority.isCurrent() && metadata.commit(write),
+  };
+}
+
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
     action.type === workspaceUnmounted.type &&
@@ -318,9 +330,14 @@ function* startSnapshotRead(
   }
   if (!receipts) {
     const captured = rendererEventRecovery.captureSelector();
+    const authority = rendererEventRecovery.captureAuthoritySelector();
     receipts = {
       recovery: rendererEventRecovery.capture(agentSubscriptionsRecoveryKey(wsId, agentId)),
-      metadata: (workspaceId) => captured(agentMetadataRecoveryKey(workspaceId)),
+      metadata: (workspaceId) =>
+        withWorkspaceAuthority(
+          captured(agentMetadataRecoveryKey(workspaceId)),
+          authority(`agent-workspace-authority:${JSON.stringify([workspaceId])}`),
+        ),
     };
   }
   if (!receipts.recovery.commit(() => undefined)) return;
@@ -430,6 +447,7 @@ function* refreshWorkspaceSubscriptionsWorker(
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
   const captured = rendererEventRecovery.captureSelector();
+  const authority = rendererEventRecovery.captureAuthoritySelector();
   const [wsId, changedAgentId, watchedAgentId] = action.payload;
   if (!wsId) return;
   // Pending initial reads are demanded contexts even before Redux has a snapshot.
@@ -477,7 +495,10 @@ function* refreshWorkspaceSubscriptionsWorker(
     const metadata = (workspaceId: string) => {
       const key = agentMetadataRecoveryKey(workspaceId);
       const admission = getRecoveryAdmission(action, key);
-      return admission === undefined ? captured(key) : admission;
+      return withWorkspaceAuthority(
+        admission === undefined ? captured(key) : admission,
+        authority(`agent-workspace-authority:${JSON.stringify([workspaceId])}`),
+      );
     };
     yield* startSnapshotRead(coordinator, targetWs, agentId, 'snapshot', { recovery, metadata });
   }
