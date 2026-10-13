@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 /** Independent ordinary scopes may overlap; recovery owns an exclusive snapshot. */
 type SnapshotLane = { active: Set<Promise<void>>; barrier?: Promise<void> };
@@ -8,6 +9,13 @@ export function trackWorktreeSnapshotRead<T>(
   read: () => Promise<T>,
   mode: 'ordinary' | 'recovery' = 'ordinary',
 ): Promise<T> {
+  const retire = rendererEventRecovery.captureRetirement(key);
+  const observe = async (error: unknown): Promise<void> => {
+    const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
+    if (code === -32003 || code === -32001) retire(error);
+    const completion = await getPhysicalRequestCompletion(error);
+    if (completion && !completion.retired) await Promise.all(completion.errors.map(observe));
+  };
   const lane: SnapshotLane = lanes.get(key) ?? { active: new Set<Promise<void>>() };
   lanes.set(key, lane);
   const previous =
@@ -24,12 +32,7 @@ export function trackWorktreeSnapshotRead<T>(
     }
   };
   const result = previous ? previous.then(invoke) : invoke();
-  const settled = result.then(
-    () => undefined,
-    async (error) => {
-      await getPhysicalRequestCompletion(error);
-    },
-  );
+  const settled = result.then(() => undefined, observe);
   lane.active.add(settled);
   if (mode === 'recovery') lane.barrier = settled;
   void settled.then(() => {

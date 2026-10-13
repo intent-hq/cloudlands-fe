@@ -84,3 +84,69 @@ it('keeps a real ordinary browser deadline in the worktree lane until its wire r
     vi.useRealTimers();
   }
 });
+
+it.each(['current', 'push', 'replaced'] as const)(
+  'observes late worktree denial on original authority after %s',
+  async (change) => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { agentLockReducer, setAgentLockState } =
+      await import('$store/renderer/slices/agent-lock/agent-lock-slice');
+    rendererEventRecovery.dispose();
+    let state = agentLockReducer(undefined, setAgentLockState('ws', { protected: true }, {}));
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onNotification: () => () => {},
+        onRetired: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const key = 'worktree-denial-' + change;
+    const owner = {
+      key,
+      workspaceId: 'ws',
+      eventTypes: ['git:*'],
+      isCurrent: () => true,
+      read: async () => null,
+      apply: () => undefined,
+      invalidate: () => undefined,
+      retire: () => {
+        state = agentLockReducer(state, setAgentLockState('ws', {}, {}));
+      },
+    };
+    const handle = scope.registerResource(owner);
+    let finish!: (outcome: { retired: boolean; errors: unknown[] }) => void;
+    const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+      finish = resolve;
+    });
+    const error = Object.assign(new Error('timeout'), { completion });
+    try {
+      await expect(trackWorktreeSnapshotRead(key, () => Promise.reject(error))).rejects.toBe(error);
+      if (change === 'push') rendererEventRecovery.push(key);
+      if (change === 'replaced') {
+        handle.dispose();
+        scope.registerResource(owner);
+        state = agentLockReducer(state, setAgentLockState('ws', { replacement: true }, {}));
+      }
+      const before = state;
+      const expected =
+        change === 'replaced' ? before : agentLockReducer(before, setAgentLockState('ws', {}, {}));
+      const next = trackWorktreeSnapshotRead(
+        key,
+        async () => {
+          expect(state).toEqual(expected);
+          return 'done';
+        },
+        'recovery',
+      );
+      finish({ retired: false, errors: [Object.assign(new Error('denied'), { rpcCode: -32003 })] });
+      await next;
+      expect(rendererEventRecovery.captureAuthority(key).isCurrent()).toBe(change === 'replaced');
+    } finally {
+      rendererEventRecovery.dispose();
+    }
+  },
+);

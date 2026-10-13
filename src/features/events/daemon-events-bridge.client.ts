@@ -4981,6 +4981,11 @@ function sharedWorkspaceIdsToRefresh(): string[] {
  */
 async function reconcileAgentFailureRegistry(): Promise<void> {
   const receipt = rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY);
+  const authority = rendererEventRecovery.captureAuthority(AGENT_FAILURES_RECOVERY_KEY);
+  const deniedOrMissing = (error: unknown) => {
+    const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
+    return code === -32003 || code === -32001 || isStructuredAgentNotFoundError(error);
+  };
   const entries = listAgentFailureEntries();
   if (entries.length === 0) return;
   await trackAgentRecoveryRead(
@@ -4996,11 +5001,15 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
             await backendRequest('agent.get', { agentId, workspaceId });
             return;
           } catch (error) {
+            if (deniedOrMissing(error))
+              authority.commit(() => {
+                if (getAgentFailureEntry(agentId) === entry) removeAgentFailure(agentId);
+              });
             const completion = await getPhysicalRequestCompletion(error);
             if (completion?.retired) return;
-            const missing = completion?.errors.find(isStructuredAgentNotFoundError);
+            const missing = completion?.errors.find(deniedOrMissing);
             if (missing) error = missing;
-            if (!isStructuredAgentNotFoundError(error)) {
+            if (!deniedOrMissing(error)) {
               logger.warn(
                 'agent.get failed during failure-registry reconciliation — keeping entry',
                 {
@@ -5021,8 +5030,8 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
             agentId,
             workspaceId,
           });
-          receipt.commit(() => {
-            removeAgentFailure(agentId);
+          authority.commit(() => {
+            if (getAgentFailureEntry(agentId) === entry) removeAgentFailure(agentId);
           });
         }),
       );

@@ -11948,6 +11948,29 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       },
     );
 
+    it.each([-32003, -32001])(
+      'clears only a late denied failure entry (code=%s)',
+      async (rpcCode) => {
+        recordAgentFailure({ agentId: 'private', workspaceId: 'private-ws', error: 'failed' });
+        recordAgentFailure({ agentId: 'other', workspaceId: 'other-ws', error: 'failed' });
+        backendRequestSpy.mockImplementation((method, params) =>
+          method === 'agent.get' && (params as { agentId: string }).agentId === 'private'
+            ? Promise.reject(
+                Object.assign(new Error('ordinary timeout'), {
+                  completion: Promise.resolve({
+                    retired: false,
+                    errors: [Object.assign(new Error('denied'), { rpcCode })],
+                  }),
+                }),
+              )
+            : Promise.resolve({}),
+        );
+        await refreshDaemonEventsAfterReconnect(null);
+        expect(listAgentFailureEntries().map((row) => row.agentId)).toEqual(['other']);
+        expect(agentGetCalls()).toHaveLength(2);
+      },
+    );
+
     it('drops registry entries whose agent no longer exists on the daemon', async () => {
       // agent:deleted fired while the connection was down — the registry
       // still holds the stale entry. The reconnect refresh must verify each
