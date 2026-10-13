@@ -1,3 +1,4 @@
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { mcpSettingsSaga } from '../mcp-settings/sagas/mcp-settings-saga';
 import { toggleWorkspaceMcpServer } from '../mcp-settings/mcp-settings-slice';
 import { withRecoveryAdmissions } from '../../middlewares/event-recovery';
@@ -348,6 +349,85 @@ describe('workspace catalog host probes through live clients', () => {
     );
     await settle();
     expect(store.state.providerCatalog.byWorkspaceId?.other.settings[0]?.value).toBe('admitted');
+  });
+
+  it('reuses the admitted catalog receipt for the MCP mirror without another read', async () => {
+    await attachRecovery();
+    backend.onRequest('mcp.servers.list', () => ({
+      servers: [
+        {
+          id: 'server',
+          name: 'tools',
+          transport: 'stdio',
+          enabled: true,
+          workspaceDisabled: false,
+        },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({ status: { state: 'running' } }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const key = workspaceCatalogRecoveryKey(WS);
+    expect(rendererEventRecovery.push(key)).toBe(true);
+    const receipt = rendererEventRecovery.capture(key);
+    const before = backend.requests.length;
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'review',
+        event: {
+          type: 'workspace:updated',
+          workspaceId: WS,
+          data: { changes: { mcpServerToggled: { serverId: 'server', workspaceDisabled: true } } },
+        },
+      },
+      'review',
+      { lifetimes: new Map([[key, receipt]]) },
+    );
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].mcpServers[0].workspaceDisabled).toBe(
+      true,
+    );
+    expect(store.state.mcpSettings.byWorkspaceId?.[WS]?.disabledServers?.server).toBe(true);
+    expect(backend.requests.length).toBe(before);
+    expect(receipt.commit(() => undefined)).toBe(true);
+  });
+  it('rejects integrated MCP toggles with no catalog admission instead of using legacy push', async () => {
+    await attachRecovery();
+    backend.onRequest('mcp.servers.list', () => ({
+      servers: [
+        {
+          id: 'server',
+          name: 'tools',
+          transport: 'stdio',
+          enabled: true,
+          workspaceDisabled: false,
+        },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({ status: { state: 'running' } }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    const before = backend.requests.length;
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'review',
+        event: {
+          type: 'workspace:updated',
+          workspaceId: WS,
+          data: { changes: { mcpServerToggled: { serverId: 'server', workspaceDisabled: true } } },
+        },
+      },
+      'review',
+      { lifetimes: new Map() },
+    );
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].mcpServers[0].workspaceDisabled).toBe(
+      false,
+    );
+    expect(store.state.mcpSettings.byWorkspaceId?.[WS]?.disabledServers?.server).toBeUndefined();
+    expect(backend.requests.length).toBe(before);
   });
 
   it('serializes real MCP fallback hydration with catalog recovery across lease changes', async () => {
