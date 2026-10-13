@@ -10,6 +10,7 @@
  * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
  * events-driven refetch.
  */
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
@@ -147,6 +148,7 @@ export class LiveNotesClient implements NotesClient {
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
+    const lifetime = rendererEventRecovery.capture(`notes:${JSON.stringify([workspaceId])}`);
     // §5.2 `projection`: only ride the wire when "slim" is requested so older
     // daemons see an unchanged request. If a daemon rejects the unknown param
     // (-32602 Invalid params), fall back once to the plain full list; other
@@ -159,7 +161,7 @@ export class LiveNotesClient implements NotesClient {
           projection: 'slim',
         });
       } catch (error) {
-        if (!isProjectionRejected(error)) throw error;
+        if (!isProjectionRejected(error) || !lifetime.isCurrent()) throw error;
         result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       }
     } else {
@@ -168,7 +170,9 @@ export class LiveNotesClient implements NotesClient {
     const notes = Array.isArray(result?.notes) ? result.notes : [];
     return notes.map((n) => {
       const note = normalizeNote(n as Record<string, unknown>, workspaceId);
-      rememberNoteWorkspace(String(note.id), workspaceId);
+      lifetime.commit(() => {
+        rememberNoteWorkspace(String(note.id), workspaceId);
+      });
       return note;
     });
   }
@@ -407,6 +411,13 @@ export class LiveNotesClient implements NotesClient {
    */
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
+      recovery: {
+        eventTypes: ['note:*', 'task:*'],
+        read: async ({ request }, params) => {
+          const result = await request<{ notes: unknown[] }>('note.list', params);
+          return result.notes;
+        },
+      },
       channel: {
         subscribeMethod: 'note.subscribe',
         unsubscribeMethod: 'note.unsubscribe',

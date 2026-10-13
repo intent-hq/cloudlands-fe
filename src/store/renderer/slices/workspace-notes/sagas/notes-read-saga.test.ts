@@ -101,7 +101,12 @@ function harness(seed: Note[] = []) {
     }
     return action;
   };
-  const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga);
+  const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga, {
+    get state() {
+      return state() as never;
+    },
+    dispatch,
+  });
   return {
     actions,
     channel,

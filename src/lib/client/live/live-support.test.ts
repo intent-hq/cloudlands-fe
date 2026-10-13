@@ -872,3 +872,77 @@ describe('resolveNoteWorkspaceId (negative cache)', () => {
     expect(noteListCalls).toHaveLength(1);
   });
 });
+
+it('starts a new workspace scope seed without waiting for a disposed read', async () => {
+  let finish!: (value: any) => void;
+  listWorkspaceIdsImpl = () =>
+    new Promise((done) => {
+      finish = done;
+    });
+  const oldOff = subscribeWorkspaceIds(() => {});
+  oldOff();
+  listWorkspaceIdsImpl = async () => workspaceListResult(['ws-new']);
+  const snapshots: string[][] = [];
+  const off = subscribeWorkspaceIds((ids) => snapshots.push([...ids]));
+  try {
+    await flush();
+    expect(snapshots.at(-1)).toEqual(['ws-new']);
+    finish(workspaceListResult(['ws-old']));
+    await flush();
+    expect(snapshots.at(-1)).toEqual(['ws-new']);
+  } finally {
+    off();
+  }
+});
+
+describe('workspace scope recovery after generic loss', () => {
+  it('evicts a lost final deletion and rejects a delayed older workspace event', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    let receive!: (n: { method: string; params?: unknown }) => void;
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'loss', lossRecovery: 1 };
+      if (method === 'workspace.list') return { workspaces: [{ id: 'remaining' }] };
+      return params;
+    });
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: (fn) => {
+          receive = fn;
+          return () => {};
+        },
+        request: async (method, params, observe) => {
+          const result = await request(method, params);
+          observe?.(result);
+          return result;
+        },
+        dispose: () => {},
+      }),
+    );
+    listWorkspaceIdsImpl = async () => ({ workspaces: [{ id: 'deleted' }, { id: 'remaining' }] });
+    const snapshots: string[][] = [];
+    const off = subscribeWorkspaceIds((ids) => snapshots.push([...ids]));
+    try {
+      await scope.subscribe({ eventTypes: ['workspace:*'] }, { recover: true });
+      await flush();
+      expect(snapshots.at(-1)).toEqual(['deleted', 'remaining']);
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'loss', generation: '1', scope: { workspaceId: null } },
+      });
+      await flush();
+      expect(snapshots.at(-1)).toEqual(['remaining']);
+      emit('events.event', {
+        event: { type: 'workspace:created', data: { workspace: { id: 'deleted' } } },
+      });
+      expect(snapshots.at(-1)).toEqual(['remaining']);
+      expect(request.mock.calls.filter(([method]) => method === 'workspace.list')).toHaveLength(1);
+    } finally {
+      off();
+      rendererEventRecovery.dispose();
+    }
+  });
+});

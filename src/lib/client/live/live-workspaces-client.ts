@@ -1,3 +1,5 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
 import type {
   NativeReviewOwner,
@@ -95,7 +97,7 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
 }
 
 /** Coerce a raw daemon workspace object into the renderer `Workspace` shape. */
-function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
+export function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
   const { defaultAgentPlacement, ...fields } = raw;
@@ -181,13 +183,15 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return createRepositoryContextTransport().observe(request, handler);
   }
 
+  private readonly readLifetimes = new WeakMap<Promise<unknown>, RecoveryLifetime>();
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
   private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
     const existing = this.listRequests.get(includeArchived);
-    if (existing) return existing;
+    if (existing && this.readLifetimes.get(existing)?.commit(() => {})) return existing;
+    const lifetime = rendererEventRecovery.capture('workspace-list');
 
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
@@ -198,6 +202,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
         normalizeWorkspace(workspace as Record<string, unknown>),
       );
     });
+    this.readLifetimes.set(request, lifetime);
     this.listRequests.set(includeArchived, request);
     const clearRequest = () => {
       if (this.listRequests.get(includeArchived) === request) {
@@ -217,7 +222,8 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    */
   get(id: string): Promise<Workspace | null> {
     const existing = this.getRequests.get(id);
-    if (existing) return existing;
+    if (existing && this.readLifetimes.get(existing)?.commit(() => {})) return existing;
+    const lifetime = rendererEventRecovery.capture('workspace-list');
 
     const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
@@ -229,6 +235,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       if (!raw || typeof raw !== 'object') return null;
       return normalizeWorkspace(raw as Record<string, unknown>);
     });
+    this.readLifetimes.set(request, lifetime);
     this.getRequests.set(id, request);
     const clearRequest = () => {
       if (this.getRequests.get(id) === request) {
@@ -483,6 +490,15 @@ export class LiveWorkspacesClient implements WorkspacesClient {
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {
     return createDeltaSubscription<Workspace>({
+      recovery: {
+        eventTypes: ['workspace:*'],
+        read: async ({ request }) => {
+          const result = await request<{ workspaces: unknown[] }>('workspace.list', {
+            includeArchived: true,
+          });
+          return result.workspaces;
+        },
+      },
       // Typed §6.9 channel — the one GLOBAL channel (no workspaceId). Its
       // seq-0 snapshot includes archived workspaces (intentd#521).
       channel: {

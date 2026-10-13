@@ -35,6 +35,10 @@
  * precedent) instead of dropped.
  */
 import type { SubscriptionHandler, Unsubscribe } from '../app-client';
+import {
+  ownTypedCollectionRecovery,
+  type TypedCollectionRecovery,
+} from './typed-collection-recovery';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
 /** Incremental change set carried by a `kind:"delta"` push. */
@@ -178,6 +182,8 @@ export interface TypedChannelDescriptor {
 export interface DeltaSubscriptionConfig<T> {
   /** The typed §6.9 channel backing this subscription — the only data path. */
   channel: TypedChannelDescriptor;
+  /** Reconcile on observed generic loss; this does not detect typed-only loss. */
+  recovery?: TypedCollectionRecovery;
   /** Stable id for an entity from its raw daemon shape. */
   getId: (raw: Record<string, unknown>) => string;
   /** Coerce a raw push entity into `T`; `null` drops it. */
@@ -193,6 +199,9 @@ export interface DeltaSubscriptionConfig<T> {
  */
 interface DynamicChannelState<T> {
   params: Record<string, unknown>;
+  request: typeof backendRequest;
+  recovery?: ReturnType<typeof ownTypedCollectionRecovery>;
+  retired?: boolean;
   /**
    * Per-channel registration-generation token: bumped whenever a newer
    * registration or a teardown (removal, resnapshot, reconnect, dispose)
@@ -257,6 +266,11 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   const reconciler = new DeltaReconciler<T>(getId, normalize);
 
   let disposed = false;
+  let retired = false;
+  let channelRequest: typeof backendRequest = backendRequest;
+  let notificationEpoch = {};
+  let started = false;
+  let recovery: ReturnType<typeof ownTypedCollectionRecovery> | undefined;
   let channelSubscriptionId: string | undefined;
   // Registration-generation token: bumped whenever a new registration or a
   // teardown (unregister, reconnect, resnapshot, dispose) supersedes prior
@@ -319,14 +333,15 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // per id via `registerDynamicChannel`. A failed registration retries with
   // capped exponential backoff — the channel is the only data path.
   const registerChannel = () => {
-    if (dynamic) return;
+    if (dynamic || disposed || retired) return;
     if (retryTimer !== undefined) {
       clearTimeout(retryTimer);
       retryTimer = undefined;
     }
     channelGeneration += 1;
     const generation = channelGeneration;
-    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, params)
+    const request = channelRequest;
+    request<{ subscriptionId?: string }>(channel.subscribeMethod, params)
       .then((result) => {
         const id = result?.subscriptionId;
         if (generation !== channelGeneration || disposed) {
@@ -335,7 +350,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           // the newer id must keep matching — and best-effort release the
           // daemon-side subscription this reply just created.
           if (id) {
-            void backendRequest(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
+            void request(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
               // Unsubscribe is best-effort.
             });
           }
@@ -381,20 +396,21 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (!channelSubscriptionId) return;
     const id = channelSubscriptionId;
     channelSubscriptionId = undefined;
-    void backendRequest(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
+    void channelRequest(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
       // Unsubscribe is best-effort.
     });
   };
 
   const registerDynamicChannel = (id: string, state: DynamicChannelState<T>) => {
-    if (!dynamic) return;
+    if (!dynamic || disposed || state.retired) return;
     if (state.retryTimer !== undefined) {
       clearTimeout(state.retryTimer);
       state.retryTimer = undefined;
     }
     state.generation += 1;
     const generation = state.generation;
-    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, state.params)
+    const request = state.request;
+    request<{ subscriptionId?: string }>(channel.subscribeMethod, state.params)
       .then((result) => {
         const sid = result?.subscriptionId;
         if (disposed || dynamicChannels.get(id) !== state || generation !== state.generation) {
@@ -402,11 +418,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           // while this attempt was in flight. Best-effort release the
           // daemon-side subscription this reply just created.
           if (sid) {
-            void backendRequest(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(
-              () => {
-                // Unsubscribe is best-effort.
-              },
-            );
+            void request(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(() => {
+              // Unsubscribe is best-effort.
+            });
           }
           return;
         }
@@ -451,11 +465,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     const sid = state.subscriptionId;
     state.subscriptionId = undefined;
     if (sid) {
-      void backendRequest(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(
-        () => {
-          // Unsubscribe is best-effort.
-        },
-      );
+      void state.request(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(() => {
+        // Unsubscribe is best-effort.
+      });
     }
   };
 
@@ -482,6 +494,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     for (const [id, state] of [...dynamicChannels]) {
       if (desired.has(id)) continue;
       dynamicChannels.delete(id);
+      state.recovery?.dispose();
       unregisterDynamicChannel(state);
       changed = true;
     }
@@ -489,6 +502,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       if (dynamicChannels.has(id)) continue;
       const state: DynamicChannelState<T> = {
         generation: 0,
+        request: backendRequest,
         params: { ...dynamic.paramsForId(id) },
         reconciler: new DeltaReconciler<T>(getId, normalize),
         seeded: false,
@@ -496,6 +510,41 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         retryAttempt: 0,
       };
       dynamicChannels.set(id, state);
+      if (config.recovery) {
+        let started = false;
+        state.recovery = ownTypedCollectionRecovery(
+          channel.subscribeMethod,
+          state.params,
+          config.recovery,
+          {
+            apply: (rows) => {
+              if (disposed || dynamicChannels.get(id) !== state) return;
+              state.reconciler.applySnapshot(0, rows);
+              state.seeded = true;
+              emit();
+            },
+            retire: () => {
+              state.retired = true;
+              unregisterDynamicChannel(state);
+              state.reconciler.reset();
+              bufferedPushes.length = 0;
+              emit();
+            },
+            resume: (request) => {
+              state.request = request;
+              state.retired = false;
+              if (started) rewireNotifications();
+              if (started) {
+                unregisterDynamicChannel(state);
+                state.reconciler.reset();
+                bufferedPushes.length = 0;
+                registerDynamicChannel(id, state);
+              }
+            },
+          },
+        );
+        started = true;
+      }
       registerDynamicChannel(id, state);
       changed = true;
     }
@@ -522,6 +571,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (dynamic) {
       for (const [id, state] of dynamicChannels) {
         if (state.subscriptionId !== push.subscriptionId) continue;
+        if (state.retired || (state.recovery && !state.recovery.push())) return;
         if (push.kind === 'snapshot') {
           state.awaitingResnapshot = false;
           state.seeded = true;
@@ -545,6 +595,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       if (hasPendingRegistration()) bufferPush(push);
       return;
     }
+    if (retired || (recovery && !recovery.push())) return;
     if (push.kind === 'snapshot') {
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
       emit();
@@ -555,10 +606,19 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     }
   };
 
-  const off = onBackendNotification((n) => {
-    const push = parseSubscriptionPush(n.method, n.params);
-    if (push) processPush(push);
-  });
+  const listen = () => {
+    const epoch = (notificationEpoch = {});
+    return onBackendNotification((n) => {
+      if (epoch !== notificationEpoch) return;
+      const push = parseSubscriptionPush(n.method, n.params);
+      if (push) processPush(push);
+    });
+  };
+  let off = listen();
+  const rewireNotifications = () => {
+    off();
+    off = listen();
+  };
 
   // Reconnect (RESUB-1): the daemon dropped its subscription registry on
   // restart, so the stashed id points at nothing — no unsubscribe frame, just
@@ -598,6 +658,33 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   const offIds: Unsubscribe | undefined = dynamic
     ? dynamic.subscribeIds(reconcileDesiredIds)
     : undefined;
+  if (!dynamic && config.recovery) {
+    recovery = ownTypedCollectionRecovery(channel.subscribeMethod, params, config.recovery, {
+      apply: (rows) => {
+        if (disposed) return;
+        reconciler.applySnapshot(0, rows);
+        emit();
+      },
+      retire: () => {
+        notificationEpoch = {};
+        retired = true;
+        unregisterChannel();
+        reconciler.reset();
+        bufferedPushes.length = 0;
+        emit();
+      },
+      resume: (request) => {
+        channelRequest = request;
+        retired = false;
+        if (started) rewireNotifications();
+        if (started) {
+          bufferedPushes.length = 0;
+          resnapshot();
+        }
+      },
+    });
+  }
+  started = true;
   if (!dynamic) registerChannel();
 
   return () => {
@@ -609,8 +696,12 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     off();
     offReconnect();
     offIds?.();
+    recovery?.dispose();
     unregisterChannel();
-    for (const state of dynamicChannels.values()) unregisterDynamicChannel(state);
+    for (const state of dynamicChannels.values()) {
+      state.recovery?.dispose();
+      unregisterDynamicChannel(state);
+    }
     dynamicChannels.clear();
   };
 }

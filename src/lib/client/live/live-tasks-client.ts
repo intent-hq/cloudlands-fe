@@ -464,6 +464,13 @@ export class LiveTasksClient implements TasksClient {
    */
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
     return createDeltaSubscription<WorkspaceTask>({
+      recovery: {
+        eventTypes: ['note:*', 'task:*'],
+        read: async ({ request }, params) => {
+          const result = await request<{ tasks: unknown[] }>('task.list', params);
+          return result.tasks;
+        },
+      },
       channel: {
         subscribeMethod: 'task.subscribe',
         unsubscribeMethod: 'task.unsubscribe',

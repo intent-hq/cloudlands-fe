@@ -88,6 +88,12 @@ function harness(seed: Note | Note[] = note(), comments: CommentV2[] = []) {
   const task = runSaga(
     { channel, dispatch, getState: () => ({ workspaceNotes, comments: commentState }) },
     notesWriteSaga,
+    {
+      get state() {
+        return { workspaceNotes, comments: commentState } as never;
+      },
+      dispatch,
+    },
   );
   return { actions, channel, dispatch, getState: () => workspaceNotes, task };
 }
