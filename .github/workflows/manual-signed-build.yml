@@ -35,14 +35,12 @@ on:
         type: boolean
         default: false
       macos_arch:
-        description: 'Mac architectures: both, Apple Silicon (arm64), or Intel (x64)'
+        description: 'Manual Mac builds use Apple Silicon; Intel is release-only'
         required: false
         type: choice
-        default: both
+        default: arm64
         options:
-          - both
           - arm64
-          - x64
       smoke_macos:
         description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
         required: false
@@ -109,14 +107,10 @@ jobs:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
-          case "${MACOS_ARCH:-both}" in
-            both) TARGETS="[$ARM,$INTEL]" ;;
+          case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
-            x64) TARGETS="[$INTEL]" ;;
-            *) echo "::error::macos_arch must be both, arm64, or x64"; exit 1 ;;
+            *) echo "::error::Manual Mac builds support arm64 only; Intel is release-only"; exit 1 ;;
           esac
-          # Smoke one built artifact on its native CPU; prefer ARM when both are built.
           {
             echo "matrix={\"include\":$TARGETS}"
             echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
