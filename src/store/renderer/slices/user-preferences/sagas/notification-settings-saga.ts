@@ -1,10 +1,11 @@
 import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
 
-import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
+import { readSetting, updateSettingsRevision } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
+  selectNotificationFieldEdits,
   selectNotificationVolume,
   selectNotificationVolumeWrite,
   selectSoundEnabled,
@@ -32,11 +33,7 @@ type SettingResponse = { value?: unknown };
 export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
   const work = captureSettingsWork();
   if (!work.isCurrent()) return;
-  const initial = {
-    enabled: yield* selectNotificationEnabled.effect(),
-    soundEnabled: yield* selectSoundEnabled.effect(),
-    soundOnlyWhenUnfocused: yield* selectSoundOnlyWhenUnfocused.effect(),
-  };
+  const initial = yield* selectNotificationFieldEdits.effect();
   try {
     // Volume is hydrated by the revision-ordered settings snapshot/event saga.
     // A separate settings.get here could complete after a newer live update.
@@ -48,7 +45,7 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
     if (!work.isSameScope()) return;
     if (
       work.isSameScope() &&
-      (yield* selectNotificationEnabled.effect()) === initial.enabled &&
+      (yield* selectNotificationFieldEdits.effect())?.enabled === initial?.enabled &&
       typeof (enabled as SettingResponse).value === 'boolean'
     ) {
       const action = setNotificationEnabled((enabled as { value: boolean }).value);
@@ -57,7 +54,7 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
     }
     if (
       work.isSameScope() &&
-      (yield* selectSoundEnabled.effect()) === initial.soundEnabled &&
+      (yield* selectNotificationFieldEdits.effect())?.soundEnabled === initial?.soundEnabled &&
       typeof (soundEnabled as SettingResponse).value === 'boolean'
     ) {
       const action = setSoundEnabled((soundEnabled as { value: boolean }).value);
@@ -66,7 +63,8 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
     }
     if (
       work.isSameScope() &&
-      (yield* selectSoundOnlyWhenUnfocused.effect()) === initial.soundOnlyWhenUnfocused &&
+      (yield* selectNotificationFieldEdits.effect())?.soundOnlyWhenUnfocused ===
+        initial?.soundOnlyWhenUnfocused &&
       typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean'
     ) {
       const action = setSoundOnlyWhenUnfocused(
@@ -94,7 +92,7 @@ export function* persistNotificationSettingsWorker() {
   const volume = yield* selectNotificationVolume.effect();
   let revision: number | undefined;
   try {
-    const result = yield* call(updateSettings, [
+    revision = yield* call(updateSettingsRevision, [
       { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
       { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
       {
@@ -103,7 +101,6 @@ export function* persistNotificationSettingsWorker() {
       },
       { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
     ]);
-    revision = result.revision;
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }

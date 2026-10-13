@@ -1534,3 +1534,68 @@ it('notification hydration preserves a newer local field edit', async () => {
   expect(store.state.userPreferences.soundEnabled).toBe(false);
   expect(settingsTransport.request).toHaveBeenCalledTimes(3);
 });
+
+it.each([
+  [4, 0.9],
+  [30, 0.4],
+])(
+  'notification save orders daemon revision %s against acknowledged revision 20',
+  async (revision, expected) => {
+    vi.useFakeTimers();
+    admitLegacyPrincipal();
+    const h = recoveryHarness();
+    installTracked();
+    const scope = rendererEventRecovery.attach(h.session);
+    await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+    let release!: (value: unknown) => void;
+    const held = new Promise((done) => {
+      release = done;
+    });
+    settingsTransport.request.mockReset().mockReturnValue(held);
+    store.dispatch(recoverySetVolume(0.9));
+    cleanups.add(store.runSaga(recoveryPersistNotificationSettingsWorker));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(
+      settingsTransport.request.mock.calls.filter(([method]) => method === 'settings.update'),
+    ).toHaveLength(1);
+    h.emit({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'global',
+        event: {
+          type: 'settings:changed',
+          data: { revision, changes: [{ path: 'notifications.volume', value: 0.4 }] },
+        },
+      },
+    });
+    await settle();
+    release({ revision: 20, applied: [{ path: 'notifications.volume', value: 0.9 }] });
+    await settle();
+    expect(store.state.userPreferences.volume).toBe(expected);
+    expect(store.state.userPreferences.pendingNotificationVolumeEditId).toBeNull();
+  },
+);
+
+it('notification hydration preserves a local field edit that returns to its initial value', async () => {
+  admitLegacyPrincipal();
+  const h = recoveryHarness();
+  installTracked();
+  const scope = rendererEventRecovery.attach(h.session);
+  await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  settingsTransport.request.mockReset().mockImplementation(async (_method, params) => {
+    await held;
+    return { definition: { path: params.path }, value: false };
+  });
+  expect(store.state.userPreferences.soundEnabled).toBe(true);
+  cleanups.add(store.runSaga(recoveryHydrateNotificationSettingsWorker));
+  await settle();
+  store.dispatch(recoverySetSoundEnabled(false));
+  store.dispatch(recoverySetSoundEnabled(true));
+  release();
+  await settle();
+  expect(store.state.userPreferences.soundEnabled).toBe(true);
+});

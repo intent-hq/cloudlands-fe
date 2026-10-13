@@ -1,6 +1,7 @@
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   GLOBAL_SETTINGS_RECOVERY_KEY,
+  captureSettingsWork,
   GLOBAL_MCP_RECOVERY_KEY,
   trackSettingsRead,
   isSettingsAuthorityError,
@@ -251,6 +252,18 @@ export async function updateSettings(changes: AppSettingChange[]): Promise<Setti
     applied: Array.isArray(result?.applied) ? result.applied : [],
     revision: typeof result?.revision === 'number' ? result.revision : 0,
   };
+}
+
+/** Revision-only acknowledgement for journals that order intervening push values themselves. */
+export async function updateSettingsRevision(changes: AppSettingChange[]): Promise<number> {
+  if (changes.length === 0) return 0;
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) throw new Error('Settings request lifetime retired');
+  const result = await backendRequest<{ revision?: unknown }>('settings.update', { changes });
+  if (!work.isSameScope()) throw new Error('Settings request scope retired');
+  invalidateSettingsReadCache(changes.map(({ path }) => path));
+  // Applied values deliberately stay behind the stricter updateSettings guard.
+  return typeof result?.revision === 'number' ? result.revision : 0;
 }
 
 /** A new connection must neither reuse nor wait on the previous host's reads. */
