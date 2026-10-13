@@ -38,7 +38,8 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
-  handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  recovery: false,
+  handler: (async () => ({})) as (method: string, params?: unknown) => Promise<unknown>,
   principal: (async () => ({
     id: 'prn_7',
     login: 'octocat',
@@ -62,6 +63,26 @@ vi.mock('../json-rpc-client', () => {
     private readonly config: unknown;
     private readonly onHelloResult?: (result: unknown) => void;
     private status = 'disconnected';
+    private connection: { incarnation: object; eventStreamRecovery: boolean } | null = null;
+    private feed = new Set<(event: unknown) => void>();
+    getRepositoryConnection() {
+      return this.connection;
+    }
+    onRepositoryConnectionEvent(fn: (event: unknown) => void) {
+      this.feed.add(fn);
+      return () => this.feed.delete(fn);
+    }
+    async requestOnCapturedConnection(
+      connection: object,
+      method: string,
+      params?: unknown,
+      options?: { observe?: (r: unknown) => void },
+    ) {
+      if (connection !== this.connection) throw new Error('retired');
+      const result = await this.request(method, params);
+      options?.observe?.(result);
+      return result;
+    }
     private readonly listeners = new Map<string, Array<(arg: unknown) => void>>();
     constructor(opts: { config: unknown; onHelloResult?: (result: unknown) => void }) {
       this.config = opts.config;
@@ -78,10 +99,20 @@ vi.mock('../json-rpc-client', () => {
       return this;
     }
     emit(event: string, arg?: unknown): void {
+      if (event === 'notification' && this.connection)
+        for (const fn of this.feed)
+          fn({ type: 'notification', incarnation: this.connection.incarnation, notification: arg });
+      if (event === 'status' && arg !== 'connected' && this.connection) {
+        const old = this.connection;
+        this.connection = null;
+        for (const fn of [...this.feed]) fn({ type: 'identity-retired', connection: old });
+      }
       if (event === 'status' && typeof arg === 'string') this.status = arg;
       for (const h of this.listeners.get(event) ?? []) h(arg);
     }
     hello(result: unknown): void {
+      if (rpc.recovery && !this.connection)
+        this.connection = { incarnation: {}, eventStreamRecovery: true };
       this.onHelloResult?.(result);
     }
     start(): void {
@@ -95,7 +126,7 @@ vi.mock('../json-rpc-client', () => {
       rpc.payloads.push([method, params]);
       rpc.params.push(params);
       rpc.options.push(options);
-      return method === 'principal.me' ? rpc.principal() : rpc.handler(method);
+      return method === 'principal.me' ? rpc.principal() : rpc.handler(method, params);
     });
     registerMethod(): () => void {
       return () => {};
@@ -408,6 +439,7 @@ function findHandler(channel: string) {
 }
 
 beforeEach(() => {
+  rpc.recovery = false;
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
@@ -5492,6 +5524,181 @@ describe('guest-sessions:* IPC handlers', () => {
         guestStore.setWorkspaces.mockClear();
         return { guest, send, mod };
       }
+
+      it('recovers the final lost guest title and membership from fenced authority reads', async () => {
+        rpc.recovery = true;
+        let rows = [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }];
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list') return { workspaces: rows };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        let cached = [{ id: 'ws-guest', title: 'Before' }];
+        guestStore.setWorkspaces.mockImplementation(async (_id, refs, guard) => {
+          if (!guard()) return false;
+          cached = refs;
+          return true;
+        });
+        rows = [];
+        const loss = {
+          method: 'events.lost',
+          params: { subscriptionId: SUB_ID, generation: '1', scope: { workspaceId: null } },
+        };
+        guest.emit('notification', loss);
+        guest.emit('notification', loss);
+        await vi.waitFor(() => expect(cached).toEqual([]));
+        expect(rpc.calls.filter((method) => method === 'workspace.list')).toHaveLength(2);
+        expect(rpc.calls.filter((method) => method === 'events.fence')).toHaveLength(2);
+        expect(rpc.calls.filter((method) => method === 'principal.me')).toHaveLength(2);
+      });
+
+      it('serializes guest recovery behind an old hydration and rejects its stale result', async () => {
+        rpc.recovery = true;
+        let rows = [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }];
+        let held: Promise<unknown> | undefined;
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list') return held ?? { workspaces: rows };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        let cached = [{ id: 'ws-guest', title: 'Before' }];
+        guestStore.setWorkspaces.mockImplementation(async (_id, refs, guard) => {
+          if (!guard()) return false;
+          cached = refs;
+          return true;
+        });
+        let finish!: (value: unknown) => void;
+        held = new Promise((r) => {
+          finish = r;
+        });
+        guest.emit(
+          'notification',
+          workspaceEvent(SUB_ID, 'workspace:updated', {
+            workspaceId: 'ws-guest',
+            changes: { title: 'Old' },
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(2),
+        );
+        guest.emit('notification', {
+          method: 'events.lost',
+          params: { subscriptionId: SUB_ID, generation: '1', scope: { workspaceId: null } },
+        });
+        await vi.waitFor(() =>
+          expect(rpc.calls.filter((m) => m === 'events.fence')).toHaveLength(1),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(2);
+        rows = [];
+        held = undefined;
+        finish({ workspaces: [{ id: 'ws-guest', title: 'Stale', myRole: 'collaborator' }] });
+        await vi.waitFor(() => expect(cached).toEqual([]));
+        expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(3);
+      });
+
+      it('clears guest authority on identity retirement while a recovered store write is queued', async () => {
+        rpc.recovery = true;
+        let title = 'Before';
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list')
+            return { workspaces: [{ id: 'ws-guest', title, myRole: 'collaborator' }] };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        let cached = [{ id: 'ws-guest', title: 'Before' }];
+        let finish!: () => void;
+        const held = new Promise<void>((r) => {
+          finish = r;
+        });
+        guestStore.setWorkspaces.mockImplementation(async (_id, refs, guard) => {
+          if (refs[0]?.title === 'Recovered') await held;
+          await Promise.resolve();
+          if (!guard()) return false;
+          cached = refs;
+          return true;
+        });
+        title = 'Recovered';
+        guest.emit('notification', {
+          method: 'events.lost',
+          params: { subscriptionId: SUB_ID, generation: '1', scope: { workspaceId: null } },
+        });
+        await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalled());
+        guest.emit('status', 'disconnected');
+        finish();
+        await vi.waitFor(() => expect(cached).toEqual([]));
+        expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(2);
+      });
+
+      it('clears guest membership when recovery finds a different principal', async () => {
+        rpc.recovery = true;
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list')
+            return { workspaces: [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }] };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        let cached = [{ id: 'ws-guest', title: 'Before' }];
+        guestStore.setWorkspaces.mockImplementation(async (_id, refs, guard) => {
+          if (!guard()) return false;
+          cached = refs;
+          return true;
+        });
+        rpc.principal = async () => ({
+          id: 'different',
+          login: 'other',
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+        });
+        guest.emit('notification', {
+          method: 'events.lost',
+          params: { subscriptionId: SUB_ID, generation: '1', scope: { workspaceId: null } },
+        });
+        await vi.waitFor(() => expect(cached).toEqual([]));
+        expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(1);
+        expect(rpc.calls.filter((m) => m === 'principal.me')).toHaveLength(2);
+        expect(rpc.calls.filter((m) => m === 'events.fence')).toHaveLength(1);
+      });
+
+      it('rebuilds guest recovery after reconnecting the same pooled client', async () => {
+        rpc.recovery = true;
+        let rows = [{ id: 'ws-guest', title: 'Before', myRole: 'collaborator' }];
+        rpc.handler = async (method, params) => {
+          if (method === 'events.subscribe') return { subscriptionId: SUB_ID, lossRecovery: 1 };
+          if (method === 'events.fence') return params;
+          if (method === 'workspace.list') return { workspaces: rows };
+          return {};
+        };
+        const { guest } = await connectGuest();
+        guest.emit('status', 'disconnected');
+        guest.hello(hello);
+        await vi.waitFor(() =>
+          expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(2),
+        );
+        expect(rpc.calls.filter((m) => m === 'events.subscribe')).toHaveLength(2);
+        let cached = [{ id: 'ws-guest', title: 'Before' }];
+        guestStore.setWorkspaces.mockImplementation(async (_id, refs, guard) => {
+          if (!guard()) return false;
+          cached = refs;
+          return true;
+        });
+        rows = [];
+        guest.emit('notification', {
+          method: 'events.lost',
+          params: { subscriptionId: SUB_ID, generation: '1', scope: { workspaceId: null } },
+        });
+        await vi.waitFor(() => expect(cached).toEqual([]));
+        expect(rpc.calls.filter((m) => m === 'workspace.list')).toHaveLength(3);
+      });
 
       it('the guest hello subscribes the pooled client to the host workspace events', async () => {
         installHost(() => 'Guest project');

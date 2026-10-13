@@ -52,6 +52,7 @@
  * remaining consumers in main.
  */
 
+import { captureMainEventRecovery } from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import {
   getLocalBackendClient,
@@ -82,6 +83,11 @@ const APP_SETTING_PATHS: readonly string[] = [
 let cachedBranchPrefix: string | null = null;
 let cachedWorktreesLocation: string | null = null;
 let cachedSshKeyPath: string | null = null;
+let recovery: ReturnType<typeof captureMainEventRecovery>;
+let recoveryResource:
+  ReturnType<NonNullable<typeof recovery>['coordinator']['registerResource']> | undefined;
+let authorityRetired = false;
+let ordinaryRefresh: Promise<void> | undefined;
 let hydrationPromise: Promise<void> | null = null;
 /** One-time guard for the notification / reconnect listeners. */
 let listenersAttached = false;
@@ -137,7 +143,10 @@ function allHydrated(): boolean {
 }
 
 async function fetchStringSetting(path: string): Promise<string> {
-  const result = (await getLocalBackendClient().request('settings.get', {
+  const client = getLocalBackendClient();
+  if (client.getRepositoryConnection && !client.getRepositoryConnection())
+    throw new Error('Local identity unavailable');
+  const result = (await (recovery?.session ?? getLocalBackendClient()).request('settings.get', {
     path,
   })) as { value?: unknown } | null;
   const value = result?.value;
@@ -150,6 +159,22 @@ async function fetchStringSetting(path: string): Promise<string> {
  * it was `null`), so a later retry can still hydrate it.
  */
 async function refreshSettings(paths: readonly string[]): Promise<void> {
+  const epoch = subscribeEpoch;
+  const run = (ordinaryRefresh ?? Promise.resolve()).then(() => {
+    if (epoch === subscribeEpoch) return refreshSettingsPass(paths);
+  });
+  ordinaryRefresh = run;
+  try {
+    await run;
+  } finally {
+    if (ordinaryRefresh === run) ordinaryRefresh = undefined;
+  }
+}
+
+async function refreshSettingsPass(paths: readonly string[]): Promise<void> {
+  if (authorityRetired) return;
+  const epoch = subscribeEpoch;
+  const receipt = recoveryResource?.captureLifetime();
   await Promise.all(
     paths.map(async (path) => {
       const versionAtFetch = deltaVersions.get(path) ?? 0;
@@ -161,7 +186,20 @@ async function refreshSettings(paths: readonly string[]): Promise<void> {
           logger.info(`Discarding stale settings.get result for ${path}`);
           return;
         }
-        setCachedValue(path, value);
+        if (epoch !== subscribeEpoch) return;
+        if (receipt) {
+          const committed = receipt.commit(() => {
+            setCachedValue(path, value);
+          });
+          // These paths are independent settings. An unrelated path's push
+          // supersedes the grouped receipt, but not this unchanged path version.
+          // Re-admit only within the same lease epoch and a clean resource.
+          const current = recoveryResource?.captureLifetime();
+          if (!committed && current?.key === receipt.key && !authorityRetired)
+            current.commit(() => {
+              setCachedValue(path, value);
+            });
+        } else setCachedValue(path, value);
       } catch (error) {
         logger.warn(`Failed to hydrate ${path} from daemon`, {
           error: (error as Error).message,
@@ -177,14 +215,15 @@ async function refreshSettings(paths: readonly string[]): Promise<void> {
  * `fetchStringSetting` — non-string (e.g. a reset to the catalog default)
  * becomes `''`.
  */
-function handleBackendNotification(n: JsonRpcNotification): void {
+function handleBackendNotification(n: JsonRpcNotification, ordered = false): void {
+  if (recovery && !ordered) return;
   if (n.method !== 'events.event') return;
   const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
   const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
   // Strict match: the shared client also carries notifications for
   // renderer-proxied subscriptions; only our own subscription's events
   // may touch the cache.
-  if (!subscriptionId || subId !== subscriptionId) return;
+  if (!ordered && (!subscriptionId || subId !== subscriptionId)) return;
   const event = params?.event as { type?: unknown; data?: unknown } | undefined;
   if (!event || event.type !== 'settings:changed') return;
   const changes = (event.data as { changes?: unknown } | undefined)?.changes;
@@ -208,14 +247,63 @@ function handleBackendNotification(n: JsonRpcNotification): void {
  * retry, which covers a transient subscribe failure while the connection is
  * already up and never transitions.
  */
+function retireSettings(): void {
+  authorityRetired = true;
+  subscribeEpoch++;
+  subscriptionId = undefined;
+  cachedBranchPrefix = cachedWorktreesLocation = cachedSshKeyPath = null;
+  hydrationPromise = null;
+  recoveryResource = undefined;
+}
+
+function captureSettingsRecovery(): void {
+  if (recovery?.session.isCurrent()) return;
+  recovery = captureMainEventRecovery(getLocalBackendClient(), retireSettings);
+  if (!recovery) return;
+  authorityRetired = false;
+  recoveryResource = recovery.coordinator.registerResource({
+    key: 'app-settings',
+    workspaceId: null,
+    eventTypes: ['settings:changed'],
+    read: async (reader) => {
+      await ordinaryRefresh;
+      return Promise.all(
+        APP_SETTING_PATHS.map(async (path) => {
+          const result = await reader.request<{ value?: unknown }>('settings.get', { path });
+          return [path, typeof result?.value === 'string' ? result.value : ''] as const;
+        }),
+      );
+    },
+    apply: (values) => {
+      for (const [path, value] of values) setCachedValue(path, value);
+    },
+    invalidate: () => {},
+    retire: () => {
+      retireSettings();
+    },
+    onEvent: (n) => handleBackendNotification(n, true),
+  });
+}
+
 async function subscribeToSettingsChanges(): Promise<void> {
+  captureSettingsRecovery();
   const epoch = subscribeEpoch;
   try {
     const client = getLocalBackendClient();
-    const result = (await client.request('events.subscribe', {
-      eventTypes: ['settings:changed'],
-    })) as { subscriptionId?: string } | undefined;
-    const id = result?.subscriptionId;
+    if (client.getRepositoryConnection && !client.getRepositoryConnection())
+      throw new Error('Local identity unavailable');
+    const id = recovery
+      ? (
+          await recovery.coordinator.subscribe(
+            { eventTypes: ['settings:changed'] },
+            { recover: true },
+          )
+        )?.id
+      : (
+          (await client.request('events.subscribe', { eventTypes: ['settings:changed'] })) as {
+            subscriptionId?: string;
+          }
+        )?.subscriptionId;
     if (epoch !== subscribeEpoch) {
       // A reconnect ran while subscribe was in flight; this id belongs to
       // the previous connection generation. Best-effort release it.
@@ -312,6 +400,9 @@ function attachSettingsListeners(): Promise<void> {
     // then re-fetch all three paths: a change landing between the fetch
     // reads and the subscription registration is then delivered as a
     // delta instead of being silently lost until the next reconnect.
+    recovery?.coordinator.dispose();
+    recovery = undefined;
+    recoveryResource = undefined;
     subscribeEpoch++;
     subscriptionId = undefined;
     clearSubscribeRetry();
@@ -338,6 +429,7 @@ export async function initAppSettingsService(): Promise<void> {
   const subscribed = attachSettingsListeners();
   if (allHydrated()) return;
   if (hydrationPromise) return;
+  const epoch = subscribeEpoch;
   hydrationPromise = (async () => {
     // Subscribe-before-fetch (never rejects — failures arm the retries):
     // changes landing during the initial fetch arrive as deltas.
@@ -358,7 +450,7 @@ export async function initAppSettingsService(): Promise<void> {
       armStatusRetry();
     })
     .finally(() => {
-      hydrationPromise = null;
+      if (epoch === subscribeEpoch) hydrationPromise = null;
     });
 }
 
@@ -394,6 +486,10 @@ export function getSshKeyPath(): string {
  * @internal
  */
 export function __resetAppSettingsForTesting(): void {
+  recovery?.coordinator.dispose();
+  recovery = undefined;
+  recoveryResource = undefined;
+  authorityRetired = false;
   cachedBranchPrefix = null;
   cachedWorktreesLocation = null;
   cachedSshKeyPath = null;
