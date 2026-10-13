@@ -237,6 +237,56 @@ describe('production bounded note window assembly', () => {
     await readNoteWindow(b.read, { at: 0, ...identity });
     expect(b.requests.map((q) => q.kind)).toEqual(['source', 'context']);
   });
+
+  for (const conflict of [false, true]) {
+    it(`drains deferred ancestor chains and ${conflict ? 'rejects conflicting' : 'retains matching'} identities`, async () => {
+      const b = backend('hello');
+      const read = async (q: NotePageRequest): Promise<NoteReadPage> => {
+        if (q.kind !== 'context') return b.read(q);
+        const paragraph = {
+          kind: 'boundary' as const,
+          id: 'paragraph',
+          construct: 'paragraph',
+          sourceRange: { start: 0, end: 5 },
+          parentRef: 'parent',
+        };
+        const parent = {
+          ...paragraph,
+          id: 'parent',
+          construct: 'listItem',
+          parentRef: 'grandparent',
+        };
+        return {
+          ...identity,
+          kind: 'noteContextPage',
+          items:
+            q.contextRef === 'parent'
+              ? [parent]
+              : q.contextRef === 'grandparent'
+                ? [
+                    { ...parent, id: 'grandparent', construct: 'list', parentRef: undefined },
+                    { ...paragraph, sourceRange: { start: 0, end: conflict ? 4 : 5 } },
+                  ]
+                : [paragraph],
+          nextCursor: null,
+        };
+      };
+      if (conflict)
+        await expect(readNoteWindow(read, { at: 0, ...identity })).rejects.toThrow(
+          /Conflicting note context identity/,
+        );
+      else {
+        const window = await readNoteWindow(read, { at: 0, ...identity });
+        expect(window.context.map((item) => item.id)).toEqual([
+          'paragraph',
+          'parent',
+          'grandparent',
+        ]);
+        expect(window.text).toBe('hello');
+        expect(window.cost.requests).toBe(4);
+      }
+    });
+  }
 });
 
 it('shrinks source admission for dense short blocks instead of exceeding lexical budgets', async () => {
