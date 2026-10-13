@@ -174,6 +174,42 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(selectHudActive.select(appStore.state)).toBe(true);
   });
 
+  it('does not send a queued HUD metadata read after the HUD lifetime ends', async () => {
+    const { trackAgentMetadataRead } = await import('$features/agent/agent-metadata-recovery');
+    scriptHappyBackend(backend);
+    backend.onRequest('agent.list', () => ({ agents: [] }));
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_ID)));
+    let release!: () => void;
+    const held = trackAgentMetadataRead(
+      WS_ID,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    try {
+      stop = startHudSubscription();
+      await flush();
+      expect(
+        backend.requests.filter(
+          (r) => r.method === 'agent.list' && (r.params as any).workspaceId === WS_ID,
+        ),
+      ).toHaveLength(0);
+      stop();
+      release();
+      await held;
+      await flush();
+      expect(
+        backend.requests.filter(
+          (r) => r.method === 'agent.list' && (r.params as any).workspaceId === WS_ID,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      release();
+      appStore.dispatch(removeWorkspaceEntity(WS_ID));
+    }
+  });
+
   it('rejects a previous HUD lifetime usage reply after stop and restart', async () => {
     scriptHappyBackend(backend);
     let resolveOld!: (value: ReturnType<typeof usageResult>) => void;
@@ -1070,14 +1106,15 @@ describe('HUD subscription (mock backend, real store)', () => {
         });
       }
       await flush();
-      // Nothing may take over while the mute state is still unknown, and
-      // the reads are bounded by the distinct unknown agents, not the events.
+      // The shared metadata lane holds subsequent point reads behind the first.
+      // Nothing may take over while the mute state is still unknown.
       expect(received).toEqual([]);
-      expect(getCalls().sort()).toEqual([GONE_ID, LOUD_CHILD_ID, MUTED_CHILD_ID].sort());
+      expect(getCalls()).toEqual([MUTED_CHILD_ID]);
 
       releaseGet?.();
       await flush();
       await flush();
+      expect(getCalls().sort()).toEqual([GONE_ID, LOUD_CHILD_ID, MUTED_CHILD_ID].sort());
 
       // The point read decides: the muted child's takeovers are dropped, the
       // unmuted child's fires, and a vanished session gates as unmuted.

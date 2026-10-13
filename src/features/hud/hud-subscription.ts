@@ -1,4 +1,7 @@
-import { acquireAgentMetadataDemand } from '$features/agent/agent-metadata-recovery';
+import {
+  acquireAgentMetadataDemand,
+  trackAgentMetadataRead,
+} from '$features/agent/agent-metadata-recovery';
 import {
   rendererEventRecovery,
   type RendererRecoveryScope,
@@ -383,17 +386,20 @@ async function hydrateHudWorkspaceAgents(
   const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
   try {
     const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([
-      scope
-        ? scope
-            .request<{ agents: Record<string, unknown>[] }>('agent.list', {
-              workspaceId,
-              scope: 'topLevel',
-            })
-            .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
-        : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
+      trackAgentMetadataRead(workspaceId, () => {
+        if (!isLive() || !token.commit(() => {})) throw new Error('HUD metadata read superseded');
+        return scope
+          ? scope
+              .request<{ agents: Record<string, unknown>[] }>('agent.list', {
+                workspaceId,
+                scope: 'topLevel',
+              })
+              .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
+          : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' });
+      }),
       busyAgentIds,
     ]);
-    if (!isLive() || !token.isCurrent()) return;
+    if (!isLive() || !token.commit(() => {})) return;
     const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
     const pointReadIds = [
       ...new Set([...(busyByWorkspaceId.get(workspaceId) ?? []), ...failedSummaryIds]),
@@ -401,7 +407,12 @@ async function hydrateHudWorkspaceAgents(
     const pointReadRows = await Promise.all(
       pointReadIds.map(async (agentId) => {
         try {
-          return await readHudAgent(agentId, workspaceId, scope);
+          return await readHudAgent(
+            agentId,
+            workspaceId,
+            scope,
+            () => isLive() && token.commit(() => {}),
+          );
         } catch (error) {
           logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
             workspaceId,
@@ -569,14 +580,23 @@ const pendingUnknownAgentReadByAgentId = new Map<string, Promise<void>>();
  * failed or not-found read leaves the agent unknown — it then gates as
  * unmuted, the pre-existing behavior for a session the store never saw.
  */
-async function readHudAgent(agentId: string, workspaceId: string, scope?: RendererRecoveryScope) {
-  if (!scope) return appClient.agents.get(agentId, workspaceId || undefined);
-  const result = await scope.request<{ agent?: unknown } | unknown>('agent.get', {
-    agentId,
-    ...(workspaceId ? { workspaceId } : {}),
+async function readHudAgent(
+  agentId: string,
+  workspaceId: string,
+  scope?: RendererRecoveryScope,
+  isLive: () => boolean = () => true,
+) {
+  const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
+  return trackAgentMetadataRead(workspaceId, async () => {
+    if (!isLive() || !token.commit(() => {})) return null;
+    if (!scope) return appClient.agents.get(agentId, workspaceId || undefined);
+    const result = await scope.request<{ agent?: unknown } | unknown>('agent.get', {
+      agentId,
+      ...(workspaceId ? { workspaceId } : {}),
+    });
+    const raw = result && typeof result === 'object' && 'agent' in result ? result.agent : result;
+    return raw && typeof raw === 'object' ? normalizeAgent(raw as Record<string, unknown>) : null;
   });
-  const raw = result && typeof result === 'object' && 'agent' in result ? result.agent : result;
-  return raw && typeof raw === 'object' ? normalizeAgent(raw as Record<string, unknown>) : null;
 }
 
 function hydrateUnknownAgent(
@@ -588,7 +608,7 @@ function hydrateUnknownAgent(
   const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
   const pending = pendingUnknownAgentReadByAgentId.get(agentId);
   if (pending) return pending;
-  const read = readHudAgent(agentId, workspaceId, scope)
+  const read = readHudAgent(agentId, workspaceId, scope, () => isLive() && token.commit(() => {}))
     .then((agent) => {
       if (!isLive() || !agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
       const session = { ...agent, messages: agent.messages ?? [] };
