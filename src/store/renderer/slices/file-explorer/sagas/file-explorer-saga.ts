@@ -5,7 +5,7 @@ import {
   fileSearchRecoveryKey,
 } from '$features/file/file-recovery-keys';
 import { demandFileSearch } from '$features/file/file-recovery-demand';
-import { putFileRecovery } from '$features/file/file-recovery-effects';
+import { putFileRecovery, readFileSnapshot } from '$features/file/file-recovery-effects';
 import {
   call,
   cancel,
@@ -32,7 +32,10 @@ import {
   takeLeadingInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { selectFileExplorerState } from '../file-explorer-selectors';
+import {
+  selectFileExplorerState,
+  selectEffectiveFileExplorerWorkspacePath,
+} from '../file-explorer-selectors';
 import {
   addExpandedPath,
   addLoadingPath,
@@ -135,9 +138,10 @@ function* loadDirectoryChildren(wsId: string, dirPath: string): SagaGenerator<Fi
   yield* putFileRecovery(receipt, addLoadingPath(wsId, dirPath));
   try {
     const response: Awaited<ReturnType<typeof appClient.files.listDirectory>> = yield* call(
-      [appClient.files, appClient.files.listDirectory],
-      wsId,
-      relativePath,
+      readFileSnapshot<Awaited<ReturnType<typeof appClient.files.listDirectory>>>,
+      fileExplorerRecoveryKey(wsId),
+      receipt,
+      () => appClient.files.listDirectory(wsId, relativePath),
     );
     const children = response.map((node) => mapFileNode(node, `${dirPath}/${node.name}`, true));
     yield* putFileRecovery(receipt, setChildrenAtPathAction(wsId, dirPath, children));
@@ -155,7 +159,12 @@ function* loadDirectoryChildren(wsId: string, dirPath: string): SagaGenerator<Fi
 function* loadAgentFileEdits(wsId: string) {
   const receipt = rendererEventRecovery.capture(fileEditsRecoveryKey(wsId));
   try {
-    const edits: Map<string, string[]> = yield* call(getAgentFileEdits, wsId);
+    const edits: Map<string, string[]> = yield* call(
+      readFileSnapshot<Map<string, string[]>>,
+      fileEditsRecoveryKey(wsId),
+      receipt,
+      () => getAgentFileEdits(wsId),
+    );
     const record: Record<string, string[]> = {};
     for (const [path, agents] of edits) record[path] = [...agents];
     const ws = yield* selectFileExplorerState.effect(wsId);
@@ -191,8 +200,10 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
   let completed = false;
   try {
     const response: Awaited<ReturnType<typeof appClient.files.explorerTree>> = yield* call(
-      [appClient.files, appClient.files.explorerTree],
-      wsId,
+      readFileSnapshot<Awaited<ReturnType<typeof appClient.files.explorerTree>>>,
+      fileExplorerRecoveryKey(wsId),
+      receipt,
+      () => appClient.files.explorerTree(wsId),
     );
     if (response) {
       const root: FileNode = {
@@ -224,18 +235,24 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
 }
 
 function* hydrateExplorer(wsId: string, force = false) {
-  const receipt = rendererEventRecovery.capture(fileExplorerRecoveryKey(wsId));
   const existing = yield* selectFileExplorerState.effect(wsId);
   if (!force && (existing.isInitialized || existing.isLoading)) return;
+  const workspacePath =
+    existing.workspacePath || (yield* selectEffectiveFileExplorerWorkspacePath.effect(wsId));
+  if (workspacePath && workspacePath !== existing.workspacePath)
+    yield* put(setFileExplorerWorkspacePath(wsId, workspacePath));
+  const receipt = rendererEventRecovery.capture(fileExplorerRecoveryKey(wsId));
   yield* putFileRecovery(receipt, setFileExplorerLoading(wsId, true));
   let completed = false;
   try {
     const response: Awaited<ReturnType<typeof appClient.files.explorerTree>> = yield* call(
-      [appClient.files, appClient.files.explorerTree],
-      wsId,
+      readFileSnapshot<Awaited<ReturnType<typeof appClient.files.explorerTree>>>,
+      fileExplorerRecoveryKey(wsId),
+      receipt,
+      () => appClient.files.explorerTree(wsId),
     );
     if (response) {
-      const tree = mapFileNode(response, response.path, false);
+      const tree = mapFileNode(response, workspacePath || response.path, !response.path);
       yield* putFileRecovery(receipt, setFileExplorerWorkspacePath(wsId, tree.path));
       yield* putFileRecovery(receipt, setRootNode(wsId, tree));
       if (!receipt.commit(() => undefined)) return;
@@ -474,11 +491,17 @@ function* searchFiles(action: ReturnType<typeof fileSearchRequested>) {
     yield* putFileRecovery(receipt, fileSearchLoading(wsId, consumerId, requestId));
   });
   try {
-    const response = yield* call(backendRequest<{ files: string[] }>, 'search.fileNames', {
-      workspaceId: wsId,
-      pattern: query,
-      limit: 100,
-    });
+    const response = yield* call(
+      readFileSnapshot<{ files: string[] }>,
+      fileSearchRecoveryKey(wsId, consumerId),
+      receipt,
+      () =>
+        backendRequest<{ files: string[] }>('search.fileNames', {
+          workspaceId: wsId,
+          pattern: query,
+          limit: 100,
+        }),
+    );
     yield* putFileRecovery(
       receipt,
       fileSearchSettled(wsId, consumerId, requestId, response.files, null),

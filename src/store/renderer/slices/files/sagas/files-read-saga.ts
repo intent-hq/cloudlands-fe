@@ -1,7 +1,7 @@
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { fileContentRecoveryKey } from '$features/file/file-recovery-keys';
 import { demandFileRead } from '$features/file/file-recovery-demand';
-import { putFileRecovery } from '$features/file/file-recovery-effects';
+import { putFileRecovery, readFileSnapshot } from '$features/file/file-recovery-effects';
 import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { FileContent } from '../files-types';
 import { editableText } from '$features/file/utils/file-content';
@@ -37,14 +37,18 @@ type ReadResult =
 function* loadFileContentWorker(
   workspaceId: string,
   path: string,
+  receipt: RecoveryLifetime,
   gitRoot?: { id: string; relativePath: string },
 ): SagaGenerator<ReadResult> {
   try {
     const entry: Awaited<ReturnType<typeof appClient.files.read>> = yield* call(
-      [appClient.files, appClient.files.read],
-      ...(gitRoot
-        ? ([workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id }] as const)
-        : ([workspaceId, path] as const)),
+      readFileSnapshot<Awaited<ReturnType<typeof appClient.files.read>>>,
+      fileContentRecoveryKey(workspaceId, path),
+      receipt,
+      () =>
+        gitRoot
+          ? appClient.files.read(workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id })
+          : appClient.files.read(workspaceId, path),
     );
     if (!entry) {
       if (gitRoot) return { kind: 'failure', message: m.files_read_notFound_error() };
@@ -52,7 +56,12 @@ function* loadFileContentWorker(
       // worktree-relative (see monorepo#2059). Attempt suffix resolution.
       // Candidates never include the requested path itself (the helper
       // excludes the self-match), so a single candidate is a real retarget.
-      const { candidates, truncated } = yield* call(resolveFileBySuffix, workspaceId, path);
+      const { candidates, truncated } = yield* call(
+        readFileSnapshot<Awaited<ReturnType<typeof resolveFileBySuffix>>>,
+        fileContentRecoveryKey(workspaceId, path),
+        receipt,
+        () => resolveFileBySuffix(workspaceId, path),
+      );
       if (!truncated && candidates.length === 1) {
         // Provably unique match (search not truncated): retarget open file
         // tabs to the resolved path; the tab component re-issues the read
@@ -111,6 +120,7 @@ function* readWithPermit(
   generation: number,
   workspaceId: string,
   path: string,
+  receipt: RecoveryLifetime,
   gitRoot?: { id: string; relativePath: string },
 ): SagaGenerator<ReadResult | undefined> {
   let acquired = false;
@@ -129,7 +139,7 @@ function* readWithPermit(
     if (generations.get(key) !== generation) return undefined;
 
     const read = yield* race({
-      result: call(loadFileContentWorker, workspaceId, path, gitRoot),
+      result: call(loadFileContentWorker, workspaceId, path, receipt, gitRoot),
       cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (read.cleanup) {
@@ -197,6 +207,7 @@ function* loadFileContentRequestWorker(
     generation,
     workspaceId,
     path,
+    receipt,
     action.payload[3]?.gitRoot,
   );
   if (!result || generations.get(key) !== generation) return;

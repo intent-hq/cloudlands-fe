@@ -1,6 +1,10 @@
+import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+import { m } from '$shared/paraglide/messages.js';
+import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   RendererRecoveryHandle,
+  RendererRecoveryOwner,
   RendererRecoveryScope,
 } from '$features/events/renderer-event-recovery';
 import type { RecoveryReader } from '$features/events/event-recovery-coordinator';
@@ -13,12 +17,16 @@ import type { StoreState } from '$store/renderer/types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 import {
   loadFileContentSucceeded,
+  loadFileContentFailed,
   removeFileContentEntry,
 } from '$store/renderer/slices/files/files-slice';
 import {
   fileSearchReleased,
   fileSearchSettled,
   removeAgentFileEditsEntries,
+  removeLoadingPath,
+  setBulkOperation,
+  setFileExplorerError,
   setFileExplorerInitialized,
   setFileExplorerFileCount,
   setFileExplorerLoading,
@@ -81,6 +89,20 @@ export function installFileEventRecovery(
   scope: RendererRecoveryScope,
   store: FileRecoveryStore,
 ): () => void {
+  const registerSnapshot = <T>(owner: RendererRecoveryOwner<T>) => {
+    let recovered = false;
+    return scope.registerResource({
+      ...owner,
+      // File notices contain no store snapshot. Before recovery, preserve the
+      // existing read-driven path (including legacy leases). After recovery,
+      // unversioned notices invalidate the authoritative snapshot via push().
+      acceptsEvent: () => recovered,
+      apply: (value: T) => {
+        owner.apply(value);
+        recovered = true;
+      },
+    });
+  };
   const treeDemands = new Map<string, string>();
   const owners = new Map<
     string,
@@ -90,7 +112,10 @@ export function installFileEventRecovery(
   let disposed = false,
     syncing = false;
   const current = () =>
-    !disposed && scope.isCurrent() && principal === getPrincipalActionContext(store.getState());
+    !disposed &&
+    !!principal &&
+    scope.isCurrent() &&
+    principal === getPrincipalActionContext(store.getState());
   const entry = (ws: string, path: string) => {
     const files = store.getState().files.byWorkspaceId[ws]?.files;
     return files && getItem(files, path);
@@ -102,10 +127,21 @@ export function installFileEventRecovery(
       const needed = new Set<string>();
       const own = (
         key: string,
+        workspaceId: string,
         identity: string,
         create: (isCurrent: () => boolean) => RendererRecoveryHandle,
         active = true,
       ) => {
+        const authority = selectWorkspaceParticipationContext.select(store.getState(), workspaceId);
+        const deletionToken = store.getState().workspace.deletionTokens[workspaceId];
+        if (!authority || authority !== principal) {
+          owners
+            .get(key)
+            ?.handle.captureLifetime()
+            .commit(() => undefined);
+          return;
+        }
+        identity = JSON.stringify([identity, deletionToken]);
         needed.add(key);
         let row = owners.get(key);
         if (row && row.identity !== identity) {
@@ -120,7 +156,14 @@ export function installFileEventRecovery(
             alive: true,
             handle: undefined as unknown as RendererRecoveryHandle,
           };
-          next.handle = create(() => next.alive && current());
+          next.handle = create(
+            () =>
+              next.alive &&
+              current() &&
+              selectWorkspaceParticipationContext.select(store.getState(), workspaceId) ===
+                authority &&
+              store.getState().workspace.deletionTokens[workspaceId] === deletionToken,
+          );
           owners.set(key, next);
           row = next;
         }
@@ -136,50 +179,80 @@ export function installFileEventRecovery(
           const options = fileReadDemands.get(key);
           own(
             key,
+            workspaceId,
             JSON.stringify([file.absolutePath, options?.gitRoot]),
             (isCurrent) =>
-              scope.registerResource({
+              registerSnapshot({
                 key,
                 workspaceId,
                 eventTypes: ['file:*'],
                 isCurrent,
-                read: async ({ request }) => {
-                  try {
-                    const result = await request<unknown>('file.read', {
-                      workspaceId,
-                      path: options?.gitRoot?.relativePath ?? file.path,
-                      ...(options?.gitRoot ? { gitRootId: options.gitRoot.id } : {}),
-                    });
-                    const parsed = parseFileReadResult(file.path, result);
-                    if (!parsed) throw new Error('Invalid file.read response');
-                    return parsed;
-                  } catch (error) {
-                    const failure = error as { rpcCode?: number; message?: string };
-                    // file.read's documented I/O convention predates canonical
-                    // not-found. Keep the narrow ENOENT handling of the file client.
-                    if (
-                      failure.rpcCode === -32603 &&
-                      /\(os error [23]\)$/.test(failure.message ?? '')
-                    )
-                      return null;
-                    if (
-                      failure.rpcCode === -32603 &&
-                      failure.message?.endsWith('stream did not contain valid UTF-8')
-                    )
-                      return { kind: 'preview-only' as const, isBinary: true, truncated: false };
-                    throw error;
-                  }
-                },
+                read: ({ request, lifetime }) =>
+                  trackWorktreeSnapshotRead(
+                    key,
+                    async () => {
+                      if (!lifetime.isCurrent()) throw new Error('File read authority expired');
+                      try {
+                        const result = await request<unknown>('file.read', {
+                          workspaceId,
+                          path: options?.gitRoot?.relativePath ?? file.path,
+                          ...(options?.gitRoot ? { gitRootId: options.gitRoot.id } : {}),
+                        });
+                        const parsed = parseFileReadResult(file.path, result);
+                        if (!parsed) throw new Error('Invalid file.read response');
+                        return parsed;
+                      } catch (error) {
+                        const failure = error as {
+                          rpcCode?: number;
+                          message?: string;
+                          data?: { code?: string };
+                        };
+                        // file.read's documented I/O convention predates canonical
+                        // not-found. Keep the narrow ENOENT handling of the file client.
+                        if (
+                          failure.rpcCode === -32603 &&
+                          /\(os error [23]\)$/.test(failure.message ?? '')
+                        )
+                          return null;
+                        if (
+                          failure.rpcCode === -32603 &&
+                          failure.message?.endsWith('stream did not contain valid UTF-8')
+                        )
+                          return {
+                            kind: 'preview-only' as const,
+                            isBinary: true,
+                            truncated: false,
+                          };
+                        if (
+                          failure.rpcCode === -32602 &&
+                          failure.data?.code === 'not-found' &&
+                          (dirty(entry(workspaceId, file.path)) ||
+                            entry(workspaceId, file.path)?.preservedDraft !== undefined)
+                        )
+                          return null;
+                        throw error;
+                      }
+                    },
+                    'recovery',
+                  ),
                 apply: (value) => {
                   if (!value) {
-                    if (!dirty(entry(workspaceId, file.path)))
+                    if (
+                      !dirty(entry(workspaceId, file.path)) &&
+                      entry(workspaceId, file.path)?.preservedDraft === undefined
+                    )
                       store.dispatch(removeFileContentEntry(workspaceId, file.path));
+                    else
+                      store.dispatch(
+                        loadFileContentFailed(
+                          workspaceId,
+                          file.path,
+                          absolutePath,
+                          m.files_read_notFound_error(),
+                        ),
+                      );
                     return;
                   }
-                  // Text snapshots update the disk baseline while the reducer keeps
-                  // the draft. A changed binary representation cannot erase a draft.
-                  if (dirty(entry(workspaceId, file.path)) && value.kind !== 'editable-text')
-                    return;
                   const content =
                     value.kind === 'editable-text'
                       ? { kind: 'editable-text' as const, content: value.originalContent }
@@ -224,43 +297,51 @@ export function installFileEventRecovery(
           owners.get(treeKey)?.handle.invalidate();
         own(
           fileExplorerRecoveryKey(workspaceId),
+          workspaceId,
           root,
           (isCurrent) =>
-            scope.registerResource({
+            registerSnapshot({
               key: fileExplorerRecoveryKey(workspaceId),
               workspaceId,
               eventTypes: ['file:*'],
               isCurrent,
-              read: async ({ request }) => {
-                const latest = store.getState().fileExplorer.byWorkspaceId[workspaceId];
-                const raw = await request<unknown>('file.tree', { workspaceId, path: '.' });
-                if (!Array.isArray(raw)) throw new Error('Invalid file.tree response');
-                const tree: FileNode = {
-                  name: root.split('/').pop() ?? root,
-                  path: root,
-                  type: 'directory',
-                  children: anchor(toFileNodes(raw), root),
-                };
-                const nodes = new Map<string, FileNode>([
-                  [root, tree],
-                  ...(tree.children ?? []).map((n) => [n.path, n] as const),
-                ]);
-                for (const path of [...new Set(latest?.expandedPaths ?? [])].sort(
-                  (a, b) => a.length - b.length,
-                )) {
-                  if (path === root || !path.startsWith(`${root}/`)) continue;
-                  const node = nodes.get(path);
-                  if (node?.type !== 'directory') continue;
-                  const children = await request<unknown>('file.list', {
-                    workspaceId,
-                    path: stripWorkspacePrefix(path, root),
-                  });
-                  if (!Array.isArray(children)) throw new Error('Invalid file.list response');
-                  node.children = anchor(toFileNodes(children), path);
-                  for (const child of node.children) nodes.set(child.path, child);
-                }
-                return tree;
-              },
+              read: ({ request, lifetime }) =>
+                trackWorktreeSnapshotRead(
+                  treeKey,
+                  async () => {
+                    if (!lifetime.isCurrent()) throw new Error('File tree authority expired');
+                    const latest = store.getState().fileExplorer.byWorkspaceId[workspaceId];
+                    const raw = await request<unknown>('file.tree', { workspaceId, path: '.' });
+                    if (!Array.isArray(raw)) throw new Error('Invalid file.tree response');
+                    const tree: FileNode = {
+                      name: root.split('/').pop() ?? root,
+                      path: root,
+                      type: 'directory',
+                      children: anchor(toFileNodes(raw), root),
+                    };
+                    const nodes = new Map<string, FileNode>([
+                      [root, tree],
+                      ...(tree.children ?? []).map((n) => [n.path, n] as const),
+                    ]);
+                    for (const path of [...new Set(latest?.expandedPaths ?? [])].sort(
+                      (a, b) => a.length - b.length,
+                    )) {
+                      if (path === root || !path.startsWith(`${root}/`)) continue;
+                      const node = nodes.get(path);
+                      if (node?.type !== 'directory') continue;
+                      if (!lifetime.isCurrent()) throw new Error('File tree authority expired');
+                      const children = await request<unknown>('file.list', {
+                        workspaceId,
+                        path: stripWorkspacePrefix(path, root),
+                      });
+                      if (!Array.isArray(children)) throw new Error('Invalid file.list response');
+                      node.children = anchor(toFileNodes(children), path);
+                      for (const child of node.children) nodes.set(child.path, child);
+                    }
+                    return tree;
+                  },
+                  'recovery',
+                ),
               apply: (tree) => {
                 store.dispatch(setRootNode(workspaceId, tree));
                 const count = (node: FileNode): number =>
@@ -270,6 +351,11 @@ export function installFileEventRecovery(
                 store.dispatch(setFileExplorerFileCount(workspaceId, count(tree)));
                 store.dispatch(setFileExplorerInitialized(workspaceId, true));
                 store.dispatch(setFileExplorerLoading(workspaceId, false));
+                store.dispatch(setFileExplorerError(workspaceId, null));
+                store.dispatch(setBulkOperation(workspaceId, false));
+                for (const path of store.getState().fileExplorer.byWorkspaceId[workspaceId]
+                  ?.loadingPaths ?? [])
+                  store.dispatch(removeLoadingPath(workspaceId, path));
               },
               invalidate: () => {},
               retire: () => {
@@ -281,14 +367,24 @@ export function installFileEventRecovery(
         );
         own(
           fileEditsRecoveryKey(workspaceId),
+          workspaceId,
           root,
           (isCurrent) =>
-            scope.registerResource({
+            registerSnapshot({
               key: fileEditsRecoveryKey(workspaceId),
               workspaceId,
               eventTypes: ['file:*'],
               isCurrent,
-              read: (reader) => readEdits(workspaceId, root, reader),
+              read: (reader) =>
+                trackWorktreeSnapshotRead(
+                  fileEditsRecoveryKey(workspaceId),
+                  () => {
+                    if (!reader.lifetime.isCurrent())
+                      throw new Error('File edits authority expired');
+                    return readEdits(workspaceId, root, reader);
+                  },
+                  'recovery',
+                ),
               apply: (edits) => {
                 const old = Object.keys(
                   store.getState().fileExplorer.byWorkspaceId[workspaceId]?.agentFileEdits ?? {},
@@ -322,18 +418,25 @@ export function installFileEventRecovery(
         const key = fileSearchRecoveryKey(workspaceId, consumerId),
           demand = fileSearchDemands.get(key);
         if (!demand?.query || demand.requestId !== requestId) continue;
-        own(key, requestId, (isCurrent) =>
-          scope.registerResource({
+        own(key, workspaceId, requestId, (isCurrent) =>
+          registerSnapshot({
             key,
             workspaceId,
             eventTypes: ['file:*'],
             isCurrent,
-            read: ({ request }) =>
-              request<{ files: string[] }>('search.fileNames', {
-                workspaceId,
-                pattern: demand.query,
-                limit: 100,
-              }),
+            read: ({ request, lifetime }) =>
+              trackWorktreeSnapshotRead(
+                key,
+                () => {
+                  if (!lifetime.isCurrent()) throw new Error('File search authority expired');
+                  return request<{ files: string[] }>('search.fileNames', {
+                    workspaceId,
+                    pattern: demand.query,
+                    limit: 100,
+                  });
+                },
+                'recovery',
+              ),
             apply: (result) => {
               store.dispatch(
                 fileSearchSettled(workspaceId, consumerId, requestId, result.files, null),

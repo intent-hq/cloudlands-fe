@@ -1,6 +1,15 @@
+import { fileExplorerSaga } from '$store/renderer/slices/file-explorer/sagas/file-explorer-saga';
+import { runSaga, stdChannel } from 'redux-saga';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
+import { filesWriteSaga } from '$store/renderer/slices/files/sagas/files-write-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
-import { RendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
+import {
+  RendererEventRecovery,
+  rendererEventRecovery,
+} from '$features/events/renderer-event-recovery';
 import {
   createEventRecoverySession,
   type RecoveryNotification,
@@ -8,11 +17,13 @@ import {
 import {
   filesReducer,
   loadFileContentSucceeded,
+  saveFileContentRequested,
   updateFileContent,
   removeFileContentEntry,
 } from '$store/renderer/slices/files/files-slice';
 import {
   fileExplorerReducer,
+  hydrateFileExplorerRequested,
   setFileExplorerWorkspacePath,
   setRootNode,
   addExpandedPath,
@@ -41,17 +52,20 @@ const lost = (generation = '1') => ({
   params: { subscriptionId: 'lease', generation, scope: { workspaceId: 'ws' } },
 });
 const text = (content: string) => ({ kind: 'editable-text' as const, content });
-function setup(recoverable = true) {
+function setup(recoverable = true, registry = new RendererEventRecovery()) {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   let emit!: (n: RecoveryNotification) => void;
   let files = filesReducer(undefined, { type: 'init' }),
     fileExplorer = fileExplorerReducer(undefined, { type: 'init' });
   const listeners = new Set<() => void>();
+  const channel = stdChannel();
+  let workspaceVisible = true;
   const dispatch = (action: { type: string; payload?: unknown }) => {
     files = filesReducer(files, action);
     fileExplorer = fileExplorerReducer(fileExplorer, action);
     for (const listener of listeners) listener();
+    channel.put(action);
     return action;
   };
   let activeWorkspace: string | null = 'ws';
@@ -60,6 +74,13 @@ function setup(recoverable = true) {
     ({
       files,
       fileExplorer,
+      workspace: {
+        workspaces: createCollection(
+          'id',
+          workspaceVisible ? [{ id: 'ws', myRole: 'owner', worktreePath: '/repo' }] : [],
+        ),
+        deletionTokens: {},
+      },
       tabState: { currentTabId: activeWorkspace },
       ...authority,
     }) as StoreState;
@@ -90,8 +111,7 @@ function setup(recoverable = true) {
     },
     dispose: () => {},
   });
-  const registry = new RendererEventRecovery(),
-    scope = registry.attach(session);
+  const scope = registry.attach(session);
   const off = installFileEventRecovery(scope, {
     getState: state,
     dispatch,
@@ -104,6 +124,11 @@ function setup(recoverable = true) {
   });
   return {
     registry,
+    channel,
+    setWorkspaceVisible: (visible: boolean) => {
+      workspaceVisible = visible;
+      for (const listener of listeners) listener();
+    },
     setActive: (value: string | null) => {
       activeWorkspace = value;
       for (const listener of listeners) listener();
@@ -130,6 +155,152 @@ function setup(recoverable = true) {
 }
 afterEach(() => vi.useRealTimers());
 describe('file projections after lost final events', () => {
+  it.each([false, true])(
+    'keeps ordinary reads admitted when a pre-loss file notice carries no store snapshot (recovery=%s)',
+    async (recoverable) => {
+      const h = setup(recoverable);
+      h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('base')));
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+      const receipt = h.registry.capture(fileContentRecoveryKey('ws', 'a.ts'));
+      h.emit({
+        method: 'events.event',
+        params: {
+          subscriptionId: 'lease',
+          event: { type: 'file:changed', workspaceId: 'ws', data: { path: 'a.ts' } },
+        },
+      });
+      await flush();
+      expect(
+        receipt.commit(() =>
+          h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('ordinary read'))),
+        ),
+      ).toBe(true);
+      expect(h.entry()?.originalContent).toBe('ordinary read');
+      expect(
+        h.request.mock.calls.filter(
+          ([method]) => method === 'file.read' || method === 'events.fence',
+        ),
+      ).toHaveLength(0);
+      h.close();
+    },
+  );
+
+  it('hydrates a newly admitted explorer from the shallow live tree without dropping its first snapshot', async () => {
+    const h = setup(true, rendererEventRecovery);
+    const tree = vi.spyOn(appClient.files, 'explorerTree').mockResolvedValue({
+      name: '',
+      path: '',
+      type: 'directory',
+      children: [{ name: 'a.ts', path: 'a.ts', type: 'file' }],
+    });
+    const git = vi.spyOn(appClient.files, 'gitStatusMap').mockResolvedValue({});
+    const task = runSaga(
+      { channel: h.channel, getState: h.state, dispatch: h.dispatch },
+      fileExplorerSaga,
+    );
+    try {
+      h.dispatch(hydrateFileExplorerRequested('ws'));
+      await flush();
+      expect(h.state().fileExplorer.byWorkspaceId.ws).toMatchObject({
+        workspacePath: '/repo',
+        rootPath: '/repo',
+        isInitialized: true,
+        isLoading: false,
+      });
+      expect(getItem(h.state().fileExplorer.byWorkspaceId.ws.nodes, '/repo/a.ts')).toBeDefined();
+      expect(tree).toHaveBeenCalledTimes(1);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      h.close();
+      tree.mockRestore();
+      git.mockRestore();
+    }
+  });
+
+  it('settles a save that spans loss without replaying it or replacing a newer draft', async () => {
+    const h = setup(true, rendererEventRecovery);
+    const held = deferred<{ success: boolean }>();
+    const write = vi.spyOn(appClient.files, 'write').mockReturnValueOnce(held.promise);
+    const state = vi.spyOn(appStore, 'state', 'get').mockImplementation(h.state);
+    const task = runSaga(
+      { channel: h.channel, getState: h.state, dispatch: h.dispatch },
+      filesWriteSaga,
+    );
+    try {
+      h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('base')));
+      h.dispatch(saveFileContentRequested('ws', 'a.ts', '/repo/a.ts', text('saved')));
+      await flush();
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+      h.emit(lost());
+      await flush();
+      expect(h.entry()?.saving).toBe(true);
+      h.dispatch(updateFileContent('ws', 'a.ts', text('new draft'), { autoSave: false }));
+      held.resolve({ success: true });
+      await flush();
+      await vi.advanceTimersByTimeAsync(250);
+      await flush();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(h.entry()).toMatchObject({
+        originalContent: 'disk new',
+        localContent: 'new draft',
+        saving: false,
+      });
+      expect(h.request.mock.calls.filter(([method]) => method === 'file.read')).toHaveLength(2);
+      expect(h.request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(4);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      h.close();
+      write.mockRestore();
+      state.mockRestore();
+    }
+  });
+
+  it('retires a workspace membership before an old content reply can reappear after rejoin', async () => {
+    const h = setup();
+    h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('private')));
+    const receipt = h.registry.capture(fileContentRecoveryKey('ws', 'a.ts'));
+    h.setWorkspaceVisible(false);
+    expect(h.entry()).toBeUndefined();
+    h.setWorkspaceVisible(true);
+    h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('new incarnation')));
+    expect(
+      receipt.commit(() =>
+        h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('old private'))),
+      ),
+    ).toBe(false);
+    expect(h.entry()?.originalContent).toBe('new incarnation');
+    h.close();
+  });
+
+  it('waits for an outstanding ordinary physical read before recovering the final content', async () => {
+    const h = setup();
+    h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('base')));
+    const held = deferred<string>();
+    const receipt = h.registry.capture(fileContentRecoveryKey('ws', 'a.ts'));
+    const ordinary = trackWorktreeSnapshotRead(
+      fileContentRecoveryKey('ws', 'a.ts'),
+      () => held.promise,
+    );
+    await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['file:*'] }, { recover: true });
+    h.emit(lost());
+    await flush();
+    expect(h.request.mock.calls.filter(([method]) => method === 'file.read')).toHaveLength(0);
+    held.resolve('obsolete');
+    await ordinary;
+    expect(
+      receipt.commit(() =>
+        h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('obsolete'))),
+      ),
+    ).toBe(false);
+    await flush();
+    expect(h.entry()?.originalContent).toBe('disk new');
+    expect(h.request.mock.calls.filter(([method]) => method === 'file.read')).toHaveLength(1);
+    expect(h.request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(2);
+    h.close();
+  });
+
   it('recovers text, expanded tree, search and edit badges with bounded exact reads and keeps a draft', async () => {
     const h = setup();
     h.dispatch(loadFileContentSucceeded('ws', 'a.ts', '/repo/a.ts', text('base')));
@@ -306,7 +477,7 @@ describe('file projections after lost final events', () => {
     expect(h.entry()).toMatchObject({ originalContent: 'disk', localContent: 'new draft' });
     h.close();
   });
-  it.each(['missing', 'binary'])(
+  it.each(['missing', 'binary', 'canonical missing'])(
     'handles documented %s file I/O without losing a draft',
     async (kind) => {
       const h = setup();
@@ -317,7 +488,8 @@ describe('file projections after lost final events', () => {
       h.request.mockImplementation((method, params) =>
         method === 'file.read'
           ? Promise.reject({
-              rpcCode: -32603,
+              rpcCode: kind === 'canonical missing' ? -32602 : -32603,
+              data: { code: 'not-found' },
               message:
                 kind === 'missing'
                   ? 'No such file (os error 2)'
@@ -327,7 +499,12 @@ describe('file projections after lost final events', () => {
       );
       h.emit(lost());
       await flush();
-      expect(h.entry()?.localContent).toBe('draft');
+      expect(h.entry()).toMatchObject({
+        kind: 'preview-only',
+        preservedDraft: 'draft',
+        localContent: null,
+        loading: false,
+      });
       expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(1);
       h.close();
     },

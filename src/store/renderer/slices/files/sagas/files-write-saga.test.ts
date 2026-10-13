@@ -1154,7 +1154,7 @@ describe('filesWriteSaga', () => {
 
     resolveFirst({ success: true });
     await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(3));
-    await vi.waitFor(() => expect(actions).toHaveLength(3));
+    await vi.waitFor(() => expect(actions).toHaveLength(2));
     expect(write.mock.calls).toEqual([
       ['ws-1', 'a.ts', { kind: 'editable-text', content: 'first' }],
       ['ws-2', 'b.ts', { kind: 'editable-text', content: 'other' }],
@@ -1162,7 +1162,6 @@ describe('filesWriteSaga', () => {
     ]);
     expect(actions).toEqual([
       saveFileContentSucceeded('ws-2', 'b.ts', { kind: 'editable-text', content: 'other' }),
-      saveFileContentSucceeded('ws-1', 'a.ts', { kind: 'editable-text', content: 'first' }),
       saveFileContentSucceeded('ws-1', 'a.ts', { kind: 'editable-text', content: 'latest' }),
     ]);
     expect(selectFileContentEntry.select({ files } as any, 'ws-1', 'a.ts')).toMatchObject({
