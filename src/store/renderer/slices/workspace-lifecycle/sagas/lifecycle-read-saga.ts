@@ -313,6 +313,8 @@ type WorkspaceProjectionAction = ReturnType<
 >;
 
 function* refreshWorkspaces(): SagaGenerator<void> {
+  const authority = rendererEventRecovery.captureAuthority(WORKSPACE_LIST_RECOVERY_KEY);
+  let published = false;
   const receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
   if (!receipt.commit(() => undefined)) return;
   const dispatch = store.dispatch;
@@ -367,6 +369,7 @@ function* refreshWorkspaces(): SagaGenerator<void> {
         receipt,
       ),
     );
+    published = receipt.commit(() => undefined);
     yield* put(withRecoveryLifetime(setWorkspaceHasLoaded(true, backendId, context), receipt));
     const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
     if (
@@ -379,6 +382,9 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     yield* put(withRecoveryLifetime(loadRecencyData({ lastViewedAt: recentViews }), receipt));
   } finally {
     changes.close();
+    if (!published && !receipt.isCurrent() && authority.isCurrent()) {
+      yield* put(withRecoveryLifetime(loadWorkspacesRequested(), authority));
+    }
   }
 }
 
@@ -1823,7 +1829,7 @@ function* refreshEvents(workspaceId: string): SagaGenerator<void> {
 function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
   const release = acquireWorkspaceActivityDemand(workspaceId);
   const key = workspaceActivityRecoveryKey(workspaceId);
-  const receipt = rendererEventRecovery.capture(key);
+  const original = rendererEventRecovery.capture(key);
   const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
   const redux = yield* getContext<{ getState(): StoreState } | undefined>('reduxStore');
   const initialState: StoreState = yield* select();
@@ -1832,6 +1838,11 @@ function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
   const cursorCurrent = (state: StoreState = redux?.getState() ?? initialState) =>
     selectOlderEventsNextToken.select(state, workspaceId) === nextToken &&
     state.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration === historyGeneration;
+  const receipt: RecoveryLifetime = {
+    key: original.key,
+    isCurrent: () => original.isCurrent() && cursorCurrent(),
+    commit: (mutation) => cursorCurrent() && original.commit(mutation),
+  };
   try {
     if (!receipt.commit(() => undefined)) return;
     if (!nextToken) {

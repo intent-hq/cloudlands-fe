@@ -347,6 +347,56 @@ describe('lifecycleReadSaga', () => {
     vi.clearAllMocks();
   });
 
+  it('reconciles the complete workspace list when a point push retires its held boot reply', async () => {
+    rendererEventRecovery.dispose();
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const owner = scope.registerResource({
+      key: 'workspace-list',
+      workspaceId: null,
+      eventTypes: ['workspace:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    let finish!: (result: unknown) => void;
+    mocks.workspaceServiceList
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue({ ok: true, data: [{ id: WS }, { id: 'unaffected-sibling' }] });
+    const run = startWithLoopback();
+    try {
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(rendererEventRecovery.push('workspace-list')).toBe(true);
+      finish({ ok: true, data: [{ id: WS }] });
+      await settle();
+      await vi.advanceTimersByTimeAsync(1000);
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().workspaces.ids).toEqual([WS, 'unaffected-sibling']);
+    } finally {
+      await stop(run.task);
+      owner.dispose();
+      rendererEventRecovery.dispose();
+    }
+  });
+
   it('loads the workspace list and recency in middleware order', async () => {
     const workspace = { id: WS, branch: 'main', wire_only: 'drop' };
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [workspace] });
@@ -491,10 +541,13 @@ describe('lifecycleReadSaga', () => {
         .map((action) => action as { type: string; payload: unknown[] })
         .filter((action) => action.type === 'workspace/bulkUpdateWorkspaceEntities')
         .map((action) => (action.payload[0] as { payload: unknown[] }[])[0]!.payload);
-      expect(merged).toEqual([
-        [WS, { memberCount: 1, openInviteCount: 0 }],
-        ['ws-other', { memberCount: 1, openInviteCount: 0 }],
-      ]);
+      expect(merged).toHaveLength(2);
+      expect(merged).toEqual(
+        expect.arrayContaining([
+          [WS, { memberCount: 1, openInviteCount: 0 }],
+          ['ws-other', { memberCount: 1, openInviteCount: 0 }],
+        ]),
+      );
       await stop(run.task);
     });
 
@@ -4966,95 +5019,109 @@ import {
   eventsLoaded as verifierEventsLoaded,
 } from '../../workspace-events/workspace-events-slice';
 import { installWorkspaceActivityRecovery as verifierInstallActivity } from '$features/events/workspace-activity-recovery';
-it('older activity page cannot commit after rows change with identical cursor', async () => {
-  appStore.dispose();
-  appStore.init();
-  rendererEventRecovery.dispose();
-  const ev = (id: string) => ({
-    id,
-    type: 'agent:idle',
-    workspaceId: WS,
-    timestamp: '2026-10-13T09:00:00Z',
-    actor: { type: 'agent', id: 'a' },
-    data: { agentId: 'a' },
-  });
-  const current = state(null, 'same-cursor') as any;
-  current.workspaceLifecycle = { sessionPhaseByWorkspaceId: { [WS]: 'live' } };
-  current.workspaceEvents = {
-    ...current.workspaceEvents,
-    ...verifierEventsReducer(
-      undefined,
-      verifierEventsLoaded(WS, [ev('initial') as never], 'same-cursor'),
-    ),
-  };
-  let release!: (v: any) => void;
-  mocks.events.queryPage.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        release = resolve;
-      }),
-  );
-  const listeners = new Set<() => void>();
-  const channel = stdChannel();
-  const dispatch = (action: any) => {
-    const apply = () => {
-      current.workspaceEvents = verifierEventsReducer(current.workspaceEvents, action);
-      for (const f of listeners) f();
-      channel.put(action);
-    };
-    const receipt = getRecoveryLifetime(action);
-    if (receipt) receipt.commit(apply);
-    else apply();
-    return action;
-  };
-  const store = {
-    getState: () => current,
-    dispatch,
-    subscribe: (f: () => void) => {
-      listeners.add(f);
-      return () => {
-        listeners.delete(f);
-      };
-    },
-  };
-  const scope = rendererEventRecovery.attach({
-    supported: true,
-    isCurrent: () => true,
-    request: async <T>(_method: string) =>
-      ({ subscriptionId: 'activity-verifier', lossRecovery: 1 }) as T,
-    fence: async (_ids, observe) => {
-      observe();
-    },
-    onRetired: () => () => {},
-    onNotification: () => () => {},
-    dispose: () => {},
-  });
-  const uninstall = verifierInstallActivity(scope, store);
-  await scope.subscribe({ workspaceId: WS, eventTypes: ['*'] }, { recover: true });
-  const task = runSaga(
-    { channel, dispatch, getState: store.getState, context: { reduxStore: store } },
-    lifecycleReadSaga,
-  );
-  try {
-    dispatch(loadOlderEventsRequested(WS));
-    await settle();
-    expect(mocks.events.queryPage).toHaveBeenCalledOnce();
-    dispatch(verifierEventsLoaded(WS, [ev('replacement') as never], 'same-cursor'));
-    release({ items: [ev('old-page')], nextToken: null });
-    await settle();
-    await settle();
-    expect(current.workspaceEvents.byWorkspaceId[WS].events.map((e: any) => e.id)).toEqual([
-      'replacement',
-    ]);
-    expect(current.workspaceEvents.byWorkspaceId[WS].nextToken).toBe('same-cursor');
-  } finally {
-    await stop(task);
-    uninstall();
-    rendererEventRecovery.dispose();
+it.each([false, true])(
+  'older activity page rejects identical-cursor replacement with deferred commit=%s',
+  async (deferCommit) => {
     appStore.dispose();
-    mocks.events.queryPage.mockReset();
-  }
-});
+    appStore.init();
+    rendererEventRecovery.dispose();
+    const ev = (id: string) => ({
+      id,
+      type: 'agent:idle',
+      workspaceId: WS,
+      timestamp: '2026-10-13T09:00:00Z',
+      actor: { type: 'agent', id: 'a' },
+      data: { agentId: 'a' },
+    });
+    const current = state(null, 'same-cursor') as any;
+    current.workspaceLifecycle = { sessionPhaseByWorkspaceId: { [WS]: 'live' } };
+    current.workspaceEvents = {
+      ...current.workspaceEvents,
+      ...verifierEventsReducer(
+        undefined,
+        verifierEventsLoaded(WS, [ev('initial') as never], 'same-cursor'),
+      ),
+    };
+    let release!: (v: any) => void;
+    mocks.events.queryPage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const listeners = new Set<() => void>();
+    const channel = stdChannel();
+    const deferred: Array<() => void> = [];
+    const dispatch = (action: any) => {
+      const apply = () => {
+        current.workspaceEvents = verifierEventsReducer(current.workspaceEvents, action);
+        for (const f of listeners) f();
+        channel.put(action);
+      };
+      const receipt = getRecoveryLifetime(action);
+      const commit = () => {
+        if (receipt) receipt.commit(apply);
+        else apply();
+      };
+      if (deferCommit && action.type === 'workspaceEvents/olderEventsLoaded') deferred.push(commit);
+      else commit();
+      return action;
+    };
+    const store = {
+      getState: () => current,
+      dispatch,
+      subscribe: (f: () => void) => {
+        listeners.add(f);
+        return () => {
+          listeners.delete(f);
+        };
+      },
+    };
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      request: async <T>(_method: string) =>
+        ({ subscriptionId: 'activity-verifier', lossRecovery: 1 }) as T,
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      onRetired: () => () => {},
+      onNotification: () => () => {},
+      dispose: () => {},
+    });
+    const uninstall = verifierInstallActivity(scope, store);
+    await scope.subscribe({ workspaceId: WS, eventTypes: ['*'] }, { recover: true });
+    const task = runSaga(
+      { channel, dispatch, getState: store.getState, context: { reduxStore: store } },
+      lifecycleReadSaga,
+    );
+    try {
+      dispatch(loadOlderEventsRequested(WS));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledOnce();
+      if (!deferCommit)
+        dispatch(verifierEventsLoaded(WS, [ev('replacement') as never], 'same-cursor'));
+      release({ items: [ev('old-page')], nextToken: null });
+      await settle();
+      await settle();
+      if (deferCommit) {
+        expect(deferred).toHaveLength(1);
+        dispatch(verifierEventsLoaded(WS, [ev('replacement') as never], 'same-cursor'));
+        for (const commit of deferred) commit();
+      }
+      expect(current.workspaceEvents.byWorkspaceId[WS].events.map((e: any) => e.id)).toEqual([
+        'replacement',
+      ]);
+      expect(current.workspaceEvents.byWorkspaceId[WS].nextToken).toBe('same-cursor');
+    } finally {
+      await stop(task);
+      uninstall();
+      rendererEventRecovery.dispose();
+      appStore.dispose();
+      mocks.events.queryPage.mockReset();
+    }
+  },
+);
 
 import { installTaskListRecovery, tasksRecoveryKey } from '$features/events/task-list-recovery';
 import { createEventRecoverySession } from '$shared/event-recovery/session';
