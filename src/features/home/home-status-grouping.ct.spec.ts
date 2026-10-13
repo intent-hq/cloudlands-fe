@@ -19,11 +19,11 @@ test('Home status groups restore every work stage in list and board views', asyn
   mount,
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 1260 });
+  await page.setViewportSize({ width: 1440, height: 1460 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   const component = await mount(Preview, {
-    props: { scenario: 'status-grouping', height: 1240 },
+    props: { scenario: 'status-grouping', height: 1440 },
   });
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
   await testInfo.attach('before-activity-groups', {
@@ -42,6 +42,8 @@ test('Home status groups restore every work stage in list and board views', asyn
   const unstarted = component.getByRole('listbox', { name: 'Not started', exact: true });
   await expect(unstarted.locator('[data-home-workspace]')).toHaveCount(3);
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await testInfo.attach('after-status-list', {
     body: await page.screenshot({ path: testInfo.outputPath('after-status-list.png') }),
     contentType: 'image/png',
@@ -131,6 +133,9 @@ test('Home status grouping keeps pinned work unique and respects filters and sav
       .getByRole('region', { name: 'Archived', exact: true })
       .locator('[data-home-workspace]'),
   ).toHaveCount(1);
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
   await testInfo.attach('filtered-archived-status-groups', {
     body: await page.screenshot({
       path: testInfo.outputPath('filtered-archived-status-groups.png'),
