@@ -10,6 +10,8 @@ describe('principal discovery through browser startup', () => {
   let role: 'owner' | 'member' | 'guest' = 'owner';
   let malformed = false;
   let recoverySupported = false;
+  let holdPrincipal = false;
+  const principalReplies: Array<() => void> = [];
   let receive: (event: { data: string }) => void;
   const frames: { id: number; method: string; params?: unknown }[] = [];
 
@@ -84,9 +86,10 @@ describe('principal discovery through browser startup', () => {
           subscriptionId: `subscription-${frame.id}`,
           ...(recoverySupported ? { lossRecovery: 1 } : {}),
         };
-      queueMicrotask(() =>
-        this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) }),
-      );
+      const reply = () =>
+        this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) });
+      if (frame.method === 'principal.me' && holdPrincipal) principalReplies.push(reply);
+      else queueMicrotask(reply);
     }
   }
 
@@ -102,6 +105,8 @@ describe('principal discovery through browser startup', () => {
     role = 'owner';
     malformed = false;
     recoverySupported = false;
+    holdPrincipal = false;
+    principalReplies.length = 0;
     await import('$lib/browser-mock');
   });
   afterEach(() => {
@@ -165,6 +170,37 @@ describe('principal discovery through browser startup', () => {
       lossRecovery: 1,
     });
     expect(store.state.workspaceEvents.subscriptionPending).toBe(false);
+  });
+
+  it('rejects a held principal reply across same-socket identity renewal', async () => {
+    recoverySupported = true;
+    holdPrincipal = true;
+    const store = await boot();
+    const { selectHostRole } = await import('../principal-selectors');
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    await vi.waitFor(() => expect(principalReplies).toHaveLength(1));
+    const observed: Array<ReturnType<typeof selectHostRole.select>> = [];
+    const { getContext } = await import('typed-redux-saga');
+    store.runSaga(function* () {
+      const redux = yield* getContext<{ subscribe(listener: () => void): () => void }>(
+        'reduxStore',
+      );
+      cancel.push(redux.subscribe(() => observed.push(selectHostRole.select(store.state))));
+    });
+    role = 'guest';
+    await backendRequest('client.hello', {});
+    expect(selectHostRole.select(store.state)).toBeNull();
+    principalReplies.shift()!();
+    await vi.waitFor(() => expect(principalReplies).toHaveLength(1));
+    expect(selectHostRole.select(store.state)).toBeNull();
+    expect(observed).not.toContain('owner');
+    holdPrincipal = false;
+    principalReplies.shift()!();
+    await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('guest'));
+    expect(observed).not.toContain('owner');
+    expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(2);
+    expect(frames.filter((frame) => frame.method === 'events.subscribe')).toHaveLength(2);
+    expect(frames.filter((frame) => frame.method === 'principal.me')).toHaveLength(2);
   });
 
   it('recovers selected Git state after a final file loss with production owners and no later push', async () => {
