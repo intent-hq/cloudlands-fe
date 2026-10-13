@@ -1,3 +1,5 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { connectionsListReceived, authRejectedReceived } from '../../connections/connections-slice';
 import { connectionStatusChanged, heartbeatFailed } from '../../daemon-health/daemon-health-slice';
 import {
@@ -147,6 +149,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     }
     return;
   }
+  const recoveryKey = 'scripts:' + JSON.stringify([workspaceId]);
+  const lifetime = rendererEventRecovery.capture(recoveryKey);
   const before = yield* selectScriptById.effect(workspaceId, scriptId);
   // Older daemons reset finished scripts silently. A changed row proves that
   // an event/read already supplied authority; otherwise reconcile runtime only.
@@ -177,6 +181,10 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       if (failureMessage) yield* call([notify, notify.error], message);
       return;
     }
+    if (!lifetime.isCurrent()) {
+      rendererEventRecovery.invalidate(recoveryKey);
+      return;
+    }
     if (
       stoppedRead &&
       (yield* isScriptReadCurrent(stoppedRead)) &&
@@ -193,7 +201,12 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
           (yield* isScriptReadCurrent(stoppedRead)) &&
           before === (yield* selectScriptById.effect(workspaceId, scriptId))
         ) {
-          yield* put(updateRuntimeState(workspaceId, scriptId, runtime, true));
+          yield* put(
+            withRecoveryLifetime(
+              updateRuntimeState(workspaceId, scriptId, runtime, true),
+              lifetime,
+            ),
+          );
         }
       } catch {
         // The stop succeeded; a failed compatibility read must not report that
@@ -201,7 +214,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       }
     }
     if (stoppedRead && !(yield* isScriptReadCurrent(stoppedRead))) return;
-    if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
+    if (operation === 'delete')
+      yield* put(withRecoveryLifetime(removeScript(workspaceId, scriptId), lifetime));
     else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
     if (cleanedUp || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))

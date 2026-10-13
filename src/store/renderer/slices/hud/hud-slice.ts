@@ -210,6 +210,9 @@ export const initialState: HudState = {
 
 export const hudActivated = createAction('hud/activated');
 export const hudDeactivated = createAction('hud/deactivated');
+export const hudWorkspaceStateCleared = createAction<[workspaceId: string]>(
+  'hud/workspaceStateCleared',
+);
 export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
   createAction<[workspaceId: string, attention: string, raisedAtTs: string]>(
@@ -316,6 +319,20 @@ export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]):
 export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
+hudReducer.with(hudWorkspaceStateCleared, (state, { payload: [id] }) => {
+  const attentionByWorkspaceId = { ...state.attentionByWorkspaceId };
+  const displayStatusByWorkspaceId = { ...state.displayStatusByWorkspaceId };
+  const displayStatusOverridesContradicted = { ...state.displayStatusOverridesContradicted };
+  delete attentionByWorkspaceId[id];
+  delete displayStatusByWorkspaceId[id];
+  delete displayStatusOverridesContradicted[id];
+  return {
+    ...state,
+    attentionByWorkspaceId,
+    displayStatusByWorkspaceId,
+    displayStatusOverridesContradicted,
+  };
+});
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;

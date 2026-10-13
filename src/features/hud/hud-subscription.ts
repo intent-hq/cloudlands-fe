@@ -1,3 +1,10 @@
+import { acquireAgentMetadataDemand } from '$features/agent/agent-metadata-recovery';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryScope,
+  type RendererRecoveryHandle,
+} from '$features/events/renderer-event-recovery';
+import { normalizeAgent } from '$lib/client/live/live-agents-client';
 /**
  * HUD subscription lifecycle — the start/stop API the /hud route calls.
  *
@@ -69,6 +76,7 @@ import {
   hudUsageFailed,
   hudUsageLoaded,
   hudQuestionsResolvedForWorkspace,
+  hudWorkspaceStateCleared,
   type HudFeedEntry,
   type HudRateHistorySample,
   type HudRateSample,
@@ -131,10 +139,39 @@ function resolveQuestionsForDisplayStatus(workspaceId: string, displayStatus: st
   }
 }
 
+type UsageResult = {
+  totals?: HudUsageTotals;
+  runs?: number;
+  byHourOfDay?: Array<{ hour: number } & HudUsageTotals>;
+};
+function applyUsage(result: UsageResult): void {
+  const totals = result?.totals;
+  const byHourOfDay = result?.byHourOfDay;
+  if (!totals || !Array.isArray(byHourOfDay)) {
+    throw new Error(
+      'stats.getUsage result is missing required `totals`/`byHourOfDay` (PROTOCOL §5.36)',
+    );
+  }
+  const rateSamples: HudRateSample[] = byHourOfDay.map((bucket) => ({
+    hour: bucket.hour,
+    tokens: sumTotals(bucket),
+  }));
+  appStore.dispatch(
+    hudUsageLoaded({
+      totals,
+      runs: typeof result.runs === 'number' ? result.runs : 0,
+      rateSamples,
+      fetchedAtMs: Date.now(),
+    }),
+  );
+}
+
 /** Fetch the 24h usage rollup (§5.36) and fold it into the slice. */
-async function loadUsage(): Promise<void> {
+async function loadUsage(isLive: () => boolean, scope?: RendererRecoveryScope): Promise<void> {
+  const token = rendererEventRecovery.capture('hud-stats');
+  const request = scope?.request ?? backendRequest;
   try {
-    const result = await backendRequest<{
+    const result = await request<{
       totals?: HudUsageTotals;
       runs?: number;
       byHourOfDay?: Array<{ hour: number } & HudUsageTotals>;
@@ -142,44 +179,50 @@ async function loadUsage(): Promise<void> {
       period: '24h',
       tzOffsetMinutes: -new Date().getTimezoneOffset(),
     });
-    const totals = result?.totals;
-    const byHourOfDay = result?.byHourOfDay;
-    if (!totals || !Array.isArray(byHourOfDay)) {
-      throw new Error(
-        'stats.getUsage result is missing required `totals`/`byHourOfDay` (PROTOCOL §5.36)',
-      );
-    }
-    const rateSamples: HudRateSample[] = byHourOfDay.map((bucket) => ({
-      hour: bucket.hour,
-      tokens: sumTotals(bucket),
-    }));
-    appStore.dispatch(
-      hudUsageLoaded({
-        totals,
-        runs: typeof result.runs === 'number' ? result.runs : 0,
-        rateSamples,
-        fetchedAtMs: Date.now(),
-      }),
-    );
+    if (!isLive()) return;
+    token.commit(() => {
+      applyUsage(result);
+    });
   } catch (error) {
-    appStore.dispatch(hudUsageFailed(error instanceof Error ? error.message : String(error)));
+    if (!isLive()) return;
+    token.commit(() => {
+      appStore.dispatch(hudUsageFailed(error instanceof Error ? error.message : String(error)));
+    });
   }
 }
 
+type RateHistoryResult = { samples?: Array<{ bucketUtc: string } & HudUsageTotals> };
+function applyRateHistory(result: RateHistoryResult): void {
+  const samples = result?.samples;
+  if (!Array.isArray(samples)) {
+    throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
+  }
+  const mapped: HudRateHistorySample[] = samples.map((sample) => ({ ...sample }));
+  appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
+}
+
 /** Fetch the per-minute rate history (§5.39) and fold it into the slice. */
-async function loadRateHistory(): Promise<void> {
+async function loadRateHistory(
+  isLive: () => boolean,
+  scope?: RendererRecoveryScope,
+): Promise<void> {
+  const token = rendererEventRecovery.capture('hud-stats');
+  const request = scope?.request ?? backendRequest;
   try {
-    const result = await backendRequest<{
+    const result = await request<{
       samples?: Array<{ bucketUtc: string } & HudUsageTotals>;
     }>('stats.getRateHistory', { limit: HUD_RATE_HISTORY_LIMIT });
-    const samples = result?.samples;
-    if (!Array.isArray(samples)) {
-      throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
-    }
-    const mapped: HudRateHistorySample[] = samples.map((sample) => ({ ...sample }));
-    appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
+    if (!isLive()) return;
+    token.commit(() => {
+      applyRateHistory(result);
+    });
   } catch (error) {
-    appStore.dispatch(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
+    if (!isLive()) return;
+    token.commit(() => {
+      appStore.dispatch(
+        hudRateHistoryFailed(error instanceof Error ? error.message : String(error)),
+      );
+    });
   }
 }
 
@@ -222,7 +265,8 @@ type BusyAgentIdsByWorkspaceId = ReadonlyMap<string, ReadonlySet<string>>;
  * `agent.listActive` would re-multiply the request count by the workspace
  * count the scoped list read just removed.
  */
-function hydrateVisibleWorkspaceAgents(): void {
+function hydrateVisibleWorkspaceAgents(isLive: () => boolean, scope?: RendererRecoveryScope): void {
+  if (!isLive()) return;
   const workspaces = appStore.state.workspace?.workspaces;
   const pending: Array<{ workspaceId: string; failedSummaryIds: string[] }> = [];
   for (const workspace of workspaces ? getItems(workspaces) : []) {
@@ -238,13 +282,15 @@ function hydrateVisibleWorkspaceAgents(): void {
     pending.push({ workspaceId, failedSummaryIds: failedSummaryAgentIds(workspace) });
   }
   if (pending.length === 0) return;
-  const busyAgentIds = readBusyAgentIds();
+  const busyAgentIds = readBusyAgentIds(scope);
   for (const { workspaceId, failedSummaryIds } of pending) {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
     const hydration = hydrateHudWorkspaceAgents(
       workspaceId,
       busyAgentIds,
       failedSummaryIds,
+      isLive,
+      scope,
     ).finally(() => {
       if (pendingAgentHydrationByWorkspaceId.get(workspaceId) === hydration) {
         pendingAgentHydrationByWorkspaceId.delete(workspaceId);
@@ -260,10 +306,11 @@ function hydrateVisibleWorkspaceAgents(): void {
  * top-level rows; only the busy non-top-level rows are missed until the next
  * event-driven hydration.
  */
-async function readBusyAgentIds(): Promise<BusyAgentIdsByWorkspaceId> {
+async function readBusyAgentIds(scope?: RendererRecoveryScope): Promise<BusyAgentIdsByWorkspaceId> {
+  const request = scope?.request ?? backendRequest;
   const byWorkspaceId = new Map<string, Set<string>>();
   try {
-    const result = await backendRequest<AgentListActiveResult>('agent.listActive', {});
+    const result = await request<AgentListActiveResult>('agent.listActive', {});
     for (const stream of result?.streams ?? []) {
       if (typeof stream?.agentId !== 'string' || typeof stream.workspaceId !== 'string') continue;
       let ids = byWorkspaceId.get(stream.workspaceId);
@@ -329,13 +376,24 @@ function failedSummaryAgentIds(workspace: { agentSummary?: unknown }): string[] 
 async function hydrateHudWorkspaceAgents(
   workspaceId: string,
   busyAgentIds: Promise<BusyAgentIdsByWorkspaceId>,
-  failedSummaryIds: readonly string[] = [],
+  failedSummaryIds: readonly string[],
+  isLive: () => boolean,
+  scope?: RendererRecoveryScope,
 ): Promise<void> {
+  const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
   try {
     const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([
-      appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
+      scope
+        ? scope
+            .request<{ agents: Record<string, unknown>[] }>('agent.list', {
+              workspaceId,
+              scope: 'topLevel',
+            })
+            .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
+        : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
       busyAgentIds,
     ]);
+    if (!isLive() || !token.isCurrent()) return;
     const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
     const pointReadIds = [
       ...new Set([...(busyByWorkspaceId.get(workspaceId) ?? []), ...failedSummaryIds]),
@@ -343,7 +401,7 @@ async function hydrateHudWorkspaceAgents(
     const pointReadRows = await Promise.all(
       pointReadIds.map(async (agentId) => {
         try {
-          return await appClient.agents.get(agentId, workspaceId);
+          return await readHudAgent(agentId, workspaceId, scope);
         } catch (error) {
           logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
             workspaceId,
@@ -354,15 +412,18 @@ async function hydrateHudWorkspaceAgents(
         }
       }),
     );
+    if (!isLive()) return;
     const listed = [...topLevel, ...pointReadRows.filter((row) => row !== null)];
     const agents = listed
       .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
       .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
-    appStore.dispatch(setAgentsLoaded(workspaceId, true));
-    if (agents.length === 0) return;
-    appStore.dispatch(setAgents(workspaceId, agents));
-    appStore.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
-    for (const agent of agents) appStore.dispatch(upsertSession(agent));
+    token.commit(() => {
+      appStore.dispatch(setAgentsLoaded(workspaceId, true));
+      if (agents.length === 0) return;
+      appStore.dispatch(setAgents(workspaceId, agents));
+      appStore.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
+      for (const agent of agents) appStore.dispatch(upsertSession(agent));
+    });
   } catch (error) {
     logger.warn('agent hydration failed for HUD workspace', { workspaceId, error });
   }
@@ -407,7 +468,12 @@ function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
   return previous === trigger.detail;
 }
 
-function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true): void {
+function handleEvent(
+  event: WorkspaceEvent,
+  isLive: () => boolean = () => true,
+  scope?: RendererRecoveryScope,
+  project = true,
+): void {
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
     event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {};
@@ -419,7 +485,7 @@ function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true):
       appStore.dispatch(hudQuestionCaptured(question));
     }
   }
-  if (type === 'workspace:attention-changed') {
+  if (project && type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
       // Raise time = the event's wire timestamp (drives the elapsed timer);
@@ -430,7 +496,7 @@ function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true):
           : new Date().toISOString();
       appStore.dispatch(hudAttentionChanged(workspaceId, attention, raisedAtTs));
     }
-  } else if (type === 'workspace:displayStatus-changed') {
+  } else if (project && type === 'workspace:displayStatus-changed') {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       appStore.dispatch(hudDisplayStatusChanged(workspaceId, displayStatus));
@@ -474,7 +540,7 @@ function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true):
         emitTrigger();
         return;
       }
-      return hydrateUnknownAgent(agentId, workspaceId).then(emitTrigger);
+      return hydrateUnknownAgent(agentId, workspaceId, isLive, scope).then(emitTrigger);
     });
     return;
   }
@@ -503,16 +569,33 @@ const pendingUnknownAgentReadByAgentId = new Map<string, Promise<void>>();
  * failed or not-found read leaves the agent unknown — it then gates as
  * unmuted, the pre-existing behavior for a session the store never saw.
  */
-function hydrateUnknownAgent(agentId: string, workspaceId: string): Promise<void> {
+async function readHudAgent(agentId: string, workspaceId: string, scope?: RendererRecoveryScope) {
+  if (!scope) return appClient.agents.get(agentId, workspaceId || undefined);
+  const result = await scope.request<{ agent?: unknown } | unknown>('agent.get', {
+    agentId,
+    ...(workspaceId ? { workspaceId } : {}),
+  });
+  const raw = result && typeof result === 'object' && 'agent' in result ? result.agent : result;
+  return raw && typeof raw === 'object' ? normalizeAgent(raw as Record<string, unknown>) : null;
+}
+
+function hydrateUnknownAgent(
+  agentId: string,
+  workspaceId: string,
+  isLive: () => boolean,
+  scope?: RendererRecoveryScope,
+): Promise<void> {
+  const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
   const pending = pendingUnknownAgentReadByAgentId.get(agentId);
   if (pending) return pending;
-  const read = appClient.agents
-    .get(agentId)
+  const read = readHudAgent(agentId, workspaceId, scope)
     .then((agent) => {
-      if (!agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
+      if (!isLive() || !agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
       const session = { ...agent, messages: agent.messages ?? [] };
-      appStore.dispatch(bulkUpsertSessions([session], { listProjection: true }));
-      appStore.dispatch(upsertSession(session));
+      token.commit(() => {
+        appStore.dispatch(bulkUpsertSessions([session], { listProjection: true }));
+        appStore.dispatch(upsertSession(session));
+      });
     })
     .catch((error: unknown) => {
       logger.debug('agent.get failed for unknown HUD agent; gated as unmuted', {
@@ -585,6 +668,26 @@ function extractSubscriptionId(params: unknown): string | undefined {
  */
 export function startHudSubscription(): () => void {
   let disposed = false;
+  let generation = 0;
+  let adopted = false;
+  let recoveryScope: RendererRecoveryScope | undefined;
+  let reconcileRecoveryWorkspaces = () => {};
+  let statsOwner: RendererRecoveryHandle | undefined;
+  const pendingStats = new Map<string, Promise<void>>();
+  const refreshStats = (kind: 'usage' | 'rates') => {
+    if (pendingStats.has(kind) || statsOwner?.status.stale) return;
+    const pending = (kind === 'usage' ? loadUsage : loadRateHistory)(
+      capture(),
+      recoveryScope,
+    ).finally(() => {
+      if (pendingStats.get(kind) === pending) pendingStats.delete(kind);
+    });
+    pendingStats.set(kind, pending);
+  };
+  const capture = () => {
+    const version = generation;
+    return () => !disposed && generation === version;
+  };
   let subscriptionId: string | undefined;
 
   lastStatusUpdateTextByWorkspaceId.clear();
@@ -599,6 +702,7 @@ export function startHudSubscription(): () => void {
   const stopGridFilterPersistence = startHudGridFilterPersistence();
 
   async function subscribe(): Promise<void> {
+    const isLive = capture();
     // Drop the stale id first so the scope gate cannot match a foreign
     // subscription that reuses it during the resubscribe window.
     subscriptionId = undefined;
@@ -607,7 +711,7 @@ export function startHudSubscription(): () => void {
         eventTypes: [...HUD_SUBSCRIBE_EVENT_TYPES],
         replaceGroup: HUD_REPLACE_GROUP,
       });
-      if (disposed) {
+      if (!isLive()) {
         if (typeof result?.subscriptionId === 'string') {
           void backendUnsubscribe(result.subscriptionId).catch(() => {});
         }
@@ -624,13 +728,13 @@ export function startHudSubscription(): () => void {
   }
 
   const removeNotificationListener = onBackendNotification((notification) => {
-    if (notification.method !== 'events.event') return;
+    if (adopted || notification.method !== 'events.event') return;
     // §6.3 fan-out dedupe: one notification per matching subscription — drop
     // copies tagged with a foreign id; accept legacy/flat envelopes (no id).
     const envelopeId = extractSubscriptionId(notification.params);
     if (envelopeId !== undefined && envelopeId !== subscriptionId) return;
     const event = extractEvent(notification.params);
-    if (event) handleEvent(event, () => !disposed);
+    if (event) handleEvent(event, capture());
   });
 
   // RESUB-1: the daemon's subscription registry is empty after a restart —
@@ -638,17 +742,196 @@ export function startHudSubscription(): () => void {
   // workspace's agent list (events missed during the outage may have changed
   // `lastAgentResponse`/status).
   const removeReconnectListener = onBackendReconnected(() => {
+    if (adopted) return;
+    generation++;
+    pendingAgentHydrationByWorkspaceId.clear();
+    pendingUnknownAgentReadByAgentId.clear();
     void subscribe();
-    void loadUsage();
-    void loadRateHistory();
+    refreshStats('usage');
+    refreshStats('rates');
     hydratedAgentWorkspaceIds.clear();
-    hydrateVisibleWorkspaceAgents();
+    hydrateVisibleWorkspaceAgents(capture(), recoveryScope);
   });
 
-  void subscribe();
-  void loadUsage();
-  void loadRateHistory();
-  hydrateVisibleWorkspaceAgents();
+  const offRecovery = rendererEventRecovery.onSession((scope) => {
+    adopted = true;
+    recoveryScope = scope;
+    generation++;
+    const live = capture();
+    pendingStats.clear();
+    appStore.dispatch(hudActivated());
+    hydratedAgentWorkspaceIds.clear();
+    pendingAgentHydrationByWorkspaceId.clear();
+    pendingUnknownAgentReadByAgentId.clear();
+    const abort = new AbortController();
+    if (subscriptionId) void backendUnsubscribe(subscriptionId).catch(() => {});
+    subscriptionId = undefined;
+    const workspaces = new Map<string, RendererRecoveryHandle>();
+    const retiredWorkspaces = new Set<string>();
+    const agentDemands = new Map<string, () => void>();
+    const visibleIds = () =>
+      (appStore.state.workspace?.workspaces ? getItems(appStore.state.workspace.workspaces) : [])
+        .filter(
+          (row) =>
+            row.status !== WorkspaceStatus.Archived && row.status !== WorkspaceStatus.Deleted,
+        )
+        .map((row) => String(row.id));
+    const stats = scope.registerResource({
+      key: 'hud-stats',
+      workspaceId: null,
+      eventTypes: HUD_SUBSCRIBE_EVENT_TYPES,
+      isCurrent: live,
+      read: async (reader) => {
+        await Promise.allSettled([...pendingStats.values()]);
+        return {
+          usage: await reader.request<UsageResult>('stats.getUsage', {
+            period: '24h',
+            tzOffsetMinutes: -new Date().getTimezoneOffset(),
+          }),
+          rates: await reader.request<RateHistoryResult>('stats.getRateHistory', {
+            limit: HUD_RATE_HISTORY_LIMIT,
+          }),
+        };
+      },
+      apply: (value) => {
+        applyUsage(value.usage);
+        applyRateHistory(value.rates);
+      },
+      invalidate: () => {},
+      retire: () => {
+        generation++;
+        appStore.dispatch(hudDeactivated());
+      },
+    });
+    statsOwner = stats;
+    const reconcile = () => {
+      const ids = new Set(visibleIds());
+      for (const [id, owner] of workspaces)
+        if (!ids.has(id)) {
+          owner.dispose();
+          agentDemands.get(id)?.();
+          agentDemands.delete(id);
+          workspaces.delete(id);
+          appStore.dispatch(hudWorkspaceStateCleared(id));
+        }
+      for (const id of ids)
+        if (!workspaces.has(id)) {
+          agentDemands.set(id, acquireAgentMetadataDemand(id, { hud: true }));
+          const owner = scope.registerResource({
+            key: 'hud:' + JSON.stringify([id]),
+            workspaceId: id,
+            eventTypes: [
+              'workspace:attention-changed',
+              'workspace:displayStatus-changed',
+              'workspace:updated',
+            ],
+            isCurrent: () => live() && visibleIds().includes(id),
+            read: async (reader) => {
+              const result = await reader.request<Record<string, unknown>>('workspace.get', {
+                workspaceId: id,
+              });
+              return (result.workspace ?? result) as {
+                attention?: string;
+                displayStatus?: unknown;
+                updatedAt?: string;
+              };
+            },
+            apply: (value) => {
+              appStore.dispatch(hudWorkspaceStateCleared(id));
+              appStore.dispatch(
+                hudAttentionChanged(
+                  id,
+                  value.attention ?? 'none',
+                  value.updatedAt ?? new Date().toISOString(),
+                ),
+              );
+              if (isWorkspaceDisplayStatus(value.displayStatus))
+                appStore.dispatch(hudDisplayStatusChanged(id, value.displayStatus));
+              if (typeof value.displayStatus === 'string')
+                resolveQuestionsForDisplayStatus(id, value.displayStatus);
+            },
+            invalidate: () => {},
+            retire: () => {
+              retiredWorkspaces.add(id);
+              agentDemands.get(id)?.();
+              agentDemands.delete(id);
+              appStore.dispatch(hudQuestionsResolvedForWorkspace(id));
+              appStore.dispatch(hudWorkspaceStateCleared(id));
+            },
+            onEvent: (notification) => {
+              const event = extractEvent(notification.params);
+              if (!event) return;
+              const type: string = event.type;
+              const data = event.data as { attention?: string; displayStatus?: unknown };
+              if (type === 'workspace:attention-changed' && typeof data?.attention === 'string')
+                appStore.dispatch(
+                  hudAttentionChanged(
+                    id,
+                    data.attention,
+                    event.timestamp ?? new Date().toISOString(),
+                  ),
+                );
+              if (
+                type === 'workspace:displayStatus-changed' &&
+                isWorkspaceDisplayStatus(data?.displayStatus)
+              ) {
+                appStore.dispatch(hudDisplayStatusChanged(id, data.displayStatus));
+                resolveQuestionsForDisplayStatus(id, data.displayStatus);
+              }
+            },
+          });
+          workspaces.set(id, owner);
+        }
+    };
+    reconcileRecoveryWorkspaces = reconcile;
+    reconcile();
+    const offTransient = scope.onNotification((notification) => {
+      if (
+        !live() ||
+        notification.method !== 'events.event' ||
+        !subscriptionId ||
+        extractSubscriptionId(notification.params) !== subscriptionId
+      )
+        return;
+      const event = extractEvent(notification.params);
+      if (event && !retiredWorkspaces.has(String(event.workspaceId)))
+        handleEvent(event, live, scope, false);
+    });
+    void scope
+      .subscribe(
+        { eventTypes: [...HUD_SUBSCRIBE_EVENT_TYPES], replaceGroup: HUD_REPLACE_GROUP },
+        { recover: true, signal: abort.signal },
+      )
+      .then((lease) => {
+        if (!live()) return;
+        subscriptionId = lease?.id;
+        refreshStats('usage');
+        refreshStats('rates');
+        hydrateVisibleWorkspaceAgents(live, scope);
+      })
+      .catch((error) => logger.warn('HUD recovery subscription failed', { error }));
+    return () => {
+      abort.abort();
+      offTransient();
+      stats.dispose();
+      if (statsOwner === stats) statsOwner = undefined;
+      for (const owner of workspaces.values()) owner.dispose();
+      workspaces.clear();
+      for (const release of agentDemands.values()) release();
+      agentDemands.clear();
+      if (subscriptionId) void scope.unsubscribe(subscriptionId);
+      subscriptionId = undefined;
+      if (recoveryScope === scope) recoveryScope = undefined;
+      reconcileRecoveryWorkspaces = () => {};
+    };
+  });
+
+  if (!adopted) {
+    void subscribe();
+    refreshStats('usage');
+    refreshStats('rates');
+    hydrateVisibleWorkspaceAgents(capture());
+  }
 
   // The workspace list hydrates asynchronously (and can grow later) — re-run
   // the once-per-workspace hydration pass whenever the list reference moves.
@@ -659,25 +942,27 @@ export function startHudSubscription(): () => void {
     const workspaces = state.workspace?.workspaces;
     if (workspaces === lastWorkspaces) return;
     lastWorkspaces = workspaces;
+    reconcileRecoveryWorkspaces();
     for (const workspace of workspaces ? getItems(workspaces) : []) {
       if (typeof workspace.displayStatus === 'string') {
         resolveQuestionsForDisplayStatus(String(workspace.id), workspace.displayStatus);
       }
     }
     queueMicrotask(() => {
-      if (!disposed) hydrateVisibleWorkspaceAgents();
+      if (!disposed) hydrateVisibleWorkspaceAgents(capture(), recoveryScope);
     });
   });
 
   // TOK/MIN chart poll — minute buckets only move once a minute, but a short
   // cadence keeps the newest bucket's in-progress accumulation fresh.
   const rateHistoryTimer = setInterval(() => {
-    void loadRateHistory();
+    refreshStats('rates');
   }, HUD_RATE_HISTORY_POLL_MS);
 
   return () => {
     if (disposed) return;
     disposed = true;
+    offRecovery();
     clearInterval(rateHistoryTimer);
     removeNotificationListener();
     removeReconnectListener();

@@ -46,12 +46,17 @@ import {
 import { scriptsOperationSaga } from './scripts-operation-saga';
 
 import { store as appStore } from '../../../store';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 
 beforeEach(() => {
   appStore.dispose();
   appStore.init();
 });
-afterEach(() => appStore.dispose());
+afterEach(() => {
+  appStore.dispose();
+  rendererEventRecovery.dispose();
+});
 
 const WS = 'ws-1';
 const settle = async () => {
@@ -78,12 +83,13 @@ function start() {
       ]),
     },
   });
-  const dispatch = (action: { type: string }) => {
+  const reduce = (action: { type: string }) => {
     state.scripts = scriptsReducer(state.scripts, action);
     actions.push(action);
     channel.put(action);
     return action;
   };
+  const dispatch = createEventRecoveryMiddleware()({} as never)(reduce as never) as typeof reduce;
   const task = runSaga(
     {
       channel,
@@ -125,6 +131,43 @@ describe('scriptsOperationSaga', () => {
       ]),
     );
   }
+
+  it('does not remove a recovered script from a held pre-loss delete response', async () => {
+    const pending = deferred<{ success: boolean }>();
+    mocks.remove.mockReturnValue(pending.promise);
+    const run = start();
+    seed(run);
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      request: async <T>() => ({}) as T,
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      dispose: () => {},
+    });
+    const owner = scope.registerResource({
+      key: 'scripts:' + JSON.stringify([WS]),
+      workspaceId: WS,
+      eventTypes: ['script:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    expect(mocks.remove).toHaveBeenCalledOnce();
+    owner.invalidate();
+    seed(run);
+    pending.resolve({ success: true });
+    await settle();
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+    expect(run.state.scripts.byWorkspaceId[WS].operations['script-1']?.pending).not.toBe(true);
+    await stop(run.task);
+  });
 
   it('retires a denied delete and permits retry after admission returns', async () => {
     const run = start();

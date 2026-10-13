@@ -21,6 +21,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
   type BackendNotification,
 } from '$lib/client/live/backend-transport';
 import {
@@ -281,5 +282,44 @@ describe('subscribeGitRoots (gitRoot:* events.subscribe + fold)', () => {
     expect(mockedRequest).toHaveBeenNthCalledWith(2, 'gitRoot.list', { workspaceId: 'ws-1' });
     expect(seen.at(-1)).toEqual([refreshed]);
     dispose();
+  });
+});
+
+describe('connection lifetime regression', () => {
+  afterEach(() => vi.clearAllMocks());
+  it('never emits a held list from the previous connection', async () => {
+    let reconnect!: () => void;
+    vi.mocked(onBackendReconnected).mockImplementation((handler) => {
+      reconnect = handler;
+      return () => {};
+    });
+    mockedSubscribe.mockResolvedValue({ subscriptionId: 'lease' });
+    let resolveOld!: (value: unknown) => void;
+    let resolveNew!: (value: unknown) => void;
+    mockedRequest
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveNew = resolve;
+          }),
+      );
+    const seen: GitRootRow[][] = [];
+    const subscription = subscribeGitRoots('ws-1', (rows) => seen.push(rows));
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+    reconnect();
+    await flush();
+    resolveOld({ gitRoots: [makeRoot()] });
+    await flush();
+    expect(seen.flat()).toEqual([]);
+    resolveNew({ gitRoots: [] });
+    await flush();
+    subscription.dispose();
   });
 });

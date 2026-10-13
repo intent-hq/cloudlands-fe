@@ -90,6 +90,7 @@ function createHarness() {
     return action;
   });
   const reduxStore = {
+    dispatch,
     getState: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);

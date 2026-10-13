@@ -46,6 +46,7 @@ function createHarness(currentTabId: string | null = null) {
     return action;
   });
   const reduxStore = {
+    dispatch,
     getState: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -73,6 +74,22 @@ describe('prMonitorSaga', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('commits a synchronous subscription seed before its handler returns', async () => {
+    const harness = createHarness();
+    const row = { monitorId: 'atomic', workspaceId: 'ws-A' };
+    let observed: unknown;
+    mocks.subscribePrMonitors.mockImplementation((_workspaceId, emit) => {
+      emit([row]);
+      observed = harness.getState().prMonitor.byWorkspaceId['ws-A']?.monitors.map.atomic;
+      return { dispose: vi.fn() };
+    });
+    harness.dispatch(prMonitorsSubscribeRequested('ws-A'));
+    await settle();
+    expect(observed).toBe(row);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
 
   it('forwards flush and cancel triggers with their exact wire arguments', () => {
     const flushIterator = flushPrMonitorWorker(flushPrMonitorRequested('ws-1', 'mon-1'));

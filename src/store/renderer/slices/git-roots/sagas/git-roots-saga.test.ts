@@ -40,6 +40,7 @@ function createHarness(openWorkspaceIds: string[] = []) {
     return action;
   });
   const reduxStore = {
+    dispatch,
     getState: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -66,6 +67,28 @@ describe('gitRootsSaga', () => {
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('commits a synchronous subscription seed before its handler returns', async () => {
+    const harness = createHarness();
+    await advanceReconciliation();
+    const root = {
+      id: 'root-atomic',
+      workspaceId: 'ws-A',
+      path: '/x',
+      source: 'agent',
+    } as GitRootRow;
+    let observed: unknown;
+    mocks.subscribeGitRoots.mockImplementation((_workspaceId, emit) => {
+      emit([root]);
+      observed = harness.getState().gitRoots.byWorkspaceId['ws-A']?.gitRoots.map['root-atomic'];
+      return { dispose: vi.fn() };
+    });
+    harness.dispatch(openWorkspaceTab('ws-A'));
+    await settle();
+    expect(observed).toBe(root);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
 
   it('subscribes to every initially open workspace immediately', async () => {
     const harness = createHarness(['ws-A', 'ws-B']);

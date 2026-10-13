@@ -1,3 +1,5 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import type { EventRecoverySession, RecoveryNotification } from '$shared/event-recovery/session';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport: the WSS seam is replaced by the scripted MockBackendTransport
@@ -152,6 +154,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   afterEach(() => {
     stop?.();
     stop = undefined;
+    rendererEventRecovery.dispose();
     resetMockBackend();
   });
 
@@ -169,6 +172,158 @@ describe('HUD subscription (mock backend, real store)', () => {
       expect.arrayContaining([...HUD_FEED_EVENT_TYPES, 'agent:stream:end']),
     );
     expect(selectHudActive.select(appStore.state)).toBe(true);
+  });
+
+  it('rejects a previous HUD lifetime usage reply after stop and restart', async () => {
+    scriptHappyBackend(backend);
+    let resolveOld!: (value: ReturnType<typeof usageResult>) => void;
+    backend.onRequest(
+      'stats.getUsage',
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    stop = startHudSubscription();
+    await flush();
+    stop();
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+    const current = selectHudUsage.select(appStore.state);
+    resolveOld({ ...usageResult(), runs: 999 });
+    await flush();
+    expect(selectHudUsage.select(appStore.state)).toEqual(current);
+  });
+
+  it('recovers current HUD attention while keeping later feed events transient', async () => {
+    scriptHappyBackend(backend);
+    appStore.dispatch(setWorkspaceEntity({ ...makeHudWorkspace(WS_ID), displayStatus: 'working' }));
+    const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
+    const workspace = { ...makeHudWorkspace(WS_ID), displayStatus: 'idle', attention: 'none' };
+    const request = vi.fn(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'hud-captured', lossRecovery: 1 };
+      if (method === 'stats.getUsage') return usageResult();
+      if (method === 'stats.getRateHistory') return rateHistoryResult();
+      if (method === 'workspace.get') return workspace;
+      if (method === 'agent.list') return { agents: [] };
+      if (method === 'agent.listActive') return { streams: [] };
+      return {};
+    });
+    rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      request: request as EventRecoverySession['request'],
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      dispose: () => {},
+      onRetired: () => () => {},
+      onNotification: (fn) => {
+        listeners.add(fn);
+        return () => {
+          listeners.delete(fn);
+        };
+      },
+    });
+    const emit = (method: string, params: unknown) => {
+      for (const fn of listeners) void fn({ method, params });
+    };
+    stop = startHudSubscription();
+    await flush();
+    emit('events.event', {
+      subscriptionId: 'hud-captured',
+      event: {
+        id: 'attention-before',
+        type: 'workspace:attention-changed',
+        workspaceId: WS_ID,
+        data: { attention: 'review_required' },
+      },
+    });
+    expect(selectHudAttentionByWorkspaceId.select(appStore.state)[WS_ID]).toBeDefined();
+    emit('events.lost', {
+      subscriptionId: 'hud-captured',
+      generation: '1',
+      scope: { workspaceId: null },
+    });
+    await flush();
+    expect(selectHudAttentionByWorkspaceId.select(appStore.state)[WS_ID]).toBeUndefined();
+    const before = selectHudFeed.select(appStore.state).length;
+    emit('events.event', {
+      subscriptionId: 'hud-captured',
+      event: {
+        id: 'attention-after',
+        type: 'workspace:attention-changed',
+        workspaceId: WS_ID,
+        timestamp: '2026-10-13T07:00:00Z',
+        data: { attention: 'review_required' },
+      },
+    });
+    expect(selectHudAttentionByWorkspaceId.select(appStore.state)[WS_ID]).toBeUndefined();
+    expect(selectHudFeed.select(appStore.state).length).toBe(before + 1);
+    expect(selectHudFeed.select(appStore.state)[0].id).toBe('attention-after');
+    expect(request.mock.calls.filter(([method]) => method === 'workspace.get')).toHaveLength(1);
+    appStore.dispatch(removeWorkspaceEntity(WS_ID));
+  });
+
+  it('serializes loss recovery behind an ordinary stats read and clears retired data', async () => {
+    scriptHappyBackend(backend);
+    const listeners = new Set<(n: RecoveryNotification) => void | Promise<void>>();
+    const retirees = new Set<() => void>();
+    let resolveOld!: (value: unknown) => void;
+    let reads = 0;
+    let current = true;
+    const request = vi.fn(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'hud-held', lossRecovery: 1 };
+      if (method === 'stats.getUsage') {
+        if (++reads === 1)
+          return new Promise((resolve) => {
+            resolveOld = resolve;
+          });
+        return { ...usageResult(), runs: 42 };
+      }
+      if (method === 'stats.getRateHistory') return rateHistoryResult();
+      return {};
+    });
+    rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => current,
+      request: request as EventRecoverySession['request'],
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      dispose: () => {},
+      onRetired: (fn) => {
+        retirees.add(fn);
+        return () => {
+          retirees.delete(fn);
+        };
+      },
+      onNotification: (fn) => {
+        listeners.add(fn);
+        return () => {
+          listeners.delete(fn);
+        };
+      },
+    });
+    stop = startHudSubscription();
+    await flush();
+    for (const generation of ['1', '2', '3'])
+      for (const fn of listeners)
+        void fn({
+          method: 'events.lost',
+          params: { subscriptionId: 'hud-held', generation, scope: { workspaceId: null } },
+        });
+    await flush();
+    expect(reads).toBe(1);
+    resolveOld({ ...usageResult(), runs: 999 });
+    await flush();
+    await vi.waitFor(() => expect(selectHudUsage.select(appStore.state)?.runs).toBe(42));
+    expect(reads).toBeLessThanOrEqual(3);
+    current = false;
+    for (const fn of [...retirees]) fn();
+    expect(selectHudUsage.select(appStore.state)).toBeNull();
+    expect(selectHudActive.select(appStore.state)).toBe(false);
   });
 
   it('fetches the 24h stats.getUsage rollup on start — and NEVER its own system.status', async () => {
