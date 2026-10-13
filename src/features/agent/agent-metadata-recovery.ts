@@ -52,6 +52,7 @@ import { reconcileAgentFailureSnapshot, type AgentRecoveryStore } from './agent-
 import {
   agentMetadataDemands as demands,
   agentMetadataDemandListeners as listeners,
+  bindAgentMetadataDemandOwner,
 } from './agent-metadata-demand';
 export { acquireAgentMetadataDemand } from './agent-metadata-demand';
 function lineStatsIdsFor(workspaceId: string, store: AgentRecoveryStore): string[] {
@@ -249,7 +250,12 @@ export function installAgentMetadataRecovery(
   const context = selectPrincipalActionContext.select(store.getState());
   const owners = new Map<
     string,
-    { handle: RendererRecoveryHandle; signature: string; lineStatsIds: Set<string> }
+    {
+      handle: RendererRecoveryHandle;
+      signature: string;
+      lineStatsIds: Set<string>;
+      unbindDemand: () => void;
+    }
   >();
   let disposed = false,
     syncing = false,
@@ -401,7 +407,12 @@ export function installAgentMetadataRecovery(
               store.dispatch(removeWorkspaceAgentState(workspaceId));
             },
           });
-          owner = { handle, signature, lineStatsIds };
+          owner = {
+            handle,
+            signature,
+            lineStatsIds,
+            unbindDemand: bindAgentMetadataDemandOwner(workspaceId, handle),
+          };
           owners.set(workspaceId, owner);
         } else if (owner.signature !== signature) {
           owner.signature = signature;
@@ -423,7 +434,10 @@ export function installAgentMetadataRecovery(
     disposed = true;
     stop();
     listeners.delete(sync);
-    for (const owner of owners.values()) owner.handle.dispose();
+    for (const owner of owners.values()) {
+      owner.unbindDemand();
+      owner.handle.dispose();
+    }
     owners.clear();
   };
 }

@@ -1227,3 +1227,107 @@ it.each(['current', 'replacement', 'retired'] as const)(
     }
   },
 );
+
+it.each(['queued', 'running'] as const)(
+  'retains released metadata demand until %s recovery applies',
+  async (phase) => {
+    const { agentMetadataDemands } = await import('./agent-metadata-demand');
+    const h = integration();
+    const held = Promise.withResolvers<{ additions: number; deletions: number }>();
+    h.store.dispatch(updateAgentStats('a', { additions: 1, deletions: 1, timestamp: 'old' }));
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) =>
+      method === 'metrics.getAgentStats' ? held.promise : normal(method, params),
+    );
+    let release = () => {};
+    try {
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+      h.emit(loss);
+      await settle();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(0);
+      release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+      if (phase === 'running') await settle();
+      expect(h.registry.capture('agents:["ws"]').commit(() => undefined)).toBe(false);
+      release();
+      release();
+      expect(agentMetadataDemands.has('ws')).toBe(true);
+      await settle();
+      expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(1);
+      held.resolve({ additions: 8, deletions: 3 });
+      await settle();
+      expect(h.state.changes.agentStats.a).toMatchObject({ additions: 8, deletions: 3 });
+      expect(agentMetadataDemands.has('ws')).toBe(false);
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(1);
+      expect(h.fence).toHaveBeenCalledTimes(2);
+      h.emit({ ...loss, params: { ...loss.params, generation: '2' } });
+      await settle();
+      expect(h.request.mock.calls.filter(([m]) => m === 'agent.list')).toHaveLength(1);
+    } finally {
+      held.resolve({ additions: 8, deletions: 3 });
+      release();
+      h.stop();
+      h.registry.dispose();
+      await settle();
+    }
+  },
+);
+
+it('releases clean metadata demand synchronously without starting a snapshot', async () => {
+  const { agentMetadataDemands } = await import('./agent-metadata-demand');
+  const h = integration();
+  try {
+    const release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+    expect(agentMetadataDemands.has('ws')).toBe(true);
+    release();
+    expect(agentMetadataDemands.has('ws')).toBe(false);
+    await settle();
+    expect(h.request).not.toHaveBeenCalled();
+  } finally {
+    h.stop();
+    h.registry.dispose();
+  }
+});
+
+it.each(['dispose', 'exhaust'] as const)(
+  'releases retained metadata demand on %s',
+  async (terminal) => {
+    vi.useFakeTimers();
+    const { agentMetadataDemands } = await import('./agent-metadata-demand');
+    const h = integration();
+    const held = Promise.withResolvers<unknown>();
+    h.store.dispatch(updateAgentStats('a', { additions: 1, deletions: 1, timestamp: 'old' }));
+    const normal = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) => {
+      if (method === 'metrics.getAgentStats') {
+        if (terminal === 'exhaust') throw new Error('temporary');
+        return held.promise;
+      }
+      return normal(method, params);
+    });
+    let release = () => {};
+    try {
+      await h.scope.subscribe({ workspaceId: 'ws', eventTypes: ['changes:*'] }, { recover: true });
+      h.emit(loss);
+      await settle();
+      release = acquireAgentMetadataDemand('ws', { agentId: 'a', lineStats: true });
+      release();
+      await settle();
+      if (terminal === 'dispose') h.stop();
+      else await vi.advanceTimersByTimeAsync(6000);
+      await settle();
+      expect(agentMetadataDemands.has('ws')).toBe(false);
+      expect(h.request.mock.calls.filter(([m]) => m === 'metrics.getAgentStats')).toHaveLength(
+        terminal === 'dispose' ? 1 : 3,
+      );
+      held.resolve({ additions: 88, deletions: 33 });
+      await settle();
+      expect(h.state.changes.agentStats.a).toMatchObject({ additions: 1, deletions: 1 });
+    } finally {
+      held.resolve(null);
+      release();
+      h.stop();
+      h.registry.dispose();
+      await settle();
+    }
+  },
+);
