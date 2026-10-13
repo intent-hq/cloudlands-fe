@@ -25,6 +25,7 @@ export function WorkspaceFile({
   query?: string;
 }) {
   const title = useRef<HTMLHeadingElement>(null);
+  const retry = useRef<HTMLButtonElement>(null);
   const code = useRef<HTMLDivElement>(null);
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const entry = selectFileContentEntry(workspaceId, path);
@@ -34,6 +35,9 @@ export function WorkspaceFile({
   useLayoutEffect(() => {
     title.current?.focus();
   }, [path]);
+  useLayoutEffect(() => {
+    if (settled) (current.error ? retry.current : title.current)?.focus();
+  }, [settled, current?.error]);
   useLayoutEffect(() => {
     if (settled && line) {
       code.current?.querySelectorAll('.code-line')[line - 1]?.scrollIntoView({ block: 'center' });
@@ -62,6 +66,7 @@ export function WorkspaceFile({
         <>
           <p role="alert">{current.error}</p>
           <Button
+            ref={retry}
             variant="outline"
             className="w-fit"
             onClick={() => store.dispatch(loadFileContentRequested(workspaceId, path, ''))}
