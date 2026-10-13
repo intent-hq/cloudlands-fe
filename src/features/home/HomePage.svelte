@@ -912,9 +912,30 @@
                               : m.workspace_links_untitled_label()}
                             {@const pullRequestCount =
                               item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
+                            {@const repositoryLabel =
+                              [item.repositoryOwner, item.repositoryName]
+                                .filter(Boolean)
+                                .join('/') || item.repositoryPath}
+                            {#snippet workspaceRepository()}
+                              <Tooltip.Provider
+                                ><Tooltip.Root
+                                  ><Tooltip.Trigger
+                                    >{#snippet child({ props: homeTooltipProps })}<span
+                                        {...homeTooltipProps}
+                                        class="block min-w-0 truncate"
+                                        data-home-workspace-repository>{repositoryLabel}</span
+                                      >{/snippet}</Tooltip.Trigger
+                                  ><Tooltip.Content>{repositoryLabel}</Tooltip.Content
+                                  ></Tooltip.Root
+                                ></Tooltip.Provider
+                              >
+                            {/snippet}
                             <ListRow
-                              class="home-list-row h-12 items-center border-b border-border px-3 py-1"
+                              class="home-list-row min-h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
+                              description={!selectedRepository && repositoryLabel
+                                ? workspaceRepository
+                                : undefined}
                               onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >

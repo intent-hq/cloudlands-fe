@@ -79,6 +79,9 @@
             {@const displayTitle = workspace.title.trim()
               ? workspace.title
               : m.workspace_links_untitled_label()}
+            {@const repositoryLabel =
+              [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/') ||
+              workspace.repositoryPath}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
@@ -124,7 +127,7 @@
               <span
                 class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
-                {#if showRepository && workspace.repositoryName}
+                {#if showRepository && repositoryLabel}
                   <Tooltip.Provider
                     ><Tooltip.Root
                       ><Tooltip.Trigger
@@ -138,13 +141,11 @@
                                 class="shrink-0 rounded-sm"
                               />
                             {/if}
-                            <span class="truncate">{workspace.repositoryName}</span>
+                            <span class="truncate" data-home-workspace-repository
+                              >{repositoryLabel}</span
+                            >
                           </span>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content
-                        >{[workspace.repositoryOwner, workspace.repositoryName]
-                          .filter(Boolean)
-                          .join('/')}</Tooltip.Content
-                      ></Tooltip.Root
+                      ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
                     ></Tooltip.Provider
                   >
                 {/if}
