@@ -110,6 +110,7 @@ export function installGitContentRecovery(
           const capturedRoot = rootTransport;
           const observingTransport = (readKey: object, retireDenied: (error: unknown) => void) => ({
             key: readKey,
+            onFailure: retireDenied,
             request: <T>(method: string, params?: unknown): Promise<T> =>
               observeGitReadFailure(
                 capturedRoot.transport.request<T>(method, params),

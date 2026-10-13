@@ -38,7 +38,11 @@ import {
   captureSecondaryRootRead,
   readSecondaryRootSnapshot,
 } from './git-secondary-root-recovery';
-import { captureGitRead, gitContentRecoveryKey } from './git-recovery-read-lane';
+import {
+  captureGitRead,
+  gitContentRecoveryKey,
+  chatContentRecoveryKey,
+} from './git-recovery-read-lane';
 import { readGitContent } from './git-content-read';
 import { installChatChangesRecovery } from './chat-content-recovery';
 import {
@@ -1010,3 +1014,189 @@ it.each(['ordinary', 'recovery'])(
     }
   },
 );
+
+it.each(['current', 'late', 'push', 'replacement'])(
+  'every joined trackedDiff owner observes its original denial (%s)',
+  async (mode) => {
+    const h = await setup();
+    h.dispatch(releaseGitRead('ws', 'view', 'request'));
+    const normal = h.request.getMockImplementation()!;
+    const denied = deferred<any>();
+    const held = deferred<any>();
+    const completion = deferred<{ retired: boolean; errors: unknown[] }>();
+    h.request.mockImplementation((m, p) =>
+      m === 'git.diffs'
+        ? Promise.resolve(p.paths.map((path: string) => ({ path, hunks: [] })))
+        : m === 'git.showFile'
+          ? p.filePath === 'b.ts'
+            ? denied.promise
+            : Promise.resolve({ content: 'index a' })
+          : m === 'file.read'
+            ? p.path === 'b.ts'
+              ? held.promise
+              : Promise.resolve({ content: 'disk a' })
+            : normal(m, p),
+    );
+    const reads = ['a.ts', 'b.ts'].map((filePath) => ({
+      kind: 'trackedDiff' as const,
+      filePath,
+      workspacePath: '/ws',
+      stage: 'unstaged',
+      allowHeadReads: true,
+      forceRefresh: false,
+      useProvidedContent: true,
+      providedOld: 'private index ' + filePath,
+      providedNew: 'private disk ' + filePath,
+    }));
+    for (let i = 0; i < reads.length; i++)
+      h.dispatch(gitReadRequested('ws', 'view' + i, 'req' + i, reads[i]));
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    for (const read of reads) {
+      const key = gitReadKey(read);
+      h.dispatch(gitReadStarted('ws', key, 'seed'));
+      h.dispatch(
+        gitReadCompleted(
+          'ws',
+          key,
+          'seed',
+          {
+            kind: 'trackedDiff',
+            oldContent: read.providedOld,
+            newContent: read.providedNew,
+          } as any,
+          null,
+        ),
+      );
+    }
+    h.event();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    try {
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.diffs')).toHaveLength(1);
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(2);
+      expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(2);
+      const secondKey = gitReadKey(reads[1]);
+      if (mode === 'replacement') {
+        h.dispatch(releaseGitRead('ws', 'view1', 'req1'));
+        h.dispatch(gitReadRequested('ws', 'view1', 'successor', reads[1]));
+      }
+      if (mode === 'push' || mode === 'replacement') {
+        h.dispatch(gitReadStarted('ws', secondKey, 'newer'));
+        h.dispatch(
+          gitReadCompleted(
+            'ws',
+            secondKey,
+            'newer',
+            { kind: 'trackedDiff', oldContent: 'new index', newContent: 'new disk' },
+            null,
+          ),
+        );
+      }
+      const denial = { rpcCode: -32003, message: 'Forbidden' };
+      if (mode === 'late') {
+        denied.resolve(
+          Promise.reject(
+            new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion.promise),
+          ),
+        );
+        await settle();
+        expect(
+          getItem(h.store.getState().git.byWorkspaceId.ws.reads, secondKey).result,
+        ).not.toBeNull();
+        completion.resolve({ retired: false, errors: [denial] });
+      } else denied.resolve(Promise.reject(denial));
+      await settle();
+      const result = getItem(h.store.getState().git.byWorkspaceId.ws.reads, secondKey).result;
+      if (mode === 'replacement') expect(result).toMatchObject({ newContent: 'new disk' });
+      else expect(result, 'joined owner retires before physical sibling settles').toBeNull();
+      expect(
+        getItem(h.store.getState().git.byWorkspaceId.ws.reads, gitReadKey(reads[0])).result,
+      ).not.toBeNull();
+      expect(h.request.mock.calls.filter(([m]) => m === 'git.showFile')).toHaveLength(2);
+      expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(2);
+    } finally {
+      held.resolve({ content: 'old b' });
+      denied.resolve({ content: 'old b' });
+      await settle();
+    }
+  },
+);
+
+it('notifies both Git and chat owners of a coalesced denial before sibling drain', async () => {
+  const h = await setup();
+  h.dispatch(releaseGitRead('ws', 'view', 'request'));
+  cleanups.push(installChatChangesRecovery(h.scope, h.store));
+  const original = h.request.getMockImplementation()!;
+  const denied = deferred<any>();
+  const held = deferred<any>();
+  const hunks = [
+    {
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 1,
+      lines: [{ type: 'Addition', content: 'fresh' }],
+    },
+  ];
+  h.request.mockImplementation((m, p) =>
+    m === 'git.diffs'
+      ? Promise.resolve(p.staged ? [] : p.paths.map((path: string) => ({ path, hunks })))
+      : m === 'file.read'
+        ? held.promise
+        : m === 'git.showFile'
+          ? denied.promise
+          : original(m, p),
+  );
+  h.dispatch(
+    gitReadRequested('ws', 'git', 'g', {
+      kind: 'trackedDiff',
+      filePath: 'a.ts',
+      workspacePath: '/ws',
+      stage: 'unstaged',
+      allowHeadReads: true,
+      forceRefresh: false,
+      useProvidedContent: false,
+    }),
+  );
+  h.dispatch(
+    chatChangesInputChanged('ws', 'chat', 'c', {
+      changes: [
+        {
+          filePath: 'a.ts',
+          action: 'modify',
+          toolName: 'git',
+          toolCallId: 'a',
+          additions: 1,
+          deletions: 0,
+          category: 'unstaged',
+        },
+      ],
+      showStagingControls: true,
+      isAggregate: false,
+      groupByCommit: false,
+      nodeOwnedPaths: false,
+    }),
+  );
+  h.loss();
+  await settle();
+  await vi.advanceTimersByTimeAsync(0);
+  await settle();
+  expect(h.request.mock.calls.filter(([m, p]) => m === 'git.diffs' && !p.staged)).toHaveLength(1);
+  expect(h.request.mock.calls.filter(([m]) => m === 'file.read')).toHaveLength(1);
+  try {
+    denied.resolve(Promise.reject({ rpcCode: -32003, message: 'Forbidden' }));
+    await settle();
+    const c = getItem(h.store.getState().chatChanges.byWorkspaceId.ws.consumers, 'chat');
+    expect(
+      rendererEventRecovery
+        .captureAuthority(chatContentRecoveryKey('ws', 'chat', c.resourceKey, c.requestId))
+        .isCurrent(),
+    ).toBe(false);
+  } finally {
+    held.resolve({ content: 'obsolete' });
+    await settle();
+  }
+});

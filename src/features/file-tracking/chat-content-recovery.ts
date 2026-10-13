@@ -215,6 +215,7 @@ export function installChatChangesRecovery(
           const ordinary = async (
             lifetime: import('$shared/event-recovery/resource').RecoveryLifetime,
           ) => {
+            const onFailure = captureGitReadRetirement(key);
             try {
               const changes = await serializeGitRead(
                 key,
@@ -231,7 +232,7 @@ export function installChatChangesRecovery(
                   return readChatContentSnapshot(
                     wsId,
                     latest,
-                    captured.transport,
+                    { ...captured.transport, onFailure },
                     () => current() && lifetime.commit(() => undefined),
                   );
                 },
@@ -251,8 +252,9 @@ export function installChatChangesRecovery(
             onEvent: (_notification, lifetime) => ordinary(lifetime),
             acceptsEvent: (notification) =>
               gitEventMatchesRoot(notification, consumer.options.gitRootId),
-            read: (reader) =>
-              serializeGitRead(
+            read: (reader) => {
+              const onFailure = captureGitReadRetirement(key);
+              return serializeGitRead(
                 key,
                 () => current() && reader.lifetime.isCurrent(),
                 async () => {
@@ -267,11 +269,12 @@ export function installChatChangesRecovery(
                   return readChatContentSnapshot(
                     wsId,
                     latest,
-                    { key: captured.recoveryKey, request: reader.request },
+                    { key: captured.recoveryKey, request: reader.request, onFailure },
                     () => current() && reader.lifetime.isCurrent(),
                   );
                 },
-              ),
+              );
+            },
             apply: (changes) => {
               store.dispatch(chatChangesRecovered(wsId, id, requestId, resourceKey, changes));
             },
@@ -283,7 +286,11 @@ export function installChatChangesRecovery(
               store.dispatch(chatChangesRecovered(wsId, id, requestId, resourceKey, [], true));
             },
           });
-          const unbind = bindGitReadTransport(key, captured.transport);
+          const unbind = bindGitReadTransport(
+            key,
+            captured.transport,
+            captureGitReadRetirement(key),
+          );
           rows.set(key, {
             owner,
             rootKey,

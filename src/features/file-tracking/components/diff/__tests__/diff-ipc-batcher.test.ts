@@ -1045,3 +1045,37 @@ it.each([false, true])(
     expect(request).toHaveBeenCalledTimes(2);
   },
 );
+
+it.each(['showFile', 'numstat'] as const)(
+  'notifies each joined %s caller of a late denial without another physical request',
+  async (method) => {
+    let finish!: (value: { retired: boolean; errors: unknown[] }) => void;
+    const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+      finish = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion);
+    const key = {};
+    const request = vi.fn().mockRejectedValue(timeout);
+    const first = { key, request, onFailure: vi.fn() };
+    const joined = { key, request, onFailure: vi.fn() };
+    const fresh = {
+      key: {},
+      request: vi.fn().mockResolvedValue(method === 'showFile' ? { content: 'new' } : []),
+      onFailure: vi.fn(),
+    };
+    const read = (transport: typeof first) =>
+      method === 'showFile'
+        ? dedupedShowFile('joined', 'HEAD', 'a.ts', { transport })
+        : dedupedGitNumstat('joined', { transport });
+    await expect(read(first)).rejects.toBe(timeout);
+    await expect(read(joined)).rejects.toBe(timeout);
+    await read(fresh);
+    expect(request).toHaveBeenCalledTimes(1);
+    const denial = { rpcCode: -32003, message: 'Forbidden' };
+    finish({ retired: false, errors: [denial] });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(first.onFailure).toHaveBeenCalledWith(denial);
+    expect(joined.onFailure).toHaveBeenCalledWith(denial);
+    expect(fresh.onFailure).not.toHaveBeenCalled();
+  },
+);

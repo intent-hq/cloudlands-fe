@@ -1,5 +1,9 @@
 import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
-import { gitReadDrained, gitReadFailureDrained } from '../../git-recovery-read-lane';
+import {
+  gitReadDrained,
+  gitReadFailureDrained,
+  observeGitReadFailure,
+} from '../../git-recovery-read-lane';
 /**
  * Request coalescer / deduper for the diff viewers' git reads.
  *
@@ -130,6 +134,7 @@ interface DiffReadPolicy {
 interface PendingDiff {
   transport?: GitReadTransport;
   callers: Map<string, Array<() => boolean>>;
+  transports: Map<string, Array<{ transport: GitReadTransport; canRead: () => boolean }>>;
   paths: Set<string>;
   resolvers: Map<string, Array<(chunk: DiffChunk | undefined) => void>>;
   rejecters: Array<(err: unknown) => void>;
@@ -146,6 +151,30 @@ interface PendingDiff {
 /** A shared read remains authorized while at least one caller still needs this path. */
 function hasActiveCaller(pending: PendingDiff, path: string): boolean {
   return pending.callers.get(path)?.some((canRead) => canRead()) ?? false;
+}
+
+/** Capture each participating owner's observer before dispatch, without changing batching identity. */
+function batchTransport(
+  pending: PendingDiff,
+  paths = [...pending.callers.keys()],
+): GitReadTransport | undefined {
+  const transports = paths.flatMap((path) =>
+    (pending.transports.get(path) ?? [])
+      .filter((caller) => caller.canRead())
+      .map((caller) => caller.transport),
+  );
+  const first = transports[0];
+  if (!first) return pending.transport;
+  const observers = new Set(transports.map((transport) => transport.onFailure));
+  const onFailure = (error: unknown) => {
+    for (const observer of observers) observer?.(error);
+  };
+  return {
+    key: first.key,
+    onFailure,
+    request: <T>(method: string, params?: unknown) =>
+      observeGitReadFailure(first.request<T>(method, params), onFailure),
+  };
 }
 
 function resolveAbortedGroup(pending: PendingDiff): void {
@@ -396,7 +425,7 @@ function sharedFullTreeDiffRead(
     transportId(transport),
   ]);
   const existing = pendingFullTreeReads.get(key);
-  if (existing) return existing;
+  if (existing) return observeGitReadFailure(existing, transport?.onFailure);
 
   const promise = (transport?.request ?? backendRequest)<unknown>(
     'git.diffs',
@@ -409,7 +438,7 @@ function sharedFullTreeDiffRead(
   });
 
   pendingFullTreeReads.set(key, promise);
-  return promise;
+  return observeGitReadFailure(promise, transport?.onFailure);
 }
 
 async function flushDiffGroup(key: string) {
@@ -440,7 +469,8 @@ async function flushDiffGroup(key: string) {
       resolveAbortedGroup(pending);
       return;
     }
-    const result = await (pending.transport?.request ?? backendRequest)<unknown>(
+    const transport = batchTransport(pending);
+    const result = await (transport?.request ?? backendRequest)<unknown>(
       'git.diffs',
       staged
         ? { workspaceId: wsId, staged: true, paths, ...(gitRootId ? { gitRootId } : {}) }
@@ -483,12 +513,7 @@ async function flushDiffGroup(key: string) {
         { workspaceId: wsId, staged, paths: suspiciousUnmatched },
       );
       try {
-        const recoveryChunks = await sharedFullTreeDiffRead(
-          wsId,
-          staged,
-          gitRootId,
-          pending.transport,
-        );
+        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged, gitRootId, transport);
         for (const path of suspiciousUnmatched) {
           matches.set(path, findChunkForPath(recoveryChunks, path));
         }
@@ -527,7 +552,10 @@ async function flushDiffGroup(key: string) {
           gitlinkByChunk.get(chunk),
           gitRootId,
           pending.gitRootPath,
-          pending.transport,
+          batchTransport(
+            pending,
+            [...matches].filter(([, match]) => match === chunk).map(([path]) => path),
+          ),
         ),
       ),
     );
@@ -581,8 +609,9 @@ async function flushBranchBaseDiffGroup(key: string) {
       baseCommitSha: baseCommitSha || undefined,
       targetRef: 'HEAD',
     };
-    const result: GitDiffResponse = pending.transport
-      ? { success: true, data: await pending.transport.request('git.branchDiff', params) }
+    const transport = batchTransport(pending);
+    const result: GitDiffResponse = transport
+      ? { success: true, data: await transport.request('git.branchDiff', params) }
       : ((await invoke('git:diff', params)) as GitDiffResponse);
 
     const chunks = result?.success && Array.isArray(result.data) ? result.data : [];
@@ -632,6 +661,7 @@ export function batchedGitDiff(
     paths: new Set(),
     resolvers: new Map(),
     callers: new Map(),
+    transports: new Map(),
     rejecters: [],
     timer: null,
     wirePaths: new Map(),
@@ -661,6 +691,11 @@ export function batchedGitDiff(
     }
     const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
     const callers = pending.callers.get(filePath) ?? [];
+    if (options?.transport) {
+      const transports = pending.transports.get(filePath) ?? [];
+      transports.push({ transport: options.transport, canRead });
+      pending.transports.set(filePath, transports);
+    }
     callers.push(canRead);
     pending.callers.set(filePath, callers);
     resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
@@ -687,6 +722,7 @@ export function batchedGitBranchBaseDiff(
     paths: new Set(),
     resolvers: new Map(),
     callers: new Map(),
+    transports: new Map(),
     rejecters: [],
     timer: null,
     transport: options.transport,
@@ -705,6 +741,11 @@ export function batchedGitBranchBaseDiff(
     }
     const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
     const callers = pending.callers.get(filePath) ?? [];
+    if (options?.transport) {
+      const transports = pending.transports.get(filePath) ?? [];
+      transports.push({ transport: options.transport, canRead });
+      pending.transports.set(filePath, transports);
+    }
     callers.push(canRead);
     pending.callers.set(filePath, callers);
     resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
@@ -750,7 +791,7 @@ export function dedupedShowFile(
     transportId(opts?.transport),
   ]);
   const existing = pendingShows.get(key);
-  if (existing) return existing.promise;
+  if (existing) return observeGitReadFailure(existing.promise, opts?.transport?.onFailure);
 
   const promise = (opts?.transport?.request ?? backendRequest)<{ content?: unknown }>(
     'git.showFile',
@@ -779,7 +820,7 @@ export function dedupedShowFile(
   });
 
   pendingShows.set(key, { promise });
-  return promise;
+  return observeGitReadFailure(promise, opts?.transport?.onFailure);
 }
 
 function numstatKey(workspaceId: string, options: NumstatOptions): string {
@@ -801,7 +842,7 @@ export function dedupedGitNumstat(
   if (options.gitRootId) return Promise.reject(new Error('Secondary-root numstat is unavailable'));
   const key = numstatKey(workspaceId, options);
   const existing = pendingNumstats.get(key);
-  if (existing) return existing;
+  if (existing) return observeGitReadFailure(existing, options.transport?.onFailure);
 
   const { transport, ...params } = options;
   const promise = (
@@ -816,5 +857,5 @@ export function dedupedGitNumstat(
   });
 
   pendingNumstats.set(key, promise);
-  return promise;
+  return observeGitReadFailure(promise, options.transport?.onFailure);
 }
