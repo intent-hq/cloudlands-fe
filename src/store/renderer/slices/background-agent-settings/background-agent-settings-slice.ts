@@ -1,3 +1,8 @@
+import {
+  settingsRecoveryInvalidated,
+  settingsAuthorityRetired,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { m } from '$shared/paraglide/messages.js';
@@ -436,3 +441,12 @@ export function reconcileBackgroundSettings(
 backgroundAgentSettingsReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) =>
   reconcileBackgroundSettings(state, ack),
 );
+
+backgroundAgentSettingsReducer.with(settingsRecoveryInvalidated, (state) => ({
+  ...state,
+  persistencePending: false,
+  pendingFields: {},
+  persistenceGeneration: (state.persistenceGeneration ?? 0) + 1,
+}));
+backgroundAgentSettingsReducer.with(settingsAuthorityRetired, () => initialState);
+backgroundAgentSettingsReducer.with(settingsSnapshotReplacing, () => initialState);

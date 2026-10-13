@@ -1000,3 +1000,39 @@ it('routes workspace snapshots and MCP reads while keeping the global rules sent
     workspaceId: 'global',
   });
 });
+
+describe('settings cache authority retirement', () => {
+  it('does not share a held read or completed value with the replacement session', async () => {
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    const held = deferred<{ definition: { path: string }; value: string }>();
+    mockedRequest.mockReturnValueOnce(held.promise as never);
+    const old = readSetting('private').catch(() => null);
+    rendererEventRecovery.dispose();
+    mockedRequest.mockResolvedValueOnce({ definition: { path: 'private' }, value: 'new' });
+    const current = readSetting('private');
+    held.resolve({ definition: { path: 'private' }, value: 'old' });
+    expect(await old).toBeNull();
+    expect(await current).toMatchObject({ value: 'new' });
+    expect(await readSetting('private')).toMatchObject({ value: 'new' });
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    rendererEventRecovery.dispose();
+    mockedRequest.mockResolvedValueOnce({ definition: { path: 'private' }, value: 'third' });
+    expect(await readSetting('private')).toMatchObject({ value: 'third' });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+});
+
+it('coalesces parallel catalog reads and reads again after the first completes', async () => {
+  const held = deferred<{ settings: unknown[]; revision: number }>();
+  mockedRequest.mockReturnValueOnce(held.promise as never);
+  const client = new LiveSettingsClient();
+  const a = client.listSnapshot();
+  const b = client.listSnapshot();
+  await Promise.resolve();
+  expect(mockedRequest).toHaveBeenCalledTimes(1);
+  held.resolve({ settings: [], revision: 1 });
+  expect(await a).toEqual(await b);
+  mockedRequest.mockResolvedValueOnce({ settings: [], revision: 2 });
+  expect((await client.listSnapshot()).revision).toBe(2);
+  expect(mockedRequest).toHaveBeenCalledTimes(2);
+});

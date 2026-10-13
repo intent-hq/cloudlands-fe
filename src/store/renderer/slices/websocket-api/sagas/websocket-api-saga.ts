@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { buffers, channel as createChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -17,7 +18,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import {
   beginWebsocketCredentialRequest,
-  clearAllWebsocketCredentials,
+  resetWebsocketCredentials,
   clearWebsocketCredentials,
   readWebsocketToken,
   readPersonalPairingUri,
@@ -73,10 +74,11 @@ async function pairing(
   client: typeof localMachineClient,
   request: SettingsFormRequest,
 ): Promise<Omit<ServerPairingInfo, 'token'>> {
+  const work = captureSettingsWork();
   // Credential-bearing results never cross a saga effect/result diagnostic boundary.
   try {
     const { token, ...info } = await client.server.pairingInfo();
-    receiveWebsocketCredentials(request, { token, qrDataUrl: '' });
+    if (work.isCurrent()) receiveWebsocketCredentials(request, { token, qrDataUrl: '' });
     return info;
   } catch {
     throw new Error(m.settings_wsApi_serverNotRunning());
@@ -179,6 +181,10 @@ function* loadMobile(
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
+  if (!captureSettingsWork().isCurrent()) {
+    yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
+    return;
+  }
   const context = 'context' in intent ? intent.context : undefined;
   const client = intent.connectionId === LOCAL_CONNECTION_ID ? appClient : localMachineClient;
   let snapshot = yield* selectWebsocketApiSnapshot.effect(request);
@@ -509,6 +515,6 @@ export function* websocketApiSaga(): SagaGenerator<void> {
     writes.close();
     reads.close();
     timers.close();
-    clearAllWebsocketCredentials();
+    resetWebsocketCredentials();
   }
 }

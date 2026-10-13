@@ -77,3 +77,12 @@ export function readPersonalPairingUri(identity: SettingsFormRequest): string {
   const recipient = recipients.get(identity.formId);
   return recipient?.sessionId === identity.sessionId ? (recipient.value.pairingUri ?? '') : '';
 }
+
+/** Clear secrets and pending delivery while preserving mounted panel callbacks. */
+export function resetWebsocketCredentials(): void {
+  for (const recipient of recipients.values()) {
+    recipient.requestIds = {};
+    recipient.value = { token: '', qrDataUrl: '' };
+    recipient.receive(recipient.value);
+  }
+}

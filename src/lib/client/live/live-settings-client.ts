@@ -1,3 +1,9 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  GLOBAL_SETTINGS_RECOVERY_KEY,
+  GLOBAL_MCP_RECOVERY_KEY,
+  trackSettingsRead,
+} from '$features/settings/settings-recovery-lifetime';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { validateMcpServerIdentities } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 /**
@@ -68,11 +74,30 @@ type UserPrefsResult = UserPreferencesState | null;
 const GLOBAL_RULES_WORKSPACE_ID = 'global';
 
 type PendingSettingRead = {
+  receipt: SettingsReceipt;
   generation: number;
   promise: Promise<SettingDefinitionWithValue | null>;
 };
 
-const settingCache = new Map<string, SettingDefinitionWithValue | null>();
+type SettingsReceipt = ReturnType<typeof rendererEventRecovery.capture>;
+const settingCache = new Map<
+  string,
+  { value: SettingDefinitionWithValue | null; receipt: SettingsReceipt }
+>();
+function captureSettings(workspaceId?: string) {
+  return rendererEventRecovery.capture(
+    workspaceId
+      ? `workspace-catalog:${JSON.stringify([workspaceId])}`
+      : GLOBAL_SETTINGS_RECOVERY_KEY,
+  );
+}
+function assertSettingsCurrent(receipt: SettingsReceipt): void {
+  if (!receipt.commit(() => {})) throw new Error('Settings request lifetime retired');
+}
+const pendingSnapshots = new Map<
+  string,
+  { receipt: SettingsReceipt; promise: Promise<SettingsSnapshot>; trailing?: boolean }
+>();
 const pendingSettingReads = new Map<string, PendingSettingRead>();
 const trailingSettingReads = new Map<string, Promise<SettingDefinitionWithValue | null>>();
 let settingsGeneration = 0;
@@ -140,9 +165,19 @@ export function readSetting(
 ): Promise<SettingDefinitionWithValue | null> {
   ensureSettingsLifecycle();
   const key = settingKey(path, workspaceId);
-  if (settingCache.has(key)) return Promise.resolve(settingCache.get(key) ?? null);
+  const receipt = captureSettings(workspaceId);
+  if (!receipt.commit(() => {}))
+    return Promise.reject(new Error('Settings request lifetime retired'));
+  const cached = settingCache.get(key);
+  if (cached?.receipt.commit(() => {})) return Promise.resolve(cached.value);
+  settingCache.delete(key);
 
-  const pending = pendingSettingReads.get(key);
+  let pending = pendingSettingReads.get(key);
+  if (pending && pending.receipt.key !== receipt.key) {
+    pendingSettingReads.delete(key);
+    trailingSettingReads.delete(key);
+    pending = undefined;
+  }
   if (pending?.generation === settingsGeneration) return pending.promise;
   if (pending) {
     const trailing = trailingSettingReads.get(key);
@@ -150,7 +185,7 @@ export function readSetting(
     const run = pending.promise
       .catch(() => null)
       .then(() => {
-        if (trailingSettingReads.get(key) !== run) return null;
+        if (trailingSettingReads.get(key) !== run || !receipt.commit(() => {})) return null;
         trailingSettingReads.delete(key);
         return readSetting(path, workspaceId);
       })
@@ -170,23 +205,27 @@ export function readSetting(
   }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) })
     .then(parseSettingResult)
     .then((setting) => {
-      if (generation === settingsGeneration) settingCache.set(key, setting);
+      assertSettingsCurrent(receipt);
+      if (generation === settingsGeneration) settingCache.set(key, { value: setting, receipt });
       return setting;
     })
     .finally(() => {
       if (pendingSettingReads.get(key)?.promise === run) pendingSettingReads.delete(key);
     });
-  pendingSettingReads.set(key, { generation, promise: run });
+  pendingSettingReads.set(key, { generation, promise: run, receipt });
   return run;
 }
 
 /** Strict shared settings.update mutation with immediate read-cache invalidation. */
 export async function updateSettings(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
   if (changes.length === 0) return { applied: [], revision: 0 };
+  const receipt = captureSettings();
+  assertSettingsCurrent(receipt);
   const result = await backendRequest<{
     applied?: AppliedSettingChange[];
     revision?: unknown;
   }>('settings.update', { changes });
+  assertSettingsCurrent(receipt);
   invalidateSettingsReadCache(changes.map(({ path }) => path));
   return {
     applied: Array.isArray(result?.applied) ? result.applied : [],
@@ -198,6 +237,7 @@ export async function updateSettings(changes: AppSettingChange[]): Promise<Setti
 export function resetSettingsConnectionCache(): void {
   invalidateSettingsReadCache();
   pendingSettingReads.clear();
+  pendingSnapshots.clear();
   trailingSettingReads.clear();
 }
 
@@ -220,13 +260,47 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async listSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
+    const key = workspaceId ?? '';
+    const receipt = captureSettings(workspaceId);
+    const current = pendingSnapshots.get(key);
+    if (current && current.receipt.key === receipt.key) {
+      if (current.trailing || current.receipt.commit(() => {})) return current.promise;
+      const promise = current.promise
+        .then(() => {
+          assertSettingsCurrent(receipt);
+          return this.readSnapshot(workspaceId);
+        })
+        .catch(() => ({ settings: [], revision: 0 }))
+        .finally(() => {
+          if (pendingSnapshots.get(key)?.promise === promise) pendingSnapshots.delete(key);
+        });
+      pendingSnapshots.set(key, { receipt, promise, trailing: true });
+      return promise;
+    }
+    const promise = this.readSnapshot(workspaceId).finally(() => {
+      if (pendingSnapshots.get(key)?.promise === promise) pendingSnapshots.delete(key);
+    });
+    pendingSnapshots.set(key, { receipt, promise });
+    return promise;
+  }
+
+  private async readSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
     ensureSettingsLifecycle();
     const generation = settingsGeneration;
+    const receipt = captureSettings(workspaceId);
     try {
-      const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
-        'settings.list',
-        ...(workspaceId ? [{ workspaceId }] : []),
+      assertSettingsCurrent(receipt);
+      const result = await trackSettingsRead(
+        workspaceId
+          ? `workspace-catalog:${JSON.stringify([workspaceId])}`
+          : GLOBAL_SETTINGS_RECOVERY_KEY,
+        () =>
+          backendRequest<{ settings?: unknown[]; revision?: unknown }>(
+            'settings.list',
+            ...(workspaceId ? [{ workspaceId }] : []),
+          ),
       );
+      assertSettingsCurrent(receipt);
       const snapshot = {
         settings: Array.isArray(result?.settings)
           ? (result.settings as SettingDefinitionWithValue[])
@@ -235,7 +309,7 @@ export class LiveSettingsClient implements SettingsClient {
       };
       if (generation === settingsGeneration) {
         for (const setting of snapshot.settings)
-          settingCache.set(settingKey(setting.path, workspaceId), setting);
+          settingCache.set(settingKey(setting.path, workspaceId), { value: setting, receipt });
       }
       return snapshot;
     } catch {
@@ -260,10 +334,13 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async reset(path: string): Promise<AppliedSettingChange | null> {
+    const receipt = captureSettings();
     try {
+      assertSettingsCurrent(receipt);
       const result = await backendRequest<{ path?: string; value?: unknown }>('settings.reset', {
         path,
       });
+      assertSettingsCurrent(receipt);
       if (typeof result?.path !== 'string') return null;
       invalidateSettingsReadCache([result.path]);
       return { path: result.path, value: result.value };
@@ -422,9 +499,18 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
+    const receipt = rendererEventRecovery.capture(GLOBAL_MCP_RECOVERY_KEY);
+    const request = async (method: string, params: unknown) => {
+      assertSettingsCurrent(receipt);
+      const result = await backendRequest(method, params);
+      assertSettingsCurrent(receipt);
+      return result;
+    };
     try {
+      assertSettingsCurrent(receipt);
       validateMcpServerIdentities(servers);
       const existing = await listWireMcpServers();
+      assertSettingsCurrent(receipt);
       const existingById = new Map(existing.map((server) => [server.id, server]));
       const desired = servers.map((config) => {
         if (config.id !== undefined) return { config, current: existingById.get(config.id) };
@@ -441,12 +527,12 @@ export class LiveSettingsClient implements SettingsClient {
       }
       for (const server of existing) {
         if (server.id && !desiredIds.has(server.id)) {
-          await backendRequest('mcp.servers.delete', { serverId: server.id });
+          await request('mcp.servers.delete', { serverId: server.id });
         }
       }
       for (const { config, current } of desired) {
         if (!current?.id) {
-          await backendRequest('mcp.servers.create', {
+          await request('mcp.servers.create', {
             config: toWireMcpConfig(config, config.id),
           });
           continue;
@@ -459,7 +545,7 @@ export class LiveSettingsClient implements SettingsClient {
           headers: config.headers ?? current.headers,
         };
         if (!sameMcpConfigBody(current, desiredConfig)) {
-          await backendRequest('mcp.servers.update', {
+          await request('mcp.servers.update', {
             serverId: current.id,
             config: toWireMcpConfig(desiredConfig, current.id),
           });
@@ -467,7 +553,7 @@ export class LiveSettingsClient implements SettingsClient {
         const desiredEnabled = config.disabled !== true;
         const currentEnabled = current.enabled !== false;
         if (currentEnabled !== desiredEnabled) {
-          await backendRequest('mcp.servers.toggle', {
+          await request('mcp.servers.toggle', {
             serverId: current.id,
             enabled: desiredEnabled,
           });
@@ -599,7 +685,7 @@ interface WireMcpServerStatus {
  * the same id back (§5.22), so correlation must not depend on the echo; a
  * mismatched echo is dropped rather than mis-correlated.
  */
-function fromWireMcpStatus(
+export function fromWireMcpStatus(
   serverId: string,
   wire: WireMcpServerStatus | undefined,
 ): McpServerRuntimeStatus | null {
@@ -634,7 +720,7 @@ async function listWireMcpServers(workspaceId?: string): Promise<WireMcpServerCo
 }
 
 /** Map a wire config (§5.22) to the FE `McpServerConfig` shape; `null` when nameless. */
-function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
+export function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   if (typeof wire?.name !== 'string' || !wire.name) return null;
   const type = wire.transport === 'http' || wire.transport === 'sse' ? wire.transport : 'stdio';
   const config: McpServerConfig = { name: wire.name, type };

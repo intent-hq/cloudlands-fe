@@ -11,6 +11,12 @@ const mocks = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 
+vi.mock('./settings-recovery', () => ({
+  installSettingsRecovery: () => () => {},
+  recordSettingsSnapshotRevision: () => {},
+  getSettingsSnapshotRevision: () => -1,
+}));
+
 vi.mock('$lib/client', () => ({
   appClient: {
     settings: {

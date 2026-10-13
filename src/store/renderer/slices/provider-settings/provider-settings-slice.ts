@@ -1,3 +1,8 @@
+import {
+  settingsRecoveryInvalidated,
+  settingsAuthorityRetired,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -366,3 +371,15 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
   delete pending[providerId];
   return { ...state, fastMode: { ...state.fastMode, pending } };
 });
+
+providerSettingsReducer.with(settingsRecoveryInvalidated, (state) => ({
+  ...state,
+  pendingEnablementOverrides: {},
+  fastMode: { ...state.fastMode, pending: {} },
+}));
+providerSettingsReducer.with(settingsAuthorityRetired, () => initialState);
+providerSettingsReducer.with(settingsSnapshotReplacing, (state) => ({
+  ...initialState,
+  sessions: state.sessions,
+  pathsRevision: state.pathsRevision + 1,
+}));

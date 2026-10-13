@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { collaborationMachineNameClient } from '$lib/components/settings/collaboration-machine-name.client';
 import { validCollaborationMachineName } from '$shared/collaboration-machine-name';
 import { all, call, cancelled, put, race, take, type SagaGenerator } from 'typed-redux-saga';
@@ -6,7 +7,11 @@ import { appClient } from '$lib/client';
 import type { SettingDefinitionWithValue } from '$lib/client/app-client';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
-import { FEATURE_PATHS } from '$lib/components/settings/agent-feature-definitions';
+import {
+  settingsFormPaths as paths,
+  isSettingsFormValue as isValue,
+  catalogEntry,
+} from '../settings-form-catalog';
 import { refreshAutoCommitSettings } from '../../workspace-settings/workspace-settings-slice';
 import {
   selectSettingsForm,
@@ -27,54 +32,6 @@ import type {
   SettingsFormRequest,
   SettingsFormValue,
 } from '../settings-events-types';
-
-const paths = {
-  'collaboration-machine-name': ['sharing.machineName'],
-  'agent-backend': [
-    'agents.maxConcurrent',
-    'agents.memoryBudgetMb',
-    'agents.idleReapMinutes',
-    'agents.acpNodeMaxOldSpaceMb',
-  ],
-  'agent-features': [...FEATURE_PATHS, 'prMonitor.debounceSeconds', 'agents.maxTopLevelAgents'],
-  'workspace-api': [
-    'workspaceApi.maxOutputChars',
-    'workspaceApi.toonOutput',
-    'agents.historyReplayToolContentChars',
-    'agents.toolPayloadRetentionDays',
-  ],
-  'git-workspace': [
-    'workspace.worktreesLocation',
-    'workspace.sshKeyPath',
-    'workspace.defaultShell',
-    'git.autoCommit',
-    'workspace.cowIsolation',
-    'workspace.branchPrefix',
-    'sourceControl.github.exposeGitCredentialToChildren',
-  ],
-} satisfies Partial<Record<SettingsFormKind, string[]>>;
-
-function isValue(value: unknown): value is SettingsFormValue {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value)) ||
-    (Array.isArray(value) && value.every((item) => typeof item === 'string'))
-  );
-}
-
-function catalogEntry(entry: SettingDefinitionWithValue): SettingsFormEntry {
-  if (!isValue(entry.value)) throw new Error('Unsupported settings value');
-  return {
-    path: entry.path,
-    value: entry.value,
-    ...(isValue(entry.defaultValue) ? { defaultValue: entry.defaultValue } : {}),
-    ...(entry.min !== undefined ? { min: entry.min } : {}),
-    ...(entry.max !== undefined ? { max: entry.max } : {}),
-    ...(entry.tokenImpact !== undefined ? { tokenImpact: entry.tokenImpact } : {}),
-  };
-}
 
 function loadError(kind: SettingsFormKind, error: string) {
   switch (kind) {
@@ -138,6 +95,12 @@ function* optionalSetting(path: string): SagaGenerator<SettingDefinitionWithValu
 }
 
 function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) {
+    yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
+    return;
+  }
+
   const form = yield* selectSettingsForm.effect(request);
   if (!form || !(form.kind in paths) || !(yield* selectSettingsFormRequestCurrent.effect(request)))
     return;
@@ -146,6 +109,7 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
     let settings: SettingDefinitionWithValue[];
     if (form.kind === 'collaboration-machine-name') {
       const result = yield* call(collaborationMachineNameClient.read);
+      if (!work.isCurrent()) return;
       if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       yield* put(
         settingsFormRequestSettled(request, {
@@ -164,10 +128,12 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
             : call(optionalSetting, path),
         ),
       );
+      if (!work.isCurrent()) return;
       if (!entries[0]) throw new Error('Settings unavailable');
       settings = entries.filter((entry): entry is SettingDefinitionWithValue => entry !== null);
     } else {
       settings = yield* call([appClient.settings, appClient.settings.list]);
+      if (!work.isCurrent()) return;
       if (settings.length === 0) throw new Error('Settings unavailable');
     }
     const entries = settings.filter((entry) => wanted.includes(entry.path)).map(catalogEntry);
@@ -185,17 +151,20 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
     }
     if (form.kind === 'git-workspace') {
       const caps = yield* call([appClient.system, appClient.system.capabilities]);
+      if (!work.isCurrent()) return;
       values.cowSupported = caps.cowSupported === true;
     }
     yield* put(settingsFormRequestSettled(request, { status: 'succeeded', entries, values }));
   } catch (error) {
+    if (!work.isCurrent()) return;
     if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
     const message = loadError(form.kind, error instanceof Error ? error.message : String(error));
     yield* put(settingsFormRequestSettled(request, { status: 'failed', error: message }));
     if (form.kind === 'agent-features' || form.kind === 'workspace-api')
       yield* call(notify.error, message);
+    if (!work.isCurrent()) return;
   } finally {
-    if (yield* cancelled())
+    if ((yield* cancelled()) || !work.isCurrent())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }
@@ -221,6 +190,12 @@ type SaveAction = ReturnType<typeof settingsFormSaveRequested>;
 
 function* saveForm(action: SaveAction): SagaGenerator<void> {
   const [request, changes] = action.payload;
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) {
+    yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
+    return;
+  }
+
   const form = yield* selectSettingsForm.effect(request);
   if (!form || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
   if (!form.loaded) {
@@ -254,6 +229,7 @@ function* saveForm(action: SaveAction): SagaGenerator<void> {
             },
           ]
         : yield* call([appClient.settings, appClient.settings.update], changes);
+    if (!work.isCurrent()) return;
     if (
       form.kind === 'collaboration-machine-name' &&
       !(yield* selectSettingsFormRequestCurrent.effect(request))
@@ -306,12 +282,15 @@ function* saveForm(action: SaveAction): SagaGenerator<void> {
       yield* put(settingsFormRequestSettled(request, { status: 'failed', error }));
       if (form.kind === 'agent-features' || form.kind === 'workspace-api')
         yield* call(notify.error, error);
+      if (!work.isCurrent()) return;
     } else {
       yield* put(settingsFormRequestSettled(request, { status: 'succeeded' }));
       const message = form.kind === 'workspace-api' ? savedMessage(request.resource) : null;
       if (message) yield* call(notify.success, message);
+      if (!work.isCurrent()) return;
     }
   } catch (error) {
+    if (!work.isCurrent()) return;
     if (form.kind === 'agent-backend') {
       yield* put(
         settingsFormSaveQueueFailed(
@@ -332,8 +311,9 @@ function* saveForm(action: SaveAction): SagaGenerator<void> {
     yield* put(settingsFormRequestSettled(request, { status: 'failed', error: message }));
     if (form.kind === 'agent-features' || form.kind === 'workspace-api')
       yield* call(notify.error, message);
+    if (!work.isCurrent()) return;
   } finally {
-    if (yield* cancelled())
+    if ((yield* cancelled()) || !work.isCurrent())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

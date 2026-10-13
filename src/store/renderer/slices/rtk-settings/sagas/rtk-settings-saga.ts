@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { buffers, channel as createChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -77,6 +78,10 @@ function* installFollowup(request: SettingsFormRequest, terminalId: string): Sag
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
+  if (!captureSettingsWork().isCurrent()) {
+    yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
+    return;
+  }
   let error: string | undefined;
   const values: Record<string, SettingsFormValue> = {};
   try {

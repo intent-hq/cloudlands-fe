@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { all, call, cancelled, put, takeEvery, takeLatest } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
@@ -28,9 +29,13 @@ import {
 } from '../provider-settings-slice';
 
 function* loadPaths() {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
+
   const revision = yield* selectProviderPathsRevision.effect();
   try {
     const entry = yield* call([appClient.settings, appClient.settings.get], 'providers.paths');
+    if (!work.isCurrent()) return;
     const value = entry?.value;
     const configured: Record<string, string> = {};
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -49,6 +54,7 @@ function* loadPaths() {
       }>,
       PROVIDERS_CHANNELS.GET_PATHS,
     );
+    if (!work.isCurrent()) return;
     if (!result.success || !result.data) {
       yield* put(providerPathsFailed(revision));
       return;
@@ -62,6 +68,7 @@ function* loadPaths() {
       }),
     );
   } catch {
+    if (!work.isCurrent()) return;
     yield* put(providerPathsFailed(revision));
   } finally {
     if (yield* cancelled()) yield* put(providerPathsFailed(revision));
@@ -71,11 +78,16 @@ function* loadPaths() {
 type AdapterReads = { revision: number };
 
 function* checkPiAdapter(reads: AdapterReads) {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
+
   const revision = ++reads.revision;
   try {
     const installed = yield* call(checkPiMcpAdapterInstalled);
+    if (!work.isCurrent()) return;
     if (revision === reads.revision) yield* put(piAdapterCheckSettled(installed));
   } catch {
+    if (!work.isCurrent()) return;
     if (revision === reads.revision) yield* put(piAdapterCheckSettled(null));
   } finally {
     if ((yield* cancelled()) && revision === reads.revision)
@@ -97,30 +109,42 @@ function* installPiAdapter(
   reads: AdapterReads,
   action: ReturnType<typeof piAdapterInstallRequested>,
 ) {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
+
   const [request] = action.payload;
   if (!(yield* selectProviderSettingsSessionActive.effect(request.sessionId))) {
     yield* call(cancelPiInstall, action);
+    if (!work.isCurrent()) return;
     return;
   }
   try {
     const result = yield* call(installPiMcpAdapter);
+    if (!work.isCurrent()) return;
     if (!result?.success) throw new Error(result?.error || m.settings_providers_unknownError());
     yield* call(checkPiAdapter, reads);
+    if (!work.isCurrent()) return;
     yield* put(providerSettingsRequestSettled(request.id, 'success'));
     if (yield* selectProviderSettingsSessionActive.effect(request.sessionId)) {
       const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+      if (!work.isCurrent()) return;
       yield* call(notify.success, m.settings_providers_piAdapterInstalled());
+      if (!work.isCurrent()) return;
     }
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(providerSettingsRequestSettled(request.id, 'failure'));
     if (yield* selectProviderSettingsSessionActive.effect(request.sessionId)) {
       const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
+      if (!work.isCurrent()) return;
       yield* call(notify.error, m.settings_providers_piAdapterInstallFailed(), {
         description: error instanceof Error ? error.message : m.settings_providers_unknownError(),
       });
+      if (!work.isCurrent()) return;
     }
   } finally {
     if (yield* cancelled()) yield* call(cancelPiInstall, action);
+    if (!work.isCurrent()) return;
   }
 }
 
