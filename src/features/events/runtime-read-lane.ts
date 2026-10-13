@@ -1,5 +1,5 @@
 import { rendererEventRecovery } from './renderer-event-recovery';
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 
 const sessions = new WeakMap<object, Map<string, Promise<void>>>();
 
@@ -8,7 +8,7 @@ export function runtimeReadDrained(result: Promise<unknown>): Promise<void> {
   return result.then(
     () => {},
     async (error) => {
-      if (error instanceof RecoveryRequestTimeoutError) await error.drained;
+      await getPhysicalRequestCompletion(error);
     },
   );
 }

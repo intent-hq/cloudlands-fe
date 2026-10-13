@@ -27,6 +27,7 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
@@ -196,7 +197,9 @@ export class LiveNotesClient implements NotesClient {
           : result;
       if (!raw || typeof raw !== 'object') return null;
       return normalizeNote(raw as Record<string, unknown>, workspaceId);
-    } catch {
+    } catch (error) {
+      // A caller deadline is not an empty snapshot or physical completion.
+      if (error instanceof BackendError && error.code === 'TIMEOUT') throw error;
       return null;
     }
   }

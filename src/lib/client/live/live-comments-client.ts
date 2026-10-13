@@ -29,6 +29,7 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import type { TypedChannelDescriptor } from './delta-subscription';
 import { newIdempotencyKey, resolveNoteWorkspaceId, runMutation } from './live-support';
@@ -164,7 +165,9 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
       }
     }
     return out;
-  } catch {
+  } catch (error) {
+    // A caller deadline is not an empty snapshot or physical completion.
+    if (error instanceof BackendError && error.code === 'TIMEOUT') throw error;
     return [];
   }
 }
