@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useState } from 'react';
 import { EyeIcon, HandIcon } from '@phosphor-icons/react';
 import type { ContentBlock } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 import { getReadOnlyToolPresentation } from '$lib/components/chat/read-only-tool-presentation';
 import { sanitizeToolPayload, sanitizeToolText } from '$lib/components/chat/tool-display-model';
 import { extractPayloadText } from '$lib/components/chat/tool-result-pairing';
@@ -11,6 +12,8 @@ import { OPERATIONAL_INLINE_DETAILS_CLASS } from '$lib/components/chat/operation
 import { ChatOperationalRow } from '@/features/chat/components/chat-operational-row';
 import { ToolStatusIcon } from '@/features/chat/components/tool-status-icon';
 import { CopyButton } from '@/components/ui/copy-button';
+import { ListRow, ListView } from '@/components/patterns/collection';
+import { AgentAvatar } from '@/features/agent/components/agent-avatar/agent-avatar';
 import { ErrorState, LoadingState } from '@/components/patterns/screen';
 import { selectHydratedBlock } from '@/store/chat-state/chat-state-selectors';
 import { store } from '@/store';
@@ -22,12 +25,14 @@ export function WorkspaceReadOnlyTool({
   agentId,
   messageId,
   isStreaming,
+  onOpenAgent,
 }: {
   call: ContentBlock;
   resultBlock?: ContentBlock;
   agentId: string;
   messageId: string;
   isStreaming: boolean;
+  onOpenAgent: (agentId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
@@ -166,7 +171,52 @@ export function WorkspaceReadOnlyTool({
                 />
               </div>
             )}
-          {parsed.type === 'confirmation' && state !== 'error' && parsed.content ? (
+          {parsed.type === 'agent-list' && state !== 'error' && parsed.agents?.length ? (
+            <div data-workspace-agent-list-body="" className="min-w-0">
+              <ListView
+                items={parsed.agents}
+                className="max-h-64 overflow-y-auto"
+                ariaLabel={m.workspace_multiSelectSidebar_agentsTab_label()}
+                getKey={(agent, index) => `${agent.agentId}:${index}`}
+                getText={(agent) => agent.name}
+                onActivate={(agent) => {
+                  if (agent.agentId) onOpenAgent(agent.agentId);
+                }}
+                row={({ item: agent }) => (
+                  <ListRow
+                    data-tool-result-agent={agent.agentId}
+                    title={agent.name}
+                    leading={<AgentAvatar agentId={agent.agentId} variant="compact" />}
+                    trailing={
+                      agent.status ? (
+                        <span
+                          data-tool-agent-status=""
+                          className={
+                            agent.status === 'responding' || agent.status === 'running'
+                              ? 'text-success-ink'
+                              : agent.status === 'error'
+                                ? 'text-danger'
+                                : agent.status === 'idle' || agent.status === 'completed'
+                                  ? 'text-muted-foreground'
+                                  : 'text-subtle'
+                          }
+                        >
+                          {agent.status}
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                )}
+              />
+              <div className="type-caption text-subtle pt-1 border-t border-border mt-1">
+                {(parsed.agents.length === 1
+                  ? m.chat_toolDetails_agentCount_one
+                  : m.chat_toolDetails_agentCount_many)({
+                  count: formatInteger(parsed.agents.length),
+                })}
+              </div>
+            </div>
+          ) : parsed.type === 'confirmation' && state !== 'error' && parsed.content ? (
             <pre
               data-tool-confirmation-text=""
               className="m-0 p-2 text-sm leading-relaxed max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap break-words"

@@ -429,6 +429,7 @@ export function WorkspaceConversation({
                           agentId={agentId}
                           messageId={message.id}
                           isStreaming={message.isStreaming === true}
+                          onOpenAgent={(agent) => open(workspaceId, { agent })}
                           renderBlock={(block, index) => (
                             <ConversationBlock
                               key={block.id ?? index}

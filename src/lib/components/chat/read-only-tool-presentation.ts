@@ -21,15 +21,20 @@ export function getReadOnlyToolPresentation(
   const input = call.input || {};
   const result = getToolResultPayload(resultBlock);
   const parsed = parseToolResult(call.name || '', input, result);
-  const workspaceConfirmation =
-    parsed.type === 'confirmation' &&
-    (cleanToolName(call.name).toLowerCase() === 'workspace_api' ||
-      (typeof input.code === 'string' && typeof input.summary === 'string'));
+  const workspaceTool =
+    cleanToolName(call.name).toLowerCase() === 'workspace_api' ||
+    (typeof input.code === 'string' && typeof input.summary === 'string');
+  const workspaceConfirmation = workspaceTool && parsed.type === 'confirmation';
+  const workspaceAgentList =
+    workspaceTool &&
+    parsed.type === 'agent-list' &&
+    resultBlock != null &&
+    Boolean(parsed.agents?.length);
   // ACP file-kind receipts can contain only exit metadata. The canonical
   // unknown body is raw data; the human title never supplies file contents.
   const rawFileResult =
     parsed.type === 'unknown' && resultBlock != null && call.metadata?.toolKind === 'file';
-  if (!workspaceConfirmation && !rawFileResult) return null;
+  if (!workspaceConfirmation && !workspaceAgentList && !rawFileResult) return null;
   const display = classifyTool(call.name, input, result);
   const state = getToolCallState(resultBlock, isStreaming);
   const model = buildToolDisplayModel({

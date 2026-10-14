@@ -26,6 +26,57 @@ const result = (
 });
 
 describe('bounded read-only tool presentation', () => {
+  it('admits canonical agent-list rows and consumes only their exact paired result', () => {
+    const tool = {
+      ...call(),
+      input: { code: 'return await ws.agent.list()', summary: 'Read agents' },
+    };
+    const agents = [
+      { id: 'agent-a', name: 'First', status: 'running' },
+      { id: 'agent-b', name: 'Second', status: 'completed' },
+    ];
+    const paired = result('provider-call', {
+      error: null,
+      result: {
+        content: [{ type: 'text', text: JSON.stringify(agents) }],
+        structuredContent: null,
+        _meta: null,
+      },
+    });
+    const model = getReadOnlyToolPresentation(tool, paired);
+    expect(model?.parsed).toEqual({
+      type: 'agent-list',
+      agents: agents.map(({ id, ...agent }) => ({ ...agent, agentId: id })),
+    });
+    expect(model?.admitted).toBe(true);
+    const prepared = prepareReadOnlyToolContent([tool, paired, result('unmatched')]);
+    expect(prepared.pairs.get(tool)).toBe(paired);
+    expect([...prepared.consumedResults]).toEqual([paired]);
+  });
+
+  it('leaves pending, failed, empty and unsupported agent-list data in the existing fallback', () => {
+    const tool = {
+      ...call(),
+      input: { code: 'return await ws.agent.list()', summary: 'Read agents' },
+    };
+    for (const paired of [
+      undefined,
+      result('provider-call', '[]'),
+      result('provider-call', {
+        result: null,
+        error: { message: 'Not available' },
+      }),
+    ])
+      expect(getReadOnlyToolPresentation(tool, paired)).toBeNull();
+    const foreign = { ...tool, name: 'agent-list', input: {} };
+    expect(
+      getReadOnlyToolPresentation(
+        foreign,
+        result('provider-call', '[{"id":"agent-a","name":"First"}]'),
+      ),
+    ).toBeNull();
+  });
+
   it('pairs the observed ACP raw result without inventing a file body from its title', () => {
     const tool: ContentBlock = {
       ...call(),
