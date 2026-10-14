@@ -309,24 +309,23 @@ jobs:
           rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never be
-      # restored here; scoped to the intentd-src workspace (the FE checkout has
-      # no Cargo workspace). cache-on-failure keeps the compiled deps when a
-      # later step (packaging/notarization) fails after a completed cold
-      # ~15-min cargo build, so the next dispatch doesn't pay it again.
+      # Share compiler outputs through Depot on both native macOS architectures.
       - name: Configure Depot managed compiler cache
-        if: ${{ inputs.intentd_ref != '' && (runner.os != 'macOS' || matrix.arch == 'arm64') }}
-        uses: ./.github/actions/depot-rust-cache
-      - name: Cache intentd cargo build
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -711,18 +710,20 @@ jobs:
       # leg for the full rationale).
       - name: Configure Depot managed compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: ./.github/actions/depot-rust-cache
-      - name: Cache intentd cargo build
-        if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: x86_64-pc-windows-msvc
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
       # at target/release/intentd.exe. rustc locates the MSVC linker itself,
       # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -1016,15 +1017,15 @@ jobs:
       # leg for the full rationale).
       - name: Configure Depot managed compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: ./.github/actions/depot-rust-cache
-      - name: Cache intentd cargo build
-        if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
       # Explicit --target (unlike the native macOS/Windows builds): the musl
       # triple differs from the host's glibc triple, so the binary lands at
       # target/<triple>/release/intentd. CC_<target> and the per-target

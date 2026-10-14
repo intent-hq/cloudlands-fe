@@ -244,13 +244,14 @@ attribution and lineage details.
 
 ### Depot CI runners
 
-GitHub Actions checks and automation use ephemeral Depot runners. Linux jobs
-that previously used 8 CPUs retain that size, Linux ARM64 builds stay native,
-and Windows builds use Depot Windows Server 2022 with 16 CPUs. Apple Silicon
-jobs use Depot macOS 15. Native Intel packaging currently retains macos-15-large
-while its migration path is reviewed; it is not silently cross-compiled.
+Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
+when unavailable or busy. Other checks and automation use Depot. Linux ARM64
+builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
+and Apple Silicon jobs use Depot macOS 15. Native Intel desktop release and
+manual packaging builds deliberately retain GitHub's `macos-15-large` runners.
 
-From-source Rust sidecars on Depot use its managed sccache WebDAV service with
-incremental compilation disabled. Enable automatic Depot Cache access for this
-repository. Existing Cargo and pnpm dependency caches remain separate from the
-managed compiler cache. The setup fails clearly if the managed endpoint is absent.
+From-source Rust sidecars use managed sccache without Rust cache actions.
+The setup script installs a pinned, checksum-verified binary. Depot supplies
+cache access automatically; GitHub Intel runners use the `DEPOT_TOKEN` Actions
+secret. Without credentials, compilation proceeds uncached with a notice.
+pnpm dependency caching remains unchanged.
