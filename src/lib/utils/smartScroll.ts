@@ -21,6 +21,8 @@ export interface FollowBottomOptions {
   threshold?: number;
   /** Callback when follow state changes due to user interaction */
   onFollowChange?: (follow: boolean) => void;
+  /** Release pending navigation before a focused, unmodified End key follows the tail. */
+  onEndKey?: () => void;
   /**
    * Reports live geometry for controls outside the scroll container.
    *
@@ -97,6 +99,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let enabled = options.enabled ?? true;
   let isFollowing = options.follow;
   let onFollowChange = options.onFollowChange;
+  let onEndKey = options.onEndKey;
   let onScrollStateChange = options.onScrollStateChange;
   let threshold = options.threshold ?? 100;
   let pointerScrolling = false;
@@ -504,6 +507,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       document.activeElement === container
     ) {
       e.preventDefault();
+      onEndKey?.();
       follower.followAndScroll();
       return;
     }
@@ -698,6 +702,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   return {
     update(newOptions: FollowBottomOptions) {
       onFollowChange = newOptions.onFollowChange;
+      onEndKey = newOptions.onEndKey;
       onScrollStateChange = newOptions.onScrollStateChange;
       threshold = newOptions.threshold ?? 100;
       const nextEnabled = newOptions.enabled ?? true;

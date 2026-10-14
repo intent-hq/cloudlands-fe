@@ -6307,6 +6307,13 @@
           ($agentMessages$.length > 0 || pendingConversationMessages.length > 0),
         threshold: 100,
         layoutNeutralBottomAnchor: true,
+        onEndKey: () => {
+          // followBottom consumes End before our keydown cancellation listener.
+          if (cancelPreviousMessageLoad) {
+            scrollNavigationId++;
+            cancelPreviousMessageLoad();
+          }
+        },
         onFollowChange: (f) => {
           shouldFollowBottom = f;
         },

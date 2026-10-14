@@ -20,6 +20,7 @@ for (const scenario of [
       const group = details.getByRole('radiogroup', { name });
       const controls = group.getByRole('radio');
       await expect(controls).toHaveCount(4);
+      await controls.first().hover();
       const boxes = await controls.evaluateAll((elements) =>
         elements.map((element) => {
           const box = element.getBoundingClientRect();

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import {
   animateScrollTo,
   beforeFollowBottomMutation,
@@ -1391,6 +1391,72 @@ describe('followBottom policy', () => {
     expect(scrollTop).toBe(600);
     expect(followChanges).toEqual([false]);
     action.destroy();
+  });
+
+  it('notifies the navigation owner before focused End follows, including an already followed tail', () => {
+    document.body.append(container);
+    container.tabIndex = -1;
+    container.focus();
+    scrollTop = 300;
+    const onEndKey = vi.fn(() => isFollowingBottom(container));
+    const action = followBottom(container, { follow: false, onEndKey });
+    onTestFinished(() => {
+      action.destroy();
+      container.remove();
+    });
+    const pressEnd = () => {
+      const event = new KeyboardEvent('keydown', { key: 'End', cancelable: true });
+      container.dispatchEvent(event);
+      return event;
+    };
+
+    expect(pressEnd().defaultPrevented).toBe(true);
+    expect(onEndKey).toHaveReturnedWith(false);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(scrollTop).toBe(600);
+    pressEnd();
+    expect(onEndKey).toHaveBeenCalledTimes(2);
+    expect(onEndKey).toHaveLastReturnedWith(true);
+
+    const nextOnEndKey = vi.fn();
+    action.update({ follow: true, onEndKey: nextOnEndKey });
+    pressEnd();
+    expect(onEndKey).toHaveBeenCalledTimes(2);
+    expect(nextOnEndKey).toHaveBeenCalledOnce();
+    action.update({ enabled: false, follow: true, onEndKey: nextOnEndKey });
+    pressEnd();
+    expect(nextOnEndKey).toHaveBeenCalledOnce();
+  });
+
+  it('does not notify End callbacks for editing, handled, modified, or unfocused keys', () => {
+    document.body.append(container);
+    container.tabIndex = -1;
+    const onEndKey = vi.fn();
+    const action = followBottom(container, { follow: false, onEndKey });
+    onTestFinished(() => {
+      action.destroy();
+      container.remove();
+    });
+    // An End event without focus does not own the transcript's navigation.
+    container.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+    container.focus();
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+      container.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', [modifier]: true }));
+    }
+    const handled = new KeyboardEvent('keydown', { key: 'End', cancelable: true });
+    handled.preventDefault();
+    container.dispatchEvent(handled);
+    for (const tag of ['input', 'textarea', 'button', 'a', 'div']) {
+      const child = document.createElement(tag);
+      child.tabIndex = 0;
+      if (tag === 'div') child.contentEditable = 'true';
+      container.append(child);
+      child.focus();
+      child.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+      child.remove();
+    }
+    runFrame();
+    expect(onEndKey).not.toHaveBeenCalled();
   });
 
   it('re-locks only after user input reaches the bottom', () => {
