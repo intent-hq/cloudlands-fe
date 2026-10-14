@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.217.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.8...v2.217.0) (2026-10-14)
+
+
+### 🚀 Features
+
+* add detailed status grouping to Home workspace list ([#3406](https://github.com/intent-hq/cloudlands-fe/issues/3406)) ([4596feb](https://github.com/intent-hq/cloudlands-fe/commit/4596feb894e03589ad3a8929bb26034c16a2cda5))
+
 ## [2.216.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.7...v2.216.8) (2026-10-14)
 
 

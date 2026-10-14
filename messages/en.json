@@ -7510,5 +7510,7 @@
   "workspace_peopleActivity_empty_label": "No recorded activity from people yet.",
   "workspace_peopleActivity_recentEmpty_label": "No activity from people in these recent events.",
   "workspace_peopleActivity_loadOlder_error": "Could not load older activity.",
-  "workspace_peopleActivity_loadMore_label": "Load more"
+  "workspace_peopleActivity_loadMore_label": "Load more",
+  "browser_activity_browsing_label": "Browsing {host}",
+  "browser_activity_unavailable_tooltip": "This browser tab is no longer available"
 }

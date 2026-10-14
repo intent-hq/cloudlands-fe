@@ -7510,5 +7510,7 @@
   "workspace_peopleActivity_empty_label": "Aucune activité de personnes enregistrée pour le moment.",
   "workspace_peopleActivity_recentEmpty_label": "Aucune activité de personnes dans ces événements récents.",
   "workspace_peopleActivity_loadOlder_error": "Impossible de charger l’activité antérieure.",
-  "workspace_peopleActivity_loadMore_label": "Charger plus"
+  "workspace_peopleActivity_loadMore_label": "Charger plus",
+  "browser_activity_browsing_label": "Navigation sur {host}",
+  "browser_activity_unavailable_tooltip": "Cet onglet du navigateur n’est plus disponible"
 }
