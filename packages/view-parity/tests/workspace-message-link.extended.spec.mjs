@@ -188,21 +188,29 @@ test('a genuine conversation note link retires the reader and recovers its targe
   const requests = [],
     replies = [],
     probes = [];
-  page.on('websocket', (socket) => {
-    if (new URL(socket.url()).pathname !== '/intentd/ws') return;
-    const pending = new Map();
-    socket.on('framesent', ({ payload }) => {
-      const request = JSON.parse(String(payload));
-      requests.push(request);
-      pending.set(request.id, request);
+  const observeWire = (target) =>
+    target.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname !== '/intentd/ws') return;
+      const pending = new Map();
+      socket.on('framesent', ({ payload }) => {
+        const request = JSON.parse(String(payload));
+        requests.push(request);
+        pending.set(request.id, request);
+      });
+      socket.on('framereceived', ({ payload }) => {
+        const response = JSON.parse(String(payload));
+        const request = pending.get(response.id);
+        pending.delete(response.id);
+        if (request) replies.push({ request, response });
+      });
     });
-    socket.on('framereceived', ({ payload }) => {
-      const response = JSON.parse(String(payload));
-      const request = pending.get(response.id);
-      pending.delete(response.id);
-      if (request) replies.push({ request, response });
-    });
-  });
+  observeWire(page);
+  const popupObservations = [];
+  const observePopup = (popup) => {
+    observeWire(popup);
+    popupObservations.push(observeErrors(popup));
+  };
+  page.context().on('page', observePopup);
   const conversation = page.getByTestId('workspace-conversation');
   const row = conversation.locator(`[data-message-id="${messageId}"]`);
   const link = row.getByRole('link', { name: 'Recovery details', exact: true });
@@ -339,9 +347,75 @@ test('a genuine conversation note link retires the reader and recovers its targe
     }
     const lastSubscription = lease();
     expect(subscriptions).not.toContain(lastSubscription);
+    const external = row.getByRole('link', { name: 'Open the workspace preview', exact: true });
+    const externalHref = 'http://daemon.localhost:5411/workspaces/system-design';
+    expect(
+      actual.contentBlocks.some(
+        (block) =>
+          block.type === 'text' &&
+          block.text.includes(`[Open the workspace preview](${externalHref})`),
+      ),
+    ).toBe(true);
+    await expect(external).toHaveAttribute('href', externalHref);
+    const sourceUrl = page.url();
+    const workspaceReads = () =>
+      replies.filter(
+        ({ request, response }) =>
+          request.method === 'workspace.list' && response.result?.workspaces,
+      );
+    const beforePopupReads = workspaceReads().length;
+    const popupPromise = page.waitForEvent('popup');
+    await external.click();
+    const popup = await popupPromise;
+    try {
+      await expect(popup).toHaveURL(externalHref);
+      await expect(popup.getByTestId('workspace-overview')).toHaveAttribute(
+        'data-workspace-id',
+        workspaceId,
+        { timeout: 60_000 },
+      );
+      await expect.poll(() => workspaceReads().length).toBeGreaterThan(beforePopupReads);
+      const actualWorkspace = workspaceReads()
+        .at(-1)
+        .response.result.workspaces.find((workspace) => workspace.id === workspaceId);
+      expect(actualWorkspace).toBeTruthy();
+      await expect(
+        popup.getByTestId('workspace-overview').getByRole('heading', { level: 1 }),
+      ).toHaveText(actualWorkspace.title);
+      expect(await popup.evaluate(() => window.opener)).toBeNull();
+      expect(page.url()).toBe(sourceUrl);
+      await expect(conversation).toHaveAttribute('data-ready', 'true');
+      await expect(row).toBeVisible();
+      expect(lease()).toBe(lastSubscription);
+      expect(
+        requests.some(
+          (request) =>
+            request.method === 'chat.unsubscribe' &&
+            request.params.subscriptionId === lastSubscription,
+        ),
+      ).toBe(false);
+      await info.attach('genuine-external-workspace', {
+        body: await popup.screenshot(),
+        contentType: 'image/png',
+      });
+    } finally {
+      await popup.close();
+    }
+    await expect(link).toHaveAttribute('href', href);
+    expect(lease()).toBe(lastSubscription);
     await conversation.getByRole('link', { name: 'Back to Workspace', exact: true }).click();
     await expect(conversation).toHaveCount(0);
     await released(lastSubscription);
+    for (const subscriptionId of new Set(
+      replies
+        .filter(
+          ({ request, response }) =>
+            request.method === 'chat.subscribe' && response.result?.subscriptionId,
+        )
+        .map(({ response }) => response.result.subscriptionId),
+    )) {
+      await released(subscriptionId);
+    }
     expect(page.context().pages()).toHaveLength(1);
     expect(
       requests.filter(({ method }) =>
@@ -350,10 +424,14 @@ test('a genuine conversation note link retires the reader and recovers its targe
         ),
       ),
     ).toEqual([]);
+    expect(popupObservations).toHaveLength(1);
+    expect((await Promise.all(popupObservations)).flat()).toEqual([]);
     expect(errors).toEqual([]);
   } finally {
+    page.context().off('page', observePopup);
+    const popupErrors = (await Promise.all(popupObservations)).flat();
     await info.attach('conversation-note-link-wire-and-geometry', {
-      body: JSON.stringify({ requests, replies, probes, errors }),
+      body: JSON.stringify({ requests, replies, probes, errors, popupErrors }),
       contentType: 'application/json',
     });
   }
