@@ -336,14 +336,33 @@ describe('actual initializer submission admission', () => {
   });
   it('does not persist the old branch after held validation crosses readmission', async () => {
     let resolve!: (v: unknown) => void;
+    let resolveBranches!: (v: unknown) => void;
+    const branches = new Promise((r) => (resolveBranches = r));
+    // The selector owns connection-bound default persistence independently of
+    // submission admission. Hold its reply until the component is disposed.
+    mocks.getBranches.mockReturnValue(branches);
     mocks.validate.mockReturnValue(new Promise((r) => (resolve = r)));
-    await submit();
-    store.dispatch(backendReconnected());
-    resolve({ valid: true });
-    await new Promise((r) => setTimeout(r, 20));
+    try {
+      await submit();
+      await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
+      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+      store.dispatch(backendReconnected());
+      resolve({ valid: true });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+      expect(mocks.pull).not.toHaveBeenCalled();
+      expect(mocks.create).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      resolveBranches({
+        branches: ['main'],
+        remoteBranches: [],
+        defaultBranch: 'main',
+        currentBranch: 'main',
+      });
+      await branches;
+    }
     expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-    expect(mocks.pull).not.toHaveBeenCalled();
-    expect(mocks.create).not.toHaveBeenCalled();
   });
 });
 
