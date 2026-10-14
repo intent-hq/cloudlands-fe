@@ -376,13 +376,7 @@
       collapsible: true,
     })),
   );
-  const listGroups: {
-    id: string;
-    label: string;
-    items: Workspace[];
-    expanded: boolean;
-    collapsible: boolean;
-  }[] = $derived.by(() => {
+  const listGroups = $derived.by(() => {
     if (effectiveGroupBy === 'none') return [];
     const groups = (
       effectiveGroupBy === 'repository'
@@ -841,7 +835,9 @@
                         {#snippet workspaceSettings()}
                           <HomeWorkspaceSettings view={$view$} onchange={updateView} />
                         {/snippet}
-                        {#snippet workspaceControls()}
+                        <div
+                          class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
+                        >
                           <HomeWorkspaceControls
                             {query}
                             {filter}
@@ -852,11 +848,6 @@
                             onview={(view) => updateView({ view })}
                             settings={workspaceSettings}
                           />
-                        {/snippet}
-                        <div
-                          class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
-                        >
-                          {@render workspaceControls()}
                         </div>
                         {#if $workspaceError$}<ErrorState
                             retryLabel={m.home_retry()}
