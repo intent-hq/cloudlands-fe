@@ -72,6 +72,7 @@ import { HomeWorkspaceControlsExamples } from './home-workspace-controls-example
 import { ProtocolMismatchExamples } from './protocol-mismatch-examples';
 import { RulesInspectorExamples } from './rules-inspector-examples';
 import { LauncherHoverCardExamples } from './launcher-hover-card-examples';
+import { DividerButtonExamples } from './divider-button-examples';
 import { FileSearchExamples } from './file-search-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
@@ -619,6 +620,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'select' && <SelectWrapperExample />}
       {slug === 'sidebar' && <SidebarPersistenceExample />}
       {slug === 'sidebar' && <WorkspaceSidebarRailExamples />}
+      {slug === 'sidebar' && <DividerButtonExamples />}
       {slug === 'scroll-area' && <ScrollAreaExample />}
       {slug === 'zoom-pan-viewport' && <ZoomMediaExample />}
       {displayWidgetSlugs.some((value) => value === slug) && <DisplayWidgetExample slug={slug} />}
