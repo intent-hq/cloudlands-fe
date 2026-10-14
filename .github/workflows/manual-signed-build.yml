@@ -96,7 +96,7 @@ jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
@@ -108,7 +108,7 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-15","intentd_target":"aarch64-apple-darwin"}'
           INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
           case "${MACOS_ARCH:-both}" in
             both) TARGETS="[$ARM,$INTEL]" ;;
@@ -125,7 +125,7 @@ jobs:
 
   smoke-inputs:
     if: ${{ inputs.smoke_macos }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require a signed macOS artifact
@@ -314,6 +314,9 @@ jobs:
       # no Cargo workspace). cache-on-failure keeps the compiled deps when a
       # later step (packaging/notarization) fails after a completed cold
       # ~15-min cargo build, so the next dispatch doesn't pay it again.
+      - name: Configure Depot managed compiler cache
+        if: ${{ inputs.intentd_ref != '' && (runner.os != 'macOS' || matrix.arch == 'arm64') }}
+        uses: ./.github/actions/depot-rust-cache
       - name: Cache intentd cargo build
         if: ${{ inputs.intentd_ref != '' }}
         uses: Swatinem/rust-cache@v2
@@ -592,7 +595,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: gh-windows-16x
+    runs-on: depot-windows-2022-16
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -706,6 +709,9 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
+      - name: Configure Depot managed compiler cache
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: ./.github/actions/depot-rust-cache
       - name: Cache intentd cargo build
         if: ${{ inputs.intentd_ref != '' }}
         uses: Swatinem/rust-cache@v2
@@ -890,7 +896,7 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: gh-linux-8x
+            runner: depot-ubuntu-24.04-8
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -911,7 +917,7 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: gh-linux-arm64-8x
+            runner: depot-ubuntu-24.04-arm-8
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -1008,6 +1014,9 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
+      - name: Configure Depot managed compiler cache
+        if: ${{ inputs.intentd_ref != '' }}
+        uses: ./.github/actions/depot-rust-cache
       - name: Cache intentd cargo build
         if: ${{ inputs.intentd_ref != '' }}
         uses: Swatinem/rust-cache@v2

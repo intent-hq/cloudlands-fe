@@ -241,3 +241,16 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
+
+### Depot CI runners
+
+GitHub Actions checks and automation use ephemeral Depot runners. Linux jobs
+that previously used 8 CPUs retain that size, Linux ARM64 builds stay native,
+and Windows builds use Depot Windows Server 2022 with 16 CPUs. Apple Silicon
+jobs use Depot macOS 15. Native Intel packaging currently retains macos-15-large
+while its migration path is reviewed; it is not silently cross-compiled.
+
+From-source Rust sidecars on Depot use its managed sccache WebDAV service with
+incremental compilation disabled. Enable automatic Depot Cache access for this
+repository. Existing Cargo and pnpm dependency caches remain separate from the
+managed compiler cache. The setup fails clearly if the managed endpoint is absent.

@@ -225,7 +225,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         : configured
     ).include;
     expect(matrix.map((m) => [m.arch, m.runner, m.intentd_target])).toEqual([
-      ['arm64', 'macos-15-xlarge', 'aarch64-apple-darwin'],
+      ['arm64', 'depot-macos-15', 'aarch64-apple-darwin'],
       ['x64', 'macos-15-large', 'x86_64-apple-darwin'],
     ]);
     for (const row of matrix) {
@@ -540,7 +540,7 @@ describe('manual Mac architecture selection', () => {
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
       expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe(
-        row.arch === 'arm64' ? 'macos-15-xlarge' : 'macos-15-large',
+        row.arch === 'arm64' ? 'depot-macos-15' : 'macos-15-large',
       );
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
