@@ -4,6 +4,8 @@ import importlib.util
 import io
 from pathlib import Path
 import tempfile
+import socket
+import urllib.request
 import unittest
 from unittest import mock
 
@@ -29,6 +31,10 @@ class CallerTests(unittest.TestCase):
         processes = mock.patch.object(C.subprocess, 'run', side_effect=AssertionError('unit test attempted real subprocess'))
         processes.start()
         self.addCleanup(processes.stop)
+        for target, name in ((socket.socket, 'connect'), (socket.socket, 'connect_ex'), (socket, 'create_connection'), (urllib.request, 'urlopen')):
+            network = mock.patch.object(target, name, side_effect=AssertionError('unit test attempted real network'))
+            network.start()
+            self.addCleanup(network.stop)
         self.api = T.FakeGitHub(REPO)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -40,6 +46,25 @@ class CallerTests(unittest.TestCase):
     def batches(self):
         self.api.runs = {i: self.api.make_run(i, T.H if i < 16 else T.S) for i in range(10, 20)}
         self.api.compares[(T.B, T.H)] = T.comparison(T.B, T.H, 'ahead')
+
+    def test_default_deny_guard_prevents_cli_from_invoking_recording_gh_stub(self):
+        marker = Path(self.directory.name) / 'gh-invoked'
+        executable = Path(self.directory.name) / 'gh'
+        executable.write_text('#!/bin/sh\necho invoked > "$GUARD_MARKER"\nexit 99\n')
+        executable.chmod(0o755)
+        environment = {'PATH': self.directory.name, 'GUARD_MARKER': str(marker),
+                       'RETIREMENT_READ_TOKEN': 'fake-read', 'GH_TOKEN': 'fake-write'}
+        with mock.patch.dict(C.os.environ, environment, clear=True):
+            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--state', str(self.state)]):
+                with self.assertRaisesRegex(AssertionError, 'real subprocess'):
+                    C.main()
+            with self.assertRaisesRegex(AssertionError, 'live transport'):
+                C.P.GhApi()
+            with self.assertRaisesRegex(AssertionError, 'real network'):
+                socket.create_connection(('example.invalid', 443))
+        self.assertFalse(marker.exists(), 'the guard let the recording executable run')
+        self.assertFalse(self.state.exists())
+        self.assertEqual(self.api.calls, [])
 
     def test_older_ineligible_batches_do_not_starve_later_eligible_ids(self):
         self.batches()
