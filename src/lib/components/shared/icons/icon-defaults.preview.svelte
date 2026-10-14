@@ -22,8 +22,12 @@
   import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
-  import { faArrowRightArrowLeft, faCopy, faGithub } from '$lib/icons/phosphor-icons';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import {
+    faArrowRightArrowLeft,
+    faCopy,
+    faEllipsisVertical,
+    faGithub,
+  } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
 
   let { layout = 'menu' }: Props = $props();
@@ -47,7 +51,7 @@
     <Menu.Trigger>
       {#snippet child({ props })}
         <Button {...props} variant="ghost" size="icon-sm" aria-label="Workspace actions">
-          <KebabIcon />
+          <Fa icon={faEllipsisVertical} size={16} class="size-4" />
         </Button>
       {/snippet}
     </Menu.Trigger>
