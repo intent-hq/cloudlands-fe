@@ -48,6 +48,7 @@ import {
   bulkUpsertSessions,
   clearProcessQueueHint,
   setProcessQueueHint,
+  removeSession,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
@@ -59,6 +60,7 @@ import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
   readAgentSession,
+  readAgentSessionAfterCurrent,
   refreshAgentSessionAfterEvent,
 } from './agent-read-service';
 import {
@@ -91,6 +93,259 @@ describe('agentReadService (fake seam, real store)', () => {
     vi.clearAllMocks();
     clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'fresh confirmation drains an older %s and coalesces concurrent barriers without hydration',
+    async (outcome) => {
+      const id = `confirm-raw-${outcome}`;
+      const stored = makeSession({ id, name: 'local transcript owner' });
+      appStore.dispatch(bulkUpsertSessions([stored]));
+      let resolveOld!: (value: AgentSession) => void;
+      let rejectOld!: (reason: Error) => void;
+      const pending = new Promise<AgentSession>((resolve, reject) => {
+        resolveOld = resolve;
+        rejectOld = reject;
+      });
+      let resolveFresh!: (value: AgentSession) => void;
+      const fresh = new Promise<AgentSession>((resolve) => {
+        resolveFresh = resolve;
+      });
+      agentsApi.get.mockReturnValueOnce(pending).mockReturnValueOnce(fresh);
+      const leading = readAgentSession(id, WS).catch(() => null);
+      const first = readAgentSessionAfterCurrent(id, WS, () => true);
+      const second = readAgentSessionAfterCurrent(id, WS, () => true);
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+      if (outcome === 'resolve') resolveOld(makeSession({ id, name: 'old idle' }));
+      else rejectOld(new Error('leading failed'));
+      await leading;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(agentsApi.get).toHaveBeenCalledTimes(2);
+      resolveFresh(makeSession({ id, name: 'fresh idle' }));
+      expect((await first)?.name).toBe('fresh idle');
+      expect((await second)?.name).toBe('fresh idle');
+      expect(selectAgentSession.select(appStore.state, id)?.name).toBe('local transcript owner');
+    },
+  );
+
+  it.each(['caller', 'reconnect', 'workspace', 'principal'] as const)(
+    'fresh confirmation never follows a stale leading read after %s changes',
+    async (change) => {
+      if (change === 'principal') {
+        const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+        admitLegacyPrincipal();
+      }
+      const id = `confirm-raw-stale-${change}`;
+      appStore.dispatch(bulkUpsertSessions([makeSession({ id })]));
+      let resolveOld!: (value: AgentSession) => void;
+      agentsApi.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveOld = resolve;
+          }),
+      );
+      const leading = readAgentSession(id, WS);
+      let current = true;
+      const confirmation = readAgentSessionAfterCurrent(id, WS, () => current);
+      if (change === 'caller') current = false;
+      if (change === 'reconnect') for (const callback of reconnectCallbacks) callback();
+      if (change === 'workspace') {
+        const { claimAgentReadOwnership } = await import('./agent-read-ownership');
+        claimAgentReadOwnership(id, 'other');
+        claimAgentReadOwnership(id, WS);
+      }
+      if (change === 'principal') {
+        const { principalIdentityChanged } =
+          await import('$store/renderer/slices/principal/principal-slice');
+        appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+      }
+      resolveOld(makeSession({ id }));
+      await leading;
+      expect(await confirmation).toBeNull();
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('fences old detail reads across principal invalidation and session re-admission', async () => {
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { principalIdentityChanged, principalReceived } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    admitLegacyPrincipal();
+    const principalSnapshot = appStore.state.principal.snapshot!;
+    const id = 'principal-fenced-detail';
+    appStore.dispatch(bulkUpsertSessions([makeSession({ id, metadata: { provider: 'old' } })]));
+    appStore.dispatch(
+      updateSession(id, { metadataPatch: { provider: { op: 'set', value: 'old' } } }),
+    );
+    expect(appStore.state.agentSessions.projectionVersions?.[id]?.metadata).toEqual({
+      provider: 1,
+    });
+    let resolveOld!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const old = ensureAgentSession(id, WS);
+    appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+    appStore.dispatch(removeSession(id));
+    expect(appStore.state.agentSessions.projectionVersions?.[id]).toBeUndefined();
+    const principal = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: principal.context!,
+          invalidation: principal.invalidation,
+          presentationVersion: principal.presentationVersion,
+        },
+        principalSnapshot,
+      ),
+    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ id, metadata: { provider: 'new' } })]));
+    let resolveFresh!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          resolveFresh = resolve;
+        }),
+    );
+    const fresh = ensureAgentSession(id, WS);
+    appStore.dispatch(
+      updateSession(id, { metadataPatch: { provider: { op: 'set', value: 'new' } } }),
+    );
+    resolveFresh(
+      makeSession({
+        id,
+        name: 'new authority',
+        metadata: { provider: 'stale', taskNoteId: 'new-task' },
+      }),
+    );
+    await fresh;
+    const projected = appStore.state.agentSessions.projectionVersions?.[id];
+    expect(projected).toEqual({ fields: {}, metadata: { provider: 1 } });
+    resolveOld(
+      makeSession({
+        id,
+        name: 'old authority',
+        metadata: { provider: 'old', taskNoteId: 'old-task' },
+      }),
+    );
+    await old;
+    const stored = selectAgentSession.select(appStore.state, id);
+    expect(stored?.name).toBe('new authority');
+    expect(stored?.metadata).toEqual({ provider: 'new', taskNoteId: 'new-task' });
+    expect(appStore.state.agentSessions.projectionVersions?.[id]).toEqual(projected);
+    expect(agentsApi.get.mock.calls).toEqual([
+      [id, WS],
+      [id, WS],
+    ]);
+  });
+
+  it('hydrates special and untouched keys while preserving ABA and explicit absent clears', async () => {
+    const id = 'hydrated-metadata-ownership';
+    const seed = makeSession({
+      id,
+      metadata: { specialist: 'original', ['__proto__']: 'local', provider: 'before' },
+    });
+    appStore.dispatch(bulkUpsertSessions([seed]));
+    let finish!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const read = ensureAgentSession(id, WS);
+    appStore.dispatch(
+      updateSession(id, {
+        metadataPatch: {
+          specialist: { op: 'set', value: 'temporary' },
+          ['__proto__']: { op: 'set', value: 'local' },
+          attentionReason: { op: 'clear' },
+          ['toString']: { op: 'clear' },
+        },
+      }),
+    );
+    appStore.dispatch(
+      updateSession(id, {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          ['__proto__']: { op: 'set', value: 'local' },
+          attentionReason: { op: 'clear' },
+        },
+      }),
+    );
+    appStore.dispatch(
+      updateSession(id, { metadataPatch: { specialist: { op: 'set', value: 'original' } } }),
+    );
+    const projected = appStore.state.agentSessions.projectionVersions?.[id];
+    expect(projected).toEqual({
+      fields: {},
+      metadata: {
+        specialist: 3,
+        ['__proto__']: 2,
+        attentionReason: 2,
+        ['toString']: 1,
+      },
+    });
+    finish(
+      makeSession({
+        id,
+        // Exercise a real store upsert: extension-only same-timestamp equivalence
+        // is an existing optimization and is not the contract under test here.
+        name: 'Fresh detail was hydrated',
+        metadata: {
+          specialist: 'stale',
+          ['__proto__']: 'stale',
+          attentionReason: 'stale',
+          ['toString']: 'stale',
+          ['constructor']: 'fetched-special',
+          provider: 'fetched-provider',
+          unrelated: 'fetched-extension',
+        },
+      }),
+    );
+    await read;
+    const stored = selectAgentSession.select(appStore.state, id)!;
+    expect(stored.name).toBe('Fresh detail was hydrated');
+    expect(stored.metadata).toEqual({
+      specialist: 'original',
+      ['__proto__']: 'local',
+      ['constructor']: 'fetched-special',
+      provider: 'fetched-provider',
+      unrelated: 'fetched-extension',
+    });
+    expect(Object.hasOwn(stored.metadata!, '__proto__')).toBe(true);
+    expect(Object.hasOwn(stored.metadata!, 'constructor')).toBe(true);
+    expect(Object.hasOwn(stored.metadata!, 'attentionReason')).toBe(false);
+    expect(Object.hasOwn(stored.metadata!, 'toString')).toBe(false);
+    expect(Object.getPrototypeOf(stored.metadata)).toBe(Object.prototype);
+    expect(JSON.parse(JSON.stringify(stored.metadata))).toEqual(stored.metadata);
+    expect(appStore.state.agentSessions.projectionVersions?.[id]).toEqual(projected);
+    expect(appStore.state.agentSessions.detailHydrated?.[id]).toBe(true);
+    expect(agentsApi.get.mock.calls).toEqual([[id, WS]]);
+  });
+
+  it('does not restore detail hydration from a response invalidated by the principal', async () => {
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { principalIdentityChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    admitLegacyPrincipal();
+    const id = 'principal-dropped-detail';
+    let resolveOld!: (value: AgentSession) => void;
+    agentsApi.get.mockImplementationOnce(
+      () =>
+        new Promise<AgentSession>((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const old = ensureAgentSession(id, WS);
+    appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+    resolveOld(makeSession({ id }));
+    await old;
+    expect(appStore.state.agentSessions.detailHydrated?.[id]).not.toBe(true);
+    expect(selectAgentSession.select(appStore.state, id)).toBeUndefined();
   });
 
   it('ensureAgentSession fetches via the seam and hydrates the store', async () => {
@@ -648,6 +903,7 @@ describe('agentReadService (fake seam, real store)', () => {
 });
 
 it('keeps concurrent reads of an opaque agent id separate by workspace', async () => {
+  appStore.init();
   const resolve: Array<(session: AgentSession) => void> = [];
   agentsApi.get.mockImplementation(() => new Promise((r) => resolve.push(r)));
   const a = readAgentSession('shared-id', 'workspace-a');
@@ -755,3 +1011,86 @@ it('never projects workspace A question markers into a pending workspace B read'
   );
   expect((await read)?.metadata?.pendingQuestionsMessageId).toBe('b-marker');
 });
+
+it('preserves a pushed idle transition over an older metadata read without a trailing RPC', async () => {
+  appStore.init();
+  agentsApi.get.mockClear();
+  const agentId = 'pushed-idle-read';
+  const busy = makeSession({ id: agentId, isActive: true, isResponding: true });
+  appStore.dispatch(bulkUpsertSessions([busy]));
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise<AgentSession>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const read = ensureAgentSession(agentId, WS);
+  appStore.dispatch(
+    updateSession(agentId, { status: AgentStatus.Idle, isActive: false, isResponding: false }),
+  );
+  finish(busy);
+  await read;
+  expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+    status: AgentStatus.Idle,
+    isActive: false,
+    isResponding: false,
+  });
+  expect(agentsApi.get).toHaveBeenCalledTimes(1);
+});
+
+it.each(['__proto__', 'constructor', 'toString'])(
+  'preserves explicit set and clear of extension key %s through stale reads',
+  async (key) => {
+    appStore.init();
+    agentsApi.get.mockClear();
+    const agentId = `extension-key-${key}`;
+    const unrelatedKey = key === '__proto__' ? 'constructor' : '__proto__';
+    const value = { resolution: 'applied' as const };
+    const seed = makeSession({ id: agentId, metadata: { [key]: value, [unrelatedKey]: 'before' } });
+    appStore.dispatch(bulkUpsertSessions([seed]));
+    for (const operation of ['set', 'clear'] as const) {
+      let finish!: (session: AgentSession) => void;
+      agentsApi.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const read = readAgentSession(agentId, WS);
+      for (let repeat = 0; repeat < 2; repeat++) {
+        appStore.dispatch(
+          updateSession(agentId, {
+            metadataPatch: {
+              [key]: operation === 'set' ? { op: 'set', value } : { op: 'clear' },
+            },
+          }),
+        );
+      }
+      finish(
+        makeSession({
+          id: agentId,
+          metadata: { [key]: 'stale', [unrelatedKey]: 'fetched', fetched: 'kept' },
+        }),
+      );
+      const resolved = await read;
+      expect(resolved).not.toBeNull();
+      const metadata = resolved!.metadata!;
+      expect(Object.getPrototypeOf(metadata)).toBe(Object.prototype);
+      expect(Object.hasOwn(metadata, key)).toBe(operation === 'set');
+      expect(metadata).toEqual({
+        ...(operation === 'set' ? { [key]: value } : {}),
+        [unrelatedKey]: 'fetched',
+        fetched: 'kept',
+      });
+      expect(JSON.parse(JSON.stringify(metadata))).toEqual(metadata);
+      expect(appStore.state.agentSessions.projectionVersions?.[agentId].metadata).toEqual({
+        [key]: operation === 'set' ? 2 : 4,
+      });
+    }
+    expect(agentsApi.get.mock.calls).toEqual([
+      [agentId, WS],
+      [agentId, WS],
+    ]);
+  },
+);

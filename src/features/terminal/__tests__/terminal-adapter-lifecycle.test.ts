@@ -94,6 +94,10 @@ vi.mock('../../../shared/logger', () => ({
     error = vi.fn();
   },
 }));
+// These terminal tests never read Git status or admit a principal.
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: { select: () => null },
+}));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: vi.fn(), state: {} } }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectCodeFontFamilyCSS: Object.assign(

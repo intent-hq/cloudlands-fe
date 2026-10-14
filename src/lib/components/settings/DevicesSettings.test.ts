@@ -238,6 +238,8 @@ describe('DevicesSettings', () => {
         if (channel === 'connections:open') return mocks.open(params.id).promise;
         if (channel === 'connections:forget') return mocks.forget(params.id).promise;
         if (channel === 'connections:update-backend') return mocks.updateBackend(params.id).promise;
+        if (channel === 'connections:get-tunnel')
+          return Promise.resolve({ supported: false, enabled: false });
         if (channel === 'connections:sync-get-state')
           return Promise.resolve(
             mocks.keychainSync ?? { supported: false, enabled: false, status: null },
@@ -1161,10 +1163,14 @@ describe('DevicesSettings', () => {
       port: 6200,
     });
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBe('true'));
-    expect(within(form).getByRole('status')).toBeTruthy();
+    expect(within(form).getByText(m.settings_devices_testing_label()).getAttribute('role')).toBe(
+      'status',
+    );
     resolveTest({ status: 'success', fingerprint: remote.fingerprint! });
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());
-    expect(within(form).getByRole('status')).toBeTruthy();
+    expect(
+      within(form).getByText(m.settings_devices_testSuccess_label()).getAttribute('role'),
+    ).toBe('status');
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.open).not.toHaveBeenCalled();
   });

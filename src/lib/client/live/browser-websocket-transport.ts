@@ -390,6 +390,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+                  workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
                 });
               }
               this.helloConfirmed = true;

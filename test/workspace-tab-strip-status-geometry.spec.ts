@@ -70,7 +70,18 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
-    );`,
+    );
+    export const selectWorkspaceById = {
+      select: (_state, workspaceId) =>
+        globalThis.__workspaceTabScenario.workspaces.find((workspace) => workspace.id === workspaceId),
+    };`,
+  '$store/renderer/slices/hardware-console/hardware-console-selectors': `
+    const readable = (value) => ({ subscribe(run) { run(value); return () => {}; } });
+    export const selectWorkspaceResolvedKeySlot = Object.assign(
+      () => readable(null), { select: () => null },
+    );
+    export const selectWorkspacePinnedKeySlot = { select: () => null };
+    export const selectHardwareConsoleKeySlots = { select: () => [] };`,
   '$store/renderer/slices/presence/presence-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectPresenceRosters = () => readable(() => ({}));

@@ -95,6 +95,9 @@ const mocks = vi.hoisted(() => {
     selectedModel$: writable(''),
     configuredModels$: writable<Record<string, string>>({}),
     defaultProviderId: 'auggie',
+    activeProviderId$: writable('auggie'),
+    enabledProviders$: writable<Record<string, boolean>>({}),
+    enabledProviders: {} as Record<string, boolean>,
     defaultReasoningEffort$: writable(''),
     effortLevelsByModel: {} as Record<string, string[] | undefined>,
     providerModelsByProviderId: {} as Record<
@@ -125,7 +128,7 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       providerCatalog,
-      providerSettings: { enabledProviders: {} },
+      providerSettings: { enabledProviders: mocks.enabledProviders },
       model: { defaultProviderId: mocks.defaultProviderId },
       providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
     }),
@@ -177,7 +180,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
-  selectActiveProviderId: () => mocks.readable('auggie'),
+  selectActiveProviderId: () => mocks.activeProviderId$,
+  selectEnabledProviders: () => mocks.enabledProviders$,
 }));
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -205,6 +209,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import InitialAgentPicker from '../InitialAgentPicker.svelte';
+import ProviderSelectionHarness from './mocks/ProviderSelectionHarness.svelte';
 import { store as mockAppStore } from '$store/renderer/store';
 import { LiveSpecialistsClient } from '$lib/client/live/live-specialists-client';
 
@@ -233,6 +238,16 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function setEnabledProviders(enabled: Record<string, boolean>) {
+  mocks.enabledProviders = enabled;
+  mocks.enabledProviders$.set(enabled);
+  emitStoreState();
+}
+
+function selection() {
+  return JSON.parse(screen.getByTestId('selection').textContent ?? '{}');
+}
+
 describe('InitialAgentPicker stale model override clearing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -241,6 +256,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     mocks.selectedModel$.set('');
     mocks.configuredModels$.set({});
     mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
     mocks.defaultReasoningEffort$.set('');
     mocks.specialists$.set([]);
     mocks.effortLevelsByModel = {};
@@ -257,6 +274,143 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('keeps an Antigravity model pick when Auggie is disabled', async () => {
+    setEnabledProviders({ auggie: false, antigravity: true });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: {
+        auggie: { available: true },
+        antigravity: { available: true, authenticated: true },
+      },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    await fireEvent.click(screen.getAllByTestId('pick-antigravity')[SINGLE_PICKER]);
+    await flush();
+    expect(selection()).toEqual({
+      selectedProvider: 'antigravity',
+      selectedModel: 'gemini-4-argon',
+      modelWasOverridden: true,
+    });
+  });
+
+  it.each(['', 'auggie'])('skips disabled Auggie with active provider %j', async (active) => {
+    mocks.activeProviderId$.set(active);
+    setEnabledProviders({ auggie: false });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: true } },
+    });
+    render(ProviderSelectionHarness);
+    await waitFor(() => expect(selection().selectedProvider).toBe('codex'));
+  });
+
+  it('preserves an in-session model pick when a late availability probe reports it unavailable', async () => {
+    let resolveAvailability!: (result: unknown) => void;
+    mocks.getProviderAvailability.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAvailability = resolve;
+        }),
+    );
+    render(ProviderSelectionHarness);
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[SINGLE_PICKER]);
+    resolveAvailability({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: false } },
+    });
+    await flush();
+    expect(selection()).toEqual({
+      selectedProvider: 'codex',
+      selectedModel: 'bare-picked-model',
+      modelWasOverridden: true,
+    });
+  });
+
+  it('switches away when settings disable the selected provider after availability loads', async () => {
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: true } },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    setEnabledProviders({ auggie: false });
+    await waitFor(() => expect(selection().selectedProvider).toBe('codex'));
+  });
+
+  it('clears a disabled restored override before availability resolves', async () => {
+    setEnabledProviders({ auggie: false });
+    mocks.fileSpecialistsLoaded$.set(true);
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedProvider: 'auggie',
+        selectedModel: 'remembered-model',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+  });
+
+  it.each([false, undefined])(
+    'clears a restored Antigravity override without confirmed auth (%s)',
+    async (authenticated) => {
+      mocks.fileSpecialistsLoaded$.set(true);
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { antigravity: { available: true, authenticated } },
+      });
+      const onModelChange = vi.fn();
+      render(InitialAgentPicker, {
+        props: {
+          selectedProvider: 'antigravity',
+          selectedModel: 'gemini-4-argon',
+          modelWasOverridden: true,
+          onModelChange,
+        },
+      });
+      await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+    },
+  );
+
+  it('clears a disabled provider when no enabled provider is ready', async () => {
+    setEnabledProviders({ auggie: false });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: false } },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    expect(selection()).toEqual({ selectedProvider: '', modelWasOverridden: false });
+  });
+
+  it('clears a disabled provider while availability is pending', async () => {
+    setEnabledProviders({ auggie: false });
+    render(ProviderSelectionHarness);
+    await flush();
+    expect(selection()).toEqual({ selectedProvider: '', modelWasOverridden: false });
+  });
+
+  it('clears an in-session model when its provider is disabled with no fallback', async () => {
+    setEnabledProviders({ auggie: false, antigravity: true });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { antigravity: { available: true, authenticated: true } },
+    });
+    render(ProviderSelectionHarness);
+    await fireEvent.click(screen.getAllByTestId('pick-antigravity')[SINGLE_PICKER]);
+    await flush();
+    expect(selection().selectedModel).toBe('gemini-4-argon');
+    setEnabledProviders({ auggie: false, antigravity: false });
+    await waitFor(() =>
+      expect(selection()).toEqual({
+        selectedProvider: '',
+        modelWasOverridden: false,
+      }),
+    );
   });
 
   it('exposes the active work mode and updates it when a card is selected', async () => {
@@ -631,6 +785,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
   it('uses the selected provider Settings model for General, independently of the active provider', async () => {
     mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
     mocks.selectedModel$.set('fable-5');
     mocks.configuredModels$.set({ auggie: 'fable-5', codex: 'gpt-fixture' });
     mocks.defaultReasoningEffort$.set('high');
@@ -1405,6 +1561,8 @@ describe('InitialAgentPicker specialist dropdown', () => {
     mocks.selectedModel$.set('');
     mocks.configuredModels$.set({});
     mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
     mocks.defaultReasoningEffort$.set('');
     mocks.specialists$.set([]);
     mocks.effortLevelsByModel = {};

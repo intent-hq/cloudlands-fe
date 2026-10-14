@@ -16,6 +16,11 @@ import {
 import type { StoreState } from '../../types';
 import type { PresenceIdentity, PresencePerson, PresenceState } from './presence-types';
 
+/** Fence membership replies against profile pushes received after request start. */
+export const selectPresenceProfileRevision = store.createSelector(
+  (state) => state.presence.profileRevision,
+);
+
 /** One admitted presentation lifetime; no saved profile is an authority fallback. */
 export const selectPresenceContext = store.createSelector((state): string | null =>
   selectCollaborationReady.select(state) ? selectPrincipalActionContext.select(state) : null,

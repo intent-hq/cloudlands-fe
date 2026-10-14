@@ -1,6 +1,6 @@
-import type { ScriptMonitor } from './types';
+import type { ActiveScriptMonitor, ScriptMonitorSummary } from './types';
 import type { ScriptWithState } from '$features/scripts/types';
-export const monitorFixture: ScriptMonitor = {
+export const monitorFixture: ActiveScriptMonitor = {
   monitorId: 'monitor-checks',
   workspaceId: 'monitor-preview',
   agentId: 'agent-checks',
@@ -23,4 +23,21 @@ export const scriptFixture: ScriptWithState = {
   source: 'user',
   createdAt: '2026-10-02T10:00:00Z',
   runtime: { status: 'running', restartCount: 0, runId: 'run-checks-1' },
+};
+
+/** The independent wire page fixture has preview fields, never a full pattern. */
+export const monitorSummaryFixture: ScriptMonitorSummary = {
+  monitorId: 'monitor-checks',
+  workspaceId: 'monitor-preview',
+  agentId: 'agent-checks',
+  scriptId: 'checks',
+  runId: 'run-checks-1',
+  scriptName: 'Frontend checks',
+  mode: 'command',
+  state: 'active',
+  createdAt: '2026-10-02T10:00:00Z',
+  expiresAt: '2026-10-02T10:10:00Z',
+  outputPatternPreview: '^Tests:.*passed$',
+  outputPatternTruncated: false,
+  lineCount: 200,
 };

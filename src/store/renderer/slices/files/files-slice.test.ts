@@ -24,6 +24,49 @@ const OTHER_PATH = 'src/other.ts';
 const OTHER_ABS_PATH = '/repo/src/other.ts';
 
 describe('filesReducer', () => {
+  it('restores a readable binary snapshot without admitting text edits', () => {
+    const snapshot = { kind: 'restorable-snapshot', content: '\b\u0001', isBinary: true } as const;
+    const restored = filesReducer(initialState, saveFileContentSucceeded(WS_ID, PATH, snapshot));
+    expect(restored.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'restorable-snapshot',
+      isBinary: true,
+      originalContent: '\b\u0001',
+      localContent: '\b\u0001',
+      lastUpdated: 1,
+    });
+    expect(
+      filesReducer(
+        restored,
+        updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'replacement' }),
+      ),
+    ).toBe(restored);
+  });
+
+  it('keeps a newer text draft when a text snapshot restore finishes', () => {
+    const loaded = filesReducer(
+      initialState,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'disk' }),
+    );
+    const edited = filesReducer(
+      loaded,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'new draft' }),
+    );
+    const restored = filesReducer(
+      edited,
+      saveFileContentSucceeded(WS_ID, PATH, {
+        kind: 'restorable-snapshot',
+        content: 'restored',
+        isBinary: false,
+      }),
+    );
+    expect(restored.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
+      originalContent: 'restored',
+      localContent: 'new draft',
+      lastUpdated: 1,
+    });
+  });
+
   it('returns the initial state', () => {
     expect(filesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
@@ -37,6 +80,7 @@ describe('filesReducer', () => {
       ...emptyFilesWorkspaceState.files.map[PATH],
       path: PATH,
       absolutePath: ABS_PATH,
+      kind: 'preview-only',
       originalContent: null,
       localContent: null,
       lastUpdated: 0,
@@ -50,9 +94,14 @@ describe('filesReducer', () => {
 
     const loadedState = filesReducer(
       loadingState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'hello', true),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'restorable-snapshot',
+        content: 'hello',
+        isBinary: true,
+      }),
     );
     expect(loadedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'restorable-snapshot',
       originalContent: 'hello',
       localContent: 'hello',
       lastUpdated: 0,
@@ -65,10 +114,17 @@ describe('filesReducer', () => {
   it('stores truncated state from loaded content', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'partial', false, true),
+      loadFileContentSucceeded(
+        WS_ID,
+        PATH,
+        ABS_PATH,
+        { kind: 'editable-text', content: 'partial' },
+        true,
+      ),
     );
 
     expect(loadedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'partial',
       localContent: 'partial',
       truncated: true,
@@ -87,9 +143,12 @@ describe('filesReducer', () => {
   it('updates both original and local content when load completes without user edits', () => {
     let state = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'X', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'X' }),
     );
-    state = filesReducer(state, loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'Z', false));
+    state = filesReducer(
+      state,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'Z' }),
+    );
 
     const entry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
     expect(entry?.localContent).toBe('Z');
@@ -99,7 +158,7 @@ describe('filesReducer', () => {
   it('sets both original and local content on first load', () => {
     const state = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'Z', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'Z' }),
     );
 
     const entry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
@@ -110,11 +169,17 @@ describe('filesReducer', () => {
   it('preserves user edits when load completes while edits are pending', () => {
     let state = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'X', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'X' }),
     );
-    state = filesReducer(state, updateFileContent(WS_ID, PATH, 'Y'));
+    state = filesReducer(
+      state,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'Y' }),
+    );
     state = filesReducer(state, loadFileContentRequested(WS_ID, PATH, ABS_PATH));
-    state = filesReducer(state, loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'Z', false));
+    state = filesReducer(
+      state,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'Z' }),
+    );
 
     const entry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
     expect(entry?.localContent).toBe('Y');
@@ -124,7 +189,7 @@ describe('filesReducer', () => {
   it('stores load errors and clears content', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'hello', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'hello' }),
     );
     const failedState = filesReducer(
       loadedState,
@@ -132,6 +197,7 @@ describe('filesReducer', () => {
     );
 
     expect(failedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'preview-only',
       originalContent: null,
       localContent: null,
       loading: false,
@@ -172,7 +238,7 @@ describe('filesReducer', () => {
 
     const loadedState = filesReducer(
       failedState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'hello', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'hello' }),
     );
     expect(loadedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
       originalContent: 'hello',
@@ -183,9 +249,15 @@ describe('filesReducer', () => {
   it('tracks dirty content through selectors', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
 
     expect(selectFileIsDirty.select({ files: loadedState } as any, WS_ID, PATH)).toBe(false);
     expect(selectFileIsDirty.select({ files: editedState } as any, WS_ID, PATH)).toBe(true);
@@ -194,9 +266,12 @@ describe('filesReducer', () => {
   it('exposes local edits separately from disk-backed original content', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'disk', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'disk' }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'unsaved'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'unsaved' }),
+    );
 
     expect(selectFileContent.select({ files: editedState } as any, WS_ID, PATH)).toBe('unsaved');
     expect(selectOriginalFileContent.select({ files: editedState } as any, WS_ID, PATH)).toBe(
@@ -207,11 +282,18 @@ describe('filesReducer', () => {
   it('captures original content on first edit', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
 
     expect(editedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'original',
       localContent: 'edited',
     });
@@ -220,15 +302,22 @@ describe('filesReducer', () => {
   it('does not change original content on later edits', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const firstEditedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const firstEditedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
     const secondEditedState = filesReducer(
       firstEditedState,
-      updateFileContent(WS_ID, PATH, 'edited again'),
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited again' }),
     );
 
     expect(secondEditedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'original',
       localContent: 'edited again',
     });
@@ -237,9 +326,15 @@ describe('filesReducer', () => {
   it('does not touch original content when updating local content', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
 
     const entry = getItem(editedState.byWorkspaceId[WS_ID].files, PATH);
     expect(entry?.localContent).toBe('edited');
@@ -249,12 +344,22 @@ describe('filesReducer', () => {
   it('clears original content when edits revert to the baseline', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
-    const revertedState = filesReducer(editedState, updateFileContent(WS_ID, PATH, 'original'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
+    const revertedState = filesReducer(
+      editedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'original' }),
+    );
 
     expect(revertedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'original',
       localContent: 'original',
     });
@@ -263,24 +368,41 @@ describe('filesReducer', () => {
   it('returns the same state when setting content to the current value', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
 
-    expect(filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'original'))).toBe(loadedState);
+    expect(
+      filesReducer(
+        loadedState,
+        updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'original' }),
+      ),
+    ).toBe(loadedState);
   });
 
   it('removes only the requested file content entry from the requested workspace', () => {
     let state = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'primary', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'primary',
+      }),
     );
     state = filesReducer(
       state,
-      loadFileContentSucceeded(WS_ID, OTHER_PATH, OTHER_ABS_PATH, 'other', false),
+      loadFileContentSucceeded(WS_ID, OTHER_PATH, OTHER_ABS_PATH, {
+        kind: 'editable-text',
+        content: 'other',
+      }),
     );
     state = filesReducer(
       state,
-      loadFileContentSucceeded(OTHER_WS_ID, PATH, ABS_PATH, 'other workspace', false),
+      loadFileContentSucceeded(OTHER_WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'other workspace',
+      }),
     );
 
     const nextState = filesReducer(state, removeFileContentEntry(WS_ID, PATH));
@@ -297,7 +419,10 @@ describe('filesReducer', () => {
   it('preserves the state reference when removing a missing file content entry', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
 
     expect(filesReducer(loadedState, removeFileContentEntry(WS_ID, OTHER_PATH))).toBe(loadedState);
@@ -307,22 +432,33 @@ describe('filesReducer', () => {
   it('marks save lifecycle and updates original content on success', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
     const savingState = filesReducer(
       editedState,
-      saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'edited'),
+      saveFileContentRequested(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'edited' }),
     );
     expect(savingState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'original',
       localContent: 'edited',
       saving: true,
       error: null,
     });
 
-    const savedState = filesReducer(savingState, saveFileContentSucceeded(WS_ID, PATH, 'edited'));
+    const savedState = filesReducer(
+      savingState,
+      saveFileContentSucceeded(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
     expect(savedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      kind: 'editable-text',
       originalContent: 'edited',
       localContent: 'edited',
       lastUpdated: 1,
@@ -333,11 +469,20 @@ describe('filesReducer', () => {
   it('preserves user edits when save succeeds after additional in-flight edits', () => {
     let state = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'A', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'A' }),
     );
-    state = filesReducer(state, saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'A'));
-    state = filesReducer(state, updateFileContent(WS_ID, PATH, 'B'));
-    state = filesReducer(state, saveFileContentSucceeded(WS_ID, PATH, 'A'));
+    state = filesReducer(
+      state,
+      saveFileContentRequested(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'A' }),
+    );
+    state = filesReducer(
+      state,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'B' }),
+    );
+    state = filesReducer(
+      state,
+      saveFileContentSucceeded(WS_ID, PATH, { kind: 'editable-text', content: 'A' }),
+    );
 
     const entry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
     expect(entry?.localContent).toBe('B');
@@ -348,12 +493,18 @@ describe('filesReducer', () => {
   it('marks save failures without discarding edited content', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+        kind: 'editable-text',
+        content: 'original',
+      }),
     );
-    const editedState = filesReducer(loadedState, updateFileContent(WS_ID, PATH, 'edited'));
+    const editedState = filesReducer(
+      loadedState,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'edited' }),
+    );
     const savingState = filesReducer(
       editedState,
-      saveFileContentRequested(WS_ID, PATH, ABS_PATH, 'edited'),
+      saveFileContentRequested(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'edited' }),
     );
     const failedState = filesReducer(
       savingState,
@@ -370,7 +521,7 @@ describe('filesReducer', () => {
   it('clears workspace state on workspace unmount', () => {
     const loadedState = filesReducer(
       initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'hello', false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'hello' }),
     );
 
     expect(

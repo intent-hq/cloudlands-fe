@@ -4,6 +4,169 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.218.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.217.0...v2.218.0) (2026-10-14)
+
+
+### 🚀 Features
+
+* **browser:** Keep agent tabs behind current content ([#3338](https://github.com/intent-hq/cloudlands-fe/issues/3338)) ([73321bb](https://github.com/intent-hq/cloudlands-fe/commit/73321bb6e3fdb0d58e74acadc5c1ac12eba52771))
+
+## [2.217.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.8...v2.217.0) (2026-10-14)
+
+
+### 🚀 Features
+
+* add detailed status grouping to Home workspace list ([#3406](https://github.com/intent-hq/cloudlands-fe/issues/3406)) ([4596feb](https://github.com/intent-hq/cloudlands-fe/commit/4596feb894e03589ad3a8929bb26034c16a2cda5))
+
+## [2.216.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.7...v2.216.8) (2026-10-14)
+
+
+### 🐛 Bug Fixes
+
+* respect GitHub link preferences on Home ([#3401](https://github.com/intent-hq/cloudlands-fe/issues/3401)) ([ca6d325](https://github.com/intent-hq/cloudlands-fe/commit/ca6d325e813f40c8f5d0dedc9deca6f3627f5f08))
+
+## [2.216.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.6...v2.216.7) (2026-10-14)
+
+
+### 🐛 Bug Fixes
+
+* **initializer:** centralize provider availability/enabled checks and preserve Antigravity model selection ([#3400](https://github.com/intent-hq/cloudlands-fe/issues/3400)) ([ac7c9f0](https://github.com/intent-hq/cloudlands-fe/commit/ac7c9f0d665c0a2a8f9be1b4367701cfccc254ec))
+
+## [2.216.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.5...v2.216.6) (2026-10-14)
+
+
+### 🐛 Bug Fixes
+
+* restore Home PR and waiting indicators ([#3379](https://github.com/intent-hq/cloudlands-fe/issues/3379)) ([d51c449](https://github.com/intent-hq/cloudlands-fe/commit/d51c449a5265bcb5f9d9bab14db7864fbdbd1691))
+
+## [2.216.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.4...v2.216.5) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* avoid closing destroyed workspace action menus ([#3390](https://github.com/intent-hq/cloudlands-fe/issues/3390)) ([107d899](https://github.com/intent-hq/cloudlands-fe/commit/107d899c6de1136531d32bafb622441a97fe781a))
+* clear completed chat activity without hiding newer turns ([#3391](https://github.com/intent-hq/cloudlands-fe/issues/3391)) ([8a7b61b](https://github.com/intent-hq/cloudlands-fe/commit/8a7b61b09c2aa7993b1f32e6c4b15545a2750702))
+* left-align workspace description ([#3395](https://github.com/intent-hq/cloudlands-fe/issues/3395)) ([12253e5](https://github.com/intent-hq/cloudlands-fe/commit/12253e5a8e04acf9239dd6395e33dcb776f642f1))
+
+## [2.216.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.3...v2.216.4) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* remove Figma MCP presets from settings ([#3394](https://github.com/intent-hq/cloudlands-fe/issues/3394)) ([b7b6650](https://github.com/intent-hq/cloudlands-fe/commit/b7b665083b0b0417615f5a71d4dc291684986811))
+
+## [2.216.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.2...v2.216.3) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* show untitled workspace labels throughout Home ([#3371](https://github.com/intent-hq/cloudlands-fe/issues/3371)) ([7304217](https://github.com/intent-hq/cloudlands-fe/commit/730421751922a750b424987eaf059205a05ec7dc))
+
+## [2.216.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.1...v2.216.2) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.46 ([#3384](https://github.com/intent-hq/cloudlands-fe/issues/3384)) ([7152870](https://github.com/intent-hq/cloudlands-fe/commit/7152870b047289b5d6150d8df98eb806de85f56d))
+* keep Home PR counts stable during detail loading ([#3380](https://github.com/intent-hq/cloudlands-fe/issues/3380)) ([66c3497](https://github.com/intent-hq/cloudlands-fe/commit/66c34974284b549384e8d83f4d901b8321369dc8))
+* render Mermaid diagrams in Markdown file previews ([#3372](https://github.com/intent-hq/cloudlands-fe/issues/3372)) ([d88949b](https://github.com/intent-hq/cloudlands-fe/commit/d88949b8f9ea586c79e6f69a96ee7d5152b445c0))
+
+## [2.216.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.0...v2.216.1) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.45 ([#3377](https://github.com/intent-hq/cloudlands-fe/issues/3377)) ([fbb2800](https://github.com/intent-hq/cloudlands-fe/commit/fbb280051b6e5239987663df744b77eede3274fc))
+
+## [2.216.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.7...v2.216.0) (2026-10-13)
+
+
+### 🚀 Features
+
+* **scripts:** load active summaries and selected details ([#3366](https://github.com/intent-hq/cloudlands-fe/issues/3366)) ([25ad290](https://github.com/intent-hq/cloudlands-fe/commit/25ad290f4c2ff0b778ce7f38725c3ca8ac8c0009))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.44 ([#3375](https://github.com/intent-hq/cloudlands-fe/issues/3375)) ([87e7d30](https://github.com/intent-hq/cloudlands-fe/commit/87e7d30281bf80b02675c0f28e06c898695d2303))
+* fit Kanban columns and preserve workspace menu focus ([#3297](https://github.com/intent-hq/cloudlands-fe/issues/3297)) ([84d75f3](https://github.com/intent-hq/cloudlands-fe/commit/84d75f315cdc94ec790736315fecb2054d916687))
+* standardize dropdown icon size and alignment ([#3370](https://github.com/intent-hq/cloudlands-fe/issues/3370)) ([d4e69b2](https://github.com/intent-hq/cloudlands-fe/commit/d4e69b2042f6100bd068fe78df672996228f293a))
+
+
+### ⚡ Performance
+
+* consume pushed workspace state without redundant RPC reads ([#3365](https://github.com/intent-hq/cloudlands-fe/issues/3365)) ([2cda0cf](https://github.com/intent-hq/cloudlands-fe/commit/2cda0cfeff7a4d23953f2288777551926710cd51))
+
+## [2.215.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.6...v2.215.7) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* recall presented user messages in composer ([#7068](https://github.com/intent-hq/cloudlands-fe/issues/7068)) ([#3359](https://github.com/intent-hq/cloudlands-fe/issues/3359)) ([f6301c7](https://github.com/intent-hq/cloudlands-fe/commit/f6301c733cc057046586c5f218a500d630f06e04))
+* require PR component tests for fixture dependencies ([#3363](https://github.com/intent-hq/cloudlands-fe/issues/3363)) ([e04cb98](https://github.com/intent-hq/cloudlands-fe/commit/e04cb9843018aa0177c7c25200b8d31bf0b4285e))
+
+## [2.215.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.5...v2.215.6) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* apply primary browser selection events immediately ([#3361](https://github.com/intent-hq/cloudlands-fe/issues/3361)) ([45853ca](https://github.com/intent-hq/cloudlands-fe/commit/45853ca8efa6dd7608ce5cc6685a2682071a3e91))
+
+## [2.215.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.4...v2.215.5) (2026-10-12)
+
+
+### 🐛 Bug Fixes
+
+* cycle from Home to the first or last workspace ([#3358](https://github.com/intent-hq/cloudlands-fe/issues/3358)) ([a175f76](https://github.com/intent-hq/cloudlands-fe/commit/a175f76cb57ab7a268c86f8ef982043c15ad04de))
+* default new workspace dialog to sidebar repository ([#3360](https://github.com/intent-hq/cloudlands-fe/issues/3360)) ([0511e02](https://github.com/intent-hq/cloudlands-fe/commit/0511e0283f2ac815f27a1dce0aa6015a6b9cbaa9))
+
+## [2.215.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.3...v2.215.4) (2026-10-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.43 ([#3356](https://github.com/intent-hq/cloudlands-fe/issues/3356)) ([612d8b4](https://github.com/intent-hq/cloudlands-fe/commit/612d8b4f968b6cecb4059bdf29a62c0de8d57b77))
+
+## [2.215.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.2...v2.215.3) (2026-10-10)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.42 ([#3351](https://github.com/intent-hq/cloudlands-fe/issues/3351)) ([ddc3ed8](https://github.com/intent-hq/cloudlands-fe/commit/ddc3ed8823a5b36c045b2f34617ce4cc45374669))
+
+## [2.215.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.1...v2.215.2) (2026-10-10)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.40 ([#3349](https://github.com/intent-hq/cloudlands-fe/issues/3349)) ([a009485](https://github.com/intent-hq/cloudlands-fe/commit/a00948506e6b94a695fdd77c512a009b9163d785))
+* bump intentd sidecar to v0.10.41 ([#3350](https://github.com/intent-hq/cloudlands-fe/issues/3350)) ([946b39f](https://github.com/intent-hq/cloudlands-fe/commit/946b39f389d0da0ba998cfc2958ed5042b19a471))
+* preserve answers when advancing question wizard ([#3340](https://github.com/intent-hq/cloudlands-fe/issues/3340)) ([4bd4d05](https://github.com/intent-hq/cloudlands-fe/commit/4bd4d051601bd80f3b5f3d20303fdee69e470e69))
+* restore Micro workspace numbering across home and tabs ([#3331](https://github.com/intent-hq/cloudlands-fe/issues/3331)) ([3414cc4](https://github.com/intent-hq/cloudlands-fe/commit/3414cc4850a03f631eae187ccea937b080c2c59b))
+
+## [2.215.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.0...v2.215.1) (2026-10-10)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.39 ([#3345](https://github.com/intent-hq/cloudlands-fe/issues/3345)) ([b52b769](https://github.com/intent-hq/cloudlands-fe/commit/b52b769a0c077d50aa25d361212fa37d71ed7005))
+* report Vite build child termination signals ([#3341](https://github.com/intent-hq/cloudlands-fe/issues/3341)) ([2b69e1f](https://github.com/intent-hq/cloudlands-fe/commit/2b69e1f131a31b394965997d0c3bfceb9ec7f492))
+
+## [2.215.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.214.1...v2.215.0) (2026-10-09)
+
+
+### 🚀 Features
+
+* enable Tailcat from remote device settings ([#3301](https://github.com/intent-hq/cloudlands-fe/issues/3301)) ([839ca66](https://github.com/intent-hq/cloudlands-fe/commit/839ca66d657bd6541d8ebf3ca18cc1bee887ad7d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.38 ([#3342](https://github.com/intent-hq/cloudlands-fe/issues/3342)) ([2a3b64f](https://github.com/intent-hq/cloudlands-fe/commit/2a3b64f4db5989a34855c017b9105861f083df5e))
+* offer downloads for unsupported binary artifact links ([#3335](https://github.com/intent-hq/cloudlands-fe/issues/3335)) ([dea8dda](https://github.com/intent-hq/cloudlands-fe/commit/dea8ddad64efd7633e3942ad3c5dae132fab7d7d))
+* restore browser primary selection after reconnect ([#3333](https://github.com/intent-hq/cloudlands-fe/issues/3333)) ([f75b931](https://github.com/intent-hq/cloudlands-fe/commit/f75b9313d4266e03a750fe2070dea1ff53d37dcd))
+* warn about provider CLIs below adapter minimums ([#3332](https://github.com/intent-hq/cloudlands-fe/issues/3332)) ([96ffd63](https://github.com/intent-hq/cloudlands-fe/commit/96ffd63cd383b39a0f241366e4ac7415c3e92a4b))
+
 ## [2.214.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.214.0...v2.214.1) (2026-10-09)
 
 

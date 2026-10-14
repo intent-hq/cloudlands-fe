@@ -39,6 +39,8 @@ import {
 } from '../agent-subscription-ui-slice';
 import {
   selectDisplayedSubscriptionTargets,
+  selectAgentSubscriptions,
+  selectDelegationGroups,
   selectTrackedAgentIds,
   selectWaitingState,
   selectSubscriptionSnapshotStatus,
@@ -394,17 +396,35 @@ function* refreshWorkspaceSubscriptionsWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
-  const [wsId, changedAgentId] = action.payload;
+  const [wsId, changedAgentId, watchedAgentId] = action.payload;
   if (!wsId) return;
   // Pending initial reads are demanded contexts even before Redux has a snapshot.
   const agentIds = new Set(yield* selectTrackedAgentIds.effect(wsId));
   for (const context of coordinator.contexts.values()) {
     if (context.wsId === wsId) agentIds.add(context.agentId);
   }
-  for (const agentId of agentIds) {
-    if (!changedAgentId || changedAgentId === agentId) {
-      yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  const targets = new Map(
+    [...agentIds].map((agentId) => [makeKey(wsId, agentId), { wsId, agentId }]),
+  );
+  // Cross-workspace completion watches use the parent's home workspace.
+  if (watchedAgentId) {
+    for (const [key, context] of coordinator.contexts) targets.set(key, context);
+  }
+  for (const { wsId: targetWs, agentId } of targets.values()) {
+    if (changedAgentId && changedAgentId !== agentId) continue;
+    if (watchedAgentId) {
+      const subscriptions = yield* selectAgentSubscriptions.effect(targetWs, agentId);
+      const groups = yield* selectDelegationGroups.effect(targetWs, agentId);
+      const known = (yield* selectSubscriptionSnapshotStatus.effect(targetWs, agentId)) === 'ready';
+      const watchesChild =
+        subscriptions.some((watch) => watch.actorIds.includes(watchedAgentId)) ||
+        groups.some((group) => group.expectedAgentIds.includes(watchedAgentId));
+      // Unknown same-workspace snapshots may have captured this child before
+      // the event. Known empty/unrelated snapshots, including hidden views,
+      // are not invalidated by an arbitrary agent finishing.
+      if (!watchesChild && (known || targetWs !== wsId)) continue;
     }
+    yield* startSnapshotRead(coordinator, targetWs, agentId, 'snapshot');
   }
 }
 

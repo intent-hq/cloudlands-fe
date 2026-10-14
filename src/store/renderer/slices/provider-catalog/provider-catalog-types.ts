@@ -37,3 +37,10 @@ export interface WorkspaceCatalogSnapshot {
   settings: import('$lib/client/app-client').SettingDefinitionWithValue[];
   specialists: import('$lib/client/app-client').SpecialistDef[];
 }
+
+/** Read only the resources whose invalidation payload is incomplete. */
+export type WorkspaceCatalogResource = 'catalog' | 'settings' | 'specialists' | 'readiness' | 'mcp';
+export type WorkspaceCatalogUpdate =
+  | { kind: 'settings'; changes: import('$lib/client/app-client').AppliedSettingChange[] }
+  | { kind: 'status'; status: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus }
+  | { kind: 'toggle'; serverId: string; workspaceDisabled: boolean };

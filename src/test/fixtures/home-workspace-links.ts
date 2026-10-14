@@ -26,17 +26,21 @@ import { workspaceNavigationTabSaga } from '$store/renderer/slices/workspace-nav
 import { installMockElectronBridge } from '../ct-mock-electron-bridge';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 import { admitLegacyPrincipal } from './principal-state';
+import { setGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 
 export function setupHomeWorkspaceLinksFixtures({
   href,
   title,
   repository,
   nodeOwned,
+  githubLinkDefaultAction = 'show-choices',
 }: {
   href: string;
   title: string;
   repository: boolean;
   nodeOwned: boolean;
+  githubLinkDefaultAction?: GithubLinkDefaultAction;
 }) {
   const ownerId = WorkspaceId('preview-owner');
   const targetId = WorkspaceId('preview-other');
@@ -105,6 +109,7 @@ export function setupHomeWorkspaceLinksFixtures({
     store.runSaga(workspaceNavigationTabSaga),
   ]);
   admitLegacyPrincipal();
+  store.dispatch(setGithubLinkDefaultAction(githubLinkDefaultAction));
   store.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
   store.dispatch(
     setWorkspaceEntity(

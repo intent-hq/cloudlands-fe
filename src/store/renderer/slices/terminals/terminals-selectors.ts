@@ -9,6 +9,15 @@ import {
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
+export const selectTerminalCreationOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcome = getItem(state.terminals.creationOutcomes, consumerId);
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
+);
+
 function getActiveWs(state: StoreState, wsId: string | null | undefined) {
   if (!wsId) return emptyWorkspaceState;
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
@@ -35,19 +44,11 @@ export const selectTerminals = store.createSelector((state, wsId: string | null)
   return getItems(getActiveWs(state, wsId).terminals);
 });
 
-/**
- * Selected script tab for the active workspace, validated against the scripts
- * slice: once scripts are initialized for the workspace, a selection pointing
- * at a missing script (deleted, or a stale persisted id) reads as null. While
- * scripts are still hydrating the raw id is returned so a restored script tab
- * isn't dropped before `script.list` lands.
- */
+/** A known selected ID survives partial pages and archive retirement. */
 export const selectSelectedScriptId = store.createSelector((state, wsId: string | null) => {
   if (!wsId) return null;
   const selectedScriptId = getWsById(state, wsId).selectedScriptId;
   if (!selectedScriptId) return null;
-  const scriptsWs = state.scripts.byWorkspaceId[wsId];
-  if (scriptsWs?.initialized && !scriptsWs.scripts[selectedScriptId]) return null;
   return selectedScriptId;
 });
 

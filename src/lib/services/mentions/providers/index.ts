@@ -1,3 +1,4 @@
+import { scriptCommandLabel } from '$features/scripts/types';
 /**
  * Provider Registry and Additional Providers
  */
@@ -545,7 +546,9 @@ class ScriptProvider implements Provider {
       const filtered =
         query && !isTypingTrigger
           ? scripts.filter(
-              (s) => fuzzyMatch(query, s.name) !== null || fuzzyMatch(query, s.command) !== null,
+              (s) =>
+                fuzzyMatch(query, s.name) !== null ||
+                fuzzyMatch(query, scriptCommandLabel(s)) !== null,
             )
           : scripts;
 
@@ -561,7 +564,7 @@ class ScriptProvider implements Provider {
           id: script.id,
           type: 'script' as MentionType,
           label: script.name,
-          subtitle: `${statusLabel} · ${script.command}`,
+          subtitle: `${statusLabel} · ${scriptCommandLabel(script)}`,
           description: m.chat_mentions_scriptOutput_description(),
           icon: '▶️',
           uri: `devspace://script/${encodeURIComponent(script.id)}`,

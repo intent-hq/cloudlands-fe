@@ -29,8 +29,12 @@ export const selectSettledProviderReadiness = store.createSelector((state) =>
 export const selectWorkspaceCatalogEpoch = store.createSelector(
   (state): number => state.providerCatalog?.workspaceEpoch ?? 0,
 );
-const selectWorkspaceCatalog = store.createSelector((state, workspaceId?: string) =>
+export const selectWorkspaceCatalog = store.createSelector((state, workspaceId?: string) =>
   workspaceId ? state.providerCatalog?.byWorkspaceId?.[workspaceId] : undefined,
+);
+/** Includes creation pickers which can demand a catalog before lifecycle mount. */
+export const selectWorkspaceCatalogIds = store.createSelector((state): string[] =>
+  Object.keys(state.providerCatalog?.byWorkspaceId ?? {}),
 );
 export const selectWorkspaceCatalogFresh = store.createSelector(
   (state, workspaceId: string): boolean =>

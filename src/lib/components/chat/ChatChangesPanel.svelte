@@ -89,6 +89,10 @@
   } from '$store/renderer/slices/chat-changes/chat-changes-slice';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
 
   /**
    * Get the expand/collapse key for a change entry.
@@ -1562,6 +1566,12 @@
     if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     return name[0]?.toUpperCase() || '?';
   }
+  $effect(() => {
+    const wsId = routeWorkspaceId;
+    if (!wsId || !(groupByCommit && !gitRootId && !nodeOwnedPaths)) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'history'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'history'));
+  });
 </script>
 
 <svelte:window onkeydown={handleAllChangesGlobalKeydown} />

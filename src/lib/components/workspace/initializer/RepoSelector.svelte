@@ -11,6 +11,7 @@
   const admission$ = selectPrincipalActionContext();
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { appClient } from '$lib/client';
+  import type { RecentRepositoriesClient } from './recent-repositories-client';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -783,6 +784,7 @@
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
   async function loadRecentRepos(
+    client: RecentRepositoriesClient,
     isCurrent: () => boolean,
     admission: string,
     publish: boolean,
@@ -857,7 +859,7 @@
         await Promise.all(
           originPaths.map(async (path) => {
             if (!isCurrent()) return [path, null] as const;
-            const url = await appClient.git.originUrl(path);
+            const url = await client.git.originUrl(path);
             const identity = url
               ? getRecentRepoIdentity(
                   { path, type: 'local', name: '', githubUrl: url },
@@ -1028,7 +1030,9 @@
       active &&
       appStore.dispatch === mountedDispatch &&
       admission === selectPrincipalActionContext.select(appStore.state);
-    void untrack(() => loadRecentRepos(isCurrent, admission, !awaitingHydration, gitlabInstance));
+    void untrack(() =>
+      loadRecentRepos(appClient, isCurrent, admission, !awaitingHydration, gitlabInstance),
+    );
     return () => {
       active = false;
     };

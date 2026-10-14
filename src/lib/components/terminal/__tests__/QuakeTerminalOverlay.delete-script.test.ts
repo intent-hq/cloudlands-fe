@@ -17,12 +17,16 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptWithState } from '$features/scripts/types';
 
 const authority = vi.hoisted(() => ({ current: 'admitted' as string | null }));
+const asyncDefinitionActionHandlers = vi.hoisted(() => ({
+  update: null as ((action: any, complete: (script: unknown) => void) => void) | null,
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: { select: () => authority.current },
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
+  const { scriptsReducer, editScriptRequested, scriptOperationSucceeded, scriptWorkflowFinished } =
+    await import('$store/renderer/slices/scripts/scripts-slice');
   const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
   let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
@@ -46,6 +50,59 @@ vi.mock('$store/renderer/store', async () => {
       scriptsState = scriptsReducer(scriptsState, action);
       terminalsState = terminalsReducer(terminalsState, action);
       for (const notify of subscribers) notify();
+      if (action.type === 'scripts/updateScriptDefinitionRequested') {
+        const [workspaceId, scriptId, updates, consumer] = action.payload;
+        scriptsState = scriptsReducer(scriptsState, editScriptRequested(workspaceId, scriptId));
+        for (const notify of subscribers) notify();
+        const complete = (script: unknown) => {
+          action.success(script);
+          if (consumer)
+            store.dispatch(scriptWorkflowFinished(workspaceId, consumer, 'success', script));
+          scriptsState = scriptsReducer(
+            scriptsState,
+            scriptOperationSucceeded(workspaceId, scriptId, 'edit'),
+          );
+          for (const notify of subscribers) notify();
+        };
+        const fail = (error: unknown) => {
+          action.failure(error);
+          if (consumer)
+            store.dispatch(
+              scriptWorkflowFinished(
+                workspaceId,
+                consumer,
+                'failure',
+                undefined,
+                error instanceof Error ? error.message : String(error),
+              ),
+            );
+          scriptsState = scriptsReducer(
+            scriptsState,
+            scriptOperationSucceeded(workspaceId, scriptId, 'edit'),
+          );
+          for (const notify of subscribers) notify();
+        };
+        if (asyncDefinitionActionHandlers.update)
+          asyncDefinitionActionHandlers.update(action, complete);
+        else complete({ id: scriptId, workspaceId, ...updates });
+        action.__fail = fail;
+      } else if (action.type === 'scripts/getScriptDefinitionRequested') {
+        const [workspaceId, scriptId, consumer] = action.payload;
+        void (async () => {
+          try {
+            const script = await (
+              await import('$lib/client')
+            ).appClient.scripts.get(workspaceId, scriptId);
+            if (consumer)
+              store.dispatch(scriptWorkflowFinished(workspaceId, consumer, 'success', script));
+          } catch (error) {
+            if (consumer)
+              store.dispatch(
+                scriptWorkflowFinished(workspaceId, consumer, 'failure', undefined, String(error)),
+              );
+          }
+        })();
+      }
       return action;
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
@@ -137,7 +194,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
 vi.mock('$features/scripts/scripts.client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/scripts/scripts.client')>();
@@ -228,6 +285,7 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authority.current = 'admitted';
+    asyncDefinitionActionHandlers.update = null;
     vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
   });
@@ -442,20 +500,21 @@ describe('script definition and authority races', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authority.current = 'admitted';
+    asyncDefinitionActionHandlers.update = null;
     vi.mocked(confirm).mockResolvedValue(true);
     (appStore as any).__reset();
     seedWorkspace(WS_A, ['script-1'], 'script-1');
     appStore.dispatch(openTerminalOverlay(WS_A));
     vi.mocked(appClient.scripts.list).mockResolvedValue([makeScript('script-1', WS_A)]);
+    vi.mocked(appClient.scripts.get).mockResolvedValue(makeScript('script-1', WS_A));
   });
 
   it.each(['name', 'command'])('blocks deletion throughout a deferred %s save', async (field) => {
-    let finish!: (result: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.create).mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
+    let finish!: () => void;
+    asyncDefinitionActionHandlers.update = (action, complete) => {
+      const [workspaceId, scriptId, updates] = action.payload;
+      finish = () => complete({ id: scriptId, workspaceId, ...updates });
+    };
     const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
     if (field === 'name') {
       await fireEvent.click(screen.getByTitle('Click to rename script'));
@@ -464,7 +523,7 @@ describe('script definition and authority races', () => {
       await fireEvent.blur(input);
     } else {
       await fireEvent.click(screen.getByRole('button', { name: 'Edit command' }));
-      await fireEvent.input(screen.getByPlaceholderText('npm run dev'), {
+      await fireEvent.input(await screen.findByPlaceholderText('npm run dev'), {
         target: { value: 'make check' },
       });
       await fireEvent.keyDown(screen.getByPlaceholderText('npm run dev'), {
@@ -472,11 +531,13 @@ describe('script definition and authority races', () => {
         ctrlKey: true,
       });
     }
-    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
+    );
     expect(
       (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    finish({ success: true });
+    finish();
     await waitFor(() =>
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
@@ -488,21 +549,21 @@ describe('script definition and authority races', () => {
     'releases the delete button after a direct save fails (throw: %s)',
     async (throws) => {
       let finish!: () => void;
-      vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-        new Promise((resolve, reject) => {
-          finish = () =>
-            throws ? reject(new Error('offline')) : resolve({ success: false, error: 'offline' });
-        }),
+      asyncDefinitionActionHandlers.update = (action) => {
+        finish = () => action.__fail(throws ? new Error('offline') : 'offline');
+      };
+      const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
+      await fireEvent.click(screen.getByTitle('Click to rename script'));
+      const input = view.container.querySelector('[data-edit-script-header-name]')!;
+      await fireEvent.input(input, { target: { value: 'Renamed' } });
+      await fireEvent.blur(input);
+      await waitFor(() =>
+        expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
       );
-      render(QuakeTerminalOverlay, { workspaceId: WS_A });
-      const saved = scriptsClient.update(WS_A, 'script-1', { name: 'Renamed' });
-      const result = saved.catch((error: Error) => ({ success: false, error: error.message }));
-      await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
       ).toBe(true);
       finish();
-      expect(await result).toEqual({ success: false, error: 'offline' });
       await waitFor(() =>
         expect(
           (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
@@ -513,27 +574,29 @@ describe('script definition and authority races', () => {
 
   it('rejects a save started while confirmation is open', async () => {
     let accept!: (value: boolean) => void;
-    let finish!: (result: { success: boolean }) => void;
+    let finish!: () => void;
     vi.mocked(confirm).mockReturnValue(
       new Promise((resolve) => {
         accept = resolve;
       }),
     );
-    vi.mocked(appClient.scripts.create).mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
+    asyncDefinitionActionHandlers.update = (action, complete) => {
+      const [workspaceId, scriptId, updates] = action.payload;
+      finish = () => complete({ id: scriptId, workspaceId, ...updates });
+    };
     const view = render(QuakeTerminalOverlay, { workspaceId: WS_A });
     await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
     await fireEvent.click(screen.getByTitle('Click to rename script'));
     const input = view.container.querySelector('[data-edit-script-header-name]')!;
     await fireEvent.input(input, { target: { value: 'Renamed' } });
     await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(dispatchedTypes()).toContain('scripts/updateScriptDefinitionRequested'),
+    );
     accept(true);
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
-    finish({ success: true });
+    finish();
   });
 
   it('reports missing authority before opening a confirmation', async () => {

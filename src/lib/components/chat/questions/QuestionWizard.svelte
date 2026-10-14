@@ -365,8 +365,8 @@
         questions={primitiveQuestions}
         currentIndex={idx}
         answers={primitiveAnswers}
-        onCurrentIndexChange={(nextIndex) => {
-          if (!completed) updateDraft({ idx: nextIndex, answers });
+        onCurrentIndexChange={(nextIndex, nextAnswers) => {
+          if (!completed) updateDraft({ idx: nextIndex, answers: toDraftAnswers(nextAnswers) });
         }}
         onAnswersChange={handleAnswersChange}
         onOtherPaste={handleOtherPaste}

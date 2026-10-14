@@ -13,20 +13,8 @@
   import {
     getSidebarContextPosition,
     type SidebarContextPosition,
-    type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
-  import { store as appStore } from '$store/renderer/store';
-  import {
-    markKeySlotUnassigned,
-    pinWorkspaceToKey,
-  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-  import {
-    selectWorkspacePinnedKeySlot,
-    selectWorkspaceResolvedKeySlot,
-    selectHardwareConsoleKeySlots,
-  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { createMicroKeyAssignmentItems } from '$features/hardware-console/assignment/workspace-key-menu';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { slotHoverClasses as slotHoverClassesFor } from '$features/hardware-console/components/micro-key-slot-colors';
@@ -68,49 +56,6 @@
   function closeMenu() {
     menu = null;
   }
-
-  function getMenuItems(): SidebarMenuEntry[] {
-    const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspaceId);
-    const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspaceId);
-    const occupiedSlots = selectHardwareConsoleKeySlots.select(appStore.state);
-    const items: SidebarMenuEntry[] = [];
-    for (let target = 0; target < AGENT_KEY_COUNT; target += 1) {
-      const occupantId = occupiedSlots[target];
-      const occupant =
-        occupantId && occupantId !== workspaceId
-          ? selectWorkspaceById.select(appStore.state, occupantId)
-          : undefined;
-      items.push({
-        id: `assign-micro-key-${target + 1}`,
-        label: occupant
-          ? m.workspace_card_assignOccupiedMicroKey_label({
-              number: formatInteger(target + 1),
-              title: occupant.title,
-            })
-          : m.workspace_card_assignMicroKeyNumber_label({
-              number: formatInteger(target + 1),
-            }),
-        checked: pinnedSlot === target,
-        closeOnSelect: true,
-        onClick: () => {
-          appStore.dispatch(pinWorkspaceToKey(target, workspaceId));
-          closeMenu();
-        },
-      });
-    }
-    if (resolvedSlot !== null) {
-      items.push({ type: 'separator' });
-      items.push({
-        id: 'unassign-micro-key',
-        label: m.workspace_card_unassignMicroKey_label(),
-        onClick: () => {
-          appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
-          closeMenu();
-        },
-      });
-    }
-    return items;
-  }
 </script>
 
 <!-- The interactive click target composes the shared non-interactive square
@@ -142,7 +87,7 @@
     returnFocus={menu?.returnFocus}
     selection="single"
     ariaLabel={m.workspace_card_assignMicroKey_label()}
-    items={getMenuItems()}
+    items={createMicroKeyAssignmentItems(workspaceId, closeMenu)}
     onClickOutside={closeMenu}
   />
 {/if}

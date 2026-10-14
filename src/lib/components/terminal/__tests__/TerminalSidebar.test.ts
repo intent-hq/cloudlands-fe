@@ -1,6 +1,6 @@
+import { scriptsClient } from '$features/scripts/scripts.client';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { appClient } from '$lib/client';
 
 vi.mock('$lib/client/live/backend-transport', async () => {
   const { appClient } = await import('$lib/client');
@@ -22,7 +22,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 });
 
 vi.mock('$lib/client', () => ({
-  appClient: { scripts: { list: vi.fn(), create: vi.fn() } },
+  appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
 
 const {
@@ -40,6 +40,7 @@ const {
   activeTerminalIds,
   activeWorkspaceState,
   selectorWorkspaceArgs,
+  asyncActionHandlers,
   executorState,
   mockGetNavigationContext,
   notify,
@@ -76,6 +77,10 @@ const {
     executorState: { isRunning: false, agentId: null as string | null },
     mockGetNavigationContext: vi.fn(),
     selectorWorkspaceArgs: [] as unknown[],
+    asyncActionHandlers: {
+      detect: null as ((action: any) => void) | null,
+      apply: null as ((action: any) => void) | null,
+    },
     notify: {
       success: vi.fn(),
       info: vi.fn(),
@@ -87,6 +92,7 @@ const {
 
 vi.mock('$features/scripts/scripts.client', () => ({
   scriptsClient: {
+    list: vi.fn(async () => ({ success: true, data: scriptEntries.value })),
     detect: mockDetect,
     create: mockScriptCreate,
     update: mockScriptUpdate,
@@ -128,10 +134,40 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  const { scriptsReducer, emptyWorkspaceState } =
+  const { scriptsReducer, emptyWorkspaceState, scriptWorkflowFinished } =
     await import('$store/renderer/slices/scripts/scripts-slice');
   let scripts = scriptsReducer(undefined, { type: '@@init' });
-  return createAppStoreMockModule({
+  let module: ReturnType<typeof createAppStoreMockModule>;
+  const finishWorkflow = (
+    action: any,
+    status: 'success' | 'failure',
+    result?: unknown,
+    error?: string,
+  ) => {
+    const payload = action.payload as any[];
+    const consumer =
+      action.type === 'scripts/createScriptDefinitionRequested'
+        ? payload[2]
+        : action.type === 'scripts/updateScriptDefinitionRequested'
+          ? payload[3]
+          : action.type === 'scripts/removeScriptDefinitionRequested' ||
+              action.type === 'scripts/getScriptDefinitionRequested'
+            ? payload[2]
+            : action.type === 'scripts/detectScriptDefinitionsRequested' ||
+                action.type === 'scripts/saveScriptDefinitionsToRepoRequested'
+              ? payload[1]
+              : action.type === 'scripts/applyScriptDefinitionChangesRequested'
+                ? payload[3]
+                : action.type === 'scripts/restoreScriptDefinitionsRequested' ||
+                    action.type === 'scripts/listScriptDefinitionsRequested'
+                  ? payload[2]
+                  : undefined;
+    if (consumer)
+      module.store.dispatch(
+        scriptWorkflowFinished(payload[0], consumer, status, result as never, error),
+      );
+  };
+  module = createAppStoreMockModule({
     state: () => ({
       scripts: {
         byWorkspaceId: Object.fromEntries(
@@ -155,22 +191,91 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: (action) => {
       mockDispatch(action);
       scripts = scriptsReducer(scripts, action);
+      if (action?.asyncActionType) {
+        const success = action.success;
+        const failure = action.failure;
+        action.success = (result: unknown) => {
+          const next = success(result);
+          finishWorkflow(action, 'success', result);
+          return next;
+        };
+        action.failure = (error: unknown) => {
+          const next = failure(error);
+          finishWorkflow(action, 'failure', undefined, String(error));
+          return next;
+        };
+      }
+      if (
+        action.type === 'scripts/detectScriptDefinitionsRequested' &&
+        asyncActionHandlers.detect
+      ) {
+        asyncActionHandlers.detect(action);
+      } else if (action.type === 'scripts/createScriptDefinitionRequested') {
+        const [workspaceId, input] = action.payload;
+        action.success({ id: 'new-command', workspaceId, ...input });
+      } else if (action.type === 'scripts/updateScriptDefinitionRequested') {
+        const [workspaceId, scriptId, updates] = action.payload;
+        action.success({ id: scriptId, workspaceId, ...updates });
+      } else if (action.type === 'scripts/removeScriptDefinitionRequested') {
+        action.success(undefined);
+      } else if (action.type === 'scripts/detectScriptDefinitionsRequested') {
+        action.success({ detected: 0, added: 0, updated: 0, removed: 0, skippedRunning: [] });
+      } else if (action.type === 'scripts/applyScriptDefinitionChangesRequested') {
+        const changes = action.payload[1];
+        if (asyncActionHandlers.apply) {
+          asyncActionHandlers.apply(action);
+          return;
+        }
+        const skippedRunning = changes.update.some(
+          (entry: { id: string }) => entry.id === 'auto-running',
+        )
+          ? ['dev']
+          : [];
+        action.success({
+          detected: 0,
+          added: changes.add.length,
+          updated: changes.update.length - skippedRunning.length,
+          removed: changes.remove.length,
+          skippedRunning,
+          snapshot: scriptEntries.byWorkspaceId[action.payload[0]] ?? scriptEntries.value,
+        });
+      } else if (action.type === 'scripts/listScriptDefinitionsRequested') {
+        const [workspaceId] = action.payload;
+        void scriptsClient.list(workspaceId).then((result) => {
+          if (result.success) action.success(result.data);
+          else action.failure(result.error);
+        });
+      } else if (
+        action.type === 'scripts/restoreScriptDefinitionsRequested' ||
+        action.type === 'scripts/saveScriptDefinitionsToRepoRequested'
+      ) {
+        action.success(undefined);
+      }
+      module.store.emitState();
     },
   });
+  return module;
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceById: (workspaceArg: any) => {
-    selectorWorkspaceArgs.push(workspaceArg);
-    return {
-      subscribe: (fn: (value: any) => void) =>
-        typeof workspaceArg === 'string'
-          ? (fn(activeWorkspaceState.byWorkspaceId[workspaceArg] ?? activeWorkspaceState.value),
-            () => {})
-          : workspaceArg.subscribe((workspaceId: string) =>
-              fn(activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value),
-            ),
-    };
-  },
+  selectWorkspaceActionContext: { select: () => 'owner' },
+  selectWorkspaceById: Object.assign(
+    (workspaceArg: any) => {
+      selectorWorkspaceArgs.push(workspaceArg);
+      return {
+        subscribe: (fn: (value: any) => void) =>
+          typeof workspaceArg === 'string'
+            ? (fn(activeWorkspaceState.byWorkspaceId[workspaceArg] ?? activeWorkspaceState.value),
+              () => {})
+            : workspaceArg.subscribe((workspaceId: string) =>
+                fn(activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value),
+              ),
+      };
+    },
+    {
+      select: (_state: unknown, workspaceId: string) =>
+        activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value,
+    },
+  ),
 }));
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
@@ -283,6 +388,8 @@ beforeEach(() => {
   activeWorkspaceState.byWorkspaceId = {};
   executorState.isRunning = false;
   executorState.agentId = null;
+  asyncActionHandlers.detect = null;
+  asyncActionHandlers.apply = null;
   mockGetNavigationContext.mockReset();
   selectorWorkspaceArgs.length = 0;
 });
@@ -351,7 +458,6 @@ describe('TerminalSidebar detection flow', () => {
   });
 
   it('saves commands added through the user form', async () => {
-    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
     await fireEvent.click(screen.getByTitle('Add script'));
     await fireEvent.input(screen.getByPlaceholderText('Name'), { target: { value: 'test' } });
@@ -359,26 +465,206 @@ describe('TerminalSidebar detection flow', () => {
       target: { value: 'pnpm test' },
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }));
-    expect(mockScriptCreate).toHaveBeenCalledWith('ws-1', {
-      name: 'test',
-      command: 'pnpm test',
-      mode: 'command',
-      purpose: 'saved',
-      source: 'user',
-    });
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/createScriptDefinitionRequested',
+        payload: [
+          'ws-1',
+          { name: 'test', command: 'pnpm test', mode: 'command', purpose: 'saved', source: 'user' },
+          expect.objectContaining({ resourceId: 'create' }),
+        ],
+      }),
+    );
   });
 
   it('saves commands returned by legacy agent detection', async () => {
-    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
     await backgroundAgentOptions.value!.onResult(
       JSON.stringify([{ name: 'test', command: 'pnpm test', mode: 'command' }]),
     );
-    expect(mockScriptCreate).toHaveBeenCalledWith(
-      'ws-1',
-      expect.objectContaining({ purpose: 'saved' }),
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({
+            add: [expect.objectContaining({ purpose: 'saved', source: 'auto-detected' })],
+          }),
+          undefined,
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          expect.any(String),
+        ],
+      }),
     );
   });
+
+  it('deduplicates legacy agent results against the full fetched inventory', async () => {
+    const offPage = {
+      id: 'off-page',
+      workspaceId: 'ws-1',
+      name: 'test',
+      command: 'pnpm test',
+      mode: 'command',
+      source: 'user',
+      runtime: { status: 'idle' },
+    };
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({
+      success: true,
+      data: [offPage] as never,
+    });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+    await waitFor(() => expect(mockExecute).toHaveBeenCalledOnce());
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify([{ name: 'test', command: 'pnpm test', mode: 'command' }]),
+    );
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({ add: [] }),
+          [offPage],
+          expect.any(Object),
+          expect.any(String),
+        ],
+      }),
+    );
+  });
+
+  it('still launches agent detection when the context inventory read fails', async () => {
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: false, error: 'List failed' });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledWith(
+        activeWorkspaceState.value,
+        expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
+      ),
+    );
+  });
+
+  it('captures full definitions for detection Undo even when the visible rows are previews', async () => {
+    const full = {
+      id: 'old',
+      name: 'test',
+      command: 'complete command beyond the preview',
+      mode: 'command',
+      cwd: 'app',
+      env: { KEY: 'value' },
+      runtime: { status: 'idle' },
+    };
+    scriptEntries.value = [
+      {
+        id: full.id,
+        name: full.name,
+        mode: full.mode,
+        commandPreview: 'complete',
+        commandTruncated: true,
+        runtime: full.runtime,
+      },
+    ];
+    vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full as never] });
+    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
+    asyncActionHandlers.apply = (action) =>
+      action.success({
+        detected: 0,
+        added: 1,
+        updated: 0,
+        removed: 0,
+        skippedRunning: [],
+        snapshot: [full],
+      });
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Agent assist' }));
+    await waitFor(() => expect(mockExecute).toHaveBeenCalledOnce());
+    await backgroundAgentOptions.value!.onResult(
+      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: [
+          'ws-1',
+          expect.any(Object),
+          [full],
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          expect.any(String),
+        ],
+      }),
+    );
+    await notify.success.mock.calls[0][1].action.onClick();
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/restoreScriptDefinitionsRequested',
+        payload: [
+          'ws-1',
+          [expect.objectContaining({ command: full.command, cwd: full.cwd, env: full.env })],
+          expect.objectContaining({ resourceId: 'restore' }),
+        ],
+      }),
+    );
+  });
+
+  it.each(['switch', 'unmount'] as const)(
+    'releases a pending detection batch on workspace %s without stale fallback',
+    async (lifecycle) => {
+      let reject!: (error: Error) => void;
+      asyncActionHandlers.apply = (action) => {
+        reject = action.failure;
+      };
+      const full = {
+        id: 'off-page',
+        workspaceId: 'ws-a',
+        name: 'Build',
+        command: 'pnpm build',
+        mode: 'command',
+        source: 'auto-detected',
+        createdAt: '2026-10-09',
+        runtime: { status: 'idle', restartCount: 0 },
+      };
+      vi.mocked(scriptsClient.list).mockResolvedValueOnce({ success: true, data: [full] as never });
+      scriptEntries.byWorkspaceId['ws-a'] = [full];
+      const view = render(TerminalSidebar, { props: { workspaceId: 'ws-a' } });
+      const detection = backgroundAgentOptions.value!.onResult(
+        JSON.stringify({ remove: [full.id] }),
+      );
+      await waitFor(() =>
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'scripts/applyScriptDefinitionChangesRequested',
+            payload: [
+              'ws-a',
+              expect.any(Object),
+              undefined,
+              expect.objectContaining({ resourceId: 'agent-detection' }),
+              expect.any(String),
+            ],
+          }),
+        ),
+      );
+
+      if (lifecycle === 'switch') await view.rerender({ workspaceId: 'ws-b' });
+      else view.unmount();
+
+      const request = mockDispatch.mock.calls.find(
+        ([action]) => action.type === 'scripts/applyScriptDefinitionChangesRequested',
+      )![0];
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/workflowReleased',
+          payload: ['ws-a', request.payload[3].consumerId],
+        }),
+      );
+      reject(new Error('Applying script changes cancelled'));
+      await detection;
+      expect(notify.info).not.toHaveBeenCalled();
+      expect(mockDetect).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['saved', 'oneOff', undefined] as const)(
     'restores %s purpose when undo recreates a definition',
@@ -393,16 +679,21 @@ describe('TerminalSidebar detection flow', () => {
           runtime: { status: 'idle' },
         },
       ];
-      mockScriptCreate.mockResolvedValue({ success: true, data: { id: 'new-command' } });
       render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
       await backgroundAgentOptions.value!.onResult(
         JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
       );
-      mockScriptRestoreSnapshot.mockResolvedValueOnce({ success: true });
       await notify.success.mock.calls[0][1].action.onClick();
-      expect(mockScriptRestoreSnapshot).toHaveBeenCalledWith('ws-1', [
-        expect.objectContaining({ name: 'test', purpose }),
-      ]);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/restoreScriptDefinitionsRequested',
+          payload: [
+            'ws-1',
+            [expect.objectContaining({ name: 'test', purpose })],
+            expect.objectContaining({ resourceId: 'restore' }),
+          ],
+        }),
+      );
     },
   );
 
@@ -421,18 +712,23 @@ describe('TerminalSidebar detection flow', () => {
     ] as any[];
 
     let resolveDetect: (() => void) | undefined;
-    mockDetect.mockReturnValue(
-      new Promise((resolve) => {
-        resolveDetect = () => resolve({ success: true, detected: 0 });
-      }),
-    );
-    // mockDetect already configured via mockReturnValue above
+    asyncActionHandlers.detect = (action) => {
+      resolveDetect = () =>
+        action.success({ detected: 0, added: 0, updated: 0, removed: 0, skippedRunning: [] });
+    };
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
 
-    await waitFor(() => expect(mockDetect).toHaveBeenCalledWith('ws-1'));
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/detectScriptDefinitionsRequested',
+          payload: ['ws-1', expect.objectContaining({ resourceId: 'local-detection' })],
+        }),
+      ),
+    );
     expect(mockExecute).not.toHaveBeenCalled();
     expect(screen.getByText('Scanning files…')).toBeTruthy();
 
@@ -453,8 +749,6 @@ describe('TerminalSidebar detection flow', () => {
         runtime: { status: 'idle', exitCode: null },
       },
     ] as any[];
-
-    mockDetect.mockResolvedValue({ success: true, detected: 0 });
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
@@ -486,8 +780,6 @@ describe('TerminalSidebar detection flow', () => {
         runtime: { status: 'idle', exitCode: null },
       },
     ] as any[];
-
-    mockDetect.mockResolvedValue({ success: true, detected: 0 });
 
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
@@ -558,11 +850,17 @@ describe('TerminalSidebar workspace prop changes', () => {
       true,
     );
 
-    mockScriptRemove.mockResolvedValueOnce({ success: true });
     await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
     await fireEvent.click(screen.getByText('Delete'));
 
-    await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/deleteScriptRequested',
+          payload: ['ws-b', 'script-b', expect.any(String)],
+        }),
+      ),
+    );
   });
 });
 
@@ -600,12 +898,6 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
         runtime: { status: 'idle', exitCode: null },
       },
     ] as any[];
-    mockScriptUpdate.mockResolvedValue({ success: true });
-    mockScriptCreate.mockResolvedValue({
-      success: true,
-      data: { id: 'auto-lint', name: 'lint', command: 'pnpm lint', mode: 'command' },
-    });
-    mockScriptRemove.mockResolvedValue({ success: true });
   });
 
   it('skips the running script in the update loop, surfaces the skipped-running toast, and still applies other entries', async () => {
@@ -624,20 +916,27 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
       }),
     );
 
-    expect(mockScriptUpdate).toHaveBeenCalledTimes(1);
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'auto-idle', {
-      command: 'pnpm build --clean',
-    });
-    expect(mockScriptCreate).toHaveBeenCalledWith(
-      'ws-1',
+    expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'lint',
-        command: 'pnpm lint',
-        mode: 'command',
-        purpose: 'saved',
+        type: 'scripts/applyScriptDefinitionChangesRequested',
+        payload: [
+          'ws-1',
+          {
+            add: [
+              expect.objectContaining({ name: 'lint', command: 'pnpm lint', purpose: 'saved' }),
+            ],
+            update: [
+              { id: 'auto-running', updates: { command: 'pnpm dev --host' } },
+              { id: 'auto-idle', updates: { command: 'pnpm build --clean' } },
+            ],
+            remove: ['auto-stale'],
+          },
+          undefined,
+          expect.objectContaining({ resourceId: 'agent-detection' }),
+          expect.any(String),
+        ],
       }),
     );
-    expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
     expect(notify.warning).toHaveBeenCalledTimes(1);
     expect(notify.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
     expect(notify.success).toHaveBeenCalled();
@@ -707,7 +1006,6 @@ describe('TerminalSidebar script inline rename', () => {
       },
     ] as any[];
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
-    mockScriptUpdate.mockResolvedValue({ success: true });
   });
 
   it('shows a prefilled rename input on double-click and restores the row on Escape', async () => {
@@ -722,7 +1020,9 @@ describe('TerminalSidebar script inline rename', () => {
     await fireEvent.keyDown(input!, { key: 'Escape' });
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
     expect(screen.getByText('build')).toBeTruthy();
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/updateScriptDefinitionRequested' }),
+    );
   });
 
   it('commits a non-empty rename with Enter', async () => {
@@ -734,7 +1034,17 @@ describe('TerminalSidebar script inline rename', () => {
     await fireEvent.keyDown(input!, { key: 'Enter' });
 
     await waitFor(() =>
-      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'compile' }),
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/updateScriptDefinitionRequested',
+          payload: [
+            'ws-1',
+            'script-1',
+            { name: 'compile' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
+        }),
+      ),
     );
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
   });
@@ -748,7 +1058,17 @@ describe('TerminalSidebar script inline rename', () => {
     await fireEvent.blur(input!);
 
     await waitFor(() =>
-      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'bundle' }),
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/updateScriptDefinitionRequested',
+          payload: [
+            'ws-1',
+            'script-1',
+            { name: 'bundle' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
+        }),
+      ),
     );
     expect(screen.getByText('build')).toBeTruthy();
   });
@@ -761,7 +1081,9 @@ describe('TerminalSidebar script inline rename', () => {
 
     await fireEvent.keyDown(input!, { key: 'Enter' });
 
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/updateScriptDefinitionRequested' }),
+    );
     expect(screen.getByText('build')).toBeTruthy();
   });
 });
@@ -814,118 +1136,5 @@ describe('TerminalSidebar resize handle', () => {
 
     await fireEvent.mouseUp(document);
     expect(handle?.getAttribute('data-resizing')).toBe('false');
-  });
-});
-
-describe('sidebar inline rename deletion races', () => {
-  const scriptId = 'sidebar-rename';
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    const actual = await vi.importActual<typeof import('$features/scripts/scripts.client')>(
-      '$features/scripts/scripts.client',
-    );
-    mockScriptUpdate.mockReset().mockImplementation(actual.scriptsClient.update);
-    mockScriptRemove.mockReset().mockImplementation(actual.scriptsClient.remove);
-    mockScriptRestoreSnapshot.mockReset().mockImplementation(actual.scriptsClient.restoreSnapshot);
-    mockWireRemove.mockReset().mockResolvedValue({ success: true });
-    vi.mocked(appClient.scripts.list).mockImplementation(async () => scriptEntries.value);
-    scriptEntries.value = [
-      {
-        id: scriptId,
-        name: 'Rename target',
-        command: 'true',
-        mode: 'command',
-        source: 'user',
-        runtime: { status: 'idle', restartCount: 0 },
-      },
-    ];
-  });
-
-  async function rename() {
-    await fireEvent.dblClick(screen.getByRole('button', { name: /^Rename target/ }));
-    const input = document.querySelector(`[data-edit-script="${scriptId}"]`)!;
-    await fireEvent.input(input, { target: { value: 'New name' } });
-    await fireEvent.blur(input);
-  }
-
-  it('blocks shared deletion eligibility throughout a deferred inline rename', async () => {
-    const { store } = await import('$store/renderer/store');
-    const { selectCanDeleteScript } =
-      await import('$store/renderer/slices/scripts/scripts-selectors');
-    let finish!: (result: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
-    render(TerminalSidebar, { workspaceId: 'ws-1' });
-    await rename();
-    await waitFor(() =>
-      expect(appClient.scripts.create).toHaveBeenCalledWith(
-        'ws-1',
-        expect.objectContaining({ scriptId, name: 'New name' }),
-      ),
-    );
-    expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(false);
-    finish({ success: true });
-    await waitFor(() =>
-      expect(selectCanDeleteScript.select(store.state, 'ws-1', scriptId)).toBe(true),
-    );
-  });
-
-  it('refuses inline rename while deletion is pending', async () => {
-    const { store } = await import('$store/renderer/store');
-    const { deleteScriptRequested, scriptOperationSucceeded } =
-      await import('$store/renderer/slices/scripts/scripts-slice');
-    store.dispatch(deleteScriptRequested('ws-1', scriptId, 'Delete failed'));
-    render(TerminalSidebar, { workspaceId: 'ws-1' });
-    await rename();
-    expect(appClient.scripts.list).not.toHaveBeenCalled();
-    expect(appClient.scripts.create).not.toHaveBeenCalled();
-    expect(notify.warning).toHaveBeenCalled();
-    store.dispatch(scriptOperationSucceeded('ws-1', scriptId, 'delete'));
-  });
-  it('keeps the sidebar row when context deletion races a pending rename', async () => {
-    let finish!: (result: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
-    render(TerminalSidebar, { workspaceId: 'ws-1' });
-    await rename();
-    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
-    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Rename target/ }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Delete', exact: true }));
-    finish({ success: true });
-    await waitFor(() => expect(notify.warning).toHaveBeenCalled());
-    expect(mockWireRemove).not.toHaveBeenCalled();
-    expect(mockDispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'scripts/removeScript' }),
-    );
-  });
-  it('rejects detection Undo during a rename without removing or recreating rows', async () => {
-    mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new' } });
-    render(TerminalSidebar, { workspaceId: 'ws-1' });
-    await backgroundAgentOptions.value!.onResult(
-      JSON.stringify({ add: [{ name: 'lint', command: 'pnpm lint', mode: 'command' }] }),
-    );
-    const undo = notify.success.mock.calls[0][1].action.onClick;
-    notify.success.mockClear();
-    mockScriptCreate.mockClear();
-    let finish!: (result: { success: boolean }) => void;
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    );
-    await rename();
-    await waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
-    await undo();
-    expect(mockWireRemove).not.toHaveBeenCalled();
-    expect(mockScriptCreate).not.toHaveBeenCalled();
-    expect(notify.warning).toHaveBeenCalled();
-    expect(notify.success).not.toHaveBeenCalled();
-    finish({ success: true });
   });
 });

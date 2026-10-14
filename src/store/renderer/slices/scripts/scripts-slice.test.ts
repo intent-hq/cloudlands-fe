@@ -17,14 +17,18 @@ import {
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   clearScriptOperations,
+  applyScriptDefinitionChangesRequested,
   emptyWorkspaceState,
+  removeScriptDefinitionRequested,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
+  scriptWorkflowFinished,
   scriptsReducer,
   setScriptsData,
   startScriptRequested,
   stopScriptRequested,
+  updateScriptDefinitionRequested,
   updateRuntimeState,
   upsertScript,
 } from './scripts-slice';
@@ -42,6 +46,7 @@ import {
   selectWorkspaceScriptEntries,
   selectWorkspaceScriptOperations,
   selectWorkspaceScriptRuntime,
+  selectScriptWorkflowOutcome,
   selectWorkspaceScriptsInitialized,
 } from './scripts-selectors';
 
@@ -201,6 +206,73 @@ describe('scriptsReducer', () => {
     expect(state.byWorkspaceId['ws-2'].operations['script-2']?.pending).toBe(true);
   });
 
+  it.each([
+    ['update', () => updateScriptDefinitionRequested(WS, 'script-1', { name: 'Renamed' })],
+    ['remove', () => removeScriptDefinitionRequested(WS, 'script-1')],
+  ] as const)(
+    'reserves a definition %s synchronously for its request lifetime',
+    (_name, request) => {
+      const first = request();
+      const second = request();
+      let state = scriptsReducer(undefined, first);
+
+      expect(state.byWorkspaceId[WS].operations['script-1']).toEqual({
+        action: 'edit',
+        pending: true,
+        reservationId: `${first.type}:${first.seq}`,
+      });
+
+      state = scriptsReducer(state, second);
+      state = scriptsReducer(
+        state,
+        scriptOperationSucceeded(WS, 'script-1', 'edit', `${second.type}:${second.seq}`),
+      );
+      expect(state.byWorkspaceId[WS].operations['script-1']?.reservationId).toBe(
+        `${first.type}:${first.seq}`,
+      );
+
+      state = scriptsReducer(
+        state,
+        scriptOperationSucceeded(WS, 'script-1', 'edit', `${first.type}:${first.seq}`),
+      );
+      expect(state.byWorkspaceId[WS].operations['script-1']).toBeUndefined();
+    },
+  );
+
+  it('retains pending definition reservations but invalidates their publication identity', () => {
+    const request = updateScriptDefinitionRequested(WS, 'script-1', { name: 'Renamed' });
+    let state = scriptsReducer(undefined, request);
+    const reservation = state.byWorkspaceId[WS].operations['script-1'];
+
+    state = scriptsReducer(state, clearScriptOperations(WS));
+
+    expect(state.byWorkspaceId[WS].operations['script-1']).toEqual(reservation);
+    expect(state.byWorkspaceId[WS].operations['script-1']).not.toBe(reservation);
+  });
+
+  it('correlates workflow outcomes by consumer, workspace, and resource', () => {
+    const consumer = { consumerId: 'consumer-1', requestId: 'request-1', resourceId: 'resource-1' };
+    const request = applyScriptDefinitionChangesRequested(
+      WS,
+      { add: [], update: [], remove: [] },
+      [],
+      consumer,
+    );
+    let state = scriptsReducer(undefined, request);
+    state = scriptsReducer(state, scriptWorkflowFinished(WS, consumer, 'cancelled'));
+    const root = { scripts: state } as never;
+
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, WS, consumer.resourceId),
+    ).toMatchObject({ status: 'cancelled', requestId: consumer.requestId });
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, 'ws-2', consumer.resourceId),
+    ).toBeUndefined();
+    expect(
+      selectScriptWorkflowOutcome.select(root, consumer.consumerId, WS, 'other-resource'),
+    ).toBeUndefined();
+  });
+
   it('appends raw chunks verbatim — no line splitting, no injected newlines', () => {
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
     state = scriptsReducer(
@@ -313,7 +385,7 @@ describe('archive lifecycle reconciliation', () => {
     scripts = scriptsReducer(scripts, activeRefresh);
     terminals = terminalsReducer(terminals, activeRefresh);
     expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
-    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
+    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(0);
     scripts = scriptsReducer(
       scripts,
       updateRuntimeState(WS, active.id, { status: 'exited', exitCode: 2 }),
@@ -326,7 +398,7 @@ describe('archive lifecycle reconciliation', () => {
     expect(selectWorkspaceScriptEntries.select({ scripts: legacyList } as never, WS)).toEqual([
       active,
     ]);
-    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].runtime.exitCode).toBe(2);
+    expect(selectAllWorkspaceScriptEntries.select(root, WS)).toEqual([]);
     expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
       'retained output',
     );

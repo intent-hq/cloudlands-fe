@@ -87,7 +87,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    selectWorkspaceDrivingClient,
+    selectWorkspaceBrowserSelectionKnown,
+    selectOwnClientIdConfirmed,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
@@ -562,19 +566,25 @@
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
+  const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
+  const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
     Boolean(
-      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+      $ownClientIdConfirmed$ &&
+      $drivingClient$.ownClientId &&
+      $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
     ),
   );
   const canSetPrimaryClient = $derived(
     Boolean(
       workspaceId &&
       $canSetPrimaryClient$ &&
+      $browserSelectionKnown$ &&
+      $ownClientIdConfirmed$ &&
       !primaryAlreadySelected &&
       $drivingClient$.eligibleClients.some(
         (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
@@ -610,12 +620,14 @@
   function handleConfirmSetPrimaryClient() {
     const pending = pendingPrimaryClient;
     pendingPrimaryClient = null;
+    // A backend change can precede the rendered selector update.
     if (
       !pending ||
       !canSetPrimaryClient ||
       pending.workspaceId !== workspaceId ||
       pending.clientId !== $drivingClient$.ownClientId ||
-      pending.context !== $principalActionContext$
+      pending.context !== $principalActionContext$ ||
+      pending.context !== selectPrincipalActionContext.select(appStore.state)
     )
       return;
     appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));
@@ -1321,7 +1333,7 @@
             <Button
               variant="plain"
               wrapContent={false}
-              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+              class="type-body relative z-10 h-auto w-full justify-start cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"

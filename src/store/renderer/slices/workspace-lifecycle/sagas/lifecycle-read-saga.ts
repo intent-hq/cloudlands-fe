@@ -1,4 +1,7 @@
-import { selectAllWorkspaceScriptEntries } from '../../scripts/scripts-selectors';
+import {
+  selectAllWorkspaceScriptEntries,
+  selectScriptListPageState,
+} from '../../scripts/scripts-selectors';
 import {
   beginScriptRead,
   isScriptReadCurrent,
@@ -29,6 +32,9 @@ import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
+import { parsePushedGitStatus, toTrackedChange } from '$lib/client/live/live-git-client';
+import type { GitStatus } from '$shared/types';
+import type { TrackedChange } from '$features/file-tracking/types';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
@@ -37,6 +43,7 @@ import { selectActiveBackendId } from '../../../utils/backend-storage-namespace'
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectHostRole, selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
@@ -54,6 +61,10 @@ import {
   agentLineStatsRequestStarted,
   agentLineStatsRequestSucceeded,
   appendOlderCommits,
+  changesEventReceived,
+  changesConsumerMounted,
+  changesConsumerUnmounted,
+  reconcileChangesRequested,
   loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
@@ -76,13 +87,14 @@ import {
 } from '../../pr-status/pr-status-slice';
 import {
   refreshScripts,
+  loadMoreScripts,
+  setScriptPageCursor,
   setScriptsData,
   setScriptsInitialized,
   setScriptListState,
   setActiveScriptsData,
   scriptReadFinished,
   scriptReadReconciled,
-  removeScript,
 } from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
@@ -445,25 +457,249 @@ function* admittedWorkspaceRead(workspaceId: string): SagaGenerator<string | nul
   return context;
 }
 
-function* refreshChanges(workspaceId: string): SagaGenerator<void> {
-  const context = yield* admittedWorkspaceRead(workspaceId);
-  if (!context) return;
-  const { status, trackedChanges, commitsEnvelope } = yield* all({
-    status: call([appClient.git, appClient.git.status], workspaceId),
-    trackedChanges: call([appClient.git, appClient.git.trackedChanges], workspaceId),
-    commitsEnvelope: call([appClient.git, appClient.git.commitsWithBoundary], workspaceId),
-  });
-  if ((yield* admittedWorkspaceRead(workspaceId)) !== context || !status || trackedChanges === null)
-    return;
-  const changes = reconcileGitStatusChanges(status.files, trackedChanges);
-  yield* put(setChangesData(workspaceId, changes, false, changes.length));
-  yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
-  yield* put(setHasLoadedInitialData(workspaceId, true));
+type ChangesEntry = {
+  context: string;
+  filesRevision: number;
+  historyRevision: number;
+  filesDirty: boolean;
+  historyDirty: boolean;
+  status?: GitStatus;
+  tracked?: TrackedChange[];
+  historyIdentity?: string;
+  loadedHistoryIdentity?: string;
+  historyRecoveryAttempted?: boolean;
+};
+type ChangesReads = Map<string, ChangesEntry>;
+type ChangesDemand = Map<string, { files: number; history: number }>;
+
+function* hasChangesDemand(
+  demand: ChangesDemand,
+  workspaceId: string,
+  scope?: 'files' | 'history',
+): SagaGenerator<boolean> {
+  return (
+    (scope
+      ? (demand.get(workspaceId)?.[scope] ?? 0) > 0
+      : (demand.get(workspaceId)?.files ?? 0) + (demand.get(workspaceId)?.history ?? 0) > 0) &&
+    (yield* selectCurrentWorkspaceTabId.effect()) === workspaceId
+  );
 }
 
-function* refreshOlderCommits(workspaceId: string): SagaGenerator<void> {
+function changesEntry(reads: ChangesReads, workspaceId: string, context: string): ChangesEntry {
+  let entry = reads.get(workspaceId);
+  if (!entry || entry.context !== context) {
+    entry = {
+      context,
+      filesRevision: 0,
+      historyRevision: 0,
+      filesDirty: !!entry,
+      historyDirty: !!entry,
+    };
+    reads.set(workspaceId, entry);
+  }
+  return entry;
+}
+
+function* refreshChanges(
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  workspaceId: string,
+  explicit: boolean,
+): SagaGenerator<void> {
   const context = yield* admittedWorkspaceRead(workspaceId);
   if (!context) return;
+  const entry = changesEntry(reads, workspaceId, context);
+  if (explicit) {
+    entry.historyRevision++;
+    // A manual/initial read establishes fresh correspondence, including when
+    // the status push announcing a newer history was missed. Later pushes
+    // still advance the revision and reject this response if superseded.
+    entry.historyIdentity = undefined;
+    entry.loadedHistoryIdentity = undefined;
+    entry.historyRecoveryAttempted = false;
+    entry.filesDirty = true;
+    entry.historyDirty = true;
+    entry.status = undefined;
+    entry.tracked = undefined;
+  } else if (!(yield* hasChangesDemand(demand, workspaceId))) return;
+  const filesRevision = entry.filesRevision;
+  const historyRevision = entry.historyRevision;
+  const historyIdentity = entry.historyIdentity;
+  const filesDirty =
+    entry.filesDirty && (explicit || (yield* hasChangesDemand(demand, workspaceId, 'files')));
+  const historyDirty =
+    entry.historyDirty && (explicit || (yield* hasChangesDemand(demand, workspaceId, 'history')));
+  if (!filesDirty && !historyDirty) return;
+  if (filesDirty) entry.filesDirty = false;
+  if (historyDirty) entry.historyDirty = false;
+  const { status, trackedChanges, commitsEnvelope } = yield* call(function* (): SagaGenerator<{
+    status: GitStatus | null;
+    trackedChanges: TrackedChange[] | null;
+    commitsEnvelope: Awaited<ReturnType<typeof appClient.git.commitsWithBoundary>> | null;
+  }> {
+    try {
+      return yield* all({
+        status: call(function* (): SagaGenerator<GitStatus | null> {
+          if (!filesDirty) return null;
+          return entry.status ?? (yield* call([appClient.git, appClient.git.status], workspaceId));
+        }),
+        trackedChanges: call(function* (): SagaGenerator<TrackedChange[] | null> {
+          if (!filesDirty) return null;
+          return (
+            entry.tracked ??
+            (yield* call([appClient.git, appClient.git.trackedChanges], workspaceId))
+          );
+        }),
+        commitsEnvelope: call(function* (): SagaGenerator<Awaited<
+          ReturnType<typeof appClient.git.commitsWithBoundary>
+        > | null> {
+          return historyDirty
+            ? yield* call([appClient.git, appClient.git.commitsWithBoundary], workspaceId)
+            : null;
+        }),
+      });
+    } catch (error) {
+      if (entry.filesRevision === filesRevision) entry.filesDirty ||= filesDirty;
+      if (entry.historyRevision === historyRevision) entry.historyDirty ||= historyDirty;
+      throw error;
+    }
+  });
+  if ((yield* admittedWorkspaceRead(workspaceId)) !== context || reads.get(workspaceId) !== entry)
+    return;
+  if (filesDirty && filesRevision === entry.filesRevision) {
+    if (!status || trackedChanges === null) {
+      entry.filesDirty = true;
+      entry.historyDirty ||= historyDirty;
+      return;
+    }
+    entry.status = status;
+    entry.tracked = trackedChanges;
+    const changes = reconcileGitStatusChanges(status.files, trackedChanges);
+    yield* put(setChangesData(workspaceId, changes, false, changes.length));
+  }
+  if (commitsEnvelope && historyRevision === entry.historyRevision) {
+    const responseIdentity = commitsEnvelope.historyIdentity;
+    if (historyIdentity && responseIdentity !== historyIdentity) {
+      // A status push cannot prove which immutable snapshot the history read
+      // captured (including A -> B -> A). Retry once, then keep the dirty
+      // marker for the next demand/event rather than looping on missing data.
+      entry.historyDirty = true;
+      entry.loadedHistoryIdentity = undefined;
+      if (!entry.historyRecoveryAttempted) {
+        entry.historyRecoveryAttempted = true;
+        yield* put(reconcileChangesRequested(workspaceId));
+      }
+    } else {
+      yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
+      entry.loadedHistoryIdentity = responseIdentity;
+      entry.historyIdentity = responseIdentity;
+      entry.historyDirty = false;
+      entry.historyRecoveryAttempted = false;
+    }
+  }
+  if (explicit) yield* put(setHasLoadedInitialData(workspaceId, true));
+}
+
+function* receiveChangesEvent(
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  action: ReturnType<typeof changesEventReceived>,
+): SagaGenerator<void> {
+  const [workspaceId, type, data] = action.payload;
+  if (typeof data.gitRootId === 'string' && data.gitRootId) return;
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (!context) return;
+  const entry = changesEntry(reads, workspaceId, context);
+  if (type === 'workspace:updated' && !Object.hasOwn(data.changes ?? {}, 'branch')) {
+    entry.historyRevision++;
+    entry.historyIdentity = undefined;
+    entry.historyRecoveryAttempted = false;
+    entry.historyDirty = true;
+    if (yield* hasChangesDemand(demand, workspaceId))
+      yield* put(reconcileChangesRequested(workspaceId));
+    return;
+  }
+  entry.filesRevision++;
+  if (type === 'changes:tracked' && Array.isArray(data.changes)) {
+    const tracked = data.changes.map(toTrackedChange);
+    if (tracked.every((change): change is TrackedChange => change !== null)) {
+      entry.tracked = tracked;
+      // This push contains attribution, not an as-of working-tree snapshot.
+      // Read only membership/stage; never infer that untracked paths vanished
+      // or that the previously read index still matches this new attribution.
+      entry.status = undefined;
+      entry.filesDirty = true;
+      if (yield* hasChangesDemand(demand, workspaceId, 'files')) {
+        yield* put(reconcileChangesRequested(workspaceId));
+      }
+      return;
+    }
+  }
+  entry.filesDirty = true;
+  entry.tracked = undefined;
+  entry.status = undefined;
+  const status =
+    data.status && typeof data.status === 'object'
+      ? (data.status as Record<string, unknown>)
+      : undefined;
+  entry.status = parsePushedGitStatus(status?.gitStatus) ?? undefined;
+  if (type !== 'changes:tracked') {
+    const identity =
+      typeof status?.historyIdentity === 'string' && status.historyIdentity
+        ? status.historyIdentity
+        : undefined;
+    if (!identity || identity !== entry.historyIdentity) {
+      entry.historyRevision++;
+      entry.historyRecoveryAttempted = false;
+    }
+    entry.historyIdentity = identity;
+    entry.historyDirty ||= !identity || entry.loadedHistoryIdentity !== identity;
+  }
+  if (yield* hasChangesDemand(demand, workspaceId))
+    yield* put(reconcileChangesRequested(workspaceId));
+}
+
+function* reconcileVisibleChanges(reads: ChangesReads, demand: ChangesDemand): SagaGenerator<void> {
+  const workspaceId = yield* selectCurrentWorkspaceTabId.effect();
+  if (!workspaceId || !(yield* hasChangesDemand(demand, workspaceId))) return;
+  const entry = reads.get(workspaceId);
+  if (entry?.filesDirty || entry?.historyDirty) yield* put(reconcileChangesRequested(workspaceId));
+}
+
+function* changeChangesDemand(
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  action: ReturnType<typeof changesConsumerMounted | typeof changesConsumerUnmounted>,
+): SagaGenerator<void> {
+  const [workspaceId, scope = 'all'] = action.payload;
+  const delta = action.type === changesConsumerMounted.type ? 1 : -1;
+  const counts = demand.get(workspaceId) ?? { files: 0, history: 0 };
+  if (scope !== 'history') counts.files = Math.max(0, counts.files + delta);
+  if (scope !== 'files') counts.history = Math.max(0, counts.history + delta);
+  demand.set(workspaceId, counts);
+  yield* reconcileVisibleChanges(reads, demand);
+}
+
+function* reconnectChanges(reads: ChangesReads, demand: ChangesDemand): SagaGenerator<void> {
+  for (const entry of reads.values()) {
+    entry.filesRevision++;
+    entry.historyRevision++;
+    entry.filesDirty = true;
+    entry.historyDirty = true;
+    entry.status = undefined;
+    entry.tracked = undefined;
+    entry.historyIdentity = undefined;
+    entry.loadedHistoryIdentity = undefined;
+    entry.historyRecoveryAttempted = false;
+  }
+  yield* reconcileVisibleChanges(reads, demand);
+}
+
+function* refreshOlderCommits(reads: ChangesReads, workspaceId: string): SagaGenerator<void> {
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (!context) return;
+  const entry = reads.get(workspaceId);
+  const revision = entry?.historyRevision;
   yield* put(setLoadingOlderCommits(workspaceId, true));
   try {
     const envelope: Awaited<ReturnType<typeof appClient.git.commitsWithBoundary>> = yield* call(
@@ -471,8 +707,22 @@ function* refreshOlderCommits(workspaceId: string): SagaGenerator<void> {
       workspaceId,
       true,
     );
-    if ((yield* admittedWorkspaceRead(workspaceId)) === context)
-      yield* put(appendOlderCommits(workspaceId, envelope.commits));
+    if (
+      (yield* admittedWorkspaceRead(workspaceId)) === context &&
+      reads.get(workspaceId) === entry &&
+      entry?.historyRevision === revision
+    ) {
+      if (
+        entry?.loadedHistoryIdentity &&
+        envelope.historyIdentity !== entry.loadedHistoryIdentity
+      ) {
+        entry.historyDirty = true;
+        entry.loadedHistoryIdentity = undefined;
+        yield* put(reconcileChangesRequested(workspaceId));
+      } else {
+        yield* put(appendOlderCommits(workspaceId, envelope.commits));
+      }
+    }
   } finally {
     if ((yield* admittedWorkspaceRead(workspaceId)) === context)
       yield* put(setLoadingOlderCommits(workspaceId, false));
@@ -1186,71 +1436,30 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  * stable answer, not a failure, so these reads settle to an empty list
  * instead of logging an error on every refresh.
  */
-function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
-  const retainedBeforeRead = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
-  let context = yield* beginScriptRead(workspaceId);
-  function* isCurrent(): SagaGenerator<boolean> {
-    return yield* isScriptReadCurrent(context);
-  }
-  let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
+function* refreshWorkspaceScripts(workspaceId: string, append = false): SagaGenerator<void> {
+  const previous = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
+  const ws = yield* selectScriptListPageState.effect(workspaceId);
+  if (append && (!ws.nextCursor || ws.loading)) return;
+  const context = yield* beginScriptRead(workspaceId);
   yield* put(setScriptListState(workspaceId, true));
   try {
-    const supported = appClient.scripts.supportsLifecycle
-      ? yield* call([appClient.scripts, appClient.scripts.supportsLifecycle])
-      : false;
-    if (!(yield* isCurrent())) return;
-    if (appClient.scripts.supportsLifecycle) {
-      yield* put(setScriptListState(workspaceId, true, undefined, supported));
-    }
-    scripts = supported
-      ? yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-          archive: 'active' as const,
+    const page = append
+      ? yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId, {
+          cursor: ws.nextCursor,
         })
-      : yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
-    const reconciled = yield* reconcileScriptRead(context, scripts);
+      : yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId);
+    const entries = append
+      ? [...new Map([...previous, ...page.scripts].map((row) => [row.id, row])).values()]
+      : page.scripts;
+    const reconciled = yield* reconcileScriptRead(context, entries);
     if (!reconciled) return;
-    const changedIds = reconciled.definitionChanges;
-    scripts = reconciled.scripts;
-    yield* put(scriptReadReconciled(workspaceId, context.requestId, scripts));
-    yield* put(setScriptListState(workspaceId, false, undefined, supported));
-    if (supported) {
-      yield* put(setActiveScriptsData(workspaceId, scripts));
-      // Active omission cannot prove archive metadata or deletion. Reconcile
-      // retained rows with one all-list read, without populating unopened history.
-      const activeIds = new Set(
-        scripts.filter((script) => !script.archivedAt).map((script) => script.id),
-      );
-      const retained = retainedBeforeRead.filter(
-        (script) => !activeIds.has(script.id) && !changedIds.has(script.id),
-      );
-      if (retained.length) {
-        yield* put(scriptReadFinished(workspaceId, context.requestId));
-        context = yield* beginScriptRead(workspaceId);
-        const all = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
-          archive: 'all' as const,
-        });
-        const current = yield* reconcileScriptRead(context, all);
-        if (!current) return;
-        yield* put(scriptReadReconciled(workspaceId, context.requestId, current.scripts, true));
-        const known = new Set(
-          (yield* selectAllWorkspaceScriptEntries.effect(workspaceId)).map((script) => script.id),
-        );
-        const incoming = new Set(current.scripts.map((script) => script.id));
-        for (const script of retained) {
-          if (!incoming.has(script.id)) yield* put(removeScript(workspaceId, script.id));
-        }
-        yield* put(
-          setActiveScriptsData(
-            workspaceId,
-            current.scripts.filter((script) => !script.archivedAt || known.has(script.id)),
-          ),
-        );
-      }
-    } else {
-      yield* put(setScriptsData(workspaceId, scripts));
-    }
+    yield* put(scriptReadReconciled(workspaceId, context.requestId, reconciled.scripts));
+    yield* put(setActiveScriptsData(workspaceId, reconciled.scripts));
+    yield* put(setScriptPageCursor(workspaceId, page.nextCursor));
+    yield* put(setScriptListState(workspaceId, false, undefined, true));
+    yield* put(setScriptsInitialized(workspaceId, true));
   } catch (error) {
-    if (!(yield* isCurrent())) return;
+    if (!(yield* isScriptReadCurrent(context))) return;
     yield* put(
       setScriptListState(
         workspaceId,
@@ -1259,12 +1468,11 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
       ),
     );
     if (!isForbiddenErrorResponse(error)) throw error;
-    logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
     yield* put(setScriptsData(workspaceId, []));
+    yield* put(setScriptsInitialized(workspaceId, true));
   } finally {
     yield* put(scriptReadFinished(workspaceId, context.requestId));
   }
-  yield* put(setScriptsInitialized(workspaceId, true));
 }
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
@@ -1448,7 +1656,10 @@ function* skillsWorker(
 }
 
 type ScriptsReadAction = ReturnType<
-  typeof refreshScripts | typeof workspaceDeleted | typeof workspaceUnmounted
+  | typeof refreshScripts
+  | typeof loadMoreScripts
+  | typeof workspaceDeleted
+  | typeof workspaceUnmounted
 >;
 
 function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAction) {
@@ -1457,21 +1668,37 @@ function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAc
       scheduler,
       'scripts',
       action.payload[0],
-      refreshWorkspaceScripts,
+      (workspaceId) => refreshWorkspaceScripts(workspaceId, action.type === loadMoreScripts.type),
       false,
     );
   }
 }
 
 type ChangesReadAction = ReturnType<
-  typeof refreshRequested | typeof loadWorkspaceDataRequested | typeof workspaceUnmounted
+  | typeof refreshRequested
+  | typeof loadWorkspaceDataRequested
+  | typeof reconcileChangesRequested
+  | typeof workspaceUnmounted
 >;
 
-function* changesWorker(scheduler: WorkspaceReadScheduler, action: ChangesReadAction) {
+function* changesWorker(
+  scheduler: WorkspaceReadScheduler,
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  action: ChangesReadAction,
+) {
   if (isWorkspaceCleanupAction(action)) return;
-  if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
-    yield* runWorkspaceRead(scheduler, 'changes', action.payload[0], refreshChanges, false);
-  }
+  const explicit = action.type !== reconcileChangesRequested.type;
+  if (!explicit) yield* delay(1000);
+  yield* runWorkspaceRead(
+    scheduler,
+    'changes',
+    action.payload[0],
+    function* (workspaceId) {
+      yield* refreshChanges(reads, demand, workspaceId, explicit);
+    },
+    false,
+  );
 }
 
 type AgentsReadAction = ReturnType<typeof hydrateAgentsRequested | typeof workspaceUnmounted>;
@@ -1547,9 +1774,12 @@ function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
 
 function* olderCommitsWorker(
   scheduler: WorkspaceReadScheduler,
+  reads: ChangesReads,
   action: ReturnType<typeof loadOlderCommitsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'olderCommits', action.payload.wsId, refreshOlderCommits);
+  yield* runWorkspaceRead(scheduler, 'olderCommits', action.payload.wsId, function* (workspaceId) {
+    yield* refreshOlderCommits(reads, workspaceId);
+  });
 }
 
 function* agentLineStatsWorker(action: ReturnType<typeof requestAgentLineStats>) {
@@ -1588,6 +1818,8 @@ function* clearUnmountedInitializedContext(
 }
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
+  const changesReads: ChangesReads = new Map();
+  const changesDemand: ChangesDemand = new Map();
   const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
@@ -1659,23 +1891,51 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       ),
       takeLeadingByWorkspace(loadSkillsRequested, skillsWorker, scheduler),
       takeSingleFlightInContext(
-        [refreshScripts, workspaceDeleted, workspaceUnmounted],
+        [refreshScripts, loadMoreScripts, workspaceDeleted, workspaceUnmounted],
         scriptsReadContext,
         scriptsWorker,
         scheduler,
       ),
       takeLeadingByWorkspace(refreshPRStatusRequested, prStatusWorker),
       takeSingleFlightInContext(
-        [refreshRequested, loadWorkspaceDataRequested, workspaceUnmounted],
-        workspaceReadContext,
+        [
+          refreshRequested,
+          loadWorkspaceDataRequested,
+          reconcileChangesRequested,
+          workspaceUnmounted,
+        ],
+        (action) => {
+          if (isWorkspaceCleanupAction(action)) {
+            changesReads.delete(action.payload[0]);
+            changesDemand.delete(action.payload[0]);
+          }
+          return workspaceReadContext(action);
+        },
         changesWorker,
         scheduler,
+        changesReads,
+        changesDemand,
+      ),
+      takeEvery(changesEventReceived, receiveChangesEvent, changesReads, changesDemand),
+      takeEvery(
+        CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS,
+        reconcileVisibleChanges,
+        changesReads,
+        changesDemand,
+      ),
+      takeEvery(backendReconnected, reconnectChanges, changesReads, changesDemand),
+      takeEvery(
+        [changesConsumerMounted, changesConsumerUnmounted],
+        changeChangesDemand,
+        changesReads,
+        changesDemand,
       ),
       takeLeadingInContext(
         loadOlderCommitsRequested,
         (action) => action.payload.wsId,
         olderCommitsWorker,
         scheduler,
+        changesReads,
       ),
       takeLeadingByAgent(requestAgentLineStats, agentLineStatsWorker),
       takeSingleFlightInContext(

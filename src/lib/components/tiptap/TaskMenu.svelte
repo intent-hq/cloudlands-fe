@@ -72,13 +72,27 @@
   class:anchored={anchorName}
   style={anchorName ? `position-anchor: --${anchorName};` : ''}
 >
-  <Button variant="ghost" class="task-menu-item" onclick={() => handleAction('assign-agent')}>
-    <Fa icon={faRobot} size="sm" class="w-4 h-4" />
+  <Button
+    variant="ghost"
+    wrapContent={false}
+    class="task-menu-item h-auto whitespace-normal"
+    onclick={() => handleAction('assign-agent')}
+  >
+    <span class="first-line-icon w-(--menu-icon-size)">
+      <Fa icon={faRobot} class="size-(--menu-icon-size)" />
+    </span>
     <span>{m.tiptap_taskMenu_assignToAgent_label()}</span>
   </Button>
 
-  <Button variant="ghost" class="task-menu-item" onclick={() => handleAction('task-breakdown')}>
-    <Fa icon={faList} size="sm" class="w-4 h-4" />
+  <Button
+    variant="ghost"
+    wrapContent={false}
+    class="task-menu-item h-auto whitespace-normal"
+    onclick={() => handleAction('task-breakdown')}
+  >
+    <span class="first-line-icon w-(--menu-icon-size)">
+      <Fa icon={faList} class="size-(--menu-icon-size)" />
+    </span>
     <span>{m.tiptap_taskMenu_breakIntoSubtasks_label()}</span>
   </Button>
 </div>
@@ -158,7 +172,7 @@
 
   .task-menu-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     width: 100%;
     padding: 0.5rem 0.75rem;

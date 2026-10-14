@@ -14,7 +14,7 @@ describe('registered-root file read support', () => {
     undefined,
     '11.0',
     '10.99',
-    '14.0',
+    '15.0',
     '12',
     '12.0-preview',
     '13',
@@ -27,16 +27,26 @@ describe('registered-root file read support', () => {
       ).toThrow();
     }
   });
-  it.each(['11.1', '11.2', '11.1.3', '12.0', '12.1', '12.0.1', '13.0', '13.1', '13.0.1'])(
-    'accepts supported known-generation sending connection %s',
-    (protocolVersion) => {
-      for (const method of ['file.read', 'file.readChunk']) {
-        expect(() =>
-          assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
-        ).not.toThrow();
-      }
-    },
-  );
+  it.each([
+    '11.1',
+    '11.2',
+    '11.1.3',
+    '12.0',
+    '12.1',
+    '12.0.1',
+    '13.0',
+    '13.1',
+    '13.0.1',
+    '14.0',
+    '14.1',
+    '14.0.1',
+  ])('accepts supported known-generation sending connection %s', (protocolVersion) => {
+    for (const method of ['file.read', 'file.readChunk']) {
+      expect(() =>
+        assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
+      ).not.toThrow();
+    }
+  });
   it('preserves unscoped and unrelated requests without root support', () => {
     expect(() => assertScopedFileReadSupport('file.read', {}, undefined)).not.toThrow();
     expect(() =>

@@ -8,6 +8,10 @@
 
   import { toStore } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
@@ -59,6 +63,13 @@
 
   const workspace = selectWorkspaceById(workspaceId$);
   const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || undefined);
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!isActive || !wsId || gitRootId) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'all'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'all'));
+  });
+
   const gitRootId = $derived(tab.data?.gitRootId as string | undefined);
   const gitRootPath = $derived(tab.data?.gitRootPath as string | undefined);
   const effectiveRepoPath = $derived(gitRootPath || repoPath);

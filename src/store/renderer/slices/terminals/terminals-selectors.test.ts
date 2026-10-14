@@ -4,6 +4,7 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import type { TerminalOverlayState, TerminalPlacement, TerminalTab } from './terminals-slice';
 import {
   selectSelectedScriptId,
+  selectTerminalCreationOutcome,
   selectTerminalDisplayName,
   selectTerminalOverlayHeight,
   selectTerminalPlacement,
@@ -22,6 +23,7 @@ function terminalState(
     height: 50,
     workspaceHeights: {},
     workspacePlacements: {},
+    creationOutcomes: createCollection('id'),
     workspaces: {
       [WS]: {
         isOpen: false,
@@ -58,6 +60,27 @@ function scriptSelectionState(options: {
 }
 
 describe('terminals selectors', () => {
+  it('returns a creation outcome only for its correlated workspace and resource', () => {
+    const terminals = terminalState([]);
+    terminals.creationOutcomes = createCollection('id', [
+      {
+        id: 'mount-1',
+        workspaceId: WS,
+        resourceId: 'overlay',
+        seq: 1,
+        status: 'pending' as const,
+      },
+    ]);
+    const state = { terminals } as unknown as StoreState;
+
+    expect(selectTerminalCreationOutcome.select(state, 'mount-1', WS, 'overlay')).toMatchObject({
+      status: 'pending',
+    });
+    expect(
+      selectTerminalCreationOutcome.select(state, 'mount-1', 'ws-other', 'overlay'),
+    ).toBeUndefined();
+  });
+
   describe('selectWorkspaceSetupTerminal', () => {
     it('returns the setup terminal when one exists by name', () => {
       const state = stateWith([{ id: 'term-1', name: 'Setup' }]);
@@ -153,13 +176,13 @@ describe('terminals selectors', () => {
       expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
     });
 
-    it('returns null once scripts initialize without the selected id (stale/deleted)', () => {
+    it('preserves a selected known ID absent from the loaded page', () => {
       const state = scriptSelectionState({
         selectedScriptId: 'script-1',
         scriptsWs: { initialized: true, scripts: { 'other-script': {} } },
       });
 
-      expect(selectSelectedScriptId.select(state, 'ws-1')).toBeNull();
+      expect(selectSelectedScriptId.select(state, 'ws-1')).toBe('script-1');
     });
 
     it('returns the id when scripts are initialized and the script exists', () => {

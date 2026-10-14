@@ -264,6 +264,89 @@ describe('agentMutationSaga', () => {
     vi.clearAllMocks();
   });
 
+  it.each(['background', 'specialist rollback'] as const)(
+    'preserves untouched fetched metadata during real %s projection',
+    async (operation) => {
+      vi.useRealTimers();
+      const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+      const { createMockWorkspace } =
+        await import('../../../../../test/factories/workspace.factory');
+      const { setWorkspaceEntity } = await import('../../workspace/workspace-slice');
+      const { ensureAgentSession } = await import('$features/agent/agent-read-service');
+      admitLegacyPrincipal();
+      appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WS, myRole: 'owner' })));
+      const prior = session(A1, {
+        metadata: {
+          specialist: 'optimistic',
+          behaviorPrompt: 'new prompt',
+          specialistName: 'New name',
+          provider: 'before',
+        },
+      });
+      appStore.dispatch(bulkUpsertSessions([prior]));
+      let resolve!: (value: AgentSession) => void;
+      mocks.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((done) => {
+            resolve = done;
+          }),
+      );
+      const cancel = appStore.runSaga(agentMutationSaga);
+      try {
+        const read = ensureAgentSession(A1, WS);
+        if (operation === 'background') {
+          mocks.setBackground.mockResolvedValue({ success: true });
+          const action = setAgentBackgroundRequested(WS, A1, true);
+          appStore.dispatch(action);
+          await action.promise;
+        } else {
+          mocks.updateSpecialist.mockResolvedValue({ success: false, error: 'rejected' });
+          const action = saveAgentSessionRequested(WS, A1, true, {
+            specialistUpdate: { specialist: 'optimistic', rememberSpecialist: true },
+            specialistRollback: {
+              metadataPatch: {
+                specialist: { op: 'clear' },
+                behaviorPrompt: { op: 'clear' },
+                specialistName: { op: 'clear' },
+              },
+              model: prior.model,
+            },
+          });
+          const failed = expect(action.promise).rejects.toThrow('rejected');
+          appStore.dispatch(action);
+          await failed;
+        }
+        resolve({
+          ...prior,
+          metadata: {
+            specialist: 'fetched',
+            behaviorPrompt: 'old prompt',
+            specialistName: 'Old name',
+            provider: 'fetched-provider',
+            taskNoteId: 'new-detail',
+          },
+        });
+        await read;
+        const stored = appStore.state.agentSessions.byAgentId[A1];
+        expect(stored.metadata).toMatchObject({
+          provider: 'fetched-provider',
+          taskNoteId: 'new-detail',
+        });
+        if (operation === 'background') {
+          expect(stored.isBackground).toBe(true);
+          expect(stored.metadata).toMatchObject({ isBackground: true, specialist: 'fetched' });
+        } else {
+          expect(stored.metadata?.specialist).toBeUndefined();
+          expect(stored.metadata?.behaviorPrompt).toBeUndefined();
+          expect(stored.metadata?.specialistName).toBeUndefined();
+        }
+        expect(mocks.get).toHaveBeenCalledTimes(1);
+      } finally {
+        cancel();
+      }
+    },
+  );
+
   it('settles a cancelled mode request and releases its pending state', async () => {
     mocks.setBackground.mockReturnValue(new Promise(() => {}));
     const run = start({ [A1]: session() }, { live: true });
@@ -654,13 +737,27 @@ describe('agentMutationSaga', () => {
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
-      specialistRollback: { metadata: previousMetadata, model: 'default-model' },
+      specialistRollback: {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
+        },
+        model: 'default-model',
+      },
     });
     channel.put(action);
 
     await expect(action.promise).rejects.toThrow('update rejected');
     expect(dispatched).toContainEqual(
-      updateSession(A1, { metadata: previousMetadata, model: 'default-model' }),
+      updateSession(A1, {
+        metadataPatch: {
+          specialist: { op: 'clear' },
+          behaviorPrompt: { op: 'clear' },
+          specialistName: { op: 'clear' },
+        },
+        model: 'default-model',
+      }),
     );
     expect(mocks.error).toHaveBeenCalledWith('update rejected');
     await stop(task);
@@ -1124,7 +1221,9 @@ describe('agentMutationSaga', () => {
     await settle();
     expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
 
-    dispatch(updateSession(A1, { metadata: { lastSeenMessageId: 'm-9' } }));
+    dispatch(
+      updateSession(A1, { metadataPatch: { lastSeenMessageId: { op: 'set', value: 'm-9' } } }),
+    );
     pending.resolve({ success: false, error: 'mute rejected' });
 
     await expect(action.promise).rejects.toThrow('mute rejected');

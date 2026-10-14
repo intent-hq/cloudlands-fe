@@ -180,7 +180,7 @@
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
-  import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
+  import type { Workspace, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import {
@@ -2104,7 +2104,7 @@
     // Extract user messages and build history, excluding automated messages
     const userMessages = messages
       .filter((m) => m.role === 'user' && !isAutomatedMessage(m))
-      .map((m) => extractAllContent(m).trim())
+      .map((m) => getPresentedUserMessageText(m, workspace?.ownerPrincipalId).trim())
       .filter((text) => text.length > 0);
 
     if (userMessages.length > 0) {
@@ -5756,19 +5756,17 @@
 
     // Update session metadata with new specialist AND behavior prompt
     // The backend reads behaviorPrompt from metadata to build the system prompt
-    const newMetadata: AgentMetadata = {
-      ...session.metadata,
-      specialist: specialistId ?? undefined,
-      behaviorPrompt: behaviorPrompt ?? '',
-      specialistName: specialistName ?? '',
-    };
-
-    // Update the session via Redux (agent-session slice is canonical)
-    if (workspace?.id) {
-      appStore.dispatch(
-        updateAgentSessionFields(agentId, { metadata: newMetadata, model: newModel }),
-      );
-    }
+    // Update only the fields this picker owns; copied metadata is never a patch.
+    appStore.dispatch(
+      updateAgentSessionFields(agentId, {
+        model: newModel,
+        metadataPatch: {
+          specialist: specialistId === null ? { op: 'clear' } : { op: 'set', value: specialistId },
+          behaviorPrompt: { op: 'set', value: behaviorPrompt ?? '' },
+          specialistName: { op: 'set', value: specialistName ?? '' },
+        },
+      }),
+    );
 
     // Persist only the specialist fields resolved by this picker change.
     const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
@@ -5782,7 +5780,23 @@
             ? { systemPrompt: behaviorPrompt }
             : {}),
       },
-      specialistRollback: { metadata: session.metadata, model: session.model },
+      specialistRollback: {
+        model: session.model,
+        metadataPatch: {
+          specialist:
+            session.metadata?.specialist === undefined
+              ? { op: 'clear' }
+              : { op: 'set', value: session.metadata.specialist },
+          behaviorPrompt:
+            session.metadata?.behaviorPrompt === undefined
+              ? { op: 'clear' }
+              : { op: 'set', value: session.metadata.behaviorPrompt },
+          specialistName:
+            session.metadata?.specialistName === undefined
+              ? { op: 'clear' }
+              : { op: 'set', value: session.metadata.specialistName },
+        },
+      },
     });
     // The mutation saga owns rollback and the user-visible error; retain
     // specialist-specific failure context in the log.

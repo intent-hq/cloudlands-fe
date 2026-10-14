@@ -8,7 +8,7 @@
  *
  * No IPC/preload/native window, genuine tunnel/provider bootstrap or real users.
  * Deliberate original-frame holds are marked below; no RPC reply or notification
- * is synthesized. Backend production/source and all earlier suites are unchanged.
+ * is synthesized. The fixture daemon must include scoped membership invalidations.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
@@ -88,18 +88,7 @@ async function loaded() {
   );
   expect(store.state.presence.ownTypingSource).toEqual(expect.any(String));
   expect(vi.isMockFunction(invoke)).toBe(false);
-  // Settle an actual focus-driven member refresh before arming a later gate.
-  // A FIFO event marker alone would not wait for the saga's debounce/read.
-  const accepted = settled('workspace.members.list').length;
-  await fixture.owner.request('presence.update', {
-    focus: [{ workspaceId: fixture.workspaceId }],
-    typing: null,
-  });
   await rendererMarker();
-  await eventually(
-    () => settled('workspace.members.list').length > accepted,
-    'accepted focus-driven member refresh',
-  );
 }
 async function mount(enabled = true) {
   started = true;
@@ -135,6 +124,19 @@ const isSharedPresence = (frame: Frame) =>
   frame.method === 'events.event' &&
   frame.params?.event?.type === 'presence:changed' &&
   frame.params.event.data.workspaceId === fixture.workspaceId;
+
+const isSharedMembershipChange = (frame: Frame) =>
+  frame.method === 'events.event' &&
+  frame.params?.event?.type === 'workspace:updated' &&
+  frame.params.event.data.workspaceId === fixture.workspaceId &&
+  frame.params.event.data.changes?.members === true;
+
+async function removeStableMember() {
+  await fixture.owner.request('workspace.members.remove', {
+    workspaceId: fixture.workspaceId,
+    principalId: fixture.stable.principalId,
+  });
+}
 
 suite('hermetic daemon event to mounted workspace avatar', () => {
   beforeEach(async () => {
@@ -234,12 +236,11 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
         (p: { principalId: string }) => p.principalId === fixture.target.principalId,
       ),
     ).toBe(false);
-    const hold = fixture.renderer.hold(isSharedPresence);
+    const hold = fixture.renderer.hold(isSharedMembershipChange);
     await fixture.promote();
     await eventually(() => hold.frames.length > 0, 'real promotion frame received');
-    expect(
-      hold.frames.every((f) => JSON.stringify(f.params!.event.data) === JSON.stringify(before)),
-    ).toBe(true);
+    expect(await fixture.snapshot()).toEqual(before);
+    expect(hold.frames.every((f) => f.params!.event.data.changes.members === true)).toBe(true);
     expect((await fixture.workspace()).memberCount).toBe(count);
     expect(target()).not.toBeNull(); // Causal control BEFORE delivering the actual frame.
     const reads = requests('workspace.members.list').length;
@@ -320,10 +321,7 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
     store.dispatch(setLabsMultiplayerEnabled(true));
     await loaded();
     const hold = fixture.renderer.hold((_frame, method) => method === 'workspace.members.list');
-    await fixture.owner.request('presence.update', {
-      focus: [{ workspaceId: fixture.workspaceId }],
-      typing: null,
-    });
+    await removeStableMember();
     await eventually(() => hold.frames.length > 0, 'real feature reply held');
     store.dispatch(setLabsMultiplayerEnabled(false));
     await waitFor(() => expect(target()).toBeNull());
@@ -345,10 +343,7 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
     const prior = selectPrincipalActionContext.select(store.state);
     const generation = store.state.workspaceEvents.subscriptionGeneration;
     const hold = fixture.renderer.hold((_frame, method) => method === 'workspace.members.list');
-    await fixture.owner.request('presence.update', {
-      focus: [{ workspaceId: fixture.workspaceId }],
-      typing: null,
-    });
+    await removeStableMember();
     await eventually(() => hold.frames.length > 0, 'old socket member response');
     store.dispatch(replaceWorkspaceList([]));
     await waitFor(() => expect(target()).toBeNull());
@@ -418,10 +413,7 @@ suite('hermetic daemon event to mounted workspace avatar', () => {
     expect(initialMentions.some((m) => m.id === `member-${fixture.target.principalId}`)).toBe(true);
     const hold = fixture.renderer.hold((_frame, method) => method === 'workspace.members.list');
     const baseline = settled('workspace.members.list').length;
-    await fixture.owner.request('presence.update', {
-      focus: [{ workspaceId: fixture.workspaceId }],
-      typing: null,
-    });
+    await removeStableMember();
     await eventually(() => hold.frames.length > 0, 'held real membership response');
     expect(target()).not.toBeNull();
     expect(await mentions()).toEqual(initialMentions);

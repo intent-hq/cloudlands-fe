@@ -41,10 +41,10 @@ export interface WorkspaceGitStatus {
     title: string;
     state: 'open' | 'closed' | 'merged' | 'draft';
   };
-  canMergeDirectly: boolean;
-  hasConflicts: boolean;
+  canMergeDirectly?: boolean;
+  hasConflicts?: boolean;
   /** True if local branch has diverged from remote (e.g., after rebase) - needs force push */
-  hasDivergedFromRemote: boolean;
+  hasDivergedFromRemote?: boolean;
   /** True if the branch's tree hash appears in trunk history (indicates squash merge) */
   isContentMergedToTrunk?: boolean;
   remoteUrl?: string;

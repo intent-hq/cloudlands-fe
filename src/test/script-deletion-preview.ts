@@ -1,3 +1,4 @@
+import type { ScriptWithState } from '$features/scripts/types';
 import { appClient } from '$lib/client';
 import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { store } from '$store/renderer/store';
@@ -23,6 +24,7 @@ export function setupScriptDeletionPreview(
   const scriptId = deletionPreviewScript;
   const previous = {
     list: appClient.scripts.list,
+    get: appClient.scripts.get,
     start: appClient.scripts.start,
     output: appClient.scripts.output,
   };
@@ -31,7 +33,14 @@ export function setupScriptDeletionPreview(
     releaseStart = resolve;
   });
   appClient.scripts.list = async () =>
-    Object.values(store.state.scripts.byWorkspaceId[workspaceId]?.scripts ?? {});
+    Object.values(store.state.scripts.byWorkspaceId[workspaceId]?.scripts ?? {}).filter(
+      (row): row is ScriptWithState => typeof row.command === 'string',
+    );
+  appClient.scripts.get = async (_ws, id) => {
+    const row = (await appClient.scripts.list(workspaceId)).find((row) => row.id === id);
+    if (!row) throw new Error('Unknown preview script');
+    return row;
+  };
   const transport = resolveBackendTransport();
   const previousRequest = transport.request;
   transport.request = async <T>(

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import SidebarGroupHeader from './SidebarGroupHeader.svelte';
   import { Button } from '$lib/components/ui/button';
   /**
@@ -12,10 +12,7 @@
   import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
   import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 
-  import {
-    hydrateWorkspaceMcpDisabled,
-    toggleWorkspaceMcpServer,
-  } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+  import { toggleWorkspaceMcpServer } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
   import {
     selectMcpServers,
     selectMcpErrorMessages,
@@ -80,8 +77,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      appStore.dispatch(workspaceCatalogRequested(workspaceId));
-      appStore.dispatch(hydrateWorkspaceMcpDisabled(workspaceId));
+      appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
     }
   });
 
