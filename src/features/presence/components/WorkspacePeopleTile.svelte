@@ -124,9 +124,6 @@
         data-sidebar-people-open
       />
     {/if}
-    <h2 class="type-caption font-semibold leading-5 text-foreground">
-      {m.workspace_peopleTile_title()}
-    </h2>
     <PresenceAvatarStack
       class="relative z-10 w-fit"
       people={$presencePeople$}
@@ -135,5 +132,8 @@
       variant="tile"
       action={presencePersonAction}
     />
+    <h2 class="type-caption font-semibold leading-5 text-foreground">
+      {m.workspace_peopleTile_title()}
+    </h2>
   </Card>
 {/if}
