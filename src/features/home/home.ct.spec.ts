@@ -676,7 +676,7 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
   await expect(inactive.getByRole('img', { name: /^Idle\./ })).toHaveCount(1);
-  await expect(inactive.getByRole('img', { name: /^PR Queued\./ })).toHaveCount(1);
+  await expect(inactive.getByRole('img', { name: /^PR queued\./ })).toHaveCount(1);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
 });
 
