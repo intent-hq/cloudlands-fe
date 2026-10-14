@@ -17,6 +17,7 @@
  */
 
 import { Logger } from '$shared/logger';
+import { extractFilePathTarget, resolveFilePathTarget } from '$shared/utils/file-link-target';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
 import { notify } from '$lib/components/patterns/notify';
@@ -25,7 +26,6 @@ import {
   type LinkHandlerOptions,
   isAuthUrl,
   isCmdClickModifier,
-  parseFilePathLineSuffix,
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
@@ -105,7 +105,11 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Route path-like targets (schemeless hrefs/targets, or resolved URLs on the
     // app's own origin) to the workspace file viewer — never the browser panel
-    const fileTarget = extractFilePathTarget(url, options.rawHref);
+    const fileTarget = extractFilePathTarget(
+      url,
+      options.rawHref,
+      typeof window === 'undefined' ? undefined : window.location.origin,
+    );
     if (fileTarget) {
       return await openFilePathLink(
         fileTarget.path,
@@ -258,33 +262,6 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
   }
 }
 
-/** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
-// A drive uses one separator; `x://` is a URL scheme, not a drive path.
-const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\/(?!\/)/i;
-
-function normalizeSlashes(path: string): string {
-  return path.replace(/\\/g, '/');
-}
-
-function decodePathTarget(path: string): string | null {
-  try {
-    return normalizeSlashes(decodeURIComponent(path));
-  } catch {
-    return null;
-  }
-}
-
-function hasTraversalSegment(path: string): boolean {
-  return path.split('/').some((segment) => segment === '..');
-}
-
-function normalizeWorkspaceRelativePath(path: string): string | null {
-  const segments = path.split('/').filter((segment) => segment && segment !== '.');
-  if (segments.length === 0 || segments.some((segment) => segment === '..')) return null;
-  return segments.join('/');
-}
-
 function shouldOpenInWorkspace(options: LinkHandlerOptions): boolean {
   if (options.openInWorkspace !== undefined) return options.openInWorkspace;
   const target = options.event?.target;
@@ -326,50 +303,6 @@ function focusSourcePanel(
 }
 
 /**
- * Detect a path-like link target.
- *
- * - Prefer the raw href; otherwise use the target itself. If it is schemeless
- *   (no scheme prefix, not protocol-relative `//`, not an in-page fragment
- *   `#...`), it IS the path.
- * - Safety net: if the resolved http(s) URL sits on the app's own origin, the
- *   URL's pathname (+ hash) is treated as the path — self-origin URLs must
- *   never reach the embedded browser panel.
- *
- * Returns null when the target is not path-like.
- */
-function extractFilePathTarget(
-  url: string,
-  rawHref?: string,
-): { path: string; fromResolvedUrl: boolean } | null {
-  const target = rawHref ?? url;
-  if (target) {
-    // In-page fragment links keep their current behavior
-    if (target.startsWith('#')) return null;
-    // A drive letter or a filename's line suffix is not a URL scheme.
-    const path = parseFilePathLineSuffix(target).path;
-    if (
-      !target.startsWith('//') &&
-      (WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizeSlashes(path)) || !SCHEME_PATTERN.test(path))
-    ) {
-      return { path: target, fromResolvedUrl: false };
-    }
-  }
-
-  if ((url.startsWith('http://') || url.startsWith('https://')) && typeof window !== 'undefined') {
-    try {
-      const parsed = new URL(url);
-      if (parsed.origin === window.location.origin) {
-        return { path: parsed.pathname + parsed.hash, fromResolvedUrl: true };
-      }
-    } catch {
-      // Not a parseable URL — fall through to the regular handlers
-    }
-  }
-
-  return null;
-}
-
-/**
  * Open a path-like link target in the workspace file viewer.
  *
  * - A trailing line suffix maps to the `line` option.
@@ -386,50 +319,29 @@ async function openFilePathLink(
 ): Promise<boolean> {
   try {
     if (options.canOpenFile?.() === false) return false;
-    // Parse location syntax before decoding so encoded # or : remain filename characters.
-    const parsedTarget = parseFilePathLineSuffix(target);
-    const decodedPath = decodePathTarget(parsedTarget.path);
-    if (!decodedPath || decodedPath.includes('\0')) return false;
-    let path = decodedPath;
-    const { line, column } = parsedTarget;
-
     const { workspaceId } = options;
     if (!workspaceId) {
-      logger.warn('Cannot open file link without workspaceId', { path });
+      logger.warn('Cannot open file link without workspaceId', { target });
       return false;
     }
-
-    if (hasTraversalSegment(path)) {
-      logger.warn('Rejected file link with path traversal', { path });
+    const { selectWorkspaceById } =
+      await import('$store/renderer/slices/workspace/workspace-selectors');
+    const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
+    const resolved = resolveFilePathTarget(
+      { path: target, fromResolvedUrl },
+      workspace?.worktreePath ?? workspace?.path,
+    );
+    if (!resolved) {
+      logger.warn('Rejected invalid workspace file link', { target });
       return false;
     }
-
-    if (path.startsWith('/') || WINDOWS_ABSOLUTE_PATH_PATTERN.test(path)) {
-      const { selectWorkspaceById } =
-        await import('$store/renderer/slices/workspace/workspace-selectors');
-      const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
-      const root = workspace?.worktreePath ?? workspace?.path;
-      const slashRoot = root ? normalizeSlashes(root) : undefined;
-      const normalizedRoot = slashRoot?.endsWith('/') ? slashRoot.slice(0, -1) : slashRoot;
-      if (normalizedRoot && path.startsWith(`${normalizedRoot}/`)) {
-        path = path.slice(normalizedRoot.length + 1);
-      } else if (fromResolvedUrl) {
-        // Self-origin pathname (e.g. `/src/main.rs`) — treat as worktree-relative
-        path = path.replace(/^\/+/, '');
-      } else {
-        logger.debug('Absolute path outside workspace root, opening in external editor', { path });
-        const location =
-          line === undefined ? '' : `:${line}${column === undefined ? '' : `:${column}`}`;
-        return await openInExternalEditor(`file://${path}${location}`);
-      }
+    const { path, line, column } = resolved;
+    if (resolved.kind === 'external') {
+      logger.debug('Absolute path outside workspace root, opening in external editor', { path });
+      const location =
+        line === undefined ? '' : `:${line}${column === undefined ? '' : `:${column}`}`;
+      return await openInExternalEditor(`file://${path}${location}`);
     }
-
-    const normalizedPath = normalizeWorkspaceRelativePath(path);
-    if (!normalizedPath) {
-      logger.warn('Rejected invalid workspace file link', { path });
-      return false;
-    }
-    path = normalizedPath;
 
     const openInAdjacentPanel = isCmdClickModifier(options);
     await activateLinkWorkspace(workspaceId, options);

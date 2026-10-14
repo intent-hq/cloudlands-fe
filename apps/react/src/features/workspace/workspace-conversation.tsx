@@ -15,6 +15,7 @@ import {
 } from '@/store/agent-session/agent-session-selectors';
 import { selectChatAgentState, selectHydratedBlock } from '@/store/chat-state/chat-state-selectors';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
+import { selectWorkspaceById } from '@/store/workspace/workspace-selectors';
 import {
   messageBlockHydrationRequested,
   messageHistoryRequested,
@@ -34,6 +35,7 @@ import type { ContentBlock } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import { formatNumber } from '$lib/i18n/format';
 import { parseIntentLink } from '$shared/utils/intent-link-parser';
+import { extractFilePathTarget, resolveFilePathTarget } from '$shared/utils/file-link-target';
 import { m } from '$shared/paraglide/messages.js';
 
 type Navigation = Pick<
@@ -323,6 +325,20 @@ export function WorkspaceConversation({
     onOpenFile: (id, file, options) => open(id, { file, line: options?.line }),
     onOpenLink: (url, options) => {
       const target = options.rawHref ?? url;
+      const fileTarget = extractFilePathTarget(url, options.rawHref, window.location.origin);
+      if (fileTarget) {
+        if (
+          options.canOpenFile?.() === false ||
+          !selectAdmittedWorkspaceReadContext.select(store.state, workspaceId)
+        )
+          return false;
+        const workspace = selectWorkspaceById.select(store.state, workspaceId);
+        const file = resolveFilePathTarget(fileTarget, workspace?.worktreePath ?? workspace?.path);
+        // This read-only host has no external-editor or filesystem escape path.
+        if (!file || file.kind !== 'workspace') return false;
+        open(workspaceId, { file: file.path, line: file.line });
+        return true;
+      }
       if (target.startsWith('intent://')) {
         const link = parseIntentLink(target);
         if (link.valid) {
