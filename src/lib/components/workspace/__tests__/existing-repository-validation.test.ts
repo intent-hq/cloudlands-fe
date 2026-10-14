@@ -115,6 +115,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
