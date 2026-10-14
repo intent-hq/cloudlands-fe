@@ -967,7 +967,7 @@
     <div
       class={cn(
         'sidebar-stage grid min-h-0 flex-1',
-        isLauncherOverview ? 'grid-rows-[minmax(0,1fr)_232px]' : 'grid-rows-[minmax(0,1fr)_0px]',
+        isLauncherOverview ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-[minmax(0,1fr)_0px]',
       )}
       data-sidebar-stage
     >
@@ -1311,10 +1311,11 @@
       {#if isLauncherOverview}
         <!-- Lightweight launchers disappear while a section is expanded. -->
         <div
-          class="flex h-full min-h-0 items-end px-6 pt-4"
+          class="grid content-end gap-3 px-6 pt-2"
           data-testid="sidebar-launchers"
           data-launcher-layout="tiles"
         >
+          <WorkspacePeopleTile {workspaceId} />
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
             {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
               <div
@@ -1499,7 +1500,9 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
-      <WorkspacePeopleTile {workspaceId} />
+      {#if isNewWorkspaceSession}
+        <WorkspacePeopleTile {workspaceId} />
+      {/if}
       {#if !isCollaborator}
         {#if !isNewWorkspaceSession}
           <div class="min-w-0" in:launcherGridReveal|global={4}>
