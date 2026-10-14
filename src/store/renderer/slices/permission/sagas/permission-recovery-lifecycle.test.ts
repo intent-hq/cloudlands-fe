@@ -232,10 +232,12 @@ describe('permission recovery subscription boundary', () => {
     'keeps reconnect acknowledgment current while a %s is held',
     async (held) => {
       boot();
-      await settle();
+      // Hydration must capture the admitted principal, including an async subscribe ack.
+      await vi.waitFor(() =>
+        expect(selectPrincipalActionContext.select(store.state)).not.toBeNull(),
+      );
       hydrateWorkspace();
-      await settle();
-      expect(reads()).toHaveLength(1);
+      await vi.waitFor(() => expect(reads()).toHaveLength(1));
       const snapshot = deferred<{ status: string }>();
       const notification = deferred<{ notify: { warning: ReturnType<typeof vi.fn> } }>();
       const importNotification = vi.fn(() => notification.promise);
