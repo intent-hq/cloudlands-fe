@@ -1028,15 +1028,13 @@
             : m.chat_queuedMessages_sendingWhenIdle_label()}
         </span>
       </Button>
-      {#if !disabled || (singleMessage && editingId && findQueuedMessageForEdit([singleMessage], editingId))}
+      {#if !disabled}
         {#if singleMessage}
-          <div class="flex shrink-0 items-center" data-testid="queued-message-actions">
-            {#if editingId && findQueuedMessageForEdit([singleMessage], editingId)}
-              {@render editActions(singleMessage)}
-            {:else}
+          {#if !editingId || !findQueuedMessageForEdit([singleMessage], editingId)}
+            <div class="flex shrink-0 items-center" data-testid="queued-message-actions">
               {@render messageActions(singleMessage)}
-            {/if}
-          </div>
+            </div>
+          {/if}
         {:else}
           {#if onsendall && messages.some((message) => permissions(message).sendNow)}
             <Button
@@ -1147,9 +1145,7 @@
                           spellcheck="false"
                         />
                       {/if}
-                      {#if !singleMessage}
-                        {@render editActions(message)}
-                      {/if}
+                      {@render editActions(message)}
                     </div>
                     {#each rows.find((row) => row.key === message.id)?.contributions ?? [] as contribution (contribution.id)}
                       <div class="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere" role="status">

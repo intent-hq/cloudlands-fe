@@ -1,7 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import QueuedMessagesPreview from '../queued-messages.preview.svelte';
 
-test('edits a collapsed single message from the header and saves or cancels without losing focus', async ({
+test('edits a collapsed single message from the header and saves or cancels inline', async ({
   mount,
   page,
 }, info) => {
@@ -18,15 +18,19 @@ test('edits a collapsed single message from the header and saves or cancels with
   await expect(editor).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   await editor.fill('Discard this draft');
-  await header.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await info.attach('single-message-inline-editor.png', {
+    body: await component.getByTestId('queued-messages-container').screenshot(),
+    contentType: 'image/png',
+  });
+  await row.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(editor).toHaveCount(0);
   await expect(row.getByTestId('queued-message-text')).toHaveText('Check the empty state too.');
   await header.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(editor).toBeFocused();
-  await editor.fill('Saved from the header');
-  await header.getByRole('button', { name: 'Save', exact: true }).click();
+  await editor.fill('Saved inline');
+  await row.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(editor).toHaveCount(0);
-  await expect(row.getByTestId('queued-message-text')).toHaveText('Saved from the header');
+  await expect(row.getByTestId('queued-message-text')).toHaveText('Saved inline');
   const surface = component.getByTestId('queued-messages-container');
   expect(await surface.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await info.attach('single-message-saved.png', {
@@ -53,10 +57,7 @@ test('keeps the active draft when a multiple-message queue becomes a single mess
   await component.update({ props: { messageCount: 1 } });
   await expect(editor).toBeFocused();
   await expect(editor).toHaveValue('Keep my active draft');
-  await component
-    .getByTestId('queued-messages-header')
-    .getByRole('button', { name: 'Save', exact: true })
-    .click();
+  await first.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(first.getByTestId('queued-message-text')).toHaveText('Keep my active draft');
   await info.attach('single-message-after-queue-drain.png', {
     body: await component.getByTestId('queued-messages-container').screenshot(),
