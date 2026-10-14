@@ -175,5 +175,49 @@ test('Dashboard attention updates keep the card focused and unknown token totals
     }),
   );
   await expect(unread.locator('[data-home-card-unread]')).toHaveCount(0);
-  await expect(unread.locator('[data-home-card-waiting]')).toBeAttached();
+  await expect(
+    unread.locator('[data-home-status]').getByText('Waiting', { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview?.updateWorkspace('home-unread', { waiting: false }),
+  );
+  await expect(
+    unread.locator('[data-home-status]').getByText('Idle', { exact: true }),
+  ).toBeVisible();
+});
+
+test('Dashboard distinguishes live PR states and preserves waiting details and focus', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'dashboard' } });
+  const card = component.locator('[data-home-workspace="home-ready"]');
+  const status = card.locator('[data-home-status]');
+  await card.focus();
+  for (const [displayStatus, label] of [
+    ['pr_open', 'PR open'],
+    ['pr_ready', 'PR Mergeable'],
+    ['pr_queued', 'PR Queued'],
+  ] as const) {
+    await page.evaluate((state) => {
+      window.__homeWorkspacePreview!.updateWorkspace('home-ready', {
+        displayStatus: state,
+        waiting: true,
+      });
+    }, displayStatus);
+    await expect(status.getByText(label, { exact: true })).toBeVisible();
+    await expect(card).toBeFocused();
+    await status.hover();
+    await expect(page.getByRole('tooltip')).toContainText(label);
+    await expect(page.getByRole('tooltip')).toContainText(/Waiting/i);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  }
+  await page.evaluate(() => {
+    window.__homeWorkspacePreview!.updateWorkspace('home-ready', { waiting: false });
+  });
+  await status.hover();
+  await expect(page.getByRole('tooltip')).toContainText('PR Queued');
+  await expect(page.getByRole('tooltip')).not.toContainText(/Waiting/i);
 });

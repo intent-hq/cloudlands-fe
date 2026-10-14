@@ -90,11 +90,6 @@
 >
   <span class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
     <HomeWorkspaceStatus {workspace} showLabel />
-    {#if workspace.waiting}
-      <span class="type-caption text-muted-foreground" data-home-card-waiting>
-        {m.workspace_taskStatus_waiting_label()}
-      </span>
-    {/if}
     {#if workspace.attention === 'unread'}
       <span class="type-caption text-foreground" data-home-card-unread
         >{m.hud_workspaceState_unread_label()}</span
