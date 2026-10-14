@@ -114,8 +114,8 @@ jobs:
       - name: Select Mac release targets
         id: macos
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-15","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do

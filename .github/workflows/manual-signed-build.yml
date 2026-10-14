@@ -108,8 +108,8 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-15","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
           case "${MACOS_ARCH:-both}" in
             both) TARGETS="[$ARM,$INTEL]" ;;
             arm64) TARGETS="[$ARM]" ;;

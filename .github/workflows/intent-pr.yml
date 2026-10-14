@@ -791,7 +791,7 @@ jobs:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
     needs: [release-fast-path]
     if: ${{ !cancelled() && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
-    runs-on: depot-macos-15
+    runs-on: depot-macos-latest
     timeout-minutes: 15
     permissions:
       contents: read
