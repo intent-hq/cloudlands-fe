@@ -18,9 +18,23 @@
     selectOlderEventsEndReached,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
   import { loadPeopleEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
-  import { getPeopleActivity } from './people-activity';
+  import {
+    getPanelTabOpenState,
+    selectFocusedPanelId,
+    selectPanel,
+    selectPanelIds,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { openTab, setActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { markNoteRead } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { normalizeActivityFilePath } from '$lib/components/workspace/utils/activity-file-path';
+  import { getPeopleActivity, type PeopleActivityRow } from './people-activity';
 
-  let { workspaceId }: { workspaceId: string } = $props();
+  let {
+    workspaceId,
+    panelLayoutId = workspaceId,
+  }: { workspaceId: string; panelLayoutId?: string } = $props();
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   const events$ = selectWorkspaceEvents(workspaceIdStore);
@@ -32,6 +46,35 @@
   const initialized$ = selectPeopleEventsInitialized(workspaceIdStore);
   const rows = $derived(getPeopleActivity(workspaceId, $events$, $people$));
   const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$nextToken$ && !$error$);
+
+  function openActivity(item: PeopleActivityRow) {
+    if (!item.destination) return;
+    const panelId =
+      selectFocusedPanelId.select(appStore.state, panelLayoutId) ??
+      selectPanelIds.select(appStore.state, panelLayoutId)[0];
+    if (!panelId) return;
+    const panel = selectPanel.select(appStore.state, panelLayoutId, panelId);
+    if (!panel) return;
+    const destination = { ...item.destination };
+    if (destination.filePath) {
+      destination.filePath = normalizeActivityFilePath(
+        destination.filePath,
+        selectWorkspaceById.select(appStore.state, workspaceId),
+      );
+    }
+    const existing = panel.tabs.find(
+      (tab) => getPanelTabOpenState([tab], null, workspaceId, destination).isOpen,
+    );
+    if (destination.agentId) {
+      appStore.dispatch(ensureAgentSessionLoaded(workspaceId, destination.agentId));
+    }
+    if (destination.noteId) appStore.dispatch(markNoteRead(workspaceId, destination.noteId));
+    appStore.dispatch(
+      existing
+        ? setActiveTab(panelLayoutId, existing.id, panelId)
+        : openTab(panelLayoutId, destination, panelId, undefined, true, undefined, true),
+    );
+  }
 
   $effect(() => {
     const id = workspaceId;
@@ -53,12 +96,15 @@
     <ListView
       items={rows}
       getKey={(row) => row.id}
+      getText={(row) => row.label}
+      onActivate={openActivity}
       ariaLabel={m.workspace_resizablePanels_activity_label()}
       virtualize={false}
       class="overflow-visible"
     >
       {#snippet row({ item })}
         <ListRow
+          data-people-activity-id={item.id}
           class="min-h-[42px] items-center gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
         >
           {#snippet leading()}

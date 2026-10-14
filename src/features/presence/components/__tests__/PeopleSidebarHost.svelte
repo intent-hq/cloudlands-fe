@@ -10,11 +10,65 @@
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import { selectShareDialogOpen } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    initializeLayout,
+    clearPanelLayout,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    selectPanels,
+    selectFocusedPanelId,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   let { guest = false, older = false }: { guest?: boolean; older?: boolean } = $props();
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const sharingOpen = selectShareDialogOpen();
   const workspaceId = 'people-tile-preview';
+  const panels$ = selectPanels(workspaceId);
+  const focusedPanel$ = selectFocusedPanelId(workspaceId);
+  store.dispatch(
+    initializeLayout(workspaceId, {
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'current' },
+          { type: 'panel', panelId: 'neighbor' },
+        ],
+        sizes: [50, 50],
+      },
+      panels: {
+        current: {
+          id: 'current',
+          activeTabId: 'original',
+          tabs: [
+            {
+              id: 'original',
+              type: 'note',
+              noteId: 'spec',
+              title: 'Spec',
+              workspaceId,
+              closable: true,
+            },
+          ],
+        },
+        neighbor: {
+          id: 'neighbor',
+          activeTabId: 'neighbor-note',
+          tabs: [
+            {
+              id: 'neighbor-note',
+              type: 'note',
+              noteId: 'sidebar-mockup',
+              title: 'Sidebar mockup',
+              workspaceId,
+              closable: true,
+            },
+          ],
+        },
+      },
+      focusedPanelId: 'current',
+    }),
+  );
 
   function addActivity() {
     store.dispatch(
@@ -48,7 +102,10 @@
     );
   }
 
-  onDestroy(dispose);
+  onDestroy(() => {
+    store.dispatch(clearPanelLayout(workspaceId));
+    dispose();
+  });
 </script>
 
 <div style:width="346px">
@@ -59,3 +116,6 @@
 <Button onclick={() => store.dispatch(setLabsMultiplayerEnabled(false))}>Disable multiplayer</Button
 >
 <output data-share-dialog-open>{String($sharingOpen)}</output>
+<output data-people-navigation
+  >{JSON.stringify({ panels: $panels$, focusedPanel: $focusedPanel$ })}</output
+>

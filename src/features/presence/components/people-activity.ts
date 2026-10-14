@@ -7,13 +7,15 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
 import { getHumanMessageAuthor } from '$lib/utils/message-authorship';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
-interface PeopleActivityRow {
+export interface PeopleActivityRow {
   id: string;
   name: string;
   avatarUrl: string | null;
   label: string;
   timestamp: string;
+  destination: Omit<PanelTab, 'id'> | null;
 }
 
 function text(value: unknown): string {
@@ -24,6 +26,68 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function activityDestination(event: WorkspaceEvent): PeopleActivityRow['destination'] {
+  const data = record(event.data);
+  const base = { workspaceId: event.workspaceId, closable: true };
+  const note = (noteId: string) =>
+    noteId
+      ? {
+          ...base,
+          type: 'note' as const,
+          noteId,
+          title: text(data.title) || text(data.noteTitle) || m.layout_tabTypes_note_title(),
+        }
+      : null;
+  switch (event.type as string) {
+    case 'note:created':
+    case 'note:updated':
+    case 'comment:added':
+    case 'comment:resolved':
+      return note(text(data.noteId));
+    case 'task:status-changed':
+      return note(text(data.noteId) || text(data.linkedNoteId));
+    case 'spec:updated':
+    case 'goal:updated':
+      return note('spec');
+    case 'agent:created':
+    case 'agent:renamed':
+    case 'agent:restored':
+    case 'agent:updated':
+    case 'agent:message':
+    case 'agent:user-message:sent': {
+      const agentId = text(data.agentId) || text(event.sessionId);
+      return agentId
+        ? {
+            ...base,
+            type: 'agent',
+            agentId,
+            title: text(data.agentName) || m.layout_tabTypes_agent_title(),
+          }
+        : null;
+    }
+    case 'file:changed': {
+      const filePath = text(data.path) || text(data.relativePath);
+      return filePath && data.action !== 'delete'
+        ? { ...base, type: 'file', filePath, title: filePath.split(/[\\/]/).pop() || filePath }
+        : null;
+    }
+    case 'git:commit': {
+      const commitHash = text(data.commit);
+      const gitRootId = text(data.gitRootId);
+      return commitHash
+        ? {
+            ...base,
+            type: 'changes',
+            title: m.layout_tabTypes_changes_title(),
+            data: { commitHash, ...(gitRootId ? { gitRootId } : {}) },
+          }
+        : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Only actions whose labels describe a human's mutation, not agent lifecycle noise. */
@@ -186,6 +250,7 @@ export function getPeopleActivity(
       avatarUrl: author ? author.avatarUrl : (person?.avatarUrl ?? null),
       label,
       timestamp: event.timestamp,
+      destination: activityDestination(event),
     });
   }
   return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));

@@ -1158,7 +1158,7 @@
                       use:scrollFade
                     >
                       {#if tabId === 'people'}
-                        <WorkspacePeopleActivity {workspaceId} />
+                        <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
                       {:else if tabId === 'agents'}
                         <div
                           class="px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"

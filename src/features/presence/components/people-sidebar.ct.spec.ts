@@ -3,6 +3,56 @@ import PeopleSidebarHost from './__tests__/PeopleSidebarHost.svelte';
 
 test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
+test('activity clicks reuse the current pane and keep the other pane and People panel open', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost);
+  const navigation = component.locator('[data-people-navigation]');
+  await component.getByRole('button', { name: 'People', exact: true }).click();
+  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  const note = panel.locator('[data-people-activity-id="people-activity-note"]');
+  await note.click();
+  await expect
+    .poll(async () => JSON.parse((await navigation.textContent()) || '{}'))
+    .toMatchObject({
+      focusedPanel: 'current',
+      panels: {
+        current: { tabs: [{ id: 'original', noteId: 'spec' }, { noteId: 'sidebar-mockup' }] },
+        neighbor: {
+          activeTabId: 'neighbor-note',
+          tabs: [{ id: 'neighbor-note', noteId: 'sidebar-mockup' }],
+        },
+      },
+    });
+  const afterClick = JSON.parse((await navigation.textContent()) || '{}');
+  expect(afterClick.panels.current.activeTabId).toBe(afterClick.panels.current.tabs[1].id);
+  await note.click();
+  await expect(navigation).toHaveText(JSON.stringify(afterClick));
+  await expect(panel).toBeVisible();
+});
+
+test('keyboard activation opens the message agent in the current pane', async ({ mount }) => {
+  const component = await mount(PeopleSidebarHost);
+  await component.getByRole('button', { name: 'People', exact: true }).click();
+  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  const row = panel
+    .locator('[data-slot="list-view-item"]')
+    .filter({ hasText: 'Sam: Sent a message' });
+  await row.focus();
+  await row.press('Enter');
+  const navigation = component.locator('[data-people-navigation]');
+  await expect
+    .poll(async () => JSON.parse((await navigation.textContent()) || '{}'))
+    .toMatchObject({
+      focusedPanel: 'current',
+      panels: {
+        current: { tabs: [{ id: 'original' }, { type: 'agent', agentId: 'planner' }] },
+        neighbor: { activeTabId: 'neighbor-note' },
+      },
+    });
+  await expect(panel).toBeVisible();
+});
+
 test('opens People, receives live human activity, and restores focus on close', async ({
   mount,
   page,

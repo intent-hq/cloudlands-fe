@@ -26,6 +26,57 @@ function rows(events: WorkspaceEvent[], people: PresenceIdentity[] = [person]) {
 }
 
 describe('People activity', () => {
+  it.each([
+    ['note:updated', { noteId: 'note-1', title: 'Plan' }, { type: 'note', noteId: 'note-1' }],
+    ['comment:added', { noteId: 'note-2' }, { type: 'note', noteId: 'note-2' }],
+    ['comment:resolved', { noteId: 'note-2', resolved: true }, { type: 'note', noteId: 'note-2' }],
+    ['task:status-changed', { linkedNoteId: 'task-1' }, { type: 'note', noteId: 'task-1' }],
+    ['spec:updated', {}, { type: 'note', noteId: 'spec' }],
+    ['goal:updated', {}, { type: 'note', noteId: 'spec' }],
+    ['agent:created', { agentId: 'agent-1' }, { type: 'agent', agentId: 'agent-1' }],
+    [
+      'agent:message',
+      { agentId: 'agent-2', role: 'user', author: person },
+      { type: 'agent', agentId: 'agent-2' },
+    ],
+    [
+      'file:changed',
+      { path: 'src/app.ts', action: 'modify' },
+      { type: 'file', filePath: 'src/app.ts' },
+    ],
+    ['git:commit', { commit: 'abc123' }, { type: 'changes', data: { commitHash: 'abc123' } }],
+    [
+      'git:commit',
+      { commit: 'def456', gitRootId: 'frontend-root' },
+      { type: 'changes', data: { commitHash: 'def456', gitRootId: 'frontend-root' } },
+    ],
+  ])('resolves the recorded subject for %s', (type, data, destination) => {
+    expect(
+      rows([event({ type: type as WorkspaceEvent['type'], data })])[0].destination,
+    ).toMatchObject({
+      workspaceId,
+      closable: true,
+      ...destination,
+    });
+  });
+
+  it('uses the recorded agent session when the payload has no agent ID', () => {
+    expect(
+      rows([event({ type: 'agent:created', sessionId: 'session-agent', data: {} })])[0].destination,
+    ).toMatchObject({ type: 'agent', agentId: 'session-agent' });
+  });
+
+  it.each([
+    ['agent:created', {}],
+    ['note:updated', { noteId: { malformed: true } }],
+    ['comment:added', {}],
+    ['agent:deleted', { agentId: 'deleted-agent' }],
+    ['note:deleted', { noteId: 'deleted-note' }],
+    ['file:changed', { path: 'src/gone.ts', action: 'delete' }],
+  ])('does not invent a destination for unavailable %s subjects', (type, data) => {
+    expect(rows([event({ type: type as WorkspaceEvent['type'], data })])[0].destination).toBeNull();
+  });
+
   it('shows recorded human message authors and photos, including system-delivered messages', () => {
     const message = event({
       type: 'agent:message',
