@@ -76,6 +76,7 @@ import { LauncherHoverCardExamples } from './launcher-hover-card-examples';
 import { DividerButtonExamples } from './divider-button-examples';
 import { CreateAgentSectionExamples } from './create-agent-section-examples';
 import { WorkspaceTabFlareExamples } from './workspace-tab-flare-examples';
+import { PanelCornerHandleExamples } from './panel-corner-handle-examples';
 import { FileSearchExamples } from './file-search-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
@@ -627,6 +628,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'sidebar' && <DividerButtonExamples />}
       {slug === 'sidebar' && <CreateAgentSectionExamples />}
       {slug === 'sidebar' && <WorkspaceTabFlareExamples />}
+      {slug === 'sidebar' && <PanelCornerHandleExamples />}
       {slug === 'scroll-area' && <ScrollAreaExample />}
       {slug === 'zoom-pan-viewport' && <ZoomMediaExample />}
       {displayWidgetSlugs.some((value) => value === slug) && <DisplayWidgetExample slug={slug} />}

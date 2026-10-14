@@ -9,8 +9,14 @@
 @import '../../../../src/lib/styles/tokens.css';
 @import '../../../../src/lib/styles/overlay-surface.css';
 @import '../../../../src/lib/styles/subscription-card-utilities.css';
+@import '../../../../src/lib/styles/resize-handles.css';
 @import './line-change-tokens.css';
 @import './workspace-phase-tokens.css';
+
+body.panel-resizing iframe,
+body.panel-resizing webview {
+  pointer-events: none !important;
+}
 
 @source '../../../../src/lib/components/workspace/utils/workspace-status-presentation.ts';
 @source '../../../../src/lib/components/workspace/utils/task-status-display.ts';
