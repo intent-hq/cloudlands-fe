@@ -20,6 +20,7 @@
         setTitle: (id: string, title: string) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
         roundTripSettings: () => void;
+        updateWorkspace: (id: string, changes: Partial<Workspace>) => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
     }
@@ -38,6 +39,8 @@
       | 'board-repositories'
       | 'repository-labels'
       | 'board-repository-labels'
+      | 'dashboard'
+      | 'dashboard-repository'
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
@@ -70,6 +73,8 @@
       'board-repositories': { props: { scenario: 'board-repositories' } },
       'repository-labels': { props: { scenario: 'repository-labels' } },
       'board-repository-labels': { props: { scenario: 'board-repository-labels' } },
+      dashboard: { props: { scenario: 'dashboard' } },
+      'dashboard-repository': { props: { scenario: 'dashboard-repository' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -380,6 +385,8 @@
     bulkUpdateWorkspaceEntities,
     setWorkspaceHasLoaded,
     setWorkspaceError,
+    updateWorkspaceEntity,
+    bulkUpdateWorkspaceEntities,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
@@ -462,6 +469,8 @@
         ),
       );
     },
+    updateWorkspace: (id, changes) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, changes)])),
   };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -653,6 +662,13 @@
         }),
       );
     }
+    if (scenario === 'dashboard' || scenario === 'dashboard-repository')
+      store.dispatch(
+        updateHomeWorkspaceView({
+          view: 'dashboard',
+          groupBy: scenario === 'dashboard-repository' ? 'repository' : 'status',
+        }),
+      );
     if (scenario === 'status-icons') store.dispatch(updateHomeWorkspaceView({ groupBy: 'none' }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))

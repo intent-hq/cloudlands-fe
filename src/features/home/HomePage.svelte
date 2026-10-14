@@ -80,6 +80,7 @@
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
+  import HomeWorkspaceDashboard from './HomeWorkspaceDashboard.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -894,6 +895,18 @@
                                 >{/if}
                             {/snippet}
                           </EmptyState>
+                        {:else if $view$.view === 'dashboard'}
+                          <HomeWorkspaceDashboard
+                            workspaces={filteredWorkspaces}
+                            groups={listGroups}
+                            showRepository={!selectedRepository && $view$.groupBy !== 'repository'}
+                            {selectedId}
+                            onselect={(id) =>
+                              updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
+                            oncontextmenu={showWorkspaceMenu}
+                            onexpand={setGroupExpanded}
+                          />
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}

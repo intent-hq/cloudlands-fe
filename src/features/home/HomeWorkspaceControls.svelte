@@ -3,7 +3,8 @@
   import { Button } from '$lib/components/ui/button';
   import HomeSearch from './HomeSearch.svelte';
   import Fa from 'svelte-fa';
-  import { faList, faTableColumns, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
+  import { faList, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+  import SquaresFour from 'phosphor-svelte/lib/SquaresFourIcon';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import HomeFilterSelect from './HomeFilterSelect.svelte';
@@ -65,7 +66,7 @@
     onclick={() => onfilter('archived')}>{m.home_filter_archived()}</Button
   >
 </div>
-<div class="home-workspace-filters-compact ml-auto min-w-0">
+<div class="home-workspace-filters-compact ml-auto min-w-0 shrink-0">
   <HomeFilterSelect
     value={filter}
     label={m.layout_allCard_status_label()}
@@ -102,7 +103,7 @@
     aria-pressed={view === 'dashboard'}
     aria-label={m.home_dashboard_view_label()}
     tooltip={m.home_dashboard_view_label()}
-    onclick={() => onview('dashboard')}><Fa icon={faTableCellsLarge} /></Button
+    onclick={() => onview('dashboard')}><SquaresFour size={16} /></Button
   >
 </div>
 <HomeViewOptions>{@render settings()}</HomeViewOptions>

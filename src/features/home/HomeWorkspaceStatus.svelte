@@ -123,7 +123,8 @@
               <Fa icon={waitingPresentation.icon} weight="fill" class="size-full!" />
             </span>
           {/if}
-          {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{description}</span
+          {#if showLabel}<span class="text-foreground">{presentation.label}</span><span
+              class="sr-only">{description}</span
             >{/if}
         </span>{/snippet}</Tooltip.Trigger
     ><Tooltip.Content>{description}</Tooltip.Content></Tooltip.Root
