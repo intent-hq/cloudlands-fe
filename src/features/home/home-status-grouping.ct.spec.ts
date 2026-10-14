@@ -15,7 +15,7 @@ const statuses = [
   ['pr_merged', 'PR merged'],
 ] as const;
 
-test('Home status groups restore every work stage in list and board views', async ({
+test('Home status groups restore every work stage in list view only', async ({
   mount,
   page,
 }, testInfo) => {
@@ -50,28 +50,40 @@ test('Home status groups restore every work stage in list and board views', asyn
   });
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  for (const [status, label] of statuses) {
-    await expect(
-      board
-        .getByRole('region', { name: label, exact: true })
-        .locator(`[data-home-workspace="home-status-${status}"]`),
-    ).toHaveCount(1);
-  }
+  await expect(board.locator('section')).toHaveCount(3);
+  await expect(board.getByRole('region', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(board.getByRole('region', { name: 'Running', exact: true })).toBeVisible();
+  await expect(
+    board
+      .getByRole('region', { name: 'Done & idle', exact: true })
+      .locator('[data-home-workspace]'),
+  ).toHaveCount(8);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(13);
-  await testInfo.attach('after-status-board', {
-    body: await page.screenshot({ path: testInfo.outputPath('after-status-board.png') }),
+  await component.getByRole('button', { name: 'View options', exact: true }).click();
+  const grouping = page.getByRole('combobox', { name: 'Group by', exact: true });
+  await expect(grouping).toContainText('Activity');
+  await grouping.click();
+  await expect(page.getByRole('option', { name: 'Status', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await testInfo.attach('kanban-activity-columns', {
+    body: await page.screenshot({ path: testInfo.outputPath('kanban-activity-columns.png') }),
     contentType: 'image/png',
   });
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
+  await expect(component.locator('[data-home-group]')).toHaveCount(11);
   await page.evaluate(() =>
     window.__homeWorkspacePreview!.setStatus('home-status-pr_open', 'pr_ready'),
   );
-  await expect(board.getByRole('region', { name: 'PR open', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('listbox', { name: 'PR open', exact: true })).toHaveCount(0);
   await expect(
-    board
-      .getByRole('region', { name: 'PR Mergeable', exact: true })
+    component
+      .getByRole('listbox', { name: 'PR Mergeable', exact: true })
       .locator('[data-home-workspace]'),
   ).toHaveCount(2);
-  await expect(board.locator('[data-home-workspace]')).toHaveCount(13);
+  await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
 });
 
 test('Home status grouping keeps pinned work unique and respects filters and saved settings', async ({

@@ -412,11 +412,9 @@
   const boardGroups = $derived(
     $view$.groupBy === 'repository'
       ? repositorySections
-      : $view$.groupBy === 'workspace-status'
-        ? statusGroups
-        : $view$.groupBy === 'none'
-          ? [{ id: 'all', label: m.home_filter_all(), items: filteredWorkspaces }]
-          : undefined,
+      : $view$.groupBy === 'none'
+        ? [{ id: 'all', label: m.home_filter_all(), items: filteredWorkspaces }]
+        : undefined,
   );
   const integrationWorkspaceId = $derived($collaborator$ ? scopedWorkspaces[0]?.id : undefined);
   const selectedRepositoryGithubUrl = $derived(
