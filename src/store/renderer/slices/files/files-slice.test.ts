@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { fileSnapshot } from '$features/file/utils/file-content';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -24,6 +25,77 @@ const OTHER_PATH = 'src/other.ts';
 const OTHER_ABS_PATH = '/repo/src/other.ts';
 
 describe('filesReducer', () => {
+  it.each([false, true])(
+    'keeps a failed preview retry read-only until a complete read succeeds (truncated=%s)',
+    (truncated) => {
+      let state = filesReducer(
+        initialState,
+        loadFileContentSucceeded(
+          WS_ID,
+          PATH,
+          ABS_PATH,
+          {
+            kind: 'read-only-text',
+            content: 'prefix',
+            bytesRead: 6,
+            totalBytes: truncated ? 99 : 6,
+          },
+          truncated,
+        ),
+      );
+      state = filesReducer(
+        state,
+        loadFileContentRequested(WS_ID, PATH, ABS_PATH, { readOnlyPreview: true }),
+      );
+      state = filesReducer(state, loadFileContentFailed(WS_ID, PATH, ABS_PATH, 'connection lost'));
+      const failed = getItem(state.byWorkspaceId[WS_ID].files, PATH);
+      expect(failed).toMatchObject({
+        kind: 'read-only-text',
+        originalContent: 'prefix',
+        localContent: null,
+        bytesRead: 6,
+        totalBytes: truncated ? 99 : 6,
+        truncated,
+        loading: false,
+        error: 'connection lost',
+      });
+      expect(fileSnapshot(failed)).toBeUndefined();
+      expect(
+        filesReducer(
+          state,
+          updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'stale draft' }),
+        ),
+      ).toBe(state);
+      for (const content of [
+        { kind: 'editable-text', content: 'old save' } as const,
+        { kind: 'restorable-snapshot', content: 'old undo', isBinary: false } as const,
+      ]) {
+        state = filesReducer(state, saveFileContentSucceeded(WS_ID, PATH, content));
+        expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toMatchObject({
+          kind: 'read-only-text',
+          originalContent: 'prefix',
+          localContent: null,
+          truncated,
+        });
+        expect(fileSnapshot(getItem(state.byWorkspaceId[WS_ID].files, PATH))).toBeUndefined();
+      }
+      state = filesReducer(state, loadFileContentRequested(WS_ID, PATH, ABS_PATH));
+      expect(fileSnapshot(getItem(state.byWorkspaceId[WS_ID].files, PATH))).toBeUndefined();
+      state = filesReducer(
+        state,
+        loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+          kind: 'editable-text',
+          content: 'complete document',
+        }),
+      );
+      expect(fileSnapshot(getItem(state.byWorkspaceId[WS_ID].files, PATH))).toEqual({
+        kind: 'restorable-snapshot',
+        content: 'complete document',
+        isBinary: false,
+      });
+    },
+  );
+
   it('restores a readable binary snapshot without admitting text edits', () => {
     const snapshot = { kind: 'restorable-snapshot', content: '\b\u0001', isBinary: true } as const;
     const restored = filesReducer(initialState, saveFileContentSucceeded(WS_ID, PATH, snapshot));

@@ -26,6 +26,8 @@ import {
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
   removeFileContentEntry,
+  loadFileContentRequested,
+  loadFileContentFailed,
   loadFileContentSucceeded,
   saveFileContentFailed,
   saveFileContentRequested,
@@ -99,12 +101,17 @@ describe('filesWriteSaga', () => {
     vi.mocked(backendRequest).mockReset();
   });
 
-  it.each([false, true])(
-    'rejects explicit save/update/deletion from a read-only preview (truncated=%s)',
-    async (truncated) => {
+  it.each([
+    { truncated: false, failedRetry: false },
+    { truncated: true, failedRetry: false },
+    { truncated: false, failedRetry: true },
+    { truncated: true, failedRetry: true },
+  ])(
+    'rejects explicit save/update/deletion from a read-only preview ($truncated, failedRetry=$failedRetry)',
+    async ({ truncated, failedRetry }) => {
       const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
       const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
-      const read = vi.spyOn(appClient.files, 'read');
+      const read = vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
       const h = startWrites();
       try {
         h.dispatch(
@@ -121,6 +128,12 @@ describe('filesWriteSaga', () => {
             truncated,
           ),
         );
+        if (failedRetry) {
+          h.dispatch(
+            loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', { readOnlyPreview: true }),
+          );
+          h.dispatch(loadFileContentFailed('ws-1', 'a.ts', '/repo/a.ts', 'connection lost'));
+        }
         h.dispatch(
           updateFileContent('ws-1', 'a.ts', { kind: 'editable-text', content: 'changed' }),
         );
@@ -145,6 +158,52 @@ describe('filesWriteSaga', () => {
         expect(read).not.toHaveBeenCalled();
         expect(h.actions.some((a) => a.type === saveFileContentFailed.type)).toBe(true);
       } finally {
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['prune', 'unmount'] as const)(
+    'keeps a failed-preview save blocked after queued %s cleanup',
+    async (cleanup) => {
+      const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = reserveGitMutation('ws-1');
+      try {
+        await lease.ready;
+        h.dispatch(
+          loadFileContentSucceeded(
+            'ws-1',
+            'a.ts',
+            '/repo/a.ts',
+            {
+              kind: 'read-only-text',
+              content: 'prefix',
+              bytesRead: 6,
+              totalBytes: 99999,
+            },
+            true,
+          ),
+        );
+        h.dispatch(
+          loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', { readOnlyPreview: true }),
+        );
+        h.dispatch(loadFileContentFailed('ws-1', 'a.ts', '/repo/a.ts', 'connection lost'));
+        h.dispatch(
+          saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', {
+            kind: 'editable-text',
+            content: 'stale queued draft',
+          }),
+        );
+        h.dispatch(
+          cleanup === 'prune' ? removeFileContentEntry('ws-1', 'a.ts') : workspaceUnmounted('ws-1'),
+        );
+        await lease.release();
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+        expect(write).not.toHaveBeenCalled();
+      } finally {
+        await lease.release();
         h.task.cancel();
         await h.task.toPromise();
       }

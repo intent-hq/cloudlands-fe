@@ -149,7 +149,7 @@ filesReducer.with(loadFileContentRequested, (state, { payload: [wsId, path, abso
     absolutePath,
     loading: true,
     error: null,
-    truncated: false,
+    truncated: entry.kind === 'read-only-text' ? entry.truncated : false,
     notFoundCandidates: null,
   })),
 );
@@ -180,10 +180,14 @@ filesReducer.with(
     upsertFileEntry(state, wsId, path, (entry) => ({
       ...entry,
       absolutePath,
-      ...fileContentData({ kind: 'preview-only', isBinary: entry.isBinary }),
+      // A failed retry cannot grant edit/Undo authority to an observed prefix.
+      // Keep its read-only content contract until a new complete read succeeds.
+      ...(entry.kind === 'read-only-text'
+        ? {}
+        : fileContentData({ kind: 'preview-only', isBinary: entry.isBinary })),
       loading: false,
       error,
-      truncated: false,
+      truncated: entry.kind === 'read-only-text' ? entry.truncated : false,
       notFoundCandidates: notFoundCandidates ?? null,
     })),
 );
