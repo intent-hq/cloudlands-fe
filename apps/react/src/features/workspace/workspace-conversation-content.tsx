@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import type { ContentBlock } from '$shared/types';
 import type { RenderContentBlock } from '$lib/utils/messageParser';
 import { mergeHydratedContent } from '$lib/components/chat/block-hydration';
-import { prepareWorkspaceConfirmationContent } from '$lib/components/chat/workspace-confirmation-presentation';
+import { prepareReadOnlyToolContent } from '$lib/components/chat/read-only-tool-presentation';
 import { selectChatAgentState } from '@/store/chat-state/chat-state-selectors';
 import { ResponseGroup } from '@/features/chat/components/response-group';
-import { WorkspaceConfirmationTool } from './workspace-confirmation-tool';
+import { WorkspaceReadOnlyTool } from './workspace-read-only-tool';
 
 export function WorkspaceConversationContent({
   blocks,
@@ -22,10 +22,7 @@ export function WorkspaceConversationContent({
 }) {
   const cache = selectChatAgentState(agentId).value.hydratedBlocks;
   const hydrated = mergeHydratedContent(blocks, messageId, cache);
-  const { groups, pairs, consumedResults } = prepareWorkspaceConfirmationContent(
-    hydrated,
-    isStreaming,
-  );
+  const { groups, pairs, consumedResults } = prepareReadOnlyToolContent(hydrated, isStreaming);
   const originalById = new Map(
     blocks.filter((block) => block.id).map((block) => [block.id, block]),
   );
@@ -46,7 +43,7 @@ export function WorkspaceConversationContent({
       if (pairs.has(block)) {
         const result = pairs.get(block);
         return (
-          <WorkspaceConfirmationTool
+          <WorkspaceReadOnlyTool
             key={block.id ?? index}
             call={originalById.get(block.id) ?? block}
             resultBlock={result && (originalById.get(result.id) ?? result)}

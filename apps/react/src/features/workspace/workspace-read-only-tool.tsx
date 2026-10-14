@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useState } from 'react';
 import { EyeIcon, HandIcon } from '@phosphor-icons/react';
 import type { ContentBlock } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
-import { getWorkspaceConfirmationPresentation } from '$lib/components/chat/workspace-confirmation-presentation';
+import { getReadOnlyToolPresentation } from '$lib/components/chat/read-only-tool-presentation';
 import { sanitizeToolPayload, sanitizeToolText } from '$lib/components/chat/tool-display-model';
 import { extractPayloadText } from '$lib/components/chat/tool-result-pairing';
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
@@ -16,7 +16,7 @@ import { selectHydratedBlock } from '@/store/chat-state/chat-state-selectors';
 import { store } from '@/store';
 import { messageBlockHydrationRequested } from '../../../../../src/store/renderer/slices/chat-state/chat-state-slice';
 
-export function WorkspaceConfirmationTool({
+export function WorkspaceReadOnlyTool({
   call,
   resultBlock,
   agentId,
@@ -47,11 +47,7 @@ export function WorkspaceConfirmationTool({
       for (const blockId of truncatedToolBlockIds(call, resultBlock))
         dispatch(messageBlockHydrationRequested(agentId, messageId, blockId));
   }, [expanded, call, resultBlock, agentId, messageId, dispatch]);
-  const presentation = getWorkspaceConfirmationPresentation(
-    displayedCall,
-    displayedResult,
-    isStreaming,
-  );
+  const presentation = getReadOnlyToolPresentation(displayedCall, displayedResult, isStreaming);
   if (!presentation?.admitted) return null;
   const { input, result, parsed, display, state, model } = presentation;
   const entries = [
@@ -124,7 +120,8 @@ export function WorkspaceConfirmationTool({
       animateDetailsHeight
       details={
         <div
-          data-workspace-confirmation-body=""
+          data-workspace-confirmation-body={parsed.type === 'confirmation' ? '' : undefined}
+          data-workspace-raw-tool-body={parsed.type === 'unknown' ? '' : undefined}
           data-hydration={
             truncated.length ? (loaded ? 'loaded' : error ? 'error' : 'pending') : 'complete'
           }
@@ -157,16 +154,19 @@ export function WorkspaceConfirmationTool({
               {errorText || m.chat_toolDetails_noErrorDetails_label()}
             </p>
           )}
-          {state !== 'error' && state !== 'running' && parsed.content && (
-            <div className="absolute top-0 right-0 z-10 flex items-center opacity-0 transition-opacity group-hover/details:opacity-100 focus-within:opacity-100">
-              <CopyButton
-                text={typeof input.content === 'string' ? input.content : parsed.content}
-                label={m.chat_toolDetails_copyContent_title()}
-                className="text-muted-foreground"
-              />
-            </div>
-          )}
-          {state !== 'error' && parsed.content ? (
+          {parsed.type === 'confirmation' &&
+            state !== 'error' &&
+            state !== 'running' &&
+            parsed.content && (
+              <div className="absolute top-0 right-0 z-10 flex items-center opacity-0 transition-opacity group-hover/details:opacity-100 focus-within:opacity-100">
+                <CopyButton
+                  text={typeof input.content === 'string' ? input.content : parsed.content}
+                  label={m.chat_toolDetails_copyContent_title()}
+                  className="text-muted-foreground"
+                />
+              </div>
+            )}
+          {parsed.type === 'confirmation' && state !== 'error' && parsed.content ? (
             <pre
               data-tool-confirmation-text=""
               className="m-0 p-2 text-sm leading-relaxed max-h-72 overflow-y-auto text-muted-foreground whitespace-pre-wrap break-words"

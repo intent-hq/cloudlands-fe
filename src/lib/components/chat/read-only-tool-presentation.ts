@@ -12,21 +12,24 @@ import { normalizeResponseGroups } from './response-group-blocks';
 import { classifyToolResults, findToolResult, getToolResultPayload } from './tool-result-pairing';
 
 /** Bounded port admission. Other result families retain their existing renderer. */
-export function getWorkspaceConfirmationPresentation(
+export function getReadOnlyToolPresentation(
   call: ContentBlock,
   resultBlock: ContentBlock | undefined,
   isStreaming = false,
 ) {
   if (call.type !== 'tool_use') return null;
   const input = call.input || {};
-  if (
-    cleanToolName(call.name).toLowerCase() !== 'workspace_api' &&
-    !(typeof input.code === 'string' && typeof input.summary === 'string')
-  )
-    return null;
   const result = getToolResultPayload(resultBlock);
   const parsed = parseToolResult(call.name || '', input, result);
-  if (parsed.type !== 'confirmation') return null;
+  const workspaceConfirmation =
+    parsed.type === 'confirmation' &&
+    (cleanToolName(call.name).toLowerCase() === 'workspace_api' ||
+      (typeof input.code === 'string' && typeof input.summary === 'string'));
+  // ACP file-kind receipts can contain only exit metadata. The canonical
+  // unknown body is raw data; the human title never supplies file contents.
+  const rawFileResult =
+    parsed.type === 'unknown' && resultBlock != null && call.metadata?.toolKind === 'file';
+  if (!workspaceConfirmation && !rawFileResult) return null;
   const display = classifyTool(call.name, input, result);
   const state = getToolCallState(resultBlock, isStreaming);
   const model = buildToolDisplayModel({
@@ -48,8 +51,8 @@ export function getWorkspaceConfirmationPresentation(
   };
 }
 
-/** Only consumed confirmation results are suppressed; other pairs stay visible. */
-export function prepareWorkspaceConfirmationContent(blocks: ContentBlock[], isStreaming = false) {
+/** Only consumed supported results are suppressed; all other blocks stay visible. */
+export function prepareReadOnlyToolContent(blocks: ContentBlock[], isStreaming = false) {
   const groups = normalizeResponseGroups(
     groupContentBlocks(dedupeToolUseBlocks(blocks), isStreaming),
     isStreaming,
@@ -65,7 +68,7 @@ export function prepareWorkspaceConfirmationContent(blocks: ContentBlock[], isSt
       }
       if (block.type !== 'tool_use') continue;
       const result = findToolResult(classification.resultsMap, block);
-      if (!getWorkspaceConfirmationPresentation(block, result, isStreaming)) continue;
+      if (!getReadOnlyToolPresentation(block, result, isStreaming)) continue;
       pairs.set(block, result);
       if (result) consumedResults.add(result);
     }
