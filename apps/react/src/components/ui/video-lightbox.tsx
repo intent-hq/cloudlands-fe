@@ -4,6 +4,7 @@ import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { VideoActionsMenu } from '@/components/ui/video-actions-menu';
 import type { VideoSource } from '$shared/types/video-source';
 import { m } from '$shared/paraglide/messages.js';
+import { sizeVideoFromMetadata } from '$lib/actions/size-video-from-metadata';
 
 export interface VideoLightboxProps {
   open?: boolean;
@@ -65,6 +66,7 @@ export function VideoLightbox({
       >
         {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- Agent output has no captions field, matching the source. */}
         <video
+          ref={sizeVideoFromMetadata}
           src={videoUrl}
           poster={poster}
           controls

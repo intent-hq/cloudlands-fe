@@ -12,6 +12,7 @@ import { PNG } from 'pngjs';
 // pending work cleanup, daemon admission and source-paired pixels stay unverified.
 const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
 const productFiles = [
+  'src/lib/actions/size-video-from-metadata.ts',
   'src/lib/utils/media-provenance.ts',
   'src/lib/utils/image-actions.ts',
   'src/lib/i18n/format.ts',
@@ -41,6 +42,7 @@ const ownFiles = [
   'packages/view-parity/lib/chat-video.mjs',
   'packages/view-parity/tests/chat-video.core.spec.mjs',
   'packages/view-parity/tests/chat-video.extended.spec.mjs',
+  'packages/view-parity/tests/chat-video-sizing.extended.spec.mjs',
 ];
 const runnerFiles = [
   ...ownFiles,
@@ -445,9 +447,8 @@ export async function sameNode(handle, target) {
 export async function detached(handle) {
   await expect.poll(() => handle.evaluate((node) => node.isConnected)).toBe(false);
 }
-export function posterFile() {
-  // Realistic intrinsic poster dimensions keep native video controls usable in the fixture.
-  const png = new PNG({ width: 320, height: 180 });
+export function posterFile(width = 320, height = 180) {
+  const png = new PNG({ width, height });
   for (let i = 0; i < png.data.length; i += 4) {
     png.data[i] = 120;
     png.data[i + 1] = 190;

@@ -1,10 +1,76 @@
 import { expect, test } from '../../../../test/ct-test';
 import ChatVideoBlockHost from './ChatVideoBlockHost.svelte';
+import ChatVideoFilesHost from './ChatVideoFilesHost.svelte';
+import { readFileSync } from 'node:fs';
 
 const demoVideo = Buffer.from(
   'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAANcbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAHgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAod0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAHgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAB4AAAEAAABAAAAAAH/bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAABgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABqm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAWpzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MS4xOS4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAL7iAAAAAAAAABhzdHRzAAAAAAAAAAEAAAADAAACAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAKGN0dHMAAAAAAAAAAwAAAAEAAAQAAAAAAQAABgAAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAwAAAAEAAAAgc3RzegAAAAAAAAAAAAAAAwAAAsUAAAAMAAAADAAAABRzdGNvAAAAAAAAAAEAAAOMAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMAAAAAhmcmVlAAAC5W1kYXQAAAKuBgX//6rcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9hZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MjUgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAPZYiEADP//vbsvgU2FMjBAAAACEGaImxCv/7AAAAACAGeQXkK/8SB',
   'base64',
 );
+
+for (const dimensions of ['12x8', '320x180']) {
+  test(`decoded video dimensions override a ${dimensions} local poster`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 420, height: 900 });
+    const component = await mount(ChatVideoFilesHost);
+    for (const [label, file, mimeType] of [
+      ['Choose local video', 'landscape.webm', 'video/webm'],
+      ['Choose local poster', `poster-${dimensions}.png`, 'image/png'],
+    ]) {
+      const pending = page.waitForEvent('filechooser');
+      await component.getByRole('button', { name: label, exact: true }).click();
+      await (
+        await pending
+      ).setFiles({
+        name: file,
+        mimeType,
+        buffer: readFileSync(new URL(`./fixtures/${file}`, import.meta.url)),
+      });
+    }
+    const trigger = component.getByRole('button', { name: 'Play landscape.webm', exact: true });
+    await expect(trigger.locator('video')).toHaveAttribute('poster', /^data:image\/png;base64,/);
+    await trigger.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Video preview: landscape.webm' });
+    const player = dialog.getByTestId('chat-video-player');
+    await expect
+      .poll(() =>
+        player.evaluate((node: HTMLVideoElement) => {
+          const { width, height } = node.getBoundingClientRect();
+          return [node.videoWidth, node.videoHeight, width, height, node.controls];
+        }),
+      )
+      .toEqual([320, 180, 320, 180, true]);
+    // Both viewport bounds must preserve the decoded aspect ratio.
+    for (const viewport of [
+      { width: 240, height: 900 },
+      { width: 420, height: 150 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect
+        .poll(() =>
+          player.evaluate((node) => {
+            const { width, height } = node.getBoundingClientRect();
+            return (
+              width <= innerWidth * 0.9 &&
+              height <= innerHeight * 0.85 &&
+              Math.abs(width / height - 16 / 9) < 0.01
+            );
+          }),
+        )
+        .toBe(true);
+    }
+    await page.setViewportSize({ width: 420, height: 900 });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.press('Enter');
+    await expect(player).toBeVisible();
+    await component.unmount();
+    await expect(page.getByTestId('chat-video-player')).toHaveCount(0);
+  });
+}
 
 for (const theme of ['dark'] as const) {
   test(`opens accessible modal playback without changing transcript follow in ${theme}`, async ({

@@ -5,6 +5,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
+  import { sizeVideoFromMetadata } from '$lib/actions/size-video-from-metadata';
 
   interface Props {
     open?: boolean;
@@ -29,6 +30,10 @@
   }: Props = $props();
 
   let playbackUnavailable = $state(false);
+
+  function sizePlayer(video: HTMLVideoElement) {
+    return { destroy: sizeVideoFromMetadata(video) };
+  }
 
   $effect(() => {
     if (!open || !videoUrl) return;
@@ -62,6 +67,7 @@
   >
     <!-- svelte-ignore a11y_media_has_caption (agent video output has no captions field) -->
     <video
+      use:sizePlayer
       src={videoUrl}
       {poster}
       controls
