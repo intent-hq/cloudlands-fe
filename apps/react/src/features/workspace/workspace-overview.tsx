@@ -288,7 +288,13 @@ export function WorkspaceOverview({
                 />
               ) : (
                 <>
-                  {!noteId && <WorkspaceProgress workspaceId={workspaceId} query={query} />}
+                  {!noteId && (
+                    <WorkspaceProgress
+                      workspaceId={workspaceId}
+                      query={query}
+                      fileQuery={fileQuery}
+                    />
+                  )}
                   {!noteId && <WorkspaceAgents workspaceId={workspaceId} />}
                   {!noteId && (
                     <WorkspaceGitStatus
@@ -301,6 +307,7 @@ export function WorkspaceOverview({
                     workspaceId={workspaceId}
                     noteId={noteId}
                     query={query}
+                    fileQuery={fileQuery}
                     onRetry={() =>
                       store.dispatch(
                         workspaceNotesHydrationRequested(

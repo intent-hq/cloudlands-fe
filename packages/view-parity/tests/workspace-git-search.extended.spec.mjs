@@ -117,3 +117,77 @@ test('real changed-file search survives refresh, file return and reload without 
     contentType: 'application/json',
   });
 });
+
+test('independent workspace filters survive real note and linked-note navigation', async ({
+  page,
+}, info) => {
+  const {
+    REACT_BASE_URL: base,
+    REACT_WORKSPACE_ID: workspaceId,
+    REACT_LINK_NOTE_ID: noteId,
+  } = process.env;
+  if (!base || !workspaceId || !noteId)
+    throw new Error('Set the real workspace and linked-note environment');
+  const errors = await observeErrors(page);
+  const methods = [];
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname !== '/intentd/ws') return;
+    socket.on('framesent', ({ payload }) => methods.push(JSON.parse(String(payload)).method));
+  });
+  await page.setViewportSize({ width: 420, height: 1000 });
+  await page.goto(`${base}/workspaces/${encodeURIComponent(workspaceId)}?fileQuery=package.json`);
+  const git = page.getByTestId('workspace-git-status');
+  const notes = page.getByTestId('workspace-notes');
+  const fileInput = git.getByRole('searchbox');
+  const noteInput = notes.getByRole('searchbox');
+  await expect(fileInput).toHaveValue('package.json', { timeout: 30_000 });
+  await notes.locator('[data-sidebar-search="context"]').getByRole('button').click();
+  await noteInput.fill(noteId);
+  const targetNote = notes.locator(`a[data-note-id="${noteId}"]`);
+  await expect(targetNote).toHaveCount(1);
+  await expect(notes.locator('a[data-note-id="spec"]')).toHaveCount(1);
+  await expect(fileInput).toHaveValue('package.json');
+  const before = await notes.locator('header').boundingBox();
+  await targetNote.click();
+  const article = page.getByTestId('workspace-note');
+  await expect(article).toHaveAttribute('data-note-id', noteId, { timeout: 30_000 });
+  await expect(article.getByRole('heading').first()).toBeFocused();
+  expect(new URL(page.url()).searchParams.get('fileQuery')).toBe('package.json');
+  await article.getByRole('link', { name: 'Recovery', exact: true }).click();
+  await expect(article).not.toHaveAttribute('data-note-id', noteId);
+  await expect(article.getByRole('heading').first()).toBeFocused();
+  expect(new URL(page.url()).searchParams.get('q')).toBe(noteId);
+  expect(new URL(page.url()).searchParams.get('fileQuery')).toBe('package.json');
+  await notes.getByRole('link', { name: 'All notes', exact: true }).click();
+  await expect(noteInput).toBeFocused();
+  await expect(noteInput).toHaveValue(noteId);
+  await expect(fileInput).toHaveValue('package.json');
+  await expect(git.locator('a[data-file-path]')).toHaveCount(1);
+  await expect(git.locator('a[data-file-path]')).toHaveAttribute('data-file-path', 'package.json');
+  const after = await notes.locator('header').boundingBox();
+  expect(await notes.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+    1,
+  );
+  await page.evaluate(() => document.fonts.ready);
+  await page.mouse.move(0, 0);
+  await stableLocatorScreenshot(page, notes, async ({ png, attempt }) => {
+    if (png) await info.attach(`note-filters-${attempt}`, { body: png, contentType: 'image/png' });
+  });
+  await noteInput.fill('');
+  await expect.poll(() => notes.locator('a[data-note-id]').count()).toBeGreaterThan(1);
+  await expect(fileInput).toHaveValue('package.json');
+  expect(new URL(page.url()).searchParams.has('q')).toBe(false);
+  expect(new URL(page.url()).searchParams.get('fileQuery')).toBe('package.json');
+  expect(
+    methods.filter((method) =>
+      /\.(write|create|delete|rename|mkdir|stage|unstage|commit|push|pull|update|setContent)$/.test(
+        method ?? '',
+      ),
+    ),
+  ).toEqual([]);
+  expect(errors).toEqual([]);
+  await info.attach('note-filter-geometry', {
+    body: JSON.stringify({ before, after, methods, errors }),
+    contentType: 'application/json',
+  });
+});

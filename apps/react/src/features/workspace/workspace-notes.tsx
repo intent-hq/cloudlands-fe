@@ -31,10 +31,12 @@ function NoteContent({
   workspaceId,
   noteId,
   query,
+  fileQuery,
 }: {
   workspaceId: string;
   noteId: string;
   query: string;
+  fileQuery?: string;
 }) {
   const consumerId = useId();
   const title = useRef<HTMLHeadingElement>(null);
@@ -68,6 +70,7 @@ function NoteContent({
       search: {
         note: targetNoteId,
         q: targetWorkspaceId === workspaceId ? query || undefined : undefined,
+        fileQuery: targetWorkspaceId === workspaceId ? fileQuery || undefined : undefined,
       },
     });
   }
@@ -90,6 +93,7 @@ function NoteContent({
         line: options?.line,
         note: targetWorkspaceId === workspaceId ? noteId : undefined,
         q: targetWorkspaceId === workspaceId ? query || undefined : undefined,
+        fileQuery: targetWorkspaceId === workspaceId ? fileQuery || undefined : undefined,
       },
     });
   }
@@ -192,11 +196,13 @@ export function WorkspaceNotes({
   workspaceId,
   noteId,
   query = '',
+  fileQuery,
   onRetry,
 }: {
   workspaceId: string;
   noteId?: string;
   query?: string;
+  fileQuery?: string;
   onRetry: () => void;
 }) {
   const navigate = useNavigate();
@@ -241,12 +247,18 @@ export function WorkspaceNotes({
           <Link
             to="/workspaces/$workspaceId"
             params={{ workspaceId }}
-            search={{ q: query || undefined }}
+            search={{ q: query || undefined, fileQuery: fileQuery || undefined }}
             className="w-fit text-muted-foreground hover:text-foreground"
           >
             All notes
           </Link>
-          <NoteContent key={noteId} workspaceId={workspaceId} noteId={noteId} query={query} />
+          <NoteContent
+            key={noteId}
+            workspaceId={workspaceId}
+            noteId={noteId}
+            query={query}
+            fileQuery={fileQuery}
+          />
         </>
       ) : (
         <>
@@ -258,7 +270,7 @@ export function WorkspaceNotes({
                 void navigate({
                   to: '/workspaces/$workspaceId',
                   params: { workspaceId },
-                  search: { q: value || undefined },
+                  search: { q: value || undefined, fileQuery: fileQuery || undefined },
                   replace: true,
                 });
               }}
@@ -277,7 +289,11 @@ export function WorkspaceNotes({
                 <Link
                   to="/workspaces/$workspaceId"
                   params={{ workspaceId }}
-                  search={{ note: String(note.id), q: query || undefined }}
+                  search={{
+                    note: String(note.id),
+                    q: query || undefined,
+                    fileQuery: fileQuery || undefined,
+                  }}
                   className="block rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
                   data-note-id={note.id}
                 >

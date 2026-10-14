@@ -10,7 +10,15 @@ import {
   selectWorkspaceTasksInitialized,
 } from '@/store/workspace-tasks/workspace-tasks-selectors';
 
-export function WorkspaceProgress({ workspaceId, query }: { workspaceId: string; query?: string }) {
+export function WorkspaceProgress({
+  workspaceId,
+  query,
+  fileQuery,
+}: {
+  workspaceId: string;
+  query?: string;
+  fileQuery?: string;
+}) {
   const navigate = useNavigate();
   const workspace = selectWorkspaceById(workspaceId);
   const stats = selectWorkspaceTaskProgress(workspaceId);
@@ -36,7 +44,7 @@ export function WorkspaceProgress({ workspaceId, query }: { workspaceId: string;
           void navigate({
             to: '/workspaces/$workspaceId',
             params: { workspaceId },
-            search: { note: noteId, q: query || undefined },
+            search: { note: noteId, q: query || undefined, fileQuery: fileQuery || undefined },
           });
         }}
       />

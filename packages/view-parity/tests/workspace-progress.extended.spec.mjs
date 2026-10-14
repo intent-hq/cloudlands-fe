@@ -32,7 +32,8 @@ test('daemon task progress opens real task and spec notes without changing the f
     });
   });
   const query = 'retained-progress-filter';
-  const url = `${base}/workspaces/${encodeURIComponent(workspaceId)}?q=${query}`;
+  const fileQuery = 'package.json';
+  const url = `${base}/workspaces/${encodeURIComponent(workspaceId)}?q=${query}&fileQuery=${fileQuery}`;
   const host = page.getByTestId('workspace-task-progress');
   const bar = host.getByRole('progressbar');
   const popup = page.locator('[data-tooltip-content]').filter({ visible: true });
@@ -56,6 +57,7 @@ test('daemon task progress opens real task and spec notes without changing the f
     const content = page.getByTestId('workspace-note');
     await expect(content).toHaveAttribute('data-note-id', task.id);
     expect(new URL(page.url()).searchParams.get('q')).toBe(query);
+    expect(new URL(page.url()).searchParams.get('fileQuery')).toBe(fileQuery);
     await expect
       .poll(() =>
         replies.some(
@@ -70,13 +72,18 @@ test('daemon task progress opens real task and spec notes without changing the f
     await content.getByRole('button', { name: 'Source', exact: true }).click();
     await expect(page.getByTestId('note-content')).toHaveText(read.response.result.note.content);
     await page.getByRole('link', { name: 'All notes', exact: true }).click();
-    await expect(page.getByRole('searchbox')).toHaveValue(query);
-    await expect(page.getByRole('searchbox')).toBeFocused();
+    const noteSearch = page.getByTestId('workspace-notes').getByRole('searchbox');
+    await expect(noteSearch).toHaveValue(query);
+    await expect(noteSearch).toBeFocused();
+    await expect(page.getByTestId('workspace-git-status').getByRole('searchbox')).toHaveValue(
+      fileQuery,
+    );
     const trigger = host.getByRole('button');
     await trigger.focus();
     await page.keyboard.press('Enter');
     await expect(content).toHaveAttribute('data-note-id', 'spec');
     expect(new URL(page.url()).searchParams.get('q')).toBe(query);
+    expect(new URL(page.url()).searchParams.get('fileQuery')).toBe(fileQuery);
     await page.goBack();
     await expect(bar).toBeVisible();
     await page.setViewportSize({ width: 420, height: 900 });
@@ -92,6 +99,10 @@ test('daemon task progress opens real task and spec notes without changing the f
     await info.attach('workspace-task-progress', { path: screenshot, contentType: 'image/png' });
     await page.keyboard.press('Escape');
     await expect(popup).toHaveCount(0);
+    await expect(noteSearch).toHaveValue(query);
+    await expect(page.getByTestId('workspace-git-status').getByRole('searchbox')).toHaveValue(
+      fileQuery,
+    );
     await trigger.focus();
     await page.keyboard.press('Space');
     await expect(content).toHaveAttribute('data-note-id', 'spec');
