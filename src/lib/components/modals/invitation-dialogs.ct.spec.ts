@@ -26,7 +26,7 @@ for (const kind of ['notice', 'consent', 'sign-in'] as const) {
     await mount(Harness, { props: { kind } });
     await page.getByRole('button', { name: 'Open invitation' }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await page.mouse.click(1, 1);
+    await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 1, y: 1 } });
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(page.getByLabel('Responses')).toHaveText(
       kind === 'notice' ? 'acknowledged' : 'cancel',

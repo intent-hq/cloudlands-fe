@@ -1187,7 +1187,7 @@ test('tab context menu dismisses and restores keyboard focus', async ({ mount, p
   await expect(source).toBeFocused();
   await source.click({ button: 'right' });
   await expect(menu).toBeVisible();
-  await page.mouse.click(850, 300);
+  await page.locator('html').click({ position: { x: 850, y: 300 } });
   await expect(menu).toHaveCount(0);
   await expect(source).toBeFocused();
   await expect(neighbor).toHaveAttribute('data-active', 'true');
