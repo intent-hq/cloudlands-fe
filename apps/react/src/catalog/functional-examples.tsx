@@ -56,6 +56,7 @@ import { NavigationContentExamples } from './navigation-content-examples';
 import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
 import { InitialsAvatarExamples } from './initials-avatar-examples';
+import { WorkspaceSidebarRailExamples } from './workspace-sidebar-rail-examples';
 import { DetectedScriptExamples } from './detected-script-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
@@ -571,6 +572,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'tooltip' && <PublicTooltipExample />}
       {slug === 'select' && <SelectWrapperExample />}
       {slug === 'sidebar' && <SidebarPersistenceExample />}
+      {slug === 'sidebar' && <WorkspaceSidebarRailExamples />}
       {slug === 'scroll-area' && <ScrollAreaExample />}
       {slug === 'zoom-pan-viewport' && <ZoomMediaExample />}
       {displayWidgetSlugs.some((value) => value === slug) && <DisplayWidgetExample slug={slug} />}
