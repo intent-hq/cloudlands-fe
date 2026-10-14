@@ -12,6 +12,8 @@
     sendDisabled,
     removeDisabled,
     sending,
+    sendLabel = m.chat_queuedMessages_sendImmediately_label(),
+    sendTooltip = m.chat_queuedMessages_sendNow_tooltip(),
     onedit,
     onsendnow,
     onremove,
@@ -21,6 +23,8 @@
     sendDisabled: boolean;
     removeDisabled: boolean;
     sending: boolean;
+    sendLabel?: string;
+    sendTooltip?: string;
     onedit: () => void;
     onsendnow?: () => void;
     onremove: () => void;
@@ -51,14 +55,12 @@
     size="icon-compact"
     iconOnly
     class="-my-1"
-    aria-label={sending
-      ? m.chat_queuedMessages_sending_label()
-      : m.chat_queuedMessages_sendImmediately_label()}
+    aria-label={sending ? m.chat_queuedMessages_sending_label() : sendLabel}
     loading={sending}
     disabled={sendDisabled}
     onpointerdown={(event) => event.stopPropagation()}
     onclick={onsendnow}
-    tooltip={m.chat_queuedMessages_sendNow_tooltip()}
+    tooltip={sendTooltip}
   >
     <Fa icon={faArrowUp} class="w-3 h-3" />
   </Button>
