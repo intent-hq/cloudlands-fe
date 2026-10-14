@@ -1,6 +1,6 @@
 <script lang="ts">
   import { truncatedTitle } from '$lib/actions/observe-overflow';
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -10,7 +10,7 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import { faEllipsisVertical, faKeyboard, faRightLeft } from '@fortawesome/free-solid-svg-icons';
+  import { faKeyboard, faRightLeft } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -658,7 +658,12 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <Fa icon={faEllipsisVertical} size={16} class="size-4" />
+            <DotsThreeOutlineVerticalIcon
+              size={16}
+              weight="fill"
+              class="size-4"
+              aria-hidden="true"
+            />
           {/if}
         </Button>
       {/snippet}

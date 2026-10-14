@@ -14,12 +14,12 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
+  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
   import {
     faArrowRight,
     faCodeBranch,
     faCodePullRequest,
     faCheck,
-    faEllipsisVertical,
     faFileLines,
     faGlobe,
     faRightLeft,
@@ -1049,7 +1049,12 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <Fa icon={faEllipsisVertical} size={16} class="size-4" />
+                <DotsThreeOutlineVerticalIcon
+                  size={16}
+                  weight="fill"
+                  class="size-4"
+                  aria-hidden="true"
+                />
               {/if}
             </Button>
           {/snippet}

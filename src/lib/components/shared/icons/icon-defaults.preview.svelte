@@ -18,16 +18,12 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
   import { initializeIconPreview } from './icon-defaults.fixture';
   import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
-  import {
-    faArrowRightArrowLeft,
-    faCopy,
-    faEllipsisVertical,
-    faGithub,
-  } from '$lib/icons/phosphor-icons';
+  import { faArrowRightArrowLeft, faCopy, faGithub } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
 
   let { layout = 'menu' }: Props = $props();
@@ -51,7 +47,7 @@
     <Menu.Trigger>
       {#snippet child({ props })}
         <Button {...props} variant="ghost" size="icon-sm" aria-label="Workspace actions">
-          <Fa icon={faEllipsisVertical} size={16} class="size-4" />
+          <DotsThreeOutlineVerticalIcon size={16} weight="fill" class="size-4" aria-hidden="true" />
         </Button>
       {/snippet}
     </Menu.Trigger>
