@@ -2,13 +2,13 @@ import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 
 const statuses = [
-  ['failed', 'Failed'],
-  ['blocked', 'Blocked'],
+  ['failed', 'Needs attention'],
+  ['blocked', 'Needs attention'],
   ['needs_attention', 'Needs attention'],
   ['not_started', 'Not started'],
   ['in_progress', 'In progress'],
-  ['idle', 'Idle'],
-  ['complete', 'Complete'],
+  ['idle', 'Done & idle'],
+  ['complete', 'Done & idle'],
   ['pr_open', 'PR open'],
   ['pr_ready', 'PR Mergeable'],
   ['pr_queued', 'PR Queued'],
@@ -19,11 +19,11 @@ test('Home status groups restore every work stage in list view only', async ({
   mount,
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 1460 });
+  await page.setViewportSize({ width: 1440, height: 1200 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   const component = await mount(Preview, {
-    props: { scenario: 'status-grouping', height: 1440 },
+    props: { scenario: 'status-grouping', height: 1180 },
   });
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
   await testInfo.attach('before-activity-groups', {
@@ -34,13 +34,17 @@ test('Home status groups restore every work stage in list view only', async ({
   await page.getByRole('combobox', { name: 'Group by', exact: true }).click();
   await page.getByRole('option', { name: 'Status', exact: true }).click();
   await page.keyboard.press('Escape');
-  await expect(component.locator('[data-home-group]')).toHaveCount(11);
+  await expect(component.locator('[data-home-group]')).toHaveCount(8);
   for (const [status, label] of statuses) {
     const group = component.getByRole('listbox', { name: label, exact: true });
     await expect(group.locator(`[data-home-workspace="home-status-${status}"]`)).toHaveCount(1);
   }
   const unstarted = component.getByRole('listbox', { name: 'Not started', exact: true });
   await expect(unstarted.locator('[data-home-workspace]')).toHaveCount(3);
+  const attention = component.getByRole('listbox', { name: 'Needs attention', exact: true });
+  await expect(attention.locator('[data-home-workspace]')).toHaveCount(3);
+  const inactive = component.getByRole('listbox', { name: 'Done & idle', exact: true });
+  await expect(inactive.locator('[data-home-workspace]')).toHaveCount(2);
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
   await page.mouse.move(0, 0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -73,7 +77,7 @@ test('Home status groups restore every work stage in list view only', async ({
     contentType: 'image/png',
   });
   await component.getByRole('button', { name: 'List view', exact: true }).click();
-  await expect(component.locator('[data-home-group]')).toHaveCount(11);
+  await expect(component.locator('[data-home-group]')).toHaveCount(8);
   await page.evaluate(() =>
     window.__homeWorkspacePreview!.setStatus('home-status-pr_open', 'pr_ready'),
   );
@@ -83,6 +87,13 @@ test('Home status groups restore every work stage in list view only', async ({
       .getByRole('listbox', { name: 'PR Mergeable', exact: true })
       .locator('[data-home-workspace]'),
   ).toHaveCount(2);
+  await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setStatus('home-status-failed', 'complete'),
+  );
+  await expect(attention.locator('[data-home-workspace]')).toHaveCount(2);
+  await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
+  await expect(inactive.locator('[data-home-workspace="home-status-failed"]')).toHaveCount(1);
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
 });
 
@@ -97,7 +108,7 @@ test('Home status grouping keeps pinned work unique and respects filters and sav
   await page.getByRole('option', { name: 'Status', exact: true }).click();
   await page.keyboard.press('Escape');
   await page.evaluate(() => window.__homeWorkspacePreview!.roundTripSettings());
-  await expect(component.locator('[data-home-group]')).toHaveCount(11);
+  await expect(component.locator('[data-home-group]')).toHaveCount(8);
   const pinned = component.locator('[data-home-workspace="home-status-pr_ready"]');
   await pinned.getByRole('button').click();
   await page.getByRole('menuitem', { name: /^Pin/ }).click();
@@ -114,8 +125,11 @@ test('Home status grouping keeps pinned work unique and respects filters and sav
     .getByRole('group', { name: 'Status', exact: true })
     .getByRole('button', { name: /^Needs you/ });
   await needsYou.click();
-  await expect(component.locator('[data-home-group="status:failed"]')).toBeVisible();
-  await expect(component.locator('[data-home-group="status:blocked"]')).toBeVisible();
+  await expect(
+    component
+      .getByRole('listbox', { name: 'Needs attention', exact: true })
+      .locator('[data-home-workspace]'),
+  ).toHaveCount(3);
   await expect(component.locator('[data-home-workspace="home-status-pr_open"]')).toHaveCount(0);
   await component
     .getByRole('group', { name: 'Status', exact: true })
@@ -170,6 +184,22 @@ test('Home status groups preserve selection and collapse state with a narrow dar
   await page.keyboard.press('Enter');
   await page.getByRole('option', { name: 'Status', exact: true }).click();
   await page.keyboard.press('Escape');
+  const attentionCollapse = component
+    .locator('[data-home-group="status:needs_attention"]')
+    .getByRole('button');
+  await attentionCollapse.focus();
+  await page.keyboard.press('Enter');
+  for (const status of ['failed', 'blocked', 'needs_attention']) {
+    await expect(component.locator(`[data-home-workspace="home-status-${status}"]`)).toHaveCount(0);
+  }
+  await page.evaluate(() => window.__homeWorkspacePreview!.roundTripSettings());
+  await expect(component.locator('[data-home-workspace="home-status-failed"]')).toHaveCount(0);
+  await attentionCollapse.click();
+  await expect(
+    component
+      .getByRole('listbox', { name: 'Needs attention', exact: true })
+      .locator('[data-home-workspace]'),
+  ).toHaveCount(3);
   const collapse = component.locator('[data-home-group="status:pr_open"]').getByRole('button');
   await collapse.focus();
   await page.keyboard.press('Enter');
