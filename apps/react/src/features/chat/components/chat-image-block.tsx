@@ -43,11 +43,14 @@ export interface ChatImageBlockProps {
   hydrationLoading?: boolean;
   /** Fetch the original via agent.getMessageBlock; absent means no hydration. */
   onHydrate?: () => void;
+  /** Read-only hosts can omit copy/download actions while retaining image viewing. */
+  showActionsMenu?: boolean;
   /** The host supplies real workspace file navigation for unavailable media. */
   onOpenLink: MediaUnavailableProps['onOpenLink'];
 }
 
 export function ChatImageBlock({
+  showActionsMenu = true,
   variant = 'default',
   src,
   data,
@@ -112,7 +115,7 @@ export function ChatImageBlock({
   }
 
   function handleContextMenu(event: MouseEvent<HTMLButtonElement>) {
-    if (!hasOriginal || !imageUrl || !supportsImageActions(imageUrl)) return;
+    if (!showActionsMenu || !hasOriginal || !imageUrl || !supportsImageActions(imageUrl)) return;
     event.preventDefault();
     event.stopPropagation();
     setImageActionsOpen(true);
@@ -231,7 +234,7 @@ export function ChatImageBlock({
                 <MediaLoadingPlaceholder name={alt} />
               </span>
             )}
-            {hasOriginal && (
+            {hasOriginal && showActionsMenu && (
               <ImageActionsMenu
                 ref={imageActionsMenu}
                 imageUrl={imageUrl}
@@ -272,7 +275,7 @@ export function ChatImageBlock({
           imageUrl={imageUrl}
           imageName={alt}
           openerElement={openerElement}
-          showActionsMenu={hasOriginal}
+          showActionsMenu={hasOriginal && showActionsMenu}
         />
       )}
     </>

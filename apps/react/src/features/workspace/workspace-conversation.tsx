@@ -1,6 +1,7 @@
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import { WorkspaceConversationContent } from './workspace-conversation-content';
 import { WorkspaceConversationMessage } from './workspace-conversation-message';
+import { WorkspaceConversationImage } from './workspace-conversation-image';
 import {
   composeTranscript,
   isConversationStartLoaded,
@@ -113,6 +114,19 @@ function ConversationBlock({
   agentId: string;
   messageId: string;
 }) {
+  if (
+    block.type === 'image' &&
+    block.mimeType === 'image/png' &&
+    block.attachmentId &&
+    navigation.workspaceContext?.workspaceId
+  )
+    return (
+      <WorkspaceConversationImage
+        agentId={agentId}
+        workspaceId={navigation.workspaceContext.workspaceId}
+        attachmentId={block.attachmentId}
+      />
+    );
   if (block.type === 'text')
     return (
       <MarkdownViewer {...navigation} content={getContentBlockText(block)} renderRichFencesAsCode />
