@@ -338,8 +338,8 @@ function createSubscriptionAcquisition(
     options?: { sinceMessageId?: string; workspaceId?: string },
   ) => MaybePromise<AsyncUnsubscribe>;
   const raw = options
-    ? subscribe(agentId, onTranscript, onPhase, options)
-    : subscribe(agentId, onTranscript, onPhase);
+    ? subscribe.call(appClient.chat, agentId, onTranscript, onPhase, options)
+    : subscribe.call(appClient.chat, agentId, onTranscript, onPhase);
 
   if (!isPromiseLike<AsyncUnsubscribe>(raw)) {
     unsubscribe = raw;
