@@ -6,6 +6,9 @@
     offline?: boolean;
     sidebar?: boolean;
     shared?: boolean;
+    expanded?: boolean;
+    guest?: boolean;
+    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older';
   }
 
   export const preview = definePreview<Props>({
@@ -18,6 +21,12 @@
       overflow: { props: { count: 8 } },
       offline: { props: { offline: true } },
       unshared: { props: { shared: false, sidebar: true } },
+      expanded: { props: { sidebar: true, expanded: true } },
+      guest: { props: { sidebar: true, expanded: true, guest: true } },
+      empty: { props: { sidebar: true, expanded: true, activityState: 'empty' } },
+      loading: { props: { sidebar: true, expanded: true, activityState: 'loading' } },
+      error: { props: { sidebar: true, expanded: true, activityState: 'error' } },
+      older: { props: { sidebar: true, expanded: true, activityState: 'older' } },
     },
   });
 </script>
@@ -45,14 +54,29 @@
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
+  import {
+    eventsLoaded,
+    eventsCleared,
+    eventsLoadStarted,
+    eventsLoadFailed,
+  } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import type { WorkspaceEvent } from '$features/events/types';
 
-  let { count = 3, offline = false, sidebar = false, shared = true }: Props = $props();
+  let {
+    count = 3,
+    offline = false,
+    sidebar = false,
+    shared = true,
+    expanded = false,
+    guest = false,
+    activityState = 'ready',
+  }: Props = $props();
   const workspaceId = 'people-tile-preview';
   const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
 
   untrack(() => {
     store.dispatch(setLabsMultiplayerEnabled(true));
-    admitLegacyPrincipal();
+    admitLegacyPrincipal(guest ? 'guest' : 'owner');
     store.dispatch(
       setWorkspaceEntity({
         id: WorkspaceId(workspaceId),
@@ -60,7 +84,7 @@
         repositoryName: 'intent',
         branch: 'feat/sidebar-people-tile',
         status: WorkspaceStatus.Active,
-        myRole: 'owner',
+        myRole: guest ? 'collaborator' : 'owner',
         memberCount: shared ? count + 1 : 1,
         statusMessage: 'Bringing people and their work together.',
         changesets: [],
@@ -69,7 +93,9 @@
         ...PREVIEW_FIXTURE_TIMESTAMPS,
       }),
     );
-    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, ['overview']));
+    store.dispatch(
+      setMultiSelectSidebarSelectedTabs(workspaceId, [expanded ? 'people' : 'overview']),
+    );
     store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, 'viewer'));
     store.dispatch(presenceWorkspacesReceived([workspaceId]));
     const names = ['Sam', 'Alex', 'Morgan', 'Taylor', 'Robin', 'Jamie', 'Casey', 'Charlie'];
@@ -90,12 +116,50 @@
           : people.map((person) => ({ ...person, focus: [{ workspaceId }], typing: [] })),
       }),
     );
+    const now = Date.now();
+    const activity: WorkspaceEvent[] = [
+      {
+        id: 'people-activity-note',
+        workspaceId,
+        type: 'note:updated',
+        timestamp: new Date(now - 5 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Alex' },
+        data: { noteId: 'sidebar-mockup', title: 'Sidebar mockup' },
+      },
+      {
+        id: 'people-activity-comment',
+        workspaceId,
+        type: 'comment:added',
+        timestamp: new Date(now - 12 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-0', name: 'Sam' },
+        data: { noteId: 'people-layout', commentId: 'layout-comment' },
+      },
+      {
+        id: 'people-activity-created',
+        workspaceId,
+        type: 'note:created',
+        timestamp: new Date(now - 24 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-2', name: 'Morgan' },
+        data: { noteId: 'group-chat', title: 'Group chat plan' },
+      },
+    ];
+    store.dispatch(
+      eventsLoaded(
+        workspaceId,
+        activityState === 'ready' ? activity : [],
+        activityState === 'older' ? 'older-page' : null,
+      ),
+    );
+    if (activityState === 'loading') store.dispatch(eventsLoadStarted(workspaceId));
+    if (activityState === 'error')
+      store.dispatch(eventsLoadFailed(workspaceId, 'Activity could not be loaded.'));
   });
 
   onDestroy(() => {
     store.dispatch(presenceReset());
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
     store.dispatch(removeWorkspaceEntity(workspaceId));
+    store.dispatch(eventsCleared(workspaceId));
   });
 </script>
 

@@ -211,6 +211,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceHostLocal: mocks.selector(true),
   isWorkspacePullRequestPoolTruncated: () => false,
   selectIsWorkspaceCollaborator: mocks.selector(false),
+  selectCanShareWorkspace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectPrMonitors: mocks.selector([]),

@@ -6,6 +6,7 @@
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { Card } from '$lib/components/ui/card';
+  import { Button } from '$lib/components/ui/button';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
     presencePersonNameWithForge,
@@ -22,7 +23,7 @@
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
-  let { workspaceId }: { workspaceId?: string } = $props();
+  let { workspaceId, onExpand }: { workspaceId?: string; onExpand?: () => void } = $props();
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId ?? ''));
   const workspace = selectWorkspaceById(workspaceIdStore);
@@ -109,13 +110,25 @@
 {#if $presencePeople$.length > 0}
   <Card
     border="none"
-    class="col-span-full min-h-[101px] w-full justify-between gap-5 rounded-lg border border-border bg-sidebar p-3.5"
+    class="relative col-span-full min-h-[101px] w-full justify-between gap-5 rounded-lg border border-border bg-sidebar p-3.5"
     data-sidebar-people-tile
+    data-sidebar-launcher={onExpand ? 'people' : undefined}
   >
+    {#if onExpand}
+      <Button
+        variant="plain"
+        class="absolute inset-0 z-0 h-auto cursor-pointer rounded-lg focus-visible:bg-muted/50"
+        aria-label={m.workspace_peopleTile_title()}
+        aria-expanded="false"
+        onclick={onExpand}
+        data-sidebar-people-open
+      />
+    {/if}
     <h2 class="type-caption font-semibold leading-5 text-foreground">
       {m.workspace_peopleTile_title()}
     </h2>
     <PresenceAvatarStack
+      class="relative z-10 w-fit"
       people={$presencePeople$}
       maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
       size={30}
