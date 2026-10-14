@@ -1054,11 +1054,6 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
   await expect(moved).toBeFocused();
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   await expect(board.getByRole('region', { name: 'PR ready', exact: true })).toBeVisible();
-  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
-    await expect(board.getByRole('heading', { name: label, exact: true })).toBeInViewport({
-      ratio: 1,
-    });
-  }
   await testInfo.attach('home-board-dismiss-layout', {
     body: JSON.stringify(
       await board.evaluate((element) => ({
@@ -1075,6 +1070,11 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
     ),
     contentType: 'application/json',
   });
+  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
+    await expect(board.getByRole('heading', { name: label, exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  }
   await testInfo.attach('home-board-dismiss-after', {
     body: await page.screenshot(),
     contentType: 'image/png',
