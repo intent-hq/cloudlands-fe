@@ -55,6 +55,19 @@ describe('obsolete merge-run retirement', () => {
     expect(save.with.path).toBe('.retirement/cursor.json');
   });
 
+  it('pins the existing read credential probe to immutable code', () => {
+    const job = workflow('intent-pr').jobs['retirement-existing-read-probe'];
+    expect(job.permissions).toEqual({ contents: 'read' });
+    const checkout = job.steps.find((step: { uses?: string }) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    expect(checkout.with.ref).toBe('35caeaf1c6b4ef2e55b770b03ab0f02ad0bf0dda');
+    expect(checkout.with['persist-credentials']).toBe(false);
+    const probe = job.steps.find((step: { run?: string }) => step.run?.includes('--probe'));
+    expect(probe.env.GH_TOKEN).toBe('${{ secrets.CI_QUEUE_READ_TOKEN }}');
+    expect(probe.run).not.toContain('--apply');
+  });
+
   it('probes with a read-only workflow token without changing existing concurrency or gates', () => {
     const ci = workflow('intent-pr');
     expect(ci.concurrency).toEqual({
