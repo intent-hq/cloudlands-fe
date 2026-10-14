@@ -1,6 +1,7 @@
 import { createFileRoute, retainSearchParams } from '@tanstack/react-router';
 import { createClientOnlyFn } from '@tanstack/react-start';
 import { lazy } from 'react';
+import { WorkspaceRouteLoading } from '@/features/workspace/workspace-content-loading';
 import { normalizeHomeConfiguration } from '../../../../src/features/home/home-workspaces-persistence';
 import type { HomeFilter } from '../../../../src/features/home/home-model';
 
@@ -12,6 +13,7 @@ const Overview = lazy(
 
 export const Route = createFileRoute('/workspaces/$workspaceId')({
   ssr: false,
+  pendingComponent: WorkspaceRouteLoading,
   validateSearch: (
     search: Record<string, unknown>,
   ): {

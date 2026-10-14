@@ -14,7 +14,6 @@ import { HomeSearch } from '@/features/home/components/home-search';
 import { HomeFilterSelect } from '@/features/home/components/home-filter-select';
 import type { HomeFilter } from '../../../../../src/features/home/home-model';
 import { HomeLoading } from '@/features/home/components/home-loading';
-import { ContentSkeleton } from '@/components/workspace/content-skeleton';
 import { Screen, ScreenHeader, ScreenBody, EmptyState } from '@/components/patterns/screen';
 import {
   selectDaemonHealth,
@@ -35,6 +34,7 @@ import { WorkspaceAgents } from './workspace-agents';
 import { WorkspaceGitStatus } from './workspace-git-status';
 import { WorkspaceFile } from './workspace-file';
 import { WorkspaceReturnFocus } from './workspace-return-focus';
+import { WorkspaceContentLoading } from './workspace-content-loading';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 import {
   loadFileContentRequested,
@@ -56,19 +56,7 @@ function WorkspaceReadiness({ list = false }: { list?: boolean }) {
         data-testid="workspace-connection-lost"
       />
     );
-  return list ? (
-    <HomeLoading />
-  ) : (
-    <div
-      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Block layout announces workspace loading while containing the panel skeleton.
-      role="status"
-      aria-label={m.layout_agentTab_loadingSpace_label()}
-      data-testid="workspace-content-loading"
-      className="h-80 min-w-0"
-    >
-      <ContentSkeleton />
-    </div>
-  );
+  return list ? <HomeLoading /> : <WorkspaceContentLoading />;
 }
 
 function WorkspaceRow({
