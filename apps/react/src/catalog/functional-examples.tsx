@@ -23,6 +23,7 @@ import { ChatMetadataExamples } from './chat-metadata-examples';
 import { ChatCommandExamples } from './chat-command-examples';
 import { CommandPaletteExamples } from './command-palette-examples';
 import { EditorIconExamples } from './editor-icon-examples';
+import { ContextProviderIconExamples } from './context-provider-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
 import { DeviceIconPickerExamples } from './device-icon-picker-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
@@ -541,6 +542,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'chat-command' && <ChatCommandExamples />}
       {slug === 'command-palette' && <CommandPaletteExamples />}
       {slug === 'editor-icons' && <EditorIconExamples />}
+      {slug === 'editor-icons' && <ContextProviderIconExamples />}
       {slug === 'device-icons' && <DeviceIconExamples />}
       {slug === 'device-icons' && <DeviceIconPickerExamples />}
       {slug === 'device-icons' && <NavigationIconExamples />}
