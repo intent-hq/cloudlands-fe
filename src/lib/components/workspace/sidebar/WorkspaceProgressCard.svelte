@@ -14,6 +14,7 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faArrowRight,
     faCodeBranch,
@@ -94,7 +95,6 @@
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -973,11 +973,15 @@
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
 {/snippet}
 
 {#snippet sidebarSideIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$ === 'left' ? 'right' : 'left'} class="opacity-50" />
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
 {/snippet}
 
 <div class="flex w-full flex-col" data-workspace-title-section>
@@ -1045,7 +1049,7 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <KebabIcon class="size-4" />
+                <KebabIcon />
               {/if}
             </Button>
           {/snippet}
