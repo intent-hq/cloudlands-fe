@@ -72,17 +72,13 @@ describe('Depot CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
-  it('uses Depot except for isolated retirement access and cleanup jobs', () => {
+  it('uses Depot except for isolated retirement cleanup', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
       for (const [id, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
         const runner = job['runs-on'];
         // Retirement must stay available independently of the managed runner fleet.
-        if (
-          (file === 'intent-pr.yml' &&
-            ['retirement-access-probe', 'retirement-existing-read-probe'].includes(id)) ||
-          (file === 'retire-obsolete-merge-runs.yml' && id === 'cleanup')
-        ) {
+        if (file === 'retire-obsolete-merge-runs.yml' && id === 'cleanup') {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
           continue;
         }

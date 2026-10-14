@@ -22,12 +22,12 @@ describe('obsolete merge-run retirement', () => {
     },
   );
 
-  it('limits cleanup to trusted main on hosted Linux while cancellation awaits credential proof', () => {
+  it('limits cleanup to trusted main on hosted Linux with job-scoped cancellation', () => {
     const cleanup = workflow('retire-obsolete-merge-runs');
     expect(Object.keys(cleanup.on).sort()).toEqual(['schedule', 'workflow_dispatch']);
     expect(cleanup.on.schedule).toEqual([{ cron: '13,43 * * * *' }]);
     expect(cleanup.on.workflow_dispatch.inputs.mode.default).toBe('dry-run');
-    expect(cleanup.on.workflow_dispatch.inputs.mode.options).toEqual(['dry-run']);
+    expect(cleanup.on.workflow_dispatch.inputs.mode.options).toEqual(['dry-run', 'apply']);
     expect(cleanup.permissions).toEqual({});
     expect(cleanup.concurrency).toEqual({
       group: 'retire-obsolete-merge-runs',
@@ -38,53 +38,43 @@ describe('obsolete merge-run retirement', () => {
     expect(job.if).toBe(
       "github.repository == 'intent-hq/cloudlands-fe' && github.ref == 'refs/heads/main'",
     );
-    expect(job.permissions).toEqual({ contents: 'read', actions: 'read', 'pull-requests': 'read' });
+    expect(job.permissions).toEqual({ contents: 'read', actions: 'write' });
     const checkout = job.steps.find((step: { uses?: string }) =>
       step.uses?.startsWith('actions/checkout@'),
     );
     expect(checkout.with).toMatchObject({ ref: 'refs/heads/main', 'persist-credentials': false });
     const execute = job.steps.find((step: { id?: string }) => step.id === 'retire');
     expect(execute.env.GH_TOKEN).toBe('${{ github.token }}');
+    expect(execute.env.RETIREMENT_READ_TOKEN).toBe('${{ secrets.CI_QUEUE_READ_TOKEN }}');
+    expect(execute.env.MODE).toBe(
+      "${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}",
+    );
     expect(execute.run).toContain('retire-obsolete-merge-runs-caller.py');
     expect(execute.run).toContain('--state .retirement/cursor.json');
-    expect(execute.run).not.toContain('--apply');
+    expect(execute.run).toContain('"--$MODE"');
+    expect(execute.run).toContain('--probe-run-id "$PROBE_RUN_ID"');
     const save = job.steps.find((step: { uses?: string }) =>
       step.uses?.startsWith('actions/cache/save@'),
     );
     expect(save.if).toContain('always()');
     expect(save.with.path).toBe('.retirement/cursor.json');
-  });
-
-  it('pins the existing read credential probe to immutable code', () => {
-    const job = workflow('intent-pr').jobs['retirement-existing-read-probe'];
-    expect(job.permissions).toEqual({ contents: 'read' });
-    const checkout = job.steps.find((step: { uses?: string }) =>
-      step.uses?.startsWith('actions/checkout@'),
+    const restore = job.steps.find((step: { uses?: string }) =>
+      step.uses?.startsWith('actions/cache/restore@'),
     );
-    expect(checkout.with.ref).toBe('588536c67bd88f062a8677341d6ffbc9925af161');
-    expect(checkout.with['persist-credentials']).toBe(false);
-    const probe = job.steps.find((step: { run?: string }) => step.run?.includes('--probe'));
-    expect(probe.env.GH_TOKEN).toBe('${{ secrets.CI_QUEUE_READ_TOKEN }}');
-    expect(probe.run).not.toContain('--apply');
+    expect(restore.with.key).toBe(save.with.key);
+    expect(restore.with['restore-keys']).toBe(
+      "retirement-v1-${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}-",
+    );
   });
 
-  it('probes with a read-only workflow token without changing existing concurrency or gates', () => {
+  it('keeps existing concurrency and removes temporary PR credential probes', () => {
     const ci = workflow('intent-pr');
     expect(ci.concurrency).toEqual({
       group: '${{ github.workflow }}-${{ github.head_ref || github.run_id }}',
       'cancel-in-progress': true,
     });
     expect(ci.on).toHaveProperty('merge_group');
-    const probe = ci.jobs['retirement-access-probe'];
-    expect(probe.permissions).toEqual({
-      contents: 'read',
-      actions: 'read',
-      'pull-requests': 'read',
-    });
-    expect(probe['runs-on']).toBe('ubuntu-latest');
-    expect(probe.if).toContain("github.event_name == 'pull_request'");
-    const execute = probe.steps.find((step: { run?: string }) => step.run?.includes('--probe'));
-    expect(execute.env.GH_TOKEN).toBe('${{ github.token }}');
-    expect(execute.run).not.toContain('--apply');
+    expect(ci.jobs).not.toHaveProperty('retirement-access-probe');
+    expect(ci.jobs).not.toHaveProperty('retirement-existing-read-probe');
   });
 });

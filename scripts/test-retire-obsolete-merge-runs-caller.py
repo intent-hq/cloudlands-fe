@@ -55,7 +55,7 @@ class CallerTests(unittest.TestCase):
         environment = {'PATH': self.directory.name, 'GUARD_MARKER': str(marker),
                        'RETIREMENT_READ_TOKEN': 'fake-read', 'GH_TOKEN': 'fake-write'}
         with mock.patch.dict(C.os.environ, environment, clear=True):
-            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--state', str(self.state)]):
+            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--probe-run-id', '10', '--state', str(self.state)]):
                 with self.assertRaisesRegex(AssertionError, 'real subprocess'):
                     C.main()
             with self.assertRaisesRegex(AssertionError, 'live transport'):
@@ -264,15 +264,44 @@ class CallerTests(unittest.TestCase):
         self.assertEqual(self.api.mutations, [])
 
     def test_cli_sweep_routes_read_and_write_tokens_explicitly(self):
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
         reader, writer = mock.Mock(wraps=self.api), mock.Mock(wraps=self.api)
         def transport(variable):
             return reader if variable == 'RETIREMENT_READ_TOKEN' else writer
         with mock.patch.object(C, 'TokenApi', side_effect=transport) as token_api:
-            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--state', str(self.state)]):
+            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--probe-run-id', '10', '--state', str(self.state)]):
                 with mock.patch('sys.stdout', new_callable=io.StringIO):
                     self.assertEqual(C.main(), 0)
         self.assertEqual(token_api.call_args_list, [mock.call('RETIREMENT_READ_TOKEN'), mock.call('GH_TOKEN')])
         writer.request.assert_called_once_with('POST', self.api.root + '/actions/runs/10/cancel', None)
+
+    def test_cli_preflight_failure_never_reaches_cancel_even_with_no_live_runs(self):
+        self.api.runs[10].update(status='completed', conclusion='success')
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        del self.api.rules[1]['bypass_actors']
+        writer = mock.Mock(wraps=self.api)
+        with mock.patch.object(C, 'TokenApi', side_effect=[self.api, writer]):
+            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--probe-run-id', '10', '--state', str(self.state)]):
+                with mock.patch('sys.stdout', new_callable=io.StringIO) as output:
+                    self.assertEqual(C.main(), 2)
+        data = C.json.loads(output.getvalue())
+        self.assertFalse(data['access']['checks']['protection']['ok'])
+        self.assertTrue(data['access']['checks']['activity']['ok'])
+        writer.request.assert_not_called()
+        self.assertFalse(self.state.exists())
+
+    def test_cli_defaults_and_explicit_dry_run_never_call_writer(self):
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        for mode in ([], ['--dry-run']):
+            writer = mock.Mock(wraps=self.api)
+            with mock.patch.object(C, 'TokenApi', side_effect=[self.api, writer]):
+                with mock.patch.object(C.sys, 'argv', ['caller', *mode, '--probe-run-id', '10', '--state', str(self.state)]):
+                    with mock.patch('sys.stdout', new_callable=io.StringIO) as output:
+                        self.assertEqual(C.main(), 0)
+            data = C.json.loads(output.getvalue())
+            self.assertTrue(data['access']['complete'])
+            self.assertEqual(data['batches'][0]['decisions'][0]['action'], 'would-cancel')
+            writer.request.assert_not_called()
 
     def test_diagnostic_drains_ref_pages_and_rejects_bad_next_links(self):
         endpoint = self.api.root + '/git/matching-refs/heads/gh-readonly-queue/'

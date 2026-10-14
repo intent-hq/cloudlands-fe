@@ -252,7 +252,12 @@ def main():
             result = probe(P.GhApi(), args.probe_run_id)
         else:
             api = SplitApi(TokenApi('RETIREMENT_READ_TOKEN'), TokenApi('GH_TOKEN'))
-            result = sweep(api, args.state, apply=args.apply)
+            access = probe(api, args.probe_run_id)
+            if access['complete']:
+                result = sweep(api, args.state, apply=args.apply)
+            else:
+                result = {'complete': False, 'error': 'read-access preflight failed; no sweep started'}
+            result['access'] = access
     except (ValueError, KeyError, TypeError, OSError) as error:
         result = {'complete': False, 'error': str(error)}
     print(json.dumps(result, sort_keys=True, indent=2))
