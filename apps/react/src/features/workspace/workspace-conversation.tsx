@@ -60,7 +60,7 @@ function ToolBody({
     if (truncated && block.id)
       dispatch(messageBlockHydrationRequested(agentId, messageId, block.id));
   }, [truncated, block.id, agentId, messageId, dispatch]);
-  const displayed = entry?.status === 'loaded' ? entry.block : block;
+  const displayed = truncated && entry?.status === 'loaded' ? entry.block : block;
   return (
     <div
       data-block-id={block.id}

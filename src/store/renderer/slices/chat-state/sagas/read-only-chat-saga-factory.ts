@@ -200,7 +200,7 @@ export function createReadOnlyChatSaga<State>({
                 totalMessages: transcript.totalMessages,
                 nextToken: transcript.nextToken,
                 initialHistory: transcript.initialHistory,
-                resumed: transcript.resumed,
+                resumed: transcript.resetCachedTranscript === true ? false : transcript.resumed,
               }),
             );
             yield* put(transcriptHydrationSettled(agentId));

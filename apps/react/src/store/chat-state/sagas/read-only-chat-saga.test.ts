@@ -280,6 +280,51 @@ describe('leased canonical history paging', () => {
     h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
     expect(h.getConversation).toHaveBeenCalledTimes(2);
   });
+  it('discards retained history and an in-flight page on a client replacement snapshot', async () => {
+    let resolve!: (value: Awaited<ReturnType<AgentsClient['getConversation']>>) => void;
+    const getConversation = vi
+      .fn<AgentsClient['getConversation']>()
+      .mockResolvedValueOnce(page('retained-old', 'older-next'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue(page('fresh-history', null));
+    const h = setup(undefined, getConversation);
+    h.connected(true);
+    h.lease('reader', [session.id]);
+    await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledOnce());
+    h.handlers[0]!(tail);
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() =>
+      expect(history.getAgentHistoryMessages(h.store.state, session.id)[0]?.id).toBe(
+        'retained-old',
+      ),
+    );
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() => expect(getConversation).toHaveBeenCalledTimes(2));
+    const epoch = getAgentChatState(h.store.state, session.id).scrollbackDiscardEpoch;
+    h.handlers[0]!({ ...tail, resetCachedTranscript: true, nextToken: 'fresh-cursor' });
+    expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+    expect(getAgentChatState(h.store.state, session.id)).toMatchObject({
+      scrollbackDiscardEpoch: epoch + 1,
+      scrollbackOlderToken: 'fresh-cursor',
+      fetchingOlderHistory: false,
+    });
+    resolve(page('stale-response', 'stale-cursor'));
+    await Promise.resolve();
+    expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+    expect(getAgentChatState(h.store.state, session.id).scrollbackOlderToken).toBe('fresh-cursor');
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() =>
+      expect(history.getAgentHistoryMessages(h.store.state, session.id)[0]?.id).toBe(
+        'fresh-history',
+      ),
+    );
+    expect(getConversation.mock.calls[2]?.[2]).toBe('fresh-cursor');
+  });
   it.each(['release', 'disconnect'] as const)(
     'drops late history on %s, deduplicates pending requests, and starts a fresh walk on return',
     async (retire) => {
