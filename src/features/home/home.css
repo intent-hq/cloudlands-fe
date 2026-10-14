@@ -92,7 +92,7 @@
     display: none;
   }
   .home-row-repository {
-    max-width: 50%;
+    display: none;
   }
   .home-list-row .workspace-row-meta {
     gap: 0.5rem;
