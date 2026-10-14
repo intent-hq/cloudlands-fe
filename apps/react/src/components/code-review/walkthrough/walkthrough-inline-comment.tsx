@@ -59,6 +59,7 @@ export function WalkthroughInlineComment({
         <Button
           type="button"
           variant="primary"
+          aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           onClick={handleSend}
           disabled={!message.trim() || isSending}
           className="h-8 w-8 p-0"

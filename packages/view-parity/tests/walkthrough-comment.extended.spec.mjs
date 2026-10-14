@@ -37,8 +37,7 @@ test('inline comments send trimmed text with current location and preserve guard
   await input.fill('Keep this draft');
   await demo.getByRole('button', { name: 'Sending', exact: true }).click();
   await expect(input).toBeDisabled();
-  // The idle source send icon is unnamed; the busy loader supplies its own accessible text.
-  const send = frame.getByRole('button').filter({ hasNotText: 'Cancel' });
+  const send = frame.getByRole('button', { name: 'Send message', exact: true });
   await expect(send).toBeDisabled();
   await expect(input).toHaveValue('Keep this draft');
   await frame.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -75,7 +74,7 @@ test('narrow inline comment keeps send and cancel reachable by keyboard', async 
   const { demo, frame, input, errors } = await open(page);
   await input.fill('Check this line');
   await input.press('Tab');
-  const send = frame.getByRole('button', { name: '', exact: true });
+  const send = frame.getByRole('button', { name: 'Send message', exact: true });
   await expect(send).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(demo.getByRole('status', { name: 'Inline comment sends' })).toHaveText(
