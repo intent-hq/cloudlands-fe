@@ -23,6 +23,7 @@ let server: ViteDevServer | undefined;
 let baseUrl = process.env.UI_PREVIEW_BASE_URL ?? '';
 const artifactDirectory = resolve('../../.intent/artifacts/inline-html');
 const polishDirectory = resolve(artifactDirectory, 'polish');
+const controlsDirectory = resolve(artifactDirectory, 'controls');
 const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
   /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
 )![1];
@@ -103,6 +104,14 @@ async function capture(
   await page.screenshot({ path, animations: 'disabled' });
   await mkdir(directory, { recursive: true });
   await copyFile(path, resolve(directory, `${name}.png`));
+  await testInfo.attach(name, { path, contentType: 'image/png' });
+}
+
+async function captureControls(page: Page, testInfo: TestInfo, name: string) {
+  const path = testInfo.outputPath(`${name}.png`);
+  await frame(page).locator('.visual-controls').screenshot({ path, animations: 'disabled' });
+  await mkdir(controlsDirectory, { recursive: true });
+  await copyFile(path, resolve(controlsDirectory, `${name}.png`));
   await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
@@ -500,15 +509,23 @@ test('keeps polished escalator playback and position controls usable as the scen
   await openChat(page, { message, prompt: 'Show me why escalator steps stay level.' });
   const slider = frame(page).getByRole('slider', { name: 'Position' });
   await expect(slider).toBeVisible();
-  await capture(page, testInfo, 'escalator-light', polishDirectory);
+  const initialTrack = await slider.boundingBox();
+  expect(initialTrack).not.toBeNull();
+  await capture(page, testInfo, 'escalator-light', controlsDirectory);
+  await captureControls(page, testInfo, 'controls-light');
   await slider.focus();
   await page.keyboard.press('End');
   await expect(frame(page).locator('#position-value')).toHaveText('100%');
   await expect(frame(page).locator('#description')).toContainText('Both tracks are horizontal');
-  await capture(page, testInfo, 'escalator-landing', polishDirectory);
+  expect((await slider.boundingBox())?.width).toBeCloseTo(initialTrack!.width, 0);
+  await capture(page, testInfo, 'escalator-landing', controlsDirectory);
   await frame(page).getByRole('button', { name: 'Play', exact: true }).click();
   await expect(frame(page).getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
   await expect.poll(() => slider.inputValue()).not.toBe('540');
+  const playingTrack = await slider.boundingBox();
+  expect(playingTrack?.x).toBeCloseTo(initialTrack!.x, 0);
+  expect(playingTrack?.width).toBeCloseTo(initialTrack!.width, 0);
+  await captureControls(page, testInfo, 'controls-playing');
   await frame(page).getByRole('button', { name: 'Pause', exact: true }).click();
   await slider.focus();
   await page.keyboard.press('Home');
@@ -517,25 +534,33 @@ test('keeps polished escalator playback and position controls usable as the scen
   await page.evaluate(() => (document.documentElement.className = 'dark'));
   await expect(frame(page).locator('html')).toHaveClass('dark');
   await expect(slider).toHaveValue('180');
-  await capture(page, testInfo, 'escalator-dark', polishDirectory);
+  await capture(page, testInfo, 'escalator-dark', controlsDirectory);
+  await frame(page).locator('#description').click();
+  await captureControls(page, testInfo, 'controls-dark');
   await page.setViewportSize({ width: 360, height: 640 });
   await expect(slider).toBeVisible();
   await expect(frame(page).getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
   ).toBeLessThanOrEqual(1);
+  await slider.focus();
   await page.keyboard.press('End');
   await expect(frame(page).locator('#position-value')).toHaveText('100%');
-  await capture(page, testInfo, 'escalator-narrow-dark', polishDirectory);
+  await capture(page, testInfo, 'escalator-narrow-dark', controlsDirectory);
+  await frame(page).locator('#description').click();
+  await captureControls(page, testInfo, 'controls-narrow-dark');
   await page.evaluate(() => (document.documentElement.className = 'light'));
   await expect(frame(page).locator('html')).not.toHaveClass(/dark/);
-  await capture(page, testInfo, 'escalator-narrow-light', polishDirectory);
+  await capture(page, testInfo, 'escalator-narrow-light', controlsDirectory);
+  await captureControls(page, testInfo, 'controls-narrow-light');
   await testInfo.attach('escalator-interaction.json', {
     body: JSON.stringify({
       keyboard: ['End', 'Home'],
       playback: ['Play', 'Pause'],
       retainedPosition: 180,
       narrowWidth: 360,
+      initialTrack,
+      playingTrack,
     }),
     contentType: 'application/json',
   });

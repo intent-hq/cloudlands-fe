@@ -48,7 +48,7 @@ export const polishedEscalatorDemo = `<title>Why escalator steps stay level</tit
   .tread { stroke: var(--diagram-node-title); stroke-width: calc(var(--diagram-connector-width) * 2); }
   #level { opacity: .5; }
   .roller { fill: var(--diagram-canvas); stroke: var(--diagram-node-title); }
-  .position-field { flex: 1 1 12rem; }
+  #play { min-width: calc(var(--control-height-medium) * 2); }
 </style>
 <section class="visual">
   <figure class="diagram-surface">
@@ -69,10 +69,8 @@ export const polishedEscalatorDemo = `<title>Why escalator steps stay level</tit
   </figure>
   <div class="visual-controls">
     <button id="play" type="button" aria-pressed="false">Play</button>
-    <div class="visual-field position-field">
-      <label for="position">Position</label><output id="position-value" for="position">19%</output>
-      <input id="position" type="range" min="180" max="540" value="250" step="1" />
-    </div>
+    <input id="position" type="range" aria-label="Position" min="180" max="540" value="250" step="1" />
+    <output id="position-value" for="position">19%</output>
   </div>
   <p id="description">Both rollers climb together; their separate tracks keep the tread level.</p>
 </section>

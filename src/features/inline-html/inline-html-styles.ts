@@ -110,6 +110,12 @@ export const INLINE_HTML_STYLES = `
     min-width: 0;
   }
   :where(.visual-controls > *) { min-width: 0; max-width: 100%; }
+  :where(.visual-controls > input[type="range"]) { flex: 1 1 0; width: 0; }
+  :where(.visual-controls > output) {
+    min-width: 5ch;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
   :where(.visual-controls > .visual-field) { flex: 1 1 12rem; }
   :where(.visual-field) {
     display: grid;
