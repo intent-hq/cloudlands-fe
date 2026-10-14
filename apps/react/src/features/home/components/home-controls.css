@@ -1,3 +1,42 @@
 .home-control-fill {
   background: hsl(var(--sidebar));
 }
+
+.home-choice-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 1rem;
+  background: hsl(var(--sidebar));
+}
+
+.home-choice-group [data-slot='button'] {
+  border-radius: 0.75rem;
+}
+
+.home-choice-group [data-slot='button'][data-state='active'] {
+  color: hsl(var(--background));
+}
+
+.home-choice-group [data-state='active'] > [data-slot='button-surface'] {
+  background: hsl(var(--foreground));
+  box-shadow: none;
+}
+
+.home-panel {
+  container: home-panel / inline-size;
+}
+
+.home-workspace-filters-compact {
+  display: none;
+}
+
+@container home-panel (max-width: 850px) {
+  .home-workspace-filters-wide {
+    display: none;
+  }
+  .home-workspace-filters-compact {
+    display: block;
+  }
+}

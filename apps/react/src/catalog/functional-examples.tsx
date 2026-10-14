@@ -66,6 +66,7 @@ import { TimeScrubberExamples } from './time-scrubber-examples';
 import { TerminalSearchBarExamples } from './terminal-search-bar-examples';
 import { HomeFilterSelectExamples } from './home-filter-select-examples';
 import { HomeActivityTimeExamples } from './home-activity-time-examples';
+import { HomeWorkspaceControlsExamples } from './home-workspace-controls-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -577,6 +578,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'popovers' && <TerminalSearchBarExamples />}
       {slug === 'popovers' && <HomeFilterSelectExamples />}
       {slug === 'popovers' && <HomeActivityTimeExamples />}
+      {slug === 'popovers' && <HomeWorkspaceControlsExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
