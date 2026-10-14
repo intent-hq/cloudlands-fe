@@ -9,6 +9,7 @@ import '@tanstack/react-start/client-only';
 import { ReactStore } from '@themislib/themis/react-store';
 import type { StoreState } from '@themislib/themis/types';
 import { catalogReducer } from './catalog/catalog-slice';
+import { themeReducer } from '../../../../src/store/renderer/slices/theme/theme-slice';
 import { uiHighlightReducer } from '../../../../src/store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { autoUpdateReducer } from '../../../../src/store/renderer/slices/auto-update/auto-update-slice';
 import { uiLayoutReducer } from '../../../../src/store/renderer/slices/ui-layout/ui-layout-slice';
@@ -45,6 +46,7 @@ export const store = new ReactStore({
   githubRepos: githubReposReducer,
   knownRepos: knownReposReducer,
   catalog: catalogReducer,
+  theme: themeReducer,
   scripts: scriptsReducer,
   changes: fileTrackingReducer,
   prStatus: prStatusReducer,

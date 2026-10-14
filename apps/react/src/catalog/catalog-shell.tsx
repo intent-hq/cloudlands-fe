@@ -31,6 +31,7 @@ import {
   type CatalogTheme,
 } from './catalog-preferences';
 import { installPreviewBrowserApi } from './preview-discovery';
+import { ownCatalogRootTheme } from './catalog-root-theme';
 import './catalog-shell.css';
 
 function subscribeSystemTheme(update: () => void) {
@@ -115,13 +116,26 @@ export function CatalogShell({ children }: { children: ReactNode }) {
     );
     for (const [key, value] of Object.entries(classes)) root.classList.toggle(key, value);
     for (const [key, value] of Object.entries(nextProperties)) root.style.setProperty(key, value);
-    return () => {
-      for (const [key, value] of Object.entries(previousClasses)) root.classList.toggle(key, value);
+    const appliedProperties = Object.fromEntries(
+      Object.keys(nextProperties).map((key) => [key, root.style.getPropertyValue(key)]),
+    );
+    return ownCatalogRootTheme(root, store, resolvedTheme, () => {
+      for (const [key, value] of Object.entries(previousClasses)) {
+        if (root.classList.contains(key) === classes[key as keyof typeof classes]) {
+          root.classList.toggle(key, value);
+        }
+      }
       for (const [key, { value, priority }] of Object.entries(previousProperties)) {
+        if (
+          root.style.getPropertyValue(key) !== appliedProperties[key] ||
+          root.style.getPropertyPriority(key) !== ''
+        ) {
+          continue;
+        }
         if (value) root.style.setProperty(key, value, priority);
         else root.style.removeProperty(key);
       }
-    };
+    });
   }, [resolvedTheme, colorTheme, motion, fit]);
 
   function updatePreference(next: {
