@@ -56,6 +56,7 @@ import { NavigationContentExamples } from './navigation-content-examples';
 import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
 import { HudAgentLineExamples } from './hud-agent-line-examples';
+import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { InitialsAvatarExamples } from './initials-avatar-examples';
 import { WorkspaceSidebarRailExamples } from './workspace-sidebar-rail-examples';
 import { DetectedScriptExamples } from './detected-script-examples';
@@ -551,6 +552,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
         </>
       )}
       {slug === 'detected-scripts' && <DetectedScriptExamples />}
+      {slug === 'badge' && <LineChangeIndicatorExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -652,6 +654,7 @@ export function hasFunctionalExample(slug: string) {
     'response-group',
     'navigation-content',
     'hud-panel',
+    'badge',
     'detected-scripts',
     'diagram-workbench',
     'toast',

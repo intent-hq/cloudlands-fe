@@ -1,0 +1,20 @@
+@theme inline {
+  --color-line-stats-added: var(--line-stats-added);
+  --color-line-stats-deleted: var(--line-stats-deleted);
+  --color-line-badge-added: var(--line-badge-added);
+  --color-line-badge-deleted: var(--line-badge-deleted);
+}
+
+:root {
+  --line-stats-added: var(--color-green-600);
+  --line-stats-deleted: var(--color-red-600);
+  --line-badge-added: var(--color-emerald-600);
+  --line-badge-deleted: var(--color-red-600);
+}
+
+.dark {
+  --line-stats-added: var(--color-green-400);
+  --line-stats-deleted: var(--color-red-400);
+  --line-badge-added: var(--color-emerald-500);
+  --line-badge-deleted: var(--color-red-500);
+}
