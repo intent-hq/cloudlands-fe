@@ -172,3 +172,189 @@ test('real message links seek the canonical row and retire on return', async ({ 
     });
   }
 });
+
+test('a genuine conversation note link retires the reader and recovers its target on Back', async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const { REACT_BASE_URL: base, REACT_WORKSPACE_ID: workspaceId } = process.env;
+  if (!base || !workspaceId) throw new Error('Set the real daemon workspace environment');
+  const agentId = 'agent-1c311418-f301-4710-815e-417c1a33aded';
+  // Persisted in the original connected-conversation receipt, not authored by this test.
+  const messageId = '01a138cd-56cc-72ec-a457-07c059ad8e39';
+  const noteId = 'b6915304-ddf3-48e6-9702-6da383b54b46';
+  const href = `intent://local/${workspaceId}/note/${noteId}`;
+  const errors = await observeErrors(page);
+  const requests = [],
+    replies = [],
+    probes = [];
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname !== '/intentd/ws') return;
+    const pending = new Map();
+    socket.on('framesent', ({ payload }) => {
+      const request = JSON.parse(String(payload));
+      requests.push(request);
+      pending.set(request.id, request);
+    });
+    socket.on('framereceived', ({ payload }) => {
+      const response = JSON.parse(String(payload));
+      const request = pending.get(response.id);
+      pending.delete(response.id);
+      if (request) replies.push({ request, response });
+    });
+  });
+  const conversation = page.getByTestId('workspace-conversation');
+  const row = conversation.locator(`[data-message-id="${messageId}"]`);
+  const link = row.getByRole('link', { name: 'Recovery details', exact: true });
+  const note = page.getByTestId('workspace-note');
+  const lease = () =>
+    replies
+      .filter(
+        ({ request, response }) =>
+          request.method === 'chat.subscribe' &&
+          request.params.agentId === agentId &&
+          response.result?.subscriptionId,
+      )
+      .at(-1)?.response.result.subscriptionId;
+  const released = async (subscriptionId) => {
+    expect(subscriptionId).toBeTruthy();
+    await expect
+      .poll(() =>
+        replies.some(
+          ({ request, response }) =>
+            request.method === 'chat.unsubscribe' &&
+            request.params.subscriptionId === subscriptionId &&
+            response.result?.success === true,
+        ),
+      )
+      .toBe(true);
+  };
+  const noteViews = () =>
+    page.evaluate(async (id) => {
+      const resource = performance
+        .getEntriesByType('resource')
+        .find((r) => new URL(r.name).pathname.endsWith('/src/store/index.ts'));
+      if (!resource) throw new Error('Real Store module was not observed');
+      const { store } = await import(resource.name);
+      return store.state.workspaceNotes.byWorkspaceId[id]?.contentViews.ids ?? [];
+    }, workspaceId);
+  try {
+    await page.addInitScript(() => performance.setResourceTimingBufferSize(5000));
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.goto(
+      `${base}/workspaces/${encodeURIComponent(workspaceId)}?agent=${agentId}&message=${messageId}`,
+    );
+    await expect(conversation).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
+    await expect(row).toBeFocused();
+    const actual = await page.evaluate(
+      async ({ workspaceId, agentId, messageId }) => {
+        const resource = performance
+          .getEntriesByType('resource')
+          .find((r) => new URL(r.name).pathname.endsWith('/features/backend/backend-transport.ts'));
+        if (!resource) throw new Error('Real transport was not observed');
+        const { backendRequest } = await import(resource.name);
+        const result = await backendRequest('agent.getConversation', {
+          workspaceId,
+          agentId,
+          aroundMessageId: messageId,
+          limit: 5,
+          projection: 'slim',
+        });
+        return result.messages.find((m) => m.id === messageId);
+      },
+      { workspaceId, agentId, messageId },
+    );
+    expect(actual.role).toBe('assistant');
+    expect(
+      actual.contentBlocks.some(
+        (b) => b.type === 'text' && b.text.includes(`[Recovery details](${href})`),
+      ),
+    ).toBe(true);
+    await expect(link).toHaveAttribute('href', href);
+    await page.evaluate(() => document.fonts.ready);
+    const subscriptions = [];
+    for (const [width, activation] of [
+      [1100, 'keyboard'],
+      [420, 'pointer'],
+    ]) {
+      await page.setViewportSize({ width, height: 850 });
+      await expect(row).toBeFocused();
+      await link.locator('..').scrollIntoViewIfNeeded();
+      probes.push({ width, activation, link: await link.boundingBox() });
+      await stableLocatorScreenshot(page, link.locator('..'), async ({ png, attempt }) => {
+        if (png)
+          await info.attach(`conversation-note-link-${width}-${attempt}`, {
+            body: png,
+            contentType: 'image/png',
+          });
+      });
+      const subscriptionId = lease();
+      expect(subscriptionId).toBeTruthy();
+      expect(subscriptions).not.toContain(subscriptionId);
+      subscriptions.push(subscriptionId);
+      if (activation === 'keyboard') {
+        await link.focus();
+        await page.keyboard.press('Enter');
+      } else await link.click();
+      await expect(note).toHaveAttribute('data-note-id', noteId);
+      await expect(conversation).toHaveCount(0);
+      await released(subscriptionId);
+      const search = new URL(page.url()).searchParams;
+      expect(search.get('note')).toBe(noteId);
+      expect(search.has('agent')).toBe(false);
+      expect(search.has('message')).toBe(false);
+      const received = replies
+        .filter(
+          ({ request, response }) =>
+            request.method === 'note.get' &&
+            request.params.noteId === noteId &&
+            request.params.workspaceId === workspaceId &&
+            response.result?.note,
+        )
+        .at(-1);
+      expect(received).toBeTruthy();
+      await expect(note.locator('header').getByRole('heading', { level: 2 })).toHaveText(
+        received.response.result.note.title,
+      );
+      await note.locator('header').getByRole('button', { name: 'Source', exact: true }).click();
+      expect(await note.getByTestId('note-content').textContent()).toBe(
+        received.response.result.note.content,
+      );
+      await expect.poll(async () => (await noteViews()).length).toBe(1);
+      await stableLocatorScreenshot(page, note.locator('header'), async ({ png, attempt }) => {
+        if (png)
+          await info.attach(`conversation-note-destination-${width}-${attempt}`, {
+            body: png,
+            contentType: 'image/png',
+          });
+      });
+      await page.goBack();
+      await expect(conversation).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
+      await expect(row).toBeFocused();
+      await expect(row).toBeInViewport();
+      await expect(link).toHaveAttribute('href', href);
+      await expect(note).toHaveCount(0);
+      await expect.poll(noteViews).toEqual([]);
+      expect(new URL(page.url()).searchParams.get('message')).toBe(messageId);
+    }
+    const lastSubscription = lease();
+    expect(subscriptions).not.toContain(lastSubscription);
+    await conversation.getByRole('link', { name: 'Back to Workspace', exact: true }).click();
+    await expect(conversation).toHaveCount(0);
+    await released(lastSubscription);
+    expect(page.context().pages()).toHaveLength(1);
+    expect(
+      requests.filter(({ method }) =>
+        /\.(set.*|update.*|write|create|delete|rename|mkdir|stage|unstage|commit|push|pull|markSeen|sendMessage|execute|join|leave)$/.test(
+          method ?? '',
+        ),
+      ),
+    ).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await info.attach('conversation-note-link-wire-and-geometry', {
+      body: JSON.stringify({ requests, replies, probes, errors }),
+      contentType: 'application/json',
+    });
+  }
+});
