@@ -5,6 +5,10 @@
   import DefaultAgentModelSettings from '../../../settings/DefaultAgentModelSettings.svelte';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import {
+    admitHostExecutionFixture,
+    HOST_EXECUTION_FIXTURE,
+  } from '../../../../../test/fixtures/host-execution-state';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { MOCK_PROVIDER_CATALOG } from '../../../../../test/fixtures/provider-catalog.fixture';
   import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -13,6 +17,7 @@
     checkAllProvidersComplete,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import { selectProviderModelsClearEpoch } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import {
     loadDefaultReasoningEffortFromStorage,
     loadProviderModelsFromStorage,
@@ -42,6 +47,8 @@
     ],
   });
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  admitHostExecutionFixture('owner', HOST_EXECUTION_FIXTURE);
+  const catalogEpoch = selectProviderModelsClearEpoch.select(store.state);
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
   store.dispatch(hydrateDefaultProvider(consumer === 'specialist' ? 'claude-code' : 'codex'));
   for (const providerId of ['codex', 'claude-code']) {
@@ -51,7 +58,7 @@
     );
     const providerModels =
       providerId === 'codex' ? models : [{ value: 'other', label: 'Other provider model' }];
-    store.dispatch(providerModelsLoaded(providerId, { models: providerModels }, 0));
+    store.dispatch(providerModelsLoaded(providerId, { models: providerModels }, catalogEpoch));
     // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalogs
     registerMockIpcHandler(`${providerId}:get-models`, () => ({
       success: true,

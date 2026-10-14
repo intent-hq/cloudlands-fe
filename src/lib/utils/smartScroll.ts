@@ -461,7 +461,10 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (e.deltaY < 0) {
       setFollowing(false);
     } else if (e.deltaY > 0) {
-      scheduleUserStateCheck();
+      // Passive wheel delivery can already see the compositor at the bottom.
+      // Capture that intent before queued content growth moves the bottom away.
+      if (checkIfAtBottom()) follower.followAndScroll();
+      else scheduleUserStateCheck();
     }
   }
 

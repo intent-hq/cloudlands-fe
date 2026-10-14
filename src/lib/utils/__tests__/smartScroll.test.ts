@@ -1408,6 +1408,50 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('captures downward input at the bottom before content grows in the next frame', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    runFrame();
+
+    // Passive wheel delivery can see the compositor's completed scroll before
+    // an earlier animation callback expands the disclosed content.
+    scrollTop = 550;
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }));
+    scrollHeight += 400;
+    fireResize();
+    runSettleTail();
+
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([true]);
+    expect(scrollTop).toBe(1000);
+    action.destroy();
+  });
+
+  it('still checks downward input after native scrolling reaches the bottom', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    runFrame();
+
+    scrollTop = 300;
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }));
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(followChanges).toEqual([]);
+
+    scrollTop = 550;
+    runFrame();
+
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([true]);
+    expect(scrollTop).toBe(600);
+    action.destroy();
+  });
+
   it('stays unlocked after a content click, collapse clamp, and later growth', () => {
     const followChanges: boolean[] = [];
     const action = followBottom(container, {
