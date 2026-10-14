@@ -1,5 +1,6 @@
 // Source: src/lib/components/ui/VideoLightbox.svelte.
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { videoSource } from '$lib/actions/video-source';
 import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { VideoActionsMenu } from '@/components/ui/video-actions-menu';
 import type { VideoSource } from '$shared/types/video-source';
@@ -40,6 +41,18 @@ export function VideoLightbox({
     setPlayback({ open, videoUrl, unavailable: open && videoUrl ? false : playback.unavailable });
   }
 
+  const attachVideo = useCallback(
+    (video: HTMLVideoElement) => {
+      const stopSizing = sizeVideoFromMetadata(video);
+      const source = videoSource(video, videoUrl);
+      return () => {
+        stopSizing();
+        source.destroy();
+      };
+    },
+    [videoUrl],
+  );
+
   return (
     <MediaLightbox
       open={open}
@@ -71,8 +84,7 @@ export function VideoLightbox({
       >
         {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- Agent output has no captions field, matching the source. */}
         <video
-          ref={sizeVideoFromMetadata}
-          src={videoUrl}
+          ref={attachVideo}
           poster={poster}
           controls
           preload="metadata"

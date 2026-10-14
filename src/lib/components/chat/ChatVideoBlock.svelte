@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { videoSource } from '$lib/actions/video-source';
   import { canLoadMediaUrl } from '$lib/utils/media-provenance';
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -104,7 +105,7 @@
           </svg>
         </div>
         <video
-          src={videoUrl}
+          use:videoSource={videoUrl}
           poster={safePoster}
           preload="metadata"
           muted

@@ -5,6 +5,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
+  import { videoSource } from '$lib/actions/video-source';
   import { sizeVideoFromMetadata } from '$lib/actions/size-video-from-metadata';
 
   interface Props {
@@ -68,7 +69,7 @@
     <!-- svelte-ignore a11y_media_has_caption (agent video output has no captions field) -->
     <video
       use:sizePlayer
-      src={videoUrl}
+      use:videoSource={videoUrl}
       {poster}
       controls
       preload="metadata"

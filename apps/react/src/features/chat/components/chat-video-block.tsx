@@ -1,5 +1,6 @@
 // Source: src/lib/components/chat/ChatVideoBlock.svelte.
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { videoSource } from '$lib/actions/video-source';
 import { Button } from '@/components/ui/button';
 import { MediaUnavailable, type MediaUnavailableProps } from '@/components/ui/media-unavailable';
 import { VideoActionsMenu } from '@/components/ui/video-actions-menu';
@@ -40,6 +41,10 @@ export function ChatVideoBlock({
 
   const videoUrl =
     source.kind === 'inline' ? `data:${source.mimeType};base64,${source.data}` : source.url;
+  const attachVideo = useCallback(
+    (video: HTMLVideoElement) => videoSource(video, videoUrl).destroy,
+    [videoUrl],
+  );
   function canUseMedia(url: string) {
     return (
       canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false) &&
@@ -126,7 +131,7 @@ export function ChatVideoBlock({
                 </svg>
               </div>
               <video
-                src={videoUrl}
+                ref={attachVideo}
                 poster={safePoster}
                 preload="metadata"
                 muted

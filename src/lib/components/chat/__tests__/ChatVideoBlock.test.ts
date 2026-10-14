@@ -306,3 +306,22 @@ describe('video media provenance', () => {
     expect(screen.queryByRole('button', { name: 'Video options' })).toBeNull();
   });
 });
+
+describe('native video resource lifetime', () => {
+  it('clears detached thumbnail and lightbox sources and stops native loading', async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const observed: (string | null)[] = [];
+    const load = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(function () {
+      observed.push(this.getAttribute('src'));
+    });
+    const mounted = render(ChatVideoBlock, { source: remoteSource });
+    await fireEvent.click(screen.getByTestId('chat-video-snapshot'));
+    const videos = [...document.querySelectorAll('video')];
+    expect(videos).toHaveLength(2);
+    mounted.unmount();
+    expect(videos.map((video) => video.getAttribute('src'))).toEqual([null, null]);
+    expect(pause).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(observed).toEqual([null, null]);
+  });
+});
