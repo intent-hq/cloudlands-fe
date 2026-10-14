@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { ListRow, ListView } from '@/components/patterns/collection';
 import { LoadingState } from '@/components/patterns/screen';
 import { ChangesRefreshAction } from '@/components/workspace/sidebar/changes-refresh-action';
+import { HostExecutionNotice } from '@/features/providers/host-execution-notice';
 import { store } from '@/store';
 import { selectGitWorkspaceState } from '@/store/git/git-selectors';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
@@ -44,6 +45,7 @@ export function WorkspaceGitStatus({
           }}
         />
       </header>
+      <HostExecutionNotice />
       <ListView
         items={status?.files ?? []}
         getKey={(file) => `${file.staged}:${file.path}`}

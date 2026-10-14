@@ -12,6 +12,7 @@ import { CallbackDialogExamples } from './callback-dialog-examples';
 import { MenuFocusExamples } from './menu-focus-examples';
 import { EffortPickerExamples } from './effort-picker-examples';
 import { ModelPickerExamples } from './model-picker-examples';
+import { HostExecutionNoticeExamples } from './host-execution-notice-examples';
 import { AgentAvatarExamples } from './agent-avatar-examples';
 import { WorkspacePresentationExamples } from './workspace-presentation-examples';
 import { ResourceIconExamples } from './resource-icon-examples';
@@ -533,6 +534,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'menu' && <MenuFocusExamples />}
       {slug === 'effort-picker' && <EffortPickerExamples />}
       {slug === 'model-picker' && <ModelPickerExamples />}
+      {slug === 'model-picker' && <HostExecutionNoticeExamples />}
       {slug === 'agent-avatar' && <AgentAvatarExamples />}
       {slug === 'sidebar-actions' && <SidebarActionsExamples />}
       {slug === 'sidebar-actions' && <FileSearchExamples />}
