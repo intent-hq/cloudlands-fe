@@ -170,6 +170,17 @@ export const additionalCatalogEntries: CatalogEntry[] = [
     fixtures: [interactionFixture],
   },
   {
+    slug: 'hud-panel',
+    name: 'HUD panel',
+    category: 'pattern',
+    source: 'src/features/hud/components/HudPanel.svelte',
+    publicImport: '@/features/hud/components/hud-panel',
+    exports: ['HudPanel'],
+    description:
+      'Internal presentation preview with caller-owned content and metadata. HUD application integration remains pending.',
+    fixtures: [interactionFixture],
+  },
+  {
     slug: 'smart-corner-tabs',
     name: 'SmartCornerTabs',
     category: 'primitive',
