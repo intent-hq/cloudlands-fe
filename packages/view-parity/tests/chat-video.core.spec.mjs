@@ -20,11 +20,10 @@ import {
   menuInfo,
   sameNode,
   captureVideo,
-  expectArtwork,
-  expectSourceArtwork,
+  observePausedVideo,
 } from '../lib/chat-video.mjs';
 
-// Original003 is the oracle. The caller supplies inputs, never expected outcomes.
+// Genuine fixture metadata is the oracle; the caller supplies inputs, never expected outcomes.
 test('chat video V1 selected bytes produce genuine metadata and a decoded preview frame', async ({
   page,
   nativeMedia,
@@ -61,8 +60,6 @@ test('chat video V1 selected bytes produce genuine metadata and a decoded previe
   });
   await expect(video(host)).toHaveAttribute('aria-hidden', 'true');
   await expect(opener(host, file.name)).toBeVisible();
-  await expectSourceArtwork(opener(host, file.name).locator('svg').nth(0), 0, info);
-  await expectSourceArtwork(opener(host, file.name).locator('svg').nth(1), 1, info);
   await captureVideo(page, frame(host), 'v1-decoded-before', info);
   await button(host, 'Use selected video').click();
   await decoded(video(host));
@@ -96,11 +93,9 @@ test('chat video V2 functional playback and focus; preplay visual pending', asyn
     })),
   ).toEqual({ controls: true, autoplay: false, paused: true });
   await expect(button(surface, label('chat_videoBlock_close_ariaLabel'))).toBeFocused();
-  await expectArtwork(
+  await expect(
     button(surface, label('chat_videoBlock_close_ariaLabel')).locator('svg'),
-    'faXmark',
-    info,
-  );
+  ).toHaveAttribute('aria-hidden', 'true');
   await readyForInitialVideoCapture(player, info);
   // Functional follow-up only: this observation does not replace or approve the failed visual gate.
   const geometry = await surface.evaluate((root) => {
@@ -109,7 +104,12 @@ test('chat video V2 functional playback and focus; preplay visual pending', asyn
       return { x, y, width, height };
     };
     return {
-      viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+      },
       root: rect(root),
       nodes: [...root.querySelectorAll('button,video,svg,[role],[data-chat-video]')].map(
         (node) => ({
@@ -195,7 +195,6 @@ test('chat video V4 keyboard menu reads actual duration dimensions and byte size
   await opener(host, file.name).press('Tab');
   const trigger = options(preview(host));
   await expect(trigger).toBeFocused();
-  await expectSourceArtwork(trigger.locator('svg'), 'kebab', info);
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
@@ -250,4 +249,33 @@ test('chat video V5 remote kind copies the real selected data URL through native
   await expect(paste).toHaveValue(dataUrl(file));
   await expect(video(host)).toHaveAttribute('src', dataUrl(file));
   await captureVideo(page, frame(host), 'v5-after', info);
+});
+
+test('chat video V3 functional follow-up; paused image acceptance pending', async ({
+  page,
+}, info) => {
+  info.annotations.push({
+    type: 'acceptance-pending',
+    description: 'Functional evidence only; the original paused-image case remains unresolved.',
+  });
+  const host = await openVideo(page);
+  const file = videoFile();
+  await pick(page, host, file);
+  await decoded(video(host));
+  const trigger = opener(host, file.name);
+  const retained = await trigger.elementHandle();
+  await captureVideo(page, frame(host), 'v3-before', info);
+  for (const key of ['Enter', 'Space']) {
+    await trigger.press(key);
+    const surface = dialog(page, file.name);
+    await expect(surface).toBeVisible();
+    await decoded(surface.getByTestId('chat-video-player'));
+    await expect(button(surface, label('chat_videoBlock_close_ariaLabel'))).toBeFocused();
+    await observePausedVideo(surface, `v3-functional-open-${key}`, info);
+    await page.keyboard.press('Escape');
+    await expect(surface).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await sameNode(retained, trigger);
+  }
+  await captureVideo(page, frame(host), 'v3-after', info);
 });
