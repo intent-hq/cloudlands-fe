@@ -97,6 +97,22 @@ describe('pnpm-launcher', () => {
     expect(invocation).toEqual({ executable: 'pnpm', args: ['exec', 'tsc'], shell: false });
   });
 
+  it.each([
+    '/usr/lib/node_modules/npm/bin/npm-cli.js',
+    'C:\\node\\node_modules\\npm\\bin\\npm-cli.js',
+  ])('ignores npm entry %s retained by pnpm exec', (entry) => {
+    const invocation = pnpmInvocation(['exec', 'vitest', '--config', 'vitest.config.ts'], {
+      env: { ...PNPM_ENV, npm_execpath: entry },
+      platform: 'linux',
+      execPath: '/node',
+    });
+    expect(invocation).toEqual({
+      executable: 'pnpm',
+      args: ['exec', 'vitest', '--config', 'vitest.config.ts'],
+      shell: false,
+    });
+  });
+
   it('ignores an npm_execpath that node cannot run directly', () => {
     const invocation = pnpmInvocation(['exec', 'tsc'], {
       env: { ...PNPM_ENV, npm_execpath: '/usr/local/bin/pnpm' },

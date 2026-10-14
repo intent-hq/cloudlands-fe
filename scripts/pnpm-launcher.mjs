@@ -23,7 +23,10 @@ export function pnpmInvocation(pnpmArgs, options = {}) {
   const execPath = options.execPath ?? process.execPath;
   const entry = env.npm_execpath;
   const launchedByPnpm = (env.npm_config_user_agent ?? '').startsWith('pnpm/');
-  if (entry && launchedByPnpm && JS_ENTRY_RE.test(entry)) {
+  // `pnpm exec` can replace npm's user agent while retaining its entry path.
+  // npm cannot accept pnpm's argv (notably `exec` flags); use the PATH fallback.
+  const inheritedNpmEntry = /(?:^|[\\/])npm-cli\.[cm]?js$/i.test(entry ?? '');
+  if (entry && launchedByPnpm && JS_ENTRY_RE.test(entry) && !inheritedNpmEntry) {
     return { executable: execPath, args: [entry, ...pnpmArgs], shell: false };
   }
   if (platform === 'win32') {

@@ -49,7 +49,14 @@ function reactSignalsTestPlugin() {
 // owns global temp-dir setup/teardown exactly once, including React-only runs.
 export default defineProject(async (env) => {
   const shared = await rootConfig(env);
-  const { projects: _projects, globalSetup: _globalSetup, ...test } = shared.test ?? {};
+  // Worker limits belong to the root runner, including its CLI override. Copying
+  // maxWorkers here pins this project to the default and breaks combined runs.
+  const {
+    projects: _projects,
+    globalSetup: _globalSetup,
+    maxWorkers: _maxWorkers,
+    ...test
+  } = shared.test ?? {};
   const aliases = shared.resolve?.alias;
   if (!Array.isArray(aliases)) {
     throw new Error('React unit tests require the canonical root alias list');
