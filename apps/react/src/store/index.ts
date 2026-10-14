@@ -1,3 +1,4 @@
+import { chatStateReducer } from '../../../../src/store/renderer/slices/chat-state/chat-state-slice';
 import { githubReposReducer } from '../../../../src/store/renderer/slices/github-repos/github-repos-slice';
 import { knownReposReducer } from '../../../../src/store/renderer/slices/known-repos/known-repos-slice';
 import { scriptsReducer } from '../../../../src/store/renderer/slices/scripts/scripts-slice';
@@ -72,6 +73,7 @@ export const store = new ReactStore({
   agentAvailability: agentAvailabilityReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
   agentSessions: agentSessionReducer,
+  chatState: chatStateReducer,
   agentModel: agentModelReducer,
   workspaceAgents: workspaceAgentsReducer,
   panelLayout: panelLayoutReducer,

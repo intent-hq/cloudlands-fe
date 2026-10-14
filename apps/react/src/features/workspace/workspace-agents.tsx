@@ -1,4 +1,5 @@
 import { useLayoutEffect } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { store } from '@/store';
 import {
   selectAgentsLoaded,
@@ -16,6 +17,7 @@ import { ListRow, ListView } from '@/components/patterns/collection';
 import { m } from '$shared/paraglide/messages.js';
 
 function WorkspaceAgentRows({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
   const agents = selectForegroundWorkspaceAgents(workspaceId);
   const loaded = selectAgentsLoaded(workspaceId);
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
@@ -32,6 +34,13 @@ function WorkspaceAgentRows({ workspaceId }: { workspaceId: string }) {
       items={authority ? agents.value : []}
       status={authority && loaded.value ? 'ready' : 'loading'}
       ariaLabel={m.workspace_multiSelectSidebar_agentsTab_label()}
+      onActivate={(agent) =>
+        void navigate({
+          to: '/workspaces/$workspaceId',
+          params: { workspaceId },
+          search: (previous) => ({ ...previous, agent: agent.id }),
+        })
+      }
       getKey={(agent) => agent.id}
       getText={(agent) => agent.name}
       row={({ item: agent }) => (

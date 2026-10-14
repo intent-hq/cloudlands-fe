@@ -1,6 +1,5 @@
 import { store } from '../../store';
-import type { StoreState } from '../../types';
-import { emptyChatAgentState } from './chat-state-slice';
+import { getAgentChatState } from './chat-state-projections';
 import type {
   ChatAgentState,
   HydratedBlockEntry,
@@ -15,14 +14,6 @@ import type {
   StreamFailureCorrelation,
 } from './chat-state-types';
 import { hydratedBlockKey } from './chat-state-types';
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function getAgentChatState(state: StoreState, agentId: string): ChatAgentState {
-  return state.chatState?.byAgentId[agentId] ?? emptyChatAgentState;
-}
 
 // ============================================================================
 // Selectors

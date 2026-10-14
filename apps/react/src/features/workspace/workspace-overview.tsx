@@ -31,6 +31,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceNotes } from './workspace-notes';
 import { WorkspaceProgress } from './workspace-progress';
 import { WorkspaceAgents } from './workspace-agents';
+import { WorkspaceConversation } from './workspace-conversation';
 import { WorkspaceGitStatus } from './workspace-git-status';
 import { WorkspaceFile } from './workspace-file';
 import { WorkspaceReturnFocus } from './workspace-return-focus';
@@ -191,6 +192,7 @@ export function WorkspaceList({
 
 export function WorkspaceOverview({
   workspaceId,
+  agentId,
   noteId,
   query,
   filePath,
@@ -200,6 +202,7 @@ export function WorkspaceOverview({
   homeFilter,
 }: {
   workspaceId: string;
+  agentId?: string;
   noteId?: string;
   query?: string;
   filePath?: string;
@@ -223,12 +226,19 @@ export function WorkspaceOverview({
     const firstEntry = previousWorkspace.current === undefined;
     previousWorkspace.current = workspaceId;
     if (
+      !agentId &&
       !noteId &&
       !filePath &&
       (firstEntry || !document.activeElement?.matches('[data-navigation-workspace]'))
     )
       title.current?.focus();
-  }, [workspaceId, noteId, filePath]);
+  }, [workspaceId, agentId, noteId, filePath]);
+  const previousAgent = useRef(agentId);
+  useLayoutEffect(() => {
+    const previous = previousAgent.current;
+    previousAgent.current = agentId;
+    if (previous && !agentId && !noteId && !filePath) title.current?.focus();
+  }, [agentId, noteId, filePath]);
   const previousFile = useRef({ workspaceId, filePath });
   useLayoutEffect(() => {
     const previous = previousFile.current;
@@ -297,10 +307,14 @@ export function WorkspaceOverview({
           />
         ) : (
           <>
-            {!noteId && !filePath && row.statusMessage && (
+            {!agentId && !noteId && !filePath && row.statusMessage && (
               <p data-testid="workspace-status-message">{row.statusMessage}</p>
             )}
-            <dl className={noteId || filePath ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'}>
+            <dl
+              className={
+                agentId || noteId || filePath ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'
+              }
+            >
               <div>
                 <dt className="type-caption text-muted-foreground">Repository</dt>
                 <dd data-testid="workspace-repository">{row.repositoryName}</dd>
@@ -317,7 +331,9 @@ export function WorkspaceOverview({
               </div>
             </dl>
             <div key={workspaceId} ref={content} className="grid min-w-0 gap-6">
-              {filePath ? (
+              {agentId ? (
+                <WorkspaceConversation key={agentId} workspaceId={workspaceId} agentId={agentId} />
+              ) : filePath ? (
                 <WorkspaceFile
                   key={filePath}
                   workspaceId={workspaceId}
