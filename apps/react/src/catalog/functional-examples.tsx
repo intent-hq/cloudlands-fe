@@ -57,6 +57,7 @@ import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
 import { HudAgentLineExamples } from './hud-agent-line-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
+import { NavigationIconExamples } from './navigation-icon-examples';
 import { InitialsAvatarExamples } from './initials-avatar-examples';
 import { WorkspaceSidebarRailExamples } from './workspace-sidebar-rail-examples';
 import { DetectedScriptExamples } from './detected-script-examples';
@@ -515,6 +516,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'command-palette' && <CommandPaletteExamples />}
       {slug === 'editor-icons' && <EditorIconExamples />}
       {slug === 'device-icons' && <DeviceIconExamples />}
+      {slug === 'device-icons' && <NavigationIconExamples />}
       {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'timeline-section' && <TimelineSectionExamples />}
       {slug === 'timeline-section' && <SetupTimelineExamples />}
