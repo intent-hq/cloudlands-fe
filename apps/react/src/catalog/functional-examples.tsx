@@ -55,6 +55,7 @@ import { ResponseGroupExamples } from './response-group-examples';
 import { NavigationContentExamples } from './navigation-content-examples';
 import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
+import { InitialsAvatarExamples } from './initials-avatar-examples';
 import { DetectedScriptExamples } from './detected-script-examples';
 // Local examples exercise production patterns independently of reference appearance fixtures.
 // i18n-ignore (deterministic internal catalog example content)
@@ -564,6 +565,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'copy-input' && <NativeClipboardExample />}
       {slug === 'file-input' && <NativeFileExample />}
       {slug === 'principal-avatar' && <NativeAvatarExample />}
+      {slug === 'principal-avatar' && <InitialsAvatarExamples />}
       {slug === 'settings' && <SettingsHighlightExample />}
       {slug === 'tooltip-rich' && <RichTooltipExample />}
       {slug === 'tooltip' && <PublicTooltipExample />}
