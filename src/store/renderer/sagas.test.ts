@@ -21,6 +21,7 @@ describe('renderer app saga registry', () => {
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
+      'hudSaga',
       'guestSessionsSaga',
       'presenceSaga',
       'presenceFollowSaga',

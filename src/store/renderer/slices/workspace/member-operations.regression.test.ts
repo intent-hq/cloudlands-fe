@@ -53,7 +53,9 @@ const mock = vi.hoisted(() => ({
   script: vi.fn(),
   notify: { info: vi.fn(), error: vi.fn(), warning: vi.fn(), success: vi.fn(), dismiss: vi.fn() },
 }));
-vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: { start: mock.script } }));
+vi.mock('$features/scripts/script-definition-transport', () => ({
+  scriptDefinitionTransport: { start: mock.script },
+}));
 vi.mock('$lib/client', () => ({
   appClient: { workspaces: mock, terminals: { create: mock.terminal } },
 }));

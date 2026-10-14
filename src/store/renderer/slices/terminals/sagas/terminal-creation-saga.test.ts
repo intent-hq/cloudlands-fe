@@ -20,11 +20,18 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: mocks.info, error: mocks.error }),
 }));
 
-import { createTerminalRequested, createPanelTerminalRequested } from '../terminals-slice';
+import {
+  clearTerminalCreationOutcome,
+  createOverlayTerminalRequested,
+  createPanelTerminalRequested,
+  createTerminalRequested,
+  terminalsReducer,
+} from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
 import { terminalCommandsSaga } from './terminal-commands-saga';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const settle = async () => {
   await Promise.resolve();
@@ -36,16 +43,21 @@ const settle = async () => {
 function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
   const channel = stdChannel();
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
+  let terminals = terminalsReducer(undefined, { type: '@@INIT' });
   const task = runSaga(
     {
       channel,
-      dispatch: (action: { type: string; payload?: unknown }) => dispatched.push(action),
+      dispatch: (action: { type: string; payload?: unknown }) => {
+        dispatched.push(action);
+        terminals = terminalsReducer(terminals, action);
+      },
       getState: () =>
         withLegacyPrincipal({
           connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
           // Settled owner window: guest list received, no host joined.
           guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
           panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
+          terminals,
           workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
         }),
     },
@@ -54,7 +66,16 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
       yield* fork(terminalCommandsSaga);
     },
   );
-  return { channel, dispatched, task };
+  return {
+    channel,
+    dispatched,
+    task,
+    put: (action: ReturnType<typeof createOverlayTerminalRequested> | { type: string }) => {
+      terminals = terminalsReducer(terminals, action);
+      channel.put(action);
+    },
+    getTerminalsState: () => terminals,
+  };
 }
 
 beforeEach(() => {
@@ -62,6 +83,113 @@ beforeEach(() => {
 });
 
 describe('terminalCreationSaga', () => {
+  it('returns the daemon-assigned id for an authorized overlay create', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-pty-1' });
+    const { channel, dispatched, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-pty-1');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+    });
+    expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      'terminals/open',
+      createOverlayTerminalRequested.success.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('publishes a correlated success after saga-owned insertion and opening', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-pty-1' });
+    const { dispatched, getTerminalsState, put, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1', {
+      id: 'mount-1',
+      resourceId: 'overlay',
+    });
+
+    put(request);
+    await expect(request.promise).resolves.toBe('daemon-pty-1');
+
+    expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      'terminals/open',
+      'terminals/terminalCreationFinished',
+      createOverlayTerminalRequested.success.type,
+    ]);
+    expect(getTerminalsState().creationOutcomes.map['mount-1']).toMatchObject({
+      status: 'success',
+      terminalId: 'daemon-pty-1',
+      seq: request.seq,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps a created terminal visible after the requesting overlay releases', async () => {
+    let resolveCreate: (value: { success: true; id: string }) => void = () => {};
+    mocks.create.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const { dispatched, put, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1', {
+      id: 'mount-1',
+      resourceId: 'overlay',
+    });
+
+    put(request);
+    await settle();
+    put(clearTerminalCreationOutcome('mount-1'));
+    resolveCreate({ success: true, id: 'orphaned-pty' });
+    await expect(request.promise).resolves.toBe('orphaned-pty');
+
+    expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      createOverlayTerminalRequested.success.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('allows the root overlay to create without a workspace membership row', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-root-pty' });
+    const { channel, task } = startSaga();
+    const request = createOverlayTerminalRequested(ROOT_WORKSPACE_ID);
+
+    channel.put(request);
+    await expect(request.promise).resolves.toBe('daemon-root-pty');
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: ROOT_WORKSPACE_ID,
+      cols: 80,
+      rows: 24,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('rejects a collaborator overlay create before terminal.create', async () => {
+    const { channel, dispatched, task } = startSaga('collaborator');
+    const request = createOverlayTerminalRequested('ws-1');
+
+    channel.put(request);
+    await expect(request.promise).rejects.toThrow();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched.map((action) => action.type)).toEqual([
+      createOverlayTerminalRequested.failure.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('creates, reloads, and opens a terminal in the focused panel', async () => {
     mocks.create.mockResolvedValue({ success: true, id: 'term-1' });
     const { channel, dispatched, task } = startSaga();

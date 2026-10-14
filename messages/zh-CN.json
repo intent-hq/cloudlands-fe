@@ -600,8 +600,6 @@
   "settings_mcpServers_saveSettings": "保存设置",
   "settings_mcpServers_importSuccess_one": "成功导入 1 个服务器！",
   "settings_mcpServers_importSuccess_many": "成功导入 {count} 个服务器！",
-  "settings_mcp_preset_figma_description": "推荐的托管服务器，支持 OAuth 和完整的 Figma 工具集。",
-  "settings_mcp_preset_figmaDesktop_description": "用于 Figma 桌面应用中已打开文件的本地服务器。",
   "settings_mcp_preset_redis_description": "用于构建高速应用的实时数据平台",
   "settings_mcp_preset_redis_urlInput_label": "Redis 连接 URL",
   "settings_mcp_preset_redis_urlInput_description": "输入你的连接 URL（redis://localhost:6379/0）",

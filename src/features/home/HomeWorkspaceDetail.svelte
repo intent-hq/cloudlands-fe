@@ -38,6 +38,9 @@
     preview?: boolean;
     showBackToList?: boolean;
   } = $props();
+  const displayTitle = $derived(
+    workspace.title.trim() ? workspace.title : m.workspace_links_untitled_label(),
+  );
   // Home keys this panel by workspace ID, matching the chat's subscription lifetime.
   const workspaceId = untrack(() => workspace.id);
   const agents$ = selectAllWorkspaceAgents(workspaceId);
@@ -92,14 +95,12 @@
                   aria-label={m.home_open_workspace()}
                   onclick={openWorkspace}
                 >
-                  <span class="min-w-0 line-clamp-2 [overflow-wrap:anywhere]"
-                    >{workspace.title}</span
-                  >
+                  <span class="min-w-0 line-clamp-2 [overflow-wrap:anywhere]">{displayTitle}</span>
                   <Fa icon={faArrowRight} class="shrink-0 text-muted-foreground" size="sm" />
                 </Button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content>{workspace.title}</Tooltip.Content>
+            <Tooltip.Content>{displayTitle}</Tooltip.Content>
           </Tooltip.Root>
         </Tooltip.Provider>
       </h2>

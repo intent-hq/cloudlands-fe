@@ -15,6 +15,7 @@
       __homeAssistantPreview?: { removeSelectedThread: () => void };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
+        setTitle: (id: string, title: string) => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
     }
@@ -23,6 +24,7 @@
   interface Props {
     scenario?:
       | 'populated'
+      | 'untitled'
       | 'status-icons'
       | 'pr-status-list'
       | 'board-pr-status'
@@ -51,6 +53,7 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
@@ -284,10 +287,10 @@
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
     replaceWorkspaceList,
-    setWorkspaceHasLoaded,
-    setWorkspaceError,
     updateWorkspaceEntity,
     bulkUpdateWorkspaceEntities,
+    setWorkspaceHasLoaded,
+    setWorkspaceError,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
@@ -345,6 +348,8 @@
   });
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setTitle: (id, title) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
@@ -412,6 +417,11 @@
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'untitled' && workspace.id === 'home-running'
+                ? { title: '' }
+                : scenario === 'untitled' && workspace.id === 'home-review'
+                  ? { title: ' \t ' }
+                  : {}),
               ...(scenario === 'board-long-content'
                 ? {
                     title: `${workspace.title} ${'workspace'.repeat(12)}`,

@@ -9,6 +9,15 @@ import {
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
+export const selectTerminalCreationOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcome = getItem(state.terminals.creationOutcomes, consumerId);
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
+);
+
 function getActiveWs(state: StoreState, wsId: string | null | undefined) {
   if (!wsId) return emptyWorkspaceState;
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;

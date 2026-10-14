@@ -29,6 +29,7 @@
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
     selectActiveTerminalIdForWorkspace,
+    selectTerminalCreationOutcome,
     selectTerminalsForWorkspace,
     selectWorkspaceTerminalState,
   } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -36,7 +37,8 @@
     openTerminalOverlay,
     closeTerminalOverlay,
     selectTerminal,
-    addTerminal,
+    clearTerminalCreationOutcome,
+    createOverlayTerminalRequested,
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
@@ -45,7 +47,6 @@
     setTerminalPlacement,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { appClient } from '$lib/client';
 
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
@@ -72,7 +73,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
   import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptListEntry } from '$features/scripts/types';
   import {
     getScriptStatusKind,
@@ -88,13 +88,22 @@
     selectWorkspaceScriptEntries,
     selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
+    selectScriptWorkflowOutcome,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    refreshScripts,
+    detectScriptDefinitionsRequested,
     startScriptRequested,
     restartScriptRequested,
     stopScriptRequested,
+    getScriptDefinitionRequested,
+    scriptWorkflowConsumed,
+    scriptWorkflowReleased,
+    updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
+  import type {
+    ScriptDefinitionUpdate,
+    ScriptWorkflowConsumer,
+  } from '$store/renderer/slices/scripts/scripts-types';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -174,6 +183,39 @@
   let originalScriptCommand = '';
 
   let isDetectingScripts = $state(false);
+  const detectConsumerId = crypto.randomUUID();
+  const definitionConsumerId = crypto.randomUUID();
+  const mutationConsumerId = crypto.randomUUID();
+  const definitionResourceIdStore = writable('');
+  const mutationResourceIdStore = writable('');
+  const detectOutcome$ = selectScriptWorkflowOutcome(detectConsumerId, workspaceIdStore, 'detect');
+  const definitionOutcome$ = selectScriptWorkflowOutcome(
+    definitionConsumerId,
+    workspaceIdStore,
+    definitionResourceIdStore,
+  );
+  const mutationOutcome$ = selectScriptWorkflowOutcome(
+    mutationConsumerId,
+    workspaceIdStore,
+    mutationResourceIdStore,
+  );
+  let pendingDetect = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingDefinition = $state<{
+    requestId: string;
+    workspaceId: string;
+    scriptId: string;
+    scope: string;
+    sequence: number;
+  } | null>(null);
+  let pendingMutation = $state<{
+    requestId: string;
+    workspaceId: string;
+    scriptId: string;
+    kind: 'name' | 'command' | 'tab';
+    ownership: WorkspaceId | undefined;
+    value: string;
+  } | null>(null);
+  let workflowWorkspaceId = '';
   let terminalPanel: HTMLDivElement | undefined = $state();
   let mountedPanelWorkspaceId: string | null = $state(null);
   const panelIsVisible = $derived(
@@ -203,56 +245,181 @@
     );
   }
 
-  async function handleDetectScripts() {
-    if (!workspaceId) return;
-    isDetectingScripts = true;
-    try {
-      const result = await scriptsClient.detect(workspaceId);
-      appStore.dispatch(refreshScripts(workspaceId));
-      if (!result.success) {
-        notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
-        return;
-      }
-      const detected = result.detected ?? 0;
-      const added = result.added ?? 0;
-      const removed = result.removed ?? 0;
-      const changeParts: string[] = [];
-      if (added > 0) changeParts.push(m.terminal_quakeOverlay_detectAdded_part({ count: added }));
-      if (removed > 0)
-        changeParts.push(m.terminal_quakeOverlay_detectRemoved_part({ count: removed }));
-      const summary =
-        changeParts.length > 0
-          ? detected === 1
-            ? m.terminal_quakeOverlay_detectedSummary_one({
-                count: detected,
-                changes: changeParts.join(', '),
-              })
-            : m.terminal_quakeOverlay_detectedSummary_many({
-                count: detected,
-                changes: changeParts.join(', '),
-              })
-          : detected === 1
-            ? m.terminal_quakeOverlay_detectedNoNew_one({ count: detected })
-            : m.terminal_quakeOverlay_detectedNoNew_many({ count: detected });
-      if (detected === 0) {
-        notify.info(m.terminal_quakeOverlay_noScriptsDetected_info());
-      } else {
-        notify.success(summary);
-      }
-      const skippedRunning = result.skippedRunning ?? [];
-      if (skippedRunning.length > 0) {
-        notify.warning(
-          skippedRunning.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
-            : m.scripts_detect_skippedRunning_many({
-                count: skippedRunning.length,
-                names: skippedRunning.join(', '),
-              }),
-        );
-      }
-    } finally {
+  function consumer(
+    consumerId: string,
+    requestId: string,
+    resourceId: string,
+  ): ScriptWorkflowConsumer {
+    return { consumerId, requestId, resourceId };
+  }
+
+  function releaseScriptWorkflows(releaseWorkspaceId: string): void {
+    for (const consumerId of [detectConsumerId, definitionConsumerId, mutationConsumerId]) {
+      appStore.dispatch(scriptWorkflowReleased(releaseWorkspaceId, consumerId));
+    }
+  }
+
+  $effect(() => {
+    const nextWorkspaceId = workspaceId ?? '';
+    if (workflowWorkspaceId && workflowWorkspaceId !== nextWorkspaceId) {
+      releaseScriptWorkflows(workflowWorkspaceId);
+      pendingDetect = null;
+      pendingDefinition = null;
+      pendingMutation = null;
       isDetectingScripts = false;
     }
+    workflowWorkspaceId = nextWorkspaceId;
+    return () => {
+      if (nextWorkspaceId) releaseScriptWorkflows(nextWorkspaceId);
+    };
+  });
+
+  $effect(() => {
+    const outcome = $detectOutcome$;
+    const pending = pendingDetect;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingDetect = null;
+    isDetectingScripts = false;
+    appStore.dispatch(
+      scriptWorkflowConsumed(outcome.workspaceId, detectConsumerId, outcome.requestId),
+    );
+    if (outcome.status !== 'success' || !outcome.result) {
+      notify.error(outcome.error ?? m.terminal_quakeOverlay_detectFailed_error());
+      return;
+    }
+    const result = outcome.result as {
+      detected: number;
+      added: number;
+      removed: number;
+      skippedRunning: string[];
+    };
+    const changeParts: string[] = [];
+    if (result.added > 0)
+      changeParts.push(m.terminal_quakeOverlay_detectAdded_part({ count: result.added }));
+    if (result.removed > 0)
+      changeParts.push(m.terminal_quakeOverlay_detectRemoved_part({ count: result.removed }));
+    const summary =
+      changeParts.length > 0
+        ? result.detected === 1
+          ? m.terminal_quakeOverlay_detectedSummary_one({
+              count: result.detected,
+              changes: changeParts.join(', '),
+            })
+          : m.terminal_quakeOverlay_detectedSummary_many({
+              count: result.detected,
+              changes: changeParts.join(', '),
+            })
+        : result.detected === 1
+          ? m.terminal_quakeOverlay_detectedNoNew_one({ count: result.detected })
+          : m.terminal_quakeOverlay_detectedNoNew_many({ count: result.detected });
+    if (result.detected === 0) notify.info(m.terminal_quakeOverlay_noScriptsDetected_info());
+    else notify.success(summary);
+    if (result.skippedRunning.length > 0) {
+      notify.warning(
+        result.skippedRunning.length === 1
+          ? m.scripts_detect_skippedRunning_one({ name: result.skippedRunning[0] })
+          : m.scripts_detect_skippedRunning_many({
+              count: result.skippedRunning.length,
+              names: result.skippedRunning.join(', '),
+            }),
+      );
+    }
+  });
+
+  $effect(() => {
+    const outcome = $definitionOutcome$;
+    const pending = pendingDefinition;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId ||
+      selectedScriptId !== pending.scriptId ||
+      commandEditScope !== pending.scope ||
+      commandEditRequest !== pending.sequence
+    )
+      return;
+    pendingDefinition = null;
+    appStore.dispatch(
+      scriptWorkflowConsumed(outcome.workspaceId, definitionConsumerId, outcome.requestId),
+    );
+    if (outcome.status !== 'success' || !outcome.result || Array.isArray(outcome.result)) {
+      notify.error(m.terminal_quakeOverlay_updateCommandFailed_error());
+      return;
+    }
+    const script = outcome.result as { command: string };
+    editedScriptCommand = script.command;
+    originalScriptCommand = script.command;
+    showScriptEditPanel = true;
+    requestAnimationFrame(() => editScriptCommandTextarea?.focus());
+  });
+
+  $effect(() => {
+    const outcome = $mutationOutcome$;
+    const pending = pendingMutation;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingMutation = null;
+    appStore.dispatch(
+      scriptWorkflowConsumed(outcome.workspaceId, mutationConsumerId, outcome.requestId),
+    );
+    if (outcome.status !== 'success') {
+      notify.error(
+        outcome.error ??
+          (pending.kind === 'name'
+            ? m.terminal_quakeOverlay_renameScriptFailed_error()
+            : m.terminal_quakeOverlay_updateCommandFailed_error()),
+      );
+      return;
+    }
+    if (
+      workspaceId !== pending.ownership ||
+      workspaceId !== pending.workspaceId ||
+      (pending.kind !== 'tab' && selectedScriptId !== pending.scriptId)
+    )
+      return;
+    if (pending.kind === 'name') {
+      if (editedScriptName === pending.value) isEditingScriptName = false;
+    } else if (pending.kind === 'tab') {
+      if (editingScriptTabId === pending.scriptId && editingScriptTabValue === pending.value) {
+        editingScriptTabId = null;
+        editingScriptTabValue = '';
+      }
+    } else if (editedScriptCommand === pending.value) {
+      showScriptEditPanel = false;
+    }
+  });
+
+  function handleDetectScripts() {
+    if (!workspaceId) return;
+    isDetectingScripts = true;
+    const requestId = crypto.randomUUID();
+    pendingDetect = { requestId, workspaceId };
+    appStore.dispatch(
+      detectScriptDefinitionsRequested(
+        workspaceId,
+        consumer(detectConsumerId, requestId, 'detect'),
+      ),
+    );
   }
 
   // Script Actions
@@ -358,21 +525,26 @@
     return actions;
   }
 
-  async function runScriptMutation(
-    mutation: () => Promise<{ success: boolean; error?: string }>,
-    fallbackError: string,
-  ): Promise<boolean> {
-    try {
-      const result = await mutation();
-      if (!result.success) {
-        notify.error(result.error || fallbackError);
-        return false;
-      }
-      return true;
-    } catch (error) {
-      notify.error(error instanceof Error ? error.message : fallbackError);
-      return false;
-    }
+  function runScriptMutation(
+    workspaceId: string,
+    scriptId: string,
+    updates: ScriptDefinitionUpdate,
+    kind: 'name' | 'command' | 'tab',
+    ownership: WorkspaceId | undefined,
+    value: string,
+  ): void {
+    if (pendingMutation) return;
+    const requestId = crypto.randomUUID();
+    mutationResourceIdStore.set(scriptId);
+    pendingMutation = { requestId, workspaceId, scriptId, kind, ownership, value };
+    appStore.dispatch(
+      updateScriptDefinitionRequested(
+        workspaceId,
+        scriptId,
+        updates,
+        consumer(mutationConsumerId, requestId, scriptId),
+      ),
+    );
   }
 
   export async function handleScriptAction(
@@ -419,7 +591,9 @@
       ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
-  const commandEditScope = $derived({ owner: workspaceOwnership, script: selectedScript });
+  const commandEditScope = $derived(
+    `${workspaceId ?? ''}:${selectedScript?.id ?? ''}:${selectedScript?.command ?? ''}`,
+  );
   let commandEditRequest = 0;
   const selectedScriptIdStore = writable('');
   $effect(() => selectedScriptIdStore.set(selectedScriptId ?? ''));
@@ -460,7 +634,7 @@
     });
   }
 
-  async function finishEditingScriptName(): Promise<void> {
+  function finishEditingScriptName(): void {
     const ownership = workspaceOwnership;
     const mutationWorkspaceId = ownership.workspaceId;
     const mutationScriptId = selectedScriptId;
@@ -468,19 +642,15 @@
     if (isEditingScriptName && selectedScript && mutationScriptId && mutationWorkspaceId) {
       const trimmed = mutationValue.trim();
       if (trimmed && trimmed !== selectedScript.name) {
-        const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
-          m.terminal_quakeOverlay_renameScriptFailed_error(),
+        runScriptMutation(
+          mutationWorkspaceId,
+          mutationScriptId,
+          { name: trimmed },
+          'name',
+          ownership.workspaceId,
+          mutationValue,
         );
-        if (!succeeded) return;
-        appStore.dispatch(refreshScripts(mutationWorkspaceId));
-        if (
-          workspaceOwnership !== ownership ||
-          selectedScriptId !== mutationScriptId ||
-          editedScriptName !== mutationValue
-        ) {
-          return;
-        }
+        return;
       }
     }
     isEditingScriptName = false;
@@ -502,26 +672,23 @@
     }
   }
 
-  async function startEditingScriptCommand(): Promise<void> {
+  function startEditingScriptCommand(): void {
     if (!selectedScript || !workspaceId) return;
     const id = selectedScript.id;
     const scope = commandEditScope;
     const request = ++commandEditRequest;
-    const isCurrent = () => mounted && commandEditScope === scope && commandEditRequest === request;
-    try {
-      const full = await appClient.scripts.get(workspaceId, id);
-      // A newer row snapshot or edit request invalidates this selected detail read.
-      if (!isCurrent()) return;
-      editedScriptCommand = full.command;
-      originalScriptCommand = full.command;
-    } catch {
-      if (isCurrent()) notify.error(m.terminal_quakeOverlay_updateCommandFailed_error());
-      return;
-    }
-    showScriptEditPanel = true;
-    requestAnimationFrame(() => {
-      editScriptCommandTextarea?.focus();
-    });
+    const requestId = crypto.randomUUID();
+    definitionResourceIdStore.set(id);
+    pendingDefinition = {
+      requestId,
+      workspaceId,
+      scriptId: id,
+      scope,
+      sequence: request,
+    };
+    appStore.dispatch(
+      getScriptDefinitionRequested(workspaceId, id, consumer(definitionConsumerId, requestId, id)),
+    );
   }
 
   function cancelEditingScriptCommand(): void {
@@ -529,28 +696,24 @@
     showScriptEditPanel = false;
   }
 
-  async function saveScriptCommand(): Promise<void> {
+  function saveScriptCommand(): void {
     const ownership = workspaceOwnership;
     const mutationWorkspaceId = ownership.workspaceId;
     const mutationScriptId = selectedScriptId;
     const mutationValue = editedScriptCommand;
     if (selectedScript && mutationScriptId && mutationWorkspaceId) {
-      const updates: Record<string, any> = {};
+      const updates: ScriptDefinitionUpdate = {};
       if (mutationValue !== originalScriptCommand) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
-        const succeeded = await runScriptMutation(
-          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
-          m.terminal_quakeOverlay_updateCommandFailed_error(),
+        runScriptMutation(
+          mutationWorkspaceId,
+          mutationScriptId,
+          updates,
+          'command',
+          ownership.workspaceId,
+          mutationValue,
         );
-        if (!succeeded) return;
-        appStore.dispatch(refreshScripts(mutationWorkspaceId));
-        if (
-          workspaceOwnership !== ownership ||
-          selectedScriptId !== mutationScriptId ||
-          editedScriptCommand !== mutationValue
-        ) {
-          return;
-        }
+        return;
       }
     }
     showScriptEditPanel = false;
@@ -743,28 +906,21 @@
     });
   }
 
-  async function finishEditingScriptTab() {
+  function finishEditingScriptTab(): void {
     const ownership = workspaceOwnership;
     const mutationWorkspaceId = ownership.workspaceId;
     const mutationScriptId = editingScriptTabId;
     const mutationValue = editingScriptTabValue;
     if (mutationScriptId && mutationValue.trim() && mutationWorkspaceId) {
-      const succeeded = await runScriptMutation(
-        () =>
-          scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
-            name: mutationValue.trim(),
-          }),
-        m.terminal_quakeOverlay_renameScriptFailed_error(),
+      runScriptMutation(
+        mutationWorkspaceId,
+        mutationScriptId,
+        { name: mutationValue.trim() },
+        'tab',
+        ownership.workspaceId,
+        mutationValue,
       );
-      if (!succeeded) return;
-      appStore.dispatch(refreshScripts(mutationWorkspaceId));
-      if (
-        workspaceOwnership !== ownership ||
-        editingScriptTabId !== mutationScriptId ||
-        editingScriptTabValue !== mutationValue
-      ) {
-        return;
-      }
+      return;
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';
@@ -847,41 +1003,41 @@
   }
 
   let overlayContainer = $state<HTMLDivElement>();
+  const terminalCreationConsumerId = crypto.randomUUID();
+  const terminalCreationResourceId = 'overlay';
+  // svelte-ignore state_referenced_locally -- the effect below mirrors later workspace changes.
+  const terminalCreationWorkspaceIdStore = writable(workspaceId ?? '');
+  const terminalCreationOutcome$ = selectTerminalCreationOutcome(
+    terminalCreationConsumerId,
+    terminalCreationWorkspaceIdStore,
+    terminalCreationResourceId,
+  );
+  const isCreatingTerminal = $derived($terminalCreationOutcome$?.status === 'pending');
 
-  let isCreatingTerminal = false;
+  $effect(() => {
+    terminalCreationWorkspaceIdStore.set(workspaceId ?? '');
+    return () => appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId));
+  });
 
-  async function createNewTerminal() {
-    if (!workspaceId || isCreatingTerminal) return;
-    const createWorkspaceId = workspaceId;
-    isCreatingTerminal = true;
-    try {
-      const result = await appClient.terminals.create({
-        workspaceId: createWorkspaceId,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
-      const stale = workspaceId !== createWorkspaceId;
-      if (!stale) {
-        appStore.dispatch(
-          addTerminal(
-            createWorkspaceId,
-            result.id,
-            m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-          ),
-        );
-      }
-      if (stale) return;
-      if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
+  $effect(() => {
+    const outcome = $terminalCreationOutcome$;
+    if (!outcome || outcome.status === 'pending') return;
+    if (outcome.status === 'success') {
       requestAnimationFrame(() => overlayContainer?.focus());
-    } catch {
+    } else if (outcome.status === 'failure') {
       notify.error(m.terminal_adapter_openFailed_error());
-    } finally {
-      isCreatingTerminal = false;
     }
+    appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId, outcome.seq));
+  });
+
+  function createNewTerminal() {
+    if (!workspaceId || isCreatingTerminal) return;
+    appStore.dispatch(
+      createOverlayTerminalRequested(workspaceId, {
+        id: terminalCreationConsumerId,
+        resourceId: terminalCreationResourceId,
+      }),
+    );
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -993,6 +1149,7 @@
 
   onDestroy(() => {
     mounted = false;
+    if (workflowWorkspaceId) releaseScriptWorkflows(workflowWorkspaceId);
     if (pendingClickTimeout) {
       clearTimeout(pendingClickTimeout);
       pendingClickTimeout = null;
