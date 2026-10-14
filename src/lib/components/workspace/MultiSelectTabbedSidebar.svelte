@@ -90,6 +90,7 @@
   import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
@@ -1498,6 +1499,7 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
+      <WorkspacePeopleTile {workspaceId} />
       {#if !isCollaborator}
         {#if !isNewWorkspaceSession}
           <div class="min-w-0" in:launcherGridReveal|global={4}>

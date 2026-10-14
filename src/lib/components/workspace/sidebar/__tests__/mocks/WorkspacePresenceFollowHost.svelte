@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import WorkspaceProgressCard from '../../WorkspaceProgressCard.svelte';
+  import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
@@ -24,7 +24,7 @@
   data-testid="presence-follow-host"
 >
   <aside class="w-72 shrink-0 bg-sidebar p-6">
-    <WorkspaceProgressCard workspaceId="source" />
+    <WorkspacePeopleTile workspaceId="source" />
   </aside>
   <section class="min-w-48 flex-1 p-6" aria-label="Destination navigation state">
     {#if $destinationPanel.type === 'notes' && $destinationPanel.selectedNoteId === 'project-plan'}
