@@ -507,9 +507,13 @@ export async function observePausedVideo(surface, name, info) {
 export async function captureVideo(page, target, name, info) {
   await target.scrollIntoViewIfNeeded();
   await page.evaluate(() => document.fonts.ready);
-  const player = target.locator('video[controls][data-testid="chat-video-player"]');
+  const player = target.locator('video[data-testid="chat-video-player"]');
   if (await player.count()) {
     expect(await player.count(), 'Capture must have one native chat player').toBe(1);
+    await expect(player, 'Captured chat video must retain native controls').toHaveJSProperty(
+      'controls',
+      true,
+    );
     if (
       await player.evaluate((node) => node.paused && node.currentTime === 0 && !node.played.length)
     )
