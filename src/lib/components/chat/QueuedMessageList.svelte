@@ -1285,7 +1285,7 @@
               aria-controls="{contentId}-viewport"
               onclick={expandPreview}
             />
-          {:else if showAll}
+          {:else if showAll && (!singleMessage || bodyHeight > 144)}
             <Button
               variant="ghost-light"
               size="compact"
