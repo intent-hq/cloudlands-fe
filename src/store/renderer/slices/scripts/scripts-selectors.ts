@@ -8,6 +8,7 @@ import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import type { ScriptOperationState, ScriptListEntry } from './scripts-types';
 import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 function getWs(state: StoreState, wsId: string | null | undefined) {
   if (!wsId) return emptyWorkspaceState;
@@ -103,6 +104,16 @@ export const selectWorkspaceScriptOperations = store.createSelector(
 
 export const selectScriptDetectionOperation = store.createSelector(
   (state, wsId: string): ScriptOperationState | undefined => getWs(state, wsId).detectionOperation,
+);
+
+export const selectScriptWorkflowOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcomes = getWs(state, workspaceId).workflowOutcomes;
+    const outcome = outcomes ? getItem(outcomes, consumerId) : undefined;
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
 );
 
 /** Get runtime for a script in a specific workspace (parameterized). */

@@ -16,6 +16,7 @@ import {
   backendReconnected,
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
@@ -35,10 +36,12 @@ const full = {
   createdAt: 'now',
   runtime: { status: 'idle' as const, restartCount: 0 },
 };
+let stop: () => void;
 beforeEach(() => {
   vi.resetAllMocks();
   store.dispose();
   store.init();
+  stop = store.runSaga(scriptsOperationSaga);
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity({ id: 'ws', title: 'Scripts', myRole: 'owner' } as never));
   const {
@@ -62,7 +65,10 @@ beforeEach(() => {
     throw new Error('unexpected ' + method);
   });
 });
-afterEach(() => store.dispose());
+afterEach(() => {
+  stop();
+  store.dispose();
+});
 it('edits only a selected complete definition and never writes its preview', async () => {
   expect((await scriptsClient.update('ws', 'script', { name: 'Renamed' })).success).toBe(true);
   expect(backendRequest).toHaveBeenCalledWith('script.get', {
@@ -110,6 +116,7 @@ it('restores full detection Undo data including readiness settings', async () =>
       command: full.command,
       cwd: full.cwd,
       env: full.env,
+      source: full.source,
       healthUrl: full.healthUrl,
       readyPattern: full.readyPattern,
     }),

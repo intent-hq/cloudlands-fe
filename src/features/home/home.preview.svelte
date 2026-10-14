@@ -21,6 +21,7 @@
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
         roundTripSettings: () => void;
       };
+      __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
     }
   }
 
@@ -30,6 +31,8 @@
       | 'untitled'
       | 'status-icons'
       | 'status-grouping'
+      | 'pr-status-list'
+      | 'board-pr-status'
       | 'board'
       | 'board-long-content'
       | 'board-repositories'
@@ -58,6 +61,8 @@
       untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
+      'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
+      'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
@@ -258,6 +263,46 @@
       pendingDeleteAt: '2026-09-29T00:00:00Z',
     },
   ];
+  const prStatusFixtures: Workspace[] = [
+    ...(['pr_open', 'pr_ready', 'pr_queued'] as const).flatMap((displayStatus) => [
+      {
+        ...fixtures[0],
+        id: WorkspaceId(`home-${displayStatus}`),
+        title: `${displayStatus} workspace`,
+        displayStatus,
+        attention: undefined,
+        statusMessage: 'Pull request state reported by the daemon.',
+      },
+      {
+        ...fixtures[0],
+        id: WorkspaceId(`home-${displayStatus}-running`),
+        title: `${displayStatus} with an active agent`,
+        displayStatus,
+        activity: 'agent_running' as const,
+        attention: undefined,
+        statusMessage: 'An agent is still working.',
+      },
+    ]),
+    ...(
+      [
+        ['review', 'pr_ready', 'review_required'],
+        ['question', 'needs_attention', undefined],
+        ['failed', 'failed', 'review_required'],
+        ['blocked', 'blocked', 'review_required'],
+        ['merged', 'pr_merged', undefined],
+        ['complete', 'complete', undefined],
+        ['idle', 'idle', undefined],
+        ['unread', 'idle', 'unread'],
+      ] as const
+    ).map(([id, displayStatus, attention]) => ({
+      ...fixtures[0],
+      id: WorkspaceId(`home-pr-${id}`),
+      title: `${id} workspace`,
+      displayStatus,
+      attention,
+      statusMessage: 'Existing attention and completion signals keep their meaning.',
+    })),
+  ].map((workspace) => ({ ...workspace, waiting: true }));
   const assistantFixtures: AgentSession[] = Array.from({ length: 240 }, (_, index) => {
     const name =
       [
@@ -300,7 +345,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import HomePage from './HomePage.svelte';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
@@ -349,6 +394,29 @@
   const assistant = $derived(scenario === 'assistant-long');
   const dispose = startHomePreviewFixtures();
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
+  let previewRoot = $state<HTMLDivElement | null>(null);
+  window.__homePrStatusPreview = {
+    setWaiting: (waiting) => {
+      store.dispatch(
+        bulkUpdateWorkspaceEntities(
+          prStatusFixtures.map((workspace) => updateWorkspaceEntity(workspace.id, { waiting })),
+        ),
+      );
+    },
+  };
+  onMount(() => {
+    if (scenario !== 'pr-status-list' && scenario !== 'board-pr-status') return;
+    const root = previewRoot;
+    if (!root) return;
+    // Offscreen board avatars must load for the sandbox capture's stable marker.
+    const loadImages = () => {
+      root.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
+    };
+    const observer = new MutationObserver(loadImages);
+    observer.observe(root, { childList: true, subtree: true });
+    loadImages();
+    return () => observer.disconnect();
+  });
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
     setTitle: (id, title) =>
@@ -431,11 +499,13 @@
       replaceWorkspaceList(
         scenario === 'empty'
           ? []
-          : (scenario === 'status-icons'
-              ? statusFixtures
-              : scenario === 'status-grouping'
-                ? statusGroupingFixtures
-                : fixtures
+          : (scenario === 'pr-status-list' || scenario === 'board-pr-status'
+              ? prStatusFixtures
+              : scenario === 'status-icons'
+                ? statusFixtures
+                : scenario === 'status-grouping'
+                  ? statusGroupingFixtures
+                  : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
@@ -568,11 +638,13 @@
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
     delete window.__homeWorkspacePreview;
+    delete window.__homePrStatusPreview;
     dispose();
   });
 </script>
 
 <div
+  bind:this={previewRoot}
   class="w-full overflow-hidden bg-sidebar text-foreground"
   style:height="{height}px"
   data-home-preview
