@@ -14,7 +14,7 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
-  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faArrowRight,
     faCodeBranch,
@@ -1049,12 +1049,7 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <DotsThreeOutlineVerticalIcon
-                  size={16}
-                  weight="fill"
-                  class="size-4"
-                  aria-hidden="true"
-                />
+                <KebabIcon />
               {/if}
             </Button>
           {/snippet}

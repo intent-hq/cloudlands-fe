@@ -18,7 +18,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { initializeIconPreview } from './icon-defaults.fixture';
   import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -47,7 +47,7 @@
     <Menu.Trigger>
       {#snippet child({ props })}
         <Button {...props} variant="ghost" size="icon-sm" aria-label="Workspace actions">
-          <DotsThreeOutlineVerticalIcon size={16} weight="fill" class="size-4" aria-hidden="true" />
+          <KebabIcon />
         </Button>
       {/snippet}
     </Menu.Trigger>

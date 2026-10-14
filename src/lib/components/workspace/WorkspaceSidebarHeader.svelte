@@ -1,6 +1,6 @@
 <script lang="ts">
   import { truncatedTitle } from '$lib/actions/observe-overflow';
-  import DotsThreeOutlineVerticalIcon from 'phosphor-svelte/lib/DotsThreeOutlineVerticalIcon';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -658,12 +658,7 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <DotsThreeOutlineVerticalIcon
-              size={16}
-              weight="fill"
-              class="size-4"
-              aria-hidden="true"
-            />
+            <KebabIcon />
           {/if}
         </Button>
       {/snippet}
