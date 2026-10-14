@@ -55,6 +55,7 @@ import { ResponseGroupExamples } from './response-group-examples';
 import { NavigationContentExamples } from './navigation-content-examples';
 import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
+import { HudAgentLineExamples } from './hud-agent-line-examples';
 import { InitialsAvatarExamples } from './initials-avatar-examples';
 import { WorkspaceSidebarRailExamples } from './workspace-sidebar-rail-examples';
 import { DetectedScriptExamples } from './detected-script-examples';
@@ -543,7 +544,12 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'response-group' && <ResponseGroupExamples />}
       {slug === 'navigation-content' && <NavigationContentExamples />}
       {slug === 'navigation-content' && <WalkthroughCommentExamples />}
-      {slug === 'hud-panel' && <HudPanelExamples />}
+      {slug === 'hud-panel' && (
+        <>
+          <HudPanelExamples />
+          <HudAgentLineExamples />
+        </>
+      )}
       {slug === 'detected-scripts' && <DetectedScriptExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}

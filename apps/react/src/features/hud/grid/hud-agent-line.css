@@ -1,0 +1,27 @@
+.hud-agent-line-clip {
+  height: 15px;
+  overflow: hidden;
+}
+.hud-agent-line-stack {
+  transform: translateY(0);
+}
+.hud-agent-line-slide {
+  transform: translateY(-15px);
+  transition: transform var(--hud-agent-line-duration) ease;
+}
+.hud-agent-line-row {
+  font:
+    500 9.5px 'JetBrains Mono',
+    monospace;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 15px;
+  line-height: 15px;
+}
+@container style(--motion-reduced: 1) {
+  .hud-agent-line-slide {
+    transition: none;
+  }
+}
