@@ -68,6 +68,7 @@ import { HomeFilterSelectExamples } from './home-filter-select-examples';
 import { HomeActivityTimeExamples } from './home-activity-time-examples';
 import { HomeWorkspaceControlsExamples } from './home-workspace-controls-examples';
 import { ProtocolMismatchExamples } from './protocol-mismatch-examples';
+import { FileSearchExamples } from './file-search-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -521,6 +522,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'model-picker' && <ModelPickerExamples />}
       {slug === 'agent-avatar' && <AgentAvatarExamples />}
       {slug === 'sidebar-actions' && <SidebarActionsExamples />}
+      {slug === 'sidebar-actions' && <FileSearchExamples />}
       {slug === 'mention-navigation' && <MentionNavigationExamples />}
       {slug === 'chat-transcript' && <ChatTranscriptExamples />}
       {slug === 'chat-disclosure' && <ChatDisclosureExamples />}
