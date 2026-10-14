@@ -69,6 +69,7 @@ import { HomeFilterSelectExamples } from './home-filter-select-examples';
 import { HomeActivityTimeExamples } from './home-activity-time-examples';
 import { HomeWorkspaceControlsExamples } from './home-workspace-controls-examples';
 import { ProtocolMismatchExamples } from './protocol-mismatch-examples';
+import { RulesInspectorExamples } from './rules-inspector-examples';
 import { FileSearchExamples } from './file-search-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
@@ -597,6 +598,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'screen' && <TakeoverExample />}
       {slug === 'confirm' && <ConfirmationExample />}
       {slug === 'confirm' && <ProtocolMismatchExamples />}
+      {slug === 'confirm' && <RulesInspectorExamples />}
       {slug === 'collection' && (
         <>
           <CollectionExample />
