@@ -36,7 +36,7 @@ export function RelativeTime({ date, compact = false, className = '', title }: R
 
   return (
     <TooltipRoot>
-      <TooltipTrigger asChild>
+      <TooltipTrigger asChild tabIndex={0}>
         <span className={className}>{relativeTime}</span>
       </TooltipTrigger>
       <TooltipContent>{fullTimestamp}</TooltipContent>
