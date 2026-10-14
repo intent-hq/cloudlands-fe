@@ -8,6 +8,7 @@ import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/wor
 import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { HomeWorkspaceStatus } from '@/features/home/components/home-workspace-status';
+import { HomeActivityTime } from '@/features/home/components/home-activity-time';
 import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { HomeSearch } from '@/features/home/components/home-search';
 import { HomeLoading } from '@/features/home/components/home-loading';
@@ -71,13 +72,13 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   const workspace = selectWorkspaceById(workspaceId);
   if (!workspace.value) return null;
   return (
-    <li>
+    <li className="flex min-w-0 items-center gap-3">
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
         search={{}}
         data-list-workspace={workspaceId}
-        className="flex min-w-0 flex-col gap-1 rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
+        className="flex min-w-0 flex-1 flex-col gap-1 rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
       >
         <span className="flex min-w-0 items-center gap-2">
           <HomeWorkspaceStatus workspace={workspace.value} />
@@ -89,6 +90,12 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
           </span>
         )}
       </Link>
+      <span
+        className="type-caption shrink-0 pr-3 text-muted-foreground"
+        data-workspace-activity={workspaceId}
+      >
+        <HomeActivityTime workspace={workspace.value} />
+      </span>
     </li>
   );
 }
