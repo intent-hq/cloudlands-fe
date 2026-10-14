@@ -170,8 +170,16 @@ function installPreviewBridge(
     const root = document.documentElement;
     root.classList.toggle('dark', theme.dark);
     root.style.colorScheme = theme.dark ? 'dark' : 'light';
+    const fontSize = theme.variables['--inline-html-root-font-size'];
+    if (
+      '--inline-html-root-font-size' in initialTheme.variables &&
+      typeof fontSize === 'string' &&
+      fontSize.length < 512
+    )
+      root.style.setProperty('--inline-html-root-font-size', fontSize);
     // Restrict incoming variable names to the original, trusted token vocabulary.
     for (const key of Object.keys(initialTheme.variables)) {
+      if (key === '--inline-html-root-font-size') continue;
       const value = theme.variables[key];
       if (typeof value === 'string' && value.length < 512) root.style.setProperty(key, value);
     }
