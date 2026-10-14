@@ -2,6 +2,7 @@ import { NotifyExample } from './notify-catalog-preview';
 import { QuestionWizardExample } from './question-wizard-example';
 import { NativeAttachmentExample, NativeLightboxExample } from './native-media-examples';
 import { EditorNativeExample } from './editor-native-example';
+import { SuggestionTooltipExamples } from './suggestion-tooltip-examples';
 import { CollapsiblePanelExample } from './collapsible-panel-example';
 import { RecipesPage } from './recipes-page';
 import { ReplaceAgentExample, TextareaConsumerExample } from './callback-consumer-examples';
@@ -513,6 +514,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'image-lightbox' && <NativeLightboxExample kind="image" />}
       {slug === 'video-lightbox' && <NativeLightboxExample kind="video" />}
       {slug === 'local-editor' && <EditorNativeExample />}
+      {slug === 'local-editor' && <SuggestionTooltipExamples />}
       {slug === 'collapsible-panel' && <CollapsiblePanelExample />}
       {slug === 'recipes' && <RecipesPage />}
       {slug === 'settings-textarea' && <TextareaConsumerExample />}
