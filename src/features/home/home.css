@@ -30,7 +30,6 @@
 
 .workspace-list {
   container-type: inline-size;
-  --selected: var(--sidebar);
 }
 
 .home-list-row [data-slot='list-row-title'] {
@@ -171,11 +170,6 @@
   background: hsl(var(--selected));
 }
 
-.dark .home-sidebar [data-tabs-indicator] {
-  background: hsl(var(--surface-5));
-  box-shadow: var(--elevation-raised);
-}
-
 .home-sidebar [data-slot='button'] {
   border-radius: 0.75rem;
   font-weight: 500;
@@ -192,8 +186,9 @@
   letter-spacing: var(--text-body-tracking);
 }
 
-.home-sidebar [data-state='active'] > [data-slot='button-surface'] {
-  background: hsl(var(--card));
+.home-sidebar [data-state='active'] > [data-slot='button-surface'],
+[data-home-board] [data-state='active'] > [data-slot='button-surface'] {
+  background: hsl(var(--selected));
   box-shadow: none;
 }
 
