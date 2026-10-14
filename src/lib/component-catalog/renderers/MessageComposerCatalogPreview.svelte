@@ -35,6 +35,7 @@
     untrack(() => (fixture.id === 'queued-messages' ? 'streaming' : 'idle')),
   );
   let sendStatus = $state('No message sent yet');
+  let sends = $state<Array<{ text: string; files: string[] }>>([]);
 
   const placeholderSuggestion = $derived(
     fixture.id === 'suggestions' ? 'Summarize the current workspace' : undefined,
@@ -48,7 +49,10 @@
     fixture.id === 'basic' ? ['Review the architecture', 'Summarize the open tasks'] : [],
   );
 
-  function handleSend(text: string) {
+  function handleSend(text: string, sentFiles: File[]) {
+    if (fixture.id === 'max-files') {
+      sends = [...sends, { text, files: sentFiles.map((file) => file.name) }];
+    }
     sendStatus = `Sent: ${text}`;
     value = '';
     status = 'streaming';
@@ -94,8 +98,9 @@
     {history}
     {suggestions}
     {placeholderSuggestion}
+    maxFiles={fixture.id === 'max-files' ? 2 : undefined}
     disabled={fixture.id === 'disabled'}
-    leftSlot={fixture.id === 'attachments'
+    leftSlot={fixture.id === 'attachments' || fixture.id === 'max-files'
       ? attachSlot
       : fixture.id === 'left-slot-only'
         ? leftOnlySlot
@@ -109,7 +114,7 @@
       status = 'idle';
       sendStatus = 'Stopped response';
     }}
-    onSend={(text) => handleSend(text)}
+    onSend={handleSend}
   />
 
   {#if fixture.id === 'playground'}
@@ -124,5 +129,10 @@
   {/if}
   {#if fixture.id === 'send-handler' || fixture.id === 'playground'}
     <output class="text-xs text-muted-foreground" aria-live="polite">{sendStatus}</output>
+  {/if}
+  {#if fixture.id === 'max-files'}
+    <output data-composer-sends class="text-xs break-all text-muted-foreground"
+      >{JSON.stringify(sends)}</output
+    >
   {/if}
 </div>

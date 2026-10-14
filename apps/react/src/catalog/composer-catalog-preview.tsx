@@ -1,4 +1,4 @@
-// Source: MessageComposerCatalogPreview.svelte, all nine fixtures.
+// Source: MessageComposerCatalogPreview.svelte.
 // i18n-ignore (reference catalog fixture content)
 import { useState } from 'react';
 import { AtIcon, PaperclipIcon, SparkleIcon } from '@phosphor-icons/react';
@@ -66,6 +66,7 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
     fixture.id === 'queued-messages' ? 'streaming' : 'idle',
   );
   const [sendStatus, setSendStatus] = useState('No message sent yet');
+  const [sends, setSends] = useState<Array<{ text: string; files: string[] }>>([]);
   return (
     <div
       className="grid w-full min-w-0 max-w-2xl gap-3"
@@ -77,6 +78,7 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
         files={files}
         queue={queue}
         status={status}
+        maxFiles={fixture.id === 'max-files' ? 2 : undefined}
         history={
           fixture.id === 'basic' ? ['Review the architecture', 'Summarize the open tasks'] : []
         }
@@ -94,7 +96,7 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
         }
         disabled={fixture.id === 'disabled'}
         leftSlot={
-          fixture.id === 'attachments'
+          fixture.id === 'attachments' || fixture.id === 'max-files'
             ? AttachSlot
             : fixture.id === 'left-slot-only'
               ? LeftSlot
@@ -109,7 +111,13 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
           setStatus('idle');
           setSendStatus('Stopped response');
         }}
-        onSend={(text) => {
+        onSend={(text, sentFiles) => {
+          if (fixture.id === 'max-files') {
+            setSends((previous) => [
+              ...previous,
+              { text, files: sentFiles.map((file) => file.name) },
+            ]);
+          }
           setSendStatus(`Sent: ${text}`);
           setValue('');
           setStatus('streaming');
@@ -128,6 +136,11 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
       {['send-handler', 'playground'].includes(fixture.id) && (
         <output className="text-xs text-muted-foreground" aria-live="polite">
           {sendStatus}
+        </output>
+      )}
+      {fixture.id === 'max-files' && (
+        <output data-composer-sends className="text-xs break-all text-muted-foreground">
+          {JSON.stringify(sends)}
         </output>
       )}
     </div>

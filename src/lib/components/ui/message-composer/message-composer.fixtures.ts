@@ -26,7 +26,14 @@ export const messageComposerFixtures = [
   {
     id: 'attachments',
     title: 'Attachments',
-    states: ['file-picker', 'drop-target', 'file-tiles', 'remove-file', 'max-files'],
+    states: ['file-picker', 'drop-target', 'file-tiles', 'remove-file'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+  },
+  {
+    id: 'max-files',
+    title: 'Attachment limit',
+    states: ['file-picker', 'max-files', 'remove-file', 'queue-restore', 'send-payload'],
     themes: ['light', 'dark'],
     viewport: 'both',
   },

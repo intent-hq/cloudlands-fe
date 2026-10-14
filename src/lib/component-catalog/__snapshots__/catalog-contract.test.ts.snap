@@ -9034,7 +9034,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
     "drop-target",
     "file-tiles",
     "remove-file",
-    "max-files",
   ],
   "dom": "<body>
   <div>
@@ -9070,7 +9069,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
             <h2 class="svelte-<scope>">
               "Attachments"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="attachments" data-catalog-preview="message-composer">
-            <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="file-picker drop-target file-tiles remove-file max-files" data-catalog-renderer-fixture="attachments">
+            <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="file-picker drop-target file-tiles remove-file" data-catalog-renderer-fixture="attachments">
               <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">
@@ -9146,7 +9145,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "file-picker, drop-target, file-tiles, remove-file, max-files"
+                  "file-picker, drop-target, file-tiles, remove-file"
               <div>
                 <dt>
                   "Themes"
@@ -9418,6 +9417,106 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                   "States"
                 <dd class="mt-1 text-foreground">
                   "left-slot"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-composer:max-files' 1`] = `
+{
+  "declaredStates": [
+    "file-picker",
+    "max-files",
+    "remove-file",
+    "queue-restore",
+    "send-payload",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Message Composer"
+          <p class="entry-purpose svelte-<scope>">
+            "Composing messages with optional attachments, suggestions, or queued drafts."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/message-composer/message-composer.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while exported; composer, queue, file, suggestion, and history tests pass."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="max-files">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Attachment limit"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="max-files" data-catalog-preview="message-composer">
+            <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="file-picker max-files remove-file queue-restore send-payload" data-catalog-renderer-fixture="max-files">
+              <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
+                <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
+                  <div class="pb-2">
+                    <div aria-label="Suggested prompts" class="-mx-2 border-b border-border flex flex-col pb-1.5 px-1.5 relative" id="c<id>-suggestions" role="listbox">
+                <input aria-hidden="true" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) file:bg-transparent file:border-0 file:font-medium file:mr-3 file:text-foreground focus-visible:-outline-offset-2 h-(--control-height-medium) hidden hover:bg-hover min-w-0 motion-reduce:transition-none placeholder:text-muted-foreground px-3 read-only:text-muted-foreground rounded-(--radius-medium) selection:bg-primary selection:text-primary-foreground shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="input" tabindex="-1" type="file">
+                <div aria-hidden="true" data-message-composer-height="files" data-motion-tier="moderate">
+                  <div class="flex flex-wrap gap-2 pb-1" data-message-composer-files="">
+                <div aria-hidden="true" data-message-composer-height="queue" data-motion-tier="moderate">
+                  <ul class="flex flex-col gap-1 pb-1" data-message-composer-queue-list="">
+                <div class="relative">
+                  <textarea aria-label="Message" class="active:bg-transparent aria-invalid:border-danger bg-transparent border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:bg-transparent focus-visible:outline-none focus-visible:shadow-none focus:bg-transparent hover:bg-transparent leading-5 min-h-0! min-h-20 motion-reduce:transition-none placeholder:text-muted-foreground px-2 py-2 read-only:text-muted-foreground resize-none rounded-(--radius-medium) shadow-none text-foreground text-sm transition-[background-color,border-color,box-shadow,color] w-full" data-size="default" data-slot="textarea">
+                <div class="flex gap-2 items-center justify-between mt-1">
+                  <div class="flex gap-1.5 items-center min-w-0">
+                    <div>
+                      <button aria-label="Attach files" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            <svg aria-hidden="true" role="img">
+                              <rect>
+                              <path>
+                  <div class="flex gap-1.5 items-center shrink-0">
+                    <div>
+                      <button aria-label="Send" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-mode="send" data-slot="button" disabled="" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                          <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                            <span class="flex items-center">
+                              <svg aria-hidden="true" role="img">
+                                <rect>
+                                <path>
+                <span aria-live="polite" class="sr-only" role="status">
+              <output class="break-all text-muted-foreground text-xs" data-composer-sends="">
+                "[]"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "file-picker, max-files, remove-file, queue-restore, send-payload"
               <div>
                 <dt>
                   "Themes"

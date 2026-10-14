@@ -228,13 +228,14 @@ describe('MessageComposer', () => {
     expect(onFilesChange).toHaveBeenCalledWith([image]);
   });
 
-  it('publishes the nine reference sections and valid metadata', () => {
+  it('publishes the reference sections and valid metadata', () => {
     expect(() => parseUiComponentMetadata(messageComposerMetadata)).not.toThrow();
     expect(messageComposerFixtures.map(({ title }) => title)).toEqual([
       'Playground',
       'Basic',
       'Suggestions',
       'Attachments',
+      'Attachment limit',
       'Queued messages',
       'Left slot only',
       'Right slot only',
