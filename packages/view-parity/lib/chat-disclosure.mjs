@@ -5,7 +5,7 @@ import { test as base, expect, outputJson } from './functional.mjs';
 import { endpoint, repoRoot } from './manifest.mjs';
 import { candidateProvenance } from './provenance.mjs';
 import { observeAvatarPairNetwork, assertAvatarPairNetwork } from './agent-avatar.mjs';
-import { captureTranscript, chooseProp, expectReadable } from './chat-transcript.mjs';
+import { captureTranscript, expectReadable } from './chat-transcript.mjs';
 
 // Original003 is the behavioral oracle. This fixture does not claim matched
 // source images, daemon operations, or production transcript integration.
@@ -92,7 +92,7 @@ export const test = base.extend({
   ],
 });
 
-export { expect, outputJson, chooseProp, expectReadable, captureTranscript as captureDisclosure };
+export { expect, outputJson, expectReadable, captureTranscript as captureDisclosure };
 
 export async function openDisclosure(page, motion = 'reduced') {
   const origin = endpoint(process.env.PARITY_CANDIDATE_URL, 'PARITY_CANDIDATE_URL');
@@ -112,10 +112,10 @@ export async function openDisclosure(page, motion = 'reduced') {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',

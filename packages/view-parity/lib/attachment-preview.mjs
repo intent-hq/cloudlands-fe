@@ -340,9 +340,6 @@ export async function choose(host, group, value) {
     .getByRole('radio', { name: value, exact: true })
     .click();
 }
-export async function selectSlot(host, ordinal) {
-  await field(host, 'Selected attachment slot').fill(String(ordinal));
-}
 export async function clearLogs(host) {
   await button(host, 'Clear observations').click();
   for (const name of [

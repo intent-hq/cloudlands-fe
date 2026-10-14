@@ -216,9 +216,6 @@ export async function observations(host, kind) {
   await button(host, `Refresh ${kind} observations`).click();
   return outputJson(field(host, `${kind} observations`));
 }
-export async function clear(host, kind) {
-  await button(host, `Clear ${kind} observations`).click();
-}
 export async function toggle(host, name, checked) {
   const control = host.getByRole('switch', { name, exact: true });
   if ((await control.getAttribute('aria-checked')) !== String(checked)) await control.click();

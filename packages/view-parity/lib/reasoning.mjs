@@ -181,7 +181,7 @@ export const test = base.extend({
       );
       const originalVersion = blob('pnpm-lock.yaml')
         .toString('utf8')
-        .match(/^      marked:\n        specifier: [^\n]+\n        version: ([^\n]+)/m)?.[1];
+        .match(/^ {6}marked:\n {8}specifier: [^\n]+\n {8}version: ([^\n]+)/m)?.[1];
       expect(originalVersion, 'Original root Marked lock must exist').toBeTruthy();
       expect(JSON.parse(readFileSync(path.join(markedRoot, 'package.json'))).version).toBe(
         originalVersion,
