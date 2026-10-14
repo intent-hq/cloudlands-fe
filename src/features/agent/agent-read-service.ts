@@ -1,5 +1,6 @@
 import { trackAgentMetadataRead } from './agent-metadata-read-lane';
 import { acquireAgentMetadataDemand } from './agent-metadata-demand';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
 import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { agentMetadataRecoveryKey } from './agent-recovery-keys';
@@ -68,6 +69,13 @@ function readKey(agentId: string, workspaceId?: string): string {
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
 const inFlight = new Map<string, Promise<AgentSession | null>>();
+
+/** Logical deadlines release callers, but confirmation must await the actual wire replies. */
+const physicalReads = new WeakMap<object, Map<string, Set<Promise<void>>>>();
+
+function physicalReadKey(agentId: string, workspaceId?: string): string {
+  return JSON.stringify([workspaceId ?? null, agentId]);
+}
 
 /** In-flight guarded hydrations keyed by agent id; prevents duplicate store writes. */
 const hydrationInFlight = new Map<string, Promise<AgentSession | null>>();
@@ -253,6 +261,7 @@ export function readAgentSession(
   const context = getAgentReadContext();
   const generation = ++readGeneration;
   const connection = connectionGeneration;
+  const physicalSession = rendererEventRecovery.capturePhysicalSessionIdentity();
   const request = () =>
     connection === connectionGeneration &&
     context === getAgentReadContext() &&
@@ -276,7 +285,58 @@ export function readAgentSession(
       if (inFlight.get(key) === run) inFlight.delete(key);
     });
   inFlight.set(key, run);
+  const reads = physicalReads.get(physicalSession) ?? new Map<string, Set<Promise<void>>>();
+  physicalReads.set(physicalSession, reads);
+  const physicalKey = physicalReadKey(agentId, workspaceId);
+  const active = reads.get(physicalKey) ?? new Set<Promise<void>>();
+  reads.set(physicalKey, active);
+  const completed = run.then(
+    () => {},
+    async (error: unknown) => {
+      await getPhysicalRequestCompletion(error);
+    },
+  );
+  active.add(completed);
+  void completed.then(() => {
+    active.delete(completed);
+    if (!active.size && reads.get(physicalKey) === active) reads.delete(physicalKey);
+  });
   return run;
+}
+
+/**
+ * Confirm state after a caller's observation. A shared read already in flight
+ * may predate that observation: drain it once, then use the existing raw lane
+ * for a fresh request. Concurrent callers behind that read coalesce there.
+ * This performs no hydration and never retries its own confirmation request.
+ */
+export async function readAgentSessionAfterCurrent(
+  agentId: string,
+  workspaceId: string,
+  isCurrent: () => boolean,
+): Promise<AgentSession | null> {
+  const release = acquireAgentMetadataDemand(workspaceId, { agentId });
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  readKey(agentId, workspaceId);
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const current = () =>
+    connection === connectionGeneration &&
+    ownership.isCurrent() &&
+    recovery.commit(() => undefined) &&
+    isCurrent();
+  try {
+    if (!current()) return null;
+    const pending = physicalReads
+      .get(rendererEventRecovery.capturePhysicalSessionIdentity())
+      ?.get(physicalReadKey(agentId, workspaceId));
+    if (pending?.size) await Promise.all([...pending]);
+    if (!current()) return null;
+    const session = await readAgentSession(agentId, workspaceId);
+    return current() ? session : null;
+  } finally {
+    release();
+  }
 }
 
 async function hydrateAgentSession(

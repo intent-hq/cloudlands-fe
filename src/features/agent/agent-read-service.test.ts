@@ -60,6 +60,7 @@ import {
   ensureAgentSession,
   notePendingQuestionMarkerProjection,
   readAgentSession,
+  readAgentSessionAfterCurrent,
   refreshAgentSessionAfterEvent,
 } from './agent-read-service';
 import {
@@ -93,6 +94,77 @@ describe('agentReadService (fake seam, real store)', () => {
     clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
   });
+
+  it.each(['resolve', 'reject'] as const)(
+    'fresh confirmation drains an older %s and coalesces concurrent barriers without hydration',
+    async (outcome) => {
+      const id = `confirm-raw-${outcome}`;
+      const stored = makeSession({ id, name: 'local transcript owner' });
+      appStore.dispatch(bulkUpsertSessions([stored]));
+      let resolveOld!: (value: AgentSession) => void;
+      let rejectOld!: (reason: Error) => void;
+      const pending = new Promise<AgentSession>((resolve, reject) => {
+        resolveOld = resolve;
+        rejectOld = reject;
+      });
+      let resolveFresh!: (value: AgentSession) => void;
+      const fresh = new Promise<AgentSession>((resolve) => {
+        resolveFresh = resolve;
+      });
+      agentsApi.get.mockReturnValueOnce(pending).mockReturnValueOnce(fresh);
+      const leading = readAgentSession(id, WS).catch(() => null);
+      const first = readAgentSessionAfterCurrent(id, WS, () => true);
+      const second = readAgentSessionAfterCurrent(id, WS, () => true);
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+      if (outcome === 'resolve') resolveOld(makeSession({ id, name: 'old idle' }));
+      else rejectOld(new Error('leading failed'));
+      await leading;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(agentsApi.get).toHaveBeenCalledTimes(2);
+      resolveFresh(makeSession({ id, name: 'fresh idle' }));
+      expect((await first)?.name).toBe('fresh idle');
+      expect((await second)?.name).toBe('fresh idle');
+      expect(selectAgentSession.select(appStore.state, id)?.name).toBe('local transcript owner');
+    },
+  );
+
+  it.each(['caller', 'reconnect', 'workspace', 'principal'] as const)(
+    'fresh confirmation never follows a stale leading read after %s changes',
+    async (change) => {
+      if (change === 'principal') {
+        const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+        admitLegacyPrincipal();
+      }
+      const id = `confirm-raw-stale-${change}`;
+      appStore.dispatch(bulkUpsertSessions([makeSession({ id })]));
+      let resolveOld!: (value: AgentSession) => void;
+      agentsApi.get.mockImplementationOnce(
+        () =>
+          new Promise<AgentSession>((resolve) => {
+            resolveOld = resolve;
+          }),
+      );
+      const leading = readAgentSession(id, WS);
+      let current = true;
+      const confirmation = readAgentSessionAfterCurrent(id, WS, () => current);
+      if (change === 'caller') current = false;
+      if (change === 'reconnect') for (const callback of reconnectCallbacks) callback();
+      if (change === 'workspace') {
+        const { claimAgentReadOwnership } = await import('./agent-read-ownership');
+        claimAgentReadOwnership(id, 'other');
+        claimAgentReadOwnership(id, WS);
+      }
+      if (change === 'principal') {
+        const { principalIdentityChanged } =
+          await import('$store/renderer/slices/principal/principal-slice');
+        appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+      }
+      resolveOld(makeSession({ id }));
+      await leading;
+      expect(await confirmation).toBeNull();
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('fences old detail reads across principal invalidation and session re-admission', async () => {
     const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
@@ -1152,5 +1224,87 @@ it.each(['__proto__', 'constructor', 'toString'])(
       [agentId, WS],
       [agentId, WS],
     ]);
+  },
+);
+
+it('confirmation retains the original metadata owner while an older read drains', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { agentMetadataRecoveryKey } = await import('./agent-recovery-keys');
+  appStore.init();
+  agentsApi.get.mockReset();
+  const id = 'confirmation-owner-replacement';
+  appStore.dispatch(bulkUpsertSessions([makeSession({ id, name: 'current metadata' })]));
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  } as never);
+  const options = {
+    key: agentMetadataRecoveryKey(WS),
+    workspaceId: WS,
+    eventTypes: ['agent:*'],
+    isCurrent: () => true,
+    read: async () => [],
+    apply: () => {},
+    invalidate: () => {},
+    retire: () => {},
+  };
+  const owner = scope.registerResource(options);
+  const old = Promise.withResolvers<AgentSession>();
+  agentsApi.get.mockReturnValueOnce(old.promise).mockResolvedValue(makeSession({ id }));
+  try {
+    const leading = readAgentSession(id, WS);
+    const confirmation = readAgentSessionAfterCurrent(id, WS, () => true);
+    owner.dispose();
+    scope.registerResource(options);
+    old.resolve(makeSession({ id, name: 'old owner' }));
+    await leading;
+    expect(await confirmation).toBeNull();
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    expect(selectAgentSession.select(appStore.state, id)?.name).toBe('current metadata');
+  } finally {
+    rendererEventRecovery.dispose();
+    agentsApi.get.mockReset();
+  }
+});
+
+it.each(['before', 'after', 'after principal change'] as const)(
+  'confirmation started %s timeout waits for the actual wire completion',
+  async (timing) => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    rendererEventRecovery.dispose();
+    appStore.init();
+    agentsApi.get.mockReset();
+    const id = `confirmation-physical-timeout-${timing}`;
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const old = Promise.withResolvers<AgentSession>();
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion.promise);
+    agentsApi.get.mockReturnValueOnce(old.promise).mockResolvedValue(makeSession({ id }));
+    const leading = readAgentSession(id, WS).catch(() => null);
+    let confirmation =
+      timing === 'before' ? readAgentSessionAfterCurrent(id, WS, () => true) : undefined;
+    try {
+      old.reject(timeout);
+      await leading;
+      if (timing === 'after principal change') {
+        const { principalIdentityChanged } =
+          await import('$store/renderer/slices/principal/principal-slice');
+        appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+      }
+      confirmation ??= readAgentSessionAfterCurrent(id, WS, () => true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+      completion.resolve({ errors: [], retired: false });
+      expect((await confirmation)?.id).toBe(id);
+      expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    } finally {
+      completion.resolve({ errors: [], retired: false });
+      await confirmation;
+      agentsApi.get.mockReset();
+    }
   },
 );

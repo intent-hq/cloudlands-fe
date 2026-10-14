@@ -1125,7 +1125,7 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
     streamsByAgent.delete(agentId);
   }
   ensureStream(agentId, messageId, workspaceId);
-  dispatchEventAction(event, chatSendStarted(agentId, workspaceId));
+  dispatchEventAction(event, chatSendStarted(agentId, workspaceId, undefined, messageId));
   dispatchEventAction(
     event,
     agentStreamUpdateReceived({

@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.4...v2.216.5) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* avoid closing destroyed workspace action menus ([#3390](https://github.com/intent-hq/cloudlands-fe/issues/3390)) ([107d899](https://github.com/intent-hq/cloudlands-fe/commit/107d899c6de1136531d32bafb622441a97fe781a))
+* clear completed chat activity without hiding newer turns ([#3391](https://github.com/intent-hq/cloudlands-fe/issues/3391)) ([8a7b61b](https://github.com/intent-hq/cloudlands-fe/commit/8a7b61b09c2aa7993b1f32e6c4b15545a2750702))
+* left-align workspace description ([#3395](https://github.com/intent-hq/cloudlands-fe/issues/3395)) ([12253e5](https://github.com/intent-hq/cloudlands-fe/commit/12253e5a8e04acf9239dd6395e33dcb776f642f1))
+
+## [2.216.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.3...v2.216.4) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* remove Figma MCP presets from settings ([#3394](https://github.com/intent-hq/cloudlands-fe/issues/3394)) ([b7b6650](https://github.com/intent-hq/cloudlands-fe/commit/b7b665083b0b0417615f5a71d4dc291684986811))
+
 ## [2.216.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.2...v2.216.3) (2026-10-13)
 
 

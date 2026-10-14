@@ -2012,8 +2012,17 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const handler = capturedHandlers[0]!;
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    const dispatch = vi.fn(appStore.dispatch);
+    Object.defineProperty(appStore, 'dispatch', { get: () => dispatch, configurable: true });
 
     streamStart(handler);
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: chatSendStarted.type,
+        payload: expect.objectContaining({ assistantMessageId: WAKE_MESSAGE_ID }),
+      }),
+    );
 
     // Busy state opens exactly like a user-initiated turn…
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
@@ -2033,6 +2042,22 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(assistantMessages[0].isStreaming).toBe(true);
     expect(assistantMessages[0].contentBlocks).toEqual([]);
     expectNoContentOnStreamDispatches();
+  });
+
+  it('rejects wake-start metadata without its original admission', async () => {
+    await primeBridge();
+    const envelope = notification('agent:stream:start', {
+      agentId: AGENT,
+      messageId: WAKE_MESSAGE_ID,
+      reason: 'harness-wake',
+    });
+    await routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+      lifetimes: new Map(),
+    });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readSession()?.isProcessing).toBe(false);
   });
 
   it('chunks after the wake start never write content — the subscription fills the wake row; stream:end + idle finalize it', async () => {
