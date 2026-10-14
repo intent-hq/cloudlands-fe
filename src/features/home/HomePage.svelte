@@ -898,6 +898,7 @@
                             workspaces={filteredWorkspaces}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
+                            showRepositoryOwner={!selectedOrg}
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
@@ -913,7 +914,7 @@
                             {@const pullRequestCount =
                               item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
                             {@const repositoryLabel =
-                              [item.repositoryOwner, item.repositoryName]
+                              [selectedOrg ? undefined : item.repositoryOwner, item.repositoryName]
                                 .filter(Boolean)
                                 .join('/') || item.repositoryPath}
                             {#snippet workspaceRepository()}

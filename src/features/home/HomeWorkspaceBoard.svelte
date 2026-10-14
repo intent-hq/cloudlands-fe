@@ -20,6 +20,7 @@
     oncontextmenu,
     archived = false,
     showRepository = true,
+    showRepositoryOwner = true,
     groups,
   }: {
     workspaces: Workspace[];
@@ -29,6 +30,7 @@
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
+    showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
@@ -80,8 +82,12 @@
               ? workspace.title
               : m.workspace_links_untitled_label()}
             {@const repositoryLabel =
-              [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/') ||
-              workspace.repositoryPath}
+              [
+                showRepositoryOwner ? workspace.repositoryOwner : undefined,
+                workspace.repositoryName,
+              ]
+                .filter(Boolean)
+                .join('/') || workspace.repositoryPath}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
