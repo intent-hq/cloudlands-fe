@@ -58,7 +58,9 @@
 </script>
 
 <div class="min-w-0" data-people-activity>
-  <h3 class="px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground">
+  <h3
+    class="px-2.5 py-1.5 text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
+  >
     {m.workspace_resizablePanels_activity_label()}
   </h3>
 
@@ -72,7 +74,7 @@
     >
       {#snippet row({ item })}
         <ListRow
-          class="min-h-[42px] gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:text-[11px] [&_[data-slot=list-row-leading]]:leading-4 [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4"
+          class="min-h-[42px] gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:text-[11px] [&_[data-slot=list-row-leading]]:leading-4 [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
         >
           {#snippet leading()}
             <PrincipalAvatar
@@ -87,7 +89,7 @@
             <RelativeTime
               date={item.timestamp}
               compact
-              class="whitespace-nowrap text-[11px] leading-4 text-muted-foreground"
+              class="whitespace-nowrap text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
             />
           {/snippet}
         </ListRow>
