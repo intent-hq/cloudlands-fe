@@ -7128,6 +7128,7 @@
   "home_status_complete": "Der Arbeitsbereich ist als abgeschlossen markiert.",
   "home_status_unread": "Es gibt ungelesene Agentennachrichten, aber derzeit ist keine Aktion erforderlich.",
   "home_status_idle": "Kein Agent arbeitet oder benötigt deine Aufmerksamkeit.",
+  "home_status_waiting_description": "Wartet auf externe Ereignisse oder delegierte Aufgaben.",
   "home_integrations_org_scope_incomplete": "Die vollständige Repository-Liste für diese Organisation konnte nicht geladen werden. Wähle ein Repository aus oder aktualisiere die Ansicht, um es erneut zu versuchen.",
   "settings_aiBehavior_importedClaude_title": "Aus Claude Code importiert",
   "settings_agentSettings_ownerOnly_description": "Nur der Instanzinhaber kann diese Einstellungen bearbeiten.",
