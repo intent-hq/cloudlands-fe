@@ -1,3 +1,4 @@
+import type { ConversationFileOrigin } from './workspace-file-origin';
 import { selectFileReadContext } from '@/store/files/files-selectors';
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -198,6 +199,7 @@ export function WorkspaceOverview({
   noteId,
   query,
   filePath,
+  fileOrigin,
   attachmentId,
   attachmentAgentId,
   line,
@@ -211,6 +213,7 @@ export function WorkspaceOverview({
   noteId?: string;
   query?: string;
   filePath?: string;
+  fileOrigin?: ConversationFileOrigin;
   attachmentId?: string;
   attachmentAgentId?: string;
   line?: number;
@@ -366,6 +369,7 @@ export function WorkspaceOverview({
                   key={filePath}
                   workspaceId={workspaceId}
                   path={filePath}
+                  origin={fileOrigin}
                   attachmentId={attachmentId}
                   attachmentAgentId={attachmentAgentId}
                   line={line}

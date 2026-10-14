@@ -1,3 +1,4 @@
+import { parseConversationFileOrigin } from '@/features/workspace/workspace-file-origin';
 import { createFileRoute, retainSearchParams } from '@tanstack/react-router';
 import { createClientOnlyFn } from '@tanstack/react-start';
 import { lazy } from 'react';
@@ -22,6 +23,7 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     note?: string;
     q?: string;
     file?: string;
+    fileOrigin?: string;
     attachment?: string;
     attachmentAgent?: string;
     line?: number;
@@ -40,6 +42,12 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
         : {}),
       ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
       ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+      ...(typeof search.file === 'string' &&
+      search.file &&
+      typeof search.fileOrigin === 'string' &&
+      parseConversationFileOrigin(search.fileOrigin)
+        ? { fileOrigin: search.fileOrigin }
+        : {}),
       ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
       ...(typeof search.attachment === 'string' && search.attachment
         ? { attachment: search.attachment }
@@ -71,6 +79,7 @@ function WorkspacePage() {
     note,
     q,
     file,
+    fileOrigin,
     line,
     fileQuery,
     homeQuery,
@@ -86,6 +95,7 @@ function WorkspacePage() {
       noteId={note}
       query={q}
       filePath={file}
+      fileOrigin={parseConversationFileOrigin(fileOrigin)}
       attachmentId={attachment}
       attachmentAgentId={attachmentAgent}
       line={line}

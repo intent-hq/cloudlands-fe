@@ -2,8 +2,12 @@ import { createHash } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { observeErrors, stableLocatorScreenshot } from '../lib/browser.mjs';
 
-for (const rapidDeparture of [true, false]) {
-  test(`genuine oversized JSON attachment opens a bounded read-only prefix and recovers on Back (${rapidDeparture ? 'rapid departure' : 'settled departure'})`, async ({
+for (const [rapidDeparture, onPageBack] of [
+  [true, false],
+  [false, false],
+  [true, true],
+]) {
+  test(`genuine oversized JSON attachment opens a bounded read-only prefix and recovers on Back (${onPageBack ? 'on-page Back' : rapidDeparture ? 'rapid departure' : 'settled departure'})`, async ({
     page,
     browser,
   }, info) => {
@@ -348,7 +352,17 @@ for (const rapidDeparture of [true, false]) {
               contentType: 'image/png',
             });
         });
-        await page.goBack();
+        if (onPageBack) {
+          const back = view.getByRole('link', { name: 'Back', exact: true });
+          const backSearch = new URL(await back.getAttribute('href'), base).searchParams;
+          expect(backSearch.get('agent')).toBe(agentId);
+          expect(backSearch.get('message')).toBe(messageId);
+          expect(backSearch.get('file')).toBeNull();
+          if (width === 1100) {
+            await back.focus();
+            await page.keyboard.press('Enter');
+          } else await back.click();
+        } else await page.goBack();
         await expect(conversation).toHaveAttribute('data-ready', 'true', { timeout: 60000 });
         await expect(row).toBeFocused();
         await expect(row).toBeInViewport();

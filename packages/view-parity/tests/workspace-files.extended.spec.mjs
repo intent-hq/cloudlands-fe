@@ -60,6 +60,8 @@ test('real file contents survive navigation and release their read lifetime', as
         typeof response.result === 'string',
     );
   const assertContent = async () => {
+    await expect(view).toHaveAttribute('data-file-path', file, { timeout: 60_000 });
+    await expect(content).toBeVisible();
     await expect.poll(() => successful().length, { timeout: 30_000 }).toBeGreaterThan(0);
     expect(successful().at(-1).request.params).toEqual({ workspaceId, path: file });
     const expected = successful()
@@ -217,11 +219,13 @@ test('real missing, binary and invalid paths have explicit read-only outcomes', 
     await candidate.click();
     await expect(page.getByTestId('workspace-file-content')).toBeVisible();
     await page.goto(`${url}?file=static%2Ffavicon.png`);
+    await expect(view).toHaveAttribute('data-file-path', 'static/favicon.png', { timeout: 60_000 });
     await expect(
       view.getByText('Binary file - cannot be displayed', { exact: true }),
     ).toBeVisible();
     const beforeInvalid = wire.requests.filter(({ method }) => method === 'file.read').length;
     await page.goto(`${url}?file=..%2Fpackage.json`);
+    await expect(view).toHaveAttribute('data-file-path', '../package.json', { timeout: 60_000 });
     await expect(view.getByRole('alert')).toBeVisible();
     expect(wire.requests.filter(({ method }) => method === 'file.read')).toHaveLength(
       beforeInvalid,

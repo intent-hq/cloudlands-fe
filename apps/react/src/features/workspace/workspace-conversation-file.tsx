@@ -1,5 +1,4 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { FileIcon } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { store } from '@/store';
@@ -18,6 +17,7 @@ export function WorkspaceConversationFile({
   name,
   size,
   mimeType,
+  onOpen,
 }: {
   workspaceId: string;
   agentId: string;
@@ -25,10 +25,10 @@ export function WorkspaceConversationFile({
   name: string;
   size?: number;
   mimeType: string;
+  onOpen: (path: string, attachmentId: string) => void;
 }) {
   const consumer = useId();
   const lifetime = useRef(0);
-  const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   useLayoutEffect(() => {
@@ -63,12 +63,7 @@ export function WorkspaceConversationFile({
           store.dispatch(request);
           void request.promise
             .then((path) => {
-              if (path && lifetime.current === owner)
-                void navigate({
-                  to: '/workspaces/$workspaceId',
-                  params: { workspaceId },
-                  search: { file: path, attachment: attachmentId, attachmentAgent: agentId },
-                });
+              if (path && lifetime.current === owner) onOpen(path, attachmentId);
             })
             .catch(() => {
               if (lifetime.current === owner) setFailed(true);

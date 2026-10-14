@@ -1,3 +1,4 @@
+import { conversationFileSearch } from './workspace-file-origin';
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import { WorkspaceConversationContent } from './workspace-conversation-content';
 import { WorkspaceConversationMessage } from './workspace-conversation-message';
@@ -44,7 +45,7 @@ import { m } from '$shared/paraglide/messages.js';
 type Navigation = Pick<
   MarkdownViewerProps,
   'workspaceContext' | 'onOpenLink' | 'onOpenFile' | 'onOpenNote' | 'canLoadMedia'
->;
+> & { onOpenAttachment: (path: string, attachmentId: string) => void };
 
 function ToolBody({
   block,
@@ -149,6 +150,7 @@ function ConversationBlock({
         name={block.fileName ?? ''}
         size={block.size}
         mimeType={block.mimeType}
+        onOpen={navigation.onOpenAttachment}
       />
     );
   if (block.type === 'text')
@@ -354,43 +356,68 @@ export function WorkspaceConversation({
       search,
     });
   }
-  const navigation: Navigation = {
-    // Match the maintained read-only Notes host. Desktop asset schemes need
-    // their own browser transport integration; retain the canonical fallback.
-    canLoadMedia: (url) => /^(?:https?:|data:|blob:)/i.test(url.trim()),
-    workspaceContext: { workspaceId: WorkspaceId(workspaceId) },
-    onOpenNote: (id, note) => open(id, { note }),
-    onOpenFile: (id, file, options) => open(id, { file, line: options?.line }),
-    onOpenLink: (url, options) => {
-      const target = options.rawHref ?? url;
-      const fileTarget = extractFilePathTarget(url, options.rawHref, window.location.origin);
-      if (fileTarget) {
-        if (
-          options.canOpenFile?.() === false ||
-          !selectAdmittedWorkspaceReadContext.select(store.state, workspaceId)
-        )
-          return false;
-        const workspace = selectWorkspaceById.select(store.state, workspaceId);
-        const file = resolveFilePathTarget(fileTarget, workspace?.worktreePath ?? workspace?.path);
-        // This read-only host has no external-editor or filesystem escape path.
-        if (!file || file.kind !== 'workspace') return false;
-        open(workspaceId, { file: file.path, line: file.line });
-        return true;
-      }
-      if (target.startsWith('intent://')) {
-        const link = parseIntentLink(target);
-        if (link.valid) {
-          const id = link.workspaceId ?? workspaceId;
-          if (link.type === 'message' && link.agentId)
-            open(id, { agent: link.agentId, message: link.resourceId });
-          else if (link.type === 'note' || link.type === 'task')
-            open(id, { note: link.resourceId });
-          else if (link.type === 'file') open(id, { file: link.resourceId, line: link.line });
+  function navigationFor(sourceMessageId: string): Navigation {
+    function openFile(id: string, file: string, options?: { line?: number; attachment?: string }) {
+      void navigate({
+        to: '/workspaces/$workspaceId',
+        params: { workspaceId: id },
+        search: (previous) =>
+          conversationFileSearch(
+            previous,
+            id,
+            {
+              file,
+              line: options?.line,
+              attachment: options?.attachment,
+              attachmentAgent: options?.attachment ? agentId : undefined,
+            },
+            { workspaceId, agentId, messageId: sourceMessageId },
+          ),
+      });
+    }
+    return {
+      // Match the maintained read-only Notes host. Desktop asset schemes need
+      // their own browser transport integration; retain the canonical fallback.
+      canLoadMedia: (url) => /^(?:https?:|data:|blob:)/i.test(url.trim()),
+      workspaceContext: { workspaceId: WorkspaceId(workspaceId) },
+      onOpenNote: (id, note) => open(id, { note }),
+      onOpenFile: (id, file, options) => openFile(id, file, options),
+      onOpenAttachment: (file, attachment) => openFile(workspaceId, file, { attachment }),
+      onOpenLink: (url, options) => {
+        const target = options.rawHref ?? url;
+        const fileTarget = extractFilePathTarget(url, options.rawHref, window.location.origin);
+        if (fileTarget) {
+          if (
+            options.canOpenFile?.() === false ||
+            !selectAdmittedWorkspaceReadContext.select(store.state, workspaceId)
+          )
+            return false;
+          const workspace = selectWorkspaceById.select(store.state, workspaceId);
+          const file = resolveFilePathTarget(
+            fileTarget,
+            workspace?.worktreePath ?? workspace?.path,
+          );
+          // This read-only host has no external-editor or filesystem escape path.
+          if (!file || file.kind !== 'workspace') return false;
+          openFile(workspaceId, file.path, { line: file.line });
+          return true;
         }
-      } else if (/^https?:\/\//.test(target)) window.open(target, '_blank', 'noopener,noreferrer');
-      return true;
-    },
-  };
+        if (target.startsWith('intent://')) {
+          const link = parseIntentLink(target);
+          if (link.valid) {
+            const id = link.workspaceId ?? workspaceId;
+            if (link.type === 'message' && link.agentId)
+              open(id, { agent: link.agentId, message: link.resourceId });
+            else if (link.type === 'note' || link.type === 'task')
+              open(id, { note: link.resourceId });
+            else if (link.type === 'file') openFile(id, link.resourceId, { line: link.line });
+          }
+        } else if (/^https?:\/\//.test(target))
+          window.open(target, '_blank', 'noopener,noreferrer');
+        return true;
+      },
+    };
+  }
   return (
     <section
       ref={readerElement}
@@ -470,41 +497,44 @@ export function WorkspaceConversation({
                         </Button>,
                       ]
                     : []),
-                  ...group.messages.map((message) => (
-                    <WorkspaceConversationMessage
-                      key={message.id}
-                      message={message}
-                      workspaceId={workspaceId}
-                      navigation={navigation}
-                      onOpenAgent={(id, agent) => open(id, { agent })}
-                      renderContent={(blocks) => (
-                        <WorkspaceConversationContent
-                          blocks={blocks}
-                          agentId={agentId}
-                          messageId={message.id}
-                          isStreaming={message.isStreaming === true}
-                          onOpenAgent={(agent) => open(workspaceId, { agent })}
-                          renderContent={(content) => (
-                            <MarkdownViewer
-                              {...navigation}
-                              content={content}
-                              renderRichFencesAsCode
-                            />
-                          )}
-                          renderBlock={(block, index) => (
-                            <ConversationBlock
-                              role={message.role}
-                              key={block.id ?? index}
-                              block={block}
-                              agentId={agentId}
-                              messageId={message.id}
-                              navigation={navigation}
-                            />
-                          )}
-                        />
-                      )}
-                    />
-                  )),
+                  ...group.messages.map((message) => {
+                    const navigation = navigationFor(message.id);
+                    return (
+                      <WorkspaceConversationMessage
+                        key={message.id}
+                        message={message}
+                        workspaceId={workspaceId}
+                        navigation={navigation}
+                        onOpenAgent={(id, agent) => open(id, { agent })}
+                        renderContent={(blocks) => (
+                          <WorkspaceConversationContent
+                            blocks={blocks}
+                            agentId={agentId}
+                            messageId={message.id}
+                            isStreaming={message.isStreaming === true}
+                            onOpenAgent={(agent) => open(workspaceId, { agent })}
+                            renderContent={(content) => (
+                              <MarkdownViewer
+                                {...navigation}
+                                content={content}
+                                renderRichFencesAsCode
+                              />
+                            )}
+                            renderBlock={(block, index) => (
+                              <ConversationBlock
+                                role={message.role}
+                                key={block.id ?? index}
+                                block={block}
+                                agentId={agentId}
+                                messageId={message.id}
+                                navigation={navigation}
+                              />
+                            )}
+                          />
+                        )}
+                      />
+                    );
+                  }),
                 ])}
               </div>
             </section>

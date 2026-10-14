@@ -1,3 +1,4 @@
+import { workspaceFileBackSearch, type ConversationFileOrigin } from './workspace-file-origin';
 import { Link } from '@tanstack/react-router';
 import { useLayoutEffect, useRef } from 'react';
 import { CodeBlock } from '@/components/editor/code-block';
@@ -14,6 +15,7 @@ import { parseWorkspaceFileTarget } from './workspace-file-target';
 export function WorkspaceFile({
   workspaceId,
   path,
+  origin,
   line,
   noteId,
   query,
@@ -23,6 +25,7 @@ export function WorkspaceFile({
 }: {
   workspaceId: string;
   path: string;
+  origin?: ConversationFileOrigin;
   line?: number;
   noteId?: string;
   query?: string;
@@ -57,7 +60,11 @@ export function WorkspaceFile({
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
-        search={{ note: noteId, q: query || undefined, fileQuery: fileQuery || undefined }}
+        search={workspaceFileBackSearch(workspaceId, origin, {
+          note: noteId,
+          q: query || undefined,
+          fileQuery: fileQuery || undefined,
+        })}
         className="w-fit text-muted-foreground hover:text-foreground"
       >
         {m.workspace_transfer_back_label()}
@@ -103,6 +110,7 @@ export function WorkspaceFile({
               params={{ workspaceId }}
               search={{
                 file: candidate,
+                fileOrigin: origin ? JSON.stringify(origin) : undefined,
                 note: noteId,
                 q: query || undefined,
                 line,
