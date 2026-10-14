@@ -518,10 +518,9 @@ jobs:
           run_install: false
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path — ephemeral GH-hosted runners
-        # start cold, while tinybox's persistent pnpm store makes the GH
-        # Actions cache tarball round-trip pure overhead (burst-gated, like
-        # intentd's rust-cache pattern).
+        # cache: 'pnpm' only on the burst path — ephemeral Depot runners
+        # start cold, while tinybox's persistent pnpm store already survives
+        # between jobs.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
