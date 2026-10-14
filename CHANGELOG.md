@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.6...v2.216.7) (2026-10-14)
+
+
+### 🐛 Bug Fixes
+
+* **initializer:** centralize provider availability/enabled checks and preserve Antigravity model selection ([#3400](https://github.com/intent-hq/cloudlands-fe/issues/3400)) ([ac7c9f0](https://github.com/intent-hq/cloudlands-fe/commit/ac7c9f0d665c0a2a8f9be1b4367701cfccc254ec))
+
 ## [2.216.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.5...v2.216.6) (2026-10-14)
 
 
