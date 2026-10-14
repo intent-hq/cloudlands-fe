@@ -1205,7 +1205,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: 35caeaf1c6b4ef2e55b770b03ab0f02ad0bf0dda
+          ref: 588536c67bd88f062a8677341d6ffbc9925af161
           persist-credentials: false
       - name: Probe existing retirement read credential
         env:

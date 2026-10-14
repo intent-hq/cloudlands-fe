@@ -61,7 +61,7 @@ describe('obsolete merge-run retirement', () => {
     const checkout = job.steps.find((step: { uses?: string }) =>
       step.uses?.startsWith('actions/checkout@'),
     );
-    expect(checkout.with.ref).toBe('35caeaf1c6b4ef2e55b770b03ab0f02ad0bf0dda');
+    expect(checkout.with.ref).toBe('588536c67bd88f062a8677341d6ffbc9925af161');
     expect(checkout.with['persist-credentials']).toBe(false);
     const probe = job.steps.find((step: { run?: string }) => step.run?.includes('--probe'));
     expect(probe.env.GH_TOKEN).toBe('${{ secrets.CI_QUEUE_READ_TOKEN }}');
