@@ -59,12 +59,12 @@ const logger = new Logger('LinkHandler');
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
  * 6. `http(s)://` + forceExternal → external browser
- * 7. `http(s)://` + workspace preview or Cmd+Click → embedded browser panel (external browser
- *    fallback without a workspaceId)
- * 8. GitHub issue/PR URLs (plain click with coordinates) → configured default action
- * 9. `http(s)://` (plain click) → external browser
- * 10. `file://` → external editor
- * 11. Anything else → external browser (fallback)
+ * 7. `http(s)://` + Cmd+Click → embedded browser panel (external fallback without a workspaceId)
+ * 8. GitHub issue/PR URLs (plain click) → configured default action, including on Home
+ * 9. Other workspace preview links → the owning workspace's browser panel
+ * 10. `http(s)://` (plain click) → external browser
+ * 11. `file://` → external editor
+ * 12. Anything else → external browser (fallback)
  *
  * @returns true if handled, false if not
  */
@@ -87,7 +87,15 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       }
     }
 
-    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
+    const gitHubRef = parseGitHubIssueOrPrUrl(url);
+    const { event } = options;
+    const githubAction =
+      gitHubRef && event && !isCmdClickModifier(options)
+        ? (options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state))
+        : undefined;
+    const useHomeBrowser = !githubAction || githubAction === 'open-in-app';
+
+    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal && useHomeBrowser) {
       const { showAssistantContent } = await import('$features/home/assistant-panels');
       const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
       if (await showAssistantContent(target, { layoutId: assistantLayoutId })) return true;
@@ -127,8 +135,8 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // Workspace previews and Cmd+Click use the owning workspace's browser panel.
-      if (openInWorkspace || isCmdClickModifier(options)) {
+      // Home defaults must not override the configured GitHub action.
+      if ((openInWorkspace && useHomeBrowser) || isCmdClickModifier(options)) {
         if (options.workspaceId) {
           await activateLinkWorkspace(options.workspaceId, options);
           return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
@@ -138,12 +146,8 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       }
 
       // GitHub issue/PR links (plain click) → configured default action
-      const gitHubRef = parseGitHubIssueOrPrUrl(url);
-      const { event } = options;
-      if (gitHubRef && event) {
-        const defaultAction =
-          options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state);
-        switch (defaultAction) {
+      if (gitHubRef && event && githubAction) {
+        switch (githubAction) {
           case 'open-in-browser':
             return await openInExternalBrowser(url);
           case 'open-in-app':
