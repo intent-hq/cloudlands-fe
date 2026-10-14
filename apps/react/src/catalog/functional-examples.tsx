@@ -24,6 +24,7 @@ import { EditorIconExamples } from './editor-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
 import { TimelineSectionExamples } from './timeline-section-examples';
+import { ProposalCardHeaderExamples } from './proposal-card-header-examples';
 import {
   HomePullStateExamples,
   SidebarSkeletonExamples,
@@ -507,6 +508,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'device-icons' && <DeviceIconExamples />}
       {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'timeline-section' && <TimelineSectionExamples />}
+      {slug === 'proposal-card' && <ProposalCardHeaderExamples />}
       {slug === 'home-pull-state' && <HomePullStateExamples />}
       {slug === 'sidebar-skeleton' && <SidebarSkeletonExamples />}
       {slug === 'browser-device-frame' && <BrowserDeviceFrameExamples />}
@@ -605,6 +607,7 @@ export function hasFunctionalExample(slug: string) {
     'device-icons',
     'home-loading',
     'timeline-section',
+    'proposal-card',
     'home-pull-state',
     'sidebar-skeleton',
     'browser-device-frame',
