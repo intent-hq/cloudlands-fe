@@ -114,11 +114,18 @@
 .home-layout {
   --home-header-height: 3rem;
   --home-content-gap: 1rem;
+  --selected: var(--home-selected);
+  --color-selected: hsl(var(--selected));
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   container: home-layout / inline-size;
   overflow: clip;
+}
+
+.home-layout [data-list-overlay] {
+  --selected: var(--theme-selected);
+  --color-selected: hsl(var(--selected));
 }
 
 .home-header,
