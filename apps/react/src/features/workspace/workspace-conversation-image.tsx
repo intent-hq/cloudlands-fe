@@ -35,7 +35,7 @@ function AdmittedMedia({
   agentId: string;
   authority: string;
   role: AgentMessage['role'];
-  mimeType: 'image/png' | 'video/mp4';
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4';
 }) {
   const [media, setMedia] = useState<{ src: string; name: string } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -88,7 +88,7 @@ function AdmittedMedia({
           <ChatImageBlock
             variant={role === 'user' ? 'user-attachment' : 'default'}
             src={media.src}
-            mimeType="image/png"
+            mimeType={mimeType}
             alt={media.name}
             showActionsMenu={false}
             onOpenLink={() => false}
@@ -114,7 +114,7 @@ export function WorkspaceConversationMedia({
   attachmentId: string;
   agentId: string;
   role: AgentMessage['role'];
-  mimeType: 'image/png' | 'video/mp4';
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4';
 }) {
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const agent = selectAgentSession(agentId).value;

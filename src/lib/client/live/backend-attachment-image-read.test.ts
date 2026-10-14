@@ -65,6 +65,78 @@ describe('admitted attachment PNG reads', () => {
   });
 });
 
+describe('admitted attachment JPEG reads', () => {
+  const jpeg = {
+    ...attachment,
+    fileName: 'screen.jpg',
+    path: '.intent/attachments/screen.jpg',
+    mimeType: 'image/jpeg',
+  };
+  const read = (request: ReturnType<typeof vi.fn>) =>
+    createAttachmentMediaRead(request as BackendTransport['request'], 'image/jpeg');
+
+  it.each(['jpg', 'jpeg', 'JPG', 'JPEG'])(
+    'preserves exact bytes for the canonical .%s image extension',
+    async (extension) => {
+      const registered = { ...jpeg, path: `.intent/attachments/screen.${extension}` };
+      const request = vi.fn().mockResolvedValueOnce(registered).mockResolvedValueOnce(chunk);
+      expect(await read(request)('ws', 'image-1', signal())).toEqual({
+        attachment: registered,
+        data: new Uint8Array([255, 0, 1]),
+      });
+      expect(request.mock.calls[1]).toEqual([
+        'file.readChunk',
+        { workspaceId: 'ws', path: registered.path, offset: 0, length: 1048576 },
+      ]);
+    },
+  );
+
+  it.each([
+    { attachmentId: 'other' },
+    { exists: false },
+    { mimeType: 'image/png' },
+    { mimeType: 'image/jpg' },
+    { path: '.intent/attachments/screen.png' },
+    { path: '.intent/attachments/screen.svg' },
+    { path: '.intent/attachments/screen.jpg.exe' },
+    { path: '.intent/attachments/../screen.jpeg' },
+    { path: '.intent/attachments/a\\screen.jpg' },
+    { path: '.intent/attachments/a\0.jpg' },
+    { path: '/tmp/screen.jpg' },
+  ])('rejects JPEG identity/MIME/path drift before bytes: %j', async (override) => {
+    const request = vi.fn().mockResolvedValue({ ...jpeg, ...override });
+    await expect(read(request)('ws', 'image-1', signal())).rejects.toThrow('Unsupported');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects changed JPEG size', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ ...jpeg, size: 4 })
+      .mockResolvedValueOnce(chunk);
+    await expect(read(request)('ws', 'image-1', signal())).rejects.toThrow('size changed');
+  });
+
+  it('retires a JPEG read during its final chunk', async () => {
+    const controller = new AbortController();
+    let finish!: (value: typeof chunk) => void;
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(jpeg)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const pending = read(request)('ws', 'image-1', controller.signal);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    controller.abort();
+    finish(chunk);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
 describe('admitted attachment MP4 reads', () => {
   const video = {
     ...attachment,

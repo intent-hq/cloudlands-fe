@@ -118,14 +118,15 @@ function ConversationBlock({
   role: AgentMessage['role'];
 }) {
   if (
-    ((block.type === 'image' && block.mimeType === 'image/png') ||
+    ((block.type === 'image' &&
+      (block.mimeType === 'image/png' || block.mimeType === 'image/jpeg')) ||
       (isFileBlock(block) && block.mimeType === 'video/mp4')) &&
     block.attachmentId &&
     navigation.workspaceContext?.workspaceId
   )
     return (
       <WorkspaceConversationMedia
-        mimeType={block.type === 'image' ? 'image/png' : 'video/mp4'}
+        mimeType={block.mimeType}
         role={role}
         agentId={agentId}
         workspaceId={navigation.workspaceContext.workspaceId}

@@ -9,7 +9,7 @@ import { intentFileImageUrlToWorkspaceFileUrl } from '$lib/utils/workspace-file-
  */
 export function createAttachmentMediaRead(
   request: BackendTransport['request'],
-  mimeType: 'image/png' | 'video/mp4',
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4',
 ) {
   const info = createAttachmentInfoRead(request);
   const read = createBinaryFileRead(request);
@@ -24,8 +24,10 @@ export function createAttachmentMediaRead(
       attachment.mimeType !== mimeType ||
       !attachment.path.startsWith('.intent/attachments/') ||
       attachment.path.includes('\0') ||
-      !(mimeType === 'image/png'
-        ? attachment.path.toLowerCase().endsWith('.png') &&
+      !(mimeType !== 'video/mp4'
+        ? (mimeType === 'image/png'
+            ? attachment.path.toLowerCase().endsWith('.png')
+            : /\.jpe?g$/i.test(attachment.path)) &&
           intentFileImageUrlToWorkspaceFileUrl(
             `intent://local/${workspaceId}/file/${encodedPath}`,
             workspaceId,
