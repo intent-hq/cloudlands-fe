@@ -1,5 +1,6 @@
 import { store } from '@/store';
 import { sidebarSearchMatches } from '$lib/components/workspace/sidebar/sidebar-search';
+import { matchesHomeFilter, type HomeFilter } from '../../../../../src/features/home/home-model';
 import * as authority from '../../../../../src/store/renderer/slices/workspace/workspace-authority-projections';
 export const selectWorkspaceIds = store.createSelector((state) => state.workspace.workspaces.ids);
 export const selectWorkspaceNavigationIds = store.createSelector((state, query: string) => {
@@ -20,6 +21,13 @@ export const selectWorkspaceNavigationIds = store.createSelector((state, query: 
     );
   });
 });
+export const selectHomeWorkspaceIds = store.createSelector(
+  (state, query: string, filter: HomeFilter) =>
+    selectWorkspaceNavigationIds.select(state, query).filter((id) => {
+      const workspace = authority.getWorkspaceById(state, id);
+      return workspace && matchesHomeFilter(workspace, filter);
+    }),
+);
 export const selectWorkspaceListLoadedForBackend = store.createSelector(
   authority.getWorkspaceListLoadedForBackend,
 );

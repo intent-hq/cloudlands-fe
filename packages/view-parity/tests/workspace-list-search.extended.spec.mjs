@@ -36,12 +36,15 @@ test('real workspace-list search survives Back and keeps note filtering separate
     await expect
       .poll(() => workspaces.some((row) => row.id === workspaceId), { timeout: 60_000 })
       .toBe(true);
-    await expect(rows).toHaveCount(workspaces.length);
+    const activeCount = workspaces.filter(
+      (row) => !['Archived', 'Deleted'].includes(row.status) && !row.pendingDeleteAt,
+    ).length;
+    await expect(rows).toHaveCount(activeCount);
     const workspace = workspaces.find((row) => row.id === workspaceId);
     await input.pressSequentially(workspaceId.toUpperCase());
     await expect(input).toHaveValue(workspaceId.toUpperCase());
     await expect(current).toBeVisible();
-    await expect.poll(() => rows.count()).toBeLessThan(workspaces.length);
+    await expect.poll(() => rows.count()).toBeLessThan(activeCount);
     await expect
       .poll(() => new URL(page.url()).searchParams.get('q'))
       .toBe(workspaceId.toUpperCase());
@@ -61,7 +64,7 @@ test('real workspace-list search survives Back and keeps note filtering separate
     await page.keyboard.press('Escape');
     await expect(input).toHaveValue('');
     await expect(input).toBeFocused();
-    await expect(rows).toHaveCount(workspaces.length);
+    await expect(rows).toHaveCount(activeCount);
     expect(new URL(page.url()).searchParams.has('q')).toBe(false);
     await input.fill('no-workspace-matches-35c7d04c');
     await expect(rows).toHaveCount(0);
@@ -69,7 +72,7 @@ test('real workspace-list search survives Back and keeps note filtering separate
     await list.getByRole('button', { name: 'Clear search', exact: true }).click();
     await expect(input).toHaveValue('');
     await expect(input).toBeFocused();
-    await expect(rows).toHaveCount(workspaces.length);
+    await expect(rows).toHaveCount(activeCount);
     await input.fill(workspace.title.toUpperCase());
     await expect(current).toBeVisible();
     await page.reload();

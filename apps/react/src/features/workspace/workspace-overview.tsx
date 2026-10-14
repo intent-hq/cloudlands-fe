@@ -11,6 +11,8 @@ import { HomeWorkspaceStatus } from '@/features/home/components/home-workspace-s
 import { HomeActivityTime } from '@/features/home/components/home-activity-time';
 import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { HomeSearch } from '@/features/home/components/home-search';
+import { HomeFilterSelect } from '@/features/home/components/home-filter-select';
+import type { HomeFilter } from '../../../../../src/features/home/home-model';
 import { HomeLoading } from '@/features/home/components/home-loading';
 import { ContentSkeleton } from '@/components/workspace/content-skeleton';
 import { Screen, ScreenHeader, ScreenBody, EmptyState } from '@/components/patterns/screen';
@@ -23,7 +25,7 @@ import { selectCurrentConnectionId } from '@/store/connections/connections-selec
 import {
   selectWorkspaceById,
   selectWorkspaceIds,
-  selectWorkspaceNavigationIds,
+  selectHomeWorkspaceIds,
   selectWorkspaceListLoadedForBackend,
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -100,12 +102,28 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-export function WorkspaceList({ query = '' }: { query?: string }) {
+export function WorkspaceList({
+  query = '',
+  filter = 'all',
+}: {
+  query?: string;
+  filter?: HomeFilter;
+}) {
   const navigate = useNavigate();
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const allIds = selectWorkspaceIds();
-  const ids = selectWorkspaceNavigationIds(query);
+  const ids = selectHomeWorkspaceIds(query, filter);
+  const changeSearch = (q: string, nextFilter: HomeFilter) =>
+    void navigate({
+      to: '/workspaces',
+      search: {
+        ...(q ? { q } : {}),
+        ...(nextFilter !== 'all' ? { filter: nextFilter } : {}),
+      },
+      replace: true,
+      resetScroll: false,
+    });
   return (
     <Screen className="min-h-screen" data-testid="workspace-list">
       <ScreenHeader
@@ -119,18 +137,29 @@ export function WorkspaceList({ query = '' }: { query?: string }) {
         }
       />
       <ScreenBody className="grid content-start gap-4">
-        <HomeSearch
-          value={query}
-          onchange={(value) =>
-            void navigate({
-              to: '/workspaces',
-              search: value ? { q: value } : {},
-              replace: true,
-              resetScroll: false,
-            })
-          }
-          placeholder={m.layout_activeCard_search_placeholder()}
-        />
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <HomeSearch
+            value={query}
+            onchange={(value) => changeSearch(value, filter)}
+            placeholder={m.layout_activeCard_search_placeholder()}
+            className="min-w-40 flex-1"
+          />
+          <div className="max-w-full shrink-0">
+            <HomeFilterSelect
+              value={filter}
+              label={m.layout_allCard_status_label()}
+              options={[
+                { value: 'all', label: m.home_filter_all() },
+                { value: 'attention', label: m.home_filter_attention() },
+                { value: 'running', label: m.home_filter_running() },
+                { value: 'blocked', label: m.home_filter_blocked() },
+                { value: 'unread', label: m.home_filter_unread() },
+                { value: 'archived', label: m.home_filter_archived() },
+              ]}
+              onchange={(value) => changeSearch(query, value as HomeFilter)}
+            />
+          </div>
+        </div>
         {!loaded.value ? (
           <WorkspaceReadiness list />
         ) : allIds.value.length === 0 ? (
