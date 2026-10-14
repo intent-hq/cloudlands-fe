@@ -184,12 +184,14 @@ export function WorkspaceOverview({
   query,
   filePath,
   line,
+  fileQuery,
 }: {
   workspaceId: string;
   noteId?: string;
   query?: string;
   filePath?: string;
   line?: number;
+  fileQuery?: string;
 }) {
   const navigate = useNavigate();
   const backendId = selectCurrentConnectionId();
@@ -282,12 +284,19 @@ export function WorkspaceOverview({
                   line={line}
                   noteId={noteId}
                   query={query}
+                  fileQuery={fileQuery}
                 />
               ) : (
                 <>
                   {!noteId && <WorkspaceProgress workspaceId={workspaceId} query={query} />}
                   {!noteId && <WorkspaceAgents workspaceId={workspaceId} />}
-                  {!noteId && <WorkspaceGitStatus workspaceId={workspaceId} query={query} />}
+                  {!noteId && (
+                    <WorkspaceGitStatus
+                      workspaceId={workspaceId}
+                      query={query}
+                      fileQuery={fileQuery}
+                    />
+                  )}
                   <WorkspaceNotes
                     workspaceId={workspaceId}
                     noteId={noteId}

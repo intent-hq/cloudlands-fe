@@ -14,7 +14,7 @@ test('Git refresh recovers from a real repository failure without losing keyboar
   const restore = await fixture.failGit();
   const url = `${base}/workspaces/${encodeURIComponent(workspaceId)}?q=${workspaceId}`;
   const view = page.getByTestId('workspace-git-status');
-  const refresh = view.getByRole('button');
+  const refresh = view.locator('[data-changes-refresh]');
   info.annotations.push({
     type: 'coverage-gap',
     description:

@@ -12,10 +12,13 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
   ssr: false,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { note?: string; q?: string; file?: string; line?: number } => ({
+  ): { note?: string; q?: string; file?: string; line?: number; fileQuery?: string } => ({
     ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
     ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
     ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
+    ...(typeof search.fileQuery === 'string' && search.fileQuery
+      ? { fileQuery: search.fileQuery }
+      : {}),
     ...(Number.isSafeInteger(Number(search.line)) && Number(search.line) > 0
       ? { line: Number(search.line) }
       : {}),
@@ -25,6 +28,15 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams();
-  const { note, q, file, line } = Route.useSearch();
-  return <Overview workspaceId={workspaceId} noteId={note} query={q} filePath={file} line={line} />;
+  const { note, q, file, line, fileQuery } = Route.useSearch();
+  return (
+    <Overview
+      workspaceId={workspaceId}
+      noteId={note}
+      query={q}
+      filePath={file}
+      line={line}
+      fileQuery={fileQuery}
+    />
+  );
 }

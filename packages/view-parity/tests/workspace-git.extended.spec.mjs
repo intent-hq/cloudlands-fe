@@ -56,7 +56,7 @@ test('real Git status refreshes and releases workspace state', async ({ page }, 
     };
     await assertFiles(statuses[0].response.result);
     const beforeRefresh = statuses.length;
-    await view.getByRole('button').click();
+    await view.locator('[data-changes-refresh]').click();
     await expect.poll(() => statuses.length).toBeGreaterThan(beforeRefresh);
     expect(statuses.at(-1).request.params).toEqual({ workspaceId, forceRefresh: true });
     await assertFiles(statuses.at(-1).response.result);
@@ -70,7 +70,7 @@ test('real Git status refreshes and releases workspace state', async ({ page }, 
     await expect
       .poll(() => view.evaluate((element) => element.scrollWidth - element.clientWidth))
       .toBeLessThanOrEqual(1);
-    await expect(view.getByRole('button')).toBeVisible();
+    await expect(view.locator('[data-changes-refresh]')).toBeVisible();
     await page.screenshot({ path: info.outputPath('real-git-status-narrow.png') });
     await info.attach('real-git-status-narrow', {
       path: info.outputPath('real-git-status-narrow.png'),

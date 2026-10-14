@@ -17,12 +17,14 @@ export function WorkspaceFile({
   line,
   noteId,
   query,
+  fileQuery,
 }: {
   workspaceId: string;
   path: string;
   line?: number;
   noteId?: string;
   query?: string;
+  fileQuery?: string;
 }) {
   const title = useRef<HTMLHeadingElement>(null);
   const retry = useRef<HTMLButtonElement>(null);
@@ -48,7 +50,7 @@ export function WorkspaceFile({
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
-        search={{ note: noteId, q: query || undefined }}
+        search={{ note: noteId, q: query || undefined, fileQuery: fileQuery || undefined }}
         className="w-fit text-muted-foreground hover:text-foreground"
       >
         {m.workspace_transfer_back_label()}
@@ -78,7 +80,13 @@ export function WorkspaceFile({
               key={candidate}
               to="/workspaces/$workspaceId"
               params={{ workspaceId }}
-              search={{ file: candidate, note: noteId, q: query || undefined, line }}
+              search={{
+                file: candidate,
+                note: noteId,
+                q: query || undefined,
+                line,
+                fileQuery: fileQuery || undefined,
+              }}
               className="break-all underline"
             >
               {candidate}
