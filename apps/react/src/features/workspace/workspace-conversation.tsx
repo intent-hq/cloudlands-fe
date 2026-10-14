@@ -1,7 +1,7 @@
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import { WorkspaceConversationContent } from './workspace-conversation-content';
 import { WorkspaceConversationMessage } from './workspace-conversation-message';
-import { WorkspaceConversationImage } from './workspace-conversation-image';
+import { WorkspaceConversationMedia } from './workspace-conversation-image';
 import {
   composeTranscript,
   isConversationStartLoaded,
@@ -32,6 +32,7 @@ import { LiveStreamPhaseIndicator } from '@/features/chat/components/live-stream
 import { LoadingState, EmptyState, ErrorState } from '@/components/patterns/screen';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { isFileBlock } from '$shared/types/content-block.guards';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import { formatNumber } from '$lib/i18n/format';
@@ -117,13 +118,14 @@ function ConversationBlock({
   role: AgentMessage['role'];
 }) {
   if (
-    block.type === 'image' &&
-    block.mimeType === 'image/png' &&
+    ((block.type === 'image' && block.mimeType === 'image/png') ||
+      (isFileBlock(block) && block.mimeType === 'video/mp4')) &&
     block.attachmentId &&
     navigation.workspaceContext?.workspaceId
   )
     return (
-      <WorkspaceConversationImage
+      <WorkspaceConversationMedia
+        mimeType={block.type === 'image' ? 'image/png' : 'video/mp4'}
         role={role}
         agentId={agentId}
         workspaceId={navigation.workspaceContext.workspaceId}

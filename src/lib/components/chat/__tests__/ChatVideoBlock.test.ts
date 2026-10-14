@@ -49,8 +49,24 @@ describe('ChatVideoBlock', () => {
     expect(snapshot.poster).toBe('https://media.example/demo.webp');
     expect(snapshot.className).toContain('motion-reduce:transition-none');
 
+    Object.defineProperties(snapshot, { videoWidth: { value: 320 }, videoHeight: { value: 180 } });
     await fireEvent.loadedData(snapshot);
     expect(snapshot.className).toContain('opacity-100');
+  });
+
+  it('does not treat an audio-only decode as a usable video frame', async () => {
+    render(ChatVideoBlock, { props: { source: remoteSource, name: 'unsupported-codec.mp4' } });
+    const video = screen.getByRole('button', { name: /play/i }).querySelector('video')!;
+    Object.defineProperties(video, {
+      readyState: { value: 4 },
+      videoWidth: { value: 0 },
+      videoHeight: { value: 0 },
+      error: { value: null },
+    });
+    await fireEvent.loadedData(video);
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+    expect(screen.queryByRole('button', { name: /play/i })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('opens controlled playback and restores focus after Escape', async () => {

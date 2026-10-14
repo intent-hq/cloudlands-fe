@@ -51,9 +51,11 @@
     }
   });
 
-  function markFrameReady() {
-    frameReady = true;
-    frameUnavailable = false;
+  function markFrameReady(event: Event) {
+    const video = event.currentTarget as HTMLVideoElement;
+    // A supported audio track can emit loadeddata while the video codec is unavailable.
+    frameReady = video.videoWidth > 0 && video.videoHeight > 0;
+    frameUnavailable = !frameReady;
   }
 </script>
 

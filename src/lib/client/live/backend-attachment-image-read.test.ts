@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAttachmentImageRead } from './backend-attachment-image-read';
+import { createAttachmentMediaRead } from './backend-attachment-image-read';
 import type { BackendTransport } from './backend-transport-types';
 
 const attachment = {
@@ -13,7 +13,7 @@ const attachment = {
 const chunk = { content: '/wAB', bytesRead: 3, size: 3 };
 const signal = () => new AbortController().signal;
 const reader = (request: ReturnType<typeof vi.fn>) =>
-  createAttachmentImageRead(request as BackendTransport['request']);
+  createAttachmentMediaRead(request as BackendTransport['request'], 'image/png');
 
 describe('admitted attachment PNG reads', () => {
   it('uses the scoped registry path and preserves exact binary bytes', async () => {
@@ -62,5 +62,62 @@ describe('admitted attachment PNG reads', () => {
       .mockResolvedValueOnce({ ...attachment, size: 4 })
       .mockResolvedValueOnce(chunk);
     await expect(reader(request)('ws', 'image-1', signal())).rejects.toThrow('size changed');
+  });
+});
+
+describe('admitted attachment MP4 reads', () => {
+  const video = {
+    ...attachment,
+    fileName: 'recording.mp4',
+    path: '.intent/attachments/recording.mp4',
+    mimeType: 'video/mp4',
+  };
+  const read = (request: ReturnType<typeof vi.fn>) =>
+    createAttachmentMediaRead(request as BackendTransport['request'], 'video/mp4');
+
+  it('uses the canonical video path policy and the same bounded binary reader', async () => {
+    const request = vi.fn().mockResolvedValueOnce(video).mockResolvedValueOnce(chunk);
+    expect(await read(request)('ws', 'image-1', signal())).toEqual({
+      attachment: video,
+      data: new Uint8Array([255, 0, 1]),
+    });
+    expect(request.mock.calls[1]).toEqual([
+      'file.readChunk',
+      { workspaceId: 'ws', path: video.path, offset: 0, length: 1048576 },
+    ]);
+  });
+
+  it.each([
+    { attachmentId: 'other' },
+    { exists: false },
+    { mimeType: 'image/png' },
+    { path: '.intent/attachments/recording.webm' },
+    { path: '.intent/attachments/../outside.mp4' },
+    { path: '/tmp/recording.mp4' },
+    { path: '.intent/attachments/a\\recording.mp4' },
+    { path: '.intent/attachments/a\0.mp4' },
+  ])('rejects video identity/MIME/path drift without reading bytes: %j', async (override) => {
+    const request = vi.fn().mockResolvedValue({ ...video, ...override });
+    await expect(read(request)('ws', 'image-1', signal())).rejects.toThrow('Unsupported');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not publish a final video chunk after owner cancellation', async () => {
+    const controller = new AbortController();
+    let finish!: (value: typeof chunk) => void;
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(video)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const pending = read(request)('ws', 'image-1', controller.signal);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    controller.abort();
+    finish(chunk);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

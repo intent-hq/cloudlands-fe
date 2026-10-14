@@ -13,6 +13,8 @@ export interface ChatVideoBlockProps {
   source: VideoSource;
   name?: string;
   poster?: string;
+  /** Read-only hosts omit copy/download actions. */
+  showActionsMenu?: boolean;
   allowFileMedia?: boolean;
   canLoadMedia?: (url: string) => boolean;
   canOpenFile?: () => boolean;
@@ -24,6 +26,7 @@ export function ChatVideoBlock({
   source,
   name = m.chat_videoBlock_fromAgent_label(),
   poster,
+  showActionsMenu = true,
   allowFileMedia = true,
   canLoadMedia,
   canOpenFile,
@@ -60,9 +63,12 @@ export function ChatVideoBlock({
     }
   })();
 
-  function markFrameReady() {
-    setFrameReady(true);
-    setFrameUnavailable(false);
+  function markFrameReady(event: React.SyntheticEvent<HTMLVideoElement>) {
+    const video = event.currentTarget;
+    // Audio-only decoding must not advertise an available video frame.
+    const ready = video.videoWidth > 0 && video.videoHeight > 0;
+    setFrameReady(ready);
+    setFrameUnavailable(!ready);
   }
 
   return (
@@ -83,12 +89,14 @@ export function ChatVideoBlock({
               workspaceId={workspaceFile?.workspaceId}
               onOpenLink={onOpenLink}
             />
-            <VideoActionsMenu
-              videoUrl={videoUrl}
-              videoName={name}
-              sourceKind={source.kind}
-              mimeType={source.mimeType}
-            />
+            {showActionsMenu && (
+              <VideoActionsMenu
+                videoUrl={videoUrl}
+                videoName={name}
+                sourceKind={source.kind}
+                mimeType={source.mimeType}
+              />
+            )}
           </div>
         ) : (
           <div
@@ -142,18 +150,21 @@ export function ChatVideoBlock({
                 </span>
               </span>
             </Button>
-            <VideoActionsMenu
-              videoUrl={videoUrl}
-              videoName={name}
-              sourceKind={source.kind}
-              mimeType={source.mimeType}
-              triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-            />
+            {showActionsMenu && (
+              <VideoActionsMenu
+                videoUrl={videoUrl}
+                videoName={name}
+                sourceKind={source.kind}
+                mimeType={source.mimeType}
+                triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+              />
+            )}
           </div>
         )}
       </div>
       {!frameUnavailable && !blocked && (
         <VideoLightbox
+          showActionsMenu={showActionsMenu}
           open={lightboxOpen}
           onOpenChange={setLightboxOpen}
           videoUrl={videoUrl}

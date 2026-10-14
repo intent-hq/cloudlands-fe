@@ -12,6 +12,8 @@ export interface VideoLightboxProps {
   videoUrl: string;
   videoName?: string;
   poster?: string;
+  /** Read-only hosts omit copy/download actions. */
+  showActionsMenu?: boolean;
   sourceKind?: VideoSource['kind'];
   mimeType?: string;
   openerElement?: HTMLElement | null;
@@ -24,6 +26,7 @@ export function VideoLightbox({
   videoUrl,
   videoName = m.chat_videoBlock_fromAgent_label(),
   poster,
+  showActionsMenu = true,
   sourceKind,
   mimeType,
   openerElement = null,
@@ -49,14 +52,16 @@ export function VideoLightbox({
       openerElement={openerElement}
       onClose={onClose}
       actions={
-        <VideoActionsMenu
-          videoUrl={videoUrl}
-          videoName={videoName}
-          sourceKind={sourceKind}
-          mimeType={mimeType}
-          triggerClass="h-9 w-9 bg-white/0 hover:bg-white/20"
-          contentClass="z-[1003]"
-        />
+        showActionsMenu && (
+          <VideoActionsMenu
+            videoUrl={videoUrl}
+            videoName={videoName}
+            sourceKind={sourceKind}
+            mimeType={mimeType}
+            triggerClass="h-9 w-9 bg-white/0 hover:bg-white/20"
+            contentClass="z-[1003]"
+          />
+        )
       }
     >
       <div
