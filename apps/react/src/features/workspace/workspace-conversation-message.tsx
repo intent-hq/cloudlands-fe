@@ -1,3 +1,5 @@
+import { EventWakeupBanner } from '@/features/chat/components/event-wakeup-banner';
+import { isEventWakeMessage } from '$lib/components/chat/event-wake-summary';
 import { useId, useState, type ReactNode } from 'react';
 import { AgentMessageAttributionHeader } from '@/features/chat/components/agent-message-attribution-header';
 import { AutomatedWakeCardHeader } from '@/features/chat/components/automated-wake-card-header';
@@ -33,6 +35,7 @@ export function WorkspaceConversationMessage({
   onOpenAgent: (workspaceId: string, agentId: string) => void;
   renderBlock: (block: ContentBlock, index: number) => ReactNode;
 }) {
+  const eventWake = isEventWakeMessage(message);
   const bodyId = useId();
   const [expanded, setExpanded] = useState(false);
   const candidate = message.role === 'user' ? getAgentMessageAttribution(message.metadata) : null;
@@ -48,7 +51,14 @@ export function WorkspaceConversationMessage({
       data-message-role={message.role}
       data-sender-agent-id={attribution?.fromAgentId}
     >
-      {attribution ? (
+      {eventWake ? (
+        <EventWakeupBanner
+          key={`${workspaceId}:${message.id}`}
+          message={message}
+          workspaceId={workspaceId}
+          onOpenAgent={onOpenAgent}
+        />
+      ) : attribution ? (
         <>
           <AgentMessageAttributionHeader
             key={`${workspaceId}:${attribution.fromAgentId}`}
@@ -127,7 +137,7 @@ export function WorkspaceConversationMessage({
         </>
       )}
       <ConversationTurnGap
-        currentIsEventNotification={message.role === 'system'}
+        currentIsEventNotification={eventWake || message.role === 'system'}
         currentHasAssistantMessages={message.role === 'assistant'}
         nextIsEventNotification={false}
       />

@@ -8,9 +8,12 @@ import { m } from '$shared/paraglide/messages.js';
 import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
 import { extractAllContent, type AgentMessage } from '$shared/types';
 
-/** Match both current subscription metadata and restored legacy wake messages. */
+/** Admit event cards from current metadata or legacy text, excluding explicit waiting advisories. */
 export function isEventWakeMessage(message?: AgentMessage): boolean {
   if (!message) return false;
+  // An idle child can still own external monitors. Preserve the daemon's advisory
+  // text (including its active runs) instead of presenting that wake as finished.
+  if (message.metadata?.childExternallyWaiting === true) return false;
   return (
     message.metadata?.type === 'event_notification' ||
     extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')

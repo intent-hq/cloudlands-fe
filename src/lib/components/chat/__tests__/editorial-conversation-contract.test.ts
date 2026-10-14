@@ -5,6 +5,7 @@
 //   ../operational-disclosure-classes.ts, ../ChatOperationalRow.svelte,
 //   ../operational-window-items.ts, ../OperationalWindow.svelte,
 //   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
+//   ../event-wake-presentation.ts,
 //   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
 //   ../ToolCall.svelte, ../ThinkingBlock.svelte, ../ContextEngineToolCall.svelte,
 //   ../chat-queue-edge-layout.ts, ../input/SimpleRichInput.svelte,
@@ -280,7 +281,10 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeup).toContain('<InlineAgentAvatar');
     expect(wakeup).toContain('data-testid="event-wakeup-avatar-stack"');
     expect(wakeup).toContain('data-testid="event-wakeup-details"');
-    expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
+    expect(wakeup).toContain('getEventWakePresentation');
+    expect(source('src/lib/components/chat/event-wake-presentation.ts')).toContain(
+      'm.events_activity_partFinished_label().trim()',
+    );
     expect(wakeup).not.toContain('<AgentCard');
     expect(avatar).toContain('<Tooltip.Trigger');
     expect(avatar).toContain('aria-label={activationLabel ??');
