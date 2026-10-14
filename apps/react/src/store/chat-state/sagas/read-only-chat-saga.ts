@@ -1,12 +1,15 @@
+import { createMessageBlockReader } from '$lib/client/live/backend-message-block-reader';
+import { createMessageBlockHydrationWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/message-block-hydration-workers';
 import { createConversationReader } from '$lib/client/live/backend-conversation-reader';
 import { createMessageHistorySeeker } from '../../../../../../src/store/renderer/slices/chat-state/message-history-seeker';
 import { isAgentDeletionPending } from '../../../../../../src/features/agent/utils/pending-agent-deletions';
 import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
-import { selectChatAgentState } from '../chat-state-selectors';
+import { selectChatAgentState, selectHydratedBlock } from '../chat-state-selectors';
 import {
   selectAgentHistoryMessages,
   selectAgentMessages,
   selectAgentSession,
+  selectAgentSessionWorkspaceId,
   selectHasHistorySegment,
   selectHistorySegmentMeta,
 } from '../../agent-session/agent-session-selectors';
@@ -26,6 +29,11 @@ const chat = new BackendChatClient(backend, (diagnostic) =>
 
 export const readOnlyChatSaga = createReadOnlyChatSaga({
   chat,
+  messageBlocks: createMessageBlockHydrationWorkers({
+    getMessageBlock: createMessageBlockReader(backend),
+    readEntry: selectHydratedBlock.effect,
+    readWorkspaceId: selectAgentSessionWorkspaceId.effect,
+  }),
   seekMessage: createMessageHistorySeeker({
     getConversation: createConversationReader(backend),
     readChat: (id) => selectChatAgentState.select(store.state, id),

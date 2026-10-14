@@ -1,3 +1,4 @@
+import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import {
   composeTranscript,
   isConversationStartLoaded,
@@ -10,9 +11,10 @@ import {
   selectAgentHistoryMessages,
   selectHistorySegmentMeta,
 } from '@/store/agent-session/agent-session-selectors';
-import { selectChatAgentState } from '@/store/chat-state/chat-state-selectors';
+import { selectChatAgentState, selectHydratedBlock } from '@/store/chat-state/chat-state-selectors';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import {
+  messageBlockHydrationRequested,
   messageHistoryRequested,
   messageHistoryReleased,
   retainedChatTranscriptsSet,
@@ -38,7 +40,76 @@ type Navigation = Pick<
   'workspaceContext' | 'onOpenLink' | 'onOpenFile' | 'onOpenNote' | 'canLoadMedia'
 >;
 
-function ConversationBlock({ block, navigation }: { block: ContentBlock; navigation: Navigation }) {
+function ToolBody({
+  block,
+  agentId,
+  messageId,
+}: {
+  block: ContentBlock;
+  agentId: string;
+  messageId: string;
+}) {
+  const entry = selectHydratedBlock(agentId, messageId, block.id ?? '').value;
+  const truncated =
+    truncatedToolBlockIds(
+      block.type === 'tool_use' ? block : null,
+      block.type === 'tool_result' ? block : null,
+    ).length > 0;
+  const dispatch = store.dispatch;
+  useLayoutEffect(() => {
+    if (truncated && block.id)
+      dispatch(messageBlockHydrationRequested(agentId, messageId, block.id));
+  }, [truncated, block.id, agentId, messageId, dispatch]);
+  const displayed = entry?.status === 'loaded' ? entry.block : block;
+  return (
+    <div
+      data-block-id={block.id}
+      data-hydration={truncated ? (entry?.status ?? 'pending') : 'complete'}
+    >
+      {truncated &&
+        entry?.status !== 'loaded' &&
+        (entry?.status === 'error' ? (
+          <ErrorState
+            density="compact"
+            message={m.common_resourceNotFound_loadFailed_title({
+              resourceLabel: m.chat_toolCall_technicalDetails_label(),
+            })}
+            details={entry.error}
+            detailsLabel={m.chat_toolCall_technicalDetails_label()}
+            retryLabel={m.ui_combobox_retry_label()}
+            onRetry={() => {
+              if (block.id) dispatch(messageBlockHydrationRequested(agentId, messageId, block.id));
+            }}
+          />
+        ) : (
+          <LoadingState
+            count={1}
+            density="compact"
+            label={m.chat_toolCall_loadingFullOutput_label()}
+          />
+        ))}
+      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words type-code">
+        {JSON.stringify(
+          displayed.input ?? displayed.output ?? displayed.content ?? displayed,
+          null,
+          2,
+        )}
+      </pre>
+    </div>
+  );
+}
+
+function ConversationBlock({
+  block,
+  navigation,
+  agentId,
+  messageId,
+}: {
+  block: ContentBlock;
+  navigation: Navigation;
+  agentId: string;
+  messageId: string;
+}) {
   if (block.type === 'text')
     return (
       <MarkdownViewer {...navigation} content={getContentBlockText(block)} renderRichFencesAsCode />
@@ -54,15 +125,15 @@ function ConversationBlock({ block, navigation }: { block: ContentBlock; navigat
   // Structured operational bodies remain read-only. No proposal, permission,
   // script, agent-action or other mutation callbacks are installed here.
   return (
-    <ResponseGroup
-      name={
-        block.name ?? block.toolName ?? block.fileName ?? m.chat_messageContent_toolResult_label()
-      }
-    >
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words type-code">
-        {JSON.stringify(block.input ?? block.output ?? block.content ?? block, null, 2)}
-      </pre>
-    </ResponseGroup>
+    <div data-tool-block-id={block.id}>
+      <ResponseGroup
+        name={
+          block.name ?? block.toolName ?? block.fileName ?? m.chat_messageContent_toolResult_label()
+        }
+      >
+        <ToolBody block={block} agentId={agentId} messageId={messageId} />
+      </ResponseGroup>
+    </div>
   );
 }
 
@@ -363,6 +434,8 @@ export function WorkspaceConversation({
                         <ConversationBlock
                           key={block.id ?? index}
                           block={block}
+                          agentId={agentId}
+                          messageId={message.id}
                           navigation={navigation}
                         />
                       ))}

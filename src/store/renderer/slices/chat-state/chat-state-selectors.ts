@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getAgentChatState } from './chat-state-projections';
+import { getAgentChatState, getHydratedBlock } from './chat-state-projections';
 import type {
   ChatAgentState,
   HydratedBlockEntry,
@@ -13,7 +13,6 @@ import type {
   TranscriptSnapshotMeta,
   StreamFailureCorrelation,
 } from './chat-state-types';
-import { hydratedBlockKey } from './chat-state-types';
 
 // ============================================================================
 // Selectors
@@ -201,10 +200,7 @@ export const selectAwaitingSwitchBackSnapshot = store.createSelector(
  * `agent.getMessageBlock`), or undefined when never requested. Keyed by
  * `{messageId}|{blockId}` via `hydratedBlockKey`.
  */
-export const selectHydratedBlock = store.createSelector(
-  (state, agentId: string, messageId: string, blockId: string): HydratedBlockEntry | undefined =>
-    getAgentChatState(state, agentId).hydratedBlocks?.[hydratedBlockKey(messageId, blockId)],
-);
+export const selectHydratedBlock = store.createSelector(getHydratedBlock);
 
 /**
  * Select the agent's whole hydrated-block cache (keys `{messageId}|{blockId}`

@@ -1,3 +1,4 @@
+import { createMessageBlockHydrationWorkers } from './message-block-hydration-workers';
 import { hasUnresolvedQueueProcessing } from '../../pending-submissions/pending-submissions-model';
 import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
@@ -82,9 +83,6 @@ import {
   chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
-  messageBlockHydrated,
-  messageBlockHydrationFailed,
-  messageBlockHydrationRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -368,44 +366,11 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
   yield* put(transcriptHydrationSettled(agentId));
 }
 
-/**
- * Lazy block hydration (§5.5 slim projection → `agent.getMessageBlock`):
- * fetch one FULL content block on demand when the user expands a truncated
- * tool row or views a truncated image. Single-flight per block, twice over:
- * the `messageBlockHydrationRequested` reducer parks `loading` under the
- * block's key (so a non-`loading` entry here means loaded/absent — nothing to
- * fetch), and `inFlightBlocks` (saga-local, non-serializable) drops the
- * duplicate workers takeEvery still spawns for re-dispatches that arrive
- * while the state already reads `loading`.
- */
-function* hydrateMessageBlockWorker(
-  inFlightBlocks: Set<string>,
-  action: ReturnType<typeof messageBlockHydrationRequested>,
-) {
-  const [agentId, messageId, blockId] = action.payload;
-  if (!agentId || !messageId || !blockId) return;
-  const key = `${agentId}|${messageId}|${blockId}`;
-  if (inFlightBlocks.has(key)) return;
-  const entry = yield* selectHydratedBlock.effect(agentId, messageId, blockId);
-  if (entry?.status !== 'loading') return;
-  inFlightBlocks.add(key);
-  try {
-    const block = yield* call(
-      [appClient.agents, appClient.agents.getMessageBlock],
-      agentId,
-      messageId,
-      blockId,
-      yield* selectAgentSessionWorkspaceId.effect(agentId),
-    );
-    yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('message block hydration failed', { agentId, messageId, blockId, message });
-    yield* put(messageBlockHydrationFailed(agentId, messageId, blockId, message));
-  } finally {
-    inFlightBlocks.delete(key);
-  }
-}
+const messageBlocks = createMessageBlockHydrationWorkers({
+  getMessageBlock: (...args) => appClient.agents.getMessageBlock(...args),
+  readEntry: selectHydratedBlock.effect,
+  readWorkspaceId: selectAgentSessionWorkspaceId.effect,
+});
 
 const queueReconciliationActions = [
   pendingSubmissionAccepted,
@@ -433,7 +398,6 @@ function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): Sa
 
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
-  const inFlightBlocks = new Set<string>();
   try {
     yield* all([
       takeSingleFlightInContext(
@@ -447,10 +411,9 @@ export function* chatReadSaga() {
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
       takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),
-      takeEvery(messageBlockHydrationRequested, hydrateMessageBlockWorker, inFlightBlocks),
+      call(messageBlocks.watch),
     ]);
   } finally {
     hydrationTails.clear();
-    inFlightBlocks.clear();
   }
 }

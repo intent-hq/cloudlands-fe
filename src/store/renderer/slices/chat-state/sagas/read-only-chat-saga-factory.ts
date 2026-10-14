@@ -1,3 +1,4 @@
+import type { createMessageBlockHydrationWorkers } from './message-block-hydration-workers';
 import type { createHistoryPageWorkers } from './history-page-workers';
 import type { createMessageHistorySeeker } from '../message-history-seeker';
 import { buffers, eventChannel, type Task } from 'redux-saga';
@@ -42,7 +43,9 @@ export function createReadOnlyChatSaga<State>({
   readAdmission,
   historyPages,
   seekMessage,
+  messageBlocks,
 }: {
+  messageBlocks?: ReturnType<typeof createMessageBlockHydrationWorkers>;
   seekMessage?: ReturnType<typeof createMessageHistorySeeker>;
   historyPages?: ReturnType<typeof createHistoryPageWorkers>;
   chat: ChatClient;
@@ -138,7 +141,7 @@ export function createReadOnlyChatSaga<State>({
       const current = () => readAdmission(workspaceId) === authority;
       const key = `${workspaceId}\u0000${agentId}`;
       const reader = {};
-      let pageWatchers: Task[] = [];
+      const pageWatchers: Task[] = [];
       let events: ReturnType<typeof eventChannel<ReadEvent>> | undefined;
       try {
         yield* put(clearHistorySegment(agentId));
@@ -163,9 +166,13 @@ export function createReadOnlyChatSaga<State>({
           buffers.expanding(),
         );
         readers.set(key, reader);
+        if (messageBlocks)
+          pageWatchers.push(yield* messageBlocks.watch((id) => current() && id === agentId, true));
         if (historyPages) {
-          pageWatchers = yield* historyPages.watch(
-            (wsId, id) => current() && wsId === workspaceId && id === agentId,
+          pageWatchers.push(
+            ...(yield* historyPages.watch(
+              (wsId, id) => current() && wsId === workspaceId && id === agentId,
+            )),
           );
         }
         while (true) {

@@ -13,8 +13,8 @@
  */
 
 import type { ContentBlock } from '$shared/types';
-import type { HydratedBlockEntry } from '$store/renderer/slices/chat-state/chat-state-types';
-import { hydratedBlockKey } from '$store/renderer/slices/chat-state/chat-state-types';
+import type { HydratedBlockEntry } from '../../../store/renderer/slices/chat-state/chat-state-types';
+import { hydratedBlockKey } from '../../../store/renderer/slices/chat-state/chat-state-types';
 
 /** True when the daemon served this block slim-truncated (any body kind). */
 function isSlimTruncatedBlock(block: ContentBlock | null | undefined): boolean {

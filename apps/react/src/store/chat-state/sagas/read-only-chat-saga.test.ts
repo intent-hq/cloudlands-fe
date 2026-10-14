@@ -1,6 +1,10 @@
+import { createMessageBlockHydrationWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/message-block-hydration-workers';
 import { createMessageHistorySeeker } from '../../../../../../src/store/renderer/slices/chat-state/message-history-seeker';
 import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
-import { getAgentChatState } from '../../../../../../src/store/renderer/slices/chat-state/chat-state-projections';
+import {
+  getAgentChatState,
+  getHydratedBlock,
+} from '../../../../../../src/store/renderer/slices/chat-state/chat-state-projections';
 import * as history from '../../../../../../src/store/renderer/slices/agent-session/agent-history-projections';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReactStore } from '@themislib/themis/react-store';
@@ -11,6 +15,7 @@ import { AgentStatus } from '$shared/types/agent.types';
 import { agentSessionReducer } from '../../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
 import {
   chatStateReducer,
+  messageBlockHydrationRequested,
   olderHistoryPageRequested,
   messageHistoryRequested,
   messageHistoryReleased,
@@ -54,6 +59,7 @@ const transcript: ChatTranscript = {
 function setup(
   read = vi.fn(async () => session),
   getConversation = vi.fn<AgentsClient['getConversation']>(),
+  getMessageBlock = vi.fn<AgentsClient['getMessageBlock']>(),
 ) {
   const store = new ReactStore({
     agentSessions: agentSessionReducer,
@@ -78,6 +84,13 @@ function setup(
     store.runSaga(
       createReadOnlyChatSaga({
         chat: { subscribe },
+        messageBlocks: createMessageBlockHydrationWorkers({
+          getMessageBlock,
+          readEntry: store.createSelector(getHydratedBlock).effect,
+          readWorkspaceId: store.createSelector(
+            (state, id: string) => state.agentSessions.byAgentId[id]?.workspaceId,
+          ).effect,
+        }),
         seekMessage: createMessageHistorySeeker({
           getConversation,
           readChat: (id) => getAgentChatState(store.state, id),
@@ -113,7 +126,17 @@ function setup(
     store.dispatch(connectionStatusChanged(value ? 'connected' : 'disconnected'));
   const lease = (owner: string, ids: string[]) =>
     store.dispatch(retainedChatTranscriptsSet(owner, workspaceId, ids));
-  return { store, read, subscribe, handlers, closes, connected, lease, getConversation };
+  return {
+    store,
+    read,
+    subscribe,
+    handlers,
+    closes,
+    connected,
+    lease,
+    getConversation,
+    getMessageBlock,
+  };
 }
 describe('read-only conversation ownership with canonical reducers', () => {
   it('shares one stream between consumers, rejects retired callbacks, and reconnects from a fresh snapshot', async () => {
@@ -419,6 +442,148 @@ describe('message targets owned by the admitted reader', () => {
       await Promise.resolve();
       expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
       expect(getAgentChatState(h.store.state, session.id).scrollbackGapToken).toBeNull();
+    },
+  );
+});
+
+describe('full tool blocks owned by the admitted reader', () => {
+  const full = { type: 'tool_result' as const, id: 'message-1:0', output: 'Complete tool output' };
+  const ready = async (h: ReturnType<typeof setup>) => {
+    h.connected(true);
+    h.lease('reader', [session.id]);
+    await vi.waitFor(() =>
+      expect(getAgentChatState(h.store.state, session.id).transcriptHydration).toBe('settled'),
+    );
+  };
+  const request = (h: ReturnType<typeof setup>) =>
+    h.store.dispatch(messageBlockHydrationRequested(session.id, 'message-1', full.id));
+  const entry = (h: ReturnType<typeof setup>) =>
+    getHydratedBlock(h.store.state, session.id, 'message-1', full.id);
+
+  it('deduplicates in-flight reads and reuses the canonical loaded block', async () => {
+    let resolve!: (block: typeof full) => void;
+    const h = setup(
+      undefined,
+      undefined,
+      vi.fn<AgentsClient['getMessageBlock']>(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      ),
+    );
+    await ready(h);
+    request(h);
+    request(h);
+    expect(h.getMessageBlock).toHaveBeenCalledExactlyOnceWith(
+      session.id,
+      'message-1',
+      full.id,
+      workspaceId,
+    );
+    expect(entry(h)?.status).toBe('loading');
+    resolve(full);
+    await vi.waitFor(() => expect(entry(h)).toMatchObject({ status: 'loaded', block: full }));
+    request(h);
+    expect(h.getMessageBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the loading marker when admission changes before cancellation reaches the worker', async () => {
+    const store = new ReactStore({ chatState: chatStateReducer });
+    stops.push(store.init());
+    let admitted = true;
+    let resolve!: (block: typeof full) => void;
+    const getMessageBlock = vi.fn<AgentsClient['getMessageBlock']>(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const workers = createMessageBlockHydrationWorkers({
+      getMessageBlock,
+      readEntry: store.createSelector(getHydratedBlock).effect,
+      readWorkspaceId: store.createSelector(() => workspaceId).effect,
+    });
+    stops.push(
+      store.runSaga(function* () {
+        yield* workers.watch(() => admitted, true);
+      }),
+    );
+    store.dispatch(messageBlockHydrationRequested(session.id, 'message-1', full.id));
+    expect(getHydratedBlock(store.state, session.id, 'message-1', full.id)?.status).toBe('loading');
+    admitted = false;
+    resolve(full);
+    await vi.waitFor(() =>
+      expect(getHydratedBlock(store.state, session.id, 'message-1', full.id)?.status).toBe('error'),
+    );
+    admitted = true;
+    getMessageBlock.mockResolvedValue(full);
+    store.dispatch(messageBlockHydrationRequested(session.id, 'message-1', full.id));
+    await vi.waitFor(() =>
+      expect(getHydratedBlock(store.state, session.id, 'message-1', full.id)).toMatchObject({
+        status: 'loaded',
+        block: full,
+      }),
+    );
+  });
+
+  it('retains the canonical error and retries only on another user request', async () => {
+    const h = setup(
+      undefined,
+      undefined,
+      vi
+        .fn<AgentsClient['getMessageBlock']>()
+        .mockRejectedValueOnce(new Error('read failed'))
+        .mockResolvedValue(full),
+    );
+    await ready(h);
+    request(h);
+    await vi.waitFor(() =>
+      expect(entry(h)).toMatchObject({ status: 'error', error: 'read failed' }),
+    );
+    expect(h.getMessageBlock).toHaveBeenCalledTimes(1);
+    request(h);
+    await vi.waitFor(() => expect(entry(h)).toMatchObject({ status: 'loaded', block: full }));
+    expect(h.getMessageBlock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['return', 'disconnect'] as const)(
+    'retires a pending read on %s without poisoning a reopened reader',
+    async (reason) => {
+      let resolve!: (block: typeof full) => void;
+      const replacement = { ...full, output: 'New reader output' };
+      const h = setup(
+        undefined,
+        undefined,
+        vi
+          .fn<AgentsClient['getMessageBlock']>()
+          .mockImplementationOnce(
+            () =>
+              new Promise((done) => {
+                resolve = done;
+              }),
+          )
+          .mockResolvedValue(replacement),
+      );
+      await ready(h);
+      request(h);
+      expect(entry(h)?.status).toBe('loading');
+      if (reason === 'return') h.lease('reader', []);
+      else h.connected(false);
+      await vi.waitFor(() => expect(entry(h)?.status).toBe('error'));
+      await ready(h);
+      request(h);
+      await vi.waitFor(() =>
+        expect(entry(h)).toMatchObject({ status: 'loaded', block: replacement }),
+      );
+      resolve(full);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(entry(h)).toMatchObject({ status: 'loaded', block: replacement });
+      expect(h.getMessageBlock).toHaveBeenCalledTimes(2);
+      h.lease('reader', []);
+      h.store.dispatch(messageBlockHydrationRequested(session.id, 'message-2', 'message-2:0'));
+      expect(h.getMessageBlock).toHaveBeenCalledTimes(2);
     },
   );
 });

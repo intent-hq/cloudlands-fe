@@ -9,7 +9,7 @@ import { createConversationReader } from './backend-conversation-reader';
  * events-driven `agent.list` refetch.
  */
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import { isContentBlock } from '$shared/types';
+import { createMessageBlockReader } from './backend-message-block-reader';
 import { normalizeAgent, getKnownAgentWorkspace } from './agent-normalization';
 import { createBackendAgentClient } from './backend-agent-client';
 import { createBackendPermissionClient } from './backend-permission-client';
@@ -21,7 +21,7 @@ const agentReads = createBackendAgentClient({
   onBackendNotification: (...args) => onBackendNotification(...args),
   onBackendReconnected: (...args) => onBackendReconnected(...args),
 });
-import type { AgentSession, ContentBlock } from '$shared/types';
+import type { AgentSession } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
@@ -120,26 +120,9 @@ export class LiveAgentsClient implements AgentsClient {
   // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
   // or malformed envelope rejects (callers rely on a real block or an error,
   // never a silent empty object).
-  async getMessageBlock(
-    agentId: string,
-    messageId: string,
-    blockId: string,
-    workspaceId?: string,
-  ): Promise<ContentBlock> {
-    const result = await backendRequest<{ block?: unknown }>('agent.getMessageBlock', {
-      agentId,
-      messageId,
-      blockId,
-      ...(workspaceId !== undefined ? { workspaceId } : {}),
-    });
-    const block = result?.block;
-    if (!isContentBlock(block)) {
-      throw new Error(
-        `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
-      );
-    }
-    return block;
-  }
+  getMessageBlock = createMessageBlockReader({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  });
 
   // Full user-message index (`agent.listUserMessages`, §5.5): every
   // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
