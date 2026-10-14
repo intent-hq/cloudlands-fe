@@ -13,9 +13,25 @@ export type RestorableSnapshot = {
 /** The bytes are unavailable through file.read; downloads use the original-byte route. */
 export type PreviewOnly = { kind: 'preview-only'; isBinary: boolean };
 
-export type FileContent = EditableText | RestorableSnapshot | PreviewOnly;
+/** Observed UTF-8 prefix, never an editable document or an Undo snapshot. */
+type ReadOnlyText = {
+  kind: 'read-only-text';
+  content: string;
+  bytesRead: number;
+  totalBytes: number;
+};
+
+export type FileContent = EditableText | RestorableSnapshot | PreviewOnly | ReadOnlyText;
 
 export type FileContentData =
+  | {
+      kind: 'read-only-text';
+      originalContent: string;
+      localContent: null;
+      isBinary: false;
+      bytesRead: number;
+      totalBytes: number;
+    }
   | { kind: 'preview-only'; originalContent: null; localContent: null; isBinary: boolean }
   | { kind: 'editable-text'; originalContent: string; localContent: string; isBinary: false }
   | { kind: 'restorable-snapshot'; originalContent: string; localContent: string; isBinary: true };
@@ -36,7 +52,12 @@ export type FileContentReadOptions = {
   gitRoot?: { id: string; relativePath: string };
   maxSize?: number;
   truncateIfLarge?: boolean;
+  /** Explicit bounded read-only observation; never substitutes for a full read. */
+  readOnlyPreview?: boolean;
+  attachment?: { id: string; agentId: string };
 };
+
+export type FileReadTransportOptions = { gitRootId?: string; readOnlyPreview?: boolean };
 
 export type FileContentUpdateOptions = {
   /** The standalone files route retains explicit-save behavior. */

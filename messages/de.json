@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "Nachricht gesendet.",
   "ui_messageComposer_sentQueued_label": "Nachricht gesendet. Noch {count} in der Warteschlange.",
   "ui_messageComposer_attachments_one": "{count} Anhang",
-  "ui_messageComposer_attachments_many": "{count} Anhänge"
+  "ui_messageComposer_attachments_many": "{count} Anhänge",
+  "files_read_partialPreview_label": "Teilvorschau: die ersten {shown} von {total}. Die Datei kann sich nach diesem Lesen ändern.",
+  "files_read_previewReadOnly_error": "Dies ist eine schreibgeschützte Vorschau."
 }

@@ -22,6 +22,8 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     note?: string;
     q?: string;
     file?: string;
+    attachment?: string;
+    attachmentAgent?: string;
     line?: number;
     fileQuery?: string;
     homeQuery?: string;
@@ -39,6 +41,12 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
       ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
       ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
       ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
+      ...(typeof search.attachment === 'string' && search.attachment
+        ? { attachment: search.attachment }
+        : {}),
+      ...(typeof search.attachmentAgent === 'string' && search.attachmentAgent
+        ? { attachmentAgent: search.attachmentAgent }
+        : {}),
       ...(typeof search.fileQuery === 'string' && search.fileQuery
         ? { fileQuery: search.fileQuery }
         : {}),
@@ -57,8 +65,19 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams();
-  const { agent, message, note, q, file, line, fileQuery, homeQuery, homeFilter } =
-    Route.useSearch();
+  const {
+    agent,
+    message,
+    note,
+    q,
+    file,
+    line,
+    fileQuery,
+    homeQuery,
+    homeFilter,
+    attachment,
+    attachmentAgent,
+  } = Route.useSearch();
   return (
     <Overview
       workspaceId={workspaceId}
@@ -67,6 +86,8 @@ function WorkspacePage() {
       noteId={note}
       query={q}
       filePath={file}
+      attachmentId={attachment}
+      attachmentAgentId={attachmentAgent}
       line={line}
       fileQuery={fileQuery}
       homeQuery={homeQuery}

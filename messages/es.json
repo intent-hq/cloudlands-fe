@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "Mensaje enviado.",
   "ui_messageComposer_sentQueued_label": "Mensaje enviado. Quedan {count} en la cola.",
   "ui_messageComposer_attachments_one": "{count} archivo adjunto",
-  "ui_messageComposer_attachments_many": "{count} archivos adjuntos"
+  "ui_messageComposer_attachments_many": "{count} archivos adjuntos",
+  "files_read_partialPreview_label": "Vista previa parcial: los primeros {shown} de {total}. El archivo puede cambiar después de esta lectura.",
+  "files_read_previewReadOnly_error": "Esta es una vista previa de solo lectura."
 }

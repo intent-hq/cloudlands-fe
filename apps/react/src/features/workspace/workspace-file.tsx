@@ -4,10 +4,10 @@ import { CodeBlock } from '@/components/editor/code-block';
 import { Button } from '@/components/ui/button';
 import { LoadingState } from '@/components/patterns/screen';
 import { store } from '@/store';
-import { selectFileContentEntry } from '@/store/files/files-selectors';
-import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
+import { selectFileContentEntry, selectFileReadContext } from '@/store/files/files-selectors';
 import { loadFileContentRequested } from '../../../../../src/store/renderer/slices/files/files-slice';
 import { getLanguageFromPath } from '$lib/utils/file-utils';
+import { formatBytesBinary } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 
@@ -18,6 +18,8 @@ export function WorkspaceFile({
   noteId,
   query,
   fileQuery,
+  attachmentId,
+  attachmentAgentId,
 }: {
   workspaceId: string;
   path: string;
@@ -25,11 +27,16 @@ export function WorkspaceFile({
   noteId?: string;
   query?: string;
   fileQuery?: string;
+  attachmentId?: string;
+  attachmentAgentId?: string;
 }) {
   const title = useRef<HTMLHeadingElement>(null);
   const retry = useRef<HTMLButtonElement>(null);
   const code = useRef<HTMLDivElement>(null);
-  const authority = selectAdmittedWorkspaceReadContext(workspaceId);
+  const authority = selectFileReadContext(
+    workspaceId,
+    attachmentId ? (attachmentAgentId ?? '') : undefined,
+  );
   const entry = selectFileContentEntry(workspaceId, path);
   const target = parseWorkspaceFileTarget(path);
   const current = authority.value ? entry.value : undefined;
@@ -71,7 +78,21 @@ export function WorkspaceFile({
             ref={retry}
             variant="outline"
             className="w-fit"
-            onClick={() => store.dispatch(loadFileContentRequested(workspaceId, path, ''))}
+            onClick={() =>
+              store.dispatch(
+                loadFileContentRequested(
+                  workspaceId,
+                  path,
+                  '',
+                  attachmentId
+                    ? {
+                        readOnlyPreview: true,
+                        attachment: { id: attachmentId, agentId: attachmentAgentId ?? '' },
+                      }
+                    : undefined,
+                ),
+              )
+            }
           >
             {m.ui_combobox_retry_label()}
           </Button>
@@ -93,6 +114,29 @@ export function WorkspaceFile({
             </Link>
           ))}
         </>
+      ) : current.kind === 'read-only-text' ? (
+        <div
+          className="min-w-0"
+          data-testid="workspace-file-content"
+          data-preview-bytes={current.bytesRead}
+          data-total-bytes={current.totalBytes}
+          data-truncated={current.truncated}
+        >
+          <output className="block">
+            {current.truncated
+              ? m.files_read_partialPreview_label({
+                  shown: formatBytesBinary(current.bytesRead),
+                  total: formatBytesBinary(current.totalBytes),
+                })
+              : m.files_read_previewReadOnly_error()}
+          </output>
+          <pre
+            className="type-code max-h-96 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-muted/50 p-3"
+            data-testid="workspace-file-prefix"
+          >
+            {current.originalContent}
+          </pre>
+        </div>
       ) : current.kind !== 'editable-text' ? (
         <p>{m.editor_fileViewer_binary_label()}</p>
       ) : (

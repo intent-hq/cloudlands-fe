@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "消息已发送。",
   "ui_messageComposer_sentQueued_label": "消息已发送。还有 {count} 条在队列中。",
   "ui_messageComposer_attachments_one": "{count} 个附件",
-  "ui_messageComposer_attachments_many": "{count} 个附件"
+  "ui_messageComposer_attachments_many": "{count} 个附件",
+  "files_read_partialPreview_label": "部分预览：共 {total}，显示前 {shown}。读取后文件可能会发生变化。",
+  "files_read_previewReadOnly_error": "此预览为只读。"
 }

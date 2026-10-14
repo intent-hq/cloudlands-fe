@@ -112,6 +112,7 @@ import type {
   EditableText,
   RestorableSnapshot,
   FileContentEntry,
+  FileReadTransportOptions,
 } from '../../store/renderer/slices/files/files-types';
 
 // Compatibility until all domain clients consume the neutral types directly.
@@ -891,7 +892,7 @@ export interface FilesClient {
   read(
     workspaceId: string,
     path: string,
-    options?: { gitRootId: string },
+    options?: FileReadTransportOptions,
   ): Promise<FileContentEntry | null>;
   /** Root node of the workspace file tree, or `null` when no tree is available. */
   explorerTree(workspaceId: string): Promise<FileNode | null>;

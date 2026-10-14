@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "Message sent.",
   "ui_messageComposer_sentQueued_label": "Message sent. {count} still queued.",
   "ui_messageComposer_attachments_one": "{count} attachment",
-  "ui_messageComposer_attachments_many": "{count} attachments"
+  "ui_messageComposer_attachments_many": "{count} attachments",
+  "files_read_partialPreview_label": "Partial preview: first {shown} of {total}. The file may change after this read.",
+  "files_read_previewReadOnly_error": "This is a read-only preview."
 }

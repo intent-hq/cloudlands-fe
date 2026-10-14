@@ -17,6 +17,7 @@ import type {
   FileContentEntry,
 } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
+import type { FileReadTransportOptions } from '$store/renderer/slices/files/files-types';
 import { createFileRead } from './backend-file-read';
 import { createFileListDirectory, toFileNodes } from './backend-file-list-directory';
 import { backendRequest } from './backend-transport';
@@ -48,7 +49,7 @@ export class LiveFilesClient implements FilesClient {
   async read(
     workspaceId: string,
     path: string,
-    options?: { gitRootId: string },
+    options?: FileReadTransportOptions,
   ): Promise<FileContentEntry | null> {
     return readFile(workspaceId, path, options);
   }

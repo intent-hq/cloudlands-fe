@@ -56,6 +56,14 @@ describe('file content capabilities', () => {
     ]);
   });
 
+  it('does not grant a snapshot even to a complete read-only observation', () => {
+    expect(
+      fileSnapshot(
+        entry({ kind: 'read-only-text', content: 'complete', bytesRead: 8, totalBytes: 8 }),
+      ),
+    ).toBeUndefined();
+  });
+
   it('never invents a snapshot for unavailable or truncated contents', () => {
     expect(fileSnapshot(undefined)).toBeUndefined();
     expect(fileSnapshot(entry({ kind: 'preview-only', isBinary: true }))).toBeUndefined();

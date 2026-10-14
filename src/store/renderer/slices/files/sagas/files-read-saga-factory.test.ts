@@ -9,6 +9,8 @@ import {
   type SuffixResolution,
 } from '$lib/services/files/file-suffix-resolver';
 import {
+  fileAttachmentReleased,
+  resolveFileAttachmentRequested,
   filesReducer,
   initialState,
   loadFileContentRequested,
@@ -60,6 +62,10 @@ async function settle() {
 function start(
   options: {
     context?: string | null;
+    attachments?: {
+      resolve: (workspaceId: string, attachmentId: string) => Promise<string>;
+      readCurrentContext: (workspaceId: string, agentId: string) => string | null;
+    };
     onDispatch?: (action: StoreAction<unknown>) => void;
     onError?: (error: unknown) => void;
     resolveFileBySuffix?: (workspaceId: string, path: string) => Promise<SuffixResolution>;
@@ -83,6 +89,7 @@ function start(
     { channel, dispatch },
     createFilesReadSaga({
       files,
+      attachments: options.attachments,
       resolveFileBySuffix:
         options.resolveFileBySuffix ??
         createFileSuffixResolver({ request, listDirectory: createFileListDirectory(request) }),
@@ -308,4 +315,82 @@ describe('createFilesReadSaga', () => {
       expect(run.onRetarget).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('bounded preview admission and retirement', () => {
+  it('preserves explicit preview, root and read-only result through the canonical cache', async () => {
+    const run = start();
+    run.request.mockResolvedValue({ content: 'aGk=', bytesRead: 2, size: 2 });
+    run.dispatch(
+      loadFileContentRequested('ws-1', 'src/a.ts', '/repo/src/a.ts', {
+        readOnlyPreview: true,
+        gitRoot: { id: 'root', relativePath: 'a.ts' },
+      }),
+    );
+    await settle();
+    expect(run.request.mock.calls).toEqual([
+      [
+        'file.readChunk',
+        { workspaceId: 'ws-1', path: 'a.ts', gitRootId: 'root', offset: 0, length: 16384 },
+      ],
+    ]);
+    expect(run.entry()).toMatchObject({
+      kind: 'read-only-text',
+      originalContent: 'hi',
+      localContent: null,
+      bytesRead: 2,
+      totalBytes: 2,
+    });
+  });
+  it.each(['release', 'authority'] as const)(
+    'retires a deferred bounded read on %s',
+    async (reason) => {
+      const run = start();
+      const pending = deferred<unknown>();
+      run.request.mockReturnValue(pending.promise);
+      run.dispatch(loadFileContentRequested('ws-1', 'src/a.ts', '', { readOnlyPreview: true }));
+      await settle();
+      if (reason === 'release') run.dispatch(removeFileContentEntry('ws-1', 'src/a.ts'));
+      else run.replaceContext('authority-2');
+      pending.resolve({ content: 'aGk=', bytesRead: 2, size: 2 });
+      await settle();
+      expect(run.results().some((a) => a.type === loadFileContentSucceeded.type)).toBe(false);
+    },
+  );
+  it.each(['release', 'authority', 'node'] as const)(
+    'settles attachment resolution without navigation on %s',
+    async (reason) => {
+      const pending = deferred<string>();
+      let context: string | null = 'authority-1';
+      const run = start({
+        attachments: { resolve: () => pending.promise, readCurrentContext: () => context },
+      });
+      const action = resolveFileAttachmentRequested('ws-1', 'id', 'agent', 'consumer');
+      run.dispatch(action);
+      await settle();
+      if (reason === 'release') run.dispatch(fileAttachmentReleased('consumer'));
+      else context = reason === 'node' ? null : 'authority-2';
+      pending.resolve('.intent/attachments/trace.json');
+      expect(await action.promise).toBeNull();
+    },
+  );
+  it('checks node/authority and registered path again before reading any bytes', async () => {
+    const target = deferred<string>();
+    let context: string | null = 'authority-1';
+    const run = start({
+      attachments: { resolve: () => target.promise, readCurrentContext: () => context },
+    });
+    run.dispatch(
+      loadFileContentRequested('ws-1', 'src/a.ts', '', {
+        readOnlyPreview: true,
+        attachment: { id: 'id', agentId: 'agent' },
+      }),
+    );
+    await settle();
+    context = null;
+    target.resolve('src/a.ts');
+    await settle();
+    expect(run.request).not.toHaveBeenCalled();
+    expect(run.results().some((a) => a.type === loadFileContentSucceeded.type)).toBe(false);
+  });
 });

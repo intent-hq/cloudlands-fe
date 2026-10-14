@@ -2,6 +2,7 @@ import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import { WorkspaceConversationContent } from './workspace-conversation-content';
 import { WorkspaceConversationMessage } from './workspace-conversation-message';
 import { WorkspaceConversationMedia } from './workspace-conversation-image';
+import { WorkspaceConversationFile } from './workspace-conversation-file';
 import {
   composeTranscript,
   isConversationStartLoaded,
@@ -131,6 +132,23 @@ function ConversationBlock({
         agentId={agentId}
         workspaceId={navigation.workspaceContext.workspaceId}
         attachmentId={block.attachmentId}
+      />
+    );
+  if (
+    isFileBlock(block) &&
+    block.mimeType === 'application/json' &&
+    block.attachmentId &&
+    navigation.workspaceContext?.workspaceId
+  )
+    return (
+      <WorkspaceConversationFile
+        key={`${agentId}:${block.attachmentId}`}
+        workspaceId={navigation.workspaceContext.workspaceId}
+        agentId={agentId}
+        attachmentId={block.attachmentId}
+        name={block.fileName ?? ''}
+        size={block.size}
+        mimeType={block.mimeType}
       />
     );
   if (block.type === 'text')

@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "Message envoyé.",
   "ui_messageComposer_sentQueued_label": "Message envoyé. Il en reste {count} dans la file d’attente.",
   "ui_messageComposer_attachments_one": "{count} pièce jointe",
-  "ui_messageComposer_attachments_many": "{count} pièces jointes"
+  "ui_messageComposer_attachments_many": "{count} pièces jointes",
+  "files_read_partialPreview_label": "Aperçu partiel : les premiers {shown} sur {total}. Le fichier peut changer après cette lecture.",
+  "files_read_previewReadOnly_error": "Cet aperçu est en lecture seule."
 }

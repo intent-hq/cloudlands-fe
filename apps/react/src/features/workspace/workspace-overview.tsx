@@ -1,3 +1,4 @@
+import { selectFileReadContext } from '@/store/files/files-selectors';
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useContext, useLayoutEffect, useRef } from 'react';
@@ -197,6 +198,8 @@ export function WorkspaceOverview({
   noteId,
   query,
   filePath,
+  attachmentId,
+  attachmentAgentId,
   line,
   fileQuery,
   homeQuery,
@@ -208,6 +211,8 @@ export function WorkspaceOverview({
   noteId?: string;
   query?: string;
   filePath?: string;
+  attachmentId?: string;
+  attachmentAgentId?: string;
   line?: number;
   fileQuery?: string;
   homeQuery?: string;
@@ -220,6 +225,10 @@ export function WorkspaceOverview({
   const row = loaded.value ? workspace.value : undefined;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
+  const fileAuthority = selectFileReadContext(
+    workspaceId,
+    attachmentId ? (attachmentAgentId ?? '') : undefined,
+  ).value;
   const title = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const previousWorkspace = useRef<string | undefined>(undefined);
@@ -261,12 +270,24 @@ export function WorkspaceOverview({
     };
   }, [workspaceId, connection]);
   useLayoutEffect(() => {
-    if (!connection || !filePath || !parseWorkspaceFileTarget(filePath).valid) return;
-    store.dispatch(loadFileContentRequested(workspaceId, filePath, ''));
+    if (!fileAuthority || !filePath || !parseWorkspaceFileTarget(filePath).valid) return;
+    store.dispatch(
+      loadFileContentRequested(
+        workspaceId,
+        filePath,
+        '',
+        attachmentId
+          ? {
+              readOnlyPreview: true,
+              attachment: { id: attachmentId, agentId: attachmentAgentId ?? '' },
+            }
+          : undefined,
+      ),
+    );
     return () => {
       store.dispatch(removeFileContentEntry(workspaceId, filePath));
     };
-  }, [workspaceId, filePath, connection]);
+  }, [workspaceId, filePath, fileAuthority, attachmentId, attachmentAgentId]);
   return (
     <Screen
       className="min-h-screen"
@@ -345,6 +366,8 @@ export function WorkspaceOverview({
                   key={filePath}
                   workspaceId={workspaceId}
                   path={filePath}
+                  attachmentId={attachmentId}
+                  attachmentAgentId={attachmentAgentId}
                   line={line}
                   noteId={noteId}
                   query={query}

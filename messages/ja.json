@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "メッセージを送信しました。",
   "ui_messageComposer_sentQueued_label": "メッセージを送信しました。残り {count} 件が送信待ちです。",
   "ui_messageComposer_attachments_one": "{count} 件の添付ファイル",
-  "ui_messageComposer_attachments_many": "{count} 件の添付ファイル"
+  "ui_messageComposer_attachments_many": "{count} 件の添付ファイル",
+  "files_read_partialPreview_label": "部分プレビュー：{total} のうち先頭 {shown}。読み取り後にファイルが変更される場合があります。",
+  "files_read_previewReadOnly_error": "これは読み取り専用のプレビューです。"
 }

@@ -1,7 +1,7 @@
-import type { FileContent } from '../files-types';
+import type { FileContent, FileContentReadOptions } from '../files-types';
 import { editableText } from '$features/file/utils/file-content';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, join, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import type { StoreAction } from '@themislib/themis/types';
 import type { FilesClient } from '$lib/client/app-client';
@@ -11,6 +11,8 @@ import { m } from '$shared/paraglide/messages.js';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  fileAttachmentReleased,
+  resolveFileAttachmentRequested,
   loadFileContentFailed,
   loadFileContentRequested,
   loadFileContentSucceeded,
@@ -29,12 +31,17 @@ type ReadResult =
 /** The canonical file cache reader, bound once by each renderer's lifetime owner. */
 export function createFilesReadSaga({
   files,
+  attachments,
   resolveFileBySuffix,
   admission,
   onRetarget,
   onError,
 }: {
   files: Pick<FilesClient, 'read'>;
+  attachments?: {
+    resolve: (workspaceId: string, attachmentId: string) => Promise<string>;
+    readCurrentContext: (workspaceId: string, agentId: string) => string | null;
+  };
   resolveFileBySuffix: (
     workspaceId: string,
     path: string,
@@ -54,18 +61,32 @@ export function createFilesReadSaga({
     workspaceId: string,
     path: string,
     isCurrent: () => boolean,
-    gitRoot?: { id: string; relativePath: string },
+    options?: FileContentReadOptions,
   ): SagaGenerator<ReadResult | undefined> {
     try {
+      const gitRoot = options?.gitRoot;
+      const attachment = options?.attachment;
+      if (attachment) {
+        if (!attachments || !options.readOnlyPreview || gitRoot || !isCurrent()) return undefined;
+        const resolved = yield* call(() =>
+          isCurrent() ? attachments.resolve(workspaceId, attachment.id) : Promise.resolve(null),
+        );
+        if (!isCurrent()) return undefined;
+        if (resolved !== path) throw new Error(m.ui_linkHandler_invalidFilePath_error());
+      }
       const entry = yield* call((): ReturnType<FilesClient['read']> => {
         if (!isCurrent()) return Promise.resolve(null);
-        return gitRoot
-          ? files.read(workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id })
+        return gitRoot || options?.readOnlyPreview
+          ? files.read(workspaceId, gitRoot?.relativePath ?? path, {
+              ...(gitRoot ? { gitRootId: gitRoot.id } : {}),
+              ...(options?.readOnlyPreview ? { readOnlyPreview: true } : {}),
+            })
           : files.read(workspaceId, path);
       });
       if (!isCurrent()) return undefined;
       if (!entry) {
-        if (gitRoot) return { kind: 'failure', message: m.files_read_notFound_error() };
+        if (gitRoot || options?.attachment)
+          return { kind: 'failure', message: m.files_read_notFound_error() };
         // Not found at the workspace root — the path may be submodule- or
         // worktree-relative (see monorepo#2059). Attempt suffix resolution.
         // Candidates never include the requested path itself (the helper
@@ -90,11 +111,18 @@ export function createFilesReadSaga({
       return {
         kind: 'success',
         content:
-          entry.kind === 'editable-text'
-            ? editableText(entry.originalContent)
-            : entry.kind === 'restorable-snapshot'
-              ? { kind: 'restorable-snapshot', content: entry.originalContent, isBinary: true }
-              : { kind: 'preview-only', isBinary: entry.isBinary },
+          entry.kind === 'read-only-text'
+            ? {
+                kind: 'read-only-text',
+                content: entry.originalContent,
+                bytesRead: entry.bytesRead,
+                totalBytes: entry.totalBytes,
+              }
+            : entry.kind === 'editable-text'
+              ? editableText(entry.originalContent)
+              : entry.kind === 'restorable-snapshot'
+                ? { kind: 'restorable-snapshot', content: entry.originalContent, isBinary: true }
+                : { kind: 'preview-only', isBinary: entry.isBinary },
         truncated: entry.truncated,
       };
     } catch (error) {
@@ -153,7 +181,7 @@ export function createFilesReadSaga({
     isCurrent: () => boolean,
     workspaceId: string,
     path: string,
-    gitRoot?: { id: string; relativePath: string },
+    options?: FileContentReadOptions,
   ): SagaGenerator<ReadResult | undefined> {
     if (!isCurrent()) return undefined;
     let acquired = false;
@@ -172,7 +200,7 @@ export function createFilesReadSaga({
       if (generations.get(key) !== generation || !isCurrent()) return undefined;
 
       const read = yield* race({
-        result: call(loadFileContentWorker, workspaceId, path, isCurrent, gitRoot),
+        result: call(loadFileContentWorker, workspaceId, path, isCurrent, options),
         cleanup: take(matchesReadCleanup(workspaceId, path)),
       });
       if (read.cleanup) {
@@ -206,6 +234,49 @@ export function createFilesReadSaga({
         (action.type === removeFileContentEntry.type && action.payload[1] === path));
   }
 
+  function readContext(action: ReadAction) {
+    const [workspaceId, , , options] = action.payload;
+    const context = admission?.readCurrentContext(workspaceId);
+    if (
+      options?.attachment &&
+      (!attachments ||
+        attachments.readCurrentContext(workspaceId, options.attachment.agentId) !== context)
+    )
+      return null;
+    return context;
+  }
+
+  function matchesAttachmentCleanup(workspaceId: string, consumer: string) {
+    return (event: { type: string; payload?: unknown }) =>
+      Array.isArray(event.payload) &&
+      ((event.type === fileAttachmentReleased.type && event.payload[0] === consumer) ||
+        (event.type === workspaceUnmounted.type && event.payload[0] === workspaceId));
+  }
+
+  function* resolveAttachment(
+    action: ReturnType<typeof resolveFileAttachmentRequested>,
+  ): SagaGenerator<void> {
+    const [workspaceId, attachmentId, agentId, consumer] = action.payload;
+    const context = attachments?.readCurrentContext(workspaceId, agentId);
+    let target: string | null = null;
+    let settled = false;
+    try {
+      if (!attachments || !context || !workspaceId || !attachmentId) return;
+      const result = yield* race({
+        path: call(attachments.resolve, workspaceId, attachmentId),
+        retired: take(matchesAttachmentCleanup(workspaceId, consumer)),
+      });
+      if (result.path && attachments.readCurrentContext(workspaceId, agentId) === context)
+        target = result.path;
+    } catch (error) {
+      settled = true;
+      yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    } finally {
+      // Retirement resolves null, including cancellation of the owning root saga.
+      if (!settled) yield* put(action.success(target));
+    }
+  }
+
   function registerReadGeneration(
     generations: Map<string, number>,
     requestGenerations: WeakMap<
@@ -219,7 +290,7 @@ export function createFilesReadSaga({
     generations.set(key, generation);
     requestGenerations.set(action, {
       generation,
-      context: admission?.readCurrentContext(action.payload[0]),
+      context: readContext(action),
     });
     return key;
   }
@@ -240,9 +311,7 @@ export function createFilesReadSaga({
     const { generation, context } = request;
     let active = true;
     const isCurrent = () =>
-      active &&
-      generations.get(key) === generation &&
-      (!admission || admission.readCurrentContext(workspaceId) === context);
+      active && generations.get(key) === generation && readContext(action) === context;
     try {
       if (!workspaceId || !path || typeof absolutePath !== 'string' || context === null) return;
       if (!isCurrent()) return;
@@ -256,7 +325,7 @@ export function createFilesReadSaga({
         isCurrent,
         workspaceId,
         path,
-        action.payload[3]?.gitRoot,
+        action.payload[3],
       );
       if (!result || !isCurrent()) return;
 
@@ -277,6 +346,7 @@ export function createFilesReadSaga({
     for (let index = 0; index < MAX_CONCURRENT_FILE_READS; index += 1) permits.put(true);
 
     try {
+      yield* takeEvery(resolveFileAttachmentRequested, resolveAttachment);
       const watcher = yield* takeSingleFlightInContext(
         loadFileContentRequested,
         (action) => registerReadGeneration(generations, requestGenerations, action),

@@ -1,6 +1,8 @@
 import { createFilesReadSaga } from '../../../../../../src/store/renderer/slices/files/sagas/files-read-saga-factory';
 import { loadFileContentFailed } from '../../../../../../src/store/renderer/slices/files/files-slice';
 import { createFileRead } from '$lib/client/live/backend-file-read';
+import { createAttachmentTextTargetRead } from '$lib/client/live/backend-attachment-text-target';
+import { selectFileReadContext } from '../files-selectors';
 import { createFileListDirectory } from '$lib/client/live/backend-file-list-directory';
 import { createFileSuffixResolver } from '$lib/services/files/file-suffix-resolver';
 import { backendRequest } from '@/features/backend/backend-transport';
@@ -10,6 +12,11 @@ import { selectAdmittedWorkspaceReadContext } from '../../workspace-lifecycle/wo
 
 export const filesReadSaga = createFilesReadSaga({
   files: { read: createFileRead(backendRequest) },
+  attachments: {
+    resolve: createAttachmentTextTargetRead(backendRequest),
+    readCurrentContext: (workspaceId, agentId) =>
+      selectFileReadContext.select(store.state, workspaceId, agentId),
+  },
   resolveFileBySuffix: createFileSuffixResolver({
     request: backendRequest,
     listDirectory: createFileListDirectory(backendRequest),

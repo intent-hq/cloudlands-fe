@@ -99,6 +99,106 @@ describe('filesWriteSaga', () => {
     vi.mocked(backendRequest).mockReset();
   });
 
+  it.each([false, true])(
+    'rejects explicit save/update/deletion from a read-only preview (truncated=%s)',
+    async (truncated) => {
+      const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+      const remove = vi.spyOn(appClient.files, 'delete').mockResolvedValue({ success: true });
+      const read = vi.spyOn(appClient.files, 'read');
+      const h = startWrites();
+      try {
+        h.dispatch(
+          loadFileContentSucceeded(
+            'ws-1',
+            'a.ts',
+            '/repo/a.ts',
+            {
+              kind: 'read-only-text',
+              content: 'prefix',
+              bytesRead: 6,
+              totalBytes: truncated ? 99999 : 6,
+            },
+            truncated,
+          ),
+        );
+        h.dispatch(
+          updateFileContent('ws-1', 'a.ts', { kind: 'editable-text', content: 'changed' }),
+        );
+        expect(h.entry()).toMatchObject({
+          kind: 'read-only-text',
+          localContent: null,
+          originalContent: 'prefix',
+        });
+        h.dispatch(
+          saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', {
+            kind: 'editable-text',
+            content: 'prefix',
+          }),
+        );
+        const request = deleteFileRequested('ws-1', 'a.ts', { absolutePath: '/repo/a.ts' });
+        const rejected = expect(request.promise).rejects.toThrow();
+        h.dispatch(request);
+        await rejected;
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+        expect(write).not.toHaveBeenCalled();
+        expect(remove).not.toHaveBeenCalled();
+        expect(read).not.toHaveBeenCalled();
+        expect(h.actions.some((a) => a.type === saveFileContentFailed.type)).toBe(true);
+      } finally {
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['prune', 'unmount'] as const)(
+    'retains the prefix save guard after queued %s cleanup',
+    async (cleanup) => {
+      const write = vi.spyOn(appClient.files, 'write').mockResolvedValue({ success: true });
+      const h = startWrites();
+      const lease = reserveGitMutation('ws-1');
+      try {
+        await lease.ready;
+        h.dispatch(
+          loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', {
+            kind: 'editable-text',
+            content: 'full original',
+          }),
+        );
+        h.dispatch(
+          saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', {
+            kind: 'editable-text',
+            content: 'queued draft',
+          }),
+        );
+        h.dispatch(
+          loadFileContentSucceeded(
+            'ws-1',
+            'a.ts',
+            '/repo/a.ts',
+            {
+              kind: 'read-only-text',
+              content: 'prefix',
+              bytesRead: 6,
+              totalBytes: 99999,
+            },
+            true,
+          ),
+        );
+        h.dispatch(
+          cleanup === 'prune' ? removeFileContentEntry('ws-1', 'a.ts') : workspaceUnmounted('ws-1'),
+        );
+        await lease.release();
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+        expect(write).not.toHaveBeenCalled();
+      } finally {
+        await lease.release();
+        h.task.cancel();
+        await h.task.toPromise();
+      }
+    },
+  );
+
   it.each([
     'autosave',
     'explicit',

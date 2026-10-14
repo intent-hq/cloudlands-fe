@@ -89,6 +89,14 @@ export const loadFileContentRequested = createAction<
   [wsId: string, path: string, absolutePath: string, options?: FileContentReadOptions]
 >('files/loadFileContentRequested');
 
+export const resolveFileAttachmentRequested = createAsyncAction<
+  [wsId: string, attachmentId: string, agentId: string, consumer: string],
+  string | null
+>('files/resolveFileAttachmentRequested', 'files/resolveFileAttachment');
+export const fileAttachmentReleased = createAction<[consumer: string]>(
+  'files/fileAttachmentReleased',
+);
+
 export const loadFileContentSucceeded = createAction<
   [wsId: string, path: string, absolutePath: string, content: FileContent, truncated?: boolean]
 >('files/loadFileContentSucceeded');
@@ -196,7 +204,8 @@ filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, abso
 filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, content] }) =>
   upsertFileEntry(state, wsId, path, (entry) => {
     // A write already in flight cannot replace a newer binary read in the cache.
-    if (entry.isBinary) return { ...entry, saving: false };
+    if (entry.isBinary || entry.kind === 'read-only-text' || entry.truncated)
+      return { ...entry, saving: false };
     if (content.kind === 'restorable-snapshot' && content.isBinary) {
       return {
         ...entry,

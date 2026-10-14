@@ -11,6 +11,16 @@ export function editableText(content: string): EditableText {
 }
 
 export function fileContentData(content: FileContent): FileContentData {
+  if (content.kind === 'read-only-text') {
+    return {
+      kind: content.kind,
+      originalContent: content.content,
+      localContent: null,
+      isBinary: false,
+      bytesRead: content.bytesRead,
+      totalBytes: content.totalBytes,
+    };
+  }
   if (content.kind === 'preview-only') {
     return { ...content, originalContent: null, localContent: null };
   }
@@ -21,7 +31,8 @@ export function fileContentData(content: FileContent): FileContentData {
 }
 
 export function fileSnapshot(entry: FileContentEntry | undefined): RestorableSnapshot | undefined {
-  if (!entry || entry.kind === 'preview-only' || entry.truncated) return undefined;
+  if (!entry || entry.kind === 'preview-only' || entry.kind === 'read-only-text' || entry.truncated)
+    return undefined;
   return {
     kind: 'restorable-snapshot',
     content: entry.kind === 'editable-text' ? entry.localContent : entry.originalContent,

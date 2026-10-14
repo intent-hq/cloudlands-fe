@@ -7517,5 +7517,7 @@
   "ui_messageComposer_sent_label": "메시지를 보냈습니다.",
   "ui_messageComposer_sentQueued_label": "메시지를 보냈습니다. {count}개가 대기 중입니다.",
   "ui_messageComposer_attachments_one": "첨부 파일 {count}개",
-  "ui_messageComposer_attachments_many": "첨부 파일 {count}개"
+  "ui_messageComposer_attachments_many": "첨부 파일 {count}개",
+  "files_read_partialPreview_label": "부분 미리보기: {total} 중 처음 {shown}. 읽은 후 파일이 변경될 수 있습니다.",
+  "files_read_previewReadOnly_error": "읽기 전용 미리보기입니다."
 }

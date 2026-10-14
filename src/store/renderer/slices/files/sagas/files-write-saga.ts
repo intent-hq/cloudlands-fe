@@ -128,12 +128,14 @@ function isSaveFor(
 function* saveFileContentWorker(request: SaveRequest) {
   const { workspaceId, path, absolutePath, content } = request;
   // The queue survives unmount, which clears the cache. Remember an observed
-  // binary read until this write settles so teardown cannot admit a stale save.
-  let becameBinary = selectAllFileContentEntries
+  // binary/preview read until this write settles so teardown cannot admit a stale save.
+  const matchingEntries = selectAllFileContentEntries
     .select(appStore.state, workspaceId)
-    .some(
-      (entry) => entry.isBinary && (entry.path === path || entry.absolutePath === absolutePath),
-    );
+    .filter((entry) => entry.path === path || entry.absolutePath === absolutePath);
+  let becameBinary = matchingEntries.some((entry) => entry.isBinary);
+  let becamePreview = matchingEntries.some(
+    (entry) => entry.kind === 'read-only-text' || entry.truncated,
+  );
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
@@ -141,24 +143,28 @@ function* saveFileContentWorker(request: SaveRequest) {
       path,
       (relativePath: string) => {
         // Recheck at execution, after any queued mutation and intervening read.
-        // A queued text save must not overwrite a file now known to be binary.
-        if (
-          becameBinary ||
-          [path, absolutePath, relativePath].some(
-            (alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias)?.isBinary,
-          )
-        )
+        // A queued text save must not overwrite binary or prefix-only content.
+        const entries = [path, absolutePath, relativePath].map((alias) =>
+          selectFileContentEntry.select(appStore.state, workspaceId, alias),
+        );
+        if (becameBinary || entries.some((entry) => entry?.isBinary))
           throw new Error(m.editor_fileViewer_binary_label());
+        if (
+          becamePreview ||
+          entries.some((entry) => entry?.kind === 'read-only-text' || entry?.truncated)
+        )
+          throw new Error(m.files_read_previewReadOnly_error());
         return appClient.files.write(workspaceId, relativePath, content);
       },
       ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
-        if (
-          payload[0] === workspaceId &&
-          (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
-          payload[3].isBinary &&
-          (payload[1] === path || payload[2] === absolutePath)
-        )
-          becameBinary = true;
+        if (payload[0] === workspaceId && (payload[1] === path || payload[2] === absolutePath)) {
+          if (
+            (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
+            payload[3].isBinary
+          )
+            becameBinary = true;
+          if (payload[3].kind === 'read-only-text' || payload[4]) becamePreview = true;
+        }
       },
     );
     if (result.success) {
@@ -270,7 +276,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
     .select(appStore.state, workspaceId)
     .some(
       (entry) =>
-        entry.isBinary &&
+        (entry.isBinary || entry.kind === 'read-only-text' || entry.truncated) &&
         (entry.path === path || entry.absolutePath === options.absolutePath) &&
         cannotRestore(fileSnapshot(entry)),
     );
@@ -287,7 +293,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         assertActive();
         const binaryEntry = [path, options.absolutePath, relativePath]
           .map((alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias))
-          .find((entry) => entry?.isBinary);
+          .find((entry) => entry?.isBinary || entry?.kind === 'read-only-text' || entry?.truncated);
         if (unsafeSnapshot || (binaryEntry && cannotRestore(fileSnapshot(binaryEntry))))
           throw new Error(m.fileExplorer_tree_undoUnavailable_error());
         // Delete only when Undo has real contents. null is unavailable, never
@@ -308,8 +314,10 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
       ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
         if (
           payload[0] === workspaceId &&
-          (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
-          payload[3].isBinary &&
+          (payload[3].kind === 'read-only-text' ||
+            payload[4] ||
+            ((payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
+              payload[3].isBinary)) &&
           (payload[1] === path || payload[2] === options.absolutePath) &&
           // A concurrent binary observation invalidates a pending tree snapshot.
           (options.snapshot === undefined ||
