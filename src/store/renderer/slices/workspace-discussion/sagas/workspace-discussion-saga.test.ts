@@ -1,0 +1,390 @@
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Workspace } from '$shared/types';
+import type { DiscussionMessage } from '$shared/types/workspace-discussion';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { store } from '../../../store';
+import { connectionsListReceived } from '../../connections/connections-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-slice';
+import { replaceWorkspaceList } from '../../workspace/workspace-slice';
+import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
+import { principalContextChanged, principalReceived } from '../../principal/principal-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  discussionRequested,
+  discussionOlderRequested,
+  discussionDraftChanged,
+  discussionSendRequested,
+  discussionRetryRequested,
+  discussionMessageReceived,
+} from '../workspace-discussion-slice';
+import {
+  selectDiscussionMessages,
+  selectDiscussionPending,
+  selectDiscussionTarget,
+  selectWorkspaceDiscussion,
+} from '../workspace-discussion-selectors';
+import { workspaceDiscussionSaga } from './workspace-discussion-saga';
+
+const wire = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: wire.request }));
+const message = (sequence: number, workspaceId = 'ws', body = 'hello'): DiscussionMessage => ({
+  id: `server-${sequence}`,
+  workspaceId,
+  sequence,
+  body,
+  author: { principalId: 'me', login: 'sam', displayName: null, avatarUrl: null },
+  createdAt: '2026-10-14T10:00:00Z',
+});
+const page = (start: number, end: number, hasMore = false) => ({
+  messages: Array.from({ length: end - start + 1 }, (_, i) => message(start + i)),
+  hasMore,
+});
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+function admit(id = 'me') {
+  const context = selectPrincipalConnectionContext.select(store.state)!;
+  store.dispatch(principalContextChanged(context));
+  const p = store.state.principal;
+  store.dispatch(
+    principalReceived(
+      { context, invalidation: p.invalidation, presentationVersion: p.presentationVersion },
+      {
+        principal: {
+          id,
+          hostRole: 'owner',
+          hostMembershipRevision: 1,
+          isAdministrator: true,
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+        },
+        capabilities: {
+          hostMembership: true,
+          collaborationIdentity: true,
+          personalPairing: true,
+          authenticatedDevices: true,
+        },
+      },
+    ),
+  );
+}
+const workspace = (id = 'ws') =>
+  ({
+    id: WorkspaceId(id),
+    memberCount: 2,
+    ownerPrincipalId: 'me',
+    myRole: 'owner',
+    canManage: true,
+  }) as Workspace;
+const settle = () => vi.advanceTimersByTimeAsync(0);
+const row = () => selectWorkspaceDiscussion.select(store.state, 'ws');
+const messages = () => selectDiscussionMessages.select(store.state, 'ws');
+const pending = () => selectDiscussionPending.select(store.state, 'ws');
+
+describe('workspace discussion transport', () => {
+  let dispose: () => void;
+  let cancel: () => void;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    dispose = store.init();
+    wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
+    store.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+    );
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    store.dispatch(replaceWorkspaceList([workspace(), workspace('other')]));
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    admit();
+    cancel = store.runSaga(workspaceDiscussionSaga);
+  });
+  afterEach(() => {
+    cancel();
+    dispose();
+    vi.useRealTimers();
+  });
+  async function open() {
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+  }
+
+  it('merges live delivery during list and loads older pages once per request', async () => {
+    const first = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(first.promise).mockResolvedValueOnce(page(1, 1));
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(4)),
+    );
+    first.resolve(page(2, 3, true));
+    await settle();
+    expect(messages().map((m) => m.sequence)).toEqual([2, 3, 4]);
+    store.dispatch(discussionOlderRequested('ws'));
+    await settle();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.list', {
+      workspaceId: 'ws',
+      beforeSequence: 2,
+      limit: 50,
+    });
+    expect(messages().map((m) => m.sequence)).toEqual([1, 2, 3, 4]);
+    expect(row().hasMore).toBe(false);
+  });
+  it('waits for admission and subscription before loading an already mounted pane', async () => {
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    expect(wire.request).toHaveBeenCalledWith(
+      'discussion.list',
+      expect.objectContaining({ workspaceId: 'ws' }),
+    );
+  });
+  it('deduplicates echo-before-reply and preserves edits made while sending', async () => {
+    await open();
+    const send = deferred<{ message: DiscussionMessage }>();
+    wire.request.mockReturnValueOnce(send.promise);
+    store.dispatch(discussionDraftChanged('ws', 'hello'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(pending()).toHaveLength(1);
+    store.dispatch(discussionDraftChanged('ws', 'next draft'));
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(1)),
+    );
+    send.resolve({ message: message(1) });
+    await settle();
+    expect(messages()).toEqual([message(1)]);
+    expect(pending()).toEqual([]);
+    expect(row().draft).toBe('next draft');
+  });
+  it('retains the failed body and retries with exactly the same client key', async () => {
+    await open();
+    wire.request
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({ message: message(1) });
+    store.dispatch(discussionDraftChanged('ws', 'hello'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const retry = pending()[0];
+    expect(retry).toMatchObject({ body: 'hello', status: 'failed' });
+    expect(row().draft).toBe('hello');
+    store.dispatch(discussionRetryRequested('ws', retry.id));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[0][1]).toEqual(sends[1][1]);
+    expect(pending()).toEqual([]);
+    expect(row().draft).toBe('');
+  });
+  it('pages reconnect history back to the last cached message and retains drafts', async () => {
+    wire.request.mockResolvedValueOnce(page(1, 2));
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'unsent'));
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    wire.request
+      .mockResolvedValueOnce(page(53, 102, true))
+      .mockResolvedValueOnce(page(3, 52, true))
+      .mockResolvedValueOnce(page(1, 2));
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    expect(messages()).toHaveLength(102);
+    expect(row().draft).toBe('unsent');
+    expect(row().catchUp).toBeNull();
+    expect(wire.request.mock.calls.map(([, params]) => params.beforeSequence)).toEqual([
+      undefined,
+      undefined,
+      53,
+      3,
+    ]);
+  });
+  it('bounds a long catch-up and resumes its cursor on explicit retry', async () => {
+    wire.request.mockResolvedValueOnce(page(1, 1));
+    await open();
+    wire.request.mockImplementation(async (_method, params) => {
+      const end = (params.beforeSequence ?? 552) - 1;
+      return page(Math.max(1, end - 49), end, end > 50);
+    });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(wire.request).toHaveBeenCalledTimes(11);
+    expect(row()).toMatchObject({
+      loading: false,
+      error: 'unknown',
+      catchUp: { beforeSequence: 52, afterSequence: 1 },
+    });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row().catchUp).toBeNull();
+    expect(messages()).toHaveLength(551);
+  });
+  it.each(['identity', 'backend', 'workspace'] as const)(
+    'drops delayed replies after a %s change',
+    async (change) => {
+      const late = deferred<ReturnType<typeof page>>();
+      wire.request
+        .mockReturnValueOnce(late.promise)
+        .mockResolvedValue({ messages: [], hasMore: false });
+      store.dispatch(discussionRequested('ws'));
+      await settle();
+      if (change === 'identity') admit('someone-else');
+      if (change === 'backend') {
+        store.dispatch(
+          connectionsListReceived({
+            connections: [],
+            activeId: 'remote',
+            windowBackendId: 'remote',
+          }),
+        );
+        admit();
+      }
+      if (change === 'workspace') {
+        store.dispatch(replaceWorkspaceList([workspace('other')]));
+        await settle();
+        store.dispatch(replaceWorkspaceList([workspace(), workspace('other')]));
+        await settle();
+        store.dispatch(discussionRequested('ws'));
+      }
+      await settle();
+      late.resolve(page(1, 2));
+      await settle();
+      expect(messages()).toEqual([]);
+    },
+  );
+  it.each([
+    [-32601, 'unsupported'],
+    [-32003, 'forbidden'],
+  ] as const)('exposes old daemon error %s without dropping drafts', async (rpcCode, error) => {
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'keep this'));
+    wire.request.mockRejectedValueOnce({ rpcCode });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row()).toMatchObject({
+      error,
+      unsupported: error === 'unsupported',
+      draft: 'keep this',
+      loading: false,
+    });
+  });
+  it('rejects malformed or cross-workspace list data', async () => {
+    wire.request.mockResolvedValueOnce({ messages: [message(1, 'other')], hasMore: false });
+    await open();
+    expect(messages()).toEqual([]);
+    expect(row().error).toBe('unknown');
+  });
+  it('routes valid discussion events through the admitted subscription without adding activity', async () => {
+    await open();
+    const activity = store.state.workspaceEvents.byWorkspaceId.ws;
+    const emit = (data: unknown, subscriptionId = 'current', envelope = 'ws') =>
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId,
+          event: { id: 'event-1', type: 'discussion:message', workspaceId: envelope, data },
+        },
+        ['current'],
+      );
+    emit({ workspaceId: 'ws', message: message(1) }, 'old');
+    emit({ workspaceId: 'other', message: message(1) });
+    emit({ workspaceId: 'ws', message: message(1) }, 'current', 'other');
+    expect(messages()).toEqual([]);
+    emit({ workspaceId: 'ws', message: message(1) });
+    emit({ workspaceId: 'ws', message: message(1) });
+    expect(messages()).toEqual([message(1)]);
+    expect(store.state.workspaceEvents.byWorkspaceId.ws).toBe(activity);
+    store.dispatch(connectionStatusChanged('disconnected'));
+    emit({ workspaceId: 'ws', message: message(2) });
+    expect(messages()).toEqual([]);
+  });
+  it('reopens a removed workspace while the old list is still unresolved', async () => {
+    const old = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(old.promise).mockResolvedValueOnce(page(5, 5));
+    await open();
+    store.dispatch(replaceWorkspaceList([workspace('other')]));
+    await settle();
+    store.dispatch(replaceWorkspaceList([workspace(), workspace('other')]));
+    await settle();
+    await open();
+    expect(messages()).toEqual([message(5)]);
+    old.resolve(page(1, 2));
+    await settle();
+    expect(messages()).toEqual([message(5)]);
+  });
+  it('keeps an uncertain send key across reconnect and ignores the old acknowledgement', async () => {
+    await open();
+    const old = deferred<{ message: DiscussionMessage }>();
+    wire.request.mockReturnValueOnce(old.promise);
+    store.dispatch(discussionDraftChanged('ws', 'hello'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const id = pending()[0].id;
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    wire.request.mockResolvedValueOnce(page(1, 1)).mockResolvedValueOnce({ message: message(1) });
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    old.resolve({ message: message(2) });
+    await settle();
+    expect(pending()[0]).toMatchObject({ id, status: 'failed' });
+    expect(messages()).toEqual([message(1)]);
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.send', {
+      workspaceId: 'ws',
+      messageId: id,
+      body: 'hello',
+    });
+    expect(messages()).toEqual([message(1)]);
+    expect(pending()).toEqual([]);
+  });
+  it('initial live traffic does not hide the older-history cursor', async () => {
+    await open();
+    store.dispatch(replaceWorkspaceList([workspace('other')]));
+    await settle();
+    store.dispatch(replaceWorkspaceList([workspace(), workspace('other')]));
+    await settle();
+    const result = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(result.promise);
+    store.dispatch(discussionRequested('ws'));
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(60)),
+    );
+    result.resolve(page(10, 59, true));
+    await settle();
+    expect(row()).toMatchObject({ beforeSequence: 10, hasMore: true });
+    expect(messages().at(-1)?.sequence).toBe(60);
+  });
+  it('rejects oversized UTF-8 bodies locally and preserves the draft', async () => {
+    await open();
+    const body = '🌈'.repeat(4097);
+    store.dispatch(discussionDraftChanged('ws', body));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request.mock.calls.filter(([method]) => method === 'discussion.send')).toEqual([]);
+    expect(row()).toMatchObject({ draft: body, sendError: 'invalid', sending: false });
+  });
+  it('treats an inaccessible workspace result as denied without retrying another method', async () => {
+    wire.request.mockRejectedValueOnce({ rpcCode: -32602, data: { code: 'not-found' } });
+    await open();
+    expect(row().error).toBe('forbidden');
+    expect(wire.request).toHaveBeenCalledTimes(1);
+  });
+});

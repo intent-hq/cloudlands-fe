@@ -1,6 +1,9 @@
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
+import { isDiscussionMessageEvent } from '$shared/types/workspace-discussion';
+import { discussionMessageReceived } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+import { selectDiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
 import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
 import type {
   AgentSessionUpdate,
@@ -3735,6 +3738,18 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // Discussion history belongs to its own slice, never the activity timeline.
+  if (type === 'discussion:message') {
+    const data = (event as { data?: unknown }).data;
+    if (isDiscussionMessageEvent(data)) {
+      const envelopeWorkspaceId = workspaceIdOf(event);
+      if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+      const target = selectDiscussionTarget.select(appStore.state, data.workspaceId);
+      if (target) appStore.dispatch(discussionMessageReceived(target, data.message));
+    }
+    return;
+  }
+
   // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
@@ -4470,6 +4485,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'discussion:message',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

@@ -377,6 +377,7 @@ describe('daemonEventsSaga', () => {
       'app:ui-highlight',
       'app:workspace-open',
       'presence:changed',
+      'discussion:message',
       'host:members-changed',
       'host:invites-changed',
       'host:execution-context-changed',
