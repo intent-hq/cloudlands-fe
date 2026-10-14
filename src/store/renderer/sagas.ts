@@ -63,6 +63,7 @@ import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { gitWriteSaga } from './slices/git/sagas/git-write-saga';
+import { hudSaga } from './slices/hud/sagas/hud-saga';
 import { acceptWorkflowSaga } from './slices/accept-workflow/sagas/accept-workflow-saga';
 import { acceptWorkflowObserverSaga } from './slices/accept-workflow/sagas/accept-workflow-observer-saga';
 import { prWorkflowSaga } from './slices/pr-workflow/sagas/pr-workflow-saga';
@@ -148,6 +149,7 @@ export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
+  hudSaga,
   guestSessionsSaga,
   presenceSaga,
   presenceFollowSaga,

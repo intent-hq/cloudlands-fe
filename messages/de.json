@@ -600,8 +600,6 @@
   "settings_mcpServers_saveSettings": "Einstellungen speichern",
   "settings_mcpServers_importSuccess_one": "1 Server erfolgreich importiert!",
   "settings_mcpServers_importSuccess_many": "{count} Server erfolgreich importiert!",
-  "settings_mcp_preset_figma_description": "Empfohlener gehosteter Server mit OAuth und dem vollständigen Figma-Werkzeugsatz.",
-  "settings_mcp_preset_figmaDesktop_description": "Lokaler Server für eine geöffnete Datei in der Figma-Desktop-App.",
   "settings_mcp_preset_redis_description": "Echtzeit-Datenplattform für schnelle Apps",
   "settings_mcp_preset_redis_urlInput_label": "Redis-Verbindungs-URL",
   "settings_mcp_preset_redis_urlInput_description": "Geben Sie Ihre Verbindungs-URL ein (redis://localhost:6379/0)",
@@ -7519,5 +7517,8 @@
   "chat_monitoredReviews_row_ariaLabel": "Überwachte Pull/Merge Requests",
   "workspace_sidebarReviewDropdown_trigger_ariaLabel": "Pull/Merge Requests ({count})",
   "workspace_hoverCard_mergeRequests_label": "Merge Requests",
-  "workspace_hoverCard_reviews_label": "Pull/Merge Requests"
+  "workspace_hoverCard_reviews_label": "Pull/Merge Requests",
+  "home_status_waiting_description": "Wartet auf externe Ereignisse oder delegierte Aufgaben.",
+  "browser_activity_browsing_label": "Surft auf {host}",
+  "browser_activity_unavailable_tooltip": "Dieser Browser-Tab ist nicht mehr verfügbar"
 }

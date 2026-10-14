@@ -600,8 +600,6 @@
   "settings_mcpServers_saveSettings": "設定を保存",
   "settings_mcpServers_importSuccess_one": "1 台のサーバーをインポートしました！",
   "settings_mcpServers_importSuccess_many": "{count} 台のサーバーをインポートしました！",
-  "settings_mcp_preset_figma_description": "OAuth と Figma の全ツールを使用できる推奨ホストサーバーです。",
-  "settings_mcp_preset_figmaDesktop_description": "Figma デスクトップアプリで開いているファイル用のローカルサーバーです。",
   "settings_mcp_preset_redis_description": "高速なアプリを構築するためのリアルタイムデータプラットフォーム",
   "settings_mcp_preset_redis_urlInput_label": "Redis 接続 URL",
   "settings_mcp_preset_redis_urlInput_description": "接続 URL を入力してください（redis://localhost:6379/0）",
@@ -7519,5 +7517,8 @@
   "chat_monitoredReviews_row_ariaLabel": "監視中のプル／マージリクエスト",
   "workspace_sidebarReviewDropdown_trigger_ariaLabel": "プル／マージリクエスト（{count}）",
   "workspace_hoverCard_mergeRequests_label": "マージリクエスト",
-  "workspace_hoverCard_reviews_label": "プル／マージリクエスト"
+  "workspace_hoverCard_reviews_label": "プル／マージリクエスト",
+  "home_status_waiting_description": "外部イベントまたは委任した作業を待機しています。",
+  "browser_activity_browsing_label": "{host} を閲覧中",
+  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました"
 }

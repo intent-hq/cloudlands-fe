@@ -228,10 +228,12 @@ def main():
     if len(dmgs) != 1 or dmgs[0].is_symlink() or dmgs[0].stat().st_size > 1024**3:
         raise RuntimeError('Expected exactly one bounded signed DMG')
     dmg = dmgs[0].resolve()
+    digest = hashlib.sha256()
     with dmg.open('rb') as source:
-        digest = hashlib.file_digest(source, 'sha256').hexdigest()
+        while chunk := source.read(1024**2):
+            digest.update(chunk)
     record('admission', {'source': os.environ['GITHUB_SHA'], 'run': os.environ['GITHUB_RUN_ID'],
-                         'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'scope': scope, 'dmgSha256': digest,
+                         'attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'scope': scope, 'dmgSha256': digest.hexdigest(),
                          'dmgBytes': dmg.stat().st_size, 'fixtureRoot': str(root),
                          'platform': platform.platform(), 'arch': platform.machine(),
                          'runner': os.environ['RUNNER_NAME']})

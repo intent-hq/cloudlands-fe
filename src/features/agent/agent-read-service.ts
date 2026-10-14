@@ -133,11 +133,28 @@ function preserveLocalUpdates(
     ...Object.keys(current.metadata ?? {}),
     ...Object.keys(projected?.metadata ?? {}),
   ])) {
-    if (
-      current.metadata?.[key] !== before.metadata?.[key] ||
-      projected?.metadata[key] !== beforeProjection?.metadata[key]
-    )
-      metadata[key] = current.metadata?.[key];
+    // Extension keys can name Object.prototype members. Only own values and
+    // revisions represent metadata; a missing own key is an explicit deletion.
+    const hasCurrent = Object.hasOwn(current.metadata ?? {}, key);
+    const hasBefore = Object.hasOwn(before.metadata ?? {}, key);
+    const currentValue = hasCurrent ? current.metadata?.[key] : undefined;
+    const beforeValue = hasBefore ? before.metadata?.[key] : undefined;
+    const revision = Object.hasOwn(projected?.metadata ?? {}, key)
+      ? projected?.metadata[key]
+      : undefined;
+    const beforeRevision = Object.hasOwn(beforeProjection?.metadata ?? {}, key)
+      ? beforeProjection?.metadata[key]
+      : undefined;
+    if (hasCurrent !== hasBefore || currentValue !== beforeValue || revision !== beforeRevision) {
+      if (hasCurrent) {
+        Object.defineProperty(metadata, key, {
+          value: currentValue,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else delete metadata[key];
+    }
   }
   merged.metadata = metadata;
   return merged;
@@ -228,6 +245,29 @@ export function readAgentSession(
     });
   inFlight.set(key, run);
   return run;
+}
+
+/**
+ * Confirm state after a caller's observation. A shared read already in flight
+ * may predate that observation: drain it once, then use the existing raw lane
+ * for a fresh request. Concurrent callers behind that read coalesce there.
+ * This performs no hydration and never retries its own confirmation request.
+ */
+export async function readAgentSessionAfterCurrent(
+  agentId: string,
+  workspaceId: string,
+  isCurrent: () => boolean,
+): Promise<AgentSession | null> {
+  const key = readKey(agentId, workspaceId);
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (pending) await pending.catch(() => null);
+  if (connection !== connectionGeneration || !ownership.isCurrent() || !isCurrent()) return null;
+  const session = await readAgentSession(agentId, workspaceId);
+  return connection === connectionGeneration && ownership.isCurrent() && isCurrent()
+    ? session
+    : null;
 }
 
 async function hydrateAgentSession(

@@ -1,4 +1,4 @@
-import type { AgentSession, AgentMessage } from '$shared/types';
+import type { AgentSession, AgentMessage, AgentMetadata } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 
 interface AgentSessionSendContextItem {
@@ -153,6 +153,22 @@ export type WireAgentSession = AgentSession & { [K in keyof FeOwnedSessionState]
 export type StoredAgentSession = Omit<AgentSession, 'messages' | keyof FeOwnedSessionState> & {
   messages: AgentMessage[];
 } & FeOwnedSessionState;
+
+/** Explicit intent for one key; clear cannot accidentally carry a stale value. */
+type MetadataOperation<T> =
+  { op: 'set'; value: Exclude<T, undefined> } | { op: 'clear'; value?: never };
+
+/** Omitted keys are untouched. Known metadata keys retain their value types. */
+export type AgentMetadataPatch = {
+  [K in keyof AgentMetadata]?: MetadataOperation<AgentMetadata[K]>;
+};
+
+/** Raw metadata is forbidden even on variables/spreads containing other valid fields. */
+export type AgentSessionUpdate = Partial<Omit<AgentSession, 'metadata'>> &
+  Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'> & {
+    metadata?: never;
+    metadataPatch?: AgentMetadataPatch;
+  };
 
 /**
  * Bounded, on-demand history segment for infinite scrollback.

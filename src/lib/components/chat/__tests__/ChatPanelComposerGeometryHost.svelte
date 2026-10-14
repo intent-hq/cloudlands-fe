@@ -340,7 +340,9 @@
     if (!fixture.questions) return;
     store.dispatch(
       updateSession(agentId, {
-        metadata: { pendingQuestionsMessageId: questions ? 'composer-question' : '' },
+        metadataPatch: {
+          pendingQuestionsMessageId: { op: 'set', value: questions ? 'composer-question' : '' },
+        },
       }),
     );
   });
@@ -479,7 +481,7 @@
     store.dispatch(
       updateSession(agentId, {
         messages: [...store.state.agentSessions.byAgentId[agentId].messages, next],
-        metadata: { pendingQuestionsMessageId: next.id },
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: next.id } },
       }),
     );
   });

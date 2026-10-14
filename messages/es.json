@@ -600,8 +600,6 @@
   "settings_mcpServers_saveSettings": "Guardar configuración",
   "settings_mcpServers_importSuccess_one": "¡1 servidor importado correctamente!",
   "settings_mcpServers_importSuccess_many": "¡{count} servidores importados correctamente!",
-  "settings_mcp_preset_figma_description": "Servidor alojado recomendado con OAuth y el conjunto completo de herramientas de Figma.",
-  "settings_mcp_preset_figmaDesktop_description": "Servidor local para un archivo abierto en la aplicación de escritorio de Figma.",
   "settings_mcp_preset_redis_description": "Plataforma de datos en tiempo real para crear aplicaciones rápidas",
   "settings_mcp_preset_redis_urlInput_label": "URL de conexión de Redis",
   "settings_mcp_preset_redis_urlInput_description": "Introduzca su URL de conexión (redis://localhost:6379/0)",
@@ -7519,5 +7517,8 @@
   "chat_monitoredReviews_row_ariaLabel": "Pull/merge requests supervisados",
   "workspace_sidebarReviewDropdown_trigger_ariaLabel": "Pull/merge requests ({count})",
   "workspace_hoverCard_mergeRequests_label": "Solicitudes de incorporación",
-  "workspace_hoverCard_reviews_label": "Solicitudes de incorporación"
+  "workspace_hoverCard_reviews_label": "Solicitudes de incorporación",
+  "home_status_waiting_description": "Esperando eventos externos o trabajo delegado.",
+  "browser_activity_browsing_label": "Navegando por {host}",
+  "browser_activity_unavailable_tooltip": "Esta pestaña del navegador ya no está disponible"
 }

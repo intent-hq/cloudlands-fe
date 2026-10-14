@@ -3,6 +3,8 @@
   import {
     AgentStatus,
     WorkspaceStatus,
+    WORKSPACE_DISPLAY_STATUS_VALUES,
+    type WorkspaceDisplayStatus,
     type AgentSession,
     type AgentMessage,
     type Workspace,
@@ -15,14 +17,22 @@
       __homeAssistantPreview?: { removeSelectedThread: () => void };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
+        setTitle: (id: string, title: string) => void;
+        setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
+        roundTripSettings: () => void;
       };
+      __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
     }
   }
 
   interface Props {
     scenario?:
       | 'populated'
+      | 'untitled'
       | 'status-icons'
+      | 'status-grouping'
+      | 'pr-status-list'
+      | 'board-pr-status'
       | 'board'
       | 'board-long-content'
       | 'board-repositories'
@@ -48,7 +58,11 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
+      'status-grouping': { props: { scenario: 'status-grouping' } },
+      'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
+      'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
@@ -189,6 +203,106 @@
               ][index],
           ).toISOString(),
   }));
+  const statusGroupingTitles: Record<WorkspaceDisplayStatus, string> = {
+    failed: 'Failed: retry the release build',
+    blocked: 'Blocked: restore the repository connection',
+    needs_attention: 'Needs attention: review the onboarding flow',
+    not_started: 'Not started: plan keyboard shortcuts',
+    in_progress: 'In progress: improve workspace search',
+    idle: 'Idle: explore navigation alternatives',
+    complete: 'Complete: polish settings accessibility',
+    pr_open:
+      'PR open: keep workspace titles readable across narrow layouts and long repository names',
+    pr_ready: 'PR mergeable: ship the sidebar improvements',
+    pr_queued: 'PR queued: publish the release documentation',
+    pr_merged: 'PR merged: simplify platform configuration',
+  };
+  const statusGroupingFixtures: Workspace[] = [
+    ...WORKSPACE_DISPLAY_STATUS_VALUES.map((status) => ({
+      ...fixtures[0],
+      id: WorkspaceId(`home-status-${status}`),
+      title: statusGroupingTitles[status],
+      displayStatus: status,
+      attention: status === 'pr_ready' ? ('review_required' as const) : undefined,
+      statusMessage: `Working on ${statusGroupingTitles[status].split(': ')[1]}.`,
+      repositoryName: status === 'pr_merged' ? 'platform' : 'studio',
+      repositoryPath: status === 'pr_merged' ? '/repos/platform' : '/repos/studio',
+      branch: `feat/home-status-${status}`,
+    })),
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-missing'),
+      title: 'Not started: workspace with no reported status',
+      displayStatus: undefined,
+      attention: undefined,
+      statusMessage: 'Waiting for the first workspace status update.',
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-unknown'),
+      title: 'Not started: workspace with a future status',
+      displayStatus: 'future_status' as WorkspaceDisplayStatus,
+      attention: undefined,
+      statusMessage: 'The daemon reported a status this client does not recognize yet.',
+    },
+    {
+      ...fixtures[6],
+      id: WorkspaceId('home-status-archived'),
+      title: 'Archived: explore alternative layouts',
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-deleted'),
+      title: 'Deleted: retired release experiment',
+      status: WorkspaceStatus.Deleted,
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-pending-delete'),
+      title: 'Pending deletion: retired navigation experiment',
+      pendingDeleteAt: '2026-09-29T00:00:00Z',
+    },
+  ];
+  const prStatusFixtures: Workspace[] = [
+    ...(['pr_open', 'pr_ready', 'pr_queued'] as const).flatMap((displayStatus) => [
+      {
+        ...fixtures[0],
+        id: WorkspaceId(`home-${displayStatus}`),
+        title: `${displayStatus} workspace`,
+        displayStatus,
+        attention: undefined,
+        statusMessage: 'Pull request state reported by the daemon.',
+      },
+      {
+        ...fixtures[0],
+        id: WorkspaceId(`home-${displayStatus}-running`),
+        title: `${displayStatus} with an active agent`,
+        displayStatus,
+        activity: 'agent_running' as const,
+        attention: undefined,
+        statusMessage: 'An agent is still working.',
+      },
+    ]),
+    ...(
+      [
+        ['review', 'pr_ready', 'review_required'],
+        ['question', 'needs_attention', undefined],
+        ['failed', 'failed', 'review_required'],
+        ['blocked', 'blocked', 'review_required'],
+        ['merged', 'pr_merged', undefined],
+        ['complete', 'complete', undefined],
+        ['idle', 'idle', undefined],
+        ['unread', 'idle', 'unread'],
+      ] as const
+    ).map(([id, displayStatus, attention]) => ({
+      ...fixtures[0],
+      id: WorkspaceId(`home-pr-${id}`),
+      title: `${id} workspace`,
+      displayStatus,
+      attention,
+      statusMessage: 'Existing attention and completion signals keep their meaning.',
+    })),
+  ].map((workspace) => ({ ...workspace, waiting: true }));
   const assistantFixtures: AgentSession[] = Array.from({ length: 240 }, (_, index) => {
     const name =
       [
@@ -231,7 +345,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import HomePage from './HomePage.svelte';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
@@ -239,6 +353,8 @@
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
     replaceWorkspaceList,
+    updateWorkspaceEntity,
+    bulkUpdateWorkspaceEntities,
     setWorkspaceHasLoaded,
     setWorkspaceError,
   } from '$store/renderer/slices/workspace/workspace-slice';
@@ -251,7 +367,12 @@
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import { resetHomeWorkspaceView, updateHomeWorkspaceView } from './home-workspaces-slice';
+  import {
+    hydrateHomeWorkspaceSettings,
+    resetHomeWorkspaceView,
+    updateHomeWorkspaceView,
+  } from './home-workspaces-slice';
+  import { persistedHomeState, readHomePersistence } from './home-workspaces-persistence';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import {
@@ -273,12 +394,51 @@
   const assistant = $derived(scenario === 'assistant-long');
   const dispose = startHomePreviewFixtures();
   const previousPinnedIds = store.state.sidebarNav.pinnedWorkspaceIds;
+  let previewRoot = $state<HTMLDivElement | null>(null);
+  window.__homePrStatusPreview = {
+    setWaiting: (waiting) => {
+      store.dispatch(
+        bulkUpdateWorkspaceEntities(
+          prStatusFixtures.map((workspace) => updateWorkspaceEntity(workspace.id, { waiting })),
+        ),
+      );
+    },
+  };
+  onMount(() => {
+    if (scenario !== 'pr-status-list' && scenario !== 'board-pr-status') return;
+    const root = previewRoot;
+    if (!root) return;
+    // Offscreen board avatars must load for the sandbox capture's stable marker.
+    const loadImages = () => {
+      root.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
+    };
+    const observer = new MutationObserver(loadImages);
+    observer.observe(root, { childList: true, subtree: true });
+    loadImages();
+    return () => observer.disconnect();
+  });
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setTitle: (id, title) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
+    setStatus: (id, status) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),
+      ),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
     }),
+    roundTripSettings: () => {
+      const view = store.state.homeWorkspaces;
+      const persisted = JSON.stringify(persistedHomeState(view));
+      store.dispatch(
+        hydrateHomeWorkspaceSettings(
+          view.persistenceScope,
+          readHomePersistence(JSON.parse(persisted)),
+        ),
+      );
+    },
   };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -298,7 +458,12 @@
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       hydrateSidebarNav({
-        pinnedWorkspaceIds: scenario === 'status-icons' ? ['home-complete'] : previousPinnedIds,
+        pinnedWorkspaceIds:
+          scenario === 'status-icons'
+            ? ['home-complete']
+            : scenario === 'status-grouping'
+              ? []
+              : previousPinnedIds,
       }),
     );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
@@ -334,9 +499,21 @@
       replaceWorkspaceList(
         scenario === 'empty'
           ? []
-          : (scenario === 'status-icons' ? statusFixtures : fixtures).map((workspace) => ({
+          : (scenario === 'pr-status-list' || scenario === 'board-pr-status'
+              ? prStatusFixtures
+              : scenario === 'status-icons'
+                ? statusFixtures
+                : scenario === 'status-grouping'
+                  ? statusGroupingFixtures
+                  : fixtures
+            ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'untitled' && workspace.id === 'home-running'
+                ? { title: '' }
+                : scenario === 'untitled' && workspace.id === 'home-review'
+                  ? { title: ' \t ' }
+                  : {}),
               ...(scenario === 'board-long-content'
                 ? {
                     title: `${workspace.title} ${'workspace'.repeat(12)}`,
@@ -461,11 +638,13 @@
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
     delete window.__homeWorkspacePreview;
+    delete window.__homePrStatusPreview;
     dispose();
   });
 </script>
 
 <div
+  bind:this={previewRoot}
   class="w-full overflow-hidden bg-sidebar text-foreground"
   style:height="{height}px"
   data-home-preview
