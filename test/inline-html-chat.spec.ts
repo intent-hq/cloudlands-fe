@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { inlineHtmlDemo, inlineHtmlMessage } from './fixtures/inline-html-demo';
+import { polishedClampDemo, polishedEscalatorDemo } from './fixtures/inline-html-polished-demo';
 
 type HostProps = {
   message?: string;
@@ -15,11 +16,13 @@ type HostProps = {
   scrollable?: boolean;
   follow?: boolean;
   tailHeight?: number;
+  prompt?: string;
 };
 
 let server: ViteDevServer | undefined;
 let baseUrl = process.env.UI_PREVIEW_BASE_URL ?? '';
 const artifactDirectory = resolve('../../.intent/artifacts/inline-html');
+const polishDirectory = resolve(artifactDirectory, 'polish');
 const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
   /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
 )![1];
@@ -90,11 +93,16 @@ function frame(page: Page) {
   return preview(page).locator('iframe').contentFrame().locator('iframe').contentFrame();
 }
 
-async function capture(page: Page, testInfo: TestInfo, name: string) {
+async function capture(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+  directory = artifactDirectory,
+) {
   const path = testInfo.outputPath(`${name}.png`);
-  await page.screenshot({ path });
-  await mkdir(artifactDirectory, { recursive: true });
-  await copyFile(path, resolve(artifactDirectory, `${name}.png`));
+  await page.screenshot({ path, animations: 'disabled' });
+  await mkdir(directory, { recursive: true });
+  await copyFile(path, resolve(directory, `${name}.png`));
   await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
@@ -428,6 +436,111 @@ test('shows source and follows themes without resetting input or later streaming
   await capture(page, testInfo, 'after-dark');
 });
 
+test('keeps polished clamp controls usable through themes, narrow layouts, and source inspection', async ({
+  page,
+}, testInfo) => {
+  const message = `\`\`\`ws-block:html\n${polishedClampDemo}\n\`\`\``;
+  await openChat(page, { message });
+  const slider = frame(page).getByRole('slider', { name: 'Desk thickness' });
+  await expect(slider).toBeVisible();
+  await capture(page, testInfo, 'clamp-light', polishDirectory);
+  await slider.focus();
+  await page.keyboard.press('End');
+  await expect(frame(page).locator('#fit')).toHaveText('Opening too small');
+  await expect(frame(page).locator('#clearance')).toHaveText('20 mm over');
+  await capture(page, testInfo, 'clamp-too-thick', polishDirectory);
+  await page.evaluate(() => (document.documentElement.className = 'dark'));
+  await expect(frame(page).locator('html')).toHaveClass('dark');
+  await expect(frame(page).locator('#thickness-value')).toHaveText('80 mm');
+  await slider.focus();
+  await page.keyboard.press('Home');
+  await expect(frame(page).locator('#clearance')).toHaveText('50 mm clearance');
+  await page.keyboard.press('ArrowRight');
+  await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
+  await capture(page, testInfo, 'clamp-dark', polishDirectory);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(slider).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await capture(page, testInfo, 'clamp-narrow-dark', polishDirectory);
+  await preview(page)
+    .getByRole('button', { name: /source/i })
+    .click();
+  await expect(preview(page).locator('pre')).toContainText('updateFit');
+  await preview(page)
+    .getByRole('button', { name: /preview|hide source/i })
+    .click();
+  await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
+  await updateHost(page, { message: `${message}\n\nMore explanation.`, isStreaming: true });
+  await expect(frame(page).locator('#thickness-value')).toHaveText('11 mm');
+  await updateHost(page, { isStreaming: false });
+  await preview(page)
+    .getByRole('button', { name: /reload|restart/i })
+    .click();
+  await expect(frame(page).locator('#thickness-value')).toHaveText('28 mm');
+  await page.evaluate(() => (document.documentElement.className = 'light'));
+  await expect(frame(page).locator('html')).not.toHaveClass(/dark/);
+  await capture(page, testInfo, 'clamp-narrow-light', polishDirectory);
+  await testInfo.attach('clamp-interaction.json', {
+    body: JSON.stringify({
+      keyboard: ['End', 'Home', 'ArrowRight'],
+      retainedThickness: 11,
+      reloadThickness: 28,
+      narrowWidth: 360,
+    }),
+    contentType: 'application/json',
+  });
+});
+
+test('keeps polished escalator playback and position controls usable as the scene reflows', async ({
+  page,
+}, testInfo) => {
+  const message = `\`\`\`ws-block:html\n${polishedEscalatorDemo}\n\`\`\``;
+  await openChat(page, { message, prompt: 'Show me why escalator steps stay level.' });
+  const slider = frame(page).getByRole('slider', { name: 'Position' });
+  await expect(slider).toBeVisible();
+  await capture(page, testInfo, 'escalator-light', polishDirectory);
+  await slider.focus();
+  await page.keyboard.press('End');
+  await expect(frame(page).locator('#position-value')).toHaveText('100%');
+  await expect(frame(page).locator('#description')).toContainText('Both tracks are horizontal');
+  await capture(page, testInfo, 'escalator-landing', polishDirectory);
+  await frame(page).getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(frame(page).getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await expect.poll(() => slider.inputValue()).not.toBe('540');
+  await frame(page).getByRole('button', { name: 'Pause', exact: true }).click();
+  await slider.focus();
+  await page.keyboard.press('Home');
+  await expect(frame(page).locator('#position-value')).toHaveText('0%');
+  await expect(frame(page).locator('#description')).toContainText('Both rollers climb together');
+  await page.evaluate(() => (document.documentElement.className = 'dark'));
+  await expect(frame(page).locator('html')).toHaveClass('dark');
+  await expect(slider).toHaveValue('180');
+  await capture(page, testInfo, 'escalator-dark', polishDirectory);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(slider).toBeVisible();
+  await expect(frame(page).getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await page.keyboard.press('End');
+  await expect(frame(page).locator('#position-value')).toHaveText('100%');
+  await capture(page, testInfo, 'escalator-narrow-dark', polishDirectory);
+  await page.evaluate(() => (document.documentElement.className = 'light'));
+  await expect(frame(page).locator('html')).not.toHaveClass(/dark/);
+  await capture(page, testInfo, 'escalator-narrow-light', polishDirectory);
+  await testInfo.attach('escalator-interaction.json', {
+    body: JSON.stringify({
+      keyboard: ['End', 'Home'],
+      playback: ['Play', 'Pause'],
+      retainedPosition: 180,
+      narrowWidth: 360,
+    }),
+    contentType: 'application/json',
+  });
+});
+
 test('keeps unfinished and empty blocks inert and renders after a matching close', async ({
   page,
 }, testInfo) => {
@@ -447,12 +560,6 @@ test('keeps unfinished and empty blocks inert and renders after a matching close
     .click();
   await expect(preview(page).locator('iframe')).toHaveCount(0);
   await page.evaluate(() => (document.documentElement.className = 'dark'));
-  await page.waitForFunction(
-    () =>
-      !document
-        .getAnimations()
-        .some((a) => a instanceof CSSTransition && a.playState === 'running'),
-  );
   await capture(page, testInfo, 'loading-dark');
   await page.setViewportSize({ width: 360, height: 840 });
   expect(

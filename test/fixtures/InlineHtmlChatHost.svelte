@@ -19,6 +19,7 @@
     scrollable?: boolean;
     follow?: boolean;
     tailHeight?: number;
+    prompt?: string;
   }
 
   let {
@@ -29,6 +30,7 @@
     scrollable = false,
     follow = false,
     tailHeight = 960,
+    prompt = 'Show me whether this monitor arm can clamp onto my desk.',
   }: Props = $props();
 
   const content = $derived<ContentBlock[]>([{ type: 'text', text: message }]);
@@ -41,6 +43,7 @@
     if (next.scrollable !== undefined) scrollable = next.scrollable;
     if (next.follow !== undefined) follow = next.follow;
     if (next.tailHeight !== undefined) tailHeight = next.tailHeight;
+    if (next.prompt !== undefined) prompt = next.prompt;
   }
 </script>
 
@@ -59,7 +62,7 @@
   <article class="mx-auto min-w-0 max-w-2xl" data-testid="inline-html-chat">
     {#if scrollable}<div style:height="900px">Earlier messages</div>{/if}
     <div class="mb-8 rounded-lg bg-sidebar px-4 py-3">
-      Show me whether this monitor arm can clamp onto my desk.
+      {prompt}
     </div>
     {#if renderer === 'before'}
       <p>Here is an interactive cross-section.</p>

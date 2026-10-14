@@ -1,4 +1,5 @@
 import interFontData from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?inline';
+import { INLINE_HTML_STYLES } from './inline-html-styles';
 
 /** Only existing semantic tokens cross the opaque iframe boundary. */
 const THEME_TOKENS = [
@@ -33,6 +34,69 @@ const THEME_TOKENS = [
   'radius-small',
   'radius-medium',
   'radius-large',
+  'app-background',
+  'sidebar',
+  'sidebar-accent',
+  'agent-avatar-surface-active',
+  'agent-avatar-foreground',
+  'diagram-host-surface',
+  'diagram-canvas',
+  'diagram-label-surface',
+  'diagram-node-surface',
+  'diagram-node-hover-surface',
+  'diagram-node-outline',
+  'diagram-node-title',
+  'diagram-metadata',
+  'diagram-group-outline',
+  'diagram-connector',
+  'diagram-connector-hover',
+  'diagram-connector-muted',
+  'diagram-connector-inactive',
+  'diagram-connector-danger',
+  'diagram-connector-success',
+  'diagram-connector-warning',
+  'diagram-connector-active',
+  'diagram-accent',
+  'diagram-accent-foreground',
+  'diagram-node-radius',
+  'diagram-group-radius',
+  'diagram-connector-width',
+  'text-caption-size',
+  'text-caption-line-height',
+  'text-caption-weight',
+  'text-caption-tracking',
+  'text-body-strong-size',
+  'text-body-strong-line-height',
+  'text-body-strong-weight',
+  'text-body-strong-tracking',
+  'space-1',
+  'space-2',
+  'space-3',
+  'space-4',
+  'space-5',
+  'space-6',
+  'space-7',
+  'control-height-compact',
+  'control-height-small',
+  'control-height-medium',
+  'control-height-large',
+  'radius-full',
+  'spring-fast',
+  'spring-fast-exit',
+  'spring-fast-ease',
+  'spring-moderate',
+  'spring-moderate-exit',
+  'spring-moderate-ease',
+  'spring-slow',
+  'spring-slow-exit',
+  'spring-slow-ease',
+  'spring-exit-ease',
+  'motion-fast',
+  'motion-standard',
+  'motion-slow',
+  'ease-standard',
+  'ease-emphasized-out',
+  'motion-reduced',
 ] as const;
 
 interface InlineHtmlTheme {
@@ -65,9 +129,13 @@ export function readInlineHtmlTheme(element: Element): InlineHtmlTheme {
   const styles = getComputedStyle(element);
   return {
     dark: document.documentElement.classList.contains('dark'),
-    variables: Object.fromEntries(
-      THEME_TOKENS.map((token) => [`--${token}`, styles.getPropertyValue(`--${token}`).trim()]),
-    ),
+    variables: {
+      ...Object.fromEntries(
+        THEME_TOKENS.map((token) => [`--${token}`, styles.getPropertyValue(`--${token}`).trim()]),
+      ),
+      // rem-based app tokens must use the host root, not the iframe's browser default.
+      '--inline-html-root-font-size': getComputedStyle(document.documentElement).fontSize,
+    },
   };
 }
 
@@ -312,17 +380,7 @@ export function buildInlineHtmlDocument(
   style.textContent = `
     @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900;
       font-display: swap; src: url('${interFontData}') format('woff2'); }
-    html { height: auto; overflow-x: hidden; }
-    body { margin: 0; padding: 16px; min-width: 0; box-sizing: border-box;
-      font-family: var(--font-ui); font-size: var(--text-body-size);
-      line-height: var(--text-body-line-height); font-weight: var(--text-body-weight);
-      letter-spacing: var(--text-body-tracking);
-      color: hsl(var(--foreground)); background: hsl(var(--background)); }
-    *, *::before, *::after { box-sizing: border-box; }
-    img, svg, canvas { max-width: 100%; }
-    button, input, select, textarea { font: inherit; color: inherit; }
-    code, pre { font-family: var(--font-code); }
-    :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+    ${INLINE_HTML_STYLES}
   `;
   const bridge = doc.createElement('script');
   const json = JSON.stringify([channel, theme, INLINE_HTML_MAX_SCROLL_DELTA]).replace(
