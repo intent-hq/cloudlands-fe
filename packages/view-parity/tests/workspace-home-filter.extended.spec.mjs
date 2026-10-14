@@ -211,6 +211,78 @@ test('a direct workspace URL returns to the unfiltered Home list', async ({ page
   }
 });
 
+for (const width of [1200, 420]) {
+  test(`sidebar workspace navigation retains Home context at ${width}px`, async ({
+    page,
+  }, info) => {
+    const { workspaceId, input, filter, list, rows, active, evidence } = await openList(page);
+    const mobile = width === 420;
+    const trigger = page.locator('[data-sidebar="trigger"]');
+    const navigation = page.getByTestId('workspace-navigation');
+    const overview = page.getByTestId('workspace-overview');
+    const openWorkspace = async (id, fromOverview = false) => {
+      if (mobile) await trigger.click();
+      const link = navigation.locator(`[data-navigation-workspace="${id}"]`);
+      await expect(link).toBeVisible();
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(overview).toHaveAttribute('data-workspace-id', id);
+      if (mobile) {
+        await expect(page.getByRole('dialog')).toBeHidden();
+      }
+      if (!fromOverview) {
+        await expect(overview.getByRole('heading', { level: 1 })).toBeFocused();
+      } else if (mobile) {
+        await expect(trigger).toBeFocused();
+      } else {
+        await expect(link).toBeFocused();
+      }
+      await expect(page).toHaveURL(
+        (url) =>
+          url.searchParams.get('homeQuery') === workspaceId &&
+          url.searchParams.get('homeFilter') === 'running',
+      );
+    };
+    try {
+      await page.setViewportSize({ width, height: 800 });
+      await filter.click();
+      await page.keyboard.press('r');
+      await page.keyboard.press('Enter');
+      await input.fill(workspaceId);
+      await expect(rows).toHaveCount(1);
+      const before = await list.boundingBox();
+      await openWorkspace(workspaceId);
+      const notes = page.getByTestId('workspace-notes');
+      await notes.locator('[data-sidebar-search="context"]').getByRole('button').click();
+      await notes.getByRole('searchbox').fill('independent-note-query');
+      const other = active.find((row) => row.id !== workspaceId);
+      expect(
+        other,
+        'A second real workspace is required for sidebar context coverage',
+      ).toBeTruthy();
+      await openWorkspace(other.id, true);
+      expect(new URL(page.url()).searchParams.has('q')).toBe(false);
+      await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+      await expect(filter).toHaveText('Running');
+      await expect(input).toHaveValue(workspaceId);
+      await expect(rows).toHaveCount(1);
+      await expect(input).toBeFocused();
+      const after = await list.boundingBox();
+      await page.evaluate(() => document.fonts.ready);
+      await info.attach('sidebar-home-context', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      await info.attach('sidebar-home-context-geometry', {
+        body: JSON.stringify({ before, after }),
+        contentType: 'application/json',
+      });
+    } finally {
+      await evidence(info);
+    }
+  });
+}
+
 test('invalid Home filters fall back safely and Archived uses real lifecycle records', async ({
   page,
 }, info) => {

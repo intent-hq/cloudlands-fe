@@ -232,8 +232,14 @@ export function WorkspaceOverview({
   const previousWorkspace = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (previousWorkspace.current === workspaceId) return;
+    const firstEntry = previousWorkspace.current === undefined;
     previousWorkspace.current = workspaceId;
-    if (!noteId && !filePath) title.current?.focus();
+    if (
+      !noteId &&
+      !filePath &&
+      (firstEntry || !document.activeElement?.matches('[data-navigation-workspace]'))
+    )
+      title.current?.focus();
   }, [workspaceId, noteId, filePath]);
   const previousFile = useRef({ workspaceId, filePath });
   useLayoutEffect(() => {

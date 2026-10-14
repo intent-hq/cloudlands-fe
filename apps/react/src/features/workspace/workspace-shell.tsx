@@ -1,4 +1,4 @@
-import { Link, Outlet, useParams } from '@tanstack/react-router';
+import { Link, Outlet, useParams, useSearch } from '@tanstack/react-router';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/logo';
 import { SidebarExpandableSearch } from '@/components/workspace/sidebar/sidebar-expandable-search';
@@ -13,8 +13,20 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import { WorkspaceReturnFocus } from './workspace-return-focus';
+import type { HomeFilter } from '../../../../../src/features/home/home-model';
+import { normalizeHomeConfiguration } from '../../../../../src/features/home/home-workspaces-persistence';
 
-function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; active: boolean }) {
+function WorkspaceNavigationRow({
+  workspaceId,
+  active,
+  homeQuery,
+  homeFilter,
+}: {
+  workspaceId: string;
+  active: boolean;
+  homeQuery?: string;
+  homeFilter?: HomeFilter;
+}) {
   const workspace = selectWorkspaceById(workspaceId);
   const sidebar = Sidebar.useSidebar();
   if (!workspace.value) return null;
@@ -24,7 +36,7 @@ function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; 
         <Link
           to="/workspaces/$workspaceId"
           params={{ workspaceId }}
-          search={{}}
+          search={{ homeQuery, homeFilter }}
           data-navigation-workspace={workspaceId}
           onClick={(event) => {
             if (
@@ -48,6 +60,12 @@ function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; 
 export function WorkspaceShell() {
   const [query, setQuery] = useState('');
   const { workspaceId } = useParams({ strict: false });
+  const search = useSearch({ strict: false });
+  const rawHomeQuery = workspaceId ? search.homeQuery : search.q;
+  const homeQuery = typeof rawHomeQuery === 'string' ? rawHomeQuery : undefined;
+  const homeFilter = normalizeHomeConfiguration({
+    filter: workspaceId ? search.homeFilter : search.filter,
+  }).filter;
   const returnFocus = useRef(workspaceId);
   useLayoutEffect(() => {
     if (workspaceId) returnFocus.current = workspaceId;
@@ -90,7 +108,13 @@ export function WorkspaceShell() {
               <Sidebar.Menu>
                 {loaded.value &&
                   ids.value.map((id) => (
-                    <WorkspaceNavigationRow key={id} workspaceId={id} active={id === workspaceId} />
+                    <WorkspaceNavigationRow
+                      key={id}
+                      workspaceId={id}
+                      active={id === workspaceId}
+                      homeQuery={homeQuery}
+                      homeFilter={homeFilter === 'all' ? undefined : homeFilter}
+                    />
                   ))}
               </Sidebar.Menu>
             </Sidebar.Group>
