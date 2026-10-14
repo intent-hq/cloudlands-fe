@@ -25,13 +25,14 @@
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
     selectActiveTerminalIdForWorkspace,
+    selectTerminalCreationOutcome,
     selectTerminalsForWorkspace,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
     selectTerminal as selectTerminalAction,
-    addTerminal,
+    clearTerminalCreationOutcome,
     createOverlayTerminalRequested,
     removeTerminal,
     setTerminalOverlayHeight,
@@ -70,6 +71,13 @@
   const height = selectTerminalOverlayHeight(ROOT_WORKSPACE_ID);
   const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
   const terminals = selectTerminalsForWorkspace(ROOT_WORKSPACE_ID);
+  const terminalCreationConsumerId = crypto.randomUUID();
+  const terminalCreationResourceId = 'overlay';
+  const terminalCreationOutcome$ = selectTerminalCreationOutcome(
+    terminalCreationConsumerId,
+    ROOT_WORKSPACE_ID,
+    terminalCreationResourceId,
+  );
 
   // NOTE: We intentionally do NOT have an $effect here to sync workspace ID.
   // The workspace ID is set by the keyboard shortcut handler in +layout.svelte
@@ -187,35 +195,27 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  // In-flight guard: a double-click on the new-terminal button must not
-  // issue two `terminal.create` calls (two daemon PTYs).
-  let isCreatingTerminal = false;
+  const isCreatingTerminal = $derived($terminalCreationOutcome$?.status === 'pending');
 
-  async function createNewTerminal() {
-    if (isCreatingTerminal) return;
-    isCreatingTerminal = true;
-    try {
-      const terminalId = await appStore.dispatch(createOverlayTerminalRequested(ROOT_WORKSPACE_ID));
-      appStore.dispatch(
-        addTerminal(
-          ROOT_WORKSPACE_ID,
-          terminalId,
-          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-        ),
-      );
-      if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, terminalId));
-      }
-      // Focus the overlay container immediately so keyboard shortcuts
-      // route to the terminal before xterm is ready
-      requestAnimationFrame(() => {
-        overlayContainer?.focus();
-      });
-    } catch {
+  $effect(() => {
+    const outcome = $terminalCreationOutcome$;
+    if (!outcome || outcome.status === 'pending') return;
+    if (outcome.status === 'success') {
+      requestAnimationFrame(() => overlayContainer?.focus());
+    } else if (outcome.status === 'failure') {
       notify.error(m.terminal_adapter_openFailed_error());
-    } finally {
-      isCreatingTerminal = false;
     }
+    appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId, outcome.seq));
+  });
+
+  function createNewTerminal() {
+    if (isCreatingTerminal) return;
+    appStore.dispatch(
+      createOverlayTerminalRequested(ROOT_WORKSPACE_ID, {
+        id: terminalCreationConsumerId,
+        resourceId: terminalCreationResourceId,
+      }),
+    );
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -280,7 +280,10 @@
       appStore.dispatch(setTerminalOverlayHeight(ROOT_WORKSPACE_ID, height)),
   });
 
-  onDestroy(stopResize);
+  onDestroy(() => {
+    stopResize();
+    appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId));
+  });
 
   // ============================================================================
   // Event Listeners

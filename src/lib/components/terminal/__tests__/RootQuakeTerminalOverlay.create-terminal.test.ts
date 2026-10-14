@@ -10,18 +10,44 @@ const sagaMocks = vi.hoisted(() => ({
   createTerminal: vi.fn(),
 }));
 
-vi.mock('$store/renderer/store', () => {
+vi.mock('$store/renderer/store', async () => {
+  const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
+  let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
+  const listeners = new Set<() => void>();
   const store: any = {
     get state() {
       return {
-        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
+        terminals: terminalsState,
       };
     },
     dispatch: (action: any) => {
       dispatched.push(action);
+      terminalsState = terminalsReducer(terminalsState, action);
+      listeners.forEach((listener) => listener());
       if (action.type === 'terminals/createOverlayTerminalRequested') {
-        return sagaMocks.createTerminal(action.payload[0]);
+        void sagaMocks.createTerminal(action.payload[0]).then((terminalId: string) => {
+          const [workspaceId, consumer] = action.payload;
+          const current = terminalsState.creationOutcomes.map[consumer.id];
+          if (current?.seq !== action.seq || current.status !== 'pending') return;
+          store.dispatch({
+            type: 'terminals/addTerminal',
+            payload: [workspaceId, terminalId, 'Terminal'],
+          });
+          store.dispatch({ type: 'terminals/open', payload: [workspaceId, terminalId] });
+          store.dispatch({
+            type: 'terminals/terminalCreationFinished',
+            payload: [
+              {
+                ...consumer,
+                workspaceId,
+                seq: action.seq,
+                status: 'success',
+                terminalId,
+              },
+            ],
+          });
+        });
       }
       return action;
     },
@@ -29,8 +55,10 @@ vi.mock('$store/renderer/store', () => {
       Object.assign(
         (...args: any[]) => ({
           subscribe: (listener: (v: any) => void) => {
-            listener(fn(store.state, ...args));
-            return () => {};
+            const read = () => listener(fn(store.state, ...args));
+            listeners.add(read);
+            read();
+            return () => listeners.delete(read);
           },
         }),
         { select: fn },
@@ -43,7 +71,9 @@ vi.mock('$store/renderer/store', () => {
     }),
     __dispatched: dispatched,
     __reset: () => {
+      terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
       dispatched.length = 0;
+      listeners.clear();
     },
   };
   return { store };

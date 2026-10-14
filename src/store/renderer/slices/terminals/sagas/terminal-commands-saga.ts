@@ -16,8 +16,8 @@ const logger = createLogger('TerminalCommandsSaga');
 
 /**
  * Creation presentation stays overlay-owned: the quake overlay listens for
- * this window event (Cmd+T path), dispatches the saga-owned create request,
- * and adds the daemon-keyed tab returned by that request.
+ * this window event (Cmd+T path) and dispatches the saga-owned create request;
+ * terminalCreationSaga adds the daemon-keyed tab returned by that request.
  * Terminals are owner-only (multiplayer w3): a collaborator's request is
  * dropped here so the menu / palette paths never reach `terminal.create`.
  */

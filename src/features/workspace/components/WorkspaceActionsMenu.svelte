@@ -48,7 +48,7 @@
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -107,6 +107,17 @@
   }: Props = $props();
 
   const logger = createLogger('WorkspaceActionsMenu');
+
+  // Menu selection can destroy this component before an async action finishes.
+  // Do not read snippet-owned callbacks after teardown or close a reopened menu.
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+  });
+
+  function closeMenu() {
+    if (!destroyed) onClose?.();
+  }
 
   // External editors / "Choose app" are Electron-only; on web only copy
   // actions are offered.
@@ -226,7 +237,7 @@
           filePath: resolvedPath,
           workspacePath: resolvedFolderPath || undefined,
         });
-        onClose?.();
+        closeMenu();
         return;
       }
 
@@ -257,7 +268,7 @@
       }
 
       await invoke('vscode:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
@@ -288,7 +299,7 @@
       }
 
       await invoke('jetbrains:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
@@ -314,7 +325,7 @@
             isDirectory ? undefined : resolvedPath,
           ),
         );
-        onClose?.();
+        closeMenu();
         return;
       }
 
@@ -337,7 +348,7 @@
       }
 
       await invoke('xcode:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
@@ -407,7 +418,7 @@
           break;
         }
       }
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
       notify.error(
@@ -454,7 +465,7 @@
         return;
       }
 
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
       notify.error(
@@ -467,7 +478,7 @@
     if (!resolvedPath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(resolvedPath));
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy path:', error);
     }
@@ -492,7 +503,7 @@
       }
 
       await navigator.clipboard.writeText(toNativePath(pathToCopy));
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy workspace path:', error);
     }
@@ -503,7 +514,7 @@
     try {
       const fileName = filePath.split(/[/\\]/).pop() || '';
       await navigator.clipboard.writeText(fileName);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy file name:', error);
     }
@@ -512,7 +523,7 @@
   function handleDelete() {
     if (onDelete) {
       onDelete();
-      onClose?.();
+      closeMenu();
     }
   }
 
@@ -543,7 +554,7 @@
 
       if (result?.success) {
         onFileDeleted?.();
-        onClose?.();
+        closeMenu();
 
         const toastId = notify.warning(
           m.ui_workspaceActions_deletedFile_label({ name: fileName }),
@@ -590,10 +601,10 @@
   function handleArchive() {
     if (isArchived && onUnarchive) {
       onUnarchive();
-      onClose?.();
+      closeMenu();
     } else if (!isArchived && onArchive) {
       onArchive();
-      onClose?.();
+      closeMenu();
     }
   }
 
@@ -664,7 +675,7 @@
         submenu: action.submenu ? additional(action.submenu) : undefined,
         onClick: () => {
           action.onClick();
-          onClose?.();
+          closeMenu();
         },
       }));
     result.push(...additional(additionalActions));
