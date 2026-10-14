@@ -73,6 +73,14 @@
   flex: 1;
 }
 
+.home-row-repository {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: min(32%, 16rem);
+  margin-left: auto;
+  text-align: right;
+}
+
 @container (max-width: 700px) {
   .home-row-line {
     flex-direction: row;
@@ -81,6 +89,9 @@
     max-width: 100%;
   }
   .home-row-description {
+    display: none;
+  }
+  .home-row-repository {
     display: none;
   }
   .home-list-row .workspace-row-meta {
