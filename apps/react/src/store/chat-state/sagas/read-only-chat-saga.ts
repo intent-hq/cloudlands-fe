@@ -1,3 +1,5 @@
+import { submissionEvidence } from '@/features/agent/chat-runtime';
+import { submissionHistoryEvidence } from '../../../../../../src/features/agent/utils/submission-history-evidence';
 import { createMessageBlockReader } from '$lib/client/live/backend-message-block-reader';
 import { createMessageBlockHydrationWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/message-block-hydration-workers';
 import { createConversationReader } from '$lib/client/live/backend-conversation-reader';
@@ -55,6 +57,15 @@ export const readOnlyChatSaga = createReadOnlyChatSaga({
     hasHistory: selectHasHistorySegment.effect,
     isDeleted: isAgentDeletionPending,
   }),
+  observeTranscript: (agentId, workspaceId, transcript) => {
+    submissionEvidence.observeSubmissionEvidence(
+      agentId,
+      workspaceId,
+      'history',
+      submissionHistoryEvidence(transcript.messages),
+    );
+    submissionEvidence.observeSubmissionLifecycle(agentId, workspaceId, transcript.isStreaming);
+  },
   readAgentSession,
   contextSelector: selectPrincipalConnectionContext,
   readAdmission: (workspaceId) =>

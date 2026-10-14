@@ -1,0 +1,701 @@
+import { pendingSubmissionSettled } from '../../store/renderer/slices/pending-submissions/pending-submissions-slice';
+import type { SubmissionReference } from '../../store/renderer/slices/pending-submissions/pending-submissions-types';
+import { reconcileQueuedMessage } from './utils/reconcile-queued-message';
+/**
+ * Agent send pipeline.
+ *
+ * Module-level `sendMessage()` — session restore/activation, the optimistic
+ * user message, and the single PROTOCOL.md §5.5 `agent.sendMessage` wire call.
+ * Streaming and terminal state arrive via the standing `chat.subscribe` delta
+ * stream (chat-subscribe saga) and the daemon events bridge — this module
+ * assembles no transcript state and owns no stream lifecycle.
+ */
+
+import { v4 as uuidv4 } from 'uuid';
+import { createMessageId } from '$shared/types/branded-ids';
+import { createLogger } from '$lib/utils/client-logger';
+import type {
+  Workspace,
+  ContentBlock,
+  AgentMessage,
+  AgentSession,
+  QueuedMessage,
+} from '$shared/types';
+import { AgentStatus } from '$shared/types';
+import { createAppMessageId } from '$shared/utils/app-message-id';
+import { AgentActivationState } from '$shared/types/agent-session';
+import { performanceOptimizer } from './services/performance-optimizer';
+import {
+  activateAgentRequested,
+  saveAgentSessionRequested,
+  restoreAgentSessionRequested,
+} from '../../store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  addMessage as addAgentSessionMessage,
+  removeMessage as removeAgentSessionMessage,
+  setAgentStreaming,
+  updateMessage as updateAgentSessionMessage,
+  upsertSession,
+} from '../../store/renderer/slices/agent-session/agent-session-slice';
+import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
+import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
+import {
+  chatQueuedSendStarted,
+  chatQueuedRetryRecordParked,
+} from '../../store/renderer/slices/chat-state/chat-state-slice';
+import { buildRecordedAttempt, buildQueuedRecordedAttempt } from './utils/build-recorded-attempt';
+import { replaceAgentQueue } from '../../store/renderer/slices/agent-queue/agent-queue-slice';
+import { workspaceMetrics } from '../../store/renderer/slices/workspace/utils/workspace-metrics';
+import { m } from '$shared/paraglide/messages.js';
+
+import type { StoreDispatch } from '@themislib/themis/types';
+import type { SubmissionProjectionState } from '../../store/renderer/slices/pending-submissions/pending-submissions-projections';
+import {
+  getSubmissionIsCurrent,
+  getSubmissionObserved,
+  getPendingSubmissionEntry,
+} from '../../store/renderer/slices/pending-submissions/pending-submissions-projections';
+import { getWorkspaceParticipationContext } from '../../store/renderer/slices/workspace/workspace-authority-projections';
+import { getAgentQueueMessages } from '../../store/renderer/slices/agent-queue/agent-queue-projections';
+import type { ChatStateSlice } from '../../store/renderer/slices/chat-state/chat-state-types';
+import type { createAgentReadOwnership } from './agent-read-ownership-factory';
+import type { createBackendRuntime } from '$lib/client/live/backend-transport-runtime';
+import type { ErrorBoundaryOptions } from './browser/error-boundary-core';
+/** App binding supplies transport, Store and canonical reconciliation owners; the send algorithm is shared. */
+export function createAgentSender({
+  appStore,
+  backendRequest,
+  captureAgentMutationOwnership,
+  loadChatTranscript,
+  hydrateAgentQueue,
+  getAgentQueueEventSnapshotSeq,
+  errorBoundary,
+}: {
+  appStore: {
+    readonly state: SubmissionProjectionState & { chatState: ChatStateSlice };
+    dispatch: StoreDispatch;
+  };
+  backendRequest: ReturnType<typeof createBackendRuntime>['backendRequest'];
+  captureAgentMutationOwnership: ReturnType<
+    typeof createAgentReadOwnership
+  >['captureAgentMutationOwnership'];
+  loadChatTranscript: (agentId: string, workspaceId?: string) => Promise<void>;
+  hydrateAgentQueue: (agentId: string, workspaceId?: string) => Promise<void>;
+  getAgentQueueEventSnapshotSeq: (agentId: string, workspaceId?: string) => number;
+  errorBoundary: {
+    wrap<T>(operation: () => Promise<T>, name: string, options?: ErrorBoundaryOptions): Promise<T>;
+  };
+}) {
+  const logger = createLogger('AgentSend');
+
+  type ReduxAction = { type: string; payload?: unknown };
+
+  function dispatchRedux(action: ReduxAction): void {
+    appStore.dispatch(action as any);
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  function isInFlightPromptDedupResponse(response: unknown): boolean {
+    const candidate =
+      isRecord(response) && response.success === true && 'data' in response
+        ? response.data
+        : response;
+
+    if (!isRecord(candidate) || candidate.success !== false) {
+      return false;
+    }
+
+    return (
+      typeof candidate.error === 'string' &&
+      candidate.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // sendMessage
+  // ---------------------------------------------------------------------------
+
+  async function sendMessage(
+    agentId: string,
+    content: string,
+    workspace: Workspace,
+    options: {
+      submission?: SubmissionReference;
+      contextReferences?: Array<{
+        type: string;
+        filePath?: string;
+        noteId?: string;
+        selectedText?: string;
+        [key: string]: unknown;
+      }>;
+      imageBlocks?: Array<{
+        type: 'image';
+        data?: string;
+        mimeType?: string;
+        attachmentId?: string;
+      }>;
+      /**
+       * Attachment-reference file blocks (PROTOCOL §5.5): the attachment
+       * registry UUID plus chip metadata — no bytes cross the wire.
+       */
+      fileBlocks?: Array<{
+        type: 'file';
+        attachmentId: string;
+        fileName: string;
+        mimeType?: string;
+        size?: number;
+      }>;
+      model?: string;
+      modelId?: string;
+      noteIds?: string[];
+      personality?: string;
+      stdinContext?: string;
+      /**
+       * When true, the backend will reset the ACP session before sending the message.
+       * This is used for edit/regenerate flows where we need to clear the session's
+       * internal history so it only sees the truncated messages.
+       */
+      resetHistory?: boolean;
+      /**
+       * Pre-generated logical app message ID for the user message. The send path
+       * stages an optimistic user message with this ID so the canonical message
+       * dispatched here merges with it via appMessageId dedup.
+       */
+      userAppMessageId?: string;
+      /**
+       * Message priority for interrupt semantics. When "interrupt", preempts an
+       * in-flight turn (PROTOCOL.md §5.5: cancels the turn keep-alive and delivers
+       * immediately instead of queueing). Used by force-send (⌘Enter).
+       */
+      priority?: 'interrupt';
+      /**
+       * Opaque per-message payload persisted on the user message row
+       * (PROTOCOL.md §5.5 `messageMetadata`). Used by the Q&A wizard to tag its
+       * answer message `{ type: "question_answers", answeredQuestionsMessageId }`.
+       */
+      messageMetadata?: Record<string, unknown>;
+    } = {},
+  ): Promise<void> {
+    const admission = getWorkspaceParticipationContext(appStore.state, workspace.id);
+    if (!admission) return;
+    const ownership = captureAgentMutationOwnership(agentId, workspace.id);
+    const submission = options.submission;
+    const supported =
+      !!submission &&
+      getPendingSubmissionEntry(appStore.state, submission.scope)?.supported === true;
+    const settle = (
+      outcome: 'accepted' | 'rejected' | 'uncertain',
+      queued?: QueuedMessage,
+      fallback = false,
+    ) => {
+      if (submission)
+        dispatchRedux(
+          pendingSubmissionSettled(
+            submission.scope,
+            submission.id,
+            outcome,
+            Date.now(),
+            queued,
+            fallback,
+          ),
+        );
+    };
+    let legacySubmissionReleased = false;
+    const isCurrent = () =>
+      (!submission ||
+        legacySubmissionReleased ||
+        getSubmissionIsCurrent(appStore.state, submission)) &&
+      admission === getWorkspaceParticipationContext(appStore.state, workspace.id) &&
+      ownership.isCurrent(appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId);
+    // Wrap entire sendMessage operation with performance tracking
+    return performanceOptimizer.track(
+      `sendMessage:${ownership.key}:${agentId}:${submission?.id ?? 'legacy'}`,
+      async () => {
+        if (!isCurrent()) return;
+        logger.debug(`Sending message to agent ${agentId}`, {
+          contentLength: content.length,
+          hasContextReferences: !!options.contextReferences?.length,
+          model: options.model,
+        });
+
+        // --- Session load/activate (runs once, outside retry boundary) ---
+        let session = await appStore.dispatch(restoreAgentSessionRequested(workspace.id, agentId));
+        if (!isCurrent()) return;
+        if (!session) {
+          throw new Error(m.agent_streamLifecycle_sessionNotFound_error({ agentId }));
+        }
+        session = { ...session, isStreaming: session.isStreaming ?? false };
+
+        {
+          // Activate pending session if needed
+          // Skip activation if agent already has a backendSessionId or is already active
+          const needsActivation =
+            session &&
+            (session.status === 'pending' || !session.id) &&
+            !session.backendSessionId &&
+            session.activationState !== AgentActivationState.ACTIVE &&
+            session.activationState !== AgentActivationState.ACTIVATING;
+
+          if (needsActivation) {
+            // Check if this is an optimistic workspace or workspace is not ready
+            const isOptimisticWorkspace = workspace.id.startsWith('optimistic-');
+            const hasWorkspacePath =
+              workspace.worktreePath || workspace.repositoryPath || workspace.path;
+
+            if (!isOptimisticWorkspace && hasWorkspacePath) {
+              logger.info('Activating pending session in sendMessage', {
+                agentId,
+                status: session.status,
+                activationState: session.activationState,
+                hasBackendSessionId: !!session.backendSessionId,
+              });
+              // Activate for real workspaces with paths
+              const activatedSession = await appStore.dispatch(
+                activateAgentRequested(workspace.id, agentId),
+              );
+              if (!isCurrent()) return;
+              if (activatedSession) {
+                session = activatedSession;
+              }
+            } else {
+              logger.warn('Cannot activate agent - workspace not ready', {
+                agentId,
+                workspaceId: workspace.id,
+                isOptimistic: isOptimisticWorkspace,
+                hasWorktreePath: !!workspace.worktreePath,
+                hasRepositoryPath: !!workspace.repositoryPath,
+                hasPath: !!workspace.path,
+              });
+              throw new Error(m.agent_streamLifecycle_spaceNotReady_error());
+            }
+          } else if (session && session.status === 'pending' && session.backendSessionId) {
+            // Agent was already activated but status wasn't updated - fix it
+            logger.info('Fixing status for already-activated session', {
+              agentId,
+              backendSessionId: session.backendSessionId,
+              activationState: session.activationState,
+            });
+            session = {
+              ...session,
+              status: AgentStatus.Active,
+              activationState: AgentActivationState.ACTIVE,
+            };
+            dispatchRedux(
+              upsertSession({
+                ...session,
+                workspaceId: workspace.id as AgentSession['workspaceId'],
+              }),
+            );
+          }
+
+          if (!session) {
+            throw new Error(`Failed to get or create session for agent ${agentId}`);
+          }
+
+          // Add to store after validation
+          dispatchRedux(
+            upsertSession({
+              ...session,
+              workspaceId: workspace.id as AgentSession['workspaceId'],
+            }),
+          );
+
+          // --- User message dispatch (runs once, outside retry boundary) ---
+          // This ensures user message appears exactly once regardless of retries.
+          const userContentBlocks: ContentBlock[] = [{ type: 'text' as const, text: content }];
+          if (options.imageBlocks) {
+            for (const img of options.imageBlocks) {
+              // Carry whichever arm the block arrived on (inline data or
+              // attachment reference, monorepo#3338) so the optimistic row
+              // renders its thumbnails before the daemon echo.
+              userContentBlocks.push({
+                type: 'image' as const,
+                ...(img.data !== undefined ? { data: img.data } : {}),
+                ...(img.mimeType !== undefined ? { mimeType: img.mimeType } : {}),
+                ...(img.attachmentId !== undefined ? { attachmentId: img.attachmentId } : {}),
+              });
+            }
+          }
+          if (options.fileBlocks) {
+            for (const file of options.fileBlocks) {
+              userContentBlocks.push({
+                type: 'file' as const,
+                attachmentId: file.attachmentId,
+                fileName: file.fileName,
+                ...(file.mimeType !== undefined ? { mimeType: file.mimeType } : {}),
+                ...(file.size !== undefined ? { size: file.size } : {}),
+              });
+            }
+          }
+          const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
+          // Kept separate from the wire tag below so a failed send can roll the
+          // optimistic row back to exactly this metadata.
+          const baseUserMetadata = options.contextReferences?.length
+            ? { contextReferences: options.contextReferences }
+            : {};
+          const userMessage: AgentMessage = {
+            id: createMessageId(uuidv4()),
+            appMessageId: userAppMessageId,
+            role: 'user',
+            contentBlocks: userContentBlocks,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              ...baseUserMetadata,
+              // Mirror the wire tag on the optimistic row so transcript-driven
+              // derivations (the Q&A wizard's answer resolution) settle without
+              // waiting for the daemon echo.
+              ...(options.messageMetadata ?? {}),
+            },
+          };
+
+          if (!supported) {
+            if (submission) {
+              settle('rejected');
+              legacySubmissionReleased = true;
+            }
+            dispatchRedux(addAgentSessionMessage(session.id, userMessage));
+          }
+          dispatchRedux(setAgentStreaming(session.id, true));
+
+          let wireRejected = false;
+          try {
+            // Save the session immediately after adding the user message
+            // This ensures the message persists even if the app crashes or refreshes
+            // For edit/regenerate flows (resetHistory), allow truncation since messages
+            // were intentionally removed before this save
+            if (!supported)
+              await appStore.dispatch(
+                saveAgentSessionRequested(workspace.id, agentId, true, {
+                  allowTruncation: options.resetHistory,
+                }),
+              );
+
+            // Pre-assign the assistant message ID BEFORE the retry boundary
+            // so that retries reuse the same ID instead of minting a new one.
+            // This keeps the renderer's placeholder message and the backend in sync.
+            const assistantMessageId = createMessageId(`msg_${uuidv4()}`);
+            const assistantAppMessageId = createAppMessageId();
+
+            // --- Retry boundary: only wraps the backend send ---
+            const sendAttempt = async () =>
+              errorBoundary.wrap(
+                async () => {
+                  if (!isCurrent()) return;
+                  // Streaming and terminal state for this turn arrive via the
+                  // standing chat.subscribe delta stream (PROTOCOL §7.1,
+                  // chat-subscribe saga) and the daemon events bridge
+                  // (events.subscribe → agent:stream:* / agent:idle, §7) —
+                  // no transcript state is assembled here.
+                  //
+                  // NOTE: The frontend no longer imposes a wall-clock timeout on the
+                  // stream, and no client-side stall detection remains (the former
+                  // chat-state stall saga was removed). The daemon (intentd) owns
+                  // turn lifetime and will emit a terminal event (complete with
+                  // finishReason, or error) when the turn ends.
+
+                  // Send message to backend
+                  logger.info(
+                    // i18n-ignore (log line)
+                    'Agent Service: Sending message to backend with image and file blocks',
+                    {
+                      agentId,
+                      sessionId: session.id,
+                      hasImageBlocks: !!options.imageBlocks,
+                      imageBlocksCount: options.imageBlocks?.length || 0,
+                      imageBlockDetails:
+                        options.imageBlocks?.map((b) => ({
+                          type: b.type,
+                          mimeType: b.mimeType,
+                          dataLength: b.data?.length || 0,
+                        })) || [],
+                      hasFileBlocks: !!options.fileBlocks,
+                      fileBlocksCount: options.fileBlocks?.length || 0,
+                      fileBlockDetails:
+                        options.fileBlocks?.map((b) => ({
+                          type: b.type,
+                          fileName: b.fileName,
+                          mimeType: b.mimeType,
+                          attachmentId: b.attachmentId,
+                          size: b.size,
+                        })) || [],
+                    },
+                  );
+
+                  const wireModel = options.model ?? options.modelId ?? session.model ?? undefined;
+                  // Captured BEFORE the wire call: an authoritative snapshot
+                  // folded while the RPC is in flight — a live
+                  // agent:queue:updated fold (monorepo#2481) or a
+                  // hydrate-reconciled fold (monorepo#2486) — advances this
+                  // seq, and the queued-response queue seed below must then
+                  // yield to it.
+                  dispatchRedux(chatQueuedSendStarted(agentId));
+                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
+                  const attemptGenerationAtSend =
+                    appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
+                  // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
+                  // the BackendTransport seam. History is daemon-owned (loaded from
+                  // persistence); legacy-only fields (messages, resetHistory,
+                  // behaviorPrompt, specialist, personality) are no longer sent —
+                  // edit/regenerate flows go through `agent.editAndRegenerate`.
+                  const response = await backendRequest<Record<string, unknown>>(
+                    'agent.sendMessage',
+                    {
+                      agentId,
+                      ...(supported && submission ? { messageId: submission.id } : {}),
+                      workspaceId: workspace.id,
+                      content,
+                      model: wireModel,
+                      contextReferences: options.contextReferences,
+                      imageBlocks: options.imageBlocks,
+                      fileBlocks: options.fileBlocks,
+                      noteIds: options.noteIds,
+                      stdinContext: options.stdinContext,
+                      // Pre-assigned assistant message ID so backend uses the same ID as the renderer
+                      assistantMessageId,
+                      userAppMessageId,
+                      assistantAppMessageId,
+                      // Message priority for force-send interrupt (PROTOCOL.md §5.5)
+                      priority: options.priority,
+                      // Opaque per-message tag persisted on the user row
+                      // (PROTOCOL.md §5.5) — omitted entirely when absent so
+                      // ordinary sends keep their exact request shape.
+                      ...(options.messageMetadata
+                        ? { messageMetadata: options.messageMetadata }
+                        : {}),
+                    },
+                  ).catch((error: unknown) => {
+                    if (isCurrent()) throw error;
+                    return undefined;
+                  });
+                  if (!isCurrent()) return;
+
+                  if (isInFlightPromptDedupResponse(response)) {
+                    logger.info('Backend dropped duplicate in-flight prompt', {
+                      agentId,
+                      sessionId: session.id,
+                    });
+                    settle('rejected');
+                    return;
+                  }
+
+                  // Raw daemon envelope (PROTOCOL.md §5.5): { success, queued, messageId? }
+                  if (response && typeof response === 'object' && 'success' in response) {
+                    if (!response.success) {
+                      // The daemon surfaces errors as a plain string; legacy
+                      // IpcResponse envelopes use { message }.
+                      const rawError = (response as { error?: unknown }).error;
+                      const errorMessage =
+                        typeof rawError === 'string'
+                          ? rawError
+                          : (rawError as { message?: string } | undefined)?.message;
+                      wireRejected = true;
+                      throw new Error(
+                        errorMessage || m.agent_streamLifecycle_sendToBackendFailed_error(),
+                      );
+                    }
+
+                    // Handle queued responses (agent mid-turn, or the auto-queue race
+                    // when priority: "interrupt" arrives during turn startup). The
+                    // daemon returns { success: true, queued: true, messageId? }
+                    // instead of preempting. Clear the streaming flag so the UI
+                    // doesn't stay in "Thinking", and seed the local queue when the
+                    // daemon echoes the queued entry (agent:queue:updated reconciles
+                    // either way).
+                    if ('queued' in response && response.queued === true) {
+                      logger.info(
+                        'sendMessage auto-queued by daemon (mid-turn or turn-startup race)',
+                        {
+                          agentId,
+                          sessionId: session.id,
+                          queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)
+                            ?.id,
+                        },
+                      );
+
+                      // Reset streaming flag so UI doesn't stay in "Thinking"
+                      if (
+                        !supported ||
+                        !submission ||
+                        !getSubmissionObserved(appStore.state, submission)
+                      )
+                        dispatchRedux(setAgentStreaming(session.id, false));
+                      if (!supported)
+                        dispatchRedux(removeAgentSessionMessage(session.id, userMessage.id));
+                      if (supported) {
+                        const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
+                        const rawTurnId = (response as { turnId?: unknown }).turnId;
+                        const turnId =
+                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage?.turnId;
+                        if (queuedMessage && typeof turnId === 'string') {
+                          const attempt = buildRecordedAttempt(content, options);
+                          const confirmed = getAgentQueueMessages(
+                            appStore.state,
+                            agentId,
+                            workspace.id,
+                          ).find((row) => row.id === queuedMessage.id || row.turnId === turnId);
+                          dispatchRedux(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              buildQueuedRecordedAttempt(confirmed ?? queuedMessage, attempt),
+                              !confirmed &&
+                                !!submission &&
+                                getSubmissionObserved(appStore.state, submission),
+                              attemptGenerationAtSend,
+                            ),
+                          );
+                        }
+                        settle('accepted', queuedMessage, true);
+                        void hydrateAgentQueue(agentId, workspace.id);
+                        return;
+                      }
+
+                      // Seed the local queue from queuedMessage (like chat-send-service
+                      // queue-on-send path does) so the UI immediately shows queued state
+                      const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
+                      if (queuedMessage) {
+                        const rawTurnId = (response as { turnId?: unknown }).turnId;
+                        const turnId =
+                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
+                        let retryMessage: QueuedMessage | undefined = queuedMessage;
+                        // Seed only when no authoritative snapshot — live
+                        // agent:queue:updated fold or hydrate-reconciled fold
+                        // — landed since the send started: a snapshot
+                        // (including the shrunk-after-drain one) is at least
+                        // as fresh as this echo, so seeding over it would
+                        // re-add a just-drained row (monorepo#2481).
+                        if (
+                          isCurrent() &&
+                          getAgentQueueEventSnapshotSeq(agentId, workspace.id) === queueSeqAtSend
+                        ) {
+                          const existing = getAgentQueueMessages(
+                            appStore.state,
+                            agentId,
+                            workspace.id,
+                          );
+                          const next = reconcileQueuedMessage(existing, queuedMessage);
+                          dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
+                        } else if (isCurrent()) {
+                          logger.debug(
+                            'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
+                          // Client-side apply order cannot rank the superseding
+                          // snapshot against this echo — a hydrate whose
+                          // getQueue the daemon served BEFORE this send would
+                          // wrongly suppress a still-queued row (monorepo#2486
+                          // review). By now the daemon has processed the send,
+                          // so one reconciling hydrate returns the true queue
+                          // in both directions: the row if still queued,
+                          // without it if drained. Swallowed on failure — the
+                          // send itself succeeded, and the service leaves the
+                          // prior mirror intact on error.
+                          await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
+                          retryMessage = getAgentQueueMessages(
+                            appStore.state,
+                            agentId,
+                            workspace.id,
+                          ).find(
+                            (message) =>
+                              message.id === queuedMessage.id || message.turnId === turnId,
+                          );
+                        }
+                        if (isCurrent() && typeof turnId === 'string') {
+                          const attempt = buildRecordedAttempt(content, options);
+                          // A superseding snapshot may already have promoted this turn.
+                          // Clear our optimistic attempt without re-parking a stale echo.
+                          dispatchRedux(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
+                              !retryMessage,
+                              attemptGenerationAtSend,
+                            ),
+                          );
+                        } else if (isCurrent()) {
+                          logger.warn(
+                            'auto-queued sendMessage response carried no turnId; retry record not parked',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
+                        }
+                      }
+
+                      // Exit early — no stream is starting
+                      return;
+                    }
+                  }
+                  // NOTE: Do NOT clear streaming flags for send failures here — a
+                  // backendRequest error propagates to the retry boundary, and a
+                  // per-attempt clear would flash isStreaming false→true→false
+                  // on each retry. The cleanup happens AFTER all retries are
+                  // exhausted (see the catch block below).
+
+                  if (supported) {
+                    settle('accepted');
+                    void hydrateAgentQueue(agentId, workspace.id);
+                    void loadChatTranscript(agentId, workspace.id);
+                  }
+                  // Track metrics
+                  workspaceMetrics.incrementMessageSent(workspace.id);
+                },
+                'send message',
+                {
+                  retries: supported ? 0 : 2,
+                  notify: false,
+                  context: { agentId, workspace: workspace.id },
+                },
+              );
+            const result = supported
+              ? await sendAttempt().then(() => ({ success: true, error: undefined }))
+              : await errorRecovery.executeWithRecovery(
+                  sendAttempt,
+                  DEFAULT_STRATEGIES.streaming,
+                  `send-message-${agentId}`,
+                );
+
+            if (!result.success) {
+              // Don't re-wrap - the error already has a clean user-facing message
+              // from the error boundary service
+              throw result.error || new Error(m.agent_streamLifecycle_sendFailed_error());
+            }
+          } catch (streamingError) {
+            if (!isCurrent()) return;
+            // If saveSession or any pre-retry-boundary code throws after
+            // setAgentStreaming(true), reset the streaming flag so the UI
+            // doesn't stay stuck on "Thinking…" until the safety detector fires.
+            dispatchRedux(setAgentStreaming(session.id, false));
+            // The optimistic user row is retained on failure, so an answer tag
+            // mirrored onto it would resolve the wizard's pending set even though
+            // the daemon never accepted the answer. Strip it back to the
+            // pre-send metadata; "Try again" re-mirrors it on the next attempt.
+            if (!supported && options.messageMetadata) {
+              dispatchRedux(
+                updateAgentSessionMessage(session.id, userMessage.id, {
+                  metadata: baseUserMetadata,
+                }),
+              );
+            }
+            if (supported) settle(wireRejected ? 'rejected' : 'uncertain');
+            throw streamingError;
+          }
+        }
+      },
+      {
+        memoize: false, // Don't memoize message sending
+        coalesce: true, // Coalesce duplicate requests
+        priority: 'high',
+        // No timeout - let the agent take as long as it needs
+      },
+    );
+  }
+
+  return sendMessage;
+}

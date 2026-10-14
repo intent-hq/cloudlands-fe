@@ -1,12 +1,12 @@
+import { useWorkspaceViewLifetime } from './workspace-view-lifetime';
 import type { ConversationFileOrigin } from './workspace-file-origin';
 import { selectFileReadContext } from '@/store/files/files-selectors';
-// i18n-ignore (internal unreleased read-only workspace preview)
+// i18n-ignore (internal unreleased workspace preview)
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useContext, useLayoutEffect, useRef } from 'react';
 import { store } from '@/store';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
-import { workspaceUnmounted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { loadGitStatus } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { HomeWorkspaceStatus } from '@/features/home/components/home-workspace-status';
@@ -143,7 +143,7 @@ export function WorkspaceList({
       <ScreenHeader
         leading={<SidebarTrigger />}
         title={<h1>{m.lib_commandPalette_workspaces_label()}</h1>}
-        description="Internal React preview · unreleased · read-only"
+        description={m.settings_gitWorkspace_experimental_badge()}
         actions={
           <Link to="/sandbox" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
             Component sandbox
@@ -228,6 +228,7 @@ export function WorkspaceOverview({
   const row = loaded.value ? workspace.value : undefined;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
+  useWorkspaceViewLifetime(workspaceId, loaded.value && !row);
   const fileAuthority = selectFileReadContext(
     workspaceId,
     attachmentId ? (attachmentAgentId ?? '') : undefined,
@@ -268,9 +269,6 @@ export function WorkspaceOverview({
     if (!connection) return;
     store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
     store.dispatch(loadGitStatus(workspaceId));
-    return () => {
-      store.dispatch(workspaceUnmounted(workspaceId));
-    };
   }, [workspaceId, connection]);
   useLayoutEffect(() => {
     if (!fileAuthority || !filePath || !parseWorkspaceFileTarget(filePath).valid) return;
@@ -304,7 +302,7 @@ export function WorkspaceOverview({
             {row?.title ?? m.workspace_page_workspaceResource_label()}
           </h1>
         }
-        description="Internal React preview · unreleased · read-only"
+        description={m.settings_gitWorkspace_experimental_badge()}
         actions={
           <Link
             to="/workspaces"

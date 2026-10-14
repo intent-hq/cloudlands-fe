@@ -1,3 +1,4 @@
+import { chatCommandsSaga } from './store/chat-state/sagas/chat-commands-saga';
 import { StartClient } from '@tanstack/react-start/client';
 import { StrictMode, startTransition } from 'react';
 import { hydrateRoot } from 'react-dom/client';
@@ -36,6 +37,7 @@ const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
 const cancelNotesContentReadSaga = store.runSaga(notesContentReadSaga);
 const cancelGitStatusReadSaga = store.runSaga(gitStatusReadSaga);
 const cancelFilesReadSaga = store.runSaga(filesReadSaga);
+const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
 const cancelReadOnlyChatSaga = store.runSaga(readOnlyChatSaga);
 if (hasAutoUpdatePreload()) store.dispatch(initAutoUpdate());
 let root: ReturnType<typeof hydrateRoot>;
@@ -62,6 +64,7 @@ function dispose() {
   cancelNotesContentReadSaga();
   cancelGitStatusReadSaga();
   cancelFilesReadSaga();
+  cancelChatCommandsSaga();
   cancelReadOnlyChatSaga();
   disposeProviderRuntime();
   cancelBackendConnectionSaga();

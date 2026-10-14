@@ -1,3 +1,4 @@
+import { createBrowserClientIdentity, type BrowserClientIdentity } from './browser-client-identity';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -196,6 +197,7 @@ export interface BrowserWebSocketLike {
 export interface BrowserWebSocketTransportOptions {
   /** Full `ws(s)://` daemon URL (bearer token via `?token=`, PROTOCOL §2.1). */
   url: string;
+  clientIdentity?: BrowserClientIdentity;
   /** WebSocket constructor seam for tests. Defaults to the global `WebSocket`. */
   webSocketFactory?: (url: string) => BrowserWebSocketLike;
   requestTimeoutMs?: number;
@@ -249,6 +251,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     reject: (e: Error) => void;
   }> = [];
   private clientId: string | undefined;
+  private readonly clientIdentity: BrowserClientIdentity | undefined;
   private helloConfirmed = false;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
@@ -269,6 +272,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   constructor(options: BrowserWebSocketTransportOptions) {
     this.url = options.url;
+    this.clientIdentity = options.clientIdentity;
     this.webSocketFactory =
       options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as BrowserWebSocketLike);
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -377,7 +381,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
           resolve: (result) => {
             if (method === 'client.hello' && this.socket === socket) {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
-              if (typeof clientId === 'string') this.clientId = clientId;
+              if (
+                typeof clientId === 'string' &&
+                clientId &&
+                capabilityGeneration === this.capabilityHelloGeneration
+              ) {
+                this.clientId = clientId;
+                void this.clientIdentity?.accepted(clientId);
+              }
               if (
                 typeof clientId === 'string' &&
                 clientId &&
@@ -548,6 +559,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   private async performHelloHandshake(socket: BrowserWebSocketLike): Promise<void> {
     try {
+      if (!this.clientId && this.clientIdentity) this.clientId = await this.clientIdentity.read();
+      if (this.disposed || this.socket !== socket) return;
       await this.requestOnSocket(
         'client.hello',
         {},
@@ -725,5 +738,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
 export function createBrowserWebSocketTransport(
   options: BrowserWebSocketTransportOptions,
 ): BrowserWebSocketTransport {
-  return new BrowserWebSocketTransport(options);
+  return new BrowserWebSocketTransport({
+    ...options,
+    clientIdentity: options.clientIdentity ?? createBrowserClientIdentity(options.url),
+  });
 }

@@ -1,3 +1,4 @@
+import { getInitialChatHistoryPending } from './chat-state-projections';
 import { store } from '../../store';
 import { getAgentChatState, getHydratedBlock } from './chat-state-projections';
 import type {
@@ -123,9 +124,7 @@ export const selectChatLiveStreamPhase = store.createSelector(
 export const selectInitialChatHistory = store.createSelector(
   (state, agentId: string) => getAgentChatState(state, agentId).initialHistory,
 );
-export const selectInitialChatHistoryPending = store.createSelector(
-  (state, agentId: string) => getAgentChatState(state, agentId).initialHistoryPending === true,
-);
+export const selectInitialChatHistoryPending = store.createSelector(getInitialChatHistoryPending);
 
 export const selectTranscriptSnapshotMeta = store.createSelector(
   (state, agentId: string): TranscriptSnapshotMeta | undefined =>

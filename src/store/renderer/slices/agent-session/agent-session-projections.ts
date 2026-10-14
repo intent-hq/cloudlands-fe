@@ -1,3 +1,4 @@
+import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import type { AgentSession } from '$shared/types/agent-session';
 import { getAgentProvider } from '$shared/types/agent-session';
 import type { StoredAgentSession, AgentSessionState } from './agent-session-types';
@@ -63,4 +64,12 @@ export const getAgentReasoningEffort = (
     base.startsWith('codex:') ||
     LEGACY_CODEX_EFFORT_MODELS.has(base);
   return isCodex ? suffix : undefined;
+};
+
+export const getAgentIsResponding = (
+  state: { agentSessions: AgentSessionState },
+  agentId: string,
+): boolean => {
+  const stored = state.agentSessions?.byAgentId[agentId];
+  return !!stored && isAgentRunningState(stored);
 };

@@ -692,6 +692,8 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
   });
 
   async function completeHello(socket: FakeWebSocket) {
+    // Endpoint-scoped identity lookup completes asynchronously before hello.
+    await vi.waitFor(() => expect(socket.sent.length).toBeGreaterThan(0));
     const hello = JSON.parse(socket.sent[socket.sent.length - 1]);
     expect(hello.method).toBe('client.hello');
     expect((await api.invoke('backend:get-status')).status).toBe('connecting');

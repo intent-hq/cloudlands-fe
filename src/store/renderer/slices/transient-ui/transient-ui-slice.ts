@@ -61,9 +61,9 @@ export const setSidebarActiveTab = createAction<[workspaceId: string, tab: Sideb
 export const setNoteViewMode = createAction<
   [workspaceId: string, noteId: string, mode: NoteViewMode]
 >('transientUi/setNoteViewMode');
-export const setChatDraft = createAction<[workspaceId: string, agentId: string, draft: string]>(
-  'transientUi/setChatDraft',
-);
+export const setChatDraft = createAction<
+  [workspaceId: string, agentId: string, draft: string, retainEmpty?: boolean]
+>('transientUi/setChatDraft');
 export const clearChatDraft = createAction<[workspaceId: string, agentId: string]>(
   'transientUi/clearChatDraft',
 );
@@ -111,18 +111,24 @@ transientUiReducer.with(setNoteViewMode, (state, { payload: [workspaceId, noteId
     return { ...workspaceState, noteViewModeByNoteId };
   }),
 );
-transientUiReducer.with(setChatDraft, (state, { payload: [workspaceId, agentId, draft] }) =>
-  updateWorkspaceState(state, workspaceId, (workspaceState) => {
-    const currentDraft = workspaceState.chatDrafts[agentId] ?? '';
-    if (currentDraft === draft) return workspaceState;
-    const chatDrafts = { ...workspaceState.chatDrafts };
-    if (draft) {
-      chatDrafts[agentId] = draft;
-    } else {
-      delete chatDrafts[agentId];
-    }
-    return { ...workspaceState, chatDrafts };
-  }),
+transientUiReducer.with(
+  setChatDraft,
+  (state, { payload: [workspaceId, agentId, draft, retainEmpty] }) =>
+    updateWorkspaceState(state, workspaceId, (workspaceState) => {
+      const currentDraft = workspaceState.chatDrafts[agentId] ?? '';
+      if (
+        currentDraft === draft &&
+        (draft !== '' || Boolean(retainEmpty) === agentId in workspaceState.chatDrafts)
+      )
+        return workspaceState;
+      const chatDrafts = { ...workspaceState.chatDrafts };
+      if (draft || retainEmpty) {
+        chatDrafts[agentId] = draft;
+      } else {
+        delete chatDrafts[agentId];
+      }
+      return { ...workspaceState, chatDrafts };
+    }),
 );
 transientUiReducer.with(clearChatDraft, (state, { payload: [workspaceId, agentId] }) =>
   updateWorkspaceState(state, workspaceId, (workspaceState) => {

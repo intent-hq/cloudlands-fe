@@ -36,7 +36,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createHarness() {
+function createHarness(captureOwnership = () => () => true) {
   const drafts = {
     get: vi.fn<DraftsClient['get']>(() => Promise.resolve(null)),
     set: vi.fn<DraftsClient['set']>(() => Promise.resolve(SAVED)),
@@ -53,6 +53,7 @@ function createHarness() {
     { channel, dispatch, getState: () => ({ chatDrafts: state }) },
     chatDraftsSaga,
     drafts,
+    captureOwnership,
   );
   dispatch(chatDraftOwnerOpened(OWNER));
   return { drafts, dispatch, task, owner: () => getItem(state.owners, OWNER) };
@@ -213,5 +214,44 @@ describe('chatDraftsSaga', () => {
     expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'next draft', undefined);
     expect(task.isRunning()).toBe(true);
     task.cancel();
+  });
+});
+
+describe('draft authority across deferred work', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clearDraftCacheForTests();
+  });
+  afterEach(() => vi.useRealTimers());
+  it('drops a debounce captured before principal retirement', async () => {
+    let epoch = 0;
+    const h = createHarness(() => {
+      const captured = epoch;
+      return () => captured === epoch;
+    });
+    h.dispatch(chatDraftSaveScheduled(OWNER, 'old', request('private draft')));
+    epoch++;
+    await vi.advanceTimersByTimeAsync(CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+    expect(h.drafts.set).not.toHaveBeenCalled();
+    expect(h.owner()?.saves.map.old.status).toBe('failed');
+    h.task.cancel();
+  });
+  it('does not execute a queued clear or publish a successful late save after retirement', async () => {
+    let epoch = 0;
+    const h = createHarness(() => {
+      const captured = epoch;
+      return () => captured === epoch;
+    });
+    const deferredSave = deferred<typeof SAVED>();
+    h.drafts.set.mockReturnValueOnce(deferredSave.promise);
+    h.dispatch(chatDraftSaveScheduled(OWNER, 'save', request('old text')));
+    await vi.advanceTimersByTimeAsync(CHAT_DRAFT_SAVE_DEBOUNCE_MS);
+    h.dispatch(chatDraftClearRequested(WS, AGENT));
+    epoch++;
+    deferredSave.resolve(SAVED);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.drafts.clear).not.toHaveBeenCalled();
+    expect(h.owner()?.saves.map.save.status).toBe('failed');
+    h.task.cancel();
   });
 });

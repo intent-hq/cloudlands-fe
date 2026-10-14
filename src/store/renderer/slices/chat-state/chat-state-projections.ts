@@ -16,3 +16,8 @@ export function getHydratedBlock(
 ) {
   return getAgentChatState(state, agentId).hydratedBlocks?.[hydratedBlockKey(messageId, blockId)];
 }
+
+export const getInitialChatHistoryPending = (
+  state: { chatState?: ChatStateSlice },
+  agentId: string,
+) => getAgentChatState(state, agentId).initialHistoryPending === true;

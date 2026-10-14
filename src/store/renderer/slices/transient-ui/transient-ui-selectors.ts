@@ -1,3 +1,4 @@
+import { getChatDraft } from './transient-ui-projections';
 import { store } from '../../store';
 import { emptyWorkspaceTransientUiState, type NoteViewMode } from './transient-ui-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -42,8 +43,4 @@ export const selectIsRawNoteViewEnabled = store.createSelector(
     selectNoteViewMode.select(state, workspaceId, noteId) === 'raw',
 );
 
-export const selectChatDraft = store.createSelector(
-  (state, workspaceId: string, agentId: string) => {
-    return selectTransientUiWorkspaceState.select(state, workspaceId).chatDrafts[agentId] ?? '';
-  },
-);
+export const selectChatDraft = store.createSelector(getChatDraft);

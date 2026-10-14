@@ -17,3 +17,5 @@ export const selectAgentMessages = store.createSelector(
   (state, agentId: string) => state.agentSessions.byAgentId[agentId]?.messages ?? EMPTY_MESSAGES,
 );
 const EMPTY_MESSAGES: import('$shared/types').AgentMessage[] = [];
+
+export const selectAgentIsResponding = store.createSelector(projections.getAgentIsResponding);

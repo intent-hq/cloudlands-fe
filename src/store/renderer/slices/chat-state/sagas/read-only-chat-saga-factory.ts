@@ -44,7 +44,9 @@ export function createReadOnlyChatSaga<State>({
   historyPages,
   seekMessage,
   messageBlocks,
+  observeTranscript,
 }: {
+  observeTranscript?: (agentId: string, workspaceId: string, transcript: ChatTranscript) => void;
   messageBlocks?: ReturnType<typeof createMessageBlockHydrationWorkers>;
   seekMessage?: ReturnType<typeof createMessageHistorySeeker>;
   historyPages?: ReturnType<typeof createHistoryPageWorkers>;
@@ -186,6 +188,7 @@ export function createReadOnlyChatSaga<State>({
           // The shared reconciler owns the tail; canonical history stays in
           // its separate bounded segment and survives ordinary tail updates.
           yield* put(replaceMessages(agentId, transcript.messages));
+          observeTranscript?.(agentId, workspaceId, transcript);
           yield* put(updateSession(agentId, { isStreaming: transcript.isStreaming }));
           if (transcript.initialHistory?.complete === false && !transcript.fromSnapshot) {
             yield* put(chatInitialHistoryProgressed(agentId, transcript.initialHistory));

@@ -1,5 +1,7 @@
+import type { QueuedMessageMutation } from '$store/renderer/slices/agent-queue/agent-queue-types';
 /** @vitest-environment jsdom */
 // Mount the real panel, recovery card and queue; mock unrelated panel services.
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetScaffold } from './mocks/chat-panel-render-scaffold';
@@ -72,6 +74,18 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({
     state: () => ({
       agentSubscriptionUI: { entries: {} },
+      agentQueue: {
+        byAgentId: {
+          'agent-1': {
+            workspaceId: 'ws-1',
+            messages: createCollection<QueuedMessage, 'id'>('id', testState.queue),
+            recentlyRemovedMessageIds: [],
+            isHydrating: false,
+            error: null,
+          },
+        },
+        mutations: createCollection<QueuedMessageMutation, 'requestId'>('requestId'),
+      },
       browser: { byWorkspaceId: {} },
       chatDrafts,
       chatPanelUi: { byWorkspaceId: {} },

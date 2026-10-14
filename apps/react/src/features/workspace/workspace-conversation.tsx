@@ -1,3 +1,8 @@
+import {
+  agentMetadataAcquired,
+  agentMetadataReleased,
+} from '../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
+import { WorkspaceConversationComposer } from './workspace-conversation-composer';
 import { conversationFileSearch } from './workspace-file-origin';
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
 import { WorkspaceConversationContent } from './workspace-conversation-content';
@@ -277,9 +282,11 @@ export function WorkspaceConversation({
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     if (!authority) return;
+    dispatch(agentMetadataAcquired(consumer, workspaceId, agentId));
     dispatch(retainedChatTranscriptsSet(consumer, workspaceId, [agentId]));
     return () => {
       dispatch(retainedChatTranscriptsSet(consumer, workspaceId, []));
+      dispatch(agentMetadataReleased(consumer));
     };
   }, [consumer, workspaceId, agentId, authority, dispatch]);
   useLayoutEffect(() => {
@@ -454,7 +461,12 @@ export function WorkspaceConversation({
         <>
           <output className="type-caption text-muted-foreground">
             {m.chat_longRunningDebug_messages_label()} {formatNumber(messageCount)} /{' '}
-            {formatNumber(chat.transcriptSnapshot?.totalMessages ?? session.messages.length)}
+            {formatNumber(
+              Math.max(
+                messageCount,
+                chat.transcriptSnapshot?.totalMessages ?? session.messages.length,
+              ),
+            )}
           </output>
           {!startLoaded && messageCount > 0 && (
             <Button
@@ -540,6 +552,14 @@ export function WorkspaceConversation({
             </section>
           )}
         </>
+      )}
+      {current && (
+        <WorkspaceConversationComposer
+          key={`${workspaceId}:${agentId}`}
+          transcriptReady={Boolean(ready)}
+          workspaceId={workspaceId}
+          agentId={agentId}
+        />
       )}
     </section>
   );

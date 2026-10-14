@@ -1,0 +1,235 @@
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { act, StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { store } from '@/store';
+import { WorkspaceConversationComposer } from './workspace-conversation-composer';
+import type { MessageComposerProps } from '@/components/ui/message-composer';
+import { createAdmittedLegacyPrincipal } from '../../../../../src/test/fixtures/admitted-legacy-principal';
+import { setWorkspaceEntity } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
+import { bulkUpsertSessions } from '../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
+import { pendingSubmissionSettled } from '../../../../../src/store/renderer/slices/pending-submissions/pending-submissions-slice';
+import { chatSendFailed } from '../../../../../src/store/renderer/slices/chat-state/chat-state-slice';
+import { runChatDrafts } from '../../../../../src/store/renderer/slices/chat-drafts/sagas/chat-drafts-worker';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import type { DraftsClient } from '$lib/client/app-client';
+import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
+
+const ui = vi.hoisted(() => ({ props: undefined as MessageComposerProps | undefined }));
+vi.mock('@/components/ui/message-composer', () => ({
+  MessageComposer: (props: MessageComposerProps) => {
+    ui.props = props;
+    return <div />;
+  },
+}));
+vi.mock('@/features/agent/chat-runtime', async () => {
+  const { createChatSubmission } =
+    await import('../../../../../src/features/agent/chat-submission-factory');
+  const { createAgentSubmissionAdmitter } =
+    await import('../../../../../src/store/renderer/slices/pending-submissions/pending-submissions-admission-factory');
+  return {
+    chatSubmission: createChatSubmission(
+      createAgentSubmissionAdmitter(() => ({ key: 'test-owner', isCurrent: () => true })),
+    ),
+    submissionRetry: { requestChatMessageRetry: vi.fn() },
+  };
+});
+let dispose: () => void;
+let stop: () => void;
+let root: ReturnType<typeof createRoot>;
+let container: HTMLDivElement;
+let drafts: Pick<DraftsClient, 'get' | 'set' | 'clear'>;
+const ws = WorkspaceId('composer-test');
+const agent = AgentId('composer-agent');
+async function settle() {
+  await act(async () => {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  });
+}
+beforeEach(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const initial = createAdmittedLegacyPrincipal();
+  initial.principal.snapshot!.capabilities.submissionCorrelation = 1;
+  dispose = store.init(initial);
+  store.dispatch(setWorkspaceEntity({ id: ws, myRole: 'owner' } as Workspace));
+  store.dispatch(
+    bulkUpsertSessions([
+      {
+        id: agent,
+        workspaceId: ws,
+        status: AgentStatus.RuntimeIdle,
+        messages: [],
+        name: 'Test',
+        createdAt: '2026-10-14T00:00:00Z',
+        updatedAt: '2026-10-14T00:00:00Z',
+        backendSessionId: AgentId('test-session'),
+      } as AgentSession,
+    ]),
+  );
+  drafts = {
+    get: vi.fn(async () => ({ text: 'saved draft', attachments: [], updatedAt: '' })),
+    set: vi.fn(async () => ({ ok: true as const, updatedAt: '' })),
+    clear: vi.fn(async () => ({ ok: true as const })),
+  };
+  stop = store.runSaga(function* () {
+    yield* runChatDrafts(drafts, () => () => true);
+  });
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  stop();
+  dispose();
+  vi.unstubAllGlobals();
+});
+async function mount(expectedText = 'saved draft') {
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <WorkspaceConversationComposer workspaceId={ws} agentId={agent} />
+      </StrictMode>,
+    ),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.value).toBe(expectedText);
+  });
+}
+function entry() {
+  return store.state.pendingSubmissions.byAgentId[agent];
+}
+it('restores through the draft saga and flushes the final edit when leaving', async () => {
+  await mount();
+  expect(ui.props?.value).toBe('saved draft');
+  await act(async () => ui.props?.onValueChange?.('last keystrokes'));
+  await act(async () => root.unmount());
+  await settle();
+  expect(drafts.set).toHaveBeenCalledWith(ws, agent, 'last keystrokes', undefined);
+  expect(store.state.chatDrafts.owners.ids).toEqual([]);
+});
+it('admits one send for two immediate activations, retains rejected text, and clears only after accepted delivery', async () => {
+  await mount();
+  const send = ui.props!.onSend!;
+  await act(async () => {
+    send('saved draft', []);
+    send('saved draft', []);
+  });
+  expect(getItems(entry().submissions)).toHaveLength(1);
+  const first = getItems(entry().submissions)[0];
+  expect(ui.props?.value).toBe('saved draft');
+  expect(drafts.clear).not.toHaveBeenCalled();
+  await act(async () => {
+    store.dispatch(pendingSubmissionSettled(entry().scope, first.id, 'rejected', Date.now()));
+    store.dispatch(chatSendFailed(agent, 'rejected'));
+  });
+  await settle();
+  expect(ui.props?.value).toBe('saved draft');
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  const next = getItems(entry().submissions)[0];
+  expect(next.id).not.toBe(first.id);
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, next.id, 'accepted', Date.now())),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.value).toBe('');
+  });
+  expect(drafts.clear).toHaveBeenCalledOnce();
+});
+it('does not clear a newer edit when an earlier send is accepted', async () => {
+  await mount();
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  const sent = getItems(entry().submissions)[0];
+  await act(async () => ui.props!.onValueChange!('next draft'));
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, sent.id, 'accepted', Date.now())),
+  );
+  await settle();
+  expect(ui.props?.value).toBe('next draft');
+  expect(drafts.clear).not.toHaveBeenCalled();
+});
+it('keeps unsupported attachment drafts intact without sending or rewriting them', async () => {
+  vi.mocked(drafts.get).mockResolvedValue({
+    text: 'with attachment',
+    attachments: [{ id: 'file', type: 'file', label: 'file.txt', path: 'file.txt' }],
+    updatedAt: '',
+  } as Awaited<ReturnType<DraftsClient['get']>>);
+  await mount('with attachment');
+  expect(ui.props?.disabled).toBe(true);
+  expect(ui.props?.value).toBe('with attachment');
+  await act(async () => ui.props!.onSend!('with attachment', []));
+  expect(entry()).toBeUndefined();
+  expect(drafts.set).not.toHaveBeenCalled();
+  expect(drafts.clear).not.toHaveBeenCalled();
+});
+
+it('retains submission correlation while the canonical reader refreshes hydration', async () => {
+  await mount();
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  const sent = getItems(entry().submissions)[0];
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <WorkspaceConversationComposer workspaceId={ws} agentId={agent} transcriptReady={false} />
+      </StrictMode>,
+    ),
+  );
+  expect(ui.props?.disabled).toBe(true);
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, sent.id, 'accepted', Date.now())),
+  );
+  await settle();
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <WorkspaceConversationComposer workspaceId={ws} agentId={agent} transcriptReady />
+      </StrictMode>,
+    ),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.value).toBe('');
+  });
+  expect(drafts.clear).toHaveBeenCalledOnce();
+});
+
+it.each(['keep unsaved edit', ''])(
+  'retains the unsaved draft %j through a failed save and owner remount',
+  async (text) => {
+    await mount();
+    vi.mocked(drafts.set).mockRejectedValue(new Error('owned transport disconnected'));
+    await act(async () => ui.props!.onValueChange!(text));
+    await act(async () => root.unmount());
+    await vi.waitFor(() => expect(drafts.set).toHaveBeenCalled());
+    root = createRoot(container);
+    await mount(text);
+    await vi.waitFor(() =>
+      expect(
+        getItems(store.state.chatDrafts.owners).every(
+          (owner) => owner.restore?.status === 'restored',
+        ),
+      ).toBe(true),
+    );
+    await settle();
+    expect(ui.props?.value).toBe(text);
+    expect(drafts.clear).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['retained edit', ''])(
+  'persists the recovered local draft %j before a later reload',
+  async (text) => {
+    await mount();
+    vi.mocked(drafts.set).mockRejectedValue(new Error('owned transport disconnected'));
+    await act(async () => ui.props!.onValueChange!(text));
+    await act(async () => root.unmount());
+    await vi.waitFor(() => expect(drafts.set).toHaveBeenCalled());
+    vi.mocked(drafts.set).mockClear().mockResolvedValue({ ok: true, updatedAt: '' });
+    root = createRoot(container);
+    await mount(text);
+    await vi.waitFor(() => expect(drafts.set).toHaveBeenCalledWith(ws, agent, text, undefined));
+  },
+);

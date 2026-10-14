@@ -321,11 +321,7 @@ export const selectAgentActivationWaitComplete = store.createSelector(
  * Canonical selector for agent responding state. Preserves the established active
  * thread semantics from session flags/statuses and streaming assistant messages.
  */
-export const selectAgentIsResponding = store.createSelector((state, agentId: string): boolean => {
-  const stored = state.agentSessions?.byAgentId[agentId];
-  if (!stored) return false;
-  return isActiveAgentThread(stored);
-});
+export const selectAgentIsResponding = store.createSelector(projections.getAgentIsResponding);
 
 /** @deprecated Renderer-visible queues live in agentQueue. Use selectAgentQueueMessages directly. */
 export const selectAgentQueuedMessages = store.createSelector(

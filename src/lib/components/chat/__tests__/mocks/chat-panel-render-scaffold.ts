@@ -1,3 +1,4 @@
+import type { QueuedMessageMutation } from '$store/renderer/slices/agent-queue/agent-queue-types';
 /**
  * Selector-module stand-ins for rendering ChatPanel against a mocked store.
  *
@@ -13,7 +14,8 @@
  */
 import { vi } from 'vitest';
 import { readable, type Readable } from 'svelte/store';
-import type { AgentMessage } from '$shared/types';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { initialState as chatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
 import { initialState as questionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
 
@@ -60,6 +62,21 @@ export async function appStore() {
   return createAppStoreMockModule({
     state: () => ({
       browser: { byWorkspaceId: {} },
+      agentQueue: {
+        byAgentId: {
+          'agent-1': {
+            workspaceId: 'ws-1',
+            messages: createCollection<QueuedMessage, 'id'>(
+              'id',
+              scaffold.queuedMessages as QueuedMessage[],
+            ),
+            recentlyRemovedMessageIds: [],
+            isHydrating: false,
+            error: null,
+          },
+        },
+        mutations: createCollection<QueuedMessageMutation, 'requestId'>('requestId'),
+      },
       chatDrafts,
       chatPanelUi: { byWorkspaceId: {} },
       questionUi,

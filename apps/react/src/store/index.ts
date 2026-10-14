@@ -1,3 +1,7 @@
+import { transientUiReducer } from '../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
+import { agentQueueReducer } from '../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
+import { chatDraftsReducer } from '../../../../src/store/renderer/slices/chat-drafts/chat-drafts-slice';
+import { pendingSubmissionsReducer } from '../../../../src/store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { chatStateReducer } from '../../../../src/store/renderer/slices/chat-state/chat-state-slice';
 import { githubReposReducer } from '../../../../src/store/renderer/slices/github-repos/github-repos-slice';
 import { knownReposReducer } from '../../../../src/store/renderer/slices/known-repos/known-repos-slice';
@@ -46,6 +50,10 @@ import { filesReducer } from '../../../../src/store/renderer/slices/files/files-
 export const store = new ReactStore({
   githubRepos: githubReposReducer,
   knownRepos: knownReposReducer,
+  pendingSubmissions: pendingSubmissionsReducer,
+  chatDrafts: chatDraftsReducer,
+  agentQueue: agentQueueReducer,
+  transientUi: transientUiReducer,
   catalog: catalogReducer,
   theme: themeReducer,
   scripts: scriptsReducer,

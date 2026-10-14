@@ -187,3 +187,13 @@ describe('transientUi selectors', () => {
     expect(selectNoteViewMode.select(state, WS_2, 'note-1')).toBe('editor');
   });
 });
+
+it('distinguishes an intentional empty local draft from absence without changing legacy clear behavior', () => {
+  const retained = transientUiReducer(initialState, setChatDraft(WS_1, 'agent', '', true));
+  expect(Object.hasOwn(retained.byWorkspaceId[WS_1].chatDrafts, 'agent')).toBe(true);
+  const same = transientUiReducer(retained, setChatDraft(WS_1, 'agent', '', true));
+  expect(same).toBe(retained);
+  expect(
+    transientUiReducer(retained, workspaceUnmounted(WS_1)).byWorkspaceId[WS_1],
+  ).toBeUndefined();
+});
