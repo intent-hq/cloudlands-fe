@@ -9675,7 +9675,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
             <h2 class="svelte-<scope>">
               "Queued messages"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="queued-messages" data-catalog-preview="message-composer">
-            <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="queue edit delete keyboard-reorder drag-reorder auto-dispatch" data-catalog-renderer-fixture="queued-messages">
+            <div class="gap-3 grid max-w-2xl min-w-0 w-full" data-catalog-rendered-state="queue edit delete keyboard-reorder drag-reorder auto-dispatch" data-catalog-renderer-fixture="queued-messages" data-queue-changes="[]">
               <div class="bg-surface-2 border border-border cursor-text duration-spring-fast ease-spring-fast flex flex-col p-2 rounded-(--radius-large) shadow-none transition-[box-shadow,color]" data-ring-state="rest" data-size="default" data-slot="message-composer">
                 <div aria-hidden="true" data-message-composer-height="suggestions" data-motion-tier="moderate">
                   <div class="pb-2">

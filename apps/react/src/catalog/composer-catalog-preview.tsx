@@ -67,10 +67,14 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
   );
   const [sendStatus, setSendStatus] = useState('No message sent yet');
   const [sends, setSends] = useState<Array<{ text: string; files: string[] }>>([]);
+  const [queueChanges, setQueueChanges] = useState<string[][]>([]);
   return (
     <div
       className="grid w-full min-w-0 max-w-2xl gap-3"
       data-catalog-renderer-fixture={fixture.id}
+      data-queue-changes={
+        fixture.id === 'queued-messages' ? JSON.stringify(queueChanges) : undefined
+      }
       data-catalog-rendered-state={fixture.states.join(' ')}
     >
       <MessageComposer
@@ -106,7 +110,12 @@ export function ComposerCatalogPreview({ fixture }: { fixture: UiComponentFixtur
         placeholder={fixture.id === 'disabled' ? 'Composer unavailable' : 'Ask me anything…'}
         onValueChange={setValue}
         onFilesChange={setFiles}
-        onQueueChange={setQueue}
+        onQueueChange={(next) => {
+          if (fixture.id === 'queued-messages') {
+            setQueueChanges((previous) => [...previous, next.map((item) => item.id)]);
+          }
+          setQueue(next);
+        }}
         onStop={() => {
           setStatus('idle');
           setSendStatus('Stopped response');

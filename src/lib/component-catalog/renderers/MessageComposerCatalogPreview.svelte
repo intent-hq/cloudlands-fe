@@ -36,6 +36,7 @@
   );
   let sendStatus = $state('No message sent yet');
   let sends = $state<Array<{ text: string; files: string[] }>>([]);
+  let queueChanges = $state<string[][]>([]);
 
   const placeholderSuggestion = $derived(
     fixture.id === 'suggestions' ? 'Summarize the current workspace' : undefined,
@@ -88,6 +89,7 @@
 <div
   class="grid w-full min-w-0 max-w-2xl gap-3"
   data-catalog-renderer-fixture={fixture.id}
+  data-queue-changes={fixture.id === 'queued-messages' ? JSON.stringify(queueChanges) : undefined}
   data-catalog-rendered-state={fixture.states.join(' ')}
 >
   <MessageComposer
@@ -109,7 +111,12 @@
     placeholder={fixture.id === 'disabled' ? 'Composer unavailable' : 'Ask me anything…'}
     onValueChange={(next) => (value = next)}
     onFilesChange={(next) => (files = next)}
-    onQueueChange={(next) => (queue = next)}
+    onQueueChange={(next) => {
+      if (fixture.id === 'queued-messages') {
+        queueChanges = [...queueChanges, next.map((item) => item.id)];
+      }
+      queue = next;
+    }}
     onStop={() => {
       status = 'idle';
       sendStatus = 'Stopped response';

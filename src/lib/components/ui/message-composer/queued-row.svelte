@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { flushSync } from 'svelte';
   import QueueIcon from 'phosphor-svelte/lib/QueueIcon';
   import { menuItem } from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
@@ -37,7 +38,18 @@
       onRemove(item);
     } else if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       event.preventDefault();
-      onMove(item, event.key === 'ArrowUp' ? -1 : 1);
+      const row = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+      const hadFocus = row?.ownerDocument.activeElement === row;
+      // Moving a keyed row can blur its retained DOM node. Finish the move
+      // before restoring only focus that this row owned; respect host focus changes.
+      flushSync(() => onMove(item, event.key === 'ArrowUp' ? -1 : 1));
+      if (
+        hadFocus &&
+        row?.isConnected &&
+        row.ownerDocument.activeElement === row.ownerDocument.body
+      ) {
+        row.focus({ preventScroll: true });
+      }
     }
   }
 
