@@ -285,6 +285,46 @@ function unwrapJsonEnvelope(text: string): string {
 }
 
 /**
+ * codex-acp preserves the MCP response in rawOutput = { result, error }.
+ * Contract: agentclientprotocol/codex-acp@68d7d2d5, McpToolReporter.ts and
+ * app-server/v2/McpToolCallResult.ts. The daemon echoes rawOutput unchanged.
+ * Recognize the complete success signature only, never a generic `result`
+ * field or JSON inside returned text. Errors/unknown shapes retain raw detail.
+ * This is a presentation read; canonical payload and status stay untouched.
+ */
+function codexMcpContent(result: Record<string, unknown>): unknown[] | null {
+  if (Object.keys(result).length !== 2 || result.error !== null || !('result' in result)) {
+    return null;
+  }
+  const response = result.result;
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+  const keys = Object.keys(response);
+  if (
+    keys.length !== 3 ||
+    !('content' in response) ||
+    !('structuredContent' in response) ||
+    !('_meta' in response) ||
+    !Array.isArray(response.content)
+  ) {
+    return null;
+  }
+  // A malformed text item must not reach the existing string parser.
+  if (
+    response.content.some(
+      (item: unknown) =>
+        !item ||
+        typeof item !== 'object' ||
+        !('type' in item) ||
+        typeof item.type !== 'string' ||
+        (item.type === 'text' && (!('text' in item) || typeof item.text !== 'string')),
+    )
+  ) {
+    return null;
+  }
+  return response.content;
+}
+
+/**
  * Extract text content from result that might be string, object, or array.
  * Handles MCP format where result might be ContentItem[] or an object with text property.
  * Single-field JSON envelopes (e.g. `{"output": "..."}`) are unwrapped to their
@@ -317,6 +357,8 @@ function extractResultText(result: unknown): string | null {
   // Object with text property
   if (typeof result === 'object') {
     const obj = result as Record<string, any>;
+    const mcpContent = codexMcpContent(obj);
+    if (mcpContent) return extractResultText(mcpContent);
     if (obj.text && typeof obj.text === 'string') {
       return obj.text;
     }

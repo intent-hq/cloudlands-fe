@@ -134,6 +134,21 @@ test('persisted workspace confirmations pair by protocol identity and disclose w
         { call, full },
       );
       expect(source.type).toBe('confirmation');
+      // The real provider envelope is corroborated independently of the parser.
+      // Text must be visible; a raw-envelope fallback is not equivalent.
+      expect(Object.keys(full.output).sort()).toEqual(['error', 'result']);
+      expect(full.output.error).toBeNull();
+      expect(Object.keys(full.output.result).sort()).toEqual([
+        '_meta',
+        'content',
+        'structuredContent',
+      ]);
+      const providerText = full.output.result.content
+        .filter((item) => item.type === 'text')
+        .map((item) => item.text)
+        .join('\n');
+      expect(providerText.length).toBeGreaterThan(0);
+      expect(source.content).toBe(providerText);
       if (source.content)
         await expect(body.locator('[data-tool-confirmation-text]')).toHaveText(source.content);
       else

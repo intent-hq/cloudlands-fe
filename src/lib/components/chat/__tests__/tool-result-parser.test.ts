@@ -460,6 +460,67 @@ describe('tool-result-parser', () => {
     });
   });
 
+  describe('Codex MCP result presentation', () => {
+    // Matches codex-acp McpToolReporter / McpToolCallResult, not workspace domain data.
+    const envelope = (content: unknown[]) => ({
+      result: { content, structuredContent: null, _meta: null },
+      error: null,
+    });
+    const input = { code: 'return await ws.workspace.details()', summary: 'Read workspace' };
+
+    it('reads the provider text without changing the canonical result or using structured data', () => {
+      const output = envelope([{ type: 'text', text: 'title: Existing workspace' }]);
+      const before = structuredClone(output);
+      expect(parseToolResult('workspace_api', input, output)).toMatchObject({
+        type: 'confirmation',
+        content: 'title: Existing workspace',
+      });
+      expect(output).toEqual(before);
+    });
+
+    it('uses the existing MCP text-item rules for mixed content and multiple text items', () => {
+      const content = [
+        { type: 'text', text: 'first' },
+        { type: 'image', data: 'image-data', mimeType: 'image/png' },
+        { type: 'text', text: 'second' },
+      ];
+      expect(parseToolResult('workspace_api', input, envelope(content))).toEqual(
+        parseToolResult('workspace_api', input, content),
+      );
+      expect(parseToolResult('workspace_api', input, envelope(content)).content).toBe(
+        'first\nsecond',
+      );
+    });
+
+    it('keeps tool-returned JSON text and nested result/error domain data literal', () => {
+      const literal = JSON.stringify(envelope([{ type: 'text', text: 'nested data' }]));
+      expect(parseToolResult('workspace_api', input, literal).content).toBe(literal);
+      expect(
+        parseToolResult('workspace_api', input, envelope([{ type: 'text', text: literal }]))
+          .content,
+      ).toBe(literal);
+    });
+
+    it.each([
+      { result: 'literal returned value', error: null },
+      { result: { content: [{ type: 'text', text: 'domain data' }] }, error: null },
+      { ...envelope([{ type: 'text', text: 'data' }]), domain: 'extra field' },
+      { result: null, error: { message: 'server error' } },
+      { ...envelope([{ type: 'text', text: 'partial data' }]), error: { message: 'failed' } },
+      { ...envelope([{ type: 'text', text: 'data' }]), error: undefined },
+      {
+        result: { content: 'not content items', structuredContent: null, _meta: null },
+        error: null,
+      },
+      envelope([{ type: 'text', text: { value: 'not text' } }]),
+      envelope([{ type: 'image', data: 'image-data', mimeType: 'image/png' }]),
+    ])('leaves unsupported, ambiguous and failed results available as raw data: %j', (output) => {
+      const before = structuredClone(output);
+      expect(parseToolResult('workspace_api', input, output).content).toBeUndefined();
+      expect(output).toEqual(before);
+    });
+  });
+
   describe('single-field JSON envelope unwrapping (#1758)', () => {
     it('unwraps an object result with a single output field to plain text', () => {
       const result = parseToolResult('some_mcp_tool', {}, { output: 'line1\nline2' });
