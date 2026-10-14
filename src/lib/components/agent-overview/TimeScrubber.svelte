@@ -69,7 +69,9 @@
   const hasValidRange = $derived(maxMs > minMs && !isNaN(minMs) && !isNaN(maxMs));
 </script>
 
-<div class="flex items-center gap-3 px-4 py-2.5 bg-background border-t border-border min-w-0">
+<div
+  class="@container flex flex-wrap items-center gap-3 px-4 py-2.5 bg-background border-t border-border min-w-0"
+>
   <!-- Live toggle -->
   <Button
     variant="ghost"
@@ -98,7 +100,7 @@
   </Button>
 
   <!-- Slider container -->
-  <div class="flex-1 flex items-center gap-2 min-w-0">
+  <div class="flex-1 flex items-center gap-2 min-w-0 @max-xl:order-last @max-xl:basis-full">
     <span class="shrink-0 text-ui text-subtle font-mono tabular-nums">
       {formatTime(minTime)}
     </span>
@@ -132,7 +134,9 @@
   </div>
 
   <!-- Current time -->
-  <div class="shrink-0 text-ui text-subtle font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded">
+  <div
+    class="shrink-0 text-ui text-subtle font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded @max-xl:ml-auto"
+  >
     {formatTime(currentTime)}
   </div>
 </div>
