@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Repository-local bounded sweeps and a read-only workflow-credential probe.
 
-retire-obsolete-merge-runs.py and its policy regressions are exact copies from
-intent-hq/intentd commit 62a2a110b7e217151280736acb7fd19a1daf3c71.
+retire-obsolete-merge-runs.py is an exact copy from intent-hq/intentd commit
+62a2a110b7e217151280736acb7fd19a1daf3c71. Its regression scenarios are retained
+with pre-import isolation and in-process CLI parsing for portable offline tests.
 No runtime dependency on that repository exists. This caller pins cloudlands-fe.
 A cursor only orders work; every cancellation still requires the full policy.
 Missing state starts a new sweep; malformed state stops without requests.

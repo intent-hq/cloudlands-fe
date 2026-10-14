@@ -10,6 +10,13 @@ import unittest
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
+ISOLATION_SPEC = importlib.util.spec_from_file_location(
+    'retirement_test_isolation', Path(__file__).with_name('retirement-test-isolation.py'))
+ISOLATION = importlib.util.module_from_spec(ISOLATION_SPEC)
+ISOLATION_SPEC.loader.exec_module(ISOLATION)
+ISOLATION.install()
+
+
 SCRIPT = Path(__file__).with_name('retire-obsolete-merge-runs.py')
 SPEC = importlib.util.spec_from_file_location('retirement', SCRIPT)
 P = importlib.util.module_from_spec(SPEC)
@@ -487,9 +494,11 @@ class TransportTests(unittest.TestCase):
                 mock.patch('builtins.print'):
             self.assertEqual(P.main(), 0)
             self.assertFalse(reconcile.call_args.kwargs['apply'])
-        process = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), '--repository', 'other/repo', '--apply'],
-                                 capture_output=True, text=True, timeout=5)
-        self.assertEqual(process.returncode, 2)
+        with mock.patch.object(sys, 'argv', [str(SCRIPT), '--repository', 'other/repo', '--apply']), \
+                mock.patch.object(P, 'GhApi', side_effect=AssertionError('invalid CLI reached transport')), \
+                mock.patch.object(sys, 'stderr'), self.assertRaises(SystemExit) as error:
+            P.main()
+        self.assertEqual(error.exception.code, 2)
 
 
 if __name__ == '__main__':

@@ -301,5 +301,23 @@ class CallerTests(unittest.TestCase):
             self.assertEqual(self.api.mutations, [], name)
 
 
+class IsolationTests(unittest.TestCase):
+    def test_preimport_guard_denies_network_and_all_real_subprocesses(self):
+        with self.assertRaisesRegex(RuntimeError, 'deny real process/network'):
+            socket.socket()
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'invoked'
+            stub = Path(directory) / 'harmless-stub'
+            stub.write_text('#!/bin/sh\necho invoked > "' + str(marker) + '"\n')
+            stub.chmod(0o755)
+            with self.assertRaisesRegex(RuntimeError, 'deny real process/network'):
+                C.subprocess.run([str(stub)], check=True)
+            self.assertFalse(marker.exists())
+
+    def test_unmocked_real_github_transport_cannot_launch_a_child(self):
+        with self.assertRaisesRegex(RuntimeError, 'deny real process/network'):
+            C.P.GhApi().request('GET', '/repos/' + REPO)
+
+
 if __name__ == '__main__':
     unittest.main()

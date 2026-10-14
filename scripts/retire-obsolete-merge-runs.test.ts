@@ -1,4 +1,4 @@
-// @verify-changed-triggers: scripts/*retire-obsolete-merge-runs*.py, .github/workflows/retire-obsolete-merge-runs.yml, .github/workflows/intent-pr.yml
+// @verify-changed-triggers: scripts/*retire-obsolete-merge-runs*.py, scripts/retirement-test-isolation.py, .github/workflows/retire-obsolete-merge-runs.yml, .github/workflows/intent-pr.yml
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
