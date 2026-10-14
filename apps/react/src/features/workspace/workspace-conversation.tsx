@@ -3,7 +3,7 @@ import {
   isConversationStartLoaded,
 } from '$lib/components/chat/chat-transcript-composition';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useId, useLayoutEffect, useMemo, useRef } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { store } from '@/store';
 import {
   selectAgentSession,
@@ -13,6 +13,8 @@ import {
 import { selectChatAgentState } from '@/store/chat-state/chat-state-selectors';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import {
+  messageHistoryRequested,
+  messageHistoryReleased,
   retainedChatTranscriptsSet,
   olderHistoryPageRequested,
   historyGapFillRequested,
@@ -67,9 +69,11 @@ function ConversationBlock({ block, navigation }: { block: ContentBlock; navigat
 export function WorkspaceConversation({
   workspaceId,
   agentId,
+  messageId,
 }: {
   workspaceId: string;
   agentId: string;
+  messageId?: string;
 }) {
   const consumer = useId();
   const navigate = useNavigate();
@@ -85,6 +89,7 @@ export function WorkspaceConversation({
   );
   const messageCount = composed.groups.reduce((count, group) => count + group.messages.length, 0);
   const transcriptElement = useRef<HTMLElement>(null);
+  const readerElement = useRef<HTMLElement>(null);
   const transcriptContent = useRef<HTMLDivElement>(null);
   const pendingAnchor = useRef<{ element: Element; offset: number; epoch: number } | null>(null);
   function captureReadingPosition() {
@@ -136,7 +141,10 @@ export function WorkspaceConversation({
     };
   }, [history, session?.messages, chat.scrollbackDiscardEpoch, chat.transcriptHydration]);
   const loadingHistory =
-    chat.initialHistoryPending || chat.fetchingOlderHistory || chat.fetchingGapFill;
+    chat.initialHistoryPending ||
+    chat.fetchingOlderHistory ||
+    chat.fetchingGapFill ||
+    chat.fetchingHistorySeek;
   const startLoaded = isConversationStartLoaded({
     exhausted: historyMeta.oldestReached,
     historyCount: historyMeta.historyCount,
@@ -167,9 +175,66 @@ export function WorkspaceConversation({
     authority && session?.workspaceId === workspaceId && chat.trackedWorkspaceId === workspaceId;
   const ready = current && chat.transcriptHydration === 'settled' && chat.liveStreamPhase !== null;
   const failed = authority && chat.transcriptHydration === 'error';
+  const pendingTarget = useRef<{ messageId: string } | null>(null);
+  const [target, setTarget] = useState<{ messageId: string } | null>(null);
+  useLayoutEffect(() => {
+    if (!ready || chat.initialHistoryPending || !messageId) return;
+    const requestId = crypto.randomUUID();
+    const position = { messageId };
+    pendingTarget.current = position;
+    pendingAnchor.current = null;
+    const release = () => {
+      if (pendingTarget.current === position) pendingTarget.current = null;
+      pendingAnchor.current = null;
+      dispatch(messageHistoryReleased(requestId));
+    };
+    const element = readerElement.current;
+    const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+    for (const event of inputs) element?.addEventListener(event, release, { passive: true });
+    void dispatch(
+      messageHistoryRequested(consumer, workspaceId, agentId, messageId, requestId),
+    ).then(
+      (found) => {
+        if (found && pendingTarget.current === position) setTarget(position);
+      },
+      () => {
+        if (pendingTarget.current === position) pendingTarget.current = null;
+      },
+    );
+    return () => {
+      release();
+      for (const event of inputs) element?.removeEventListener(event, release);
+    };
+  }, [
+    ready,
+    chat.initialHistoryPending,
+    messageId,
+    consumer,
+    workspaceId,
+    agentId,
+    authority,
+    dispatch,
+  ]);
+  useLayoutEffect(() => {
+    if (!target || pendingTarget.current !== target || target.messageId !== messageId) return;
+    const container = transcriptElement.current;
+    const row = [...(container?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])].find(
+      (element) => element.dataset.messageId === target.messageId,
+    );
+    if (!container || !row) return;
+    pendingTarget.current = null;
+    row.focus({ preventScroll: true });
+    container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    row.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    pendingAnchor.current = {
+      element: row,
+      offset: row.getBoundingClientRect().top - container.getBoundingClientRect().top,
+      epoch: chat.scrollbackDiscardEpoch,
+    };
+  }, [target, messageId, composed.groups, chat.scrollbackDiscardEpoch]);
   function open(
     targetWorkspace: string,
-    search: { note?: string; file?: string; line?: number; agent?: string },
+    search: { note?: string; file?: string; line?: number; agent?: string; message?: string },
   ) {
     void navigate({
       to: '/workspaces/$workspaceId',
@@ -190,7 +255,8 @@ export function WorkspaceConversation({
         const link = parseIntentLink(target);
         if (link.valid) {
           const id = link.workspaceId ?? workspaceId;
-          if (link.type === 'message' && link.agentId) open(id, { agent: link.agentId });
+          if (link.type === 'message' && link.agentId)
+            open(id, { agent: link.agentId, message: link.resourceId });
           else if (link.type === 'note' || link.type === 'task')
             open(id, { note: link.resourceId });
           else if (link.type === 'file') open(id, { file: link.resourceId, line: link.line });
@@ -201,6 +267,7 @@ export function WorkspaceConversation({
   };
   return (
     <section
+      ref={readerElement}
       className="grid min-w-0 gap-4"
       data-testid="workspace-conversation"
       data-agent-id={agentId}
@@ -215,7 +282,7 @@ export function WorkspaceConversation({
         <Link
           to="/workspaces/$workspaceId"
           params={{ workspaceId }}
-          search={(previous) => ({ ...previous, agent: undefined })}
+          search={(previous) => ({ ...previous, agent: undefined, message: undefined })}
           className={buttonVariants({ variant: 'outline', size: 'sm' })}
         >
           {m.workspace_filesPage_backToWorkspace_label()}
@@ -280,7 +347,8 @@ export function WorkspaceConversation({
                   ...group.messages.map((message) => (
                     <article
                       key={message.id}
-                      className="min-w-0"
+                      tabIndex={-1}
+                      className="min-w-0 focus-visible:outline focus-visible:outline-ring"
                       data-message-id={message.id}
                       data-message-role={message.role}
                     >

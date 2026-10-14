@@ -1,4 +1,8 @@
-import { CHAT_PAGE_SIZE } from '$shared/constants';
+import {
+  createMessageHistorySeeker,
+  MESSAGE_HYDRATION_POLL_INTERVAL_MS as HYDRATION_POLL_INTERVAL_MS,
+  MESSAGE_HYDRATION_TIMEOUT_MS as HYDRATION_TIMEOUT_MS,
+} from '$store/renderer/slices/chat-state/message-history-seeker';
 /**
  * Deep-open a conversation at a specific message.
  *
@@ -33,18 +37,10 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
-  seedHistoryAround,
-  setHistoryOldestReached,
-} from '$store/renderer/slices/agent-session/agent-session-slice';
-import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import {
-  scrollbackFetchStarted,
-  scrollbackSeekSettled,
-} from '$store/renderer/slices/chat-state/chat-state-slice';
 import { selectChatAgentState } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from './window-events';
@@ -71,13 +67,10 @@ interface OpenMessageEventDetail {
   requestId: string;
 }
 
-const HYDRATION_POLL_INTERVAL_MS = 150;
-const HYDRATION_TIMEOUT_MS = 15_000;
 /** Minimum polls before trusting a (possibly stale) 'settled' hydration status. */
 const MIN_POLLS_BEFORE_SETTLED = 2;
 /** Retry ladder for the scroll hand-off event (ChatPanel may still be mounting). */
 const SCROLL_DISPATCH_DELAYS_MS = [150, 400, 800, 1500, 3000];
-const SEEK_PAGE_LIMIT = CHAT_PAGE_SIZE;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -142,55 +135,13 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
  * row (outside the loaded window) reuses this seek before the
  * panel force-renders and scrolls to the message.
  */
-export async function seekConversationToMessage(
-  agentId: string,
-  messageId: string,
-  workspaceId?: string,
-): Promise<boolean> {
-  // A timeout waiting for a row is not permission to race the initial transfer.
-  const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
-  while (selectChatAgentState.select(appStore.state, agentId).initialHistoryPending) {
-    if (Date.now() >= deadline) return false;
-    await sleep(HYDRATION_POLL_INTERVAL_MS);
-  }
-  const session = appStore.state.agentSessions?.byAgentId[agentId];
-  if (!session) return false;
-  if (isMessageInStore(agentId, messageId)) return true;
-  workspaceId ??= session.workspaceId;
-  const previous = selectChatAgentState.select(appStore.state, agentId);
-  let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };
-  appStore.dispatch(scrollbackFetchStarted(agentId, 'seek'));
-  const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
-  const ownsSeek = () =>
-    Boolean(appStore.state.agentSessions?.byAgentId[agentId]) &&
-    selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch === epoch;
-  try {
-    const page = await appClient.agents.getConversation(
-      agentId,
-      SEEK_PAGE_LIMIT,
-      undefined,
-      messageId,
-      undefined,
-      workspaceId,
-    );
-    if (!ownsSeek() || !page.messages.some((message) => message.id === messageId)) return false;
-    // Retain the live tail and use persisted sequence numbers for the window's
-    // position. Legacy rows without a sequence leave that estimate unknown.
-    appStore.dispatch(seedHistoryAround(agentId, page.messages, page.messages[0]?.seq));
-    if (page.nextToken === null) appStore.dispatch(setHistoryOldestReached(agentId));
-    tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
-    return isMessageInStore(agentId, messageId);
-  } catch (error) {
-    logger.warn('[seekConversationToMessage] Seek fetch failed (message may no longer exist)', {
-      agentId,
-      messageId,
-      error,
-    });
-    return false;
-  } finally {
-    if (ownsSeek()) appStore.dispatch(scrollbackSeekSettled(agentId, tokens));
-  }
-}
+export const seekConversationToMessage = createMessageHistorySeeker({
+  getConversation: (...args) => appClient.agents.getConversation(...args),
+  readChat: (agentId) => selectChatAgentState.select(appStore.state, agentId),
+  readSession: (agentId) => appStore.state.agentSessions?.byAgentId[agentId],
+  hasMessage: isMessageInStore,
+  dispatch: (action) => appStore.dispatch(action),
+});
 
 /**
  * Navigate to the workspace, open/focus the agent's conversation, ensure the

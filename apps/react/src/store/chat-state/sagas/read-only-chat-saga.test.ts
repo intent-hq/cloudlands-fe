@@ -1,3 +1,4 @@
+import { createMessageHistorySeeker } from '../../../../../../src/store/renderer/slices/chat-state/message-history-seeker';
 import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
 import { getAgentChatState } from '../../../../../../src/store/renderer/slices/chat-state/chat-state-projections';
 import * as history from '../../../../../../src/store/renderer/slices/agent-session/agent-history-projections';
@@ -11,6 +12,8 @@ import { agentSessionReducer } from '../../../../../../src/store/renderer/slices
 import {
   chatStateReducer,
   olderHistoryPageRequested,
+  messageHistoryRequested,
+  messageHistoryReleased,
   retainedChatTranscriptsSet,
 } from '../../../../../../src/store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -75,6 +78,17 @@ function setup(
     store.runSaga(
       createReadOnlyChatSaga({
         chat: { subscribe },
+        seekMessage: createMessageHistorySeeker({
+          getConversation,
+          readChat: (id) => getAgentChatState(store.state, id),
+          readSession: (id) => store.state.agentSessions.byAgentId[id],
+          hasMessage: (id, messageId) =>
+            [
+              ...(store.state.agentSessions.byAgentId[id]?.messages ?? []),
+              ...history.getAgentHistoryMessages(store.state, id),
+            ].some((message) => message.id === messageId),
+          dispatch: store.dispatch,
+        }),
         historyPages: createHistoryPageWorkers({
           getConversation,
           readChat: store.createSelector(getAgentChatState).effect,
@@ -282,6 +296,129 @@ describe('leased canonical history paging', () => {
         ),
       );
       expect(getConversation.mock.calls[1]?.[2]).toBe('fresh-cursor');
+    },
+  );
+});
+
+describe('message targets owned by the admitted reader', () => {
+  const page = {
+    messages: [{ ...transcript.messages[0]!, id: 'older-target', seq: 0 }],
+    truncated: true,
+    totalMessages: 50,
+    nextToken: null,
+    prevToken: 'toward-tail',
+  };
+  const ready = async (h: ReturnType<typeof setup>) => {
+    h.connected(true);
+    h.lease('reader', [session.id]);
+    await vi.waitFor(() =>
+      expect(getAgentChatState(h.store.state, session.id).transcriptHydration).toBe('settled'),
+    );
+  };
+  const request = (h: ReturnType<typeof setup>, messageId: string, requestId = 'target-request') =>
+    h.store.dispatch(
+      messageHistoryRequested('reader', workspaceId, session.id, messageId, requestId),
+    );
+
+  it('uses the resident row without a read and seeks older rows into canonical history while keeping the tail', async () => {
+    const h = setup(undefined, vi.fn<AgentsClient['getConversation']>().mockResolvedValue(page));
+    await ready(h);
+    await expect(request(h, 'message-1')).resolves.toBe(true);
+    expect(h.getConversation).not.toHaveBeenCalled();
+    await expect(request(h, 'older-target')).resolves.toBe(true);
+    expect(h.getConversation).toHaveBeenCalledExactlyOnceWith(
+      session.id,
+      5,
+      undefined,
+      'older-target',
+      undefined,
+      workspaceId,
+    );
+    expect(h.store.state.agentSessions.byAgentId[session.id]?.messages.map((m) => m.id)).toEqual([
+      'message-1',
+    ]);
+    expect(history.getAgentHistoryMessages(h.store.state, session.id).map((m) => m.id)).toEqual([
+      'older-target',
+    ]);
+    expect(getAgentChatState(h.store.state, session.id)).toMatchObject({
+      fetchingHistorySeek: false,
+      scrollbackGapToken: 'toward-tail',
+      scrollbackOlderToken: null,
+    });
+    h.lease('reader', []);
+    expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+  });
+
+  it('keeps a newer message window when a retired target replies late', async () => {
+    let resolve!: (value: typeof page) => void;
+    const nextPage = { ...page, messages: [{ ...page.messages[0]!, id: 'new-target' }] };
+    const h = setup(
+      undefined,
+      vi
+        .fn<AgentsClient['getConversation']>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolve = done;
+            }),
+        )
+        .mockResolvedValueOnce(nextPage),
+    );
+    await ready(h);
+    const previous = request(h, 'older-target', 'old-request');
+    const rejected = expect(previous).rejects.toThrow('cancelled');
+    h.store.dispatch(messageHistoryReleased('old-request'));
+    await rejected;
+    await expect(request(h, 'new-target', 'new-request')).resolves.toBe(true);
+    resolve(page);
+    await Promise.resolve();
+    expect(history.getAgentHistoryMessages(h.store.state, session.id).map((m) => m.id)).toEqual([
+      'new-target',
+    ]);
+    expect(getAgentChatState(h.store.state, session.id).fetchingHistorySeek).toBe(false);
+  });
+
+  it('settles a missing target without manufacturing a row and rejects an absent reader', async () => {
+    const h = setup(
+      undefined,
+      vi.fn<AgentsClient['getConversation']>().mockResolvedValue({ ...page, messages: [] }),
+    );
+    await expect(request(h, 'missing')).rejects.toThrow('no longer admitted');
+    expect(h.getConversation).not.toHaveBeenCalled();
+    await ready(h);
+    await expect(request(h, 'missing')).resolves.toBe(false);
+    expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+    expect(getAgentChatState(h.store.state, session.id).fetchingHistorySeek).toBe(false);
+  });
+
+  it.each(['native input', 'release', 'disconnect'] as const)(
+    'retires a pending seek on %s and rejects a late page',
+    async (reason) => {
+      let resolve!: (value: typeof page) => void;
+      const h = setup(
+        undefined,
+        vi.fn<AgentsClient['getConversation']>(
+          () =>
+            new Promise((done) => {
+              resolve = done;
+            }),
+        ),
+      );
+      await ready(h);
+      const pending = request(h, 'older-target');
+      const rejected = expect(pending).rejects.toThrow('cancelled');
+      await vi.waitFor(() => expect(h.getConversation).toHaveBeenCalledOnce());
+      expect(getAgentChatState(h.store.state, session.id).fetchingHistorySeek).toBe(true);
+      if (reason === 'native input') h.store.dispatch(messageHistoryReleased('target-request'));
+      else if (reason === 'release') h.lease('reader', []);
+      else h.connected(false);
+      await rejected;
+      expect(getAgentChatState(h.store.state, session.id).fetchingHistorySeek).toBe(false);
+      resolve(page);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+      expect(getAgentChatState(h.store.state, session.id).scrollbackGapToken).toBeNull();
     },
   );
 });

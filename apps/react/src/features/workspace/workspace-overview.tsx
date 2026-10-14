@@ -193,6 +193,7 @@ export function WorkspaceList({
 export function WorkspaceOverview({
   workspaceId,
   agentId,
+  messageId,
   noteId,
   query,
   filePath,
@@ -203,6 +204,7 @@ export function WorkspaceOverview({
 }: {
   workspaceId: string;
   agentId?: string;
+  messageId?: string;
   noteId?: string;
   query?: string;
   filePath?: string;
@@ -332,7 +334,12 @@ export function WorkspaceOverview({
             </dl>
             <div key={workspaceId} ref={content} className="grid min-w-0 gap-6">
               {agentId ? (
-                <WorkspaceConversation key={agentId} workspaceId={workspaceId} agentId={agentId} />
+                <WorkspaceConversation
+                  key={agentId}
+                  workspaceId={workspaceId}
+                  agentId={agentId}
+                  messageId={messageId}
+                />
               ) : filePath ? (
                 <WorkspaceFile
                   key={filePath}

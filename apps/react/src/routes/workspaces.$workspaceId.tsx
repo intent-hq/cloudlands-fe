@@ -18,6 +18,7 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     search: Record<string, unknown>,
   ): {
     agent?: string;
+    message?: string;
     note?: string;
     q?: string;
     file?: string;
@@ -29,6 +30,12 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     const homeFilter = normalizeHomeConfiguration({ filter: search.homeFilter }).filter;
     return {
       ...(typeof search.agent === 'string' && search.agent ? { agent: search.agent } : {}),
+      ...(typeof search.agent === 'string' &&
+      search.agent &&
+      typeof search.message === 'string' &&
+      search.message
+        ? { message: search.message }
+        : {}),
       ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
       ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
       ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
@@ -50,11 +57,13 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams();
-  const { agent, note, q, file, line, fileQuery, homeQuery, homeFilter } = Route.useSearch();
+  const { agent, message, note, q, file, line, fileQuery, homeQuery, homeFilter } =
+    Route.useSearch();
   return (
     <Overview
       workspaceId={workspaceId}
       agentId={agent}
+      messageId={message}
       noteId={note}
       query={q}
       filePath={file}

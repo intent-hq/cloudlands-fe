@@ -1,4 +1,5 @@
 import { createConversationReader } from '$lib/client/live/backend-conversation-reader';
+import { createMessageHistorySeeker } from '../../../../../../src/store/renderer/slices/chat-state/message-history-seeker';
 import { isAgentDeletionPending } from '../../../../../../src/features/agent/utils/pending-agent-deletions';
 import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
 import { selectChatAgentState } from '../chat-state-selectors';
@@ -25,6 +26,17 @@ const chat = new BackendChatClient(backend, (diagnostic) =>
 
 export const readOnlyChatSaga = createReadOnlyChatSaga({
   chat,
+  seekMessage: createMessageHistorySeeker({
+    getConversation: createConversationReader(backend),
+    readChat: (id) => selectChatAgentState.select(store.state, id),
+    readSession: (id) => selectAgentSession.select(store.state, id),
+    hasMessage: (id, messageId) =>
+      [
+        ...selectAgentMessages.select(store.state, id),
+        ...selectAgentHistoryMessages.select(store.state, id),
+      ].some((message) => message.id === messageId),
+    dispatch: (action) => store.dispatch(action),
+  }),
   historyPages: createHistoryPageWorkers({
     getConversation: createConversationReader(backend),
     readChat: selectChatAgentState.effect,

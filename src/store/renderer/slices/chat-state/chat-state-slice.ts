@@ -865,6 +865,16 @@ export const initializeChatRequested = createAction(
   }),
 );
 
+/** Settled by the admitted read-only conversation owner, never a mutation worker. */
+export const messageHistoryRequested = createAsyncAction<
+  [owner: string, workspaceId: string, agentId: string, messageId: string, requestId: string],
+  boolean
+>('chatState/messageHistoryRequested', 'chatState/messageHistory');
+
+export const messageHistoryReleased = createAction<[requestId: string]>(
+  'chatState/messageHistoryReleased',
+);
+
 /**
  * Declare the exact child transcripts needed by one mounted subscription-list
  * owner. The chat subscribe saga reference-counts owners, opens only the listed

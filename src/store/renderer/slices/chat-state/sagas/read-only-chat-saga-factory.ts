@@ -1,6 +1,7 @@
 import type { createHistoryPageWorkers } from './history-page-workers';
+import type { createMessageHistorySeeker } from '../message-history-seeker';
 import { buffers, eventChannel, type Task } from 'redux-saga';
-import { call, cancel, join, put, take, takeEvery } from 'typed-redux-saga';
+import { call, cancel, cancelled, join, put, race, take, takeEvery } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelSelector } from '@themislib/themis/saga';
 import { takeLatestByContext } from '../../../utils/context-saga-effects';
 import type { AgentSession } from '$shared/types';
@@ -13,6 +14,8 @@ import {
 } from '../../agent-session/agent-session-slice';
 import {
   scrollbackContinuationReset,
+  messageHistoryRequested,
+  messageHistoryReleased,
   retainedChatTranscriptsSet,
   chatTrackedWorkspaceSet,
   chatLiveStreamPhaseChanged,
@@ -38,7 +41,9 @@ export function createReadOnlyChatSaga<State>({
   contextSelector,
   readAdmission,
   historyPages,
+  seekMessage,
 }: {
+  seekMessage?: ReturnType<typeof createMessageHistorySeeker>;
   historyPages?: ReturnType<typeof createHistoryPageWorkers>;
   chat: ChatClient;
   readAgentSession: (agentId: string, workspaceId: string) => Promise<AgentSession | null>;
@@ -47,6 +52,7 @@ export function createReadOnlyChatSaga<State>({
 }) {
   return function* readOnlyChatSaga() {
     const leases = new Map<string, Lease[]>();
+    const readers = new Map<string, object>();
     let notify: (() => void) | undefined;
     yield* takeEvery(
       retainedChatTranscriptsSet,
@@ -61,10 +67,77 @@ export function createReadOnlyChatSaga<State>({
       },
     );
 
+    yield* takeEvery(messageHistoryRequested, function* (action) {
+      const [owner, workspaceId, agentId, messageId, requestId] = action.payload;
+      const key = `${workspaceId}\u0000${agentId}`;
+      const reader = readers.get(key);
+      const lease = leases
+        .get(owner)
+        ?.find((item) => item.workspaceId === workspaceId && item.agentId === agentId);
+      const authority = readAdmission(workspaceId);
+      const current = () =>
+        Boolean(
+          authority &&
+          reader &&
+          lease &&
+          readers.get(key) === reader &&
+          leases.get(owner)?.includes(lease) &&
+          readAdmission(workspaceId) === authority,
+        );
+      if (!seekMessage || !current()) {
+        yield* put(action.failure(new Error('Conversation reader is no longer admitted')));
+        return;
+      }
+      const controller = new AbortController();
+      try {
+        const outcome = yield* race({
+          found: call(seekMessage, agentId, messageId, workspaceId, {
+            isCurrent: current,
+            signal: controller.signal,
+          }),
+          released: call(function* waitForRelease() {
+            while (true) {
+              const {
+                payload: [id],
+              } = yield* take(messageHistoryReleased);
+              if (id === requestId) return;
+            }
+          }),
+          ownerChanged: call(function* waitForOwnerChange() {
+            while (true) {
+              const {
+                payload: [id],
+              } = yield* take(retainedChatTranscriptsSet);
+              if (id === owner) return;
+            }
+          }),
+          readerStopped: call(function* waitForReaderStop() {
+            while (true) {
+              const {
+                payload: [id, workspace],
+              } = yield* take(chatTrackedWorkspaceSet);
+              if (id === agentId && workspace === null) return;
+            }
+          }),
+        });
+        if (typeof outcome.found === 'boolean' && current())
+          yield* put(action.success(outcome.found));
+        else yield* put(action.failure(new Error('Message navigation cancelled')));
+      } catch (error) {
+        yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+      } finally {
+        controller.abort();
+        if (yield* cancelled())
+          yield* put(action.failure(new Error('Conversation reader stopped')));
+      }
+    });
+
     function* read({ workspaceId, agentId }: Lease) {
       const authority = readAdmission(workspaceId);
       if (!authority) return;
       const current = () => readAdmission(workspaceId) === authority;
+      const key = `${workspaceId}\u0000${agentId}`;
+      const reader = {};
       let pageWatchers: Task[] = [];
       let events: ReturnType<typeof eventChannel<ReadEvent>> | undefined;
       try {
@@ -89,6 +162,7 @@ export function createReadOnlyChatSaga<State>({
             ),
           buffers.expanding(),
         );
+        readers.set(key, reader);
         if (historyPages) {
           pageWatchers = yield* historyPages.watch(
             (wsId, id) => current() && wsId === workspaceId && id === agentId,
@@ -128,6 +202,7 @@ export function createReadOnlyChatSaga<State>({
       } catch {
         if (current()) yield* put(transcriptHydrationFailed(agentId));
       } finally {
+        if (readers.get(key) === reader) readers.delete(key);
         yield* cancel(pageWatchers);
         events?.close();
         yield* put(clearHistorySegment(agentId));
