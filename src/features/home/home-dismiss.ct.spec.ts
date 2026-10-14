@@ -1054,6 +1054,27 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
   await expect(moved).toBeFocused();
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   await expect(board.getByRole('region', { name: 'PR ready', exact: true })).toBeVisible();
+  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
+    await expect(board.getByRole('heading', { name: label, exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  }
+  await testInfo.attach('home-board-dismiss-layout', {
+    body: JSON.stringify(
+      await board.evaluate((element) => ({
+        scrollTop: element.scrollTop,
+        scrollLeft: element.scrollLeft,
+        bounds: element.getBoundingClientRect().toJSON(),
+        headings: [...element.querySelectorAll('h3')].map((heading) => ({
+          label: heading.textContent?.trim(),
+          bounds: heading.getBoundingClientRect().toJSON(),
+        })),
+      })),
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
   await testInfo.attach('home-board-dismiss-after', {
     body: await page.screenshot(),
     contentType: 'image/png',
