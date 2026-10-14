@@ -302,11 +302,12 @@ describe('WorkspacePeopleTile presence row', () => {
     const row = presenceRow()!;
     const avatars = Array.from(row.querySelectorAll<HTMLElement>('[data-presence-avatar]'));
     expect(avatars.map((a) => a.getAttribute('data-presence-avatar'))).toEqual([
+      'me',
       'ada',
       'bob',
       'cy',
     ]);
-    for (const avatar of avatars) {
+    for (const avatar of avatars.slice(1)) {
       expect(avatar.hasAttribute('data-presence-offline')).toBe(true);
     }
     expect(personButton('cy').getAttribute('aria-disabled')).toBe('true');
@@ -362,13 +363,13 @@ describe('WorkspacePeopleTile presence row', () => {
       ),
     });
     const row = presenceRow()!;
-    expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(3);
+    expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(4);
     expect(row.querySelector('[data-presence-avatar-stack]')!.getAttribute('aria-label')).toBe(
       '1 other person here',
     );
   });
 
-  it('keeps the offline owner first and distinguishes online and offline members', async () => {
+  it('keeps the viewer first, then the offline owner and other members', async () => {
     await renderPeopleTile({
       presence: presenceState(
         membership,
@@ -386,28 +387,32 @@ describe('WorkspacePeopleTile presence row', () => {
     const row = presenceRow()!;
     const avatar = (principalId: string) =>
       row.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
-    // Owner first (even offline), then the online member, then the offline one.
     expect(
       Array.from(row.querySelectorAll('[data-presence-avatar]')).map((a) =>
         a.getAttribute('data-presence-avatar'),
       ),
-    ).toEqual(['me', 'bob', 'cy']);
+    ).toEqual(['ada', 'me', 'bob', 'cy']);
     expect(avatar('me').hasAttribute('data-presence-offline')).toBe(true);
     expect(avatar('cy').hasAttribute('data-presence-offline')).toBe(true);
     expect(avatar('bob').hasAttribute('data-presence-offline')).toBe(false);
-    expect(presenceRow()!.querySelector('[data-presence-avatar="ada"]')).toBeNull();
+    expect(avatar('ada').hasAttribute('data-presence-self')).toBe(true);
   });
 
-  it('shows one button per other member, never the viewer', async () => {
+  it('shows the viewer first without offering to follow yourself', async () => {
     await renderPeopleTile();
     const row = presenceRow()!;
     const buttons = Array.from(row.querySelectorAll<HTMLElement>('[data-presence-person-button]'));
     expect(buttons.map((b) => b.getAttribute('data-presence-person-button'))).toEqual([
+      'me',
       'ada',
       'bob',
       'cy',
     ]);
-    expect(row.querySelector('[data-presence-avatar="me"]')).toBeNull();
+    expect(personButton('me').getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(personButton('me'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
+    );
     expect(screen.getByRole('button', { name: /^ada/ })).toBe(personButton('ada'));
   });
 

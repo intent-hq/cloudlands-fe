@@ -6,6 +6,7 @@ import {
 } from '$features/log/utils/activity-event-visibility';
 import { m } from '$shared/paraglide/messages.js';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
+import { getHumanMessageAuthor } from '$lib/utils/message-authorship';
 
 interface PeopleActivityRow {
   id: string;
@@ -64,6 +65,16 @@ function activityLabel(event: WorkspaceEvent, name: string): string | null {
           data: stringData,
         }),
       );
+    case 'agent:updated':
+      return text(data.modelId) || data.completionReportCleared === true
+        ? withActor(
+            getActivityLabel({
+              ...event,
+              actor: { ...event.actor, name: undefined },
+              data,
+            }),
+          )
+        : null;
     case 'file:changed':
       return isSourceFileActivityEvent(event)
         ? getActivityLabel({
@@ -80,6 +91,7 @@ function activityLabel(event: WorkspaceEvent, name: string): string | null {
         : data.resolved === true
           ? withActor(m.events_activity_resolvedCommentThread_label())
           : null;
+    case 'agent:message':
     case 'agent:user-message:sent': {
       const agent = text(data.agentName) || text(data.toAgentName);
       return withActor(
@@ -131,31 +143,47 @@ export function getPeopleActivity(
 ): PeopleActivityRow[] {
   const roster = new Map(people.map((person) => [person.principalId, person]));
   const seen = new Set<string>();
+  const messages = new Set<string>();
   const rows: PeopleActivityRow[] = [];
   for (const event of events) {
     if (
       event.workspaceId !== workspaceId ||
-      event.actor?.type !== 'user' ||
       !text(event.id) ||
       seen.has(event.id) ||
       !Number.isFinite(Date.parse(event.timestamp))
     ) {
       continue;
     }
-    const id = text(event.actor.id);
+    const data = record(event.data);
+    const isMessage = event.type === 'agent:message';
+    const author = isMessage
+      ? getHumanMessageAuthor({
+          role: data.role === 'user' ? 'user' : 'system',
+          author: data.author,
+          metadata: data.metadata,
+        })
+      : null;
+    if (isMessage ? !author : event.actor?.type !== 'user') continue;
+    const messageId = isMessage ? text(data.messageId) : '';
+    const messageKey = messageId ? `${text(data.agentId)}:${messageId}` : '';
+    if (messageKey && messages.has(messageKey)) continue;
+    const id = text(event.actor?.id);
     const person = id ? roster.get(id) : undefined;
-    const name =
-      humanName(event.actor.name, id) ||
-      humanName(person?.displayName, id) ||
-      humanName(person?.login, id);
+    const name = author
+      ? humanName(author.displayName, author.principalId ?? '') ||
+        humanName(author.login, author.principalId ?? '')
+      : humanName(event.actor.name, id) ||
+        humanName(person?.displayName, id) ||
+        humanName(person?.login, id);
     if (!name) continue;
     const label = activityLabel(event, name);
     if (!label) continue;
     seen.add(event.id);
+    if (messageKey) messages.add(messageKey);
     rows.push({
       id: event.id,
       name,
-      avatarUrl: person?.avatarUrl ?? null,
+      avatarUrl: author ? author.avatarUrl : (person?.avatarUrl ?? null),
       label,
       timestamp: event.timestamp,
     });

@@ -8,51 +8,36 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { selectWorkspacePeopleIdentities } from '$store/renderer/slices/presence/presence-selectors';
   import {
     selectWorkspaceEvents,
-    selectEventsLoading,
-    selectOlderEventsLoading,
+    selectPeopleEventsLoading,
+    selectPeopleEventsError,
+    selectPeopleEventsInitialized,
     selectOlderEventsNextToken,
     selectOlderEventsEndReached,
-    selectOlderEventsError,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
-  import {
-    loadEventsRequested,
-    loadOlderEventsRequested,
-  } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import { loadPeopleEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import { getPeopleActivity } from './people-activity';
 
   let { workspaceId }: { workspaceId: string } = $props();
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   const events$ = selectWorkspaceEvents(workspaceIdStore);
-  const people$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const loading$ = selectEventsLoading(workspaceIdStore);
-  const loadingOlder$ = selectOlderEventsLoading(workspaceIdStore);
+  const people$ = selectWorkspacePeopleIdentities(workspaceIdStore);
+  const loading$ = selectPeopleEventsLoading(workspaceIdStore);
   const nextToken$ = selectOlderEventsNextToken(workspaceIdStore);
   const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
-  const olderError$ = selectOlderEventsError(workspaceIdStore);
-  const error$ = appStore.createSelector<[string], string | null>(
-    (state, id) => state.workspaceEvents.byWorkspaceId[id]?.error ?? null,
-  )(workspaceIdStore);
+  const error$ = selectPeopleEventsError(workspaceIdStore);
+  const initialized$ = selectPeopleEventsInitialized(workspaceIdStore);
   const rows = $derived(getPeopleActivity(workspaceId, $events$, $people$));
-  const pendingInitial = $derived(!$endReached$ && !$nextToken$ && !$error$);
+  const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$nextToken$ && !$error$);
 
   $effect(() => {
     const id = workspaceId;
+    if ($initialized$ || $loading$) return;
     untrack(() => {
-      const history = appStore.state.workspaceEvents.byWorkspaceId[id];
-      if (
-        id &&
-        !history?.loading &&
-        !history?.loadingOlder &&
-        !history?.error &&
-        !history?.nextToken &&
-        !history?.endReached
-      ) {
-        appStore.dispatch(loadEventsRequested(id));
-      }
+      if (id) appStore.dispatch(loadPeopleEventsRequested(id, 'initial'));
     });
   });
 </script>
@@ -74,7 +59,7 @@
     >
       {#snippet row({ item })}
         <ListRow
-          class="min-h-[42px] gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:text-[11px] [&_[data-slot=list-row-leading]]:leading-4 [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
+          class="min-h-[42px] items-center gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
         >
           {#snippet leading()}
             <PrincipalAvatar
@@ -97,11 +82,11 @@
     </ListView>
   {/if}
 
-  {#if $error$}
+  {#if $error$ && rows.length === 0}
     <ErrorState
       density="compact"
       retryLabel={m.workspace_activityPanel_retryOlder_label()}
-      onRetry={() => appStore.dispatch(loadEventsRequested(workspaceId))}
+      onRetry={() => appStore.dispatch(loadPeopleEventsRequested(workspaceId, 'initial', true))}
     >
       {#snippet message()}{m.workspace_peopleActivity_load_error()}{/snippet}
     </ErrorState>
@@ -117,22 +102,26 @@
     </EmptyState>
   {/if}
 
-  {#if !$error$ && !$loading$ && $nextToken$ && !$endReached$}
-    <div class="flex flex-col items-center gap-1 px-2.5 py-2">
-      {#if $olderError$}
+  {#if (rows.length > 0 && ($loading$ || $error$)) || ($nextToken$ && !$endReached$ && !(rows.length === 0 && $error$))}
+    <div class="flex flex-col items-start gap-1 py-2">
+      {#if $error$}
         <p class="type-caption text-muted-foreground" role="status">
           {m.workspace_peopleActivity_loadOlder_error()}
         </p>
       {/if}
       <Button
         variant="ghost"
-        size="compact"
-        loading={$loadingOlder$}
-        onclick={() => appStore.dispatch(loadOlderEventsRequested(workspaceId))}
+        size="sm"
+        class="px-2.5 text-muted-foreground hover:text-foreground"
+        loading={$loading$}
+        onclick={() =>
+          appStore.dispatch(
+            loadPeopleEventsRequested(workspaceId, $nextToken$ ? 'more' : 'initial', true),
+          )}
       >
-        {$loadingOlder$
+        {$loading$
           ? m.workspace_activityPanel_loadingOlder_label()
-          : $olderError$
+          : $error$
             ? m.workspace_activityPanel_retryOlder_label()
             : m.workspace_peopleActivity_loadMore_label()}
       </Button>

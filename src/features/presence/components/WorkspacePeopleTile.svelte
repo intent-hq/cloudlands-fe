@@ -14,7 +14,7 @@
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
     PRESENCE_FOLLOW_VISIBLE_LIMIT,
     selectPresenceFollowTargets,
@@ -30,7 +30,7 @@
   const notes = selectAllNotes(workspaceIdStore);
   const agents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
-  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
+  const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const presenceFocusTargets$ = selectPresenceFollowTargets(workspaceIdStore);
   const presencePersonAction = $derived.by(() => {
     const targets = $presenceFocusTargets$;
@@ -43,7 +43,7 @@
         : presencePersonNameWithForge(person);
       const entry = targets[person.principalId];
       const target = entry?.target;
-      if (!entry || !target)
+      if (person.self || !entry || !target)
         return {
           label:
             !person.hostRole && !person.online
@@ -130,7 +130,7 @@
     <PresenceAvatarStack
       class="relative z-10 w-fit"
       people={$presencePeople$}
-      maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
+      maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT + ($presencePeople$[0]?.self ? 1 : 0)}
       size={30}
       variant="tile"
       action={presencePersonAction}

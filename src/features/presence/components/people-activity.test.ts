@@ -26,6 +26,65 @@ function rows(events: WorkspaceEvent[], people: PresenceIdentity[] = [person]) {
 }
 
 describe('People activity', () => {
+  it('shows recorded human message authors and photos, including system-delivered messages', () => {
+    const message = event({
+      type: 'agent:message',
+      actor: { type: 'system', name: 'System' },
+      data: {
+        role: 'user',
+        messageId: 'message-1',
+        agentId: 'agent-1',
+        author: person,
+      },
+    });
+    expect(rows([message], [])).toEqual([
+      expect.objectContaining({
+        name: person.displayName,
+        avatarUrl: person.avatarUrl,
+        label: 'Current name: Sent a message',
+      }),
+    ]);
+    expect(rows([message, { ...message, id: 'replayed-event' }])).toHaveLength(1);
+  });
+
+  it('keeps portable message authors self-contained and never borrows the current profile', () => {
+    expect(
+      rows([
+        event({
+          type: 'agent:message',
+          data: {
+            role: 'user',
+            author: { ...person, principalId: null, displayName: 'Former member', avatarUrl: null },
+          },
+        }),
+      ])[0],
+    ).toMatchObject({ name: 'Former member', avatarUrl: null });
+  });
+
+  it('excludes automatic, assistant, malformed and unattributed message echoes', () => {
+    const message = event({ type: 'agent:message', data: { role: 'user', author: person } });
+    const rejected = [
+      { role: 'assistant', author: person },
+      { role: 'user' },
+      { role: 'user', author: { displayName: 'Unresolved' } },
+      { role: 'user', author: person, metadata: { source: 'system' } },
+      { role: 'user', author: person, metadata: { fromAgentId: 'agent-1' } },
+      { role: 'user', author: person, metadata: { type: 'hook_wake' } },
+    ];
+    expect(rows(rejected.map((data, i) => ({ ...message, id: `rejected-${i}`, data })))).toEqual(
+      [],
+    );
+  });
+
+  it('includes explicit model changes while excluding read-marker updates', () => {
+    expect(rows([event({ type: 'agent:updated', data: { lastSeenMessageId: 'read-1' } })])).toEqual(
+      [],
+    );
+    expect(rows([event({ type: 'agent:updated', data: { modelId: 'model-1' } })])[0].label).toBe(
+      'Historical name: Agent model set to model-1',
+    );
+  });
+
   it('keeps historical names and gets photos only from the same principal', () => {
     expect(rows([event()])).toEqual([
       expect.objectContaining({

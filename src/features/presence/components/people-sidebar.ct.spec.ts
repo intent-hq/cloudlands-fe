@@ -13,7 +13,7 @@ test('opens People, receives live human activity, and restores focus on close', 
   await launcher.press('Enter');
   const panel = component.locator('[data-sidebar-card-tab="people"]');
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText('Alex');
+  await expect(panel).toContainText('Luke');
   await expect(panel).toContainText('Sidebar mockup');
   await component.getByRole('button', { name: 'Add live activity', exact: true }).click();
   await expect(panel).toContainText('Taylor');
@@ -34,7 +34,7 @@ test('guests can read the feed and lose the panel when multiplayer is disabled',
   const component = await mount(PeopleSidebarHost, { props: { guest: true } });
   await component.getByRole('button', { name: 'People', exact: true }).click();
   const panel = component.locator('[data-sidebar-card-tab="people"]');
-  await expect(panel).toContainText('Alex');
+  await expect(panel).toContainText('Luke');
   await expect(panel.locator('[data-sidebar-action="plus"]')).toHaveCount(0);
   await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
   await expect(panel).toHaveCount(0);

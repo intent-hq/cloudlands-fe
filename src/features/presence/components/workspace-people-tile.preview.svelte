@@ -57,8 +57,8 @@
   import {
     eventsLoaded,
     eventsCleared,
-    eventsLoadStarted,
-    eventsLoadFailed,
+    peopleEventsLoadStarted,
+    peopleEventsLoadFinished,
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import type { WorkspaceEvent } from '$features/events/types';
 
@@ -85,7 +85,7 @@
         branch: 'feat/sidebar-people-tile',
         status: WorkspaceStatus.Active,
         myRole: guest ? 'collaborator' : 'owner',
-        memberCount: shared ? count + 1 : 1,
+        memberCount: shared ? Math.max(2, count) : 1,
         statusMessage: 'Bringing people and their work together.',
         changesets: [],
         timeline: [],
@@ -96,14 +96,19 @@
     store.dispatch(
       setMultiSelectSidebarSelectedTabs(workspaceId, [expanded ? 'people' : 'overview']),
     );
-    store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, 'viewer'));
+    store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, 'person-0'));
     store.dispatch(presenceWorkspacesReceived([workspaceId]));
-    const names = ['Sam', 'Alex', 'Morgan', 'Taylor', 'Robin', 'Jamie', 'Casey', 'Charlie'];
+    const names = ['Sam', 'Luke', 'Morgan', 'Taylor', 'Robin', 'Jamie', 'Casey', 'Charlie'];
     const people = names.slice(0, count).map((name, index) => ({
       principalId: `person-${index}`,
       login: name.toLowerCase(),
       displayName: name,
-      avatarUrl: null,
+      avatarUrl:
+        index === 0
+          ? 'https://avatars.githubusercontent.com/u/84644?v=4'
+          : index === 1
+            ? 'https://avatars.githubusercontent.com/u/296156?v=4'
+            : null,
       role: 'collaborator' as const,
       addedAt: PREVIEW_FIXTURE_TIMESTAMPS.createdAt,
     }));
@@ -123,16 +128,16 @@
         workspaceId,
         type: 'note:updated',
         timestamp: new Date(now - 5 * 60_000).toISOString(),
-        actor: { type: 'user', id: 'person-1', name: 'Alex' },
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
         data: { noteId: 'sidebar-mockup', title: 'Sidebar mockup' },
       },
       {
         id: 'people-activity-comment',
         workspaceId,
-        type: 'comment:added',
+        type: 'agent:message',
         timestamp: new Date(now - 12 * 60_000).toISOString(),
         actor: { type: 'user', id: 'person-0', name: 'Sam' },
-        data: { noteId: 'people-layout', commentId: 'layout-comment' },
+        data: { role: 'user', agentId: 'planner', messageId: 'message-1', author: people[0] },
       },
       {
         id: 'people-activity-created',
@@ -146,13 +151,21 @@
     store.dispatch(
       eventsLoaded(
         workspaceId,
-        activityState === 'ready' ? activity : [],
+        activityState === 'ready' || activityState === 'older' ? activity : [],
         activityState === 'older' ? 'older-page' : null,
       ),
     );
-    if (activityState === 'loading') store.dispatch(eventsLoadStarted(workspaceId));
-    if (activityState === 'error')
-      store.dispatch(eventsLoadFailed(workspaceId, 'Activity could not be loaded.'));
+    store.dispatch(peopleEventsLoadStarted(workspaceId, 'preview-load'));
+    if (activityState !== 'loading') {
+      store.dispatch(
+        peopleEventsLoadFinished(
+          workspaceId,
+          'preview-load',
+          true,
+          activityState === 'error' ? 'Activity could not be loaded.' : null,
+        ),
+      );
+    }
   });
 
   onDestroy(() => {

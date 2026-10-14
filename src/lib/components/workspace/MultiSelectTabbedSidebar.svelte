@@ -92,7 +92,7 @@
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
@@ -356,7 +356,7 @@
   // row carries, and so does every window until its identity has settled.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
-  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
+  const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0);
   const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
