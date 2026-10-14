@@ -3,6 +3,7 @@ import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import { getHomeAttentionRequests, getHomeStatusCause } from './home-attention';
 import { homeDismissQuestionAction, homeRetryAgentAction } from './home-attention-actions';
+import { getHomeTriageGroup, type HomeTriageInput } from './home-model';
 
 // Failure cases: dismissed questions reappear; stale confirmation dismisses a new
 // set; unrelated agents/workspaces are targeted; deleted/delegated/muted requests
@@ -130,10 +131,40 @@ describe('Home actionable attention', () => {
       'review',
     );
     expect(getHomeStatusCause({ displayStatus: 'needs_attention' })).toBe('question');
-    expect(getHomeStatusCause({ displayStatus: 'pr_ready' })).toBe('pull-request');
+    expect(getHomeStatusCause({ displayStatus: 'pr_ready' })).toBe('pr_ready');
     expect(getHomeStatusCause({ displayStatus: 'idle', activity: 'agent_running' })).toBe(
       'running',
     );
     expect(getHomeStatusCause({ displayStatus: 'idle', attention: 'unread' })).toBe('unread');
+  });
+});
+
+describe('Home PR status precedence', () => {
+  it.each(['pr_open', 'pr_ready', 'pr_queued'] as const)(
+    'keeps %s distinct without changing its triage group',
+    (displayStatus) => {
+      expect(getHomeStatusCause({ displayStatus })).toBe(displayStatus);
+      expect(getHomeTriageGroup({ displayStatus })).toBe(
+        displayStatus === 'pr_ready' ? 'needs-you' : 'idle',
+      );
+      expect(getHomeStatusCause({ displayStatus, attention: 'review_required' })).toBe('review');
+      expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe(
+        displayStatus === 'pr_ready' ? 'pr_ready' : 'running',
+      );
+      expect(getHomeStatusCause({ displayStatus, attention: 'unread' })).toBe(
+        displayStatus === 'pr_ready' ? 'pr_ready' : 'unread',
+      );
+    },
+  );
+
+  it.each([
+    ['failed', 'failed'],
+    ['blocked', 'blocked'],
+    ['needs_attention', 'question'],
+    ['pr_merged', 'merged'],
+    ['complete', 'complete'],
+    ['future_status', 'idle'],
+  ])('preserves the %s cause and safe fallback', (displayStatus, cause) => {
+    expect(getHomeStatusCause({ displayStatus } as HomeTriageInput)).toBe(cause);
   });
 });

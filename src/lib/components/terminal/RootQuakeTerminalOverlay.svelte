@@ -25,19 +25,20 @@
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
     selectActiveTerminalIdForWorkspace,
+    selectTerminalCreationOutcome,
     selectTerminalsForWorkspace,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
     selectTerminal as selectTerminalAction,
-    addTerminal,
+    clearTerminalCreationOutcome,
+    createOverlayTerminalRequested,
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { appClient } from '$lib/client';
   import { notify } from '$lib/components/patterns/notify';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
@@ -70,6 +71,13 @@
   const height = selectTerminalOverlayHeight(ROOT_WORKSPACE_ID);
   const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
   const terminals = selectTerminalsForWorkspace(ROOT_WORKSPACE_ID);
+  const terminalCreationConsumerId = crypto.randomUUID();
+  const terminalCreationResourceId = 'overlay';
+  const terminalCreationOutcome$ = selectTerminalCreationOutcome(
+    terminalCreationConsumerId,
+    ROOT_WORKSPACE_ID,
+    terminalCreationResourceId,
+  );
 
   // NOTE: We intentionally do NOT have an $effect here to sync workspace ID.
   // The workspace ID is set by the keyboard shortcut handler in +layout.svelte
@@ -187,47 +195,27 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  // In-flight guard: a double-click on the new-terminal button must not
-  // issue two `terminal.create` calls (two daemon PTYs).
-  let isCreatingTerminal = false;
+  const isCreatingTerminal = $derived($terminalCreationOutcome$?.status === 'pending');
 
-  async function createNewTerminal() {
-    if (isCreatingTerminal) return;
-    isCreatingTerminal = true;
-    try {
-      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
-      // assigns the PTY id and the Redux tab is keyed by it, so hydration
-      // (`terminal.list`) always matches the tab id.
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- AppClient mutation (terminal.create), not a domain data fetch; the daemon-assigned id must be awaited before the tab enters Redux (monorepo#1411).
-      const result = await appClient.terminals.create({
-        workspaceId: ROOT_WORKSPACE_ID,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
-      appStore.dispatch(
-        addTerminal(
-          ROOT_WORKSPACE_ID,
-          result.id,
-          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-        ),
-      );
-      if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
-      }
-      // Focus the overlay container immediately so keyboard shortcuts
-      // route to the terminal before xterm is ready
-      requestAnimationFrame(() => {
-        overlayContainer?.focus();
-      });
-    } catch {
+  $effect(() => {
+    const outcome = $terminalCreationOutcome$;
+    if (!outcome || outcome.status === 'pending') return;
+    if (outcome.status === 'success') {
+      requestAnimationFrame(() => overlayContainer?.focus());
+    } else if (outcome.status === 'failure') {
       notify.error(m.terminal_adapter_openFailed_error());
-    } finally {
-      isCreatingTerminal = false;
     }
+    appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId, outcome.seq));
+  });
+
+  function createNewTerminal() {
+    if (isCreatingTerminal) return;
+    appStore.dispatch(
+      createOverlayTerminalRequested(ROOT_WORKSPACE_ID, {
+        id: terminalCreationConsumerId,
+        resourceId: terminalCreationResourceId,
+      }),
+    );
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -292,7 +280,10 @@
       appStore.dispatch(setTerminalOverlayHeight(ROOT_WORKSPACE_ID, height)),
   });
 
-  onDestroy(stopResize);
+  onDestroy(() => {
+    stopResize();
+    appStore.dispatch(clearTerminalCreationOutcome(terminalCreationConsumerId));
+  });
 
   // ============================================================================
   // Event Listeners

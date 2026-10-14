@@ -7,13 +7,22 @@ import {
   createLinkTooltipHandler,
 } from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
+import type { GithubLinkDefaultAction, LinkHandlerOptions } from '$shared/utils/link-helpers';
 import type { Workspace } from '$shared/types';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const TEST_WORKTREE_ROOT = '/repo/root';
+
+const preferences = vi.hoisted(() => ({
+  githubLinkDefaultAction: 'show-choices' as GithubLinkDefaultAction,
+}));
+const showAssistantContentMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('$features/home/assistant-panels', () => ({
+  showAssistantContent: showAssistantContentMock,
+}));
 
 const handleIntentLinkMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 // Mock the dynamic imports used by handleLink
@@ -80,6 +89,7 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({
+      userPreferences: preferences,
       panelLayout: {
         byWorkspaceId: {
           'ws-1': { panels: { 'panel-chat': { tabs: [] } } },
@@ -87,6 +97,131 @@ vi.mock('$store/renderer/store', async () => {
       },
     }),
     dispatch: reduxDispatchMock,
+  });
+});
+
+describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in %s', (surface) => {
+  const url = 'https://github.com/acme/widgets/pull/7#discussion_r42';
+  let options: LinkHandlerOptions;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    preferences.githubLinkDefaultAction = 'show-choices';
+    const container = document.createElement('div');
+    if (surface === 'Assistant') container.dataset.assistantLayoutId = 'assistant-thread-1';
+    else container.dataset.workspaceLinkTarget = TEST_WORKSPACE_ID;
+    const anchor = document.createElement('a');
+    container.append(anchor);
+    const event = new MouseEvent('click', { clientX: 100, clientY: 200 });
+    Object.defineProperty(event, 'target', { value: anchor });
+    options = {
+      workspaceId: surface === 'Assistant' ? CHIEF_WORKSPACE_ID : TEST_WORKSPACE_ID,
+      event,
+    };
+  });
+
+  afterEach(() => {
+    preferences.githubLinkDefaultAction = 'show-choices';
+  });
+
+  it.each(['click', 'Enter'] as const)(
+    'uses the saved external-browser preference on %s',
+    async (activation) => {
+      preferences.githubLinkDefaultAction = 'open-in-browser';
+      if (activation === 'Enter') {
+        const event = new KeyboardEvent('keydown', { key: 'Enter' });
+        Object.defineProperty(event, 'target', { value: options.event!.target });
+        options.event = event;
+      }
+
+      expect(await handleLink(url, options)).toBe(true);
+
+      expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+      expect(showAssistantContentMock).not.toHaveBeenCalled();
+      expect(openBrowserPanelMock).not.toHaveBeenCalled();
+      expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+      expect(gotoMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shows choices without opening a browser or leaving Home', async () => {
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url,
+        workspaceId: options.workspaceId,
+        gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+      }),
+    );
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('copies the link without opening a browser or leaving Home', async () => {
+    preferences.githubLinkDefaultAction = 'copy-link';
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(writeTextToClipboardMock).toHaveBeenCalledExactlyOnceWith(url);
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('starts a workspace with the clicked pull request', async () => {
+    preferences.githubLinkDefaultAction = 'start-workspace';
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      setWorkspaceInitializerPendingGitHubPrefill({
+        owner: 'acme',
+        repo: 'widgets',
+        number: 7,
+        kind: 'pr',
+        url,
+      }),
+    );
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['preference', 'modifier'] as const)(
+    'opens in the owning app panel through the %s',
+    async (trigger) => {
+      preferences.githubLinkDefaultAction =
+        trigger === 'preference' ? 'open-in-app' : 'open-in-browser';
+      if (trigger === 'modifier') options.modifiers = { metaKey: true, ctrlKey: true };
+      expect(await handleLink(url, options)).toBe(true);
+
+      if (surface === 'Assistant') {
+        expect(showAssistantContentMock).toHaveBeenCalledExactlyOnceWith(url, {
+          layoutId: 'assistant-thread-1',
+        });
+        expect(openBrowserPanelMock).not.toHaveBeenCalled();
+        expect(gotoMock).not.toHaveBeenCalled();
+      } else {
+        expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+        expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+        expect(showAssistantContentMock).not.toHaveBeenCalled();
+      }
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+      expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps explicit external actions above the in-app preference', async () => {
+    preferences.githubLinkDefaultAction = 'open-in-app';
+    expect(await handleLink(url, { ...options, forceExternal: true })).toBe(true);
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
   });
 });
 

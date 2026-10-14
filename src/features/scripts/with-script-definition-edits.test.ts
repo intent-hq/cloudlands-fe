@@ -35,7 +35,16 @@ vi.mock('$lib/client/live/backend-transport', async () => {
         const { workspaceId, ...definition } = params;
         const result = await appClient.scripts.create(workspaceId, definition as never);
         if (!result.success) throw new Error(result.error);
-        return result.script;
+        return (
+          result.script ?? {
+            ...definition,
+            id: definition.scriptId,
+            workspaceId,
+            source: 'user',
+            createdAt: '2026-10-09',
+            runtime: { status: 'idle', restartCount: 0 },
+          }
+        );
       },
     ),
   };
@@ -246,9 +255,10 @@ describe('public definition writes and deletion', () => {
     removeRequest.mockReturnValueOnce(pending.promise);
     const removing = scriptsClient.remove(WS, 'check');
     expect((await save()).success).toBe(false);
-    expect(appClient.scripts.list).not.toHaveBeenCalled();
+    expect(appClient.scripts.list).toHaveBeenCalledOnce();
     pending.resolve({ success: true });
     expect((await removing).success).toBe(true);
+    vi.mocked(appClient.scripts.list).mockResolvedValue([]);
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.create).not.toHaveBeenCalled();
   });
@@ -300,6 +310,7 @@ describe('public definition writes and deletion', () => {
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeUndefined(),
     );
     expect(removeRequest).toHaveBeenCalledExactlyOnceWith(WS, 'check');
+    vi.mocked(appClient.scripts.list).mockResolvedValue([]);
     expect((await save()).success).toBe(false);
     expect(appClient.scripts.create).toHaveBeenCalledOnce();
   });
@@ -344,6 +355,9 @@ describe('public definition writes and deletion', () => {
       // Cleanup invalidates the old request's UI completion even after it settles.
       expect(store.state.scripts.byWorkspaceId[WS].scripts.check).toBeDefined();
       if (!success) {
+        if (_name.startsWith('workspace deletion')) {
+          store.dispatch(setWorkspaceEntity({ id: WS, title: 'Edits', myRole: 'owner' } as never));
+        }
         expect((await save()).success).toBe(true);
       }
     },
@@ -364,6 +378,7 @@ describe('public definition writes and deletion', () => {
   });
 
   it('releases thrown saves and keeps workspace reservations separate', async () => {
+    store.dispatch(setWorkspaceEntity({ id: 'other', title: 'Other', myRole: 'owner' } as never));
     store.dispatch(setScriptsData('other', [{ ...script, workspaceId: 'other' }]));
     const pending = deferred<{ success: boolean }>();
     vi.mocked(appClient.scripts.create).mockReturnValueOnce(pending.promise);

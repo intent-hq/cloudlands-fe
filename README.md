@@ -241,3 +241,17 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
+
+### Depot CI runners
+
+Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
+when unavailable or busy. Other checks and automation use Depot. Linux ARM64
+builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
+and Apple Silicon jobs use Depot’s latest macOS. Native Intel desktop release and
+manual packaging builds deliberately retain GitHub's `macos-latest-large` runners.
+
+From-source Rust sidecars use managed sccache without Rust cache actions.
+The setup script installs a pinned, checksum-verified binary. Depot supplies
+cache access automatically; GitHub Intel runners use the `DEPOT_TOKEN` Actions
+secret. Without credentials, compilation proceeds uncached with a notice.
+pnpm dependency caching remains unchanged.

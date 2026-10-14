@@ -39,27 +39,6 @@ export interface McpInstallOption {
 // so it re-evaluates with the active locale on each render.
 export const mcpOptions: McpInstallOption[] = [
   {
-    label: 'Figma',
-    get description() {
-      return m.settings_mcp_preset_figma_description();
-    },
-    iconName: 'figma',
-    type: 'http',
-    url: 'https://mcp.figma.com/mcp',
-    authType: 'oauth',
-  },
-  {
-    // i18n-ignore (stable server-name identifier containing the Figma brand)
-    label: 'Figma Desktop',
-    get description() {
-      return m.settings_mcp_preset_figmaDesktop_description();
-    },
-    iconName: 'figma',
-    type: 'http',
-    url: 'http://127.0.0.1:3845/mcp',
-    authType: 'none',
-  },
-  {
     label: 'Redis',
     get description() {
       return m.settings_mcp_preset_redis_description();

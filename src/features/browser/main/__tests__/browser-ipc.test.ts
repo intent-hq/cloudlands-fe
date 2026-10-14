@@ -140,6 +140,7 @@ describe('browser:exec IPC workspace routing', () => {
             success: true,
             message: 'Opening browser tab with URL: https://example.test',
             tabId: 'tab-123-i',
+            url: 'https://example.test',
           },
         },
       ],
