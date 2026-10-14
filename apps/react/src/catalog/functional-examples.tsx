@@ -56,6 +56,7 @@ import { NavigationContentExamples } from './navigation-content-examples';
 import { WalkthroughCommentExamples } from './walkthrough-comment-examples';
 import { HudPanelExamples } from './hud-panel-examples';
 import { HudAgentLineExamples } from './hud-agent-line-examples';
+import { HudStateBarsExamples } from './hud-state-bars-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -552,6 +553,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
         <>
           <HudPanelExamples />
           <HudAgentLineExamples />
+          <HudStateBarsExamples />
         </>
       )}
       {slug === 'detected-scripts' && <DetectedScriptExamples />}
