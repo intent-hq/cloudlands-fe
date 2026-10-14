@@ -27,17 +27,17 @@ test('real workspace agents match the daemon and release their subscriptions', a
       if (request) replies.push({ request, response });
     });
   });
-  const subscriptions = () =>
+  const subscriptions = (id = workspaceId) =>
     replies.filter(
       ({ request, response }) =>
         request.method === 'agent.subscribe' &&
-        request.params.workspaceId === workspaceId &&
+        request.params.workspaceId === id &&
         response.result?.subscriptionId,
     );
   const view = page.getByTestId('workspace-agents');
   const toggle = view.getByRole('button', { name: 'Agents', exact: true });
   const rows = view.locator('[data-workspace-agent]');
-  const assertDaemonRows = async () => {
+  const assertDaemonRows = async (id = workspaceId) => {
     const result = await page.evaluate(async (workspaceId) => {
       const module = performance
         .getEntriesByType('resource')
@@ -47,8 +47,8 @@ test('real workspace agents match the daemon and release their subscriptions', a
       if (!module) throw new Error('The real React transport was not observed');
       const { backendRequest } = await import(module.name);
       return backendRequest('agent.list', { workspaceId, scope: 'topLevel' });
-    }, workspaceId);
-    expect(result.agents.length).toBeGreaterThan(0);
+    }, id);
+    if (id === workspaceId) expect(result.agents.length).toBeGreaterThan(0);
     const expected = result.agents
       .map(({ id, name }) => ({ id, name }))
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -66,20 +66,23 @@ test('real workspace agents match the daemon and release their subscriptions', a
       .toEqual(expected);
     return expected;
   };
-  const open = async () => {
-    const before = subscriptions().length;
-    await toggle.focus();
-    await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect.poll(() => subscriptions().length).toBeGreaterThan(before);
-    const { request, response } = subscriptions().at(-1);
-    expect(request.params).toEqual({ workspaceId });
+  const subscribed = async (targetId, before) => {
+    await expect.poll(() => subscriptions(targetId).length).toBeGreaterThan(before);
+    const { request, response } = subscriptions(targetId).at(-1);
+    expect(request.params).toEqual({ workspaceId: targetId });
     const id = response.result.subscriptionId;
     await expect
       .poll(() => pushes.some((push) => push.subscriptionId === id && push.kind === 'snapshot'))
       .toBe(true);
-    await assertDaemonRows();
+    await assertDaemonRows(targetId);
     return id;
+  };
+  const open = async (id = workspaceId) => {
+    const before = subscriptions(id).length;
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    return subscribed(id, before);
   };
   const released = async (id) => {
     await expect
@@ -88,7 +91,8 @@ test('real workspace agents match the daemon and release their subscriptions', a
           ({ request, response }) =>
             request.method === 'events.unsubscribe' &&
             request.params.subscriptionId === id &&
-            !response.error,
+            !response.error &&
+            response.result?.success === true,
         ),
       )
       .toBe(true);
@@ -110,6 +114,49 @@ test('real workspace agents match the daemon and release their subscriptions', a
     await released(firstId);
     const secondId = await open();
     expect(secondId).not.toBe(firstId);
+    const navigation = page.getByTestId('workspace-navigation');
+    const otherId = await navigation
+      .locator('[data-navigation-workspace]')
+      .evaluateAll(
+        (nodes, workspaceId) =>
+          nodes.map((node) => node.dataset.navigationWorkspace).find((id) => id !== workspaceId),
+        workspaceId,
+      );
+    expect(otherId, 'A second real workspace is required for agent switching').toBeTruthy();
+    expect(
+      replies.some(
+        ({ request, response }) =>
+          request.method === 'workspace.list' &&
+          response.result?.workspaces.some((workspace) => workspace.id === otherId),
+      ),
+    ).toBe(true);
+    const switchWorkspace = async (id, previousSubscriptionId) => {
+      const before = subscriptions(id).length;
+      const link = navigation.locator(`[data-navigation-workspace="${id}"]`);
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('workspace-overview')).toHaveAttribute('data-workspace-id', id);
+      await expect(link).toBeFocused();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(rows).toHaveCount(0);
+      await released(previousSubscriptionId);
+      expect(subscriptions(id)).toHaveLength(before);
+      return open(id);
+    };
+    const otherSubscriptionId = await switchWorkspace(otherId, secondId);
+    expect(otherSubscriptionId).not.toBe(secondId);
+    const otherRows = await assertDaemonRows(otherId);
+    await info.attach('workspace-agent-switch', {
+      body: JSON.stringify({
+        workspaceId: otherId,
+        subscriptionId: otherSubscriptionId,
+        otherRows,
+      }),
+      contentType: 'application/json',
+    });
+    const restoredId = await switchWorkspace(workspaceId, otherSubscriptionId);
+    expect(restoredId).not.toBe(secondId);
+    expect(restoredId).not.toBe(otherSubscriptionId);
     await page.setViewportSize({ width: 420, height: 800 });
     await expect
       .poll(() => view.evaluate((node) => node.scrollWidth - node.clientWidth))
@@ -126,7 +173,7 @@ test('real workspace agents match the daemon and release their subscriptions', a
       .getByRole('link', { name: 'Workspaces', exact: true })
       .click();
     await expect(view).toHaveCount(0);
-    await released(secondId);
+    await released(restoredId);
     await page.goBack();
     await expect(toggle).toBeVisible();
     await open();
