@@ -9,6 +9,7 @@ import { ChatImageBlock } from '@/features/chat/components/chat-image-block';
 import { MediaLoadingPlaceholder } from '@/components/ui/media-loading-placeholder';
 import { MediaUnavailable } from '@/components/ui/media-unavailable';
 import { m } from '$shared/paraglide/messages.js';
+import type { AgentMessage } from '$shared/types';
 
 function canReadImage(workspaceId: string, agentId: string, authority: string) {
   const agent = selectAgentSession.select(store.state, agentId);
@@ -25,11 +26,13 @@ function AdmittedImage({
   attachmentId,
   agentId,
   authority,
+  role,
 }: {
   workspaceId: string;
   attachmentId: string;
   agentId: string;
   authority: string;
+  role: AgentMessage['role'];
 }) {
   const [image, setImage] = useState<{ src: string; name: string } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -61,6 +64,7 @@ function AdmittedImage({
     <div data-attachment-id={attachmentId}>
       {image ? (
         <ChatImageBlock
+          variant={role === 'user' ? 'user-attachment' : 'default'}
           src={image.src}
           mimeType="image/png"
           alt={image.name}
@@ -80,10 +84,12 @@ export function WorkspaceConversationImage({
   workspaceId,
   attachmentId,
   agentId,
+  role,
 }: {
   workspaceId: string;
   attachmentId: string;
   agentId: string;
+  role: AgentMessage['role'];
 }) {
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const agent = selectAgentSession(agentId).value;
@@ -94,6 +100,7 @@ export function WorkspaceConversationImage({
       attachmentId={attachmentId}
       agentId={agentId}
       authority={authority}
+      role={role}
     />
   ) : (
     <MediaUnavailable

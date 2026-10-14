@@ -32,7 +32,7 @@ import { LiveStreamPhaseIndicator } from '@/features/chat/components/live-stream
 import { LoadingState, EmptyState, ErrorState } from '@/components/patterns/screen';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { ContentBlock } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import { formatNumber } from '$lib/i18n/format';
 import { parseIntentLink } from '$shared/utils/intent-link-parser';
@@ -108,11 +108,13 @@ function ConversationBlock({
   navigation,
   agentId,
   messageId,
+  role,
 }: {
   block: ContentBlock;
   navigation: Navigation;
   agentId: string;
   messageId: string;
+  role: AgentMessage['role'];
 }) {
   if (
     block.type === 'image' &&
@@ -122,6 +124,7 @@ function ConversationBlock({
   )
     return (
       <WorkspaceConversationImage
+        role={role}
         agentId={agentId}
         workspaceId={navigation.workspaceContext.workspaceId}
         attachmentId={block.attachmentId}
@@ -469,6 +472,7 @@ export function WorkspaceConversation({
                           )}
                           renderBlock={(block, index) => (
                             <ConversationBlock
+                              role={message.role}
                               key={block.id ?? index}
                               block={block}
                               agentId={agentId}

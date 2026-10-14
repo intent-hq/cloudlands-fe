@@ -25,6 +25,7 @@ test('genuine attachment PNGs retain daemon bytes and release their read-only vi
     },
   ];
   const errors = await observeErrors(page);
+  let assistantPreviewFile;
   const requests = [],
     replies = [],
     evidence = [],
@@ -158,6 +159,11 @@ test('genuine attachment PNGs retain daemon bytes and release their read-only vi
         if (offset === registry.size) break;
       }
       const wireBytes = Buffer.concat(bytes);
+      assistantPreviewFile ??= {
+        name: registry.fileName,
+        mimeType: registry.mimeType,
+        buffer: wireBytes,
+      };
       expect(wireBytes.length).toBe(registry.size);
       expect(wireBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
       expect(decoded.hash).toBe(createHash('sha256').update(wireBytes).digest('hex'));
@@ -170,7 +176,21 @@ test('genuine attachment PNGs retain daemon bytes and release their read-only vi
         row: await row.boundingBox(),
         card: await card.boundingBox(),
         image: await image.boundingBox(),
+        opener: await image.locator('..').boundingBox(),
       };
+      // Canonical sent-user composition: ChatMessage.svelte uses w-10 h-10;
+      // the img owns its border inside the borderless 40px button.
+      expect(geometry.opener.width).toBe(40);
+      expect(geometry.opener.height).toBe(40);
+      expect(geometry.image.width).toBe(40);
+      expect(geometry.image.height).toBe(40);
+      expect(
+        await image.evaluate((node) => ({
+          fit: getComputedStyle(node).objectFit,
+          imageBorder: getComputedStyle(node).borderTopWidth,
+          buttonBorder: getComputedStyle(node.parentElement).borderTopWidth,
+        })),
+      ).toEqual({ fit: 'cover', imageBorder: '1px', buttonBorder: '0px' });
       await stableLocatorScreenshot(page, card, async ({ png, attempt }) => {
         if (png)
           await info.attach(`image-${item.width}-${attempt}`, {
@@ -259,6 +279,48 @@ test('genuine attachment PNGs retain daemon bytes and release their read-only vi
         leases,
       });
     }
+    // The public assistant-image composition retains its existing 160px preview.
+    // Use the same genuine daemon bytes through its native FileInput, not Store injection.
+    await page.setViewportSize({ width: 420, height: 850 });
+    await page.goto(
+      `${base}/sandbox/chat-image?example=interactive&theme=light&motion=reduced&width=420`,
+    );
+    const example = page.locator('[data-functional-example="chat-image"]');
+    await expect(example).toBeVisible({ timeout: 15_000 });
+    const choosing = page.waitForEvent('filechooser');
+    await example.getByRole('button', { name: 'Choose full image', exact: true }).click();
+    await (await choosing).setFiles(assistantPreviewFile);
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(
+            await example.getByLabel('Chat image file reads', { exact: true }).textContent(),
+          ).full?.reading,
+      )
+      .toBe(false);
+    await example.getByRole('button', { name: 'Apply selected data', exact: true }).click();
+    const assistantImage = example.locator('[data-chat-image] img');
+    await expect
+      .poll(() => assistantImage.evaluate((node) => node.complete && node.naturalWidth > 0))
+      .toBe(true);
+    const assistantBounds = await assistantImage.locator('..').boundingBox();
+    expect(assistantBounds.width).toBe(160);
+    expect(assistantBounds.height).toBe(160);
+    await stableLocatorScreenshot(
+      page,
+      example.locator('[data-chat-image]'),
+      async ({ png, attempt }) => {
+        if (png)
+          await info.attach(`assistant-preview-${attempt}`, {
+            body: png,
+            contentType: 'image/png',
+          });
+      },
+    );
+    await info.attach('assistant-preview-geometry', {
+      body: JSON.stringify(assistantBounds),
+      contentType: 'application/json',
+    });
     expect(activations).toEqual([{ trusted: true }, { trusted: true }]);
     expect(
       requests.filter(({ method }) =>

@@ -24,8 +24,8 @@ import { getLocale } from '$shared/paraglide/runtime.js';
 const { formatInteger } = createFormatters(getLocale);
 
 export interface ChatImageBlockProps {
-  /** Tool image reads show the whole image with a compact file caption. */
-  variant?: 'default' | 'file';
+  /** User attachments use the compact sent-message tile; tool reads retain their file caption. */
+  variant?: 'default' | 'file' | 'user-attachment';
   /** Resolved workspace media URL for a local image read. */
   src?: string;
   /** Base64 image data — the slim thumbnail or nothing when truncated. */
@@ -79,7 +79,8 @@ export function ChatImageBlock({
   const needsHydration = !hasOriginal && onHydrate !== undefined;
   const isPositiveInteger = (value: unknown): value is number =>
     typeof value === 'number' && Number.isInteger(value) && value > 0;
-  const sized = isPositiveInteger(width) && isPositiveInteger(height);
+  const userAttachment = variant === 'user-attachment';
+  const sized = !userAttachment && isPositiveInteger(width) && isPositiveInteger(height);
   // As in the source, URL changes retain decoded dimensions, failure identity,
   // and the revealed frame so hydration does not flash a placeholder.
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -135,12 +136,21 @@ export function ChatImageBlock({
 
   return (
     <>
-      <div className={cn('my-2 min-w-0', fileCard ? 'max-w-sm' : 'max-w-2xl')} data-chat-image="">
+      <div
+        className={cn(
+          'min-w-0',
+          userAttachment ? 'mt-2' : 'my-2',
+          fileCard ? 'max-w-sm' : 'max-w-2xl',
+        )}
+        data-chat-image=""
+      >
         {imageUrl && !imageUnavailable ? (
           <div
             className={cn(
               'group relative',
-              fileCard
+              userAttachment
+                ? 'size-10'
+                : fileCard
                 ? 'overflow-hidden rounded-lg border border-border bg-muted/30'
                 : sized
                   ? 'max-w-full'
@@ -160,7 +170,9 @@ export function ChatImageBlock({
               type="button"
               className={cn(
                 'block',
-                fileCard
+                userAttachment
+                  ? 'relative size-10 shrink-0 rounded border-0 bg-transparent'
+                  : fileCard
                   ? 'h-auto w-full rounded-none border-0 bg-transparent'
                   : `${sized ? 'absolute inset-0 size-full' : 'size-40'} rounded-lg border border-border bg-muted/30 shadow-(--elevation-raised)`,
                 'cursor-zoom-in overflow-hidden p-0 transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
@@ -190,7 +202,9 @@ export function ChatImageBlock({
                 decoding="async"
                 className={cn(
                   'block',
-                  fileCard
+                  userAttachment
+                    ? 'size-full rounded border border-border object-cover'
+                    : fileCard
                     ? 'h-auto max-h-80 w-full object-contain'
                     : `size-full ${sized ? 'object-contain' : 'object-cover'}`,
                   showPlaceholder && 'opacity-0',
