@@ -5,7 +5,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import {
-    upsertSession,
+    bulkUpsertSessions,
     removeSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import type { WireAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
@@ -39,19 +39,21 @@
   }
   window.addEventListener('chat:open-message', recordMessageNavigation);
   store.dispatch(
-    upsertSession({
-      id: 'planner',
-      workspaceId,
-      name: 'Planner',
-      messages: [
-        {
-          id: 'message-1',
-          role: 'user',
-          timestamp: '2026-10-14T12:00:00Z',
-          contentBlocks: [{ type: 'text', text: 'Let’s keep the People panel open' }],
-        },
-      ],
-    } as WireAgentSession),
+    bulkUpsertSessions([
+      {
+        id: 'planner',
+        workspaceId,
+        name: 'Planner',
+        messages: [
+          {
+            id: 'message-1',
+            role: 'user',
+            timestamp: '2026-10-14T12:00:00Z',
+            contentBlocks: [{ type: 'text', text: 'Let’s keep the People panel open' }],
+          },
+        ],
+      } as WireAgentSession,
+    ]),
   );
   const panels$ = selectPanels(workspaceId);
   const focusedPanel$ = selectFocusedPanelId(workspaceId);
