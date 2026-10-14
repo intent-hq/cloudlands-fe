@@ -6,6 +6,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
 import { cn } from '@/lib/utils';
 import { useFocusScopeRef } from '@/lib/interaction/focus-scope';
+import { useListTypeahead } from '@/lib/interaction/list-typeahead';
 import { Button } from '@/components/ui/button';
 import { ListHighlight, menuItem } from '@/components/ui/menu';
 import { clampSurface, SurfaceProvider, useSurface } from '@/components/ui/surface-context';
@@ -176,6 +177,7 @@ export function SelectContent({
   collisionPadding = 8,
   ref,
   onKeyDown,
+  onKeyDownCapture,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content> & {
   portal?: boolean;
@@ -206,8 +208,22 @@ export function SelectContent({
     [ref, wrapperId, select.open],
   );
   const scopeRef = useFocusScopeRef({ enabled: select.open }, attachContent);
+  const handleTypeahead = useListTypeahead(select.open, {
+    contentSelector: '[data-slot="select-content"]',
+    itemSelector: '[data-slot="select-item"]',
+    getLabel: (item) => item.dataset.selectLabel ?? item.textContent?.trim() ?? '',
+    onMatch: (_content, item) => {
+      item.scrollIntoView({ block: 'nearest' });
+      item.focus();
+    },
+    allowSpaces: true,
+  });
   const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
     onKeyDown?.(event);
+    if (!event.defaultPrevented && handleTypeahead(event.currentTarget, event.nativeEvent)) {
+      event.preventDefault();
+      return;
+    }
     if (event.defaultPrevented || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key))
       return;
 
@@ -255,6 +271,16 @@ export function SelectContent({
       collisionPadding={collisionPadding}
       {...props}
       onKeyDown={handleKeyDown}
+      onKeyDownCapture={(event) => {
+        onKeyDownCapture?.(event);
+        // A space in a pending query must reach typeahead before the option selects itself.
+        if (
+          !event.defaultPrevented &&
+          event.key === ' ' &&
+          handleTypeahead(event.currentTarget, event.nativeEvent)
+        )
+          event.preventDefault();
+      }}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
@@ -280,14 +306,16 @@ export function SelectItem({
   className,
   children,
   label,
+  textValue = label,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item> & { label?: string }) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       data-menu-item
+      data-select-label={textValue}
       className={cn(menuItem(), className)}
-      textValue={label}
+      textValue={textValue}
       {...props}
     >
       <div className="min-w-0 flex-1 truncate">
