@@ -25,6 +25,7 @@ import { DeviceIconExamples } from './device-icon-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
 import { TimelineSectionExamples } from './timeline-section-examples';
 import { ProposalCardHeaderExamples } from './proposal-card-header-examples';
+import { BulkProposalItemsExamples } from './bulk-proposal-items-examples';
 import {
   HomePullStateExamples,
   SidebarSkeletonExamples,
@@ -509,6 +510,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'timeline-section' && <TimelineSectionExamples />}
       {slug === 'proposal-card' && <ProposalCardHeaderExamples />}
+      {slug === 'proposal-card' && <BulkProposalItemsExamples />}
       {slug === 'home-pull-state' && <HomePullStateExamples />}
       {slug === 'sidebar-skeleton' && <SidebarSkeletonExamples />}
       {slug === 'browser-device-frame' && <BrowserDeviceFrameExamples />}
