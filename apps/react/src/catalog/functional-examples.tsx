@@ -22,6 +22,7 @@ import { ChatCommandExamples } from './chat-command-examples';
 import { CommandPaletteExamples } from './command-palette-examples';
 import { EditorIconExamples } from './editor-icon-examples';
 import { DeviceIconExamples } from './device-icon-examples';
+import { DeviceIconPickerExamples } from './device-icon-picker-examples';
 import { HomeLoadingExamples } from './home-loading-examples';
 import { TimelineSectionExamples } from './timeline-section-examples';
 import { SetupTimelineExamples } from './setup-timeline-examples';
@@ -531,6 +532,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'command-palette' && <CommandPaletteExamples />}
       {slug === 'editor-icons' && <EditorIconExamples />}
       {slug === 'device-icons' && <DeviceIconExamples />}
+      {slug === 'device-icons' && <DeviceIconPickerExamples />}
       {slug === 'device-icons' && <NavigationIconExamples />}
       {slug === 'home-loading' && <HomeLoadingExamples />}
       {slug === 'timeline-section' && <TimelineSectionExamples />}

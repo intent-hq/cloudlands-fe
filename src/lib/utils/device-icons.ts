@@ -1,11 +1,5 @@
 import type { Component } from 'svelte';
-import {
-  DETECTED_DEVICE_KINDS,
-  WILD_CARD_DEVICE_KINDS,
-  type DeviceIconChoice,
-  type DeviceKind,
-} from '$shared/types/connections';
-import { m } from '$shared/paraglide/messages.js';
+import type { DeviceKind } from '$shared/types/connections';
 import {
   AlienIcon,
   CatIcon,
@@ -24,169 +18,50 @@ import {
 } from '$lib/icons/phosphor-icons';
 import MacMiniIcon from '$lib/icons/MacMiniIcon.svelte';
 import MacStudioIcon from '$lib/icons/MacStudioIcon.svelte';
-import { resolveDeviceKind, type DeviceIconSource } from './device-icon-resolver';
+import { DEVICE_ICON_METADATA, type DeviceIconMetadata } from './device-icon-options';
 
 export { resolveDeviceKind, type DeviceIconSource } from './device-icon-resolver';
+export { deviceIconOptions, type DeviceIconOption } from './device-icon-options';
 
-type DeviceIconGroup = 'devices' | 'wildCards';
 type DeviceIconComponent = Component<Record<string, unknown>>;
 
-export interface DeviceIconDefinition {
+export interface DeviceIconDefinition extends DeviceIconMetadata {
   icon: DeviceIconComponent;
-  group: DeviceIconGroup;
-  readonly label: string;
 }
 
-export interface DeviceIconOption {
-  value: DeviceIconChoice;
-  kind: DeviceKind;
-  group: DeviceIconGroup | 'automatic';
-  label: string;
+function withMetadata<Kind extends DeviceKind, Icon extends DeviceIconComponent>(
+  kind: Kind,
+  icon: Icon,
+): {
+  icon: Icon;
+  group: (typeof DEVICE_ICON_METADATA)[Kind]['group'];
+  readonly label: (typeof DEVICE_ICON_METADATA)[Kind]['label'];
+} {
+  return {
+    icon,
+    group: DEVICE_ICON_METADATA[kind].group,
+    get label() {
+      return DEVICE_ICON_METADATA[kind].label;
+    },
+  };
 }
-
-const DEVICE_ICON_KINDS = {
-  devices: DETECTED_DEVICE_KINDS,
-  wildCards: WILD_CARD_DEVICE_KINDS,
-} as const satisfies Record<DeviceIconGroup, readonly DeviceKind[]>;
 
 export const DEVICE_ICON_REGISTRY = {
-  macMini: {
-    icon: MacMiniIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_macMini_label();
-    },
-  },
-  macStudio: {
-    icon: MacStudioIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_macStudio_label();
-    },
-  },
-  laptop: {
-    icon: LaptopIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_laptop_label();
-    },
-  },
-  desktop: {
-    icon: DesktopIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_desktop_label();
-    },
-  },
-  server: {
-    icon: HardDrivesIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_server_label();
-    },
-  },
-  cloudVm: {
-    icon: CloudIcon,
-    group: 'devices',
-    get label() {
-      return m.deviceIcons_kind_cloudVm_label();
-    },
-  },
-  robot: {
-    icon: RobotIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_robot_label();
-    },
-  },
-  rocket: {
-    icon: RocketIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_rocket_label();
-    },
-  },
+  macMini: withMetadata('macMini', MacMiniIcon),
+  macStudio: withMetadata('macStudio', MacStudioIcon),
+  laptop: withMetadata('laptop', LaptopIcon),
+  desktop: withMetadata('desktop', DesktopIcon),
+  server: withMetadata('server', HardDrivesIcon),
+  cloudVm: withMetadata('cloudVm', CloudIcon),
+  robot: withMetadata('robot', RobotIcon),
+  rocket: withMetadata('rocket', RocketIcon),
   // Phosphor has no flying-saucer glyph in the installed version; Alien is the closest playful match.
-  flyingSaucer: {
-    icon: AlienIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_flyingSaucer_label();
-    },
-  },
-  ghost: {
-    icon: GhostIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_ghost_label();
-    },
-  },
-  cat: {
-    icon: CatIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_cat_label();
-    },
-  },
-  dog: {
-    icon: DogIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_dog_label();
-    },
-  },
-  gameController: {
-    icon: GameControllerIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_gameController_label();
-    },
-  },
-  coffee: {
-    icon: CoffeeIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_coffee_label();
-    },
-  },
-  planet: {
-    icon: PlanetIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_planet_label();
-    },
-  },
-  pottedPlant: {
-    icon: PottedPlantIcon,
-    group: 'wildCards',
-    get label() {
-      return m.deviceIcons_kind_pottedPlant_label();
-    },
-  },
+  flyingSaucer: withMetadata('flyingSaucer', AlienIcon),
+  ghost: withMetadata('ghost', GhostIcon),
+  cat: withMetadata('cat', CatIcon),
+  dog: withMetadata('dog', DogIcon),
+  gameController: withMetadata('gameController', GameControllerIcon),
+  coffee: withMetadata('coffee', CoffeeIcon),
+  planet: withMetadata('planet', PlanetIcon),
+  pottedPlant: withMetadata('pottedPlant', PottedPlantIcon),
 } satisfies Record<DeviceKind, DeviceIconDefinition>;
-
-export function deviceIconOptions(source: DeviceIconSource): readonly DeviceIconOption[] {
-  const automaticKind = resolveDeviceKind({ ...source, deviceIcon: 'auto' });
-  return [
-    {
-      value: 'auto',
-      kind: automaticKind,
-      group: 'automatic',
-      label: m.deviceIcons_picker_automatic_label({
-        kind: DEVICE_ICON_REGISTRY[automaticKind].label,
-      }),
-    },
-    ...DEVICE_ICON_KINDS.devices.map((kind) => ({
-      value: kind,
-      kind,
-      group: 'devices' as const,
-      label: DEVICE_ICON_REGISTRY[kind].label,
-    })),
-    ...DEVICE_ICON_KINDS.wildCards.map((kind) => ({
-      value: kind,
-      kind,
-      group: 'wildCards' as const,
-      label: DEVICE_ICON_REGISTRY[kind].label,
-    })),
-  ];
-}

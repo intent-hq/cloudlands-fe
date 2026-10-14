@@ -116,6 +116,7 @@ export function SelectValue({
 export function SelectTrigger({
   className,
   variant = 'default',
+  asChild = false,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
@@ -139,27 +140,31 @@ export function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       aria-invalid={select.invalid || undefined}
-      className={classes}
+      className={asChild ? className : classes}
       {...props}
       asChild
     >
-      <Button
-        variant={
-          variant === 'default' ? 'outline' : variant === 'secondary' ? 'secondary' : 'ghost'
-        }
-        active={select.open}
-        className={classes}
-      >
-        {children}
-        {variant === 'default' && (
-          <SelectPrimitive.Icon asChild>
-            <CaretDownIcon
-              aria-hidden="true"
-              className="size-3 shrink-0 text-muted-foreground transition-transform duration-spring-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-            />
-          </SelectPrimitive.Icon>
-        )}
-      </Button>
+      {asChild ? (
+        children
+      ) : (
+        <Button
+          variant={
+            variant === 'default' ? 'outline' : variant === 'secondary' ? 'secondary' : 'ghost'
+          }
+          active={select.open}
+          className={classes}
+        >
+          {children}
+          {variant === 'default' && (
+            <SelectPrimitive.Icon asChild>
+              <CaretDownIcon
+                aria-hidden="true"
+                className="size-3 shrink-0 text-muted-foreground transition-transform duration-spring-fast group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+              />
+            </SelectPrimitive.Icon>
+          )}
+        </Button>
+      )}
     </SelectPrimitive.Trigger>
   );
 }
