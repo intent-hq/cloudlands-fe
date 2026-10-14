@@ -362,8 +362,8 @@ test('shows and splits a queued append while preserving keyboard focus and defer
     'Other participant',
     'Pending B',
   ]);
-  await expect(header.getByRole('button', { name: 'Send all ready messages now' })).toBeDisabled();
-  await expect(header.getByRole('button', { name: 'Clear all queued messages' })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Send all ready messages now' })).toBeEnabled();
+  await expect(header.getByRole('button', { name: 'Clear all queued messages' })).toBeEnabled();
   await expect(
     queue
       .getByTestId('queued-message-row')
