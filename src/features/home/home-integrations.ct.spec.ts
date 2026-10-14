@@ -658,13 +658,6 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   const component = await mount(Harness, {
     props: { workspaces: [link(901), duplicate, link(903), link(904), link(905)] },
   });
-  const linkedReadCount = () =>
-    page.evaluate(
-      () =>
-        window.__homeIntegrationBrowser!.calls.filter(
-          (call) => call.method === 'github.pulls.get' && call.params.number === 901,
-        ).length,
-    );
   const list = component.getByRole('listbox', { name: 'Pull requests' });
   await expect(list.getByRole('option')).toHaveCount(2);
   await expect(component.getByRole('alert')).toHaveCount(0);
@@ -672,7 +665,15 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   await filter.click();
   await page.getByRole('option', { name: 'Created by me', exact: true }).click();
   await expect(list).toContainText('Linked service fix');
-  await expect.poll(linkedReadCount).toBe(2);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__homeIntegrationBrowser!.calls.filter(
+          (call) => call.method === 'github.pulls.get' && call.params.number === 901,
+        ),
+      ),
+    )
+    .toHaveLength(2);
   const status = component.getByRole('combobox', { name: 'Status', exact: true });
   await status.click();
   await page.getByRole('option', { name: 'Closed / merged', exact: true }).click();
@@ -682,8 +683,10 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
     body: await page.screenshot({ path: testInfo.outputPath('linked-closed.png') }),
     contentType: 'image/png',
   });
-  await expect.poll(linkedReadCount).toBe(3);
   const calls = await page.evaluate(() => window.__homeIntegrationBrowser!.calls);
+  expect(
+    calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901),
+  ).toHaveLength(3);
   await testInfo.attach('linked-state-wire', {
     body: JSON.stringify(calls, null, 2),
     contentType: 'application/json',
