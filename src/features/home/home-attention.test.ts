@@ -145,7 +145,7 @@ describe('Home PR status precedence', () => {
     (displayStatus) => {
       expect(getHomeStatusCause({ displayStatus })).toBe(displayStatus);
       expect(getHomeTriageGroup({ displayStatus })).toBe(
-        displayStatus === 'pr_ready' ? 'needs-you' : 'idle',
+        displayStatus === 'pr_ready' ? 'pr-ready' : 'idle',
       );
       expect(getHomeStatusCause({ displayStatus, attention: 'review_required' })).toBe('review');
       expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe(
