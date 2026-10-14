@@ -35,7 +35,7 @@ export function getCatalogSystemSlug(slug: string): CatalogSystemSlug | undefine
   return catalogSystemEntries.find((entry) => entry.slug === slug)?.slug;
 }
 
-export function buildCatalogGroups(entries: CatalogEntry[]): CatalogGroup[] {
+function buildCatalogGroups(entries: CatalogEntry[]): CatalogGroup[] {
   return [
     { id: 'primitives', name: 'Components', category: 'primitive' },
     { id: 'patterns', name: 'Patterns', category: 'pattern' },

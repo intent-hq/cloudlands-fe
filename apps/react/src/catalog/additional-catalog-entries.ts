@@ -24,7 +24,7 @@ const widgets = [
   ['hover-card', 'HoverCard'],
   ['virtual-list', 'VirtualList'],
 ] as const;
-export const interactionFixture: UiComponentFixture = {
+const interactionFixture: UiComponentFixture = {
   id: 'interaction-example',
   title: 'Additional interaction example',
   states: ['interaction-example'],

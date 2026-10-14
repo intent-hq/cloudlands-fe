@@ -32,7 +32,7 @@ export interface CatalogProp {
   description: string;
 }
 
-export const commonProps: CatalogProp[] = [
+const commonProps: CatalogProp[] = [
   { name: 'class', type: 'string', defaultValue: '—', description: 'Additional utility classes.' },
   {
     name: 'children',
@@ -271,11 +271,11 @@ const patternEntries: CatalogEntry[] = canonicalPatternManifest.map((pattern) =>
   };
 });
 
-export const legacyCatalogSlugs: Readonly<Record<string, string>> = {
+const legacyCatalogSlugs: Readonly<Record<string, string>> = {
   spinner: 'loading-indicator',
 };
 
-export function resolveCatalogSlug(slug: string): string {
+function resolveCatalogSlug(slug: string): string {
   return legacyCatalogSlugs[slug] ?? slug;
 }
 

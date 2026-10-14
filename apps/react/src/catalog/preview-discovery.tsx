@@ -171,7 +171,7 @@ const previews: Record<string, PreviewDefinition> = {
 export function getPreview(slug: string) {
   return previews[slug];
 }
-export function listPreviewIds() {
+function listPreviewIds() {
   return Object.keys(previews).sort();
 }
 

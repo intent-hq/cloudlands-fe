@@ -38,7 +38,7 @@ import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
 import './catalog-component-page.css';
 
-export const portedComponentPages = [
+const portedComponentPages = [
   'toast',
   'notify',
   'button',
