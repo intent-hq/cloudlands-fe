@@ -71,9 +71,10 @@ const {
 });
 
 vi.mock('$store/renderer/store', () => ({ store: appStore }));
-vi.mock('$lib/utils/client-logger', () => ({
-  logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
-}));
+vi.mock('$lib/utils/client-logger', () => {
+  const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+  return { logger, createLogger: () => logger };
+});
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
 vi.mock('$lib/utils/file-type-icons', () => ({ getFileTypeIconSvg: () => '' }));
 vi.mock('../VirtualizedFileTree.svelte', async () => ({

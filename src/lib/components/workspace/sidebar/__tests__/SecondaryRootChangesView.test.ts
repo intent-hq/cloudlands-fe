@@ -119,9 +119,10 @@ vi.mock('$lib/utils/clipboard', () => ({
   writeTextToClipboard: mocks.writeTextToClipboard,
 }));
 
-vi.mock('$lib/utils/client-logger', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
+vi.mock('$lib/utils/client-logger', () => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  return { logger, createLogger: () => logger };
+});
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: mocks.toastSuccess, error: mocks.toastError },
