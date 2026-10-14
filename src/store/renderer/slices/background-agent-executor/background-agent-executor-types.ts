@@ -3,8 +3,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type ExecutorStatus =
-  'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled';
+type ExecutorStatus = 'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled';
 
 /**
  * Context data for different agent types
@@ -114,6 +113,12 @@ export const EXECUTOR_CONFIGS: Record<
     timeout: 120000,
     name: 'Code Walkthrough Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'code-walkthrough',
+  },
+  'script-detect': {
+    resultTag: 'DETECTED_SCRIPTS',
+    timeout: 90_000,
+    name: 'Script Detector', // i18n-ignore (internal background-agent executor name)
+    agentType: 'script-detect',
   },
 };
 

@@ -27,6 +27,7 @@ import {
   applyScriptDefinitionChangesRequested,
   createScriptDefinitionRequested,
   detectScriptDefinitionsRequested,
+  removeScriptDefinitionsRequested,
   removeScriptDefinitionRequested,
   refreshScripts,
   restoreScriptDefinitionsRequested,
@@ -362,6 +363,61 @@ describe('scriptsOperationSaga definition ownership', () => {
 
     await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledWith(WS, running.id));
     expect(run.state.scripts.byWorkspaceId[WS].scripts[running.id]).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it('reports individual bulk-removal failures while preserving successful removals', async () => {
+    const second = { ...definition, id: 'script-2', name: 'Second' };
+    transport.get.mockResolvedValueOnce(definition).mockResolvedValueOnce(second);
+    transport.remove
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'second failed' });
+    const run = start();
+    const request = removeScriptDefinitionsRequested(
+      WS,
+      [definition, second],
+      'Unable to remove script',
+    );
+    run.channel.put(request);
+
+    await expect(request.promise).resolves.toEqual({
+      removed: [definition.id],
+      failed: [{ scriptId: second.id, error: 'second failed' }],
+    });
+    expect(transport.remove).toHaveBeenNthCalledWith(1, WS, definition.id);
+    expect(transport.remove).toHaveBeenNthCalledWith(2, WS, second.id);
+    await stop(run.task);
+  });
+
+  it('cancels a bulk-removal consumer after its in-flight write settles', async () => {
+    const second = { ...definition, id: 'script-2', name: 'Second' };
+    let resolveRemoval!: (value: { success: true }) => void;
+    transport.get.mockResolvedValueOnce(definition);
+    transport.remove.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }),
+    );
+    const run = start();
+    const consumer = {
+      consumerId: 'consumer-1',
+      requestId: 'request-1',
+      resourceId: 'bulk-remove',
+    };
+    const request = removeScriptDefinitionsRequested(
+      WS,
+      [definition, second],
+      'Unable to remove script',
+      consumer,
+    );
+    run.channel.put(request);
+    await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledOnce());
+    run.dispatch(scriptWorkflowReleased(WS, consumer.consumerId));
+    resolveRemoval({ success: true });
+
+    await expect(request.promise).rejects.toThrow('cancelled');
+    expect(transport.get).toHaveBeenCalledOnce();
+    expect(transport.remove).toHaveBeenCalledOnce();
     await stop(run.task);
   });
 
