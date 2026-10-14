@@ -64,7 +64,7 @@ export const test = providerTest.extend({
 });
 export { expect, capturePicker };
 
-export const readout = (host, id) => host.getByTestId(`model-picker-${id}`);
+const readout = (host, id) => host.getByTestId(`model-picker-${id}`);
 export const control = (host, id) => host.getByTestId(`model-picker-${id}`);
 export const trigger = (host) =>
   host.getByTestId('model-picker-live-host').getByRole('button').first();

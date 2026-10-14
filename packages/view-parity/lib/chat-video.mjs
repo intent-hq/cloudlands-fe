@@ -183,7 +183,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson };
+export { expect };
 
 const fixtureRecords = [
   {
@@ -270,7 +270,7 @@ export function videoFile(index = 0, name = fixtureRecords[index].name + '.webm'
   if (digest(buffer) !== record.videoSha256) throw new Error('Video fixture changed');
   return { name, mimeType: 'video/webm', buffer };
 }
-export const videoContract = (index = 0) => fixtureRecords[index];
+const videoContract = (index = 0) => fixtureRecords[index];
 export const dataUrl = (file) => `data:${file.mimeType};base64,${file.buffer.toString('base64')}`;
 export const button = (host, name) => host.getByRole('button', { name, exact: true });
 export const field = (host, name) => host.getByLabel(name, { exact: true });
