@@ -139,7 +139,7 @@
                       ><Tooltip.Trigger
                         >{#snippet child({ props: homeTooltipProps })}<span
                             {...homeTooltipProps}
-                            class="flex min-w-0 max-w-full items-center gap-1.5"
+                            class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
                           >
                             {#if workspace.repositoryOwner}
                               <GitHubAvatar

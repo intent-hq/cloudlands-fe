@@ -76,7 +76,7 @@
 .home-row-repository {
   flex: 0 0 auto;
   min-width: 0;
-  max-width: 32%;
+  max-width: min(32%, 16rem);
   margin-left: auto;
   text-align: right;
 }

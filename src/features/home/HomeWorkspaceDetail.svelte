@@ -123,7 +123,7 @@
           ><Tooltip.Trigger
             >{#snippet child({ props: homeTooltipProps })}<div
                 {...homeTooltipProps}
-                class="mb-1 flex min-w-0 items-center gap-1.5 type-caption text-muted-foreground"
+                class="mb-1 flex min-w-0 max-w-[min(100%,16rem)] items-center gap-1.5 type-caption text-muted-foreground"
                 data-home-detail-repository
                 aria-label={repositoryLabel}
               >
