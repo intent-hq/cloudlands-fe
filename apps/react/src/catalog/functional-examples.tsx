@@ -58,6 +58,7 @@ import { HudPanelExamples } from './hud-panel-examples';
 import { HudAgentLineExamples } from './hud-agent-line-examples';
 import { HudStateBarsExamples } from './hud-state-bars-examples';
 import { ContentSkeletonExamples } from './content-skeleton-examples';
+import { HomeViewOptionsExamples } from './home-view-options-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -561,6 +562,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'badge' && <LineChangeIndicatorExamples />}
       {slug === 'badge' && <WorkspacePhaseExamples />}
       {slug === 'skeleton' && <ContentSkeletonExamples />}
+      {slug === 'popovers' && <HomeViewOptionsExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
@@ -619,6 +621,7 @@ export function hasFunctionalExample(slug: string) {
     ...nativeExampleSlugs,
     ...workspacePresentationSlugs,
     ...resourceIconSlugs,
+    'popovers',
     'settings-textarea',
     'modal-heading-spacing',
     'modals',
