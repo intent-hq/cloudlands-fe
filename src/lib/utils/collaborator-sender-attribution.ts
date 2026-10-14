@@ -10,7 +10,7 @@
 import type { AgentMessage, MessageAuthor, MessageRole } from '$shared/types/agent-message';
 import { stripLiteralHeader } from './agent-message-attribution';
 import { isUserAuthoredMetadata } from './message-authorship';
-import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
+import { isCollaborationIdentity } from '../../features/collaboration-auth/identity';
 
 export interface CollaboratorSenderAttribution {
   /** The row's `author` projection the preamble was rebuilt from. */

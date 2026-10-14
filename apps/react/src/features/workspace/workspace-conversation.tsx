@@ -1,4 +1,5 @@
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
+import { WorkspaceConversationMessage } from './workspace-conversation-message';
 import {
   composeTranscript,
   isConversationStartLoaded,
@@ -24,7 +25,6 @@ import {
 import { MarkdownViewer, type MarkdownViewerProps } from '@/components/markdown/markdown-viewer';
 import { ThinkingBlock } from '@/features/chat/components/thinking-block';
 import { ResponseGroup } from '@/features/chat/components/response-group';
-import { ConversationTurnGap } from '@/features/chat/components/conversation-turn-gap';
 import { LiveStreamPhaseIndicator } from '@/features/chat/components/live-stream-phase-indicator';
 import { LoadingState, EmptyState, ErrorState } from '@/components/patterns/screen';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -416,21 +416,13 @@ export function WorkspaceConversation({
                       ]
                     : []),
                   ...group.messages.map((message) => (
-                    <article
+                    <WorkspaceConversationMessage
                       key={message.id}
-                      tabIndex={-1}
-                      className="min-w-0 focus-visible:outline focus-visible:outline-ring"
-                      data-message-id={message.id}
-                      data-message-role={message.role}
-                    >
-                      <p className="type-caption mb-2 text-muted-foreground">
-                        {message.role === 'user'
-                          ? m.tiptap_attributionGutter_user_label()
-                          : message.role === 'assistant'
-                            ? m.chat_agentThread_assistant_label()
-                            : message.role}
-                      </p>
-                      {(message.contentBlocks ?? []).map((block, index) => (
+                      message={message}
+                      workspaceId={workspaceId}
+                      navigation={navigation}
+                      onOpenAgent={(id, agent) => open(id, { agent })}
+                      renderBlock={(block, index) => (
                         <ConversationBlock
                           key={block.id ?? index}
                           block={block}
@@ -438,13 +430,8 @@ export function WorkspaceConversation({
                           messageId={message.id}
                           navigation={navigation}
                         />
-                      ))}
-                      <ConversationTurnGap
-                        currentIsEventNotification={message.role === 'system'}
-                        currentHasAssistantMessages={message.role === 'assistant'}
-                        nextIsEventNotification={false}
-                      />
-                    </article>
+                      )}
+                    />
                   )),
                 ])}
               </div>

@@ -15,7 +15,7 @@
  */
 
 import type { MessageAuthor, MessageRole } from '$shared/types/agent-message';
-import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
+import { isCollaborationIdentity } from '../../features/collaboration-auth/identity';
 import { m } from '$shared/paraglide/messages.js';
 
 /**
