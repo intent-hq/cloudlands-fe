@@ -1,4 +1,4 @@
-import { projectLatestCommentAuthor } from '$features/comments/comment-attribution';
+import { projectLatestCommentAuthor } from '../../../features/comments/comment-attribution';
 import type { CommentAttribution } from '$shared/types/comment.types';
 /**
  * Tool Result Parser

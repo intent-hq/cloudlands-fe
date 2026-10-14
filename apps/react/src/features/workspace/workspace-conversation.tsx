@@ -1,4 +1,5 @@
 import { truncatedToolBlockIds } from '$lib/components/chat/block-hydration';
+import { WorkspaceConversationContent } from './workspace-conversation-content';
 import { WorkspaceConversationMessage } from './workspace-conversation-message';
 import {
   composeTranscript,
@@ -422,13 +423,21 @@ export function WorkspaceConversation({
                       workspaceId={workspaceId}
                       navigation={navigation}
                       onOpenAgent={(id, agent) => open(id, { agent })}
-                      renderBlock={(block, index) => (
-                        <ConversationBlock
-                          key={block.id ?? index}
-                          block={block}
+                      renderContent={(blocks) => (
+                        <WorkspaceConversationContent
+                          blocks={blocks}
                           agentId={agentId}
                           messageId={message.id}
-                          navigation={navigation}
+                          isStreaming={message.isStreaming === true}
+                          renderBlock={(block, index) => (
+                            <ConversationBlock
+                              key={block.id ?? index}
+                              block={block}
+                              agentId={agentId}
+                              messageId={message.id}
+                              navigation={navigation}
+                            />
+                          )}
                         />
                       )}
                     />

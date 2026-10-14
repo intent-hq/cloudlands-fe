@@ -27,13 +27,13 @@ export function WorkspaceConversationMessage({
   workspaceId,
   navigation,
   onOpenAgent,
-  renderBlock,
+  renderContent,
 }: {
   message: AgentMessage;
   workspaceId: string;
   navigation: Navigation;
   onOpenAgent: (workspaceId: string, agentId: string) => void;
-  renderBlock: (block: ContentBlock, index: number) => ReactNode;
+  renderContent: (blocks: ContentBlock[]) => ReactNode;
 }) {
   const eventWake = isEventWakeMessage(message);
   const bodyId = useId();
@@ -86,9 +86,11 @@ export function WorkspaceConversationMessage({
                 content={getPresentedUserMessageText(message)}
                 renderRichFencesAsCode
               />
-              {degradeLegacyFileBlocks(message.contentBlocks)
-                .filter((block) => block.type !== 'text')
-                .map(renderBlock)}
+              {renderContent(
+                degradeLegacyFileBlocks(message.contentBlocks).filter(
+                  (block) => block.type !== 'text',
+                ),
+              )}
             </div>
           )}
         </>
@@ -133,7 +135,7 @@ export function WorkspaceConversationMessage({
                 ? m.chat_agentThread_assistant_label()
                 : message.role}
           </p>
-          {(message.contentBlocks ?? []).map(renderBlock)}
+          {renderContent(message.contentBlocks ?? [])}
         </>
       )}
       <ConversationTurnGap

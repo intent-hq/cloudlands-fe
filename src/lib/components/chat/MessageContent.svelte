@@ -11,9 +11,9 @@
     findToolResult,
     getStandaloneToolResultPresentation,
     getToolResultPayload,
-    getToolResultText,
     isStandaloneToolResult,
   } from './tool-result-pairing';
+  import { dedupeToolUseBlocks, getToolCallState } from './tool-call-presentation';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
@@ -176,26 +176,7 @@
       return true;
     });
 
-    // Deduplicate tool_use blocks: if multiple blocks share the same ID,
-    // keep only the last occurrence (which has the real input parameters).
-    const toolUseLastIndex = new Map<string, number>();
-    for (let i = 0; i < filtered.length; i++) {
-      const block = filtered[i];
-      if (block.type === 'tool_use' && block.id) {
-        toolUseLastIndex.set(block.id, i);
-      }
-    }
-
-    // Only filter if there are actual duplicates
-    if (toolUseLastIndex.size === 0) return filtered;
-
-    return filtered.filter((block, index) => {
-      if (block.type === 'tool_use' && block.id) {
-        // Keep only the last occurrence of each tool_use ID
-        return toolUseLastIndex.get(block.id) === index;
-      }
-      return true;
-    });
+    return dedupeToolUseBlocks(filtered);
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
@@ -220,24 +201,7 @@
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
         const result = findToolResult(toolResultsMap, toolBlock);
-        if (result) {
-          // Check both snake_case and camelCase for error flag
-          const isError = result.is_error || result.isError;
-          // Also detect errors from the result payload text (§7.1 `output`,
-          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
-          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
-          const contentText = getToolResultText(result);
-          const hasErrorInContent =
-            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
-            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
-          states.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
-        } else if (!isStreaming) {
-          // Not streaming and no result - mark as completed
-          states.set(toolBlock.id, 'completed');
-        } else {
-          // Still streaming
-          states.set(toolBlock.id, 'running');
-        }
+        states.set(toolBlock.id, getToolCallState(result, isStreaming));
       }
     }
     return states;

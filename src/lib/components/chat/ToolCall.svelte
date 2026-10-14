@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shouldRenderToolCall } from './tool-call-presentation';
   import type { ContentBlock, ToolUseBlock } from '$shared/types';
   import Fa from 'svelte-fa';
   import { faEye, faHand } from '$lib/icons/phosphor-icons';
@@ -181,29 +182,9 @@
     return kind === 'eye' ? faEye : faHand;
   });
 
-  // Check if tool event is truly empty: completed successfully with no meaningful
-  // content (whitespace-only, empty array/object, null/undefined) and no input params
-  const isEmptyEvent = $derived.by(() => {
-    if (toolState === 'error' || toolState === 'running') return false;
-    if (toolDisplay.hidden) return false; // Already handled by hidden flag
-    if (displayModel.isOkOnlyWorkspaceResult) return false; // ok-only mutations are intentionally content-free
-
-    // Check if result is empty
-    const resultIsEmpty =
-      result === null ||
-      result === undefined ||
-      (typeof result === 'string' && result.trim() === '') ||
-      (Array.isArray(result) && result.length === 0) ||
-      (typeof result === 'object' && !Array.isArray(result) && Object.keys(result).length === 0);
-
-    // Check if input has any non-internal params
-    const inputIsEmpty = !Object.keys(toolUse.input || {}).some((key) => !key.startsWith('_'));
-
-    return resultIsEmpty && inputIsEmpty && !displayModel.sentence;
-  });
-
-  // Should render: not hidden, not empty
-  const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
+  const shouldRender = $derived(
+    shouldRenderToolCall(toolDisplay, displayModel, toolUse.input || {}, result, toolState),
+  );
 
   // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
   let expanded = $state(saved?.expanded ?? false);

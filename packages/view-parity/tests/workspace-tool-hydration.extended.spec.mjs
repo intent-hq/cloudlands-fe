@@ -62,6 +62,11 @@ test('real truncated tool output hydrates only on expansion and retires with its
     );
     await page.goto(`${url}&message=${encodeURIComponent(message.id)}`);
     await expect(conversation).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
+    const reasoning = conversation
+      .locator(`[data-message-id="${message.id}"]`)
+      .getByRole('button', { name: 'Reasoning', exact: true });
+    await reasoning.click();
+    await expect(reasoning).toHaveAttribute('aria-expanded', 'true');
     const row = conversation.locator(`[data-tool-block-id="${block.id}"]`);
     const trigger = row.getByRole('button').first();
     await expect(trigger).toBeVisible();
