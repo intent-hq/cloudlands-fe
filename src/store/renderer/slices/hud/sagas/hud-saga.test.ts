@@ -1,10 +1,10 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport: the WSS seam is replaced by the scripted MockBackendTransport
 // so no request reaches a real daemon. The REAL configured store is exercised:
 // PROTOCOL-shaped events.event notifications drive the hud slice end to end.
 vi.mock('$lib/client/live/backend-transport', async () => {
-  const mod = await import('../../test/mocks/backend-transport.mock');
+  const mod = await import('../../../../../test/mocks/backend-transport.mock');
   return mod.mockBackendTransportModule;
 });
 
@@ -24,7 +24,7 @@ import {
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
-} from '../../test/mocks/backend-transport.mock';
+} from '../../../../../test/mocks/backend-transport.mock';
 import { store as appStore } from '$store/renderer/store';
 import {
   selectHudActive,
@@ -42,9 +42,10 @@ import {
   HUD_RATE_HISTORY_POLL_MS,
   HUD_REPLACE_GROUP,
   HUD_SUBSCRIBE_EVENT_TYPES,
-  startHudSubscription,
-} from './hud-subscription';
-import { HUD_FEED_EVENT_TYPES } from './hud-feed-mapper';
+  hudSaga,
+} from './hud-saga';
+import { HUD_FEED_EVENT_TYPES } from '$features/hud/hud-feed-mapper';
+import { hudActivated, hudDeactivated } from '../hud-slice';
 import {
   connectionStatusChanged,
   heartbeatFailed,
@@ -62,6 +63,12 @@ import { WorkspaceStatus } from '$shared/types';
 const WS_ID = '11111111-1111-4111-8111-111111111111';
 const SUB_ID = 'ws-sub-7';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Drive the root-registered saga through the same actions as the HUD route. */
+function startHudSubscription(): () => void {
+  appStore.dispatch(hudActivated());
+  return () => appStore.dispatch(hudDeactivated());
+}
 
 /** Minimal active workspace entity for the agent-hydration pass. */
 function makeHudWorkspace(id: string): Workspace {
@@ -144,8 +151,13 @@ function scriptHappyBackend(backend: MockBackendHandle) {
 describe('HUD subscription (mock backend, real store)', () => {
   let backend: MockBackendHandle;
   let stop: (() => void) | undefined;
+  let stopRootSaga: (() => void) | undefined;
 
-  beforeAll(() => appStore.init());
+  beforeAll(() => {
+    appStore.init();
+    stopRootSaga = appStore.runSaga(hudSaga);
+  });
+  afterAll(() => stopRootSaga?.());
   beforeEach(() => {
     backend = installMockBackend();
   });
@@ -554,7 +566,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('fans notable events out to the takeover trigger bus (feed events do not)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: unknown[] = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     try {
@@ -593,7 +605,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('fans a question-bearing agent:stream:end out as a question_asked trigger (§7.1)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: unknown[] = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     try {
@@ -654,7 +666,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('fans agent:attention-requested out as a blocker/discussion takeover, feed-free (§6.5)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: unknown[] = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     try {
@@ -707,7 +719,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('resolves a UUID-only agent event to its store display name (never a raw id)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: Array<{ detail?: string }> = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     const agentId = 'agent-579724c1-fe68-450e-8188-43b7afb964c6';
@@ -749,7 +761,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('holds an unknown agent takeover until its workspace agent hydration lands, then honors the mute (§5.5)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: Array<{ kind: string; detail?: string }> = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     const WS_RACE_ID = '44444444-4444-4444-8444-444444444444';
@@ -844,7 +856,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('point-reads a muted agent OMITTED from the bounded hydration via one coalesced agent.get before gating its takeover (intent#5531)', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: Array<{ kind: string; detail?: string }> = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     const WS_OMIT_ID = '77777777-7777-4777-8777-777777777777';
@@ -953,7 +965,7 @@ describe('HUD subscription (mock backend, real store)', () => {
   });
 
   it('fires the STATUS UPDATE takeover only on statusMessage text changes, never on displayStatus', async () => {
-    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const { onTakeoverTrigger } = await import('$features/hud/takeover/hud-takeover-bus');
     const received: Array<{ kind?: string; detail?: string }> = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
     try {

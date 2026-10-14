@@ -37,6 +37,7 @@ interface Matrix {
   arch: string;
   label: string;
   runner: string;
+  proof_runner?: string;
   intentd_target: string;
 }
 interface Job {
@@ -226,8 +227,8 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         : configured
     ).include;
     expect(matrix.map((m) => [m.arch, m.runner, m.intentd_target])).toEqual([
-      ['arm64', 'macos-15-xlarge', 'aarch64-apple-darwin'],
-      ['x64', 'macos-15-large', 'x86_64-apple-darwin'],
+      ['arm64', 'depot-macos-latest', 'aarch64-apple-darwin'],
+      ['x64', 'macos-latest-large', 'x86_64-apple-darwin'],
     ]);
     for (const row of matrix) {
       const dir = temp();
@@ -571,7 +572,7 @@ describe('manual Mac architecture selection', () => {
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
       expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe(
-        row.arch === 'arm64' ? 'macos-15-xlarge' : 'macos-15-large',
+        row.arch === 'arm64' ? 'depot-macos-latest' : 'macos-latest-large',
       );
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
@@ -609,7 +610,15 @@ describe('manual Mac architecture selection', () => {
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
-      expect(render(smoke['runs-on']!, context)).toBe(row.runner);
+      const proofRunner = row.arch === 'arm64' ? 'macos-15-xlarge' : 'macos-15-large';
+      expect(row.proof_runner).toBe(proofRunner);
+      expect(render(smoke['runs-on']!, context)).toBe(proofRunner);
+      expect(
+        render(jobs['verify-isolated-macos']['runs-on']!, {
+          'matrix.proof_runner': row.proof_runner!,
+        }),
+      ).toBe(proofRunner);
+      expect(jobs['replay-isolated-macos']['runs-on']).toBe('macos-15-xlarge');
       expect(render(String(download.with?.name), context)).toBe(
         render(String(upload.with?.name), { 'matrix.arch': row.arch }),
       );

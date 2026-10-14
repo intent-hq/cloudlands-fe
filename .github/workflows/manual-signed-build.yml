@@ -101,7 +101,7 @@ jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ !inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test) }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
@@ -113,24 +113,25 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","proof_runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","proof_runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
           case "${MACOS_ARCH:-both}" in
             both) TARGETS="[$ARM,$INTEL]" ;;
             arm64) TARGETS="[$ARM]" ;;
             x64) TARGETS="[$INTEL]" ;;
             *) echo "::error::macos_arch must be both, arm64, or x64"; exit 1 ;;
           esac
-          # Smoke one built artifact on its native CPU; prefer ARM when both are built.
+          # Package inspection requires GitHub-hosted disposable Macs; build runners
+          # retain the canonical Depot migration. Prefer ARM when both are built.
           {
             echo "matrix={\"include\":$TARGETS}"
-            echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
+            echo "smoke_runner=$(jq -r '.[0].proof_runner' <<< "$TARGETS")"
             echo "smoke_artifact=manual-macos-dmg-$(jq -r '.[0].arch' <<< "$TARGETS")"
           } >> "$GITHUB_OUTPUT"
 
   smoke-inputs:
     if: ${{ !inputs.isolated_replay && inputs.smoke_macos }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require a signed macOS artifact
@@ -238,14 +239,14 @@ jobs:
           version: 10.30.3
           # Per-runner-instance dest: on the old self-hosted pool, concurrent
           # slots shared $HOME and raced on the default ~/setup-pnpm
-          # (monorepo#1239). Hosted macos-15-xlarge runners are one VM per
+          # (monorepo#1239). Hosted macOS runners are one VM per
           # job so the race can't recur, but the dest is harmless to keep.
           dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store (same as the
-        # intent-pr.yml jobs). On the hosted macos-15-xlarge runner each job
+        # intent-pr.yml jobs). On the hosted macOS runner each job
         # is a fresh VM with no persistent store, so this is a candidate for
         # cache: 'pnpm' — left as-is here since only the runner target was
         # migrated by this change.
@@ -314,21 +315,23 @@ jobs:
           rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never be
-      # restored here; scoped to the intentd-src workspace (the FE checkout has
-      # no Cargo workspace). cache-on-failure keeps the compiled deps when a
-      # later step (packaging/notarization) fails after a completed cold
-      # ~15-min cargo build, so the next dispatch doesn't pay it again.
-      - name: Cache intentd cargo build
+      # Share compiler outputs through Depot on both native macOS architectures.
+      - name: Configure Depot managed compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -360,7 +363,7 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           # Idempotency: drop any stale keychain left by a crashed run
           # before creating a fresh one. No-op on the ephemeral
-          # macos-15-xlarge runner (each job gets a clean VM) but harmless
+          # macOS runner (each job gets a clean VM) but harmless
           # to keep.
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -419,8 +422,8 @@ jobs:
 
       # dist:mac stages tailcat for the matrix CPU, which
       # builds the tailcat tunnel client from source (tailcat publishes no
-      # prebuilt macOS assets) and needs a Go toolchain — the hosted
-      # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
+      # prebuilt macOS assets) and needs the pinned Go toolchain below.
+      # Mac leg only: the Linux/Windows
       # legs stage checksum-verified prebuilt assets. Version must satisfy
       # tailcat v0.4.0's go.mod (go 1.27.0); mirrors intentd's macOS source
       # build of the same pinned tag.
@@ -461,8 +464,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
           # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
-          # 30764745052 — don't drop below ~10240). macos-15-xlarge provides
-          # 14 GB RAM, comfortably covering the ~8.2 GB committed heap peak.
+          # 30764745052 — don't drop below ~10240). The selected hosted Macs
+          # have enough RAM for this heap cap.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -568,7 +571,7 @@ jobs:
       # keychain search list, and shred the decoded certificate so no
       # signing material outlives the job (runs on failure and cancellation
       # too). Ephemeral-safe by design (#553): a no-op cleanup here is
-      # harmless on this hosted macos-15-xlarge runner.
+      # harmless on this hosted macOS runner.
       - name: Clean up signing keychain
         if: always()
         run: |
@@ -597,7 +600,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: gh-windows-16x
+    runs-on: depot-windows-2022-16
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -716,17 +719,22 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Cache intentd cargo build
+      - name: Configure Depot managed compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: x86_64-pc-windows-msvc
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
       # at target/release/intentd.exe. rustc locates the MSVC linker itself,
       # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -900,7 +908,7 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: gh-linux-8x
+            runner: depot-ubuntu-24.04-8
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -921,7 +929,7 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: gh-linux-arm64-8x
+            runner: depot-ubuntu-24.04-arm-8
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -1018,14 +1026,17 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Cache intentd cargo build
+      - name: Configure Depot managed compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: python3 scripts/setup-depot-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
       # Explicit --target (unlike the native macOS/Windows builds): the musl
       # triple differs from the host's glibc triple, so the binary lands at
       # target/<triple>/release/intentd. CC_<target> and the per-target
@@ -1193,7 +1204,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # The inspection admission requires a disposable GitHub-hosted Mac.
+    runs-on: ${{ matrix.proof_runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

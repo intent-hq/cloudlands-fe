@@ -22,7 +22,7 @@
     portal = true,
     portalProps,
     staticPosition,
-    alignIconColumn = false,
+    alignIconColumn = true,
     sideOffset = 4,
     collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,

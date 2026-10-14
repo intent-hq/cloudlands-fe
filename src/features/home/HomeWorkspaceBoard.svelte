@@ -76,6 +76,9 @@
         </h3>
         <div class="flex flex-col gap-2 pb-2">
           {#each items as workspace (workspace.id)}
+            {@const displayTitle = workspace.title.trim()
+              ? workspace.title
+              : m.workspace_links_untitled_label()}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
@@ -93,7 +96,7 @@
                 if (!event.defaultPrevented)
                   openHomeWorkspaceFromEvent(event, workspace.id, onopen);
               }}
-              aria-label={workspace.title}
+              aria-label={displayTitle}
             >
               <span class="flex items-start justify-between gap-3">
                 <WorkspaceMicroKeySlot workspaceId={workspace.id} />
@@ -104,9 +107,9 @@
                           {...homeTooltipProps}
                           class="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] font-medium"
                         >
-                          {workspace.title}
+                          {displayTitle}
                         </span>{/snippet}</Tooltip.Trigger
-                    ><Tooltip.Content>{workspace.title}</Tooltip.Content></Tooltip.Root
+                    ><Tooltip.Content>{displayTitle}</Tooltip.Content></Tooltip.Root
                   ></Tooltip.Provider
                 >
                 <HomeWorkspaceStatus {workspace} class="mt-0.5" />

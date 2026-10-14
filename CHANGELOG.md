@@ -4,6 +4,64 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.4...v2.216.5) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* avoid closing destroyed workspace action menus ([#3390](https://github.com/intent-hq/cloudlands-fe/issues/3390)) ([107d899](https://github.com/intent-hq/cloudlands-fe/commit/107d899c6de1136531d32bafb622441a97fe781a))
+* clear completed chat activity without hiding newer turns ([#3391](https://github.com/intent-hq/cloudlands-fe/issues/3391)) ([8a7b61b](https://github.com/intent-hq/cloudlands-fe/commit/8a7b61b09c2aa7993b1f32e6c4b15545a2750702))
+* left-align workspace description ([#3395](https://github.com/intent-hq/cloudlands-fe/issues/3395)) ([12253e5](https://github.com/intent-hq/cloudlands-fe/commit/12253e5a8e04acf9239dd6395e33dcb776f642f1))
+
+## [2.216.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.3...v2.216.4) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* remove Figma MCP presets from settings ([#3394](https://github.com/intent-hq/cloudlands-fe/issues/3394)) ([b7b6650](https://github.com/intent-hq/cloudlands-fe/commit/b7b665083b0b0417615f5a71d4dc291684986811))
+
+## [2.216.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.2...v2.216.3) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* show untitled workspace labels throughout Home ([#3371](https://github.com/intent-hq/cloudlands-fe/issues/3371)) ([7304217](https://github.com/intent-hq/cloudlands-fe/commit/730421751922a750b424987eaf059205a05ec7dc))
+
+## [2.216.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.1...v2.216.2) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.46 ([#3384](https://github.com/intent-hq/cloudlands-fe/issues/3384)) ([7152870](https://github.com/intent-hq/cloudlands-fe/commit/7152870b047289b5d6150d8df98eb806de85f56d))
+* keep Home PR counts stable during detail loading ([#3380](https://github.com/intent-hq/cloudlands-fe/issues/3380)) ([66c3497](https://github.com/intent-hq/cloudlands-fe/commit/66c34974284b549384e8d83f4d901b8321369dc8))
+* render Mermaid diagrams in Markdown file previews ([#3372](https://github.com/intent-hq/cloudlands-fe/issues/3372)) ([d88949b](https://github.com/intent-hq/cloudlands-fe/commit/d88949b8f9ea586c79e6f69a96ee7d5152b445c0))
+
+## [2.216.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.0...v2.216.1) (2026-10-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.45 ([#3377](https://github.com/intent-hq/cloudlands-fe/issues/3377)) ([fbb2800](https://github.com/intent-hq/cloudlands-fe/commit/fbb280051b6e5239987663df744b77eede3274fc))
+
+## [2.216.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.7...v2.216.0) (2026-10-13)
+
+
+### 🚀 Features
+
+* **scripts:** load active summaries and selected details ([#3366](https://github.com/intent-hq/cloudlands-fe/issues/3366)) ([25ad290](https://github.com/intent-hq/cloudlands-fe/commit/25ad290f4c2ff0b778ce7f38725c3ca8ac8c0009))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.44 ([#3375](https://github.com/intent-hq/cloudlands-fe/issues/3375)) ([87e7d30](https://github.com/intent-hq/cloudlands-fe/commit/87e7d30281bf80b02675c0f28e06c898695d2303))
+* fit Kanban columns and preserve workspace menu focus ([#3297](https://github.com/intent-hq/cloudlands-fe/issues/3297)) ([84d75f3](https://github.com/intent-hq/cloudlands-fe/commit/84d75f315cdc94ec790736315fecb2054d916687))
+* standardize dropdown icon size and alignment ([#3370](https://github.com/intent-hq/cloudlands-fe/issues/3370)) ([d4e69b2](https://github.com/intent-hq/cloudlands-fe/commit/d4e69b2042f6100bd068fe78df672996228f293a))
+
+
+### ⚡ Performance
+
+* consume pushed workspace state without redundant RPC reads ([#3365](https://github.com/intent-hq/cloudlands-fe/issues/3365)) ([2cda0cf](https://github.com/intent-hq/cloudlands-fe/commit/2cda0cfeff7a4d23953f2288777551926710cd51))
+
 ## [2.215.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.215.6...v2.215.7) (2026-10-12)
 
 

@@ -33,7 +33,7 @@ jobs:
   # duplicate-release guard run once here; every build job depends on it and
   # the publish job consumes its tag/version outputs.
   resolve:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -114,8 +114,8 @@ jobs:
       - name: Select Mac release targets
         id: macos
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do
@@ -198,14 +198,14 @@ jobs:
           version: 10.30.3
           # Per-runner-instance dest: on the old self-hosted pool, concurrent
           # slots shared $HOME and raced on the default ~/setup-pnpm
-          # (monorepo#1239). Hosted macos-15-xlarge runners are one VM per
+          # (monorepo#1239). Hosted macOS runners are one VM per
           # job so the race can't recur, but the dest is harmless to keep.
           dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store (same as the
-        # intent-pr.yml jobs). On the hosted macos-15-xlarge runner each job
+        # intent-pr.yml jobs). On the hosted macOS runner each job
         # is a fresh VM with no persistent store, so this is a candidate for
         # cache: 'pnpm' — left as-is here since only the runner target was
         # migrated by this change.
@@ -247,7 +247,7 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           # Idempotency: drop any stale keychain left by a crashed run
           # before creating a fresh one. No-op on the ephemeral
-          # macos-15-xlarge runner (each job gets a clean VM) but harmless
+          # macOS runner (each job gets a clean VM) but harmless
           # to keep.
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -303,8 +303,8 @@ jobs:
 
       # dist:mac stages tailcat for the matrix CPU, which
       # builds the tailcat tunnel client from source (tailcat publishes no
-      # prebuilt macOS assets) and needs a Go toolchain — the hosted
-      # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
+      # prebuilt macOS assets) and needs the pinned Go toolchain below.
+      # Mac leg only: the Linux/Windows
       # legs stage checksum-verified prebuilt assets. Version must satisfy
       # tailcat v0.4.0's go.mod (go 1.27.0); mirrors intentd's macOS source
       # build of the same pinned tag.
@@ -320,8 +320,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
           # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
-          # 30764745052 — don't drop below ~10240). macos-15-xlarge provides
-          # 14 GB RAM, comfortably covering the ~8.2 GB committed heap peak.
+          # 30764745052 — don't drop below ~10240). The selected hosted Macs
+          # have enough RAM for this heap cap.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -386,7 +386,7 @@ jobs:
       # keychain search list, and shred the decoded certificate so no
       # signing material outlives the job (runs on failure and cancellation
       # too). Ephemeral-safe by design (#553): a no-op cleanup here is
-      # harmless on this hosted macos-15-xlarge runner.
+      # harmless on this hosted macOS runner.
       - name: Clean up signing keychain
         if: always()
         run: |
@@ -416,7 +416,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: gh-windows-16x
+    runs-on: depot-windows-2022-16
     # 120 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -566,7 +566,7 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: gh-linux-8x
+            runner: depot-ubuntu-24.04-8
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -587,7 +587,7 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: gh-linux-arm64-8x
+            runner: depot-ubuntu-24.04-arm-8
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -710,7 +710,7 @@ jobs:
   # platform fails the whole release and nothing is partially published.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 30
 
     steps:

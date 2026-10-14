@@ -1,9 +1,9 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport: same seam replacement as hud-subscription.test.ts so store
 // init never dials a real daemon. The REAL configured store is exercised.
 vi.mock('$lib/client/live/backend-transport', async () => {
-  const mod = await import('../../test/mocks/backend-transport.mock');
+  const mod = await import('../../../../../test/mocks/backend-transport.mock');
   return mod.mockBackendTransportModule;
 });
 
@@ -26,11 +26,7 @@ import {
 import { EMPTY_HUD_GRID_FILTER } from '$store/renderer/slices/hud/hud-types';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connections';
-import {
-  HUD_GRID_FILTER_STORAGE_KEY,
-  sanitizePersistedHudGridFilter,
-  startHudGridFilterPersistence,
-} from './hud-grid-filter-persistence';
+import { HUD_GRID_FILTER_STORAGE_KEY, hudSaga, sanitizePersistedHudGridFilter } from './hud-saga';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -64,10 +60,21 @@ function receiveConnections(backendId: string): void {
 const remoteKey = (id: string) => `backend:${id}:${HUD_GRID_FILTER_STORAGE_KEY}`;
 const gridFilter = () => appStore.state.hud.gridFilter;
 
+/** Drive persistence through the root HUD saga's activation lifetime. */
+function startHudGridFilterPersistence(): () => void {
+  appStore.dispatch(hudActivated());
+  return () => appStore.dispatch(hudDeactivated());
+}
+
 describe('hud-grid-filter-persistence (real store)', () => {
   let stop: (() => void) | undefined;
+  let stopRootSaga: (() => void) | undefined;
 
-  beforeAll(() => appStore.init());
+  beforeAll(() => {
+    appStore.init();
+    stopRootSaga = appStore.runSaga(hudSaga);
+  });
+  afterAll(() => stopRootSaga?.());
   beforeEach(() => {
     storage.clear();
     vi.mocked(window.localStorage.getItem).mockImplementation(
@@ -76,12 +83,10 @@ describe('hud-grid-filter-persistence (real store)', () => {
     vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
       storage.set(key, String(value));
     });
-    appStore.dispatch(hudActivated());
   });
   afterEach(() => {
     stop?.();
     stop = undefined;
-    appStore.dispatch(hudDeactivated());
   });
 
   // NOTE: must run FIRST in this file — `hasReceivedList` latches true on the
@@ -206,7 +211,6 @@ describe('hud-grid-filter-persistence (real store)', () => {
 
     stop();
     stop = undefined;
-    appStore.dispatch(hudDeactivated());
     await flush();
     expect(JSON.parse(storage.get(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
       repo: 'kept/repo',

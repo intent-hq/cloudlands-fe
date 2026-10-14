@@ -1,3 +1,4 @@
+import { applyAgentMetadataPatch } from './agent-metadata-patch';
 import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
 import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
@@ -14,6 +15,7 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  AgentSessionUpdate,
   FeOwnedSessionState,
   StoredAgentSession,
   WireAgentSession,
@@ -484,17 +486,28 @@ function replaceSessionMessageById(
 function recordSessionProjection(
   state: AgentSessionState,
   agentId: string,
-  updates: Partial<StoredAgentSession>,
-  metadataKeys = Object.keys(updates.metadata ?? {}),
+  updates: AgentSessionUpdate,
 ): AgentSessionState {
   if (!getSession(state, agentId)) return state;
-  const fieldKeys = Object.keys(updates).filter((key) => key !== 'metadata' && key !== 'messages');
+  const metadataKeys = Object.entries(updates.metadataPatch ?? {})
+    .filter(([, op]) => op !== undefined)
+    .map(([key]) => key);
+  const fieldKeys = Object.keys(updates).filter(
+    (key) => key !== 'metadata' && key !== 'metadataPatch' && key !== 'messages',
+  );
   if (!fieldKeys.length && !metadataKeys.length) return state;
   const prior = state.projectionVersions?.[agentId];
   const fields = { ...prior?.fields };
-  const metadata = { ...prior?.metadata };
+  const metadata = {
+    ...prior?.metadata,
+    ...Object.fromEntries(
+      metadataKeys.map((key) => [
+        key,
+        (prior?.metadata && Object.hasOwn(prior.metadata, key) ? prior.metadata[key] : 0) + 1,
+      ]),
+    ),
+  };
   for (const key of fieldKeys) fields[key] = (fields[key] ?? 0) + 1;
-  for (const key of metadataKeys) metadata[key] = (metadata[key] ?? 0) + 1;
   return {
     ...state,
     projectionVersions: { ...state.projectionVersions, [agentId]: { fields, metadata } },
@@ -1481,8 +1494,8 @@ export const replaceMessageById = createAction<
 export const updateSession = createAction<
   [
     agentId: string,
-    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
-    options?: { reasoningEffortSource?: 'control' | 'encoder'; projectedMetadataKeys?: string[] },
+    updates: AgentSessionUpdate,
+    options?: { reasoningEffortSource?: 'control' | 'encoder'; projectedMetadataKeys?: never },
   ]
 >('agentSessions/updateSession');
 
@@ -1829,12 +1842,18 @@ agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] 
 agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>
   replaceSessionMessageById(state, agentId, oldId, newMessage),
 );
-agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates, options] }) => {
+agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  state = recordSessionProjection(state, agentId, updates, options?.projectedMetadataKeys);
-  const { messages, ...otherUpdates } = updates;
-  let merged: StoredAgentSession = { ...session, ...otherUpdates };
+  state = recordSessionProjection(state, agentId, updates);
+  const { messages, metadataPatch, ...otherUpdates } = updates;
+  let merged: StoredAgentSession = {
+    ...session,
+    ...otherUpdates,
+    metadata: metadataPatch
+      ? applyAgentMetadataPatch(session.metadata, metadataPatch)
+      : session.metadata,
+  };
   let droppedResident = 0;
   if (messages && Array.isArray(messages)) {
     const ordered = normalizeSortHistoryMessages(messages);
@@ -1879,15 +1898,18 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     const existing = getSession(state, agentId);
     if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
       return state;
-    const metadata = existing.metadata ?? {};
-    if (
-      Object.entries(fields).every(
-        ([key, value]) => metadata[key as keyof typeof metadata] === value,
-      )
-    ) {
-      return state;
-    }
-    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
+    const metadataPatch: NonNullable<AgentSessionUpdate['metadataPatch']> = {};
+    if (fields.pendingQuestionsMessageId !== undefined)
+      metadataPatch.pendingQuestionsMessageId = {
+        op: 'set',
+        value: fields.pendingQuestionsMessageId,
+      };
+    if (fields.dismissedQuestionsMessageId !== undefined)
+      metadataPatch.dismissedQuestionsMessageId = {
+        op: 'set',
+        value: fields.dismissedQuestionsMessageId,
+      };
+    return agentSessionReducer(state, updateSession(agentId, { metadataPatch }));
   }
 
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
@@ -1908,8 +1930,8 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const existing = getSession(state, agentId);
   if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
-  const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
-    ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
+  const merged: AgentSessionUpdate = {
+    ...updates,
     ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
   };
   return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);

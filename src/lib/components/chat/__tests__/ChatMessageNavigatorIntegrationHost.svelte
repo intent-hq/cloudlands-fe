@@ -12,6 +12,7 @@
   import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
   import {
     addMessage,
+    updateMessage,
     bulkUpsertSessions,
     prependHistoryMessages,
     replaceMessages,
@@ -226,6 +227,16 @@
     );
   }
 
+  function growStreamingTail() {
+    // Bounded synthetic stream update: grow the existing tail, not a new turn.
+    store.dispatch(setAgentStreaming(agentId, true));
+    store.dispatch(
+      updateMessage(agentId, 'assistant-25', {
+        contentBlocks: [{ type: 'text', text: 'Assistant response 25. '.repeat(18) }],
+      }),
+    );
+  }
+
   const navigationState$ = store.createSelector((state) => ({
     historyIds:
       state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages.map((m) => m.id) ?? [],
@@ -316,6 +327,9 @@
     >Toggle panel</button
   >
   {#if panelMounted}<PanelLayout {workspaceId} layoutId={workspaceId} contained />{/if}
+  <button class="sr-only" data-testid="grow-streaming-tail" onclick={growStreamingTail}
+    >Grow streaming tail</button
+  >
   <button
     type="button"
     class="sr-only"

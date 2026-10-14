@@ -402,7 +402,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'auggie',
-        metadata: { provider: 'auggie' },
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
         reasoningEffort: 'high',
       }),
     );
@@ -424,7 +424,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'auggie',
-        metadata: { provider: 'auggie' },
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
         reasoningEffort: 'high',
       }),
     );
@@ -464,7 +464,7 @@ describe('real composer model mutation ownership', () => {
       fixture.dispatch(
         updateSession('agent-1', {
           provider: 'auggie',
-          metadata: { provider: 'auggie' },
+          metadataPatch: { provider: { op: 'set', value: 'auggie' } },
           reasoningEffort: 'high',
         }),
       );
@@ -500,7 +500,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         reasoningEffort: 'medium',
       }),
     );
@@ -526,7 +526,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         reasoningEffort: 'medium',
       }),
     );
@@ -561,7 +561,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         model: undefined,
         reasoningEffort: null,
       }),

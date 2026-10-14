@@ -1,17 +1,23 @@
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
+import { appClient } from '$lib/client';
+import { createLogger } from '$lib/utils/client-logger';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import { selectActiveTerminalIdForWorkspace } from '../terminals-selectors';
 import {
   closeActiveTerminalRequested,
   createTerminalRequested,
+  killRestoredTerminalRequested,
   removeTerminal,
 } from '../terminals-slice';
 
+const logger = createLogger('TerminalCommandsSaga');
+
 /**
- * Creation stays overlay-owned: the quake overlay listens for this window
- * event (Cmd+T path), calls `terminal.create`, and adds the daemon-keyed tab.
+ * Creation presentation stays overlay-owned: the quake overlay listens for
+ * this window event (Cmd+T path) and dispatches the saga-owned create request;
+ * terminalCreationSaga adds the daemon-keyed tab returned by that request.
  * Terminals are owner-only (multiplayer w3): a collaborator's request is
  * dropped here so the menu / palette paths never reach `terminal.create`.
  */
@@ -41,7 +47,24 @@ function* closeActiveTerminalWorker(
   yield* call(disposeTerminal, terminalId, workspaceId);
 }
 
+function* killRestoredTerminalWorker(
+  action: ReturnType<typeof killRestoredTerminalRequested>,
+): SagaGenerator<void> {
+  const [terminalId, workspaceId] = action.payload;
+  try {
+    const result: Awaited<ReturnType<typeof appClient.terminals.kill>> = yield* call(
+      [appClient.terminals, appClient.terminals.kill],
+      terminalId,
+      workspaceId,
+    );
+    if (!result.success) logger.error('Error killing terminal:', result.error);
+  } catch (error) {
+    logger.error('Error killing terminal:', error);
+  }
+}
+
 export function* terminalCommandsSaga(): SagaGenerator<void> {
   yield* takeEvery(createTerminalRequested, createTerminalWorker);
   yield* takeEvery(closeActiveTerminalRequested, closeActiveTerminalWorker);
+  yield* takeEvery(killRestoredTerminalRequested, killRestoredTerminalWorker);
 }
