@@ -165,8 +165,8 @@ function originalModule(file) {
   );
   return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 }
-export const imageOracle = await originalModule('src/lib/utils/image-actions.ts');
-export const formats = (await originalModule('src/shared/i18n/formatters.ts')).createFormatters(
+const imageOracle = await originalModule('src/lib/utils/image-actions.ts');
+const formats = (await originalModule('src/shared/i18n/formatters.ts')).createFormatters(
   () => 'en',
 );
 
@@ -285,7 +285,7 @@ export const test = base.extend({
             type,
             (event) => {
               const node = event.target;
-              if (!(node instanceof HTMLImageElement)) return;
+              if (!(node instanceof window.HTMLImageElement)) return;
               if (!node.closest('[data-chat-image], [data-media-lightbox-root]')) return;
               window.__chatImageNativeObservation({
                 type,
@@ -367,7 +367,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson };
+export { expect };
 
 const fixtureRecords = [
   {
@@ -420,7 +420,7 @@ const fixtureRecords = [
   },
 ];
 
-export const fileRecord = (index = 0) => fixtureRecords[index];
+const fileRecord = (index = 0) => fixtureRecords[index];
 export function imageFile(index = 0, name = fileRecord(index).name) {
   const record = fileRecord(index);
   const buffer = Buffer.from(record.base64, 'base64');
@@ -460,9 +460,9 @@ export async function openImage(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     })),
   ).toEqual({ preload: 'undefined', daemonUrl: null, width: 420, height: 900, reduced: true });
   await page.evaluate(() => document.fonts.ready);
@@ -561,7 +561,12 @@ export async function captureImage(page, target, name, info) {
         return { x, y, width, height };
       };
       return {
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         root: rect(root),
         nodes: [...root.querySelectorAll('button,img,svg,[role],[data-chat-image]')].map(
           (node) => ({
@@ -638,7 +643,7 @@ export async function contained(target, info, name) {
     };
     return {
       frame: rect(root),
-      viewport: innerWidth,
+      viewport: window.innerWidth,
       clientWidth: root.clientWidth,
       scrollWidth: root.scrollWidth,
       buttons: [...root.querySelectorAll('button')].map((button) => {
@@ -680,7 +685,7 @@ export async function waitClipboardImage(page, index) {
         if (!item) return null;
         const blob = await item.getType('image/png');
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''));
+        return window.btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''));
       });
       return encoded ? digest(PNG.sync.read(Buffer.from(encoded, 'base64')).data) : null;
     })
@@ -721,7 +726,7 @@ export async function pasteImage(host, index, count, info) {
 export async function expectArtwork(svg, definition, info) {
   const expected = artwork[definition];
   const observed = await svg.evaluate((node, source) => {
-    const tree = new DOMParser().parseFromString(source, 'image/svg+xml');
+    const tree = new window.DOMParser().parseFromString(source, 'image/svg+xml');
     const shapes = (root) =>
       [...root.querySelectorAll('path,circle,ellipse,line,polyline,polygon,rect')]
         .filter((shape) => !(shape.localName === 'rect' && shape.getAttribute('fill') === 'none'))

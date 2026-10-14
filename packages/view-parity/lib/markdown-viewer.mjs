@@ -12,7 +12,7 @@ import { settledCustom, settledMermaid } from './diagrams.mjs';
 
 // Ignored preparation: publication and each native run require separate coordinator release.
 // No parser invocation supplies expected output. Fixed inputs and semantics come from original003.
-export const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
+const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const blob = (file, sha = original) =>
   execFileSync('git', ['show', `${sha}:${file}`], { cwd: repoRoot });
@@ -203,9 +203,9 @@ export async function openViewer(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemon: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     })),
   ).toEqual({ preload: 'undefined', daemon: null, width: 420, height: 900, reduced: true });
   return host;
@@ -222,7 +222,12 @@ export async function capture(page, target, name, info) {
       };
       return {
         frame: box(root),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         nodes: [...root.querySelectorAll('button,a,img,video,math,pre,table,[role]')].map(
           (node) => ({
             tag: node.localName,
@@ -417,7 +422,7 @@ export const imageActions = (host) =>
     name: label('ui_imageActionsMenu_trigger_ariaLabel'),
     exact: true,
   });
-export const customDiagram = JSON.stringify({
+const customDiagram = JSON.stringify({
   model: {
     nodes: [
       {

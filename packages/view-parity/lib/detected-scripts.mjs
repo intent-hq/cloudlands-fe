@@ -82,7 +82,7 @@ const fonts = [
   'apps/react/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2',
 ];
 const english = JSON.parse(blob('messages/en.json'));
-export function label(key, args = {}) {
+function label(key, args = {}) {
   const value = english[key];
   if (typeof value !== 'string') throw new Error(`Missing original English message ${key}`);
   return value.replace(/\{(\w+)\}/g, (_, key) => {
@@ -299,9 +299,9 @@ export async function openDetected(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemon: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     })),
   ).toEqual({ preload: 'undefined', daemon: null, width: 420, height: 900, reduced: true });
   await page.evaluate(() => document.fonts.ready);
@@ -319,14 +319,13 @@ export async function openDetected(page) {
   };
 }
 export const control = (item, name) => item.host.getByRole('button', { name, exact: true });
-export const draft = (item) =>
-  item.host.getByRole('textbox', { name: 'Scripts JSON draft', exact: true });
+const draft = (item) => item.host.getByRole('textbox', { name: 'Scripts JSON draft', exact: true });
 export async function apply(item, scripts) {
   await draft(item).fill(JSON.stringify(scripts, null, 2));
   await control(item, 'Apply scripts').click();
   expect((await item.state()).scripts).toEqual(scripts);
 }
-export function parts(row) {
+function parts(row) {
   const heading = row.locator(':scope > div > div').nth(0);
   return {
     name: heading.locator(':scope > span').nth(0),
@@ -367,7 +366,7 @@ export async function expectOriginalIcon(item, info) {
   const svg = item.card.locator('svg');
   await expect(svg).toHaveCount(1);
   const observed = await svg.evaluate((node, sourceSvg) => {
-    const document = new DOMParser().parseFromString(sourceSvg, 'image/svg+xml');
+    const document = new window.DOMParser().parseFromString(sourceSvg, 'image/svg+xml');
     const shapes = (root) =>
       [...root.querySelectorAll('path, circle, ellipse, line, polyline, polygon, rect')]
         .filter((shape) => !(shape.localName === 'rect' && shape.getAttribute('fill') === 'none'))
@@ -429,7 +428,7 @@ export async function geometry(item, name, info, { commandOverflow = false } = {
       };
     });
     return {
-      viewport: { width: innerWidth, height: innerHeight },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
       card: rect(card),
       frame: rect(card.parentElement),
       clientWidth: card.clientWidth,

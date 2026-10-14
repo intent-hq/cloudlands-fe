@@ -254,7 +254,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson };
+export { expect };
 
 export async function openAttachments(page) {
   const host = await openExample(page, 'attachment-preview', 'native-attachments');
@@ -262,10 +262,10 @@ export async function openAttachments(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -425,7 +425,7 @@ export async function expectArtwork(svg, definition, info) {
   const expected = artwork[definition];
   await expect(svg).toHaveCount(1);
   const observed = await svg.evaluate((node, source) => {
-    const tree = new DOMParser().parseFromString(source, 'image/svg+xml');
+    const tree = new window.DOMParser().parseFromString(source, 'image/svg+xml');
     const shapes = (root) =>
       [...root.querySelectorAll('path,circle,ellipse,line,polyline,polygon,rect')]
         .filter((shape) => !(shape.localName === 'rect' && shape.getAttribute('fill') === 'none'))
@@ -467,7 +467,12 @@ export async function captureAttachments(page, target, name, info) {
         return { x, y, width, height };
       };
       return {
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         root: rect(root),
         nodes: [...root.querySelectorAll('button,img,svg,[role],[data-attachment-slot]')].map(
           (node) => ({
@@ -519,7 +524,7 @@ export async function contained(target, info, name) {
     };
     return {
       frame: rect(root),
-      viewport: innerWidth,
+      viewport: window.innerWidth,
       clientWidth: root.clientWidth,
       scrollWidth: root.scrollWidth,
       buttons: [...root.querySelectorAll('button')].map((button) => {

@@ -187,7 +187,7 @@ export const test = base.extend({
   ],
 });
 
-export function panel(host, independent = false) {
+function panel(host, independent = false) {
   const region = host.getByRole('region', {
     name: independent ? 'Independent operational panel' : 'Primary operational panel',
     exact: true,
@@ -219,10 +219,10 @@ export async function openOperational(page) {
   const host = await openExample(page, 'operational-window', 'operational-window');
   expect(
     await page.evaluate(() => ({
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
     })),
@@ -378,8 +378,8 @@ export async function revealNewOperationalRowOnce(page, item, excludedKeys, info
       const parent = clientClip(outer);
       const left = Math.max(0, inner.left, parent.left);
       const top = Math.max(0, inner.top, parent.top);
-      const right = Math.min(innerWidth, inner.right, parent.right);
-      const bottom = Math.min(innerHeight, inner.bottom, parent.bottom);
+      const right = Math.min(window.innerWidth, inner.right, parent.right);
+      const bottom = Math.min(window.innerHeight, inner.bottom, parent.bottom);
       return { left, top, right, bottom, width: right - left, height: bottom - top, inner, parent };
     };
     const focused = document.activeElement;
@@ -397,7 +397,7 @@ export async function revealNewOperationalRowOnce(page, item, excludedKeys, info
     const measure = () => ({
       inner: { top: node.scrollTop, height: node.clientHeight, total: node.scrollHeight },
       outer: { top: outer.scrollTop, height: outer.clientHeight, total: outer.scrollHeight },
-      document: { x: scrollX, y: scrollY },
+      document: { x: window.scrollX, y: window.scrollY },
     });
     const hittable = (control) => {
       if (!control?.isConnected) return false;
@@ -592,18 +592,16 @@ export async function visibleRows(item) {
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
       const target = document.elementFromPoint(x, y);
-      if (
-        !(
-          rect.width > 0 &&
-          rect.height > 0 &&
-          rect.top >= 0 &&
-          rect.bottom <= innerHeight &&
-          rect.left >= 0 &&
-          rect.right <= innerWidth &&
-          target &&
-          control.contains(target)
-        )
-      )
+      if (!(
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.bottom <= window.innerHeight &&
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth &&
+        target &&
+        control.contains(target)
+      ))
         return [];
       return [
         {
@@ -670,7 +668,12 @@ export async function geometry(item) {
       return { x, y, width, height };
     };
     return {
-      page: { x: scrollX, y: scrollY, width: innerWidth, height: innerHeight },
+      page: {
+        x: window.scrollX,
+        y: window.scrollY,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
       frame: rect(root),
       activeKey:
         document.activeElement
@@ -767,7 +770,7 @@ export const followingState = (scroll) =>
     maximum: Math.max(0, node.scrollHeight - node.clientHeight),
     height: node.clientHeight,
     total: node.scrollHeight,
-    document: { x: scrollX, y: scrollY },
+    document: { x: window.scrollX, y: window.scrollY },
     focused: document.activeElement === node,
   }));
 
@@ -810,11 +813,11 @@ export async function observeNativeScroll(target, scroll, info, name, act) {
       const state = () => ({
         target: geometry(node),
         outer: geometry(outer),
-        document: { x: scrollX, y: scrollY },
+        document: { x: window.scrollX, y: window.scrollY },
         active: describe(document.activeElement),
         sameFocusedTarget: document.activeElement === node,
         input:
-          node instanceof HTMLInputElement
+          node instanceof window.HTMLInputElement
             ? { value: node.value, start: node.selectionStart, end: node.selectionEnd }
             : null,
       });

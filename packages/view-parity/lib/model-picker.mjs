@@ -78,7 +78,7 @@ export async function expectJson(host, id, expected) {
 // One-shot public Store read only: no dispatch, subscribe, RPC or state injection.
 export async function observationSnapshot(page) {
   return page.evaluate(async () => {
-    const { store } = await import(new URL('/src/store/index.ts', location.href).href);
+    const { store } = await import(new URL('/src/store/index.ts', window.location.href).href);
     const state = store.state;
     return {
       observers: state.providerModels.observers.ids.map(

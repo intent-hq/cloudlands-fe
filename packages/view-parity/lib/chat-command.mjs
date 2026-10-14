@@ -145,7 +145,7 @@ export const test = base.extend({
   ],
 });
 
-export { expect, outputJson, captureTranscript as captureCommand };
+export { expect, captureTranscript as captureCommand };
 
 export async function openCommand(page) {
   const host = await openExample(page, 'chat-command', 'chat-command');
@@ -153,10 +153,10 @@ export async function openCommand(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -249,7 +249,7 @@ export async function tabThroughActions(page, host, enabledNames, name, info) {
           inside: node.contains(active),
           tag: active?.tagName,
           label: active?.getAttribute('aria-label'),
-          disabled: active instanceof HTMLButtonElement && active.disabled,
+          disabled: active instanceof window.HTMLButtonElement && active.disabled,
         };
       });
       visited.push(observation);
@@ -289,7 +289,7 @@ export async function expectCommandContained(frame, info, name) {
       card: rect(code.parentElement),
       control,
       code: rect(code),
-      viewportWidth: innerWidth,
+      viewportWidth: window.innerWidth,
       scrollWidth: root.scrollWidth,
       clientWidth: root.clientWidth,
       copyHit: hit === copy || copy.contains(hit),

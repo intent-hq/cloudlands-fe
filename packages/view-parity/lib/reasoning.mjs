@@ -235,7 +235,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson };
+export { expect };
 
 export async function openReasoning(page) {
   const host = await openExample(page, 'reasoning', 'reasoning');
@@ -243,10 +243,10 @@ export async function openReasoning(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -271,7 +271,12 @@ export async function capture(page, frame, name, info) {
       };
       return {
         frame: box(root),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         nodes: [
           ...root.querySelectorAll(
             'button,a,section,[data-operational-summary],[data-reasoning-expanded-body],[data-reasoning-history-body],p,h1,h2,h3,strong',
@@ -446,7 +451,7 @@ export async function contained(item, info, name, requireControls = true) {
     };
     return {
       frame: box(root),
-      viewportWidth: innerWidth,
+      viewportWidth: window.innerWidth,
       clientWidth: root.clientWidth,
       scrollWidth: root.scrollWidth,
       controls: [...root.querySelectorAll('button,a')].map((node) => {

@@ -130,7 +130,7 @@ export async function nativeArt(svg) {
   await expect(svg).toBeVisible();
   const box = await svg.evaluate((node) => {
     const art = node.querySelector('g');
-    if (!(art instanceof SVGGraphicsElement)) throw new Error('Missing native SVG artwork');
+    if (!(art instanceof window.SVGGraphicsElement)) throw new Error('Missing native SVG artwork');
     const bounds = art.getBBox();
     return { width: bounds.width, height: bounds.height };
   });
@@ -212,7 +212,12 @@ export async function captureAvatar(page, target, name, info) {
         return { x, y, width, height };
       };
       return {
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         target: rect(root),
         nodes: [
           ...root.querySelectorAll(
@@ -336,7 +341,7 @@ export function assertAvatarPairNetwork(evidence, origin) {
   ).toEqual([]);
 }
 
-export async function inspectAvatarPairHost(page) {
+async function inspectAvatarPairHost(page) {
   await page.evaluate(async () => {
     await Promise.all(
       [400, 500, 600].map((weight) => document.fonts.load(`${weight} 12px 'Inter Variable'`)),
@@ -376,9 +381,9 @@ export async function inspectAvatarPairHost(page) {
     return {
       fonts,
       environment: {
-        width: innerWidth,
-        height: innerHeight,
-        deviceScaleFactor: devicePixelRatio,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        deviceScaleFactor: window.devicePixelRatio,
         locale: navigator.language,
         timezoneId: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },

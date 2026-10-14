@@ -162,7 +162,7 @@ export const test = base.extend({
   ],
 });
 
-export { expect, outputJson, captureTranscript as captureAttachments };
+export { expect, captureTranscript as captureAttachments };
 
 export async function openAttachments(page) {
   const host = await openExample(page, 'queued-attachments', 'queued-attachments');
@@ -170,10 +170,10 @@ export async function openAttachments(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -216,7 +216,7 @@ export async function expectAttachmentsContained(frame, info, name) {
     };
     return {
       frame: rect(root),
-      viewportWidth: innerWidth,
+      viewportWidth: window.innerWidth,
       clientWidth: root.clientWidth,
       scrollWidth: root.scrollWidth,
       buttons: [...root.querySelectorAll('button')].map((button) => {

@@ -19,7 +19,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 
 // Ignored preparation only. No candidate module is imported or executed here.
-export const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
+const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 function loadOriginalOracle(root, origin) {
@@ -238,9 +238,9 @@ export async function openContent(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemon: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     })),
   ).toEqual({ preload: 'undefined', daemon: null, width: 420, height: 900, reduced: true });
   return host;
@@ -315,7 +315,12 @@ export async function capture(page, target, name, info) {
       };
       return {
         frame: box(root),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         nodes: [...root.querySelectorAll('button,a,img,video,math,pre,table,[role]')].map(
           (node) => ({
             tag: node.localName,

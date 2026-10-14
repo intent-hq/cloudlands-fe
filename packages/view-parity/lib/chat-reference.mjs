@@ -164,7 +164,7 @@ export const test = base.extend({
   ],
 });
 
-export { expect, outputJson, captureTranscript as captureReference };
+export { expect, captureTranscript as captureReference };
 
 export async function openReference(page) {
   const host = await openExample(page, 'chat-reference', 'chat-reference');
@@ -172,10 +172,10 @@ export async function openReference(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -363,7 +363,7 @@ export async function expectHit(page, target, frame, info, name) {
       width,
       height,
       hit: hit === node || node.contains(hit),
-      viewport: innerWidth,
+      viewport: window.innerWidth,
     };
   });
   const bounds = await frame.boundingBox();
@@ -408,7 +408,7 @@ export async function expectSourceIcon(item, iconName, info) {
   expect(body, 'The independent source icon must have the requested artwork').toBeTruthy();
   const svg = item.leaf.locator('svg').first();
   const observed = await svg.evaluate((node, source) => {
-    const tree = new DOMParser().parseFromString(
+    const tree = new window.DOMParser().parseFromString(
       `<svg xmlns="http://www.w3.org/2000/svg">${source}</svg>`,
       'image/svg+xml',
     );

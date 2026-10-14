@@ -49,7 +49,7 @@ function oracleUrl(file) {
 }
 export const agentOracle = await import(oracleUrl(oraclePaths[0]));
 export const prOracle = await import(oracleUrl(oraclePaths[1]));
-export const avatarOracle = await import(oracleUrl(oraclePaths[5]));
+const avatarOracle = await import(oracleUrl(oraclePaths[5]));
 export const linksOracle = await import(oracleUrl(oraclePaths[3]));
 const english = JSON.parse(blob('messages/en.json'));
 export const label = (key, args = {}) => {
@@ -205,7 +205,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson };
+export { expect };
 
 export async function openHeaders(page) {
   const host = await openExample(page, 'attribution-headers', 'attribution-headers');
@@ -213,10 +213,10 @@ export async function openHeaders(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -383,7 +383,12 @@ export async function capture(page, frame, name, info) {
       };
       return {
         frame: box(root),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         nodes: [...root.querySelectorAll('button,a,span,svg')].map((node) => ({
           tag: node.localName,
           text: node.textContent,
@@ -427,7 +432,7 @@ export async function contained(frame, info) {
     };
     return {
       frame: box(root),
-      width: innerWidth,
+      width: window.innerWidth,
       scrollWidth: root.scrollWidth,
       clientWidth: root.clientWidth,
       controls: [...root.querySelectorAll('button,a')].map((node) => {
@@ -482,7 +487,7 @@ export async function avatarArt(header, agentId, specialist, info) {
   if (!art || /\{/.test(art))
     throw new Error('Original avatar art is not an unconditional SVG fragment');
   const observed = await svg.evaluate((node, markup) => {
-    const expected = new DOMParser().parseFromString(
+    const expected = new window.DOMParser().parseFromString(
       `<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
       'image/svg+xml',
     );

@@ -157,7 +157,7 @@ export const test = base.extend({
     { auto: true },
   ],
 });
-export { expect, outputJson, settledCustom, settledMermaid, mermaidGeneration, visibleNodeIds };
+export { expect, settledCustom, settledMermaid, mermaidGeneration, visibleNodeIds };
 
 // Fixed inputs/expected arguments are independent of candidate exports and logs.
 // Omitting base fields, grammar, edges and layout exercises the original serializer.
@@ -202,10 +202,10 @@ export async function openComposition(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -234,7 +234,12 @@ export async function capture(page, frame, name, info) {
       };
       return {
         frame: box(root),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+        },
         nodes: [...root.querySelectorAll('button,a,span,svg')].map((node) => ({
           tag: node.localName,
           text: node.textContent,
@@ -278,7 +283,7 @@ export async function contained(frame, info) {
     };
     return {
       frame: box(root),
-      width: innerWidth,
+      width: window.innerWidth,
       scrollWidth: root.scrollWidth,
       clientWidth: root.clientWidth,
       controls: [...root.querySelectorAll('button,a')].map((node) => {
@@ -452,7 +457,7 @@ export async function readableNode(item, target, info) {
     };
     const bounds = box(node);
     const text = [];
-    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(node, window.NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       if (!walker.currentNode.textContent.trim()) continue;
       const range = document.createRange();
@@ -473,7 +478,7 @@ export async function readableNode(item, target, info) {
         });
       }
     }
-    return { bounds, text, viewport: { width: innerWidth, height: innerHeight } };
+    return { bounds, text, viewport: { width: window.innerWidth, height: window.innerHeight } };
   });
   await info.attach('readable-node.json', {
     body: JSON.stringify(result, null, 2),

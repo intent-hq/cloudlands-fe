@@ -215,10 +215,10 @@ export async function openPrompts(page) {
     await page.evaluate(() => ({
       preload: typeof window.electronAPI,
       daemonUrl: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     })),
   ).toEqual({
     preload: 'undefined',
@@ -268,7 +268,7 @@ export async function expectCounts(item, select, edit = 0, link = 0) {
     })
     .toEqual({ total: select + edit + link, counts: { select, edit, link } });
 }
-export async function lastRecord(item, expected) {
+async function lastRecord(item, expected) {
   const history = (await item.observations()).history;
   const record = history.at(-1);
   expect(record).toMatchObject(expected);
@@ -386,7 +386,7 @@ export async function expectContained(item, info, name) {
       const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
       return { left, right, top, bottom, width, height };
     };
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(root, window.NodeFilter.SHOW_TEXT);
     const text = [];
     while (walker.nextNode()) {
       const node = walker.currentNode;
@@ -414,7 +414,7 @@ export async function expectContained(item, info, name) {
     );
     return {
       frame: rect(root),
-      viewport: innerWidth,
+      viewport: window.innerWidth,
       clientWidth: root.clientWidth,
       scrollWidth: root.scrollWidth,
       text,

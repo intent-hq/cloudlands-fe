@@ -10,7 +10,7 @@ import { candidateProvenance } from './provenance.mjs';
 import { stableLocatorScreenshot } from './browser.mjs';
 import { observeAvatarPairNetwork, assertAvatarPairNetwork } from './agent-avatar.mjs';
 
-export { expect, outputJson };
+export { expect };
 const original = '003bc52c00dcfffe8513cd6be1b8f45011716714';
 const sourcePort = 'ba312a2df08bfc289f90934119d1b9676632b2be';
 const sourceCorrection = 'e46a388f145af8692411824e5afe7736f432e1ed';
@@ -257,7 +257,7 @@ export async function toggle(host, name, checked) {
   if ((await item.getAttribute('aria-checked')) !== String(checked)) await item.click();
   await expect(item).toHaveAttribute('aria-checked', String(checked));
 }
-export function group(host, name) {
+function group(host, name) {
   const frame = host.getByTestId(`response-${name.toLowerCase()}-frame`);
   return {
     name,
@@ -275,10 +275,10 @@ export async function openGroups(page) {
   await expect(host).toHaveAttribute('data-example-ready', 'true');
   expect(
     await page.evaluate(() => ({
-      width: innerWidth,
-      height: innerHeight,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
       preload: typeof window.electronAPI,
       daemon: globalThis.__INTENT_RUNTIME_CONFIG__?.intentdWsUrl ?? null,
     })),
@@ -412,7 +412,7 @@ export async function expectArtwork(item, definition, info) {
   const svg = item.trigger.locator('[data-response-group-disclosure-icon] svg');
   await expect(svg).toHaveCount(1);
   const observed = await svg.evaluate((node, source) => {
-    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+    const parsed = new window.DOMParser().parseFromString(source, 'image/svg+xml');
     const shapes = (root) =>
       [...root.querySelectorAll('path,circle,ellipse,line,polyline,polygon,rect')]
         .filter((n) => !(n.localName === 'rect' && n.getAttribute('fill') === 'none'))
@@ -449,7 +449,12 @@ async function probe(frame) {
         return { x, y, width, height };
       };
       return {
-        viewport: { width: innerWidth, height: innerHeight, x: scrollX, y: scrollY },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          x: window.scrollX,
+          y: window.scrollY,
+        },
         frame: box(root),
         active: {
           id: document.activeElement?.id,
@@ -474,7 +479,7 @@ async function probe(frame) {
           inert: node.inert,
           hidden: node.getAttribute('aria-hidden'),
           expanded: node.getAttribute('aria-expanded'),
-          value: node instanceof HTMLInputElement ? node.value : null,
+          value: node instanceof window.HTMLInputElement ? node.value : null,
         })),
       };
     }),
@@ -495,7 +500,7 @@ async function measureGroupView(frame, targets, baseline, point = null) {
         testId: node?.getAttribute('data-testid') ?? null,
       });
       const selection = (node) =>
-        node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
+        node instanceof window.HTMLInputElement || node instanceof window.HTMLTextAreaElement
           ? [node.selectionStart, node.selectionEnd, node.selectionDirection]
           : null;
       const same = (current, prior) =>
@@ -508,8 +513,8 @@ async function measureGroupView(frame, targets, baseline, point = null) {
       const clip = {
         left: Math.max(0, r.left + root.clientLeft),
         top: Math.max(0, r.top + root.clientTop),
-        right: Math.min(innerWidth, r.left + root.clientLeft + root.clientWidth),
-        bottom: Math.min(innerHeight, r.top + root.clientTop + root.clientHeight),
+        right: Math.min(window.innerWidth, r.left + root.clientLeft + root.clientWidth),
+        bottom: Math.min(window.innerHeight, r.top + root.clientTop + root.clientHeight),
       };
       const inside = (b) =>
         b.width > 0 &&
@@ -761,7 +766,8 @@ export async function captureGroupViews(page, item, name, info, views) {
         return {
           active,
           selection:
-            active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+            active instanceof window.HTMLInputElement ||
+            active instanceof window.HTMLTextAreaElement
               ? [active.selectionStart, active.selectionEnd, active.selectionDirection]
               : null,
           roots: [...root.querySelectorAll('[data-testid="response-group"]')],
@@ -938,7 +944,7 @@ export async function hittable(locator, info, name) {
       bottom: r.bottom,
       width: r.width,
       height: r.height,
-      viewport: { width: innerWidth, height: innerHeight },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
       receivesPointer: hit !== null && node.contains(hit),
     };
   });
