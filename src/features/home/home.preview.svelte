@@ -6,6 +6,7 @@
     type AgentSession,
     type AgentMessage,
     type Workspace,
+    type PullRequestInfo,
   } from '$shared/types';
   import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
@@ -16,6 +17,7 @@
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         setTitle: (id: string, title: string) => void;
+        setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
       };
     }
   }
@@ -282,6 +284,15 @@
   window.__homeWorkspacePreview = {
     setTitle: (id, title) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
+    setPullRequest: (id, pullRequest) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(id, {
+            pullRequests: [pullRequest],
+            activePullRequest: pullRequest,
+          }),
+        ]),
+      ),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
