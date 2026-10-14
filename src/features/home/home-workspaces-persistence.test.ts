@@ -16,6 +16,23 @@ describe('durable Home configuration', () => {
     expect(homePersistenceKey('local', 'alice')).not.toBe(homePersistenceKey('remote', 'alice'));
     expect(homePersistenceKey('a:b', 'c')).not.toBe(homePersistenceKey('a', 'b:c'));
   });
+  it.each(['list', 'board', 'dashboard'] as const)(
+    'preserves the %s view through normalization and a JSON storage round trip',
+    (view) => {
+      const configuration = normalizeHomeConfiguration({
+        view,
+        groupBy: 'repository',
+        expandedGroups: { 'acme/app': false },
+      });
+      expect(configuration.view).toBe(view);
+      const serialized = JSON.stringify(persistedHomeState(configuration));
+      expect(readHomePersistence(JSON.parse(serialized)).configuration).toMatchObject({
+        view,
+        groupBy: 'repository',
+        expandedGroups: { 'acme/app': false },
+      });
+    },
+  );
   it('round-trips automatic settings without transient or retired fields', () => {
     const config = normalizeHomeConfiguration({
       view: 'canvas',

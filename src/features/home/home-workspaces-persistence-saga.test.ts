@@ -52,6 +52,42 @@ beforeEach(() => {
   mocks.failWrite = false;
 });
 describe('Home persistence behavior', () => {
+  it('saves the dashboard choice and restores it with grouping after reload', async () => {
+    const key = homePersistenceKey('one', 'alice');
+    const first = harness(key);
+    try {
+      first.dispatch(
+        updateHomeWorkspaceView({
+          view: 'dashboard',
+          groupBy: 'repository',
+          expandedGroups: { 'acme/app': false },
+        }),
+      );
+      await settle();
+      expect(JSON.parse(mocks.values.get(key)!).configuration).toMatchObject({
+        view: 'dashboard',
+        groupBy: 'repository',
+        expandedGroups: { 'acme/app': false },
+      });
+    } finally {
+      first.task.cancel();
+    }
+
+    const reloaded = harness(key);
+    try {
+      await settle();
+      expect(reloaded.state().homeWorkspaces).toMatchObject({
+        view: 'dashboard',
+        groupBy: 'repository',
+        expandedGroups: { 'acme/app': false },
+      });
+      reloaded.scope(homePersistenceKey('one', 'bob'));
+      await settle();
+      expect(reloaded.state().homeWorkspaces.view).toBe('list');
+    } finally {
+      reloaded.task.cancel();
+    }
+  });
   it('restores on reload and isolates backend/account changes', async () => {
     const alice = homePersistenceKey('one', 'alice'),
       bob = homePersistenceKey('one', 'bob');
