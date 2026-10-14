@@ -241,9 +241,9 @@ test('Dashboard distinguishes live PR states and preserves waiting details and f
   const status = card.locator('[data-home-status]');
   await card.focus();
   for (const [displayStatus, label] of [
-    ['pr_open', /PR open/i],
-    ['pr_ready', /PR mergeable/i],
-    ['pr_queued', /PR queued/i],
+    ['pr_open', 'PR open'],
+    ['pr_ready', 'PR mergeable'],
+    ['pr_queued', 'PR queued'],
   ] as const) {
     await page.evaluate((state) => {
       window.__homeWorkspacePreview!.updateWorkspace('home-ready', {
@@ -251,10 +251,10 @@ test('Dashboard distinguishes live PR states and preserves waiting details and f
         waiting: true,
       });
     }, displayStatus);
-    await expect(status.getByText(label, { exact: true })).toBeVisible();
+    await expect(status.getByText(new RegExp(`^${label}$`, 'i'))).toBeVisible();
     await expect(card).toBeFocused();
     await status.hover();
-    await expect(page.getByRole('tooltip')).toContainText(label);
+    await expect(page.getByRole('tooltip')).toContainText(new RegExp(label, 'i'));
     await expect(page.getByRole('tooltip')).toContainText(/Waiting/i);
     await page.mouse.move(0, 0);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
