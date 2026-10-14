@@ -139,6 +139,30 @@ test('real agent conversation reads canonical messages and releases on back, swi
       readable,
       'A genuine plain-text line is available for rendered content verification',
     ).toBeTruthy();
+    // Canonical event reports and agent messages start collapsed. Open their
+    // disclosure with native input before checking the chosen genuine text.
+    const readableRow = conversation.locator(`[data-message-id="${readable.id}"]`);
+    const selectedMessage = delivered.find((message) => message.id === readable.id);
+    const isEventReport = selectedMessage.metadata?.type === 'event_notification';
+    const disclosure = readableRow.getByTestId(
+      isEventReport ? 'event-wakeup-summary' : 'agent-message-disclosure-toggle',
+    );
+    if (isEventReport) await expect(disclosure).toHaveCount(1);
+    if (await disclosure.count()) {
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      await disclosure.focus();
+      await page.keyboard.press('Enter');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      await expect(
+        readableRow.getByTestId(
+          isEventReport ? 'event-wakeup-details' : 'agent-message-expanded-body',
+        ),
+      ).toBeVisible();
+      await info.attach(`opened-disclosure-${readable.id}`, {
+        body: JSON.stringify({ messageId: readable.id, text: readable.text }),
+        contentType: 'application/json',
+      });
+    }
     await expect(conversation.locator(`[data-message-id="${readable.id}"]`)).toContainText(
       readable.text,
     );
