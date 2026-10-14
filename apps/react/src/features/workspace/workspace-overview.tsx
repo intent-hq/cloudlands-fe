@@ -11,13 +11,8 @@ import { HomeWorkspaceStatus } from '@/features/home/components/home-workspace-s
 import { ResourceNotFound } from '@/components/common/resource-not-found';
 import { HomeSearch } from '@/features/home/components/home-search';
 import { HomeLoading } from '@/features/home/components/home-loading';
-import {
-  Screen,
-  ScreenHeader,
-  ScreenBody,
-  LoadingState,
-  EmptyState,
-} from '@/components/patterns/screen';
+import { ContentSkeleton } from '@/components/workspace/content-skeleton';
+import { Screen, ScreenHeader, ScreenBody, EmptyState } from '@/components/patterns/screen';
 import {
   selectDaemonHealth,
   selectHasEverConnected,
@@ -57,7 +52,19 @@ function WorkspaceReadiness({ list = false }: { list?: boolean }) {
         data-testid="workspace-connection-lost"
       />
     );
-  return list ? <HomeLoading /> : <LoadingState label="Waiting for the daemon workspace list" />;
+  return list ? (
+    <HomeLoading />
+  ) : (
+    <div
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Block layout announces workspace loading while containing the panel skeleton.
+      role="status"
+      aria-label={m.layout_agentTab_loadingSpace_label()}
+      data-testid="workspace-content-loading"
+      className="h-80 min-w-0"
+    >
+      <ContentSkeleton />
+    </div>
+  );
 }
 
 function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
