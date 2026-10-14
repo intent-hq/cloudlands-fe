@@ -1,0 +1,164 @@
+import type { WorkspaceEvent } from '$features/events/types';
+import { getActivityLabel } from '$features/events/activity-labels';
+import {
+  isSourceFileActivityEvent,
+  isWorkspaceStatusUpdateEvent,
+} from '$features/log/utils/activity-event-visibility';
+import { m } from '$shared/paraglide/messages.js';
+import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
+
+interface PeopleActivityRow {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  label: string;
+  timestamp: string;
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/** Only actions whose labels describe a human's mutation, not agent lifecycle noise. */
+function activityLabel(event: WorkspaceEvent, name: string): string | null {
+  const data = record(event.data);
+  const stringData = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => typeof value === 'string'),
+  );
+  const withActor = (action: string) =>
+    m.workspace_peopleActivity_actorAction_label({ name, action });
+  // The persisted catalog also carries newer wire types such as comment:resolved.
+  const eventType: string = event.type;
+  switch (eventType) {
+    case 'note:created':
+    case 'note:updated':
+    case 'note:deleted':
+    case 'spec:updated':
+    case 'goal:updated':
+      return getActivityLabel({
+        ...event,
+        actor: { ...event.actor, name },
+        data: stringData,
+      });
+    case 'agent:created':
+    case 'agent:renamed':
+    case 'agent:deleted':
+    case 'agent:restored':
+    case 'git:commit':
+    case 'git:push':
+    case 'git:pull':
+    case 'git:branch':
+    case 'git:merge':
+      // Existing labels sometimes treat actor.name as the target agent. Supply
+      // only target data here; the recorded human is named separately below.
+      return withActor(
+        getActivityLabel({
+          ...event,
+          actor: { ...event.actor, name: undefined },
+          data: stringData,
+        }),
+      );
+    case 'file:changed':
+      return isSourceFileActivityEvent(event)
+        ? getActivityLabel({
+            ...event,
+            actor: { ...event.actor, name },
+            data: { path: text(data.path) || text(data.relativePath), action: text(data.action) },
+          })
+        : null;
+    case 'comment:added':
+      return m.events_activity_authorCommented_label({ author: name });
+    case 'comment:resolved':
+      return data.resolved === false
+        ? withActor(m.events_activity_reopenedCommentThread_label())
+        : data.resolved === true
+          ? withActor(m.events_activity_resolvedCommentThread_label())
+          : null;
+    case 'agent:user-message:sent': {
+      const agent = text(data.agentName) || text(data.toAgentName);
+      return withActor(
+        agent
+          ? m.workspace_peopleActivity_messagedAgent_label({ agent })
+          : m.workspace_peopleActivity_sentMessage_label(),
+      );
+    }
+    case 'task:status-changed':
+      return withActor(
+        getActivityLabel({
+          ...event,
+          actor: { ...event.actor, name: undefined },
+          data: {
+            taskName: text(data.taskName) || text(data.noteTitle),
+            newStatus: text(data.newStatus) || text(data.status),
+          },
+        }),
+      );
+    case 'workspace:created':
+      return withActor(m.events_activity_createdWorkspace_label());
+    case 'workspace:updated': {
+      if (isWorkspaceStatusUpdateEvent(event)) return null;
+      const changes = record(data.changes);
+      if (Object.keys(changes).filter((key) => key !== 'workspaceId').length === 0) return null;
+      const title = text(changes.title);
+      return withActor(
+        title
+          ? m.events_activity_renamedWorkspaceTo_label({ title })
+          : m.events_activity_updatedWorkspace_label(),
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function humanName(value: unknown, id: string): string {
+  const name = text(value);
+  // Legacy generic actors and unresolved principal IDs do not identify a person.
+  return name === id || /^(user|you|system|unknown|anonymous|local user)$/i.test(name) ? '' : name;
+}
+
+/** Historical attribution wins; the current roster only supplies identity by stable ID. */
+export function getPeopleActivity(
+  workspaceId: string,
+  events: readonly WorkspaceEvent[],
+  people: readonly PresenceIdentity[],
+): PeopleActivityRow[] {
+  const roster = new Map(people.map((person) => [person.principalId, person]));
+  const seen = new Set<string>();
+  const rows: PeopleActivityRow[] = [];
+  for (const event of events) {
+    if (
+      event.workspaceId !== workspaceId ||
+      event.actor?.type !== 'user' ||
+      !text(event.id) ||
+      seen.has(event.id) ||
+      !Number.isFinite(Date.parse(event.timestamp))
+    ) {
+      continue;
+    }
+    const id = text(event.actor.id);
+    const person = id ? roster.get(id) : undefined;
+    const name =
+      humanName(event.actor.name, id) ||
+      humanName(person?.displayName, id) ||
+      humanName(person?.login, id);
+    if (!name) continue;
+    const label = activityLabel(event, name);
+    if (!label) continue;
+    seen.add(event.id);
+    rows.push({
+      id: event.id,
+      name,
+      avatarUrl: person?.avatarUrl ?? null,
+      label,
+      timestamp: event.timestamp,
+    });
+  }
+  return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+}

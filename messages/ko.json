@@ -7501,5 +7501,14 @@
   "chat_failureRecovery_action_label": "조치 필요",
   "chat_failureRecovery_queued_description": "메시지가 대기 중입니다. 아래 컨트롤로 관리하세요.",
   "chat_failureRecovery_action_description": "응답이 완료되기 전에 중지되었습니다.",
-  "providers_cliVersionWarning_message": "{provider} CLI 버전 {version}은 지원되는 최소 버전 {minimumVersion}보다 낮습니다. 데몬 호스트에서 CLI를 업데이트하세요."
+  "providers_cliVersionWarning_message": "{provider} CLI 버전 {version}은 지원되는 최소 버전 {minimumVersion}보다 낮습니다. 데몬 호스트에서 CLI를 업데이트하세요.",
+  "workspace_peopleActivity_actorAction_label": "{name} — {action}",
+  "workspace_peopleActivity_messagedAgent_label": "{agent}에게 메시지를 보냄",
+  "workspace_peopleActivity_sentMessage_label": "메시지를 보냄",
+  "workspace_peopleActivity_load_error": "활동을 불러올 수 없습니다.",
+  "workspace_peopleActivity_loading_label": "활동을 불러오는 중…",
+  "workspace_peopleActivity_empty_label": "아직 기록된 사용자 활동이 없습니다.",
+  "workspace_peopleActivity_recentEmpty_label": "최근 이벤트에 사용자 활동이 없습니다.",
+  "workspace_peopleActivity_loadOlder_error": "이전 활동을 불러올 수 없습니다.",
+  "workspace_peopleActivity_loadMore_label": "더 불러오기"
 }
