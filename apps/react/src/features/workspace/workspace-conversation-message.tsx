@@ -36,10 +36,10 @@ export function WorkspaceConversationMessage({
   const bodyId = useId();
   const [expanded, setExpanded] = useState(false);
   const candidate = message.role === 'user' ? getAgentMessageAttribution(message.metadata) : null;
-  // Chief, hook and PR wake presentation remain separate integration slices.
+  // Chief and PR wake presentation remain separate integration slices.
   const attribution = candidate?.kind === 'agent' ? candidate : null;
   const wake = getAutomatedWakePresentation(message);
-  const scriptWake = wake?.kind === 'script' ? wake : null;
+  const connectedWake = wake?.kind === 'script' || wake?.kind === 'hook' ? wake : null;
   return (
     <article
       tabIndex={-1}
@@ -82,10 +82,10 @@ export function WorkspaceConversationMessage({
             </div>
           )}
         </>
-      ) : scriptWake ? (
+      ) : connectedWake ? (
         <>
           <AutomatedWakeCardHeader
-            presentation={scriptWake}
+            presentation={connectedWake}
             expanded={expanded}
             controlsId={bodyId}
             ontoggle={() => setExpanded((value) => !value)}
@@ -97,19 +97,20 @@ export function WorkspaceConversationMessage({
             <div
               id={bodyId}
               className={`min-w-0 overflow-hidden border-t border-border ${SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}`}
-              data-testid="script-wake-expanded-body"
+              data-testid={`${connectedWake.kind}-wake-expanded-body`}
             >
-              <span className="whitespace-pre-wrap">{scriptWake.bodyText}</span>
-              {scriptWake.attribution.matchedLine !== undefined && (
-                <>
-                  <p className="type-caption text-muted-foreground">
-                    {m.chat_scriptMonitor_untrusted_description()}
-                  </p>
-                  <pre className="whitespace-pre-wrap break-all font-mono">
-                    {scriptWake.attribution.matchedLine}
-                  </pre>
-                </>
-              )}
+              <span className="whitespace-pre-wrap">{connectedWake.bodyText}</span>
+              {connectedWake.kind === 'script' &&
+                connectedWake.attribution.matchedLine !== undefined && (
+                  <>
+                    <p className="type-caption text-muted-foreground">
+                      {m.chat_scriptMonitor_untrusted_description()}
+                    </p>
+                    <pre className="whitespace-pre-wrap break-all font-mono">
+                      {connectedWake.attribution.matchedLine}
+                    </pre>
+                  </>
+                )}
             </div>
           )}
         </>
