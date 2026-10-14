@@ -63,6 +63,7 @@ import { SpecialistOptionsExamples } from './specialist-options-examples';
 import { RepositoryPickerRowExamples } from './repository-picker-row-examples';
 import { SidebarPrListExamples } from './sidebar-pr-list-examples';
 import { TimeScrubberExamples } from './time-scrubber-examples';
+import { TerminalSearchBarExamples } from './terminal-search-bar-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -571,6 +572,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'popovers' && <RepositoryPickerRowExamples />}
       {slug === 'popovers' && <SidebarPrListExamples />}
       {slug === 'popovers' && <TimeScrubberExamples />}
+      {slug === 'popovers' && <TerminalSearchBarExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
