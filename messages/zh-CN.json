@@ -6765,6 +6765,7 @@
   "workspace_share_connectGithub_label": "连接 GitHub",
   "workspace_share_existingGuest_label": "邀请现有用户",
   "workspace_share_existingGuest_description": "已登录此主机的用户无需链接即可添加。",
+  "workspace_peopleTile_title": "人员",
   "workspace_share_existingGuest_placeholder": "选择用户",
   "workspace_share_existingGuest_invite_label": "邀请",
   "workspace_share_existingGuest_inviting_label": "正在邀请…",

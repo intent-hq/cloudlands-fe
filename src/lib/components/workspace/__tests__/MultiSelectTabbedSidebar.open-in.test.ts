@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { spring } from '$lib/motion';
+import { initialState as presenceInitialState } from '$store/renderer/slices/presence/presence-slice';
+import { initialState as userPreferencesInitialState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -362,6 +364,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }),
     );
     mockStoreState = {
+      presence: presenceInitialState,
+      userPreferences: userPreferencesInitialState,
       daemonHealth: localHealth,
       externalEditors: {
         selectedAction: 'vscode',

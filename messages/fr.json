@@ -6765,6 +6765,7 @@
   "workspace_share_connectGithub_label": "Connecter GitHub",
   "workspace_share_existingGuest_label": "Inviter un utilisateur existant",
   "workspace_share_existingGuest_description": "Les personnes déjà connectées à cet hôte peuvent être ajoutées sans lien.",
+  "workspace_peopleTile_title": "Personnes",
   "workspace_share_existingGuest_placeholder": "Choisir un utilisateur",
   "workspace_share_existingGuest_invite_label": "Inviter",
   "workspace_share_existingGuest_inviting_label": "Invitation en cours…",
