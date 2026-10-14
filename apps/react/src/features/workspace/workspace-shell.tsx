@@ -1,5 +1,5 @@
 import { Link, Outlet, useParams } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/logo';
 import { SidebarExpandableSearch } from '@/components/workspace/sidebar/sidebar-expandable-search';
 import { WorkspaceStatusIcon } from '@/components/workspace/workspace-status-icon';
@@ -12,6 +12,7 @@ import {
 } from '@/store/workspace/workspace-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
+import { WorkspaceReturnFocus } from './workspace-return-focus';
 
 function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; active: boolean }) {
   const workspace = selectWorkspaceById(workspaceId);
@@ -47,6 +48,15 @@ function WorkspaceNavigationRow({ workspaceId, active }: { workspaceId: string; 
 export function WorkspaceShell() {
   const [query, setQuery] = useState('');
   const { workspaceId } = useParams({ strict: false });
+  const returnFocus = useRef(workspaceId);
+  useLayoutEffect(() => {
+    if (workspaceId) returnFocus.current = workspaceId;
+  }, [workspaceId]);
+  const consumeReturnFocus = useCallback(() => {
+    const id = returnFocus.current;
+    returnFocus.current = undefined;
+    return id;
+  }, []);
   const backendId = selectCurrentConnectionId();
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const ids = selectWorkspaceNavigationIds(query);
@@ -88,7 +98,9 @@ export function WorkspaceShell() {
         </Sidebar.Content>
       </Sidebar.Root>
       <Sidebar.Inset as="div" className="min-w-0">
-        <Outlet />
+        <WorkspaceReturnFocus value={consumeReturnFocus}>
+          <Outlet />
+        </WorkspaceReturnFocus>
       </Sidebar.Inset>
     </Sidebar.Provider>
   );

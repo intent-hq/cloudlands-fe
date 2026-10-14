@@ -1,6 +1,6 @@
 // i18n-ignore (internal unreleased read-only workspace preview)
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useLayoutEffect, useRef } from 'react';
+import { useContext, useLayoutEffect, useRef } from 'react';
 import { store } from '@/store';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
@@ -34,6 +34,7 @@ import { WorkspaceProgress } from './workspace-progress';
 import { WorkspaceAgents } from './workspace-agents';
 import { WorkspaceGitStatus } from './workspace-git-status';
 import { WorkspaceFile } from './workspace-file';
+import { WorkspaceReturnFocus } from './workspace-return-focus';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 import {
   loadFileContentRequested,
@@ -125,6 +126,17 @@ export function WorkspaceList({
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const allIds = selectWorkspaceIds();
   const ids = selectHomeWorkspaceIds(query, filter);
+  const list = useRef<HTMLElement>(null);
+  const consumeReturnFocus = useContext(WorkspaceReturnFocus);
+  useLayoutEffect(() => {
+    if (!loaded.value) return;
+    const id = consumeReturnFocus?.();
+    if (!id || document.activeElement !== document.body) return;
+    const opener = list.current?.querySelector<HTMLAnchorElement>(
+      `a[data-list-workspace="${CSS.escape(id)}"]`,
+    );
+    (opener ?? list.current?.querySelector<HTMLInputElement>('input[type="search"]'))?.focus();
+  }, [loaded.value, consumeReturnFocus]);
   const changeSearch = (q: string, nextFilter: HomeFilter) =>
     void navigate({
       to: '/workspaces',
@@ -136,7 +148,7 @@ export function WorkspaceList({
       resetScroll: false,
     });
   return (
-    <Screen className="min-h-screen" data-testid="workspace-list">
+    <Screen ref={list} className="min-h-screen" data-testid="workspace-list">
       <ScreenHeader
         leading={<SidebarTrigger />}
         title={<h1>{m.lib_commandPalette_workspaces_label()}</h1>}

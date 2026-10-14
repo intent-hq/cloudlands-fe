@@ -60,6 +60,7 @@ test('real Home status filter combines daemon signals with search and survives B
   const { list, rows, workspaceId, filter, input, active, evidence } = await openList(page);
   try {
     await expect(rows).toHaveCount(active.length);
+    await expect(input).not.toBeFocused();
     await filter.click();
     await page.keyboard.press('r');
     await page.keyboard.press('Enter');
@@ -93,6 +94,7 @@ test('real Home status filter combines daemon signals with search and survives B
     await expect(input).toHaveValue(workspaceId);
     await expect(current).toBeVisible();
     const before = await list.boundingBox();
+    await expect(current).toBeFocused();
     await current.click();
     const git = page.getByTestId('workspace-git-status');
     await git.locator('[data-sidebar-search="files"]').getByRole('button').click();
@@ -116,6 +118,7 @@ test('real Home status filter combines daemon signals with search and survives B
     await expect(input).toHaveValue(workspaceId);
     await expect(rows).toHaveCount(1);
     expect(new URL(page.url()).searchParams.get('q')).toBe(workspaceId);
+    await expect(current).toBeFocused();
     expect(new URL(page.url()).searchParams.get('filter')).toBe('running');
     expect(new URL(page.url()).searchParams.has('homeQuery')).toBe(false);
     expect(new URL(page.url()).searchParams.has('fileQuery')).toBe(false);
@@ -126,6 +129,7 @@ test('real Home status filter combines daemon signals with search and survives B
     });
     await input.fill('no-workspace-matches-491dcb8d');
     await expect(rows).toHaveCount(0);
+    await expect(input).toBeFocused();
     await expect(list.locator('output')).toBeVisible();
     await input.press('Escape');
     await expect(input).toHaveValue('');
@@ -140,6 +144,36 @@ test('real Home status filter combines daemon signals with search and survives B
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
     ).toBeLessThanOrEqual(1);
+  } finally {
+    await evidence(info);
+  }
+});
+
+test('Home return focuses search when the workspace is excluded by the retained query', async ({
+  page,
+}, info) => {
+  const { workspaceId, input, list, rows, evidence } = await openList(page);
+  try {
+    const base = process.env.REACT_BASE_URL;
+    const query = 'no-workspace-matches-return-focus';
+    await page.goto(`${base}/workspaces/${encodeURIComponent(workspaceId)}?homeQuery=${query}`);
+    await expect(page.getByTestId('workspace-overview')).toHaveAttribute(
+      'data-workspace-id',
+      workspaceId,
+    );
+    await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+    await expect(input).toHaveValue(query);
+    await expect(rows).toHaveCount(0);
+    await expect(input).toBeFocused();
+    await input.press('Escape');
+    await expect(input).toHaveValue('');
+    await expect(rows).not.toHaveCount(0);
+    await expect(input).toBeFocused();
+    await page.evaluate(() => document.fonts.ready);
+    await stableLocatorScreenshot(page, list, async ({ png, attempt }) => {
+      if (png)
+        await info.attach(`home-return-focus-${attempt}`, { body: png, contentType: 'image/png' });
+    });
   } finally {
     await evidence(info);
   }
