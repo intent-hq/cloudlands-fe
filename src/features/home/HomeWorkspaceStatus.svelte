@@ -2,7 +2,6 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import {
-    faHourglass,
     faCircleCheck,
     faCircleQuestion,
     faCircleExclamation,
@@ -12,16 +11,41 @@
   import { getHomeStatusCause } from './home-attention';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup, type HomeTriageInput } from './home-model';
+  import type { Workspace } from '$shared/types';
+  import { getWorkspaceStatusPresentation } from '$lib/components/workspace/utils/workspace-status-presentation';
 
   let {
     workspace,
     class: className,
     showLabel = false,
-  }: { workspace: HomeTriageInput; class?: string; showLabel?: boolean } = $props();
-  const waiting = $derived(getHomeStatusCause(workspace) === 'waiting');
+  }: {
+    workspace: HomeTriageInput & Pick<Workspace, 'waiting'>;
+    class?: string;
+    showLabel?: boolean;
+  } = $props();
   const group = $derived(getHomeTriageGroup(workspace));
+  const cause = $derived(getHomeStatusCause(workspace));
+  const prPresentation = $derived(
+    cause === 'pr_open' || cause === 'pr_ready' || cause === 'pr_queued'
+      ? getWorkspaceStatusPresentation(cause)
+      : null,
+  );
+  const waiting = $derived(
+    cause === 'waiting' ||
+      (workspace.waiting === true &&
+        (cause === 'idle' ||
+          cause === 'merged' ||
+          cause === 'complete' ||
+          prPresentation !== null)),
+  );
+  const waitingPresentation = $derived(getWorkspaceStatusPresentation('waiting'));
+  const supplementalWaiting = $derived(
+    waiting && cause !== 'idle' && cause !== 'waiting' && cause !== 'pr_queued',
+  );
   const explanation = $derived.by(() => {
-    switch (getHomeStatusCause(workspace)) {
+    if (prPresentation) return prPresentation.tooltip;
+    if (waiting && cause === 'idle') return m.home_status_waiting_description();
+    switch (cause) {
       case 'failed':
         return m.home_status_failed();
       case 'blocked':
@@ -30,8 +54,6 @@
         return m.home_status_review();
       case 'question':
         return m.home_status_question();
-      case 'pull-request':
-        return m.home_status_pull_request();
       case 'running':
         return m.home_status_running();
       case 'merged':
@@ -46,14 +68,17 @@
         return m.home_status_idle();
     }
   });
+  const description = $derived(
+    waiting && cause !== 'idle' && cause !== 'waiting'
+      ? `${explanation} ${m.home_status_waiting_description()}`
+      : explanation,
+  );
   const failed = $derived(workspace.displayStatus === 'failed');
   const presentation = $derived.by(() => {
-    if (waiting)
-      return {
-        label: m.workspace_taskStatus_waiting_label(),
-        icon: faHourglass,
-        color: 'text-muted-foreground',
-      };
+    const specific =
+      prPresentation ??
+      (waiting && (cause === 'idle' || cause === 'waiting') ? waitingPresentation : null);
+    if (specific) return { label: specific.label, icon: specific.icon, color: specific.className };
     switch (group) {
       case 'needs-you':
         return {
@@ -91,23 +116,34 @@
             presentation.color,
             className,
           )}
-          class:needs-you={group === 'needs-you'}
+          class:needs-you={group === 'needs-you' && !prPresentation}
           role={showLabel ? undefined : 'img'}
-          aria-label={showLabel ? undefined : `${presentation.label}. ${explanation}`}
+          aria-label={showLabel ? undefined : `${presentation.label}. ${description}`}
           data-home-status={group}
           data-home-status-error={failed || undefined}
         >
           <span class="inline-flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             {#if presentation.icon}
-              <Fa icon={presentation.icon} weight="fill" class="size-full!" />
+              <Fa
+                icon={presentation.icon}
+                weight="fill"
+                class={cause === 'pr_queued' || (waiting && cause === 'idle')
+                  ? 'size-3!'
+                  : 'size-full!'}
+              />
             {:else}
               <span class="size-2 rounded-full bg-current"></span>
             {/if}
           </span>
-          {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{explanation}</span
+          {#if supplementalWaiting && waitingPresentation.icon}
+            <span class="inline-flex size-3 shrink-0 text-muted-foreground" aria-hidden="true">
+              <Fa icon={waitingPresentation.icon} weight="fill" class="size-full!" />
+            </span>
+          {/if}
+          {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{description}</span
             >{/if}
         </span>{/snippet}</Tooltip.Trigger
-    ><Tooltip.Content>{explanation}</Tooltip.Content></Tooltip.Root
+    ><Tooltip.Content>{description}</Tooltip.Content></Tooltip.Root
   ></Tooltip.Provider
 >
 

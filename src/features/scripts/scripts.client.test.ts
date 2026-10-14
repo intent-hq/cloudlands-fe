@@ -39,7 +39,16 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
         const { workspaceId, ...definition } = params;
         const result = await scriptsCreate(workspaceId, definition);
         if (!result.success) throw new Error(result.error);
-        return result.script;
+        return (
+          result.script ?? {
+            ...definition,
+            id: definition.scriptId,
+            workspaceId,
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            runtime: { status: 'idle', restartCount: 0 },
+          }
+        );
       }
       return { config: {} };
     }),
@@ -63,12 +72,22 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 import { scriptsClient } from './scripts.client';
 import { store } from '$store/renderer/store';
 import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
+let stop: () => void;
 beforeEach(() => {
   store.dispose();
   store.init();
+  admitLegacyPrincipal();
+  store.dispatch(setWorkspaceEntity({ id: 'ws-1', title: 'Scripts', myRole: 'owner' } as never));
+  stop = store.runSaga(scriptsOperationSaga);
 });
-afterEach(() => store.dispose());
+afterEach(() => {
+  stop();
+  store.dispose();
+});
 
 function fileEntry(path: string, content: string): FileContentEntry {
   return {
@@ -123,6 +142,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
         cwd: 'packages/app',
         env: { NODE_ENV: 'development' },
         autoStart: true,
+        healthUrl: 'http://localhost:3100/health',
+        readyPattern: 'READY',
       }),
       liveScript({ id: 'script-test', name: 'test', command: 'pnpm test', mode: 'command' }),
     ]);
@@ -130,7 +151,7 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
 
     const result = await scriptsClient.saveToRepo('ws-1');
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(backendRequestMock).toHaveBeenCalledTimes(1);
     expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.save', {
       workspaceId: 'ws-1',
@@ -144,6 +165,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
             cwd: 'packages/app',
             env: { NODE_ENV: 'development' },
             autoStart: true,
+            healthUrl: 'http://localhost:3100/health',
+            readyPattern: 'READY',
           },
           { name: 'test', command: 'pnpm test', mode: 'command' },
         ],
@@ -330,6 +353,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'service',
       category: 'dev',
+      source: 'auto-detected',
     });
     expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
       name: 'test',
@@ -337,6 +361,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'command',
       category: 'test',
+      source: 'auto-detected',
     });
     expect(scriptsRemove).not.toHaveBeenCalled();
     expect(result).toEqual({

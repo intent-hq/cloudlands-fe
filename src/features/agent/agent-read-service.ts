@@ -247,6 +247,29 @@ export function readAgentSession(
   return run;
 }
 
+/**
+ * Confirm state after a caller's observation. A shared read already in flight
+ * may predate that observation: drain it once, then use the existing raw lane
+ * for a fresh request. Concurrent callers behind that read coalesce there.
+ * This performs no hydration and never retries its own confirmation request.
+ */
+export async function readAgentSessionAfterCurrent(
+  agentId: string,
+  workspaceId: string,
+  isCurrent: () => boolean,
+): Promise<AgentSession | null> {
+  const key = readKey(agentId, workspaceId);
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (pending) await pending.catch(() => null);
+  if (connection !== connectionGeneration || !ownership.isCurrent() || !isCurrent()) return null;
+  const session = await readAgentSession(agentId, workspaceId);
+  return connection === connectionGeneration && ownership.isCurrent() && isCurrent()
+    ? session
+    : null;
+}
+
 async function hydrateAgentSession(
   agentId: string,
   ownership: ReturnType<typeof claimAgentReadOwnership>,

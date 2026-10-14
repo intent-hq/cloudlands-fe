@@ -617,7 +617,7 @@ function* dispatchToLifecycle(
     return;
   }
 
-  yield* put(chatSendStarted(agentId, wsId));
+  yield* put(chatSendStarted(agentId, wsId, undefined, undefined, options.userAppMessageId));
   yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
   if (!submission) yield* put(clearChatDraft(wsId, agentId));
   try {

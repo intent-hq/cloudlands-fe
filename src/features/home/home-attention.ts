@@ -85,11 +85,12 @@ export function getHomeStatusCause(workspace: HomeTriageInput) {
   if (!workspaceReminderDismissed(workspace) && workspace.attention === 'review_required')
     return 'review';
   if (status === 'needs_attention') return 'question';
-  if (status === 'pr_ready') return 'pull-request';
+  if (status === 'pr_ready') return 'pr_ready';
   if (workspace.activity === 'agent_running' || status === 'in_progress') return 'running';
   if (status === 'pr_merged') return 'merged';
   if (status === 'complete') return 'complete';
   if (status === 'waiting') return 'waiting';
   if (workspace.attention === 'unread') return 'unread';
+  if (status === 'pr_open' || status === 'pr_queued') return status;
   return 'idle';
 }

@@ -1072,7 +1072,7 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
     streamsByAgent.delete(agentId);
   }
   ensureStream(agentId, messageId, workspaceId);
-  appStore.dispatch(chatSendStarted(agentId, workspaceId));
+  appStore.dispatch(chatSendStarted(agentId, workspaceId, undefined, messageId));
   appStore.dispatch(
     agentStreamUpdateReceived({
       workspaceId,
