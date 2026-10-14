@@ -92,6 +92,38 @@ test('real Home status filter combines daemon signals with search and survives B
     await expect(filter).toHaveText('Running');
     await expect(input).toHaveValue(workspaceId);
     await expect(current).toBeVisible();
+    const before = await list.boundingBox();
+    await current.click();
+    const git = page.getByTestId('workspace-git-status');
+    await git.locator('[data-sidebar-search="files"]').getByRole('button').click();
+    await git.getByRole('searchbox').fill('package.json');
+    const notes = page.getByTestId('workspace-notes');
+    await notes.locator('[data-sidebar-search="context"]').getByRole('button').click();
+    await notes.getByRole('searchbox').fill('independent-note-query');
+    await git.locator('a[data-file-path="package.json"]').first().click();
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible({ timeout: 30_000 });
+    await page.reload();
+    await expect(page.getByTestId('workspace-file-content')).toBeVisible({ timeout: 30_000 });
+    expect(new URL(page.url()).searchParams.get('homeQuery')).toBe(workspaceId);
+    expect(new URL(page.url()).searchParams.get('homeFilter')).toBe('running');
+    await page
+      .getByTestId('workspace-file')
+      .getByRole('link', { name: 'Back', exact: true })
+      .click();
+    await expect(notes.getByRole('searchbox')).toHaveValue('independent-note-query');
+    await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+    await expect(filter).toHaveText('Running');
+    await expect(input).toHaveValue(workspaceId);
+    await expect(rows).toHaveCount(1);
+    expect(new URL(page.url()).searchParams.get('q')).toBe(workspaceId);
+    expect(new URL(page.url()).searchParams.get('filter')).toBe('running');
+    expect(new URL(page.url()).searchParams.has('homeQuery')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('fileQuery')).toBe(false);
+    const after = await list.boundingBox();
+    await info.attach('home-return-geometry', {
+      body: JSON.stringify({ before, after }),
+      contentType: 'application/json',
+    });
     await input.fill('no-workspace-matches-491dcb8d');
     await expect(rows).toHaveCount(0);
     await expect(list.locator('output')).toBeVisible();
@@ -108,6 +140,21 @@ test('real Home status filter combines daemon signals with search and survives B
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
     ).toBeLessThanOrEqual(1);
+  } finally {
+    await evidence(info);
+  }
+});
+
+test('a direct workspace URL returns to the unfiltered Home list', async ({ page }, info) => {
+  const { rows, filter, input, active, workspaceId, evidence } = await openList(page);
+  try {
+    await page.goto(`${process.env.REACT_BASE_URL}/workspaces/${encodeURIComponent(workspaceId)}`);
+    await expect(page.getByTestId('workspace-overview')).toBeVisible();
+    await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+    await expect(filter).toHaveText('All workspaces');
+    await expect(input).toHaveValue('');
+    await expect(rows).toHaveCount(active.length);
+    expect(new URL(page.url()).search).toBe('');
   } finally {
     await evidence(info);
   }

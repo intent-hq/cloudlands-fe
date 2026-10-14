@@ -1,6 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, retainSearchParams } from '@tanstack/react-router';
 import { createClientOnlyFn } from '@tanstack/react-start';
 import { lazy } from 'react';
+import { normalizeHomeConfiguration } from '../../../../src/features/home/home-workspaces-persistence';
+import type { HomeFilter } from '../../../../src/features/home/home-model';
 
 const Overview = lazy(
   createClientOnlyFn(async () => ({
@@ -12,23 +14,39 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
   ssr: false,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { note?: string; q?: string; file?: string; line?: number; fileQuery?: string } => ({
-    ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
-    ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
-    ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
-    ...(typeof search.fileQuery === 'string' && search.fileQuery
-      ? { fileQuery: search.fileQuery }
-      : {}),
-    ...(Number.isSafeInteger(Number(search.line)) && Number(search.line) > 0
-      ? { line: Number(search.line) }
-      : {}),
-  }),
+  ): {
+    note?: string;
+    q?: string;
+    file?: string;
+    line?: number;
+    fileQuery?: string;
+    homeQuery?: string;
+    homeFilter?: HomeFilter;
+  } => {
+    const homeFilter = normalizeHomeConfiguration({ filter: search.homeFilter }).filter;
+    return {
+      ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
+      ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+      ...(typeof search.file === 'string' && search.file ? { file: search.file } : {}),
+      ...(typeof search.fileQuery === 'string' && search.fileQuery
+        ? { fileQuery: search.fileQuery }
+        : {}),
+      ...(Number.isSafeInteger(Number(search.line)) && Number(search.line) > 0
+        ? { line: Number(search.line) }
+        : {}),
+      ...(typeof search.homeQuery === 'string' && search.homeQuery
+        ? { homeQuery: search.homeQuery }
+        : {}),
+      ...(homeFilter !== 'all' ? { homeFilter } : {}),
+    };
+  },
+  search: { middlewares: [retainSearchParams(['homeQuery', 'homeFilter'])] },
   component: WorkspacePage,
 });
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams();
-  const { note, q, file, line, fileQuery } = Route.useSearch();
+  const { note, q, file, line, fileQuery, homeQuery, homeFilter } = Route.useSearch();
   return (
     <Overview
       workspaceId={workspaceId}
@@ -37,6 +55,8 @@ function WorkspacePage() {
       filePath={file}
       line={line}
       fileQuery={fileQuery}
+      homeQuery={homeQuery}
+      homeFilter={homeFilter}
     />
   );
 }

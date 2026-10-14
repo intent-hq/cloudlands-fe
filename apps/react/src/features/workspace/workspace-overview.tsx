@@ -70,7 +70,15 @@ function WorkspaceReadiness({ list = false }: { list?: boolean }) {
   );
 }
 
-function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
+function WorkspaceRow({
+  workspaceId,
+  query,
+  filter,
+}: {
+  workspaceId: string;
+  query: string;
+  filter: HomeFilter;
+}) {
   const workspace = selectWorkspaceById(workspaceId);
   if (!workspace.value) return null;
   return (
@@ -78,7 +86,10 @@ function WorkspaceRow({ workspaceId }: { workspaceId: string }) {
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
-        search={{}}
+        search={{
+          homeQuery: query || undefined,
+          homeFilter: filter === 'all' ? undefined : filter,
+        }}
         data-list-workspace={workspaceId}
         className="flex min-w-0 flex-1 flex-col gap-1 rounded-md px-3 py-3 hover:bg-muted focus-visible:outline"
       >
@@ -169,7 +180,7 @@ export function WorkspaceList({
         ) : (
           <ul className="grid gap-1">
             {ids.value.map((id) => (
-              <WorkspaceRow key={id} workspaceId={id} />
+              <WorkspaceRow key={id} workspaceId={id} query={query} filter={filter} />
             ))}
           </ul>
         )}
@@ -185,6 +196,8 @@ export function WorkspaceOverview({
   filePath,
   line,
   fileQuery,
+  homeQuery,
+  homeFilter,
 }: {
   workspaceId: string;
   noteId?: string;
@@ -192,6 +205,8 @@ export function WorkspaceOverview({
   filePath?: string;
   line?: number;
   fileQuery?: string;
+  homeQuery?: string;
+  homeFilter?: HomeFilter;
 }) {
   const navigate = useNavigate();
   const backendId = selectCurrentConnectionId();
@@ -238,7 +253,11 @@ export function WorkspaceOverview({
         title={<h1>{row?.title ?? m.workspace_page_workspaceResource_label()}</h1>}
         description="Internal React preview · unreleased · read-only"
         actions={
-          <Link to="/workspaces" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+          <Link
+            to="/workspaces"
+            search={{ q: homeQuery || undefined, filter: homeFilter }}
+            className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+          >
             {m.lib_commandPalette_workspaces_label()}
           </Link>
         }
@@ -252,7 +271,12 @@ export function WorkspaceOverview({
             resourceLabel={m.workspace_page_workspaceResource_label()}
             resourceId={workspaceId}
             headingLevel={2}
-            onNavigateAway={() => void navigate({ to: '/workspaces' })}
+            onNavigateAway={() =>
+              void navigate({
+                to: '/workspaces',
+                search: { q: homeQuery || undefined, filter: homeFilter },
+              })
+            }
           />
         ) : (
           <>
