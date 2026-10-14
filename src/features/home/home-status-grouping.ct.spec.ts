@@ -19,11 +19,11 @@ test('Home status groups restore every work stage in list view only', async ({
   mount,
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.setViewportSize({ width: 1440, height: 1320 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   const component = await mount(Preview, {
-    props: { scenario: 'status-grouping', height: 1180 },
+    props: { scenario: 'status-grouping', height: 1300 },
   });
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
   await testInfo.attach('before-activity-groups', {
