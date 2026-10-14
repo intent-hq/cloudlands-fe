@@ -107,6 +107,51 @@ test('Dashboard groups collapse with keyboard and keep filtering when switching 
   await expect(dashboard.locator('[data-home-workspace="home-running"]')).toBeVisible();
 });
 
+test('Dashboard uses activity groups and retains the saved List status grouping', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'status-grouping' } });
+  await component.getByRole('button', { name: 'View options', exact: true }).click();
+  const grouping = page.getByRole('combobox', { name: 'Group by', exact: true });
+  await grouping.click();
+  await page.getByRole('option', { name: 'Status', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(component.locator('[data-home-group]')).toHaveCount(8);
+
+  await component.getByRole('button', { name: 'Dashboard view', exact: true }).click();
+  const dashboard = component.locator('[data-home-dashboard]');
+  await expect(dashboard.locator('[data-home-workspace]')).toHaveCount(13);
+  await expect(dashboard.locator('[data-home-group]')).toHaveCount(3);
+  await expect(dashboard.locator('[data-home-group="running"]')).toBeVisible();
+  await component.getByRole('button', { name: 'View options', exact: true }).click();
+  await expect(grouping).toContainText('Activity');
+  await grouping.click();
+  await expect(page.getByRole('option', { name: 'Status', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__homeWorkspacePreview!.roundTripSettings());
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: /^Needs you/ })
+    .click();
+  await expect(dashboard.locator('[data-home-group]')).toHaveCount(0);
+  await expect(dashboard.locator('[data-home-workspace="home-status-failed"]')).toBeVisible();
+  await expect(dashboard.locator('[data-home-workspace="home-status-pr_open"]')).toHaveCount(0);
+  await component
+    .getByRole('group', { name: 'Status', exact: true })
+    .getByRole('button', { name: /^All \d/ })
+    .click();
+  await component.getByRole('button', { name: 'List view', exact: true }).click();
+  await expect(component.locator('[data-home-group]')).toHaveCount(8);
+  await expect(
+    component
+      .getByRole('listbox', { name: /^PR mergeable$/i })
+      .locator('[data-home-workspace="home-status-pr_ready"]'),
+  ).toBeVisible();
+});
+
 test('Narrow dashboard keeps long cards inside its scroller and preview controls reachable', async ({
   mount,
   page,
@@ -196,9 +241,9 @@ test('Dashboard distinguishes live PR states and preserves waiting details and f
   const status = card.locator('[data-home-status]');
   await card.focus();
   for (const [displayStatus, label] of [
-    ['pr_open', 'PR open'],
-    ['pr_ready', 'PR Mergeable'],
-    ['pr_queued', 'PR Queued'],
+    ['pr_open', /PR open/i],
+    ['pr_ready', /PR mergeable/i],
+    ['pr_queued', /PR queued/i],
   ] as const) {
     await page.evaluate((state) => {
       window.__homeWorkspacePreview!.updateWorkspace('home-ready', {
@@ -218,6 +263,6 @@ test('Dashboard distinguishes live PR states and preserves waiting details and f
     window.__homeWorkspacePreview!.updateWorkspace('home-ready', { waiting: false });
   });
   await status.hover();
-  await expect(page.getByRole('tooltip')).toContainText('PR Queued');
+  await expect(page.getByRole('tooltip')).toContainText(/PR queued/i);
   await expect(page.getByRole('tooltip')).not.toContainText(/Waiting/i);
 });

@@ -24,7 +24,7 @@
     { value: 'none', label: m.settings_mcp_form_auth_none() },
   ]);
   const groupBy = $derived(
-    view.view === 'board' && view.groupBy === 'workspace-status' ? 'status' : view.groupBy,
+    view.view !== 'list' && view.groupBy === 'workspace-status' ? 'status' : view.groupBy,
   );
 </script>
 

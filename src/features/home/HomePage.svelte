@@ -322,10 +322,12 @@
         return m.home_board_done_idle();
     }
   }
-  // Grouping is only meaningful on the unfiltered list; a status filter already
-  // names the group, and archived rows have no live triage state.
+  const effectiveGroupBy = $derived(
+    $view$.view !== 'list' && $view$.groupBy === 'workspace-status' ? 'status' : $view$.groupBy,
+  );
+  // Activity grouping applies only while all workspaces are shown.
   const triageGroups = $derived(
-    filter === 'all' && $view$.groupBy === 'status'
+    filter === 'all' && effectiveGroupBy === 'status'
       ? triageOrder.flatMap((id) => {
           const items = filteredWorkspaces.filter((workspace) => {
             const group = getHomeTriageGroup(workspace);
@@ -381,11 +383,11 @@
     expanded: boolean;
     collapsible: boolean;
   }[] = $derived.by(() => {
-    if ($view$.groupBy === 'none') return [];
+    if (effectiveGroupBy === 'none') return [];
     const groups = (
-      $view$.groupBy === 'repository'
+      effectiveGroupBy === 'repository'
         ? repositorySections
-        : $view$.groupBy === 'workspace-status'
+        : effectiveGroupBy === 'workspace-status'
           ? statusGroups
           : triageGroups
     )
@@ -394,7 +396,7 @@
         items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),
       }))
       .filter((group) => group.items.length);
-    if ($view$.groupBy === 'status' && filter !== 'all') return [];
+    if (effectiveGroupBy === 'status' && filter !== 'all') return [];
     const items = filteredWorkspaces.filter((workspace) => $pinnedIds$.includes(workspace.id));
     return items.length
       ? [
