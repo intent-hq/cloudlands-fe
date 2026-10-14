@@ -830,7 +830,7 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await component.getByRole('searchbox').fill('onboarding');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
-  await groupBy('Status');
+  await groupBy('Activity');
   await expect(board.locator('section')).toHaveCount(4);
   await expect(
     board.getByRole('region', { name: 'PR ready', exact: true }).locator('[data-home-workspace]'),
@@ -839,7 +839,7 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
   await expect(inactive.getByRole('img', { name: /^Idle\./ })).toHaveCount(1);
-  await expect(inactive.getByRole('img', { name: /^PR Queued\./ })).toHaveCount(1);
+  await expect(inactive.getByRole('img', { name: /^PR queued\./ })).toHaveCount(1);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
 });
 

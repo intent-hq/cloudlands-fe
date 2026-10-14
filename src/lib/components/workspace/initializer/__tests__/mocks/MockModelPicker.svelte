@@ -69,3 +69,11 @@
     </button>
   {/if}
 </div>
+
+<button
+  type="button"
+  data-testid="pick-antigravity"
+  onclick={() =>
+    onModelChange?.('gemini-4-argon', { providerId: 'antigravity', modelId: 'gemini-4-argon' })}
+  >pick Antigravity</button
+>

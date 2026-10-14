@@ -6,6 +6,79 @@ const observedReasons = [
   { id: 'agent:question', revision: 'question-1' },
 ];
 
+test('Detailed status grouping moves a dismissed reminder to Waiting and restores new reasons', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  const component = await mount(Preview);
+  await component.getByRole('button', { name: 'View options', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Group by', exact: true }).click();
+  await page.getByRole('option', { name: 'Status', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const attention = component.getByRole('listbox', { name: 'Needs attention', exact: true });
+  const row = component.getByRole('option', { name: 'Review onboarding' });
+  await expect(attention.getByRole('option', { name: 'Review onboarding' })).toBeVisible();
+  await expect(
+    component
+      .getByRole('listbox', { name: 'PR mergeable', exact: true })
+      .getByRole('option', { name: 'Ready to merge' }),
+  ).toBeVisible();
+  await row.click();
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  const before = await page.evaluate(() => window.__homeDismiss!.snapshot());
+  await testInfo.attach('detailed-status-before-dismiss', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
+  const waiting = component.getByRole('listbox', { name: 'Waiting', exact: true });
+  await expect(waiting.getByRole('option', { name: 'Review onboarding' })).toBeVisible();
+  await expect(attention.getByRole('option', { name: 'Review onboarding' })).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await expect(row.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  const after = await page.evaluate(() => window.__homeDismiss!.snapshot());
+  expect(after.displayStatus).toBe(before.displayStatus);
+  expect(after.attention).toBe(before.attention);
+  expect(after.attentionReminder?.dismissed).toBe(true);
+  expect(await page.evaluate(() => window.__homeDismiss!.calls)).toEqual([
+    {
+      channel: IPC_CHANNELS.BACKEND.REQUEST,
+      method: 'workspace.dismissAttention',
+      params: { workspaceId: 'dismiss-review', reasons: observedReasons },
+    },
+  ]);
+  await testInfo.attach('detailed-status-after-dismiss', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.evaluate(() => window.__homeDismiss!.addReason());
+  await expect(attention.getByRole('option', { name: 'Review onboarding' })).toBeVisible();
+  await expect(waiting).toHaveCount(0);
+  await expect(row.locator('[data-home-status]')).toHaveAttribute('data-home-status', 'needs-you');
+  await expect(attention.getByRole('option', { name: 'Blocked work' })).toBeVisible();
+  await expect(attention.getByRole('option', { name: 'Failed work' })).toBeVisible();
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await testInfo.attach('detailed-status-new-reason', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await testInfo.attach('detailed-status-ledger', {
+    body: JSON.stringify(
+      await page.evaluate(() => ({
+        current: window.__homeDismiss!.snapshot(),
+        requests: window.__homeDismiss!.calls,
+      })),
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+});
+
 for (const missing of [false, true]) {
   test(`initial selected workspace automatically resolves after admission (${missing ? 'missing' : 'present'})`, async ({
     mount,

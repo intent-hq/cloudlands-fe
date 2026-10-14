@@ -16,7 +16,7 @@ export interface HomeConfiguration {
   query: string;
   updatedWithin: 'all' | 'day' | 'week' | 'month';
   view: 'list' | 'board';
-  groupBy: 'status' | 'repository' | 'none';
+  groupBy: 'status' | 'workspace-status' | 'repository' | 'none';
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
 }
@@ -90,7 +90,11 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
       defaults.updatedWithin,
     ),
     view: member(raw.view, ['list', 'board'], defaults.view),
-    groupBy: member(raw.groupBy, ['status', 'repository', 'none'], defaults.groupBy),
+    groupBy: member(
+      raw.groupBy,
+      ['status', 'workspace-status', 'repository', 'none'],
+      defaults.groupBy,
+    ),
     expandedGroups,
     moreReposExpanded: raw.moreReposExpanded === true,
   };
