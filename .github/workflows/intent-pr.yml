@@ -718,6 +718,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Setup Python for script regression tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Checkout shared transfer-selection fixtures
         uses: actions/checkout@v7
         with:

@@ -60,6 +60,18 @@ describe('Depot CI runners', () => {
     expect(values.linux_burst).toBe(state === 'healthy' ? 'false' : 'true');
   });
 
+  it('provisions Python 3.12 before unit tests on either runner path', () => {
+    const steps = read('.github/workflows/intent-pr.yml').jobs.test.steps;
+    const setup = steps.findIndex((step: { uses?: string }) =>
+      step.uses?.startsWith('actions/setup-python@'),
+    );
+    const tests = steps.findIndex((step: { name?: string }) => step.name === 'Unit tests');
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(setup).toBeLessThan(tests);
+    expect(steps[setup].with['python-version']).toBe('3.12');
+    expect(steps[setup].if).toBeUndefined();
+  });
+
   it('uses Depot for every static job', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
