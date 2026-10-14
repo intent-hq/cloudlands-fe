@@ -118,6 +118,9 @@ test('real file contents survive navigation and release their read lifetime', as
     await expect(opener).toBeFocused();
     await expect.poll(() => readFileState(page, workspaceId)).toEqual({});
     await page.goto(`${url}?note=${noteId}&q=${noteId}`);
+    await expect(
+      page.getByTestId('workspace-note').locator('header').getByRole('heading'),
+    ).toBeFocused();
     file = noteFile;
     await page
       .getByTestId('workspace-note')
@@ -129,6 +132,7 @@ test('real file contents survive navigation and release their read lifetime', as
     expect(new URL(page.url()).searchParams.get('line')).toBe('1');
     await page.reload();
     await assertContent();
+    await expect(view.getByRole('heading')).toBeFocused();
     await view.getByRole('link', { name: 'Back', exact: true }).click();
     await expect(
       page.getByTestId('workspace-note').locator('header').getByRole('heading'),

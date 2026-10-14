@@ -89,6 +89,9 @@ test('real Home status filter combines daemon signals with search and survives B
       'data-workspace-id',
       workspaceId,
     );
+    await expect(
+      page.getByTestId('workspace-overview').getByRole('heading', { level: 1 }),
+    ).toBeFocused();
     await page.goBack();
     await expect(filter).toHaveText('Running');
     await expect(input).toHaveValue(workspaceId);
@@ -97,11 +100,22 @@ test('real Home status filter combines daemon signals with search and survives B
     await expect(current).toBeFocused();
     await current.click();
     const git = page.getByTestId('workspace-git-status');
+    await expect(git).toBeVisible();
+    await expect(
+      page.getByTestId('workspace-overview').getByRole('heading', { level: 1 }),
+    ).toBeFocused();
+    await page.evaluate(() => document.fonts.ready);
+    await info.attach('workspace-entry-focus', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     await git.locator('[data-sidebar-search="files"]').getByRole('button').click();
     await git.getByRole('searchbox').fill('package.json');
+    await expect(git.getByRole('searchbox')).toBeFocused();
     const notes = page.getByTestId('workspace-notes');
     await notes.locator('[data-sidebar-search="context"]').getByRole('button').click();
     await notes.getByRole('searchbox').fill('independent-note-query');
+    await expect(notes.getByRole('searchbox')).toBeFocused();
     await git.locator('a[data-file-path="package.json"]').first().click();
     await expect(page.getByTestId('workspace-file-content')).toBeVisible({ timeout: 30_000 });
     await page.reload();
@@ -184,6 +198,9 @@ test('a direct workspace URL returns to the unfiltered Home list', async ({ page
   try {
     await page.goto(`${process.env.REACT_BASE_URL}/workspaces/${encodeURIComponent(workspaceId)}`);
     await expect(page.getByTestId('workspace-overview')).toBeVisible();
+    await expect(
+      page.getByTestId('workspace-overview').getByRole('heading', { level: 1 }),
+    ).toBeFocused();
     await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
     await expect(filter).toHaveText('All workspaces');
     await expect(input).toHaveValue('');

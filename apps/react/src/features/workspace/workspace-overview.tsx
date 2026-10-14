@@ -227,7 +227,14 @@ export function WorkspaceOverview({
   const row = loaded.value ? workspace.value : undefined;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
+  const title = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
+  const previousWorkspace = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (previousWorkspace.current === workspaceId) return;
+    previousWorkspace.current = workspaceId;
+    if (!noteId && !filePath) title.current?.focus();
+  }, [workspaceId, noteId, filePath]);
   const previousFile = useRef({ workspaceId, filePath });
   useLayoutEffect(() => {
     const previous = previousFile.current;
@@ -262,7 +269,11 @@ export function WorkspaceOverview({
     >
       <ScreenHeader
         leading={<SidebarTrigger />}
-        title={<h1>{row?.title ?? m.workspace_page_workspaceResource_label()}</h1>}
+        title={
+          <h1 ref={title} tabIndex={-1}>
+            {row?.title ?? m.workspace_page_workspaceResource_label()}
+          </h1>
+        }
         description="Internal React preview · unreleased · read-only"
         actions={
           <Link
