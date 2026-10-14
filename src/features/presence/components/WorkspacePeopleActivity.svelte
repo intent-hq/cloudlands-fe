@@ -29,6 +29,7 @@
   import { markNoteRead } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { normalizeActivityFilePath } from '$lib/components/workspace/utils/activity-file-path';
+  import { openMessage } from '$lib/utils/open-message';
   import { getPeopleActivity, type PeopleActivityRow } from './people-activity';
 
   let {
@@ -39,15 +40,25 @@
   $effect(() => workspaceIdStore.set(workspaceId));
   const events$ = selectWorkspaceEvents(workspaceIdStore);
   const people$ = selectWorkspacePeopleIdentities(workspaceIdStore);
+  const workspace$ = selectWorkspaceById(workspaceIdStore);
   const loading$ = selectPeopleEventsLoading(workspaceIdStore);
   const nextToken$ = selectOlderEventsNextToken(workspaceIdStore);
   const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
   const error$ = selectPeopleEventsError(workspaceIdStore);
   const initialized$ = selectPeopleEventsInitialized(workspaceIdStore);
-  const rows = $derived(getPeopleActivity(workspaceId, $events$, $people$));
+  const rows = $derived(
+    getPeopleActivity(workspaceId, $events$, $people$, $workspace$?.ownerPrincipalId),
+  );
   const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$nextToken$ && !$error$);
+  let messageNavigation: AbortController | undefined;
+
+  $effect(() => {
+    void workspaceId;
+    return () => messageNavigation?.abort();
+  });
 
   function openActivity(item: PeopleActivityRow) {
+    messageNavigation?.abort();
     if (!item.destination) return;
     const panelId =
       selectFocusedPanelId.select(appStore.state, panelLayoutId) ??
@@ -74,6 +85,18 @@
         ? setActiveTab(panelLayoutId, existing.id, panelId)
         : openTab(panelLayoutId, destination, panelId, undefined, true, undefined, true),
     );
+    const targetTabId = selectPanel.select(appStore.state, panelLayoutId, panelId)?.activeTabId;
+    if (item.messageId && destination.agentId && targetTabId) {
+      messageNavigation = new AbortController();
+      void openMessage({
+        workspaceId,
+        agentId: destination.agentId,
+        messageId: item.messageId,
+        contentAlreadyOpen: true,
+        targetTabId,
+        signal: messageNavigation.signal,
+      });
+    }
   }
 
   $effect(() => {
@@ -105,6 +128,7 @@
       {#snippet row({ item })}
         <ListRow
           data-people-activity-id={item.id}
+          data-message-preview={item.messagePreview ? true : undefined}
           class="min-h-[42px] items-center gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
         >
           {#snippet leading()}
@@ -115,7 +139,9 @@
               class="border border-border"
             />
           {/snippet}
-          {#snippet title()}{item.label}{/snippet}
+          {#snippet title()}
+            <span class={item.messagePreview ? 'block truncate' : undefined}>{item.label}</span>
+          {/snippet}
           {#snippet trailing()}
             <RelativeTime
               date={item.timestamp}

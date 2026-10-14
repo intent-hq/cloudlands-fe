@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
 import { getPeopleActivity } from './people-activity';
+import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
 
 const workspaceId = 'workspace-1';
 const person: PresenceIdentity = {
@@ -26,6 +27,79 @@ function rows(events: WorkspaceEvent[], people: PresenceIdentity[] = [person]) {
 }
 
 describe('People activity', () => {
+  const messageEvent = event({
+    type: 'agent:message',
+    data: { role: 'user', agentId: 'agent-1', messageId: 'message-1', author: person },
+  });
+  const previewEvent = event({
+    id: 'preview-1',
+    type: 'agent:last-message' as WorkspaceEvent['type'],
+    data: {
+      ...messageEvent.data,
+      lastMessageRole: 'user',
+      lastMessageId: 'message-1',
+      lastUserMessage: '# **Keep** the panel\n\nopen with `context`',
+    },
+  });
+
+  it.each([false, true])(
+    'joins message previews by subject regardless of arrival order: %s',
+    (reverse) => {
+      const events = reverse ? [previewEvent, messageEvent] : [messageEvent, previewEvent];
+      expect(rows(events)).toEqual([
+        expect.objectContaining({
+          id: messageEvent.id,
+          messageId: 'message-1',
+          messagePreview: 'Keep the panel open with context',
+          label: 'Current name: Keep the panel open with context',
+          destination: expect.objectContaining({ agentId: 'agent-1' }),
+        }),
+      ]);
+    },
+  );
+
+  it('does not borrow previews from another workspace, agent, or message', () => {
+    const wrongTargets = [
+      { ...previewEvent, workspaceId: 'other-workspace' },
+      { ...previewEvent, data: { ...previewEvent.data, agentId: 'other-agent' } },
+      { ...previewEvent, data: { ...previewEvent.data, messageId: 'other-message' } },
+      { ...previewEvent, data: { ...previewEvent.data, author: undefined } },
+      { ...previewEvent, data: { ...previewEvent.data, role: 'assistant' } },
+    ];
+    for (const wrong of wrongTargets) {
+      expect(rows([messageEvent, wrong])[0]).toMatchObject({
+        messagePreview: null,
+        label: 'Current name: Sent a message',
+      });
+    }
+  });
+
+  it('presents the collaborator’s text without their stamped preamble or delivery note', () => {
+    const preamble = buildCollaboratorSenderPreamble(
+      person.login,
+      person.displayName,
+      person.principalId,
+    );
+    const source = `${preamble}\n\nPlease keep this change\n\n[SYSTEM NOTE] This message was queued at 2026-10-14T12:00:00Z and waited 8s before delivery.`;
+    const companion = { ...previewEvent, data: { ...previewEvent.data, lastUserMessage: source } };
+    expect(
+      getPeopleActivity(workspaceId, [messageEvent, companion], [], 'owner-1')[0].messagePreview,
+    ).toBe('Please keep this change');
+    expect(companion.data.lastUserMessage).toBe(source);
+    expect(
+      getPeopleActivity(workspaceId, [messageEvent, companion], [], person.principalId)[0]
+        .messagePreview,
+    ).toContain(preamble);
+  });
+
+  it('updates an existing row when its live companion arrives without duplicating it', () => {
+    expect(rows([messageEvent])[0].messagePreview).toBeNull();
+    const result = rows([messageEvent, previewEvent, { ...previewEvent, id: 'replayed-preview' }]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(messageEvent.id);
+    expect(result[0].messagePreview).toBe('Keep the panel open with context');
+  });
+
   it.each([
     ['note:updated', { noteId: 'note-1', title: 'Plan' }, { type: 'note', noteId: 'note-1' }],
     ['comment:added', { noteId: 'note-2' }, { type: 'note', noteId: 'note-2' }],

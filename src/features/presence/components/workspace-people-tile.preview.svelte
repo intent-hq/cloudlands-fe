@@ -85,6 +85,7 @@
         branch: 'feat/sidebar-people-tile',
         status: WorkspaceStatus.Active,
         myRole: guest ? 'collaborator' : 'owner',
+        ownerPrincipalId: 'person-0',
         memberCount: shared ? Math.max(2, count) : 1,
         statusMessage: 'Bringing people and their work together.',
         changesets: [],
@@ -124,6 +125,31 @@
     const now = Date.now();
     const activity: WorkspaceEvent[] = [
       {
+        id: 'people-activity-luke-message',
+        workspaceId,
+        type: 'agent:message',
+        timestamp: new Date(now - 2 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
+        data: { role: 'user', agentId: 'planner', messageId: 'message-2', author: people[1] },
+      },
+      {
+        id: 'people-activity-luke-preview',
+        workspaceId,
+        type: 'agent:last-message' as WorkspaceEvent['type'],
+        timestamp: new Date(now - 2 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
+        data: {
+          role: 'user',
+          agentId: 'planner',
+          messageId: 'message-2',
+          lastMessageRole: 'user',
+          lastMessageId: 'message-2',
+          lastUserMessage:
+            'Can we make each activity link jump to the original message in the conversation?',
+          author: people[1],
+        },
+      },
+      {
         id: 'people-activity-note',
         workspaceId,
         type: 'note:updated',
@@ -138,6 +164,22 @@
         timestamp: new Date(now - 12 * 60_000).toISOString(),
         actor: { type: 'user', id: 'person-0', name: 'Sam' },
         data: { role: 'user', agentId: 'planner', messageId: 'message-1', author: people[0] },
+      },
+      {
+        id: 'people-activity-message-preview',
+        workspaceId,
+        type: 'agent:last-message' as WorkspaceEvent['type'],
+        timestamp: new Date(now - 12 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-0', name: 'Sam' },
+        data: {
+          role: 'user',
+          agentId: 'planner',
+          messageId: 'message-1',
+          lastMessageRole: 'user',
+          lastMessageId: 'message-1',
+          lastUserMessage: 'Let’s keep the People panel open while we review the sidebar together.',
+          author: people[0],
+        },
       },
       {
         id: 'people-activity-created',

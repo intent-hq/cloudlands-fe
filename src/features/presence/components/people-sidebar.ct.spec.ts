@@ -31,13 +31,13 @@ test('activity clicks reuse the current pane and keep the other pane and People 
   await expect(panel).toBeVisible();
 });
 
-test('keyboard activation opens the message agent in the current pane', async ({ mount }) => {
+test('keyboard activation reveals the recorded message in the current pane', async ({ mount }) => {
   const component = await mount(PeopleSidebarHost);
   await component.getByRole('button', { name: 'People', exact: true }).click();
   const panel = component.locator('[data-sidebar-card-tab="people"]');
   const row = panel
     .locator('[data-slot="list-view-item"]')
-    .filter({ hasText: 'Sam: Sent a message' });
+    .filter({ hasText: 'Sam: Let’s keep the People panel open' });
   await row.focus();
   await row.press('Enter');
   const navigation = component.locator('[data-people-navigation]');
@@ -50,6 +50,14 @@ test('keyboard activation opens the message agent in the current pane', async ({
         neighbor: { activeTabId: 'neighbor-note' },
       },
     });
+  const afterClick = JSON.parse((await navigation.textContent()) || '{}');
+  await expect(component.locator('[data-people-message-navigation]')).toHaveText(
+    JSON.stringify({
+      agentId: 'planner',
+      messageId: 'message-1',
+      targetTabId: afterClick.panels.current.activeTabId,
+    }),
+  );
   await expect(panel).toBeVisible();
 });
 

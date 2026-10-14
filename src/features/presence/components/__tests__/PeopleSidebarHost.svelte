@@ -5,6 +5,11 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import {
+    upsertSession,
+    removeSession,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import type { WireAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
+  import {
     eventReceived,
     olderEventsLoaded,
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -23,6 +28,31 @@
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const sharingOpen = selectShareDialogOpen();
   const workspaceId = 'people-tile-preview';
+  let messageNavigation = $state<Record<string, string>>({});
+  function recordMessageNavigation(event: Event) {
+    const detail = (event as CustomEvent).detail;
+    messageNavigation = {
+      agentId: detail.agentId,
+      messageId: detail.messageId,
+      targetTabId: detail.targetTabId,
+    };
+  }
+  window.addEventListener('chat:open-message', recordMessageNavigation);
+  store.dispatch(
+    upsertSession({
+      id: 'planner',
+      workspaceId,
+      name: 'Planner',
+      messages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          timestamp: '2026-10-14T12:00:00Z',
+          contentBlocks: [{ type: 'text', text: 'Let’s keep the People panel open' }],
+        },
+      ],
+    } as WireAgentSession),
+  );
   const panels$ = selectPanels(workspaceId);
   const focusedPanel$ = selectFocusedPanelId(workspaceId);
   store.dispatch(
@@ -103,6 +133,8 @@
   }
 
   onDestroy(() => {
+    window.removeEventListener('chat:open-message', recordMessageNavigation);
+    store.dispatch(removeSession('planner'));
     store.dispatch(clearPanelLayout(workspaceId));
     dispose();
   });
@@ -119,3 +151,4 @@
 <output data-people-navigation
   >{JSON.stringify({ panels: $panels$, focusedPanel: $focusedPanel$ })}</output
 >
+<output data-people-message-navigation>{JSON.stringify(messageNavigation)}</output>

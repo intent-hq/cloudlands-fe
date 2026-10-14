@@ -8,6 +8,8 @@ import { m } from '$shared/paraglide/messages.js';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
 import { getHumanMessageAuthor } from '$lib/utils/message-authorship';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import type { AgentMessage } from '$shared/types';
+import { getPlainTextMessagePreview } from '$lib/components/chat/chat-message-navigation';
 
 export interface PeopleActivityRow {
   id: string;
@@ -16,6 +18,8 @@ export interface PeopleActivityRow {
   label: string;
   timestamp: string;
   destination: Omit<PanelTab, 'id'> | null;
+  messageId: string | null;
+  messagePreview: string | null;
 }
 
 function text(value: unknown): string {
@@ -26,6 +30,13 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function messageKey(event: WorkspaceEvent): string {
+  const data = record(event.data);
+  const agentId = text(data.agentId) || text(event.sessionId);
+  const messageId = text(data.messageId);
+  return agentId && messageId ? JSON.stringify([agentId, messageId]) : '';
 }
 
 function activityDestination(event: WorkspaceEvent): PeopleActivityRow['destination'] {
@@ -204,8 +215,34 @@ export function getPeopleActivity(
   workspaceId: string,
   events: readonly WorkspaceEvent[],
   people: readonly PresenceIdentity[],
+  ownerPrincipalId?: string | null,
 ): PeopleActivityRow[] {
   const roster = new Map(people.map((person) => [person.principalId, person]));
+  const previews = new Map<string, string>();
+  for (const event of events) {
+    if (event.workspaceId !== workspaceId || (event.type as string) !== 'agent:last-message')
+      continue;
+    const data = record(event.data);
+    const author = getHumanMessageAuthor({
+      role: data.role === 'user' ? 'user' : 'system',
+      author: data.author,
+      metadata: data.metadata,
+    });
+    const key = messageKey(event);
+    if (!author || !key || typeof data.lastUserMessage !== 'string') continue;
+    const preview = getPlainTextMessagePreview(
+      {
+        id: text(data.messageId),
+        role: 'user',
+        timestamp: event.timestamp,
+        contentBlocks: [{ type: 'text', text: data.lastUserMessage }],
+        author,
+        metadata: data.metadata as AgentMessage['metadata'],
+      },
+      ownerPrincipalId,
+    );
+    if (preview) previews.set(key, preview);
+  }
   const seen = new Set<string>();
   const messages = new Set<string>();
   const rows: PeopleActivityRow[] = [];
@@ -229,8 +266,8 @@ export function getPeopleActivity(
       : null;
     if (isMessage ? !author : event.actor?.type !== 'user') continue;
     const messageId = isMessage ? text(data.messageId) : '';
-    const messageKey = messageId ? `${text(data.agentId)}:${messageId}` : '';
-    if (messageKey && messages.has(messageKey)) continue;
+    const key = isMessage ? messageKey(event) : '';
+    if (key && messages.has(key)) continue;
     const id = text(event.actor?.id);
     const person = id ? roster.get(id) : undefined;
     const name = author
@@ -240,10 +277,13 @@ export function getPeopleActivity(
         humanName(person?.displayName, id) ||
         humanName(person?.login, id);
     if (!name) continue;
-    const label = activityLabel(event, name);
+    const messagePreview = isMessage ? (previews.get(key) ?? null) : null;
+    const label = messagePreview
+      ? m.workspace_peopleActivity_actorAction_label({ name, action: messagePreview })
+      : activityLabel(event, name);
     if (!label) continue;
     seen.add(event.id);
-    if (messageKey) messages.add(messageKey);
+    if (key) messages.add(key);
     rows.push({
       id: event.id,
       name,
@@ -251,6 +291,8 @@ export function getPeopleActivity(
       label,
       timestamp: event.timestamp,
       destination: activityDestination(event),
+      messageId: messageId || null,
+      messagePreview,
     });
   }
   return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
