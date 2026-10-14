@@ -10,6 +10,9 @@ Missing state starts a new sweep; malformed state stops without requests.
 import argparse
 import importlib.util
 import json
+import os
+import re
+import subprocess
 from pathlib import Path
 import sys
 
@@ -17,6 +20,47 @@ SPEC = importlib.util.spec_from_file_location('retirement', Path(__file__).with_
 P = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(P)
 REPOSITORY = 'intent-hq/cloudlands-fe'
+
+
+class TokenApi:
+    """The reviewed gh transport with an explicit per-process evidence credential."""
+    def __init__(self, variable):
+        self.variable = variable
+
+    def request(self, method, path, body=None):
+        token = os.environ.get(self.variable, '')
+        P.require(bool(token), 'missing explicit evidence credential')
+        environment = dict(os.environ, GH_TOKEN=token)
+        environment.pop('RETIREMENT_READ_TOKEN', None)
+        environment.pop('GITHUB_TOKEN', None)
+        command = ['gh', 'api', '--hostname', 'github.com', '--include', '--method', method,
+                   '-H', 'Accept: application/vnd.github+json',
+                   '-H', 'X-GitHub-Api-Version: 2022-11-28', path]
+        if body is not None:
+            command += ['--input', '-']
+        try:
+            completed = subprocess.run(command, input=None if body is None else json.dumps(body),
+                                       text=True, capture_output=True, timeout=30, env=environment)
+            response = P.parse_response(completed.stdout)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+            raise P.SafetyError('GitHub evidence request failed: ' + str(error)) from error
+        P.require(completed.returncode == 0 or response.status >= 400, 'gh failed without an HTTP error')
+        return response
+
+
+class SplitApi:
+    """Read credential for evidence; repo GITHUB_TOKEN only for exact cancel POSTs."""
+    def __init__(self, reader, writer):
+        self.reader, self.writer = ReadOnlyApi(reader), writer
+
+    def request(self, method, path, body=None):
+        root = '/repos/' + REPOSITORY
+        P.require(path == root or path.startswith(root + '/') or path == '/graphql',
+                  'transport outside local repository')
+        if method == 'POST' and re.fullmatch(re.escape(root) + r'/actions/runs/[1-9][0-9]*/cancel', path):
+            P.require(body is None, 'cancel request cannot carry extra parameters')
+            return self.writer.request(method, path, body)
+        return self.reader.request(method, path, body)
 
 
 class ReadOnlyApi:

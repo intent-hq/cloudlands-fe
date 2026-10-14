@@ -127,6 +127,54 @@ class CallerTests(unittest.TestCase):
                 api.request(method, path, body)
         self.assertEqual(self.api.calls, [])
 
+    def test_split_transport_uses_writer_only_for_exact_local_cancel(self):
+        reader, writer = mock.Mock(), mock.Mock()
+        api = C.SplitApi(reader, writer)
+        api.request('GET', '/repos/' + REPO + '/rulesets/1')
+        api.request('POST', '/graphql', {'query': T.P.QUEUE_QUERY})
+        api.request('POST', '/repos/' + REPO + '/actions/runs/10/cancel')
+        self.assertEqual(reader.request.call_count, 2)
+        writer.request.assert_called_once_with('POST', '/repos/' + REPO + '/actions/runs/10/cancel', None)
+        for method, path, body in [
+            ('POST', '/repos/intent-hq/intentd/actions/runs/10/cancel', None),
+            ('POST', '/repos/' + REPO + '/actions/runs/10/force-cancel', None),
+            ('POST', '/repos/' + REPO + '/actions/runs/10/cancel', {'extra': True}),
+            ('POST', '/repos/' + REPO + '/actions/runs/0/cancel', None),
+            ('POST', '/graphql', {'query': 'mutation { nope }'}),
+            ('DELETE', '/repos/' + REPO + '/git/refs/heads/main', None),
+        ]:
+            with self.assertRaises(T.P.SafetyError):
+                api.request(method, path, body)
+        self.assertEqual(writer.request.call_count, 1)
+        self.assertEqual(reader.request.call_count, 2)
+
+    def test_actual_policy_with_split_transport_only_writes_exact_obsolete_fe_id(self):
+        reader, writer = mock.Mock(wraps=self.api), mock.Mock(wraps=self.api)
+        self.api.runs[20] = self.api.make_run(20, T.H)
+        self.api.compares[(T.B, T.H)] = T.comparison(T.B, T.H, 'ahead')
+        result = C.sweep(C.SplitApi(reader, writer), self.state, apply=True)
+        self.assertTrue(result['complete'])
+        writer.request.assert_called_once_with('POST', '/repos/' + REPO + '/actions/runs/10/cancel', None)
+        self.assertEqual(self.api.runs[20]['status'], 'queued')
+
+    def test_evidence_transport_uses_explicit_token_without_falling_back(self):
+        with mock.patch.dict(C.os.environ, {'RETIREMENT_READ_TOKEN': 'read-fixture', 'GH_TOKEN': 'write-fixture'}):
+            with mock.patch.object(C.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout='HTTP/2.0 200 OK\n\n{}')) as run:
+                C.TokenApi('RETIREMENT_READ_TOKEN').request('GET', '/repos/' + REPO)
+                self.assertEqual(run.call_args.kwargs['env']['GH_TOKEN'], 'read-fixture')
+                self.assertNotIn('RETIREMENT_READ_TOKEN', run.call_args.kwargs['env'])
+                self.assertEqual(C.os.environ['GH_TOKEN'], 'write-fixture')
+        with mock.patch.dict(C.os.environ, {'GH_TOKEN': 'write-fixture'}, clear=True):
+            with self.assertRaises(T.P.SafetyError):
+                C.TokenApi('RETIREMENT_READ_TOKEN').request('GET', '/repos/' + REPO)
+
+    def test_request_budget_is_shared_across_batches_and_stops_without_retry(self):
+        self.batches()
+        result = self.sweep(max_candidates=1, max_batches=10, max_requests=30)
+        self.assertFalse(result['complete'])
+        self.assertEqual(len(self.api.calls), 30)
+        self.assertEqual(self.api.mutations, [])
+
     def test_named_release_browser_and_manual_workflows_are_never_cancelled(self):
         for name in ('release-alpha', 'release-stable', 'promote-beta', 'manual-signed-build', 'nightly-browser-tests', 'nightly-browser-report'):
             self.api.runs[10]['path'] = '.github/workflows/' + name + '.yml'
