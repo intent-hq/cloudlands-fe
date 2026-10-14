@@ -13,6 +13,7 @@ export function WorkspaceConversationContent({
   messageId,
   isStreaming,
   onOpenAgent,
+  renderContent,
   renderBlock,
 }: {
   blocks: ContentBlock[];
@@ -20,6 +21,7 @@ export function WorkspaceConversationContent({
   messageId: string;
   isStreaming: boolean;
   onOpenAgent: (agentId: string) => void;
+  renderContent: (content: string) => ReactNode;
   renderBlock: (block: ContentBlock, index: number) => ReactNode;
 }) {
   const cache = selectChatAgentState(agentId).value.hydratedBlocks;
@@ -53,6 +55,7 @@ export function WorkspaceConversationContent({
             messageId={messageId}
             isStreaming={isStreaming}
             onOpenAgent={onOpenAgent}
+            renderContent={renderContent}
           />
         );
       }

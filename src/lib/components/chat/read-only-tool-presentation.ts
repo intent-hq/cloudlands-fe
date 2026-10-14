@@ -30,11 +30,14 @@ export function getReadOnlyToolPresentation(
     parsed.type === 'agent-list' &&
     resultBlock != null &&
     Boolean(parsed.agents?.length);
+  const workspaceReadContent =
+    workspaceTool && parsed.type === 'note-view' && resultBlock != null && Boolean(parsed.content);
   // ACP file-kind receipts can contain only exit metadata. The canonical
   // unknown body is raw data; the human title never supplies file contents.
   const rawFileResult =
     parsed.type === 'unknown' && resultBlock != null && call.metadata?.toolKind === 'file';
-  if (!workspaceConfirmation && !workspaceAgentList && !rawFileResult) return null;
+  if (!workspaceConfirmation && !workspaceAgentList && !workspaceReadContent && !rawFileResult)
+    return null;
   const display = classifyTool(call.name, input, result);
   const state = getToolCallState(resultBlock, isStreaming);
   const model = buildToolDisplayModel({

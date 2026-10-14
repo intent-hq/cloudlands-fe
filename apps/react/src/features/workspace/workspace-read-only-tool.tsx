@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useState } from 'react';
+import { useId, useLayoutEffect, useState, type ReactNode } from 'react';
 import { EyeIcon, HandIcon } from '@phosphor-icons/react';
 import type { ContentBlock } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -26,6 +26,7 @@ export function WorkspaceReadOnlyTool({
   messageId,
   isStreaming,
   onOpenAgent,
+  renderContent,
 }: {
   call: ContentBlock;
   resultBlock?: ContentBlock;
@@ -33,6 +34,7 @@ export function WorkspaceReadOnlyTool({
   messageId: string;
   isStreaming: boolean;
   onOpenAgent: (agentId: string) => void;
+  renderContent: (content: string) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
@@ -215,6 +217,13 @@ export function WorkspaceReadOnlyTool({
                   count: formatInteger(parsed.agents.length),
                 })}
               </div>
+            </div>
+          ) : parsed.type === 'note-view' && state !== 'error' && parsed.content ? (
+            <div
+              data-workspace-read-content=""
+              className="min-w-0 max-h-72 overflow-y-auto rounded border border-border bg-muted/20 p-3 text-sm"
+            >
+              {renderContent(parsed.content)}
             </div>
           ) : parsed.type === 'confirmation' && state !== 'error' && parsed.content ? (
             <pre

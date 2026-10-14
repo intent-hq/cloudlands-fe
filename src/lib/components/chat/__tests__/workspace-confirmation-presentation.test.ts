@@ -26,6 +26,31 @@ const result = (
 });
 
 describe('bounded read-only tool presentation', () => {
+  it('keeps canonical workspace read content in its exact paired disclosure', () => {
+    const tool = {
+      ...call(),
+      input: { code: 'return await ws.note.listTasks("spec")', summary: 'Read tasks' },
+    };
+    const text = '[1]{id,status,title}:\n  task-a,done,First task';
+    const paired = result('provider-call', {
+      error: null,
+      result: {
+        content: [{ type: 'text', text }],
+        structuredContent: null,
+        _meta: null,
+      },
+    });
+    expect(getReadOnlyToolPresentation(tool, paired)?.parsed).toEqual({
+      type: 'note-view',
+      content: text,
+    });
+    const prepared = prepareReadOnlyToolContent([tool, paired, result('other-call', 'kept')]);
+    expect(prepared.pairs.get(tool)).toBe(paired);
+    expect([...prepared.consumedResults]).toEqual([paired]);
+    expect(getReadOnlyToolPresentation(tool, undefined)).toBeNull();
+    expect(getReadOnlyToolPresentation(tool, result('provider-call', ''))).toBeNull();
+  });
+
   it('admits canonical agent-list rows and consumes only their exact paired result', () => {
     const tool = {
       ...call(),

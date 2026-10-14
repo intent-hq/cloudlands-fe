@@ -430,6 +430,13 @@ export function WorkspaceConversation({
                           messageId={message.id}
                           isStreaming={message.isStreaming === true}
                           onOpenAgent={(agent) => open(workspaceId, { agent })}
+                          renderContent={(content) => (
+                            <MarkdownViewer
+                              {...navigation}
+                              content={content}
+                              renderRichFencesAsCode
+                            />
+                          )}
                           renderBlock={(block, index) => (
                             <ConversationBlock
                               key={block.id ?? index}

@@ -60,6 +60,10 @@ test('real truncated tool output hydrates only on expansion and retires with its
     const block = message.contentBlocks.find(
       (b) => b.type === 'tool_result' && b.outputTruncated && b.id,
     );
+    const call = message.contentBlocks.find(
+      (b) => b.type === 'tool_use' && b.toolCallId === block.tool_use_id,
+    );
+    expect(call?.toolCallId).toBe('exec-3ba34e21-f0cc-4b25-9978-7184bdaac660');
     await page.goto(`${url}&message=${encodeURIComponent(message.id)}`);
     await expect(conversation).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
     const reasoning = conversation
@@ -67,8 +71,10 @@ test('real truncated tool output hydrates only on expansion and retires with its
       .getByRole('button', { name: 'Reasoning', exact: true });
     await reasoning.click();
     await expect(reasoning).toHaveAttribute('aria-expanded', 'true');
-    const row = conversation.locator(`[data-tool-block-id="${block.id}"]`);
-    const trigger = row.getByRole('button').first();
+    const row = conversation.locator(`[data-tool-use-id="${call.id}"]`);
+    const trigger = row.getByTestId('tool-call-disclosure');
+    await expect(row).toHaveAttribute('data-tool-call-id', call.toolCallId);
+    await expect(conversation.locator(`[data-tool-block-id="${block.id}"]`)).toHaveCount(0);
     await expect(trigger).toBeVisible();
     expect(requests.filter((r) => r.method === 'agent.getMessageBlock')).toHaveLength(0);
     const probe = async (label) =>
@@ -77,14 +83,14 @@ test('real truncated tool output hydrates only on expansion and retires with its
         ...(await row.evaluate((el) => ({
           top: el.getBoundingClientRect().top,
           height: el.getBoundingClientRect().height,
-          body: el.querySelector('pre')?.textContent ?? null,
+          body: el.querySelector('[data-workspace-read-content]')?.textContent ?? null,
         }))),
       });
     await trigger.scrollIntoViewIfNeeded();
     const beforeTop = await trigger.evaluate((el) => el.getBoundingClientRect().top);
     await probe('before-expansion');
     await trigger.click();
-    const body = row.locator('[data-block-id]');
+    const body = row.locator('[data-hydration]');
     await expect(body).toHaveAttribute('data-hydration', 'loaded');
     const uiRead = replies.filter(({ request }) => request.method === 'agent.getMessageBlock');
     expect(uiRead).toHaveLength(1);
@@ -98,7 +104,41 @@ test('real truncated tool output hydrates only on expansion and retires with its
     const full = uiRead[0].response.result.block;
     expect(full.outputTruncated).not.toBe(true);
     expect(full.output).not.toEqual(block.output);
-    await expect(body.locator('pre')).toHaveText(JSON.stringify(full.output, null, 2));
+    const rendered = await page.evaluate(
+      async ({ call, full, workspaceId }) => {
+        const resources = performance.getEntriesByType('resource');
+        const parserUrl = resources.find((r) =>
+          new URL(r.name).pathname.endsWith('/components/chat/tool-result-parser.ts'),
+        )?.name;
+        const markdownUrl = resources.find((r) =>
+          new URL(r.name).pathname.endsWith('/utils/markdown-processor.ts'),
+        )?.name;
+        if (!parserUrl || !markdownUrl) throw new Error('Canonical content owners not observed');
+        const parsed = (await import(parserUrl)).parseToolResult(
+          call.name,
+          call.input,
+          full.output,
+        );
+        if (parsed.type !== 'note-view' || !parsed.content)
+          throw new Error('Expected the genuine workspace read-content family');
+        const html = await (
+          await import(markdownUrl)
+        ).processMarkdownToHTML(parsed.content, {
+          allowEmpty: true,
+          skipIfHTML: false,
+          preserveAnchors: true,
+          taskBlockRenderMode: 'placeholder',
+          workspaceId,
+          renderRichFencesAsCode: true,
+          processPrimitives: true,
+          allowSanitizedHtml: false,
+          renderMath: true,
+        });
+        return new globalThis.DOMParser().parseFromString(html, 'text/html').body.textContent;
+      },
+      { call, full, workspaceId },
+    );
+    await expect(body.locator('[data-workspace-read-content]')).toHaveText(rendered);
     const independent = await read('agent.getMessageBlock', uiRead[0].request.params);
     expect(independent.block).toEqual(full);
     expect(
