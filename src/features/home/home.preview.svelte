@@ -208,8 +208,8 @@
     complete: 'Complete: polish settings accessibility',
     pr_open:
       'PR open: keep workspace titles readable across narrow layouts and long repository names',
-    pr_ready: 'PR Mergeable: ship the sidebar improvements',
-    pr_queued: 'PR Queued: publish the release documentation',
+    pr_ready: 'PR mergeable: ship the sidebar improvements',
+    pr_queued: 'PR queued: publish the release documentation',
     pr_merged: 'PR merged: simplify platform configuration',
   };
   const statusGroupingFixtures: Workspace[] = [

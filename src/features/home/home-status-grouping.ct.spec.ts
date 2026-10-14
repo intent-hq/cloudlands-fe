@@ -10,8 +10,8 @@ const statuses = [
   ['idle', 'Done & idle'],
   ['complete', 'Done & idle'],
   ['pr_open', 'PR open'],
-  ['pr_ready', 'PR Mergeable'],
-  ['pr_queued', 'PR Queued'],
+  ['pr_ready', 'PR mergeable'],
+  ['pr_queued', 'PR queued'],
   ['pr_merged', 'PR merged'],
 ] as const;
 
@@ -84,7 +84,7 @@ test('Home status groups restore every work stage in list view only', async ({
   await expect(component.getByRole('listbox', { name: 'PR open', exact: true })).toHaveCount(0);
   await expect(
     component
-      .getByRole('listbox', { name: 'PR Mergeable', exact: true })
+      .getByRole('listbox', { name: 'PR mergeable', exact: true })
       .locator('[data-home-workspace]'),
   ).toHaveCount(2);
   await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
@@ -118,7 +118,7 @@ test('Home status grouping keeps pinned work unique and respects filters and sav
       .locator('[data-home-workspace]'),
   ).toHaveCount(1);
   await expect(pinned).toHaveCount(1);
-  await expect(component.getByRole('listbox', { name: 'PR Mergeable', exact: true })).toHaveCount(
+  await expect(component.getByRole('listbox', { name: 'PR mergeable', exact: true })).toHaveCount(
     0,
   );
   const needsYou = component
