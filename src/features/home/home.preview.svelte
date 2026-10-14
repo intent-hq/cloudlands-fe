@@ -3,6 +3,8 @@
   import {
     AgentStatus,
     WorkspaceStatus,
+    WORKSPACE_DISPLAY_STATUS_VALUES,
+    type WorkspaceDisplayStatus,
     type AgentSession,
     type AgentMessage,
     type Workspace,
@@ -16,6 +18,8 @@
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         setTitle: (id: string, title: string) => void;
+        setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
+        roundTripSettings: () => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
     }
@@ -26,6 +30,7 @@
       | 'populated'
       | 'untitled'
       | 'status-icons'
+      | 'status-grouping'
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
@@ -55,6 +60,7 @@
       populated: { props: { scenario: 'populated' } },
       untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
+      'status-grouping': { props: { scenario: 'status-grouping' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
@@ -197,6 +203,66 @@
               ][index],
           ).toISOString(),
   }));
+  const statusGroupingTitles: Record<WorkspaceDisplayStatus, string> = {
+    failed: 'Failed: retry the release build',
+    blocked: 'Blocked: restore the repository connection',
+    needs_attention: 'Needs attention: review the onboarding flow',
+    not_started: 'Not started: plan keyboard shortcuts',
+    in_progress: 'In progress: improve workspace search',
+    idle: 'Idle: explore navigation alternatives',
+    complete: 'Complete: polish settings accessibility',
+    pr_open:
+      'PR open: keep workspace titles readable across narrow layouts and long repository names',
+    pr_ready: 'PR mergeable: ship the sidebar improvements',
+    pr_queued: 'PR queued: publish the release documentation',
+    pr_merged: 'PR merged: simplify platform configuration',
+  };
+  const statusGroupingFixtures: Workspace[] = [
+    ...WORKSPACE_DISPLAY_STATUS_VALUES.map((status) => ({
+      ...fixtures[0],
+      id: WorkspaceId(`home-status-${status}`),
+      title: statusGroupingTitles[status],
+      displayStatus: status,
+      attention: status === 'pr_ready' ? ('review_required' as const) : undefined,
+      statusMessage: `Working on ${statusGroupingTitles[status].split(': ')[1]}.`,
+      repositoryName: status === 'pr_merged' ? 'platform' : 'studio',
+      repositoryPath: status === 'pr_merged' ? '/repos/platform' : '/repos/studio',
+      branch: `feat/home-status-${status}`,
+    })),
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-missing'),
+      title: 'Not started: workspace with no reported status',
+      displayStatus: undefined,
+      attention: undefined,
+      statusMessage: 'Waiting for the first workspace status update.',
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-unknown'),
+      title: 'Not started: workspace with a future status',
+      displayStatus: 'future_status' as WorkspaceDisplayStatus,
+      attention: undefined,
+      statusMessage: 'The daemon reported a status this client does not recognize yet.',
+    },
+    {
+      ...fixtures[6],
+      id: WorkspaceId('home-status-archived'),
+      title: 'Archived: explore alternative layouts',
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-deleted'),
+      title: 'Deleted: retired release experiment',
+      status: WorkspaceStatus.Deleted,
+    },
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-status-pending-delete'),
+      title: 'Pending deletion: retired navigation experiment',
+      pendingDeleteAt: '2026-09-29T00:00:00Z',
+    },
+  ];
   const prStatusFixtures: Workspace[] = [
     ...(['pr_open', 'pr_ready', 'pr_queued'] as const).flatMap((displayStatus) => [
       {
@@ -301,7 +367,12 @@
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import { resetHomeWorkspaceView, updateHomeWorkspaceView } from './home-workspaces-slice';
+  import {
+    hydrateHomeWorkspaceSettings,
+    resetHomeWorkspaceView,
+    updateHomeWorkspaceView,
+  } from './home-workspaces-slice';
+  import { persistedHomeState, readHomePersistence } from './home-workspaces-persistence';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import {
@@ -350,10 +421,24 @@
   window.__homeWorkspacePreview = {
     setTitle: (id, title) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
+    setStatus: (id, status) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),
+      ),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),
     }),
+    roundTripSettings: () => {
+      const view = store.state.homeWorkspaces;
+      const persisted = JSON.stringify(persistedHomeState(view));
+      store.dispatch(
+        hydrateHomeWorkspaceSettings(
+          view.persistenceScope,
+          readHomePersistence(JSON.parse(persisted)),
+        ),
+      );
+    },
   };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -373,7 +458,12 @@
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       hydrateSidebarNav({
-        pinnedWorkspaceIds: scenario === 'status-icons' ? ['home-complete'] : previousPinnedIds,
+        pinnedWorkspaceIds:
+          scenario === 'status-icons'
+            ? ['home-complete']
+            : scenario === 'status-grouping'
+              ? []
+              : previousPinnedIds,
       }),
     );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
@@ -413,7 +503,9 @@
               ? prStatusFixtures
               : scenario === 'status-icons'
                 ? statusFixtures
-                : fixtures
+                : scenario === 'status-grouping'
+                  ? statusGroupingFixtures
+                  : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',

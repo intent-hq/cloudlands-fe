@@ -3,6 +3,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { setupHomeWorkspaceLinksFixtures } from '../../test/fixtures/home-workspace-links';
+  import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 
   let {
     href = 'intent://local/file/src/main.ts',
@@ -12,6 +13,7 @@
     enlarged = false,
     ordinaryChat = false,
     nodeOwned = false,
+    githubLinkDefaultAction,
   }: {
     href?: string;
     title?: string;
@@ -20,9 +22,16 @@
     enlarged?: boolean;
     ordinaryChat?: boolean;
     nodeOwned?: boolean;
+    githubLinkDefaultAction?: GithubLinkDefaultAction;
   } = $props();
   const { workspace, agentId, agentName, dispose } = untrack(() =>
-    setupHomeWorkspaceLinksFixtures({ href, title, repository, nodeOwned }),
+    setupHomeWorkspaceLinksFixtures({
+      href,
+      title,
+      repository,
+      nodeOwned,
+      githubLinkDefaultAction,
+    }),
   );
   let closed = $state(false);
   onDestroy(dispose);
