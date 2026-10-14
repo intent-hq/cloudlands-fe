@@ -71,6 +71,7 @@ import { HomeActivityTimeExamples } from './home-activity-time-examples';
 import { HomeWorkspaceControlsExamples } from './home-workspace-controls-examples';
 import { ProtocolMismatchExamples } from './protocol-mismatch-examples';
 import { RulesInspectorExamples } from './rules-inspector-examples';
+import { LauncherHoverCardExamples } from './launcher-hover-card-examples';
 import { FileSearchExamples } from './file-search-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
@@ -613,6 +614,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'principal-avatar' && <InitialsAvatarExamples />}
       {slug === 'settings' && <SettingsHighlightExample />}
       {slug === 'tooltip-rich' && <RichTooltipExample />}
+      {slug === 'tooltip-rich' && <LauncherHoverCardExamples />}
       {slug === 'tooltip' && <PublicTooltipExample />}
       {slug === 'select' && <SelectWrapperExample />}
       {slug === 'sidebar' && <SidebarPersistenceExample />}
