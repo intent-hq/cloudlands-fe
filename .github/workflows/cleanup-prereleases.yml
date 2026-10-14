@@ -45,7 +45,7 @@ concurrency:
 jobs:
   cleanup:
     if: ${{ github.repository == 'intent-hq/cloudlands-fe' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Require cleanup credential

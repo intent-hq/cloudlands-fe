@@ -4,7 +4,12 @@
 
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ScriptReadChange } from '$features/scripts/utils/script-change';
-import type { ScriptListEntry } from '$features/scripts/types';
+import type {
+  ScriptMode,
+  ScriptPurpose,
+  WorkspaceScript,
+  ScriptListEntry,
+} from '$features/scripts/types';
 
 // Re-export types that consumers need
 export type {
@@ -45,10 +50,85 @@ type ScriptRetainedOutput = {
 
 export type ScriptQuickAction = 'start' | 'stop' | 'restart' | 'delete' | 'edit';
 
+export type ScriptDefinitionInput = {
+  purpose?: ScriptPurpose;
+  name: string;
+  command: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  mode: ScriptMode;
+  category?: string;
+  source?: string;
+  autoStart?: boolean;
+  healthUrl?: string;
+  readyPattern?: string;
+};
+
+export type ScriptDefinitionUpdate = Partial<
+  Pick<
+    ScriptDefinitionInput,
+    | 'name'
+    | 'command'
+    | 'cwd'
+    | 'env'
+    | 'mode'
+    | 'category'
+    | 'autoStart'
+    | 'healthUrl'
+    | 'readyPattern'
+  >
+>;
+
+export type ScriptDefinitionChanges = {
+  add: ScriptDefinitionInput[];
+  update: Array<{ id: string; updates: ScriptDefinitionUpdate }>;
+  remove: string[];
+};
+
+export type ScriptDetectionOutcome = {
+  detected: number;
+  added: number;
+  updated: number;
+  removed: number;
+  skippedRunning: string[];
+  packageManager?: 'npm' | 'yarn' | 'pnpm';
+};
+
+export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
+  /** Full pre-change inventory captured by the saga for Undo. */
+  snapshot: ScriptDefinitionSnapshot;
+};
+
+/** Mount-scoped identity for a serializable script UI workflow. */
+export interface ScriptWorkflowConsumer {
+  consumerId: string;
+  requestId: string;
+  resourceId: string;
+}
+
+export type ScriptWorkflowResult =
+  | WorkspaceScript
+  | ScriptListEntry
+  | ScriptListEntry[]
+  | ScriptDetectionOutcome
+  | ScriptDefinitionChangesOutcome;
+
+export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
+  id: string;
+  workspaceId: string;
+  status: 'pending' | 'success' | 'failure' | 'cancelled';
+  result?: ScriptWorkflowResult;
+  error?: string;
+  consumed?: true;
+}
+
+export type ScriptDefinitionSnapshot = WorkspaceScript[];
+
 export type ScriptOperationState = {
   action: ScriptQuickAction;
   pending: boolean;
   error?: string;
+  reservationId?: string;
 };
 
 /**
@@ -74,6 +154,8 @@ export type ScriptsWorkspaceState = {
   activeScriptIds?: string[];
   loadError?: string;
   nextCursor?: string;
+  /** Mount-scoped, serializable results for UI consumers. */
+  workflowOutcomes?: Collection<ScriptWorkflowOutcome, 'id'>;
 };
 
 /**

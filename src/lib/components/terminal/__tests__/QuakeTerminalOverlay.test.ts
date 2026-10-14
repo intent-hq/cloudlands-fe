@@ -4,16 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockDispatch,
-  mockUpdate,
   mockGet,
   selectedScript,
   scriptEntries,
   selectorSubscribers,
   terminalState,
+  asyncUpdate,
+  workflowOutcomes,
   notify,
 } = vi.hoisted(() => ({
   mockDispatch: vi.fn(),
-  mockUpdate: vi.fn(),
   mockGet: vi.fn(),
   selectedScript: { id: null as string | null },
   scriptEntries: { value: [] as any[] },
@@ -28,6 +28,10 @@ const {
       { activeId: string | null; isOpen: boolean; terminals: any[] }
     >,
   },
+  asyncUpdate: {
+    handler: null as ((action: any) => void) | null,
+  },
+  workflowOutcomes: new Map<string, any>(),
   notify: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
@@ -60,6 +64,56 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: (action: any) => {
       mockDispatch(action);
       scripts = scriptsReducer(scripts, action);
+      const finishWorkflow = (
+        consumer: any,
+        workspaceId: string,
+        status: string,
+        result?: unknown,
+        error?: string,
+      ) => {
+        if (!consumer) return;
+        workflowOutcomes.set(consumer.consumerId, {
+          ...consumer,
+          workspaceId,
+          status,
+          result,
+          error,
+          consumed: false,
+        });
+        for (const notifySelector of selectorSubscribers) notifySelector();
+      };
+      if (action.type === 'scripts/updateScriptDefinitionRequested') {
+        const [workspaceId, _scriptId, _updates, consumer] = action.payload;
+        const success = action.success;
+        const failure = action.failure;
+        action.success = (result: unknown) => {
+          const next = success(result);
+          finishWorkflow(consumer, workspaceId, 'success', result);
+          return next;
+        };
+        action.failure = (error: unknown) => {
+          const next = failure(error);
+          finishWorkflow(
+            consumer,
+            workspaceId,
+            'failure',
+            undefined,
+            error instanceof Error ? error.message : String(error),
+          );
+          return next;
+        };
+        if (asyncUpdate.handler) asyncUpdate.handler(action);
+        else {
+          const [, scriptId, updates] = action.payload;
+          action.success({ id: scriptId, workspaceId, ...updates });
+        }
+      } else if (action.type === 'scripts/getScriptDefinitionRequested') {
+        const [workspaceId, scriptId, consumer] = action.payload;
+        void mockGet(workspaceId, scriptId).then(
+          (result) => finishWorkflow(consumer, workspaceId, 'success', result),
+          (error) => finishWorkflow(consumer, workspaceId, 'failure', undefined, String(error)),
+        );
+      }
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
       Object.assign(
@@ -123,6 +177,7 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
         scopedReadable(workspaceIdStore, () => ({ selectedScriptId: selectedScript.id })),
       { select: () => ({ selectedScriptId: selectedScript.id }) },
     ),
+    selectTerminalCreationOutcome: () => readable(() => undefined),
   };
 });
 
@@ -132,9 +187,17 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   selectTerminal: (...payload: any[]) => ({ type: 'terminals/select', payload }),
   selectScript: (...payload: any[]) => ({ type: 'terminals/selectScript', payload }),
   addTerminal: (...payload: any[]) => ({ type: 'terminals/add', payload }),
+  createOverlayTerminalRequested: (...payload: any[]) => ({
+    type: 'terminals/createOverlayTerminalRequested',
+    payload,
+  }),
   removeTerminal: (...payload: any[]) => ({ type: 'terminals/remove', payload }),
   setTerminalOverlayHeight: (...payload: any[]) => ({ type: 'terminals/setHeight', payload }),
   renameTerminal: (...payload: any[]) => ({ type: 'terminals/rename', payload }),
+  clearTerminalCreationOutcome: (...payload: any[]) => ({
+    type: 'terminals/clearCreation',
+    payload,
+  }),
   clearScriptSelection: (...payload: any[]) => ({
     type: 'terminals/clearScriptSelection',
     payload,
@@ -162,6 +225,35 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOrigina
     }),
     selectWorkspaceScriptsInitialized: () => readable(() => true),
     selectCanDeleteScript: () => readable(() => false),
+    selectScriptWorkflowOutcome: (consumerId: string, workspaceArg: any, resourceArg: any) => ({
+      subscribe: (listener: (value: any) => void) => {
+        let workspaceId = typeof workspaceArg === 'string' ? workspaceArg : '';
+        let resourceId = typeof resourceArg === 'string' ? resourceArg : '';
+        const emit = () => {
+          const outcome = workflowOutcomes.get(consumerId);
+          listener(
+            outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+              ? outcome
+              : undefined,
+          );
+        };
+        const unsubWorkspace = workspaceArg?.subscribe?.((value: string) => {
+          workspaceId = value;
+          emit();
+        });
+        const unsubResource = resourceArg?.subscribe?.((value: string) => {
+          resourceId = value;
+          emit();
+        });
+        selectorSubscribers.add(emit);
+        emit();
+        return () => {
+          selectorSubscribers.delete(emit);
+          unsubWorkspace?.();
+          unsubResource?.();
+        };
+      },
+    }),
   };
 });
 
@@ -175,7 +267,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
 vi.mock('$features/scripts/scripts.client', () => ({
   scriptsClient: {
     detect: vi.fn().mockResolvedValue({ success: true }),
-    update: mockUpdate,
     remove: vi.fn().mockResolvedValue({ success: true }),
     start: vi.fn().mockResolvedValue({ success: true }),
     stop: vi.fn().mockResolvedValue({ success: true }),
@@ -245,9 +336,10 @@ describe('QuakeTerminalOverlay lifecycle', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUpdate.mockResolvedValue({ success: true });
     selectedScript.id = null;
     mockGet.mockReset().mockResolvedValue(runningScript);
+    asyncUpdate.handler = null;
+    workflowOutcomes.clear();
     scriptEntries.value = [runningScript];
     terminalState.activeId = 'terminal-1';
     terminalState.height = 50;
@@ -301,7 +393,9 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     await tick();
     await new Promise((done) => setTimeout(done, 0));
     expect(screen.queryByPlaceholderText('npm run dev')).toBeNull();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/updateScriptDefinitionRequested' }),
+    );
 
     mockGet.mockResolvedValueOnce(newer);
     await fireEvent.click(screen.getByText(newer.command));
@@ -339,7 +433,9 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       const input = await screen.findByPlaceholderText('npm run dev');
       await fireEvent.keyDown(input, { key: 's', [modifier]: true });
       await tick();
-      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/updateScriptDefinitionRequested' }),
+      );
       expect(mockGet).toHaveBeenCalledExactlyOnceWith('ws-1', 'script-1');
       expect(screen.queryByPlaceholderText('npm run dev')).toBeNull();
     },
@@ -356,15 +452,25 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     await fireEvent.input(input, { target: { value: 'pnpm edited-command' } });
     await fireEvent.keyDown(input, { key: 's', ctrlKey: true });
     await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledExactlyOnceWith('ws-1', 'script-1', {
-        command: 'pnpm edited-command',
-      }),
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/updateScriptDefinitionRequested',
+          payload: [
+            'ws-1',
+            'script-1',
+            { command: 'pnpm edited-command' },
+            expect.objectContaining({ resourceId: 'script-1' }),
+          ],
+        }),
+      ),
     );
   });
 
   it('awaits a script rename and keeps the editor open when the mutation fails in-band', async () => {
-    let resolveUpdate!: (result: { success: boolean; error?: string }) => void;
-    mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
+    let rejectUpdate!: (error: Error) => void;
+    asyncUpdate.handler = (action) => {
+      rejectUpdate = (error) => action.failure(error);
+    };
     render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
 
     await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
@@ -372,13 +478,23 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     await fireEvent.input(input, { target: { value: 'renamed dev' } });
     await fireEvent.blur(input);
 
-    expect(mockUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'renamed dev' });
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/updateScriptDefinitionRequested',
+        payload: [
+          'ws-1',
+          'script-1',
+          { name: 'renamed dev' },
+          expect.objectContaining({ resourceId: 'script-1' }),
+        ],
+      }),
+    );
     expect(mockDispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/refresh' }),
     );
     expect(screen.getByPlaceholderText('Name')).toBeTruthy();
 
-    resolveUpdate({ success: false, error: 'Rename rejected' });
+    rejectUpdate(new Error('Rename rejected'));
 
     await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Rename rejected'));
     expect(mockDispatch).not.toHaveBeenCalledWith(
@@ -387,9 +503,32 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     expect(screen.getByPlaceholderText('Name')).toBeTruthy();
   });
 
+  it('submits an Enter-plus-blur rename only once and closes from that outcome', async () => {
+    let resolveUpdate!: () => void;
+    let updateCount = 0;
+    asyncUpdate.handler = (action) => {
+      updateCount += 1;
+      resolveUpdate = () => action.success({ id: 'script-1', workspaceId: 'ws-1' });
+    };
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+
+    await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
+    const input = screen.getByPlaceholderText('Name');
+    await fireEvent.input(input, { target: { value: 'renamed once' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await fireEvent.blur(input);
+
+    expect(updateCount).toBe(1);
+    resolveUpdate();
+    await waitFor(() => expect(screen.queryByPlaceholderText('Name')).toBeNull());
+  });
+
   it('reconciles a deferred rename to its captured workspace without closing B editing UI', async () => {
-    let resolveUpdate!: (result: { success: boolean; error?: string }) => void;
-    mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
+    let resolveUpdate!: () => void;
+    asyncUpdate.handler = (action) => {
+      const [workspaceId, scriptId, updates] = action.payload;
+      resolveUpdate = () => action.success({ id: scriptId, workspaceId, ...updates });
+    };
     const { rerender } = render(QuakeTerminalOverlay, {
       props: { workspaceId: 'ws-a' as any },
     });
@@ -398,17 +537,22 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed in A' } });
     await fireEvent.blur(input);
-    expect(mockUpdate).toHaveBeenCalledWith('ws-a', 'script-1', { name: 'renamed in A' });
-
-    await rerender({ workspaceId: 'ws-b' as any });
-    resolveUpdate({ success: true });
-
-    await waitFor(() =>
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'scripts/refresh',
-        payload: ['ws-a'],
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/updateScriptDefinitionRequested',
+        payload: [
+          'ws-a',
+          'script-1',
+          { name: 'renamed in A' },
+          expect.objectContaining({ resourceId: 'script-1' }),
+        ],
       }),
     );
+
+    await rerender({ workspaceId: 'ws-b' as any });
+    resolveUpdate();
+
+    await tick();
     expect(mockDispatch).not.toHaveBeenCalledWith({
       type: 'scripts/refresh',
       payload: ['ws-b'],
