@@ -1,7 +1,10 @@
 import { useId, useState, type ReactNode } from 'react';
 import { AgentMessageAttributionHeader } from '@/features/chat/components/agent-message-attribution-header';
+import { AutomatedWakeCardHeader } from '@/features/chat/components/automated-wake-card-header';
 import { ConversationTurnGap } from '@/features/chat/components/conversation-turn-gap';
 import { MarkdownViewer, type MarkdownViewerProps } from '@/components/markdown/markdown-viewer';
+import { getAutomatedWakePresentation } from '$lib/components/chat/automated-wake-presentation';
+import { SUBSCRIPTION_WAKE_BODY_PADDING_CLASS } from '$lib/components/chat/subscription-disclosure-classes';
 import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
 import {
   degradeLegacyFileBlocks,
@@ -33,8 +36,10 @@ export function WorkspaceConversationMessage({
   const bodyId = useId();
   const [expanded, setExpanded] = useState(false);
   const candidate = message.role === 'user' ? getAgentMessageAttribution(message.metadata) : null;
-  // Chief and automated wake presentation remain separate integration slices.
+  // Chief, hook and PR wake presentation remain separate integration slices.
   const attribution = candidate?.kind === 'agent' ? candidate : null;
+  const wake = getAutomatedWakePresentation(message);
+  const scriptWake = wake?.kind === 'script' ? wake : null;
   return (
     <article
       tabIndex={-1}
@@ -74,6 +79,37 @@ export function WorkspaceConversationMessage({
               {degradeLegacyFileBlocks(message.contentBlocks)
                 .filter((block) => block.type !== 'text')
                 .map(renderBlock)}
+            </div>
+          )}
+        </>
+      ) : scriptWake ? (
+        <>
+          <AutomatedWakeCardHeader
+            presentation={scriptWake}
+            expanded={expanded}
+            controlsId={bodyId}
+            ontoggle={() => setExpanded((value) => !value)}
+            onOpenLink={async (url, context) => {
+              await navigation.onOpenLink(url, context);
+            }}
+          />
+          {expanded && (
+            <div
+              id={bodyId}
+              className={`min-w-0 overflow-hidden border-t border-border ${SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}`}
+              data-testid="script-wake-expanded-body"
+            >
+              <span className="whitespace-pre-wrap">{scriptWake.bodyText}</span>
+              {scriptWake.attribution.matchedLine !== undefined && (
+                <>
+                  <p className="type-caption text-muted-foreground">
+                    {m.chat_scriptMonitor_untrusted_description()}
+                  </p>
+                  <pre className="whitespace-pre-wrap break-all font-mono">
+                    {scriptWake.attribution.matchedLine}
+                  </pre>
+                </>
+              )}
             </div>
           )}
         </>
