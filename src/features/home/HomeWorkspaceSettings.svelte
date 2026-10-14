@@ -16,10 +16,16 @@
     { value: 'month', label: m.home_updated_month() },
   ]);
   const groupingOptions = $derived([
-    { value: 'status', label: m.layout_allCard_status_label() },
+    { value: 'status', label: m.workspace_resizablePanels_activity_label() },
+    ...(view.view === 'list'
+      ? [{ value: 'workspace-status', label: m.layout_allCard_status_label() }]
+      : []),
     { value: 'repository', label: m.home_repository() },
     { value: 'none', label: m.settings_mcp_form_auth_none() },
   ]);
+  const groupBy = $derived(
+    view.view === 'board' && view.groupBy === 'workspace-status' ? 'status' : view.groupBy,
+  );
 </script>
 
 <div class="shrink-0">
@@ -50,9 +56,14 @@
 </div>
 <div class="shrink-0">
   <Select.Root
-    value={view.groupBy}
+    value={groupBy}
     onchange={(value) => {
-      if (value === 'status' || value === 'repository' || value === 'none')
+      if (
+        value === 'status' ||
+        value === 'workspace-status' ||
+        value === 'repository' ||
+        value === 'none'
+      )
         onchange({ groupBy: value });
     }}
   >
@@ -62,7 +73,7 @@
       aria-label={m.layout_sidebarPanel_groupBy_label()}
     >
       <span class="text-muted-foreground">{m.layout_sidebarPanel_groupBy_label()}</span>
-      <span>{groupingOptions.find((option) => option.value === view.groupBy)?.label}</span>
+      <span>{groupingOptions.find((option) => option.value === groupBy)?.label}</span>
       <Fa icon={faChevronDown} class="text-muted-foreground" />
     </Select.Trigger>
     <Select.Content portal>
