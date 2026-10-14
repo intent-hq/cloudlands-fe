@@ -1,9 +1,10 @@
+import type { WorkspacePRPresentationRow } from '../../shared/pr-presentation-types';
+export type { WorkspacePRPresentationRow } from '../../shared/pr-presentation-types';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import { getPRTooltipContent } from '$lib/utils/pr-status';
 import { m } from '$shared/paraglide/messages.js';
 import type { PullRequestInfo } from '$shared/types';
-import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faCodeMerge, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
 import {
   getPRStatusTooltip,
@@ -20,27 +21,6 @@ export interface WorkspacePRPresentationOptions {
   workspaceRepo: string | undefined;
   buildPrUrl: (prNumber: number, fallbackUrl?: string) => string;
   getDisplayTitle: (pr: PullRequestInfo) => string;
-}
-
-export interface WorkspacePRPresentationRow {
-  identity: string;
-  number: number;
-  title: string;
-  url: string;
-  repo: string | undefined;
-  repoContext: string | undefined;
-  status: PRInfo['status'];
-  /** Open PR reported by its monitor snapshot as sitting in the merge queue.
-   * The `status` stays `open` (ordering and `data-pr-status` are unchanged);
-   * only `accessibleStateLabel` / `details` say "Queued". */
-  queued: boolean;
-  statusIcon: IconDefinition;
-  foregroundClass: string;
-  backgroundClass: string;
-  accessibleStateLabel: string;
-  details: string;
-  monitorAgentId: string | undefined;
-  monitorOnly: boolean;
 }
 
 /**

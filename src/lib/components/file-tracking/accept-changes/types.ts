@@ -4,6 +4,7 @@
  * Type definitions for the redesigned accept changes workflow.
  */
 
+import type { PRDisplayStatus } from '../../shared/pr-presentation-types';
 import type { LocalCommitInfo } from '$features/accept-changes/types';
 import type { PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import { m } from '$shared/paraglide/messages.js';
@@ -102,9 +103,6 @@ interface ChangeStats {
   additions: number;
   deletions: number;
 }
-
-/** PR status for display */
-type PRDisplayStatus = 'open' | 'merged' | 'closed' | 'draft';
 
 /** Pull request info for display */
 export interface PRInfo {

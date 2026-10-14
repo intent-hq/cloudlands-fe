@@ -61,6 +61,7 @@ import { ContentSkeletonExamples } from './content-skeleton-examples';
 import { HomeViewOptionsExamples } from './home-view-options-examples';
 import { SpecialistOptionsExamples } from './specialist-options-examples';
 import { RepositoryPickerRowExamples } from './repository-picker-row-examples';
+import { SidebarPrListExamples } from './sidebar-pr-list-examples';
 import { LineChangeIndicatorExamples } from './line-change-indicator-examples';
 import { NavigationIconExamples } from './navigation-icon-examples';
 import { WorkspacePhaseExamples } from './workspace-phase-examples';
@@ -567,6 +568,7 @@ export function FunctionalExamples({ slug }: { slug: string }) {
       {slug === 'popovers' && <HomeViewOptionsExamples />}
       {slug === 'popovers' && <SpecialistOptionsExamples />}
       {slug === 'popovers' && <RepositoryPickerRowExamples />}
+      {slug === 'popovers' && <SidebarPrListExamples />}
       {workspacePresentationSlugs.includes(slug) && <WorkspacePresentationExamples slug={slug} />}
       {resourceIconSlugs.includes(slug) && <ResourceIconExamples slug={slug} />}
       {(slug === 'toast' || slug === 'notify') && <NotifyExample />}
