@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline caller regressions; no real GitHub requests or cancellation."""
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +23,12 @@ REPO = 'intent-hq/cloudlands-fe'
 
 class CallerTests(unittest.TestCase):
     def setUp(self):
+        guard = mock.patch.object(C.P, 'GhApi', side_effect=AssertionError('unit test attempted live transport'))
+        guard.start()
+        self.addCleanup(guard.stop)
+        processes = mock.patch.object(C.subprocess, 'run', side_effect=AssertionError('unit test attempted real subprocess'))
+        processes.start()
+        self.addCleanup(processes.stop)
         self.api = T.FakeGitHub(REPO)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -98,9 +105,11 @@ class CallerTests(unittest.TestCase):
         self.assertEqual(self.api.calls, [])
 
     def test_probe_checks_protection_activity_and_comparison_with_no_runs(self):
+        known_run = self.api.runs[10]
         self.api.runs.clear()
+        self.api.override = lambda m, p, b, n: self.api.response(known_run) if p == self.api.root + '/actions/runs/10' else None
         self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
-        result = C.probe(self.api)
+        result = C.probe(self.api, 10)
         self.assertTrue(result['complete'], result)
         paths = [call[1] for call in self.api.calls]
         self.assertIn(self.api.root + '/rulesets/1', paths)
@@ -111,12 +120,66 @@ class CallerTests(unittest.TestCase):
     def test_probe_attempts_activity_when_bypass_metadata_is_missing(self):
         del self.api.rules[1]['bypass_actors']
         self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
-        result = C.probe(self.api)
+        result = C.probe(self.api, 10)
         self.assertFalse(result['complete'])
         self.assertFalse(result['checks']['protection']['ok'])
         self.assertTrue(result['checks']['activity']['ok'])
         self.assertIn('/graphql', [call[1] for call in self.api.calls])
         self.assertEqual(self.api.mutations, [])
+
+    def test_diagnostic_drains_later_queue_pages_after_unknown_head(self):
+        self.api.queue_pages = [self.api.queue_body([None], True, '1'), self.api.queue_body([T.H])]
+        self.api.queue_pages[1]['data']['repository']['mergeQueue']['entries']['nodes'][0]['id'] = 'MQE_later'
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        result = C.probe(self.api, 10)
+        self.assertTrue(result['complete'], result)
+        evidence = result['checks']['activity']['evidence']
+        self.assertEqual(evidence['queue_pages'], 2)
+        self.assertFalse(evidence['activity_known'])
+        self.assertEqual(result['eligibility'], 'unknown')
+        self.assertEqual([r['cursor'] for r in result['routes'] if r['path'] == '/graphql'], [None, '1'])
+        runtime = self.sweep(apply=True)
+        self.assertFalse(runtime['complete'])
+        self.assertEqual(self.api.mutations, [])
+
+    def test_unknown_first_head_does_not_hide_later_errors_or_bad_pagination(self):
+        for variant in ('partial', 'api-error', 'missing-cursor', 'repeated-cursor', 'foreign-repo', 'invalid-head'):
+            with self.subTest(variant=variant):
+                self.api = T.FakeGitHub(REPO)
+                first = self.api.queue_body([None], True, '1')
+                second = self.api.queue_body([T.H])
+                entries = second['data']['repository']['mergeQueue']['entries']
+                entries['nodes'][0]['id'] = 'MQE_later'
+                if variant == 'partial': second['errors'] = [{'message': 'unavailable'}]
+                if variant == 'missing-cursor': entries['pageInfo'] = {'hasNextPage': True, 'endCursor': None}
+                if variant == 'repeated-cursor': entries['pageInfo'] = {'hasNextPage': True, 'endCursor': '1'}
+                if variant == 'foreign-repo': second['data']['repository']['databaseId'] = 999
+                if variant == 'invalid-head': entries['nodes'][0]['headCommit']['oid'] = 'bad'
+                self.api.queue_pages = [first, second]
+                if variant == 'api-error':
+                    self.api.override = lambda m, p, b, n: self.api.response({}, 403) if p == '/graphql' and n == 2 else None
+                self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+                result = C.probe(self.api, 10)
+                self.assertFalse(result['complete'], result)
+                self.assertFalse(result['checks']['activity']['ok'])
+                self.assertEqual(sum(p == '/graphql' for _, p, _ in self.api.calls), 2)
+                self.assertEqual(self.api.mutations, [])
+
+    def test_diagnostic_reports_unexercised_run_get_without_claiming_access(self):
+        self.api.runs.clear()
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        result = C.probe(self.api)
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['checks']['run_detail']['status'], 'unexercised')
+
+    def test_diagnostic_rejects_foreign_or_malformed_exact_run_get(self):
+        for field, value in [('id', True), ('run_attempt', False), ('repository', {'id': 77, 'full_name': 'other/repo'})]:
+            self.api = T.FakeGitHub(REPO)
+            self.api.runs[10][field] = value
+            self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+            result = C.probe(self.api, 10)
+            self.assertFalse(result['complete'], result)
+            self.assertFalse(result['checks']['run_detail']['ok'])
 
     def test_read_only_transport_rejects_mutations(self):
         api = C.ReadOnlyApi(self.api)
@@ -174,6 +237,36 @@ class CallerTests(unittest.TestCase):
         self.assertFalse(result['complete'])
         self.assertEqual(len(self.api.calls), 30)
         self.assertEqual(self.api.mutations, [])
+
+    def test_cli_sweep_routes_read_and_write_tokens_explicitly(self):
+        reader, writer = mock.Mock(wraps=self.api), mock.Mock(wraps=self.api)
+        def transport(variable):
+            return reader if variable == 'RETIREMENT_READ_TOKEN' else writer
+        with mock.patch.object(C, 'TokenApi', side_effect=transport) as token_api:
+            with mock.patch.object(C.sys, 'argv', ['caller', '--apply', '--state', str(self.state)]):
+                with mock.patch('sys.stdout', new_callable=io.StringIO):
+                    self.assertEqual(C.main(), 0)
+        self.assertEqual(token_api.call_args_list, [mock.call('RETIREMENT_READ_TOKEN'), mock.call('GH_TOKEN')])
+        writer.request.assert_called_once_with('POST', self.api.root + '/actions/runs/10/cancel', None)
+
+    def test_diagnostic_drains_ref_pages_and_rejects_bad_next_links(self):
+        endpoint = self.api.root + '/git/matching-refs/heads/gh-readonly-queue/'
+        ref = {'ref': 'refs/heads/' + self.api.runs[10]['head_branch'], 'object': {'type': 'commit', 'sha': T.H}}
+        for broken in (False, True):
+            self.api = T.FakeGitHub(REPO)
+            self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+            def pages(method, path, body, count):
+                if path == endpoint:
+                    url = 'https://api.github.com' + (endpoint if not broken else '/repos/other/repo/refs') + '?page=2'
+                    return self.api.response([], next_url=url)
+                if path == endpoint + '?page=2': return self.api.response([ref])
+            self.api.override = pages
+            result = C.probe(self.api, 10)
+            self.assertEqual(result['complete'], not broken, result)
+            if not broken:
+                self.assertEqual(result['checks']['activity']['evidence']['ref_pages'], 2)
+                self.assertIn(endpoint + '?page=2', [route['path'] for route in result['routes']])
+            self.assertEqual(self.api.mutations, [])
 
     def test_named_release_browser_and_manual_workflows_are_never_cancelled(self):
         for name in ('release-alpha', 'release-stable', 'promote-beta', 'manual-signed-build', 'nightly-browser-tests', 'nightly-browser-report'):

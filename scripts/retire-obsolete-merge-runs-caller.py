@@ -101,9 +101,70 @@ def save_cursor(path, cursor):
     temporary.replace(path)
 
 
+class TraceApi:
+    def __init__(self, api):
+        self.api, self.routes = api, []
+
+    def request(self, method, path, body=None):
+        route = {'method': method, 'path': path}
+        if path == '/graphql':
+            route['cursor'] = body['variables']['cursor']
+        self.routes.append(route)
+        response = self.api.request(method, path, body)
+        route['status'] = response.status
+        return response
+
+
+def activity_access(client, ctx):
+    """Diagnostic only: drain pages even with null heads; never authorize retirement."""
+    pages = client.pages(client.root + '/git/matching-refs/heads/gh-readonly-queue/')
+    names, refs = set(), []
+    for page in pages:
+        P.require(isinstance(page, list), 'invalid reference page')
+        refs.extend(page)
+    P.require(len(refs) <= 1000, 'queue ref bound exceeded')
+    for ref in refs:
+        name, obj = ref['ref'], ref['object']
+        P.require(isinstance(name, str) and name.startswith('refs/heads/gh-readonly-queue/main/')
+                  and name not in names and obj['type'] == 'commit' and P.sha(obj['sha']),
+                  'invalid/duplicate queue reference')
+        names.add(name)
+    owner, name = REPOSITORY.split('/')
+    cursor, cursors, nodes, unknown = None, set(), set(), 0
+    for index in range(client.max_pages):
+        response = client.request('POST', '/graphql', {'query': P.QUEUE_QUERY,
+            'variables': {'owner': owner, 'name': name, 'cursor': cursor}})
+        P.require(response.status == 200 and not response.data.get('errors'), 'GraphQL access unavailable/partial')
+        repo = response.data['data']['repository']
+        P.require(P.integer(repo['databaseId'], 1) and repo['databaseId'] == ctx['id']
+                  and repo['nameWithOwner'] == REPOSITORY, 'foreign queue response')
+        entries = repo['mergeQueue']['entries']
+        P.require(isinstance(entries['nodes'], list) and len(entries['nodes']) <= 100, 'invalid queue nodes')
+        for node in entries['nodes']:
+            P.require(isinstance(node['id'], str) and node['id'] not in nodes
+                      and node['state'] in P.QUEUE_STATES and node['pullRequest']['baseRefName'] == 'main',
+                      'unknown/duplicate queue entry')
+            nodes.add(node['id'])
+            if node['headCommit'] is None:
+                unknown += 1
+            else:
+                P.require(P.sha(node['headCommit']['oid']), 'invalid queue head')
+        page = entries['pageInfo']
+        P.require(type(page['hasNextPage']) is bool, 'invalid queue pagination')
+        if not page['hasNextPage']:
+            return {'ref_pages': len(pages), 'refs': len(refs), 'queue_pages': index + 1,
+                    'queue_entries': len(nodes), 'unknown_heads': unknown,
+                    'pagination_complete': True, 'activity_known': unknown == 0}
+        cursor = page['endCursor']
+        P.require(isinstance(cursor, str) and cursor and cursor not in cursors, 'lost/repeated queue cursor')
+        cursors.add(cursor)
+    raise P.SafetyError('incomplete queue pagination')
+
+
 def probe(api, run_id=None):
     """Always inspect both protections and queue activity, even on an empty scan."""
-    client = P.Client(ReadOnlyApi(api), REPOSITORY, 10, 200)
+    traced = TraceApi(ReadOnlyApi(api))
+    client = P.Client(traced, REPOSITORY, 10, 200)
     result = {'repository': REPOSITORY, 'mode': 'read-only-probe', 'checks': {}}
 
     def check(name, operation):
@@ -121,7 +182,7 @@ def probe(api, run_id=None):
             proof = P.protection(client, ctx)
             return {'rule_ids': proof['rule_ids'], 'bypass_verified': True}
         check('protection', protection)
-        check('activity', lambda: P.activity(client, ctx, None))
+        check('activity', lambda: activity_access(client, ctx))
         check('run_inventory', lambda: {'live_runs': len(P.discover(client, ctx))})
         base = check('main', lambda: P.main_tip(client))
         if base is not None:
@@ -130,10 +191,17 @@ def probe(api, run_id=None):
             def run_access():
                 P.require(P.integer(run_id, 1), 'invalid probe run ID')
                 run = client.get(client.root + '/actions/runs/' + str(run_id))
-                P.require(run['id'] == run_id and run['repository']['id'] == ctx['id']
-                          and run['repository']['full_name'] == REPOSITORY, 'foreign probe run')
+                P.require(P.integer(run['id'], 1) and run['id'] == run_id
+                          and P.integer(run['run_attempt'], 1) and P.integer(run['repository']['id'], 1)
+                          and run['repository']['id'] == ctx['id']
+                          and run['repository']['full_name'] == REPOSITORY, 'foreign/invalid probe run')
                 return {'id': run_id, 'run_attempt': run['run_attempt']}
             check('run_detail', run_access)
+        else:
+            result['checks']['run_detail'] = {'ok': False, 'status': 'unexercised'}
+    result['routes'] = traced.routes
+    activity = result['checks'].get('activity', {})
+    result['eligibility'] = 'not-assessed' if activity.get('evidence', {}).get('activity_known') else 'unknown'
     result['complete'] = bool(ctx) and all(item['ok'] for item in result['checks'].values())
     return result
 
@@ -179,8 +247,11 @@ def main():
     if not args.probe and args.state is None:
         parser.error('--state is required for a sweep')
     try:
-        api = P.GhApi()
-        result = probe(api, args.probe_run_id) if args.probe else sweep(api, args.state, apply=args.apply)
+        if args.probe:
+            result = probe(P.GhApi(), args.probe_run_id)
+        else:
+            api = SplitApi(TokenApi('RETIREMENT_READ_TOKEN'), TokenApi('GH_TOKEN'))
+            result = sweep(api, args.state, apply=args.apply)
     except (ValueError, KeyError, TypeError, OSError) as error:
         result = {'complete': False, 'error': str(error)}
     print(json.dumps(result, sort_keys=True, indent=2))
