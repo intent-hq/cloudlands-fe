@@ -10,6 +10,7 @@
 @import '../../../../src/lib/styles/overlay-surface.css';
 @import '../../../../src/lib/styles/subscription-card-utilities.css';
 @import './line-change-tokens.css';
+@import './workspace-phase-tokens.css';
 
 @source '../../../../src/lib/components/workspace/utils/workspace-status-presentation.ts';
 @source '../../../../src/lib/components/workspace/utils/task-status-display.ts';
