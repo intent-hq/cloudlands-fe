@@ -6,6 +6,7 @@ import { test as base, expect, openExample, outputJson } from './functional.mjs'
 import { repoRoot } from './manifest.mjs';
 import { observeAvatarPairNetwork, assertAvatarPairNetwork } from './agent-avatar.mjs';
 import { stableLocatorScreenshot } from './browser.mjs';
+import { waitForUnplayedNativeVideoControls } from './chat-video-native-readiness.mjs';
 import { PNG } from 'pngjs';
 
 // Local decoder and public caller contracts only. Error paths, downloads,
@@ -40,6 +41,9 @@ const generatedDependencies = [
 ];
 const ownFiles = [
   'packages/view-parity/lib/chat-video.mjs',
+  'packages/view-parity/lib/chat-video-native-readiness.mjs',
+  'packages/view-parity/lib/chat-video-native-readiness.test.mjs',
+  'packages/view-parity/tests/chat-video-readiness.core.spec.mjs',
   'packages/view-parity/tests/chat-video.core.spec.mjs',
   'packages/view-parity/tests/chat-video.extended.spec.mjs',
   'packages/view-parity/tests/chat-video-sizing.extended.spec.mjs',
@@ -503,6 +507,14 @@ export async function observePausedVideo(surface, name, info) {
 export async function captureVideo(page, target, name, info) {
   await target.scrollIntoViewIfNeeded();
   await page.evaluate(() => document.fonts.ready);
+  const player = target.locator('video[controls][data-testid="chat-video-player"]');
+  if (await player.count()) {
+    expect(await player.count(), 'Capture must have one native chat player').toBe(1);
+    if (
+      await player.evaluate((node) => node.paused && node.currentTime === 0 && !node.played.length)
+    )
+      await waitForUnplayedNativeVideoControls(page, player, info, name);
+  }
   const geometry = () =>
     target.evaluate((root) => {
       const rect = (node) => {
