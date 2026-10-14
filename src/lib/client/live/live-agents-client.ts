@@ -1,4 +1,4 @@
-import { CHAT_PAGE_SIZE } from '$shared/constants';
+import { createConversationReader } from './backend-conversation-reader';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -21,7 +21,7 @@ const agentReads = createBackendAgentClient({
   onBackendNotification: (...args) => onBackendNotification(...args),
   onBackendReconnected: (...args) => onBackendReconnected(...args),
 });
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
@@ -57,18 +57,6 @@ import {
  * carry it — this index lets us recover it without changing the public method
  * signature. Miss → fall back to a fresh `agent.get`.
  */
-
-const MAX_OUTBOUND_FRAME_BYTES = 41_943_040;
-const OVERSIZED_CONVERSATION_RESPONSE =
-  /^response for agent\.getConversation exceeds maximum outbound frame size: ([1-9][0-9]*) bytes > 41943040 bytes$/;
-
-function isOversizedConversationResponse(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { name?: unknown; message?: unknown };
-  if (candidate.name !== 'BackendError' || typeof candidate.message !== 'string') return false;
-  const match = OVERSIZED_CONVERSATION_RESPONSE.exec(candidate.message);
-  return match !== null && Number(match[1]) > MAX_OUTBOUND_FRAME_BYTES;
-}
 
 export class LiveAgentsClient implements AgentsClient {
   private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
@@ -123,65 +111,9 @@ export class LiveAgentsClient implements AgentsClient {
   // the unknown param and serves full blocks — same additive convention as
   // `chat.subscribe`'s `deltaEncoding`). `messages` is returned raw; the
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
-  async getConversation(
-    agentId: string,
-    limit = CHAT_PAGE_SIZE,
-    pageToken?: string,
-    aroundMessageId?: string,
-    aroundIndex?: number,
-    workspaceId?: string,
-  ): Promise<{
-    messages: AgentMessage[];
-    truncated: boolean;
-    totalMessages: number;
-    nextToken: string | null;
-    prevToken: string | null;
-  }> {
-    type ConversationResult = {
-      messages?: unknown[];
-      truncated?: boolean;
-      totalMessages?: number;
-      nextToken?: unknown;
-      prevToken?: unknown;
-    };
-    let requestLimit = limit;
-    let result: ConversationResult;
-    for (;;) {
-      const params: Record<string, unknown> = {
-        agentId,
-        ...(workspaceId !== undefined ? { workspaceId } : {}),
-        limit: requestLimit,
-        projection: 'slim',
-      };
-      if (pageToken !== undefined) params.nextToken = pageToken;
-      if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
-      if (aroundIndex !== undefined) params.aroundIndex = aroundIndex;
-      try {
-        result = await backendRequest<ConversationResult>('agent.getConversation', params);
-        break;
-      } catch (error) {
-        if (
-          !isOversizedConversationResponse(error) ||
-          !Number.isFinite(requestLimit) ||
-          requestLimit <= 1
-        ) {
-          throw error;
-        }
-        requestLimit = Math.max(1, Math.floor(requestLimit / 2));
-      }
-    }
-    if (!result || typeof result !== 'object') {
-      return { messages: [], truncated: false, totalMessages: 0, nextToken: null, prevToken: null };
-    }
-    const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
-    return {
-      messages,
-      truncated: Boolean(result.truncated),
-      totalMessages: typeof result.totalMessages === 'number' ? result.totalMessages : 0,
-      nextToken: typeof result.nextToken === 'string' ? result.nextToken : null,
-      prevToken: typeof result.prevToken === 'string' ? result.prevToken : null,
-    };
-  }
+  getConversation = createConversationReader({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  });
 
   // One FULL content block by id (`agent.getMessageBlock`, §5.5) — the
   // on-demand counterpart of the slim projection: fetches the complete body

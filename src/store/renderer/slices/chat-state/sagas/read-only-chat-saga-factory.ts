@@ -1,19 +1,23 @@
-import { buffers, eventChannel } from 'redux-saga';
-import { call, join, put, take, takeEvery } from 'typed-redux-saga';
+import type { createHistoryPageWorkers } from './history-page-workers';
+import { buffers, eventChannel, type Task } from 'redux-saga';
+import { call, cancel, join, put, take, takeEvery } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelSelector } from '@themislib/themis/saga';
 import { takeLatestByContext } from '../../../utils/context-saga-effects';
 import type { AgentSession } from '$shared/types';
 import type { ChatClient, ChatTranscript, ChatLiveStreamPhase } from '$lib/client/app-client';
 import {
   bulkUpsertSessions,
+  clearHistorySegment,
   replaceMessages,
   updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
+  scrollbackContinuationReset,
   retainedChatTranscriptsSet,
   chatTrackedWorkspaceSet,
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   transcriptHydrationStarted,
   transcriptHydrationSettled,
   transcriptHydrationFailed,
@@ -26,14 +30,16 @@ type ReadEvent = { transcript: ChatTranscript } | { phase: ChatLiveStreamPhase }
 /**
  * Read-only renderer binding of the canonical chat client and reducers. This
  * owns retained-chat actions only in a renderer without chatSubscribeSaga.
- * No send, unread, scrollback, optimistic merge or mutation watcher is started.
+ * No send, unread, optimistic merge or mutation watcher is started.
  */
 export function createReadOnlyChatSaga<State>({
   chat,
   readAgentSession,
   contextSelector,
   readAdmission,
+  historyPages,
 }: {
+  historyPages?: ReturnType<typeof createHistoryPageWorkers>;
   chat: ChatClient;
   readAgentSession: (agentId: string, workspaceId: string) => Promise<AgentSession | null>;
   contextSelector: SelectorChannelSelector<string | null, [], State>;
@@ -59,8 +65,11 @@ export function createReadOnlyChatSaga<State>({
       const authority = readAdmission(workspaceId);
       if (!authority) return;
       const current = () => readAdmission(workspaceId) === authority;
+      let pageWatchers: Task[] = [];
       let events: ReturnType<typeof eventChannel<ReadEvent>> | undefined;
       try {
+        yield* put(clearHistorySegment(agentId));
+        yield* put(scrollbackContinuationReset(agentId));
         yield* put(chatTrackedWorkspaceSet(agentId, workspaceId));
         yield* put(transcriptHydrationStarted(agentId));
         const session = yield* call(readAgentSession, agentId, workspaceId);
@@ -80,6 +89,11 @@ export function createReadOnlyChatSaga<State>({
             ),
           buffers.expanding(),
         );
+        if (historyPages) {
+          pageWatchers = yield* historyPages.watch(
+            (wsId, id) => current() && wsId === workspaceId && id === agentId,
+          );
+        }
         while (true) {
           const event = yield* take(events);
           if (!current()) return;
@@ -88,11 +102,17 @@ export function createReadOnlyChatSaga<State>({
             continue;
           }
           const transcript = event.transcript;
-          // This view has no optimistic rows or separately paged history. The
-          // shared reconciler owns the entire displayed window, including resets.
+          // The shared reconciler owns the tail; canonical history stays in
+          // its separate bounded segment and survives ordinary tail updates.
           yield* put(replaceMessages(agentId, transcript.messages));
           yield* put(updateSession(agentId, { isStreaming: transcript.isStreaming }));
-          if (transcript.fromSnapshot) {
+          if (transcript.initialHistory?.complete === false && !transcript.fromSnapshot) {
+            yield* put(chatInitialHistoryProgressed(agentId, transcript.initialHistory));
+          }
+          if (
+            transcript.fromSnapshot ||
+            (transcript.fromHistory && transcript.initialHistory?.complete)
+          ) {
             yield* put(
               chatTranscriptSnapshotApplied(agentId, {
                 truncated: transcript.truncated,
@@ -108,7 +128,10 @@ export function createReadOnlyChatSaga<State>({
       } catch {
         if (current()) yield* put(transcriptHydrationFailed(agentId));
       } finally {
+        yield* cancel(pageWatchers);
         events?.close();
+        yield* put(clearHistorySegment(agentId));
+        yield* put(scrollbackContinuationReset(agentId));
         yield* put(chatLiveStreamPhaseChanged(agentId, null));
         yield* put(chatTrackedWorkspaceSet(agentId, null));
       }

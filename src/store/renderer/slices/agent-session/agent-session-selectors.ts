@@ -1,3 +1,4 @@
+import * as history from './agent-history-projections';
 import { store } from '../../store';
 import {
   AgentStatus,
@@ -195,64 +196,9 @@ export const selectAgentMessages = store.createSelector(
   },
 );
 
-const EMPTY_HISTORY_MESSAGES: AgentMessage[] = [];
-
-/** Select the hydrated scrollback history segment rows for a given agent (ordered array). */
-export const selectAgentHistoryMessages = store.createSelector(
-  (state, agentId: string): AgentMessage[] => {
-    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
-    return segment ? segment.messages : EMPTY_HISTORY_MESSAGES;
-  },
-);
-
-/**
- * True when a scrollback history segment RECORD exists for the agent — even
- * with zero hydrated rows (a page whose rows were all tail-resident merges to
- * an empty segment but keeps the record). Segment-clearing paths remove the
- * record entirely.
- */
-export const selectHasHistorySegment = store.createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.historySegmentsByAgentId?.[agentId] !== undefined,
-);
-
-export interface HistorySegmentMeta {
-  /** true when a hole is open between history and the tail. */
-  gapToTail: boolean;
-  /** true once the conversation's true first message has been hydrated. */
-  oldestReached: boolean;
-  /** Number of hydrated history rows. */
-  historyCount: number;
-  /** Number of resident tail rows. */
-  tailCount: number;
-  /**
-   * Estimated conversation ordinal of the segment's first row (seek-seeded
-   * segments only); null for serial-walk segments (split by
-   * `holeRowsEstimate` instead).
-   */
-  startOrdinalEstimate: number | null;
-  /**
-   * Estimated rows inside the open history→tail hole (serial-walk segments:
-   * newest-side cap prunes minus gap refills); null when untracked.
-   */
-  holeRowsEstimate: number | null;
-}
-
-/** Select scrollback history segment metadata (gap flag, oldestReached, counts). */
-export const selectHistorySegmentMeta = store.createSelector(
-  (state, agentId: string): HistorySegmentMeta => {
-    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
-    const tailCount = state.agentSessions?.byAgentId[agentId]?.messages.length ?? 0;
-    return {
-      gapToTail: segment?.gapToTail === true,
-      oldestReached: segment?.oldestReached === true,
-      historyCount: segment?.messages.length ?? 0,
-      tailCount,
-      startOrdinalEstimate: segment?.startOrdinalEstimate ?? null,
-      holeRowsEstimate: segment?.holeRowsEstimate ?? null,
-    };
-  },
-);
+export const selectAgentHistoryMessages = store.createSelector(history.getAgentHistoryMessages);
+export const selectHasHistorySegment = store.createSelector(history.getHasHistorySegment);
+export const selectHistorySegmentMeta = store.createSelector(history.getHistorySegmentMeta);
 
 /**
  * Select a single message by id within an agent session.

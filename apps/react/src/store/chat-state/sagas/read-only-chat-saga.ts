@@ -1,3 +1,14 @@
+import { createConversationReader } from '$lib/client/live/backend-conversation-reader';
+import { isAgentDeletionPending } from '../../../../../../src/features/agent/utils/pending-agent-deletions';
+import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
+import { selectChatAgentState } from '../chat-state-selectors';
+import {
+  selectAgentHistoryMessages,
+  selectAgentMessages,
+  selectAgentSession,
+  selectHasHistorySegment,
+  selectHistorySegmentMeta,
+} from '../../agent-session/agent-session-selectors';
 import { store } from '@/store';
 import { backend } from '@/features/backend/backend-transport';
 import { readAgentSession } from '@/features/agent/agent-read-service';
@@ -14,6 +25,16 @@ const chat = new BackendChatClient(backend, (diagnostic) =>
 
 export const readOnlyChatSaga = createReadOnlyChatSaga({
   chat,
+  historyPages: createHistoryPageWorkers({
+    getConversation: createConversationReader(backend),
+    readChat: selectChatAgentState.effect,
+    readMeta: selectHistorySegmentMeta.effect,
+    readHistory: selectAgentHistoryMessages.effect,
+    readTail: selectAgentMessages.effect,
+    readSession: selectAgentSession.effect,
+    hasHistory: selectHasHistorySegment.effect,
+    isDeleted: isAgentDeletionPending,
+  }),
   readAgentSession,
   contextSelector: selectPrincipalConnectionContext,
   readAdmission: (workspaceId) =>

@@ -1,12 +1,16 @@
+import { createHistoryPageWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/history-page-workers';
+import { getAgentChatState } from '../../../../../../src/store/renderer/slices/chat-state/chat-state-projections';
+import * as history from '../../../../../../src/store/renderer/slices/agent-session/agent-history-projections';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReactStore } from '@themislib/themis/react-store';
-import type { ChatClient, ChatTranscript } from '$lib/client/app-client';
+import type { ChatClient, ChatTranscript, AgentsClient } from '$lib/client/app-client';
 import type { AgentSession } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 import { agentSessionReducer } from '../../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
 import {
   chatStateReducer,
+  olderHistoryPageRequested,
   retainedChatTranscriptsSet,
 } from '../../../../../../src/store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -44,7 +48,10 @@ const transcript: ChatTranscript = {
   isStreaming: false,
   fromSnapshot: true,
 };
-function setup(read = vi.fn(async () => session)) {
+function setup(
+  read = vi.fn(async () => session),
+  getConversation = vi.fn<AgentsClient['getConversation']>(),
+) {
   const store = new ReactStore({
     agentSessions: agentSessionReducer,
     chatState: chatStateReducer,
@@ -68,6 +75,20 @@ function setup(read = vi.fn(async () => session)) {
     store.runSaga(
       createReadOnlyChatSaga({
         chat: { subscribe },
+        historyPages: createHistoryPageWorkers({
+          getConversation,
+          readChat: store.createSelector(getAgentChatState).effect,
+          readMeta: store.createSelector(history.getHistorySegmentMeta).effect,
+          readHistory: store.createSelector(history.getAgentHistoryMessages).effect,
+          hasHistory: store.createSelector(history.getHasHistorySegment).effect,
+          readTail: store.createSelector(
+            (state, id: string) => state.agentSessions.byAgentId[id]?.messages ?? [],
+          ).effect,
+          readSession: store.createSelector(
+            (state, id: string) => state.agentSessions.byAgentId[id],
+          ).effect,
+          isDeleted: () => false,
+        }),
         readAgentSession: read,
         contextSelector: context,
         readAdmission: () => context.select(store.state),
@@ -78,7 +99,7 @@ function setup(read = vi.fn(async () => session)) {
     store.dispatch(connectionStatusChanged(value ? 'connected' : 'disconnected'));
   const lease = (owner: string, ids: string[]) =>
     store.dispatch(retainedChatTranscriptsSet(owner, workspaceId, ids));
-  return { store, read, subscribe, handlers, closes, connected, lease };
+  return { store, read, subscribe, handlers, closes, connected, lease, getConversation };
 }
 describe('read-only conversation ownership with canonical reducers', () => {
   it('shares one stream between consumers, rejects retired callbacks, and reconnects from a fresh snapshot', async () => {
@@ -142,4 +163,125 @@ describe('read-only conversation ownership with canonical reducers', () => {
     h.lease('one', [session.id]);
     await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledOnce());
   });
+});
+
+describe('leased canonical history paging', () => {
+  const page = (id: string, nextToken: string | null) => ({
+    messages: [{ ...transcript.messages[0]!, id, seq: 0 }],
+    truncated: true,
+    totalMessages: 50,
+    nextToken,
+    prevToken: 'forward',
+  });
+  const tail = { ...transcript, truncated: true, totalMessages: 50, nextToken: 'older-1' };
+  it('waits for the progressive snapshot and uses its completed older cursor', async () => {
+    const h = setup(
+      undefined,
+      vi.fn<AgentsClient['getConversation']>().mockResolvedValue(page('progress-older', null)),
+    );
+    h.connected(true);
+    h.lease('reader', [session.id]);
+    await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledOnce());
+    h.handlers[0]!({
+      ...tail,
+      nextToken: undefined,
+      initialHistory: { target: 20, received: 1, complete: false },
+    });
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    expect(h.getConversation).not.toHaveBeenCalled();
+    h.handlers[0]!({
+      ...tail,
+      fromSnapshot: false,
+      fromHistory: true,
+      nextToken: 'completed-cursor',
+      initialHistory: { target: 20, received: 20, complete: true },
+    });
+    expect(getAgentChatState(h.store.state, session.id).initialHistoryPending).toBe(false);
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() => expect(h.getConversation).toHaveBeenCalledOnce());
+    expect(h.getConversation.mock.calls[0]?.[2]).toBe('completed-cursor');
+  });
+  it('uses snapshot and continued cursors, preserves history across tail updates and releases the segment', async () => {
+    const h = setup(
+      undefined,
+      vi
+        .fn<AgentsClient['getConversation']>()
+        .mockResolvedValueOnce(page('older-a', 'older-2'))
+        .mockResolvedValueOnce(page('older-b', null)),
+    );
+    h.connected(true);
+    h.lease('reader', [session.id]);
+    await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledOnce());
+    h.handlers[0]!(tail);
+    h.store.dispatch(olderHistoryPageRequested('wrong-workspace', session.id));
+    expect(h.getConversation).not.toHaveBeenCalled();
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() =>
+      expect(history.getAgentHistoryMessages(h.store.state, session.id).map((m) => m.id)).toEqual([
+        'older-a',
+      ]),
+    );
+    expect(h.getConversation.mock.calls[0]).toEqual([
+      session.id,
+      5,
+      'older-1',
+      undefined,
+      undefined,
+      workspaceId,
+    ]);
+    h.handlers[0]!({ ...tail, fromSnapshot: false });
+    expect(history.getAgentHistoryMessages(h.store.state, session.id)[0]?.id).toBe('older-a');
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    await vi.waitFor(() =>
+      expect(history.getHistorySegmentMeta(h.store.state, session.id).oldestReached).toBe(true),
+    );
+    expect(h.getConversation.mock.calls[1]?.[2]).toBe('older-2');
+    h.lease('reader', []);
+    await vi.waitFor(() => expect(h.closes[0]).toHaveBeenCalledOnce());
+    expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+    expect(getAgentChatState(h.store.state, session.id).scrollbackOlderToken).toBeNull();
+    h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+    expect(h.getConversation).toHaveBeenCalledTimes(2);
+  });
+  it.each(['release', 'disconnect'] as const)(
+    'drops late history on %s, deduplicates pending requests, and starts a fresh walk on return',
+    async (retire) => {
+      let resolve!: (value: Awaited<ReturnType<AgentsClient['getConversation']>>) => void;
+      const getConversation = vi
+        .fn<AgentsClient['getConversation']>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolve = done;
+            }),
+        )
+        .mockResolvedValue(page('fresh-history', null));
+      const h = setup(undefined, getConversation);
+      h.connected(true);
+      h.lease('reader', [session.id]);
+      await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledOnce());
+      h.handlers[0]!(tail);
+      h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+      h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+      expect(getConversation).toHaveBeenCalledOnce();
+      if (retire === 'release') h.lease('reader', []);
+      else h.connected(false);
+      await vi.waitFor(() => expect(h.closes[0]).toHaveBeenCalledOnce());
+      resolve(page('stale-history', 'stale-cursor'));
+      await Promise.resolve();
+      expect(history.getHasHistorySegment(h.store.state, session.id)).toBe(false);
+      expect(getAgentChatState(h.store.state, session.id).fetchingOlderHistory).toBe(false);
+      if (retire === 'release') h.lease('reader', [session.id]);
+      else h.connected(true);
+      await vi.waitFor(() => expect(h.subscribe).toHaveBeenCalledTimes(2));
+      h.handlers[1]!({ ...tail, nextToken: 'fresh-cursor' });
+      h.store.dispatch(olderHistoryPageRequested(workspaceId, session.id));
+      await vi.waitFor(() =>
+        expect(history.getAgentHistoryMessages(h.store.state, session.id).map((m) => m.id)).toEqual(
+          ['fresh-history'],
+        ),
+      );
+      expect(getConversation.mock.calls[1]?.[2]).toBe('fresh-cursor');
+    },
+  );
 });

@@ -8,3 +8,12 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
   projections.getAgentSessionWorkspaceId,
 );
 export const selectAgentReasoningEffort = store.createSelector(projections.getAgentReasoningEffort);
+
+import * as history from '../../../../../src/store/renderer/slices/agent-session/agent-history-projections';
+export const selectAgentHistoryMessages = store.createSelector(history.getAgentHistoryMessages);
+export const selectHistorySegmentMeta = store.createSelector(history.getHistorySegmentMeta);
+export const selectHasHistorySegment = store.createSelector(history.getHasHistorySegment);
+export const selectAgentMessages = store.createSelector(
+  (state, agentId: string) => state.agentSessions.byAgentId[agentId]?.messages ?? EMPTY_MESSAGES,
+);
+const EMPTY_MESSAGES: import('$shared/types').AgentMessage[] = [];
