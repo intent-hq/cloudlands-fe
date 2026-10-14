@@ -17,6 +17,7 @@ import {
   backendReconnected,
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
@@ -36,10 +37,12 @@ const full = {
   createdAt: 'now',
   runtime: { status: 'idle' as const, restartCount: 0 },
 };
+let stop: () => void;
 beforeEach(() => {
   vi.resetAllMocks();
   store.dispose();
   store.init();
+  stop = store.runSaga(scriptsOperationSaga);
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity({ id: 'ws', title: 'Scripts', myRole: 'owner' } as never));
   const {
@@ -64,6 +67,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  stop();
   store.dispose();
   rendererEventRecovery.dispose();
 });
@@ -114,6 +118,7 @@ it('restores full detection Undo data including readiness settings', async () =>
       command: full.command,
       cwd: full.cwd,
       env: full.env,
+      source: full.source,
       healthUrl: full.healthUrl,
       readyPattern: full.readyPattern,
     }),
@@ -291,6 +296,7 @@ it('does not publish a removal response captured before generic loss', async () 
       : original(method, params),
   );
   const pending = scriptsClient.remove('ws', 'script');
+  await vi.waitFor(() => expect(finish).toBeDefined());
   owner.invalidate();
   store.dispatch(setScriptsData('ws', [full]));
   finish({ ok: true });

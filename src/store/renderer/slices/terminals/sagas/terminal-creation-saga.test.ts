@@ -1,3 +1,4 @@
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -22,9 +23,11 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import {
+  clearTerminalCreationOutcome,
   createOverlayTerminalRequested,
   createPanelTerminalRequested,
   createTerminalRequested,
+  terminalsReducer,
 } from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
 import { terminalCommandsSaga } from './terminal-commands-saga';
@@ -39,19 +42,33 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
+function startSaga(
+  myRole: 'owner' | 'collaborator' = 'owner',
+  beforeDispatch?: (action: { type: string }) => void,
+) {
   const channel = stdChannel();
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
+  let terminals = terminalsReducer(undefined, { type: '@@INIT' });
+  const dispatch = createEventRecoveryMiddleware()({} as never)(
+    (action: { type: string; payload?: unknown }) => {
+      dispatched.push(action);
+      terminals = terminalsReducer(terminals, action);
+    },
+  );
   const task = runSaga(
     {
       channel,
-      dispatch: (action: { type: string; payload?: unknown }) => dispatched.push(action),
+      dispatch: (action) => {
+        beforeDispatch?.(action);
+        return dispatch(action);
+      },
       getState: () =>
         withLegacyPrincipal({
           connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
           // Settled owner window: guest list received, no host joined.
           guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
           panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
+          terminals,
           workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
         }),
     },
@@ -60,7 +77,16 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
       yield* fork(terminalCommandsSaga);
     },
   );
-  return { channel, dispatched, task };
+  return {
+    channel,
+    dispatched,
+    task,
+    put: (action: ReturnType<typeof createOverlayTerminalRequested> | { type: string }) => {
+      terminals = terminalsReducer(terminals, action);
+      channel.put(action);
+    },
+    getTerminalsState: () => terminals,
+  };
 }
 
 beforeEach(() => {
@@ -83,10 +109,84 @@ describe('terminalCreationSaga', () => {
       rows: 24,
     });
     expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      'terminals/open',
       createOverlayTerminalRequested.success.type,
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  it('publishes a correlated success after saga-owned insertion and opening', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'daemon-pty-1' });
+    const { dispatched, getTerminalsState, put, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1', {
+      id: 'mount-1',
+      resourceId: 'overlay',
+    });
+
+    put(request);
+    await expect(request.promise).resolves.toBe('daemon-pty-1');
+
+    expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      'terminals/open',
+      'terminals/terminalCreationFinished',
+      createOverlayTerminalRequested.success.type,
+    ]);
+    expect(getTerminalsState().creationOutcomes.map['mount-1']).toMatchObject({
+      status: 'success',
+      terminalId: 'daemon-pty-1',
+      seq: request.seq,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps a created terminal visible after the requesting overlay releases', async () => {
+    let resolveCreate: (value: { success: true; id: string }) => void = () => {};
+    mocks.create.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const { dispatched, put, task } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1', {
+      id: 'mount-1',
+      resourceId: 'overlay',
+    });
+
+    put(request);
+    await settle();
+    put(clearTerminalCreationOutcome('mount-1'));
+    resolveCreate({ success: true, id: 'orphaned-pty' });
+    await expect(request.promise).resolves.toBe('orphaned-pty');
+
+    expect(dispatched.map((action) => action.type)).toEqual([
+      'terminals/addTerminal',
+      createOverlayTerminalRequested.success.type,
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('fences saga-owned insertion and its correlated outcome at reducer dispatch', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'retired-at-dispatch' });
+    const run = startSaga('owner', (action) => {
+      if (action.type === 'terminals/addTerminal') rendererEventRecovery.dispose();
+    });
+    const request = createOverlayTerminalRequested('ws-1', { id: 'mount', resourceId: 'overlay' });
+    run.put(request);
+    await expect(request.promise).rejects.toThrow();
+    expect(
+      run.getTerminalsState().workspaces['ws-1']?.terminals.map['retired-at-dispatch'],
+    ).toBeUndefined();
+    expect(run.getTerminalsState().creationOutcomes.map.mount).not.toMatchObject({
+      status: 'success',
+    });
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
   });
 
   it('rejects an old-session overlay create reply before it can restore a terminal', async () => {
@@ -97,7 +197,7 @@ describe('terminalCreationSaga', () => {
           finish = resolve;
         }),
     );
-    const { channel, dispatched, task } = startSaga();
+    const { channel, dispatched, task, getTerminalsState } = startSaga();
     const request = createOverlayTerminalRequested('ws-1');
     const result = request.promise.then(
       () => 'accepted',
@@ -109,15 +209,19 @@ describe('terminalCreationSaga', () => {
     finish({ success: true, id: 'obsolete-terminal' });
     expect(await result).toBe('rejected');
     expect(
+      getTerminalsState().workspaces['ws-1']?.terminals.map['obsolete-terminal'],
+    ).toBeUndefined();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(
       dispatched.some((action) => action.type === createOverlayTerminalRequested.success.type),
     ).toBe(false);
     task.cancel();
     await task.toPromise();
   });
 
-  it.each([false, true])(
-    'keeps command authority through pushes but rejects retirement (retire: %s)',
-    async (retire) => {
+  it.each(['push', 'retire', 'replacement'])(
+    'keeps original command authority across %s',
+    async (change) => {
       const key = 'terminals:' + JSON.stringify(['ws-1']);
       const scope = rendererEventRecovery.attach({
         supported: true,
@@ -130,7 +234,7 @@ describe('terminalCreationSaga', () => {
         onRetired: () => () => {},
         onNotification: () => () => {},
       })!;
-      scope.registerResource({
+      const owner = {
         key,
         workspaceId: 'ws-1',
         eventTypes: ['terminal:exit'],
@@ -139,7 +243,8 @@ describe('terminalCreationSaga', () => {
         apply: () => {},
         invalidate: () => {},
         retire: () => {},
-      });
+      };
+      scope.registerResource(owner);
       let finish!: (value: { success: boolean; id: string }) => void;
       mocks.create.mockImplementation(
         () =>
@@ -147,7 +252,7 @@ describe('terminalCreationSaga', () => {
             finish = resolve;
           }),
       );
-      const { channel, task } = startSaga();
+      const { channel, task, getTerminalsState } = startSaga();
       const request = createOverlayTerminalRequested('ws-1');
       const result = request.promise.then(
         () => 'accepted',
@@ -156,9 +261,14 @@ describe('terminalCreationSaga', () => {
       channel.put(request);
       await settle();
       rendererEventRecovery.push(key);
-      if (retire) rendererEventRecovery.captureRetirement(key)(new Error('Denied'));
+      if (change !== 'push') rendererEventRecovery.captureRetirement(key)(new Error('Denied'));
+      if (change === 'replacement') scope.registerResource(owner);
       finish({ success: true, id: 'created-terminal' });
-      expect(await result).toBe(retire ? 'rejected' : 'accepted');
+      expect(await result).toBe(change !== 'push' ? 'rejected' : 'accepted');
+      expect(!!getTerminalsState().workspaces['ws-1']?.terminals.map['created-terminal']).toBe(
+        change === 'push',
+      );
+      expect(mocks.create).toHaveBeenCalledTimes(1);
       task.cancel();
       await task.toPromise();
     },

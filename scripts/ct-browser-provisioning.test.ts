@@ -55,7 +55,7 @@ describe('required CT hosted routing', () => {
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'tinybox'],
+        burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'linux', 'tinybox'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'pull_request' ? 'true' : '',
@@ -64,7 +64,7 @@ describe('required CT hosted routing', () => {
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(true);
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['gh-linux-8x']);
+    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['depot-ubuntu-24.04-8']);
     expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];

@@ -239,6 +239,30 @@ class Admission(unittest.TestCase):
                 commands = self.exercise(None, arch=arch)
                 self.assertEqual(sum(command[0] == 'lipo' for command in commands), 3)
 
+    def test_admission_hashes_in_bounded_chunks_without_file_digest(self):
+        original_open = Path.open
+        read_sizes = []
+        test = self
+        class BoundedReader:
+            def __init__(self, source): self.source = source
+            def __enter__(self): return self
+            def __exit__(self, *_): self.source.close()
+            def read(self, size=-1):
+                test.assertGreater(size, 0)
+                test.assertLessEqual(size, 1024**2)
+                read_sizes.append(size)
+                return self.source.read(size)
+        def open_file(path, *args, **kwargs):
+            source = original_open(path, *args, **kwargs)
+            return BoundedReader(source) if path.suffix == '.dmg' and args == ('rb',) else source
+        with patch.dict(smoke.hashlib.__dict__), patch.object(Path, 'open', open_file):
+            smoke.hashlib.__dict__.pop('file_digest', None)
+            for payload in (b'', b'fixture-only', bytes(range(256)) * 8192 + b'tail'):
+                with self.subTest(bytes=len(payload)):
+                    read_sizes.clear()
+                    self.exercise(None, dmg_bytes=payload)
+                    self.assertGreater(len(read_sizes), len(payload) // 1024**2)
+
     def test_each_executable_must_include_the_native_runner_architecture(self):
         for arch in ('arm64', 'x86_64'):
             for target in range(3):
@@ -270,10 +294,10 @@ class Admission(unittest.TestCase):
             self.assertIn('--retries=0', args)
             self.assertEqual(json.loads((root / 'fixture-correction.json').read_text())['argv'], args)
 
-    def exercise(self, failure, scope='full', arch='arm64', wrong_target=0):
+    def exercise(self, failure, scope='full', arch='arm64', wrong_target=0, dmg_bytes=b'fixture-only'):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root / 'only.dmg').write_bytes(b'fixture-only')
+            (root / 'only.dmg').write_bytes(dmg_bytes)
             commands = []
             def command(args, timeout=60):
                 commands.append(args)
@@ -299,7 +323,10 @@ class Admission(unittest.TestCase):
                     run.assert_not_called()
                 else:
                     smoke.main()
-                    self.assertEqual(json.loads((root / 'report/admission.json').read_text())['scope'], scope)
+                    admission = json.loads((root / 'report/admission.json').read_text())
+                    self.assertEqual(admission['scope'], scope)
+                    self.assertEqual(admission['dmgSha256'], smoke.hashlib.sha256(dmg_bytes).hexdigest())
+                    self.assertEqual(admission['dmgBytes'], len(dmg_bytes))
                     architectures = json.loads((root / 'report/executables.json').read_text())
                     self.assertEqual(list(architectures.values()), [[arch]] * 3)
                     if scope == 'fixture-correction':

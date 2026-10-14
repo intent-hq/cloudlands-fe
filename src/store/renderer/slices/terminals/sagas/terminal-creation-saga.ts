@@ -1,4 +1,6 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -12,14 +14,56 @@ import {
   selectWorkspaceActionContext,
 } from '../../workspace/workspace-selectors';
 import {
+  selectIsTerminalOverlayOpenForWorkspace,
+  selectTerminalCreationOutcome,
+  selectTerminalsForWorkspace,
+} from '../terminals-selectors';
+import {
+  addTerminal,
   createPanelTerminalRequested,
   createOverlayTerminalRequested,
   hydrateTerminalsRequested,
+  openTerminalOverlay,
   removeTerminal,
   saveTerminalMetadata,
+  terminalCreationFinished,
+  type TerminalCreationOutcome,
 } from '../terminals-slice';
 
 const logger = createLogger('TerminalCreationSaga');
+
+function* isOverlayConsumerCurrent(
+  action: ReturnType<typeof createOverlayTerminalRequested>,
+): SagaGenerator<boolean> {
+  const [workspaceId, consumer] = action.payload;
+  if (!consumer) return true;
+  const current = yield* selectTerminalCreationOutcome.effect(
+    consumer.id,
+    workspaceId,
+    consumer.resourceId,
+  );
+  return current?.seq === action.seq && current.status === 'pending';
+}
+
+function* finishOverlayCreation(
+  action: ReturnType<typeof createOverlayTerminalRequested>,
+  status: TerminalCreationOutcome['status'],
+  terminalId?: string,
+  error?: Error,
+  authority?: RecoveryLifetime,
+): SagaGenerator<void> {
+  const [workspaceId, consumer] = action.payload;
+  if (!consumer) return;
+  const outcome = terminalCreationFinished({
+    ...consumer,
+    workspaceId,
+    seq: action.seq,
+    status,
+    ...(terminalId ? { terminalId } : {}),
+    ...(error?.message ? { error: error.message } : {}),
+  });
+  yield* put(authority ? withRecoveryLifetime(outcome, authority) : outcome);
+}
 
 function* createOverlayTerminalWorker(
   action: ReturnType<typeof createOverlayTerminalRequested>,
@@ -35,8 +79,10 @@ function* createOverlayTerminalWorker(
         ? ROOT_WORKSPACE_ID
         : yield* selectWorkspaceActionContext.effect(workspaceId);
     if (!context || !authority.isCurrent()) {
+      const error = new Error(m.terminal_adapter_openFailed_error());
       settled = true;
-      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+      yield* finishOverlayCreation(action, 'failure', undefined, error);
+      yield* put(action.failure(error));
       return;
     }
 
@@ -49,23 +95,45 @@ function* createOverlayTerminalWorker(
         ? ROOT_WORKSPACE_ID
         : yield* selectWorkspaceActionContext.effect(workspaceId);
     if (!authority.isCurrent() || context !== currentContext || !result.success || !result.id) {
+      const error = new Error(result.error ?? m.terminal_adapter_openFailed_error());
       settled = true;
-      yield* put(action.failure(new Error(result.error ?? m.terminal_adapter_openFailed_error())));
+      yield* finishOverlayCreation(action, 'failure', undefined, error);
+      yield* put(action.failure(error));
       return;
     }
 
+    const consumerCurrent = yield* isOverlayConsumerCurrent(action);
+    const terminals = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    yield* put(
+      withRecoveryLifetime(
+        addTerminal(
+          workspaceId,
+          result.id,
+          m.terminal_quakeOverlay_terminalNumber_label({ number: terminals.length + 1 }),
+        ),
+        authority,
+      ),
+    );
+    if (consumerCurrent) {
+      if (!(yield* selectIsTerminalOverlayOpenForWorkspace.effect(workspaceId)))
+        yield* put(withRecoveryLifetime(openTerminalOverlay(workspaceId, result.id), authority));
+      if (!authority.isCurrent()) throw new Error(m.terminal_adapter_openFailed_error());
+      yield* finishOverlayCreation(action, 'success', result.id, undefined, authority);
+    }
+    if (!authority.isCurrent()) throw new Error(m.terminal_adapter_openFailed_error());
     settled = true;
     yield* put(action.success(result.id));
   } catch (error) {
+    const failure =
+      error instanceof Error ? error : new Error(m.terminal_adapter_openFailed_error());
     settled = true;
-    yield* put(
-      action.failure(
-        error instanceof Error ? error : new Error(m.terminal_adapter_openFailed_error()),
-      ),
-    );
+    yield* finishOverlayCreation(action, 'failure', undefined, failure);
+    yield* put(action.failure(failure));
   } finally {
     if (!settled && (yield* cancelled())) {
-      yield* put(action.failure(new Error(m.terminal_adapter_openFailed_error())));
+      const error = new Error(m.terminal_adapter_openFailed_error());
+      yield* finishOverlayCreation(action, 'cancelled', undefined, error);
+      yield* put(action.failure(error));
     }
   }
 }

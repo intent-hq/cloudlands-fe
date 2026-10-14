@@ -60,12 +60,22 @@ export type ScriptDefinitionInput = {
   category?: string;
   source?: string;
   autoStart?: boolean;
+  healthUrl?: string;
+  readyPattern?: string;
 };
 
 export type ScriptDefinitionUpdate = Partial<
   Pick<
     ScriptDefinitionInput,
-    'name' | 'command' | 'cwd' | 'env' | 'mode' | 'category' | 'autoStart'
+    | 'name'
+    | 'command'
+    | 'cwd'
+    | 'env'
+    | 'mode'
+    | 'category'
+    | 'autoStart'
+    | 'healthUrl'
+    | 'readyPattern'
   >
 >;
 
@@ -81,8 +91,36 @@ export type ScriptDetectionOutcome = {
   updated: number;
   removed: number;
   skippedRunning: string[];
-  packageManager?: 'npm' | 'yarn' | 'pnpm' | 'bun';
+  packageManager?: 'npm' | 'yarn' | 'pnpm';
 };
+
+export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
+  /** Full pre-change inventory captured by the saga for Undo. */
+  snapshot: ScriptDefinitionSnapshot;
+};
+
+/** Mount-scoped identity for a serializable script UI workflow. */
+export interface ScriptWorkflowConsumer {
+  consumerId: string;
+  requestId: string;
+  resourceId: string;
+}
+
+export type ScriptWorkflowResult =
+  | WorkspaceScript
+  | ScriptListEntry
+  | ScriptListEntry[]
+  | ScriptDetectionOutcome
+  | ScriptDefinitionChangesOutcome;
+
+export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
+  id: string;
+  workspaceId: string;
+  status: 'pending' | 'success' | 'failure' | 'cancelled';
+  result?: ScriptWorkflowResult;
+  error?: string;
+  consumed?: true;
+}
 
 export type ScriptDefinitionSnapshot = WorkspaceScript[];
 
@@ -90,6 +128,7 @@ export type ScriptOperationState = {
   action: ScriptQuickAction;
   pending: boolean;
   error?: string;
+  reservationId?: string;
 };
 
 /**
@@ -118,6 +157,8 @@ export type ScriptsWorkspaceState = {
   /** Exact active summary page demand, preserved across recovery/session replacement. */
   // eslint-disable-next-line themis/suspicious-state-field -- Page demand survives deletions and cannot be derived from the remaining rows.
   loadedPageCount?: number;
+  /** Mount-scoped, serializable results for UI consumers. */
+  workflowOutcomes?: Collection<ScriptWorkflowOutcome, 'id'>;
 };
 
 /**
