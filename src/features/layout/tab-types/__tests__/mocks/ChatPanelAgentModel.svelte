@@ -1,10 +1,11 @@
 <script lang="ts">
   interface Props {
+    tabId?: string;
     agentModel?: string;
     onTaskProgressChange?: (tasks: Array<{ id: string; title: string; status: string }>) => void;
   }
 
-  let { agentModel, onTaskProgressChange }: Props = $props();
+  let { tabId, agentModel, onTaskProgressChange }: Props = $props();
 
   $effect(() => {
     onTaskProgressChange?.([
@@ -14,6 +15,6 @@
   });
 </script>
 
-<div data-testid="chat-panel-agent-model" data-agent-model={agentModel ?? ''}>
+<div data-testid="chat-panel-agent-model" data-agent-model={agentModel ?? ''} data-tab-id={tabId}>
   {agentModel ?? ''}
 </div>

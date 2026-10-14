@@ -17,6 +17,7 @@ import {
   actionChannel,
   all,
   call,
+  cancelled,
   delay,
   flush,
   fork,
@@ -31,6 +32,7 @@ import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-dele
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
+import { getPeopleActivity } from '$features/presence/components/people-activity';
 import { appClient } from '$lib/client';
 import { parsePushedGitStatus, toTrackedChange } from '$lib/client/live/live-git-client';
 import type { GitStatus } from '$shared/types';
@@ -41,7 +43,12 @@ import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/type
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { selectHostRole, selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  selectHostRole,
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
+import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import {
@@ -158,15 +165,23 @@ import {
   selectScopeCountsGeneration,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
-import { selectOlderEventsNextToken } from '../../workspace-events/workspace-events-selectors';
+import {
+  selectOlderEventsNextToken,
+  selectOlderEventsEndReached,
+  selectPeopleEventsInitialized,
+  selectWorkspaceEvents,
+} from '../../workspace-events/workspace-events-selectors';
 import {
   eventsLoaded,
   eventsLoadFailed,
   eventsLoadStarted,
   loadEventsRequested,
   loadOlderEventsRequested,
+  loadPeopleEventsRequested,
   olderEventsLoaded,
   olderEventsLoadFailed,
+  peopleEventsLoadStarted,
+  peopleEventsLoadFinished,
 } from '../../workspace-events/workspace-events-slice';
 import {
   acquireWorkspaceTasksDemand,
@@ -217,6 +232,8 @@ const logger = createLogger('LifecycleReadSaga');
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 /** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
 const EVENTS_PAGE_LIMIT = 100;
+const PEOPLE_ROWS_PER_REQUEST = 20;
+const PEOPLE_MAX_PAGES_PER_REQUEST = 10;
 /**
  * Backoff for a `workspace.list` that fails before the list has ever loaded
  * for the active backend (e.g. the guest's tailcat tunnel is not up at boot).
@@ -1407,6 +1424,78 @@ function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
   }
 }
 
+function* countPeopleEvents(workspaceId: string): SagaGenerator<number> {
+  return getPeopleActivity(
+    workspaceId,
+    yield* selectWorkspaceEvents.effect(workspaceId),
+    yield* selectWorkspacePeopleIdentities.effect(workspaceId),
+  ).length;
+}
+
+function* refreshPeopleEvents(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof loadPeopleEventsRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, mode, force = false] = action.payload;
+  if (!workspaceId) return;
+  if (mode === 'initial' && !force && (yield* selectPeopleEventsInitialized.effect(workspaceId))) {
+    return;
+  }
+  const requestId = crypto.randomUUID();
+  const dispatch = store.dispatch;
+  const backendId = yield* selectActiveBackendId();
+  const principal = yield* selectPrincipalActionContext.effect();
+  const connection = yield* selectPrincipalConnectionContext.effect();
+  function* isCurrent(): SagaGenerator<boolean> {
+    return (
+      dispatch === store.dispatch &&
+      backendId === (yield* selectActiveBackendId()) &&
+      principal === (yield* selectPrincipalActionContext.effect()) &&
+      connection === (yield* selectPrincipalConnectionContext.effect())
+    );
+  }
+  let initialized = false;
+  let error: string | null = null;
+  yield* put(peopleEventsLoadStarted(workspaceId, requestId));
+  try {
+    yield* call(withReadSlot, scheduler, workspaceId, function* () {
+      if (!(yield* isCurrent())) return;
+      const target =
+        PEOPLE_ROWS_PER_REQUEST + (mode === 'more' ? yield* countPeopleEvents(workspaceId) : 0);
+      for (let pageIndex = 0; pageIndex < PEOPLE_MAX_PAGES_PER_REQUEST; pageIndex += 1) {
+        const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
+        if (yield* selectOlderEventsEndReached.effect(workspaceId)) break;
+        // Establish a cursor even when a live-only cache already has enough rows.
+        if (nextToken && (yield* countPeopleEvents(workspaceId)) >= target) break;
+        const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+          [appClient.events, appClient.events.queryPage],
+          workspaceId,
+          nextToken ? { limit: EVENTS_PAGE_LIMIT, nextToken } : { limit: EVENTS_PAGE_LIMIT },
+        );
+        if (!(yield* isCurrent())) return;
+        // Merge even the first page: the cache may already contain newer live events.
+        yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+        // Invalid pages or a non-advancing server cursor must not spin or hide continuation.
+        if ((yield* selectOlderEventsNextToken.effect(workspaceId)) === nextToken) break;
+      }
+      initialized = true;
+    });
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+    initialized = true;
+  } finally {
+    const current = yield* isCurrent();
+    yield* put(
+      peopleEventsLoadFinished(
+        workspaceId,
+        requestId,
+        initialized && current && !(yield* cancelled()),
+        current ? error : null,
+      ),
+    );
+  }
+}
+
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
   const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(
     [appClient.tasks, appClient.tasks.listAgentLinks],
@@ -1563,8 +1652,12 @@ type TasksReadAction = ReturnType<
 >;
 
 type EventsReadAction = ReturnType<
-  typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
+  | typeof loadEventsRequested
+  | typeof loadOlderEventsRequested
+  | typeof loadPeopleEventsRequested
+  | typeof workspaceUnmounted
 >;
+type PeopleReads = Map<string, ReturnType<typeof loadPeopleEventsRequested>>;
 
 function tasksReadContext(action: TasksReadAction) {
   const workspaceId = action.payload[0];
@@ -1582,14 +1675,26 @@ function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction
   yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
 }
 
-function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
+function eventsReadContext(
+  pendingInitialReads: Set<string>,
+  peopleReads: PeopleReads,
+  action: EventsReadAction,
+) {
   const workspaceId = action.payload[0];
   if (isWorkspaceCleanupAction(action)) {
     pendingInitialReads.delete(workspaceId);
+    peopleReads.delete(workspaceId);
     return { context: workspaceId || '', cancel: true as const };
   }
   if (workspaceId && action.type === loadEventsRequested.type) {
     pendingInitialReads.add(workspaceId);
+  }
+  if (
+    workspaceId &&
+    action.type === loadPeopleEventsRequested.type &&
+    !peopleReads.has(workspaceId)
+  ) {
+    peopleReads.set(workspaceId, action as ReturnType<typeof loadPeopleEventsRequested>);
   }
   return workspaceId || '';
 }
@@ -1597,18 +1702,25 @@ function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadA
 function* eventsWorker(
   scheduler: WorkspaceReadScheduler,
   pendingInitialReads: Set<string>,
+  peopleReads: PeopleReads,
   action: EventsReadAction,
 ) {
   if (isWorkspaceCleanupAction(action)) return;
   const workspaceId = action.payload[0];
   if (pendingInitialReads.delete(workspaceId)) {
     yield* runWorkspaceRead(scheduler, 'events', workspaceId, refreshEvents, false);
-    if (action.type === loadOlderEventsRequested.type) {
-      yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
-    }
-    return;
   }
-  yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
+  if (action.type === loadOlderEventsRequested.type) {
+    yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
+  }
+  const peopleRequest = peopleReads.get(workspaceId);
+  if (peopleRequest) {
+    try {
+      yield* refreshPeopleEvents(scheduler, peopleRequest);
+    } finally {
+      if (peopleReads.get(workspaceId) === peopleRequest) peopleReads.delete(workspaceId);
+    }
+  }
 }
 
 function* tokenUsageWorker(
@@ -1823,6 +1935,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
+  const peopleReads: PeopleReads = new Map();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
@@ -1851,11 +1964,17 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         scheduler,
       ),
       takeSingleFlightInContext(
-        [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],
-        (action) => eventsReadContext(pendingInitialEventReads, action),
+        [
+          loadEventsRequested,
+          loadOlderEventsRequested,
+          loadPeopleEventsRequested,
+          workspaceUnmounted,
+        ],
+        (action) => eventsReadContext(pendingInitialEventReads, peopleReads, action),
         eventsWorker,
         scheduler,
         pendingInitialEventReads,
+        peopleReads,
       ),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
       // Roster / invite deltas arrive in bursts (archive teardown emits one
@@ -1963,5 +2082,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   } finally {
     initializedContexts.clear();
     pendingInitialEventReads.clear();
+    peopleReads.clear();
   }
 }

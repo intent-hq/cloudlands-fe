@@ -60,13 +60,19 @@ export interface OpenMessageOptions {
   query?: string;
   /** The caller already opened a conversation viewer in another layout. */
   contentAlreadyOpen?: boolean;
+  /** Reveal only in this tab, even when the same agent is visible in another pane. */
+  targetTabId?: string;
+  /** Cancel when the caller navigates elsewhere while history is loading. */
+  signal?: AbortSignal;
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
-interface OpenMessageEventDetail {
+export interface OpenMessageEventDetail {
   agentId: string;
   messageId: string;
   query?: string;
+  targetTabId?: string;
+  signal?: AbortSignal;
   /** Unique per openMessage() call so the panel handles retries exactly once. */
   requestId: string;
 }
@@ -78,6 +84,9 @@ const MIN_POLLS_BEFORE_SETTLED = 2;
 /** Retry ladder for the scroll hand-off event (ChatPanel may still be mounting). */
 const SCROLL_DISPATCH_DELAYS_MS = [150, 400, 800, 1500, 3000];
 const SEEK_PAGE_LIMIT = CHAT_PAGE_SIZE;
+// A new explicit message destination supersedes the previous deep-open, even
+// if its history request or DOM hand-off has not finished yet.
+let pendingOpenMessage: AbortController | undefined;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -115,10 +124,15 @@ function hydrationStatus(agentId: string): 'loading' | 'settled' | undefined {
  * is only honored after a couple of polls: a stale settled marker from a
  * previous load can predate the fresh init the just-mounted ChatPanel kicks.
  */
-async function waitForMessage(agentId: string, messageId: string): Promise<boolean> {
+async function waitForMessage(
+  agentId: string,
+  messageId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
   let polls = 0;
   while (Date.now() < deadline) {
+    if (signal.aborted) return false;
     if (isMessageInStore(agentId, messageId)) return true;
     if (
       polls >= MIN_POLLS_BEFORE_SETTLED &&
@@ -130,7 +144,7 @@ async function waitForMessage(agentId: string, messageId: string): Promise<boole
     polls++;
     await sleep(HYDRATION_POLL_INTERVAL_MS);
   }
-  return isMessageInStore(agentId, messageId);
+  return !signal.aborted && isMessageInStore(agentId, messageId);
 }
 
 /**
@@ -146,15 +160,16 @@ export async function seekConversationToMessage(
   agentId: string,
   messageId: string,
   workspaceId?: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   // A timeout waiting for a row is not permission to race the initial transfer.
   const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
   while (selectChatAgentState.select(appStore.state, agentId).initialHistoryPending) {
-    if (Date.now() >= deadline) return false;
+    if (signal?.aborted || Date.now() >= deadline) return false;
     await sleep(HYDRATION_POLL_INTERVAL_MS);
   }
   const session = appStore.state.agentSessions?.byAgentId[agentId];
-  if (!session) return false;
+  if (!session || signal?.aborted) return false;
   if (isMessageInStore(agentId, messageId)) return true;
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
@@ -173,7 +188,12 @@ export async function seekConversationToMessage(
       undefined,
       workspaceId,
     );
-    if (!ownsSeek() || !page.messages.some((message) => message.id === messageId)) return false;
+    if (
+      signal?.aborted ||
+      !ownsSeek() ||
+      !page.messages.some((message) => message.id === messageId)
+    )
+      return false;
     // Retain the live tail and use persisted sequence numbers for the window's
     // position. Legacy rows without a sequence leave that estimate unknown.
     appStore.dispatch(seedHistoryAround(agentId, page.messages, page.messages[0]?.seq));
@@ -198,7 +218,13 @@ export async function seekConversationToMessage(
  * highlight flash — and highlight the `query` terms when provided.
  */
 export async function openMessage(options: OpenMessageOptions): Promise<void> {
-  const { workspaceId, agentId, messageId, query } = options;
+  if (options.signal?.aborted) return;
+  pendingOpenMessage?.abort();
+  pendingOpenMessage = new AbortController();
+  const signal = options.signal
+    ? AbortSignal.any([pendingOpenMessage.signal, options.signal])
+    : pendingOpenMessage.signal;
+  const { workspaceId, agentId, messageId, query, targetTabId } = options;
   logger.info('[openMessage] Deep-opening conversation at message', {
     workspaceId,
     agentId,
@@ -225,6 +251,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
       return;
     }
+    if (signal.aborted) return;
     if (window.location.pathname !== targetPathname) {
       logger.warn('[openMessage] Workspace navigation was not confirmed', { workspaceId });
       return;
@@ -235,9 +262,10 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 
-  const present = (await waitForMessage(agentId, messageId))
+  const present = (await waitForMessage(agentId, messageId, signal))
     ? true
-    : await seekConversationToMessage(agentId, messageId, workspaceId);
+    : await seekConversationToMessage(agentId, messageId, workspaceId, signal);
+  if (signal.aborted) return;
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {
       agentId,
@@ -247,8 +275,17 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   }
 
   const requestId = `open-message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const detail: OpenMessageEventDetail = { agentId, messageId, query, requestId };
+  const detail: OpenMessageEventDetail = {
+    agentId,
+    messageId,
+    query,
+    targetTabId,
+    requestId,
+    signal,
+  };
   for (const delay of SCROLL_DISPATCH_DELAYS_MS) {
-    setTimeout(() => dispatchWindowEvent('chat:open-message', detail), delay);
+    setTimeout(() => {
+      if (!signal.aborted) dispatchWindowEvent('chat:open-message', detail);
+    }, delay);
   }
 }
