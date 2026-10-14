@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.216.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.5...v2.216.6) (2026-10-14)
+
+
+### 🐛 Bug Fixes
+
+* restore Home PR and waiting indicators ([#3379](https://github.com/intent-hq/cloudlands-fe/issues/3379)) ([d51c449](https://github.com/intent-hq/cloudlands-fe/commit/d51c449a5265bcb5f9d9bab14db7864fbdbd1691))
+
 ## [2.216.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.4...v2.216.5) (2026-10-13)
 
 
