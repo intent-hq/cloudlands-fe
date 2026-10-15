@@ -396,8 +396,8 @@ to the owned test repository. Overlapping initial refresh and retired replies ar
 covered separately by shared-owner policy tests.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
-root dead-code findings and separately recorded codec, avatar, native IME, older
-in-body MESSAGE targets, full platform coverage, and publication limitations remain open.
+root dead-code findings and separately recorded codec, avatar, native IME,
+full platform coverage, and publication limitations remain open.
 
 `workspace-git-staging.extended.spec.mjs` requires an explicitly owned disposable
 Git fixture and `ISOLATED_GIT_WRITES=owned-test-daemon`. It uses native keyboard and
@@ -486,10 +486,16 @@ position. Bare URLs in user messages are clickable; explicit Markdown links and
 code keep their existing meaning. Invalid message links do not navigate. A link
 that cannot be opened shows an unavailable-message notice and retains the transcript.
 
-The owned-fixture checkpoint covers resident targets in the same or another
-conversation, desktop/narrow navigation, Back, reload, reopening from the Agents
-list, and an unavailable target. Fixture messages were
-created through real Send/provider acknowledgements before navigation measurement.
-It does not extend the historical read-only direct-URL evidence to older in-body
-targets, cross-backend access or full desktop/platform parity. This remains internal
-and unreleased; the released assistant app guide is not promoted by this checkpoint.
+Owned-fixture checkpoints cover resident and older targets in the same or another
+conversation within one workspace, desktop/narrow navigation, Back, reload,
+reopening from the Agents list, and an unavailable target. The older-target test
+(`workspace-message-body-older.extended.spec.mjs`) proves targets outside the actual
+20-message initial window in two 22-message conversations, using the unchanged
+canonical five-message seek page. Back restores the source row's reading position,
+including after reloading the destination. Fixture messages were created through
+real Send/provider acknowledgements before read-only navigation measurement.
+
+This bounded Linux/Chromium acceptance does not establish arbitrary large-history,
+cross-backend or full desktop/platform parity. Historical read-only direct-URL
+evidence retains its original scope. This remains internal and unreleased; the
+released assistant app guide is not promoted by these checkpoints.
