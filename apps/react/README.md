@@ -40,7 +40,7 @@ No Electron preload, protected local Themis patch, or live user workspace is req
    Try **Back**, then **Stay** to keep the unsaved text and editor position.
 3. Choose **Save**, then **Back**. The original repository remains unchanged;
    the edit is saved in the new workspace checkout.
-4. In **Changed files**, choose **Refresh git status**, open the file's unstaged
+4. **Changed files** updates after the confirmed Save. Open the file's unstaged
    row and inspect the diff. Choose
    **Stage**, then **Back** to review its staged row.
 5. Enter a **Commit Message** and choose **Commit**. The confirmation shows the
@@ -122,7 +122,10 @@ each group. The diff view shows line numbers and additions/deletions, with
 **Refresh** and **Back** to the originating row and filter. Deleted files do not
 require current file contents. This checkpoint covers the primary Git root only;
 workspace owners can **Stage** or **Unstage** one file from its row or diff view.
-After saving an editor file, use **Refresh git status** to update this list.
+A confirmed editor Save automatically refreshes Changed files and matching open
+worktree diffs. **Refresh git status** remains available for external changes or
+a failed status read. Failed or unknown Save outcomes do not imply a successful
+Git refresh; their existing recovery rules still apply.
 These actions update the index and preserve the working file. Pending writes stay
 owned while navigating; locked files and unavailable write admission disable the
 actions. After a category disappears, **Back** focuses the same file in its

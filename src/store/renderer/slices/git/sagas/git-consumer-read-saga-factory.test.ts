@@ -322,3 +322,50 @@ describe('createGitConsumerReadSaga', () => {
     await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(2));
   });
 });
+
+it('reconciles only matching worktree diff consumers and rejects their stale snapshots', async () => {
+  const old = deferred<GitReadResult>();
+  const next = deferred<GitReadResult>();
+  const read = vi.fn<GitConsumerReadDependencies['read']>().mockResolvedValue(empty);
+  read.mockImplementation((_ws, req) =>
+    req.kind === 'diffs' && req.path === 'a.ts' && !req.staged && !req.commitHash && !req.gitRootId
+      ? read.mock.calls.filter(
+          ([, r]) =>
+            r.kind === 'diffs' && r.path === 'a.ts' && !r.staged && !r.commitHash && !r.gitRootId,
+        ).length === 1
+        ? old.promise
+        : next.promise
+      : Promise.resolve(empty),
+  );
+  const owner = start(read);
+  const requests: GitReadRequest[] = [
+    { kind: 'diffs', path: 'a.ts' },
+    { kind: 'diffs', paths: ['a.ts', 'b.ts'] },
+    { kind: 'diffs' },
+    { kind: 'diffs', path: 'b.ts' },
+    { kind: 'diffs', path: 'a.ts', staged: true },
+    { kind: 'diffs', path: 'a.ts', commitHash: 'a'.repeat(40) },
+    { kind: 'commitDetails', commitHash: 'a'.repeat(40) },
+    { kind: 'diffs', path: 'a.ts', gitRootId: 'secondary' },
+  ];
+  requests.forEach((req, i) => owner.dispatch(gitReadRequested('ws', String(i), String(i), req)));
+  await vi.waitFor(() => expect(owner.completions()).toHaveLength(7));
+  read.mockClear();
+  // Keep the already captured first response pending while two saves invalidate it.
+  read.mockImplementation((_ws, req) =>
+    req.kind === 'diffs' && req.path === 'a.ts' && !req.gitRootId
+      ? next.promise
+      : Promise.resolve(empty),
+  );
+  owner.dispatch(gitReadsInvalidated('ws', undefined, { worktreePath: 'a.ts' }));
+  owner.dispatch(gitReadsInvalidated('ws', undefined, { worktreePath: 'a.ts' }));
+  old.resolve(empty);
+  await vi.waitFor(() => expect(read.mock.calls.some(([, req]) => req === requests[0])).toBe(true));
+  expect(owner.view('0')?.result).toBeNull();
+  expect(new Set(read.mock.calls.map(([, req]) => requests.indexOf(req)))).toEqual(
+    new Set([0, 1, 2]),
+  );
+  next.resolve(fresh);
+  await vi.waitFor(() => expect(owner.view('0')?.loading).toBe(false));
+  expect(owner.view('0')?.result).toMatchObject({ kind: 'diffs', chunks: { ids: ['a.ts'] } });
+});

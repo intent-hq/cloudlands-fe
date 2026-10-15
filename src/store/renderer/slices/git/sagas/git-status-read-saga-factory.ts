@@ -45,14 +45,21 @@ export function createGitStatusReadSaga({
   reportReadState?: boolean;
   onError?: (error: unknown) => void;
 }) {
+  const invalidations = new Map<string, { context: string | null | undefined; pending: boolean }>();
+  const contexts = new WeakMap<GitStatusReadAction, string | null | undefined>();
+
   function* loadGitStatusWorker(action: GitStatusReadAction): SagaGenerator<void> {
     const [workspaceId, forceRefresh] = action.payload;
     if (!workspaceId || action.type === workspaceUnmounted.type) return;
-    const context = admission?.readCurrentContext(workspaceId);
-    if (context === null) return;
+    const context = contexts.get(action);
+    if (context === null || (admission && admission.readCurrentContext(workspaceId) !== context))
+      return;
+    const revision = invalidations.get(workspaceId);
     let active = true;
     const isCurrent = () =>
-      active && (!admission || admission.readCurrentContext(workspaceId) === context);
+      active &&
+      invalidations.get(workspaceId) === revision &&
+      (!admission || admission.readCurrentContext(workspaceId) === context);
 
     function* publish(result: StoreAction<unknown>): SagaGenerator<boolean> {
       if (!admission) {
@@ -78,14 +85,17 @@ export function createGitStatusReadSaga({
           if (!isCurrent()) return;
           const status = yield* call((): Promise<GitStatus | null> => {
             if (!isCurrent()) return Promise.resolve(null);
-            return forceRefresh
+            return forceRefresh || (revision?.pending && revision.context === context)
               ? readStatus(workspaceId, { forceRefresh: true })
               : readStatus(workspaceId);
           });
           if (!isCurrent()) return;
           if (epoch !== getGitMutationVersion(workspaceId)) continue;
-          if (status) yield* publish(setGitStatus(workspaceId, toGitStatus(status)));
-          else if (reportReadState)
+          if (status) {
+            if (yield* publish(setGitStatus(workspaceId, toGitStatus(status)))) {
+              if (revision && revision.context === context) revision.pending = false;
+            }
+          } else if (reportReadState)
             yield* publish(setGitStatusError(workspaceId, m.git_client_statusFailed_error()));
         } catch (error) {
           if (!isCurrent()) return;
@@ -109,9 +119,24 @@ export function createGitStatusReadSaga({
   return function* gitStatusReadSaga() {
     const watcher = yield* takeSingleFlightInContext(
       [loadGitStatus, workspaceUnmounted],
-      workspaceReadContext,
+      (action) => {
+        if (action.type === workspaceUnmounted.type) invalidations.delete(action.payload[0]);
+        else {
+          // Bind queued work at intake; a later principal/root must send its own request.
+          const context = admission?.readCurrentContext(action.payload[0]);
+          contexts.set(action, context);
+          // A coalesced ordinary request cannot downgrade an unfulfilled Save refresh.
+          if (action.payload[2]?.invalidatePending)
+            invalidations.set(action.payload[0], { context, pending: true });
+        }
+        return workspaceReadContext(action);
+      },
       loadGitStatusWorker,
     );
-    yield* join(watcher);
+    try {
+      yield* join(watcher);
+    } finally {
+      invalidations.clear();
+    }
   };
 }

@@ -77,7 +77,10 @@ export const initialState: GitState = {
 // ── Actions ──
 
 /** Trigger saga to load git status for a workspace */
-export const loadGitStatus = createAction<[wsId: string, forceRefresh?: boolean]>('git/loadStatus');
+export const loadGitStatus =
+  createAction<[wsId: string, forceRefresh?: boolean, options?: { invalidatePending: boolean }]>(
+    'git/loadStatus',
+  );
 
 export const gitReadRequested =
   createAction<
@@ -104,7 +107,9 @@ export const gitReadCompleted =
     ]
   >('git/readCompleted');
 export const gitReadsInvalidated =
-  createAction<[wsId: string, gitRootId?: string]>('git/readsInvalidated');
+  createAction<[wsId: string, gitRootId?: string, scope?: { worktreePath: string }]>(
+    'git/readsInvalidated',
+  );
 export const openGitCommitFileRequested = createAction<
   [
     wsId: string,

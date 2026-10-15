@@ -35,7 +35,7 @@ export function createFilesSaveSaga({
   maxBytes?: number;
   admission?: {
     captureAuthority: (workspaceId: string, path: string, absolutePath: string) => string | null;
-    /** Stable same-owner/backend/root identity; may survive a transport reconnect, never departure. */
+    /** Stable same-owner/backend/root identity; content publication additionally requires the original view. */
     capturePublicationAuthority?: (
       workspaceId: string,
       path: string,
@@ -45,6 +45,8 @@ export function createFilesSaveSaga({
     readOperations: (workspaceId: string, path: string) => FileSaveOperation[];
     /** Synchronous dispatch is required at transport admission and publication boundaries. */
     dispatch: (action: StoreAction<unknown>) => unknown;
+    /** Confirmed transport settlement only, including after view retirement, fenced to the captured scope. */
+    onConfirmed?: (workspaceId: string, path: string) => void;
   };
   onError?: (error: unknown) => void;
 }) {
@@ -77,13 +79,13 @@ export function createFilesSaveSaga({
       path,
       absolutePath,
     );
-    const canPublish = () =>
-      active &&
-      (admission?.capturePublicationAuthority
+    const hasPublicationAuthority = () =>
+      admission?.capturePublicationAuthority
         ? publicationAuthority != null &&
           admission.capturePublicationAuthority(workspaceId, path, absolutePath) ===
             publicationAuthority
-        : isCurrent());
+        : isCurrent();
+    const canPublish = () => active && hasPublicationAuthority();
     const withinBudget = (entries: FileContentEntry[]) =>
       maxBytes === undefined ||
       (new TextEncoder().encode(content.content).byteLength <= maxBytes &&
@@ -227,6 +229,14 @@ export function createFilesSaveSaga({
           );
       }
       admission.dispatch(fileSaveOperationSettled(options.requestId, status, result.error));
+      if (result.success && hasPublicationAuthority()) {
+        // A read-side observer must never turn a confirmed write into a failed/unknown result.
+        try {
+          admission.onConfirmed?.(workspaceId, relativePath);
+        } catch (error) {
+          onError?.(error);
+        }
+      }
       return result;
     };
     const execute = (mutationPath: string): Promise<FileWriteResult> => {

@@ -5,6 +5,10 @@ import {
 } from '../../../../../../src/store/renderer/slices/files/files-projections';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '@/store';
+import {
+  gitReadsInvalidated,
+  loadGitStatus,
+} from '../../../../../../src/store/renderer/slices/git/git-slice';
 import { selectWorkspaceById } from '@/store/workspace/workspace-selectors';
 import {
   captureFileSaveAuthority,
@@ -29,5 +33,13 @@ export const filesSaveSaga = createFilesSaveSaga({
     readOperation: (id) => getFileSaveOperation(store.state, id),
     readOperations: (workspaceId, path) => getFileSaveOperations(store.state, workspaceId, path),
     dispatch: (action) => store.dispatch(action),
+    onConfirmed: (workspaceId, path) => {
+      // Reconcile existing Git read ownership; departure removes this canonical cache.
+      // React does not use the source app's full workspace hydration lifecycle.
+      if (store.state.git.byWorkspaceId[workspaceId]) {
+        store.dispatch(loadGitStatus(workspaceId, true, { invalidatePending: true }));
+        store.dispatch(gitReadsInvalidated(workspaceId, undefined, { worktreePath: path }));
+      }
+    },
   },
 });

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { store } from '@/store';
 import { filesSaveSaga } from './files-save-saga';
+import { gitStatusReadSaga } from '../../git/sagas/git-status-read-saga';
+import {
+  loadGitStatus,
+  setGitStatus,
+} from '../../../../../../src/store/renderer/slices/git/git-slice';
 import { createAdmittedLegacyPrincipal } from '../../../../../../src/test/fixtures/admitted-legacy-principal';
 import {
   setWorkspaceEntity,
@@ -24,13 +29,14 @@ import { principalContextChanged } from '../../../../../../src/store/renderer/sl
 import { selectPrincipalActionContext } from '@/store/principal/principal-selectors';
 import { captureFileSaveAuthority } from '@/features/workspace/file-save-runtime';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { Workspace } from '$shared/types';
+import { GitFileStatus, type Workspace } from '$shared/types';
 const ports = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('@/features/backend/backend-transport', () => ({ backendRequest: ports.request }));
 const ws = WorkspaceId('file-save-owned'),
   path = 'a.txt',
   absolute = '/owned/repo/a.txt';
 let dispose: () => void, stop: () => void;
+const readers: (() => void)[] = [];
 function load() {
   store.dispatch(
     loadFileContentSucceeded(
@@ -90,6 +96,7 @@ beforeEach(() => {
   stop = store.runSaga(filesSaveSaga);
 });
 afterEach(() => {
+  readers.splice(0).forEach((stopReader) => stopReader());
   stop();
   dispose();
 });
@@ -194,4 +201,151 @@ it('denies a locked file and allows deliberate retry after a definite refusal', 
   save('retry');
   await vi.waitFor(() => expect(operation('retry')?.status).toBe('succeeded'));
   expect(writes()).toHaveLength(1);
+});
+
+const cleanStatus = {
+  branch: 'main',
+  ahead: 0,
+  behind: 0,
+  diverged: false,
+  files: [],
+  hasUncommittedChanges: false,
+  hasUntrackedFiles: false,
+};
+const savedStatus = {
+  ...cleanStatus,
+  files: [{ path, status: GitFileStatus.Modified, staged: false }],
+  hasUncommittedChanges: true,
+};
+function reconcileReads() {
+  readers.push(store.runSaga(gitStatusReadSaga));
+  store.dispatch(setGitStatus(ws, cleanStatus));
+}
+function saveAndStatusPorts(write: () => Promise<unknown> = async () => ({ ok: true })) {
+  ports.request.mockImplementation(async (method, params, options) => {
+    options?.onDispatch?.();
+    wireCalls.push([method, params]);
+    if (method === 'file.write') return write();
+    if (method === 'git.status') return savedStatus;
+    return { lockedAgentIds: [], lockedFilePaths: [] };
+  });
+}
+it('reconciles actual status after confirmed Save without source hydration or an explicit refresh', async () => {
+  store.dispatch(workspaceUnmounted(ws));
+  load();
+  reconcileReads();
+  saveAndStatusPorts();
+  save();
+  await vi.waitFor(() =>
+    expect(store.state.git.byWorkspaceId[ws]?.status?.files).toEqual(savedStatus.files),
+  );
+  expect(writes()).toHaveLength(1);
+  expect(wireCalls.filter(([method]) => method === 'git.status')).toEqual([
+    ['git.status', { workspaceId: ws, forceRefresh: true }],
+  ]);
+});
+it.each(['failed', 'uncertain', 'cancelled'] as const)(
+  'does not reconcile a %s Save as a success',
+  async (outcome) => {
+    reconcileReads();
+    saveAndStatusPorts(async () => {
+      throw new Error('lost acknowledgement');
+    });
+    if (outcome === 'failed')
+      ports.request.mockResolvedValueOnce({ lockedAgentIds: ['agent'], lockedFilePaths: [path] });
+    if (outcome === 'cancelled') store.dispatch(removeFileContentEntry(ws, path));
+    if (outcome === 'cancelled')
+      store.dispatch(
+        saveFileContentRequested(
+          ws,
+          path,
+          absolute,
+          { kind: 'editable-text', content: 'edited\r\n' },
+          { requestId: 'one', authority: captureFileSaveAuthority(ws, path, absolute)! },
+        ),
+      );
+    else save();
+    await vi.waitFor(() => expect(operation()?.status).toBe(outcome));
+    expect(wireCalls.filter(([method]) => method === 'git.status')).toHaveLength(0);
+    expect(store.state.git.byWorkspaceId[ws]?.status?.files).toEqual([]);
+  },
+);
+it.each(['departed', 'remounted', 'principal', 'root'] as const)(
+  'settles confirmed Save after %s without adopting another scope or recreating a draft',
+  async (change) => {
+    reconcileReads();
+    let acknowledge!: (value: unknown) => void;
+    saveAndStatusPorts(
+      () =>
+        new Promise((done) => {
+          acknowledge = done;
+        }),
+    );
+    save();
+    await vi.waitFor(() => expect(acknowledge).toBeTypeOf('function'));
+    store.dispatch(removeFileContentEntry(ws, path));
+    store.dispatch(workspaceUnmounted(ws));
+    if (change === 'remounted') {
+      store.dispatch(workspaceMounted(ws));
+      load();
+      store.dispatch(loadGitStatus(ws));
+      await vi.waitFor(() =>
+        expect(wireCalls.filter(([method]) => method === 'git.status')).toHaveLength(1),
+      );
+    }
+    if (change === 'principal') store.dispatch(principalContextChanged('replacement'));
+    if (change === 'root')
+      store.dispatch(
+        setWorkspaceEntity({ id: ws, myRole: 'owner', worktreePath: '/owned/other' } as Workspace),
+      );
+    acknowledge({ ok: true });
+    await vi.waitFor(() => expect(operation()?.status).toBe('succeeded'));
+    if (change === 'remounted') {
+      await vi.waitFor(() =>
+        expect(store.state.git.byWorkspaceId[ws]?.status?.files).toEqual(savedStatus.files),
+      );
+      expect(wireCalls.filter(([method]) => method === 'git.status')).toHaveLength(2);
+    } else {
+      expect(wireCalls.filter(([method]) => method === 'git.status')).toHaveLength(0);
+    }
+    expect(getFileContentEntry(store.state, ws, path)?.originalContent).toBe(
+      change === 'remounted' ? 'original\r\n' : undefined,
+    );
+    expect(writes()).toHaveLength(1);
+  },
+);
+it('rejects a pre-Save status snapshot and coalesces a fresh read after it settles', async () => {
+  reconcileReads();
+  let oldRead!: (value: unknown) => void;
+  let newRead!: (value: unknown) => void;
+  let reads = 0;
+  saveAndStatusPorts();
+  const defaultRequest = ports.request.getMockImplementation()!;
+  ports.request.mockImplementation((method, ...args) => {
+    if (method === 'git.status') {
+      reads++;
+      return new Promise((done) => {
+        if (reads === 1) oldRead = done;
+        else newRead = done;
+      });
+    }
+    return defaultRequest(method, ...args);
+  });
+  const oldStatus = {
+    ...cleanStatus,
+    files: [{ path: 'old.txt', status: GitFileStatus.Modified, staged: false }],
+  };
+  store.dispatch(setGitStatus(ws, oldStatus));
+  store.dispatch(loadGitStatus(ws));
+  await vi.waitFor(() => expect(oldRead).toBeTypeOf('function'));
+  save();
+  await vi.waitFor(() => expect(operation()?.status).toBe('succeeded'));
+  oldRead(cleanStatus);
+  await vi.waitFor(() => expect(newRead).toBeTypeOf('function'));
+  expect(store.state.git.byWorkspaceId[ws]?.status?.files).toEqual(oldStatus.files);
+  newRead(savedStatus);
+  await vi.waitFor(() =>
+    expect(store.state.git.byWorkspaceId[ws]?.status?.files).toEqual(savedStatus.files),
+  );
+  expect(reads).toBe(2);
 });

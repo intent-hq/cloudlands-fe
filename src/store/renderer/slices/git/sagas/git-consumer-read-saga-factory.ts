@@ -193,10 +193,17 @@ export function createGitConsumerReadSaga(dependencies: GitConsumerReadDependenc
     reads: Channel<ReadMessage>,
     action: ReturnType<typeof gitReadsInvalidated>,
   ): SagaGenerator<void> {
-    const [workspaceId, gitRootId] = action.payload;
+    const [workspaceId, gitRootId, scope] = action.payload;
     for (const resource of resources.values()) {
       if (resource.workspaceId !== workspaceId || resource.request.gitRootId !== gitRootId)
         continue;
+      if (scope) {
+        const request = resource.request;
+        // Saving a worktree file cannot change staged or immutable commit reads.
+        if (request.kind !== 'diffs' || request.staged || request.commitHash) continue;
+        const paths = [...(request.paths ?? []), ...(request.path ? [request.path] : [])];
+        if (paths.length && !paths.includes(scope.worktreePath)) continue;
+      }
       resource.revision++;
       resource.failed = false;
       yield* put(reads, { resource });

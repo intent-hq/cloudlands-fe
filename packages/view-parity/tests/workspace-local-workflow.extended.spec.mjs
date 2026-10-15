@@ -133,6 +133,7 @@ for (const width of [1280, 420]) {
         if (!module) throw new Error('App Store provenance missing');
         const { store } = await import(module.name);
         return {
+          workspaceLifecycle: store.state.workspaceLifecycle,
           files: store.state.files,
           explorer: store.state.fileExplorer,
           git: store.state.git,
@@ -223,7 +224,6 @@ for (const width of [1280, 420]) {
       await capture('saved-editor', file);
       await activate(file.getByRole('link', { name: 'Back', exact: true }));
       await expect(treeRow(fixture.file)).toBeFocused();
-      await activate(changes.getByRole('button', { name: 'Refresh git status', exact: true }));
       await expect(changedRow(false)).toBeVisible({ timeout: 15000 });
       await activate(changedRow(false));
       await expect(diffBody).toContainText(edit);

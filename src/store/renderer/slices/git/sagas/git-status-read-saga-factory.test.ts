@@ -10,6 +10,7 @@ import {
   gitReducer,
   initialState,
   loadGitStatus,
+  gitReadsInvalidated,
   setGitStatus,
   setGitStatusLoading,
 } from '../git-slice';
@@ -288,4 +289,94 @@ describe('createGitStatusReadSaga', () => {
     expect(readStatus).not.toHaveBeenCalled();
     expect(owner.state().byWorkspaceId.ws).toBeUndefined();
   });
+});
+
+it('keeps consumer invalidation separate from source status reads', async () => {
+  const read = vi.fn().mockResolvedValue(status);
+  const owner = start(read);
+  owner.dispatch(gitReadsInvalidated('ws', undefined, { worktreePath: 'a.ts' }));
+  await settle();
+  expect(read).not.toHaveBeenCalled();
+});
+it('coalesces invalidations, retains Git mutation barriers and permits a later context', async () => {
+  const first = deferred<GitStatus>();
+  const read = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(status);
+  const owner = start(read);
+  owner.dispatch(loadGitStatus('ws'));
+  const lease = reserveGitMutation('ws');
+  owner.dispatch(loadGitStatus('ws', true, { invalidatePending: true }));
+  owner.dispatch(loadGitStatus('ws', true, { invalidatePending: true }));
+  first.resolve({ ...status, files: [] });
+  await settle();
+  expect(owner.actions.filter((action) => action.type === setGitStatus.type)).toHaveLength(0);
+  expect(read).toHaveBeenCalledTimes(1);
+  await lease.release();
+  await settle();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(owner.workspace().status).toEqual(status);
+  owner.dispatch(workspaceUnmounted('ws'));
+  owner.changeContext('connection-2');
+  owner.dispatch(gitReadsInvalidated('ws', 'secondary'));
+  await settle();
+  expect(read).toHaveBeenCalledTimes(2);
+  owner.dispatch(loadGitStatus('ws'));
+  await settle();
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(owner.workspace().status).toEqual(status);
+});
+
+it('does not adopt a queued status refresh into a replacement authority', async () => {
+  const first = deferred<GitStatus>();
+  const read = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(status);
+  const owner = start(read);
+  owner.dispatch(loadGitStatus('ws'));
+  owner.dispatch(loadGitStatus('ws', true, { invalidatePending: true }));
+  owner.changeContext('replacement-owner');
+  first.resolve(status);
+  await settle();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(owner.actions.filter((action) => action.type === setGitStatus.type)).toHaveLength(0);
+  owner.dispatch(loadGitStatus('ws'));
+  await settle();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(read).toHaveBeenLastCalledWith('ws');
+  expect(owner.workspace().status).toEqual(status);
+});
+
+it('preserves a Save refresh through an ordinary trailing request until current status succeeds', async () => {
+  const first = deferred<GitStatus>();
+  const cached = { ...status, files: [] };
+  const read = vi
+    .fn()
+    .mockReturnValueOnce(first.promise)
+    .mockImplementation((_workspaceId: string, options?: { forceRefresh?: boolean }) =>
+      Promise.resolve(options?.forceRefresh ? status : cached),
+    );
+  const owner = start(read);
+  owner.dispatch(loadGitStatus('ws'));
+  owner.dispatch(loadGitStatus('ws', true, { invalidatePending: true }));
+  owner.dispatch(loadGitStatus('ws'));
+  first.resolve(cached);
+  await settle();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(owner.workspace().status?.files).toEqual(status.files);
+  owner.dispatch(loadGitStatus('ws'));
+  await settle();
+  expect(read).toHaveBeenLastCalledWith('ws');
+});
+
+it('retains a failed Save refresh for explicit retry without leaking it across unmount', async () => {
+  const read = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(status);
+  const owner = start(read);
+  owner.dispatch(loadGitStatus('ws', true, { invalidatePending: true }));
+  await settle();
+  expect(owner.workspace().error).toBe('offline');
+  owner.dispatch(loadGitStatus('ws'));
+  await settle();
+  expect(read).toHaveBeenLastCalledWith('ws', { forceRefresh: true });
+  expect(owner.workspace().status).toEqual(status);
+  owner.dispatch(workspaceUnmounted('ws'));
+  owner.dispatch(loadGitStatus('ws'));
+  await settle();
+  expect(read).toHaveBeenLastCalledWith('ws');
 });
