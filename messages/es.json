@@ -7543,5 +7543,11 @@
   "workspace_discussion_forbidden_label": "Ya no tienes acceso a esta conversación.",
   "workspace_discussion_invalid_label": "No se pudo enviar el mensaje. Revisa su longitud e inténtalo de nuevo.",
   "workspace_discussion_unsupported_label": "Este servidor aún no admite conversaciones. Actualiza Intent en el servidor para continuar.",
-  "workspace_discussion_tooLong_error": "Este mensaje es demasiado largo. Acórtalo e inténtalo de nuevo."
+  "workspace_discussion_tooLong_error": "Este mensaje es demasiado largo. Acórtalo e inténtalo de nuevo.",
+  "workspace_share_namedTitle_label": "Compartir {title}",
+  "workspace_share_audience_ariaLabel": "Destinatarios del enlace",
+  "workspace_share_audienceGithub_label": "Solo un usuario de GitHub",
+  "workspace_share_audienceGitlab_label": "Solo un usuario de GitLab",
+  "workspace_share_invited_label": "Invitado",
+  "workspace_share_guestCount_label": "{count} / {limit}"
 }

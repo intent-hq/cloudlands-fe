@@ -7543,5 +7543,11 @@
   "workspace_discussion_forbidden_label": "이 토론에 더 이상 접근할 수 없습니다.",
   "workspace_discussion_invalid_label": "메시지를 전송하지 못했습니다. 길이를 확인하고 다시 시도하세요.",
   "workspace_discussion_unsupported_label": "이 호스트는 아직 토론을 지원하지 않습니다. 계속하려면 호스트의 Intent를 업데이트하세요.",
-  "workspace_discussion_tooLong_error": "메시지가 너무 깁니다. 내용을 줄이고 다시 시도하세요."
+  "workspace_discussion_tooLong_error": "메시지가 너무 깁니다. 내용을 줄이고 다시 시도하세요.",
+  "workspace_share_namedTitle_label": "{title} 공유",
+  "workspace_share_audience_ariaLabel": "링크 대상",
+  "workspace_share_audienceGithub_label": "GitHub 사용자 한 명만",
+  "workspace_share_audienceGitlab_label": "GitLab 사용자 한 명만",
+  "workspace_share_invited_label": "초대됨",
+  "workspace_share_guestCount_label": "{count} / {limit}"
 }

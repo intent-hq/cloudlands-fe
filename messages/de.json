@@ -7543,5 +7543,11 @@
   "workspace_discussion_forbidden_label": "Du hast keinen Zugriff mehr auf diese Diskussion.",
   "workspace_discussion_invalid_label": "Die Nachricht konnte nicht gesendet werden. Prüfe ihre Länge und versuche es erneut.",
   "workspace_discussion_unsupported_label": "Dieser Host unterstützt Diskussionen noch nicht. Aktualisiere Intent auf dem Host, um fortzufahren.",
-  "workspace_discussion_tooLong_error": "Diese Nachricht ist zu lang. Kürze sie und versuche es erneut."
+  "workspace_discussion_tooLong_error": "Diese Nachricht ist zu lang. Kürze sie und versuche es erneut.",
+  "workspace_share_namedTitle_label": "{title} teilen",
+  "workspace_share_audience_ariaLabel": "Link-Zielgruppe",
+  "workspace_share_audienceGithub_label": "Nur ein GitHub-Nutzer",
+  "workspace_share_audienceGitlab_label": "Nur ein GitLab-Nutzer",
+  "workspace_share_invited_label": "Eingeladen",
+  "workspace_share_guestCount_label": "{count} / {limit}"
 }

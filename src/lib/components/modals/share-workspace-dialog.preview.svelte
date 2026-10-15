@@ -134,6 +134,7 @@
     title: 'Share workspace dialog (identity seam)',
     defaultState: 'both-connected',
     states: {
+      'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
       'sharing-disabled': { props: sharingSetup },
       'sharing-checking': {
         props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
@@ -179,7 +180,21 @@
 <script lang="ts">
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
 
+  import type { WorkspaceShareCreatedLink } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   let props: ShareDialogPreviewProps = $props();
+  let query = $state('');
+  let addedInvites = $state<WorkspaceInvite[]>([]);
+  let createdLink = $state<WorkspaceShareCreatedLink | null>(null);
+  const suggestions = $derived(
+    query
+      ? ['alex', 'alexchen', 'alex-k'].map((login, index) => ({
+          login,
+          githubUserId: index + 1,
+          avatarUrl: null,
+          htmlUrl: null,
+        }))
+      : [],
+  );
 </script>
 
 <div class="relative min-h-[1000px] w-full">
@@ -189,8 +204,41 @@
     workspaceTitle="Polish workspace hover cards"
     gitlabHost={GITLAB_HOST}
     canManage
-    guestCount={props.members.length - 1}
+    guestCount={props.members.length - 1 + addedInvites.length}
     guestLimit={5}
     {...props}
+    invites={[...props.invites, ...addedInvites]}
+    {createdLink}
+    inviteLinks={Object.fromEntries(
+      addedInvites.map((invite) => [invite.id, `intent://invite?preview=${invite.id}`]),
+    )}
+    userSearchQuery={query}
+    userSuggestions={suggestions}
+    onSearchUsers={(value) => (query = value)}
+    onCreateInvite={(login, pin) => {
+      const id = `preview-${addedInvites.length}`;
+      addedInvites = [
+        ...addedInvites,
+        {
+          id,
+          workspaceId: WORKSPACE_ID,
+          createdByPrincipalId: owner.principalId,
+          pinLogin: login || undefined,
+          pinGithubUserId: login ? 1 : undefined,
+          pinIdentity: login
+            ? {
+                provider: pin?.provider ?? 'github',
+                host: pin?.host ?? 'github.com',
+                externalUserId: '1',
+              }
+            : undefined,
+          createdAt: '2026-10-15T00:00:00Z',
+          expiresAt: '2099-10-15T00:00:00Z',
+          reusable: !login,
+        },
+      ];
+      createdLink = { inviteId: id, pinLogin: login || undefined };
+    }}
+    onRevokeInvite={(id) => (addedInvites = addedInvites.filter((invite) => invite.id !== id))}
   />
 </div>

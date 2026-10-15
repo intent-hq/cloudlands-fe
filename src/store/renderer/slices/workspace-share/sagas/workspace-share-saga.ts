@@ -57,11 +57,7 @@ import { selectWorkspaceManagementDenied } from '../../workspace/workspace-selec
 import { integrationReconnectSettled } from '$features/integrations-request-context';
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
-import {
-  clearInviteLinks,
-  storeInviteLink,
-  vaultInviteLinks,
-} from '$features/workspace-sharing/invite-link-vault';
+import { clearInviteLinks, vaultInviteLinks } from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
@@ -441,11 +437,17 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     return;
   }
   const inviteId = outcome.result.invite.id;
-  yield* call(storeInviteLink, inviteId, outcome.result.url);
+  const [invite] = yield* call(vaultInviteLinks, [
+    {
+      ...outcome.result.invite,
+      url: outcome.result.url,
+    },
+  ]);
   yield* put(
     shareInviteCreated({
       target,
       request,
+      invite,
       link: {
         inviteId,
         pinLogin: outcome.result.invite.pinLogin,

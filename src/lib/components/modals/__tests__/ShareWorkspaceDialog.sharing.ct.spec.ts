@@ -22,6 +22,8 @@ test('enabling sharing keeps the recipient draft and waits for confirmed readine
   let enableRequests = 0;
   let invitedLogin: string | undefined;
   const callbacks = {
+    userSearchQuery: 'sam',
+    userSuggestions: [{ login: 'sam', githubUserId: 1, avatarUrl: null, htmlUrl: null }],
     onSearchUsers: () => {},
     onEnableSharing: () => {
       enableRequests += 1;
@@ -33,8 +35,10 @@ test('enabling sharing keeps the recipient draft and waits for confirmed readine
   const component = await mount(ShareWorkspaceDialog, {
     props: { ...props, ...callbacks, sharingEnabled: true },
   });
-  const recipient = page.getByRole('combobox');
-  const create = page.getByRole('button', { name: 'Create invite link' });
+  await page.getByRole('combobox', { name: 'Link audience' }).click();
+  await page.getByRole('option', { name: 'Only a GitHub user' }).click();
+  const recipient = page.getByRole('combobox', { name: 'Search GitHub users' });
+  const create = page.getByRole('button', { name: 'Copy link' });
   const enable = page.getByRole('switch', { name: 'Enable sharing' });
   await recipient.fill('sam');
   await expect(recipient).toHaveAttribute('aria-expanded', 'true');
@@ -54,6 +58,10 @@ test('enabling sharing keeps the recipient draft and waits for confirmed readine
   await expect(enable).toHaveCount(0);
   await expect(recipient).toHaveValue('sam');
   await expect(recipient).toHaveAttribute('aria-expanded', 'false');
+  await expect(create).toBeDisabled();
+  await recipient.fill('sa');
+  await recipient.fill('sam');
+  await page.getByRole('option', { name: '@sam' }).click();
   await expect(create).toBeEnabled();
   await create.click();
   await expect.poll(() => invitedLogin).toBe('sam');
@@ -80,7 +88,7 @@ test('startup failure stays in the dialog and the same toggle retries', async ({
   });
   await expect(page.getByRole('alert')).toContainText('Install Tailcat');
   await expect(enable).not.toBeChecked();
-  await expect(page.getByRole('button', { name: 'Create invite link' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy link' })).not.toBeVisible();
   await enable.click();
   await expect.poll(() => enableRequests).toBe(2);
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -95,14 +103,14 @@ test('unknown setup hides invite creation until the settings read completes', as
   });
   await expect(page.getByRole('switch', { name: 'Enable sharing' })).toBeDisabled();
   await expect(page.getByText('Checking sharing…')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create invite link' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy link' })).not.toBeVisible();
 });
 
 test('workspace managers cannot change host sharing settings', async ({ mount, page }) => {
   await mount(ShareWorkspaceDialog, { props: { ...props, canAdministerHost: false } });
   await expect(page.getByRole('switch', { name: 'Enable sharing' })).toBeDisabled();
   await expect(page.getByText('Ask the host administrator to enable sharing.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create invite link' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy link' })).not.toBeVisible();
 });
 
 test('workspace managers can invite without permission to read host settings', async ({
@@ -121,7 +129,7 @@ test('workspace managers can invite without permission to read host settings', a
     },
   });
   await expect(page.getByRole('switch', { name: 'Enable sharing' })).toHaveCount(0);
-  const create = page.getByRole('button', { name: 'Create invite link' });
+  const create = page.getByRole('button', { name: 'Copy link' });
   await expect(create).toBeEnabled();
   await create.click();
   await expect.poll(() => created).toBe(true);

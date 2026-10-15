@@ -17,6 +17,7 @@
 import {
   createCollection,
   getItem,
+  upsertItem,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createAction } from '@themislib/themis/utils/store/create-action';
@@ -248,9 +249,16 @@ export const shareInviteCreateRequested = createAction<
   [payload: { pinLogin: string; pin?: InvitePin }]
 >('workspaceShare/inviteCreateRequested');
 
-/** Saga: the invite for `target` / `request` was created; the link is shown once. */
+/** Saga: creation succeeded; publish the secret-free row before refreshing the roster. */
 export const shareInviteCreated = createAction<
-  [payload: { target: WorkspaceShareTarget; request: number; link: WorkspaceShareCreatedLink }]
+  [
+    payload: {
+      target: WorkspaceShareTarget;
+      request: number;
+      link: WorkspaceShareCreatedLink;
+      invite: WorkspaceInvite;
+    },
+  ]
 >('workspaceShare/inviteCreated');
 
 /** Saga: invite creation failed (`error` already localized). */
@@ -507,13 +515,18 @@ workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareInviteCreated,
-  (state, { payload: [{ target, request, link }] }) => {
+  (state, { payload: [{ target, request, link, invite }] }) => {
     if (!targets(state, target) || state.createRequest !== request || state.withheld) return state;
     return {
       ...state,
       creating: false,
       createError: null,
       createdLink: link,
+      invites: upsertItem(state.invites, invite),
+      guestCount:
+        state.guestCount === null || getItem(state.invites, invite.id)
+          ? state.guestCount
+          : state.guestCount + 1,
       mutationGeneration: state.mutationGeneration + 1,
     };
   },

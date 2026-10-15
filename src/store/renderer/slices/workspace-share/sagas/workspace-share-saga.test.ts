@@ -844,6 +844,28 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  it('publishes the new invite without its secret even when the follow-up list fails', async () => {
+    replyByMethod({
+      'workspace.invite.create': createReply('inv-new'),
+      'workspace.invite.list': new Error('read failed'),
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(shareInviteCreateRequested({ pinLogin: 'dave' }));
+      await settle();
+      expect(h.state().createdLink?.inviteId).toBe('inv-new');
+      expect(getItems(h.state().invites)).toEqual([
+        expect.objectContaining({ id: 'inv-new', pinLogin: 'dave' }),
+      ]);
+      expect(readInviteLink('inv-new')).toBe(INVITE_URL);
+      expect(JSON.stringify(h.dispatched)).not.toContain(INVITE_URL);
+      expect(JSON.stringify(h.dispatched)).not.toContain(SECRET_MARKER);
+      expect(h.state().loadError).toBeTruthy();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
   it('omits pinLogin from the wire for an open invite', async () => {
     replyByMethod({ 'workspace.invite.create': createReply() });
     const h = harness(opened());
