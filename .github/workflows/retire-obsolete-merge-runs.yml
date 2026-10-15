@@ -17,18 +17,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  runner-route:
-    uses: ./.github/workflows/runner-route.yml
-    permissions:
-      contents: read
-      actions: read
-    secrets:
-      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
-
   cleanup:
     if: github.repository == 'intent-hq/cloudlands-fe' && github.ref == 'refs/heads/main'
-    needs: [runner-route]
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read

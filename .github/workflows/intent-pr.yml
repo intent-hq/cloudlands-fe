@@ -789,7 +789,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+          # Persistent runners retain their store; only archive ephemeral stores.
+          cache: ${{ needs.route.outputs.macos_burst == 'true' && 'pnpm' || '' }}
       - name: Record native fixture environment
         run: |
           set -euo pipefail

@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml
+// @verify-changed-triggers: .github/workflows/*.yml
 // @vitest-environment node
 import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -126,4 +126,16 @@ describe('pnpm setup on persistent runners', () => {
       });
     }
   }
+});
+
+describe('portable fixture package cache', () => {
+  it.each(['true', 'false'])('archives the package store only when macOS bursts (%s)', (burst) => {
+    const setup = workflow.jobs['test-portable-fixtures'].steps.find(
+      (step: Step) => step.uses?.startsWith('actions/setup-node@') && step.with?.cache,
+    );
+    const expression = String(setup.with.cache).replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    expect(
+      runInNewContext(expression, { needs: { route: { outputs: { macos_burst: burst } } } }),
+    ).toBe(burst === 'true' ? 'pnpm' : '');
+  });
 });

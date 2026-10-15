@@ -1,5 +1,5 @@
 # Routing stays hosted so an unavailable self-hosted fleet cannot block fallback.
-# Keep identical across intent, intentd, and cloudlands-fe; runner-policy.test.cjs exercises the inline probe.
+# Keep identical across intent, intentd, and cloudlands-fe; runner-policy-fixtures.cjs exercises the inline probe.
 name: Runner route
 on:
   workflow_call:

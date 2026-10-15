@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-depot-sccache.py, scripts/runner-policy.test.cjs, scripts/test_runner_policy.py
+// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-depot-sccache.py, scripts/runner-policy-fixtures.cjs, scripts/test_runner_policy.py
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

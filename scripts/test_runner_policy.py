@@ -7,7 +7,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 # The probe must work when the fleet is offline; Depot smoke tests test Depot itself.
-EXCEPTIONS = {('runner-route.yml', 'probe'), ('depot-cache-smoke.yml', 'populate'), ('depot-cache-smoke.yml', 'verify'), ('manual-signed-build.yml', 'smoke-macos')}
+# Queue recovery must remain independent of the fleet it recovers.
+EXCEPTIONS = {('retire-obsolete-merge-runs.yml', 'cleanup'), ('runner-route.yml', 'probe'), ('depot-cache-smoke.yml', 'populate'), ('depot-cache-smoke.yml', 'verify'), ('manual-signed-build.yml', 'smoke-macos')}
 MAINTENANCE = {('m1mac-smoke.yml', 'smoke'), ('provision-m1mac.yml', 'provision'), ('provision-m1mac.yml', 'verify'), ('macos-prune.yml', 'prune'), ('tinybox-prune.yml', 'prune'), ('windows-prune.yml', 'prune')}
 
 
@@ -40,7 +41,7 @@ class RunnerPolicy(unittest.TestCase):
             self.assertEqual(violations(f'jobs:\n  new-work:\n    runs-on: {label}\n', 'new.yml'), ['new-work'])
 
     def test_routing_behavior(self):
-        subprocess.run(['node', '--test', str(ROOT / 'scripts/runner-policy.test.cjs')], check=True)
+        subprocess.run(['node', '--test', str(ROOT / 'scripts/runner-policy-fixtures.cjs')], check=True)
 
 
 if __name__ == '__main__':
