@@ -26,6 +26,8 @@
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
+    workspaceTitle?: string;
+    guestLimit?: number;
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -119,10 +121,12 @@
     gitlabConnected: false,
     gitlabEnabled: false,
     identityProvider: 'github',
-    members: [owner],
+    members: [{ ...owner, displayName: 'Sam Breed', login: 'wookiehangover' }],
     invites: [],
     principals: [],
     sharingEnabled: false,
+    workspaceTitle: 'Intent Site',
+    guestLimit: 10,
   };
 
   export const preview = definePreview<ShareDialogPreviewProps>({
