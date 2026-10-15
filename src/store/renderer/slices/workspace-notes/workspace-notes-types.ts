@@ -63,6 +63,7 @@ export type WorkspaceNotesWorkspaceState = {
   noteVersions: NoteVersionsState | null;
   readyTasks: ReadyTasksState | null;
   pendingContentByNoteId: Record<string, true>;
+  staleContentByNoteId: Record<string, number>;
   contentViews: Collection<NoteContentViewState, 'consumerId'>;
   workspaceRoots: Collection<NoteWorkspaceRootState, 'consumerId'>;
   presenceViews: Collection<NotePresenceViewState, 'consumerId'>;

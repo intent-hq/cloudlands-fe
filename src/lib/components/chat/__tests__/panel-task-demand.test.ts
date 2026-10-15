@@ -122,15 +122,44 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     await vi.advanceTimersByTimeAsync(20);
     flushSync();
   };
-  function invalidate() {
+  function pushTask() {
+    const rpcReads = () =>
+      backend.requests.filter(({ method }) =>
+        ['task.list', 'note.get', 'workspace.get'].includes(method),
+      );
+    const readsBefore = rpcReads();
     routeDaemonEventsNotification('events.event', {
       event: {
         id: `panel-task-${++eventId}`,
-        type: 'task:created',
+        type: 'task:updated',
         workspaceId: WS,
-        data: { noteId: 'task-1' },
+        data: {
+          workspaceId: WS,
+          tasks: [
+            { id: 'task-1', title: 'Discovered task', status: 'in_progress', specLinked: true },
+          ],
+          removedIds: [],
+        },
       },
     });
+    routeDaemonEventsNotification('events.event', {
+      event: {
+        id: `panel-task-stats-${++eventId}`,
+        type: 'workspace:task-stats-changed',
+        workspaceId: WS,
+        data: { workspaceId: WS, taskStats: { total: 1, completed: 0, inProgress: 1 } },
+      },
+    });
+    const pushed = store.state.workspaceTasks.byWorkspaceId[WS];
+    expect(
+      [{ id: 'task-1', title: 'Discovered task', status: 'in_progress', specLinked: true }].map(
+        (task) => pushed.tasks.map[task.id],
+      ),
+    ).toEqual([
+      { id: 'task-1', title: 'Discovered task', status: 'in_progress', specLinked: true },
+    ]);
+    expect(pushed.stats).toEqual({ total: 1, completed: 0, inProgress: 1 });
+    expect(rpcReads()).toEqual(readsBefore);
   }
   function watch() {
     store.dispatch(
@@ -214,7 +243,7 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps a closed menu quiet, discovers empty tasks on open, and refreshes stale tasks once on reopen', async () => {
+  it('keeps a closed menu quiet, discovers empty tasks on open, and displays pushed tasks on reopen without another read', async () => {
     render(PanelContainer, props());
     await settle();
     expect(reads()).toEqual([]);
@@ -230,17 +259,13 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     await fireEvent.click(menuButton);
     await settle();
     expect(demand()).toEqual([]);
-    backend.onRequest('task.list', () => ({
-      tasks: [{ id: 'task-1', title: 'Discovered task', status: 'in_progress', specLinked: true }],
-      stats: { total: 1, completed: 0, inProgress: 1 },
-    }));
-    invalidate();
+    pushTask();
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toHaveLength(1);
     await fireEvent.click(menuButton);
     await settle();
     expect(reads()).toEqual(
-      Array.from({ length: 2 }, () => ({ method: 'task.list', params: { workspaceId: WS } })),
+      Array.from({ length: 1 }, () => ({ method: 'task.list', params: { workspaceId: WS } })),
     );
     await fireEvent.keyDown(screen.getByTestId('task-progress-trigger'), { key: 'ArrowRight' });
     await settle();
@@ -252,11 +277,11 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     expect(demand()).toEqual([]);
     await fireEvent.click(menuButton);
     await settle();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 
   it.each(['other', 'note'])(
-    'releases a chat hidden by zooming %s and refreshes once when zoom returns',
+    'releases a chat hidden by zooming %s and displays pushed tasks when zoom returns',
     async (target) => {
       watch();
       const view = render(PanelContainer, props());
@@ -266,15 +291,15 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
       await view.rerender(props(target));
       await settle();
       expect(demand()).toEqual([]);
-      invalidate();
+      pushTask();
       await vi.advanceTimersByTimeAsync(1100);
       expect(reads()).toHaveLength(1);
       await view.rerender(props('chat'));
       await settle();
-      expect(reads()).toHaveLength(2);
+      expect(reads()).toHaveLength(1);
       await view.rerender(props());
       await settle();
-      expect(reads()).toHaveLength(2);
+      expect(reads()).toHaveLength(1);
     },
   );
 
@@ -292,14 +317,14 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     await view.rerender(props('other'));
     await settle();
     expect(demand()).toHaveLength(1);
-    invalidate();
+    pushTask();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     independent.unmount();
     expect(demand()).toEqual([]);
-    invalidate();
+    pushTask();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
   it('blurs a zoom-hidden editor before making it inert, then cancels eviction on return', async () => {
     const view = render(PanelContainer, props());

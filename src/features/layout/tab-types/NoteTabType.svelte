@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
@@ -22,6 +22,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectNoteById,
+    selectNoteWindowVisible,
     selectNoteContentView,
     selectNotePresenceView,
     selectNoteWorkspaceRoot,
@@ -51,7 +52,10 @@
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
   import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
-  import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    selectCurrentWorkspaceTabId,
+    selectAllScrollPositions,
+  } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
@@ -67,6 +71,8 @@
   let { tab, workspaceId, layoutId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
+  const contentInstanceId = $props.id();
+  const contentConsumerId = `note-content:${contentInstanceId}`;
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
@@ -88,10 +94,15 @@
   // svelte-ignore state_referenced_locally - selector targets are retargeted by the effects below
   const noteUiConsumerStore = writable(`note-tab:${tab.id}`);
   $effect(() => noteUiConsumerStore.set(`note-tab:${tab.id}`));
-  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, contentConsumerId);
   const noteWorkspaceRoot = selectNoteWorkspaceRoot(noteViewWorkspaceIdStore, noteUiConsumerStore);
   const notePresenceView = selectNotePresenceView(noteViewWorkspaceIdStore, noteUiConsumerStore);
   const principalConnectionContext = selectPrincipalConnectionContext();
+  const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const noteWindowVisible = selectNoteWindowVisible();
+  const contentVisible = $derived(
+    isActive && $noteWindowVisible && $currentWorkspaceTabId === (layoutId ?? workspaceId),
+  );
   let noteUiRequestSequence = 0;
 
   function nextNoteUiRequestId(consumerId: string, kind: string): string {
@@ -125,22 +136,25 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    const consumerId = `note-tab:${tab.id}`;
-    if (!isActive || !noteId || !noteContentStale || !$principalConnectionContext) return;
-    appStore.dispatch(
-      noteContentViewRequested(
-        consumerId,
-        nextNoteUiRequestId(consumerId, 'content'),
-        workspaceId,
-        noteId,
+    const consumerId = contentConsumerId;
+    if (!contentVisible || !noteId || !$principalConnectionContext) return;
+    const contentWorkspaceId = workspaceId;
+    untrack(() =>
+      appStore.dispatch(
+        noteContentViewRequested(
+          consumerId,
+          nextNoteUiRequestId(consumerId, 'content'),
+          contentWorkspaceId,
+          noteId,
+        ),
       ),
     );
-    return () => appStore.dispatch(noteContentViewReleased(workspaceId, consumerId));
+    return () => appStore.dispatch(noteContentViewReleased(contentWorkspaceId, consumerId));
   });
 
   function retryNoteContentLoad() {
     const noteId = tab.noteId;
-    const consumerId = `note-tab:${tab.id}`;
+    const consumerId = contentConsumerId;
     if (!noteId) return;
     appStore.dispatch(
       noteContentViewRequested(

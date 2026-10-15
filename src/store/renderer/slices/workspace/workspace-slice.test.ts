@@ -1,8 +1,12 @@
+import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import type { PullRequestInfo, Workspace, WorkspaceId } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import { openTerminalOverlay, toggleTerminalOverlay } from '../terminals/terminals-slice';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   createCollection,
   getItem,
@@ -77,6 +81,23 @@ function makePullRequest(overrides: Partial<PullRequestInfo> = {}): PullRequestI
 }
 
 describe('workspaceReducer', () => {
+  it('keeps pushed statistics over older list/detail replies until reconnect hydration', () => {
+    const older = makeWorkspace({
+      id: 'ws-1',
+      taskStats: { total: 2, completed: 0, inProgress: 2 },
+    });
+    const latest = { total: 2, completed: 1, inProgress: 1 };
+    let state = workspaceReducer(initialState, setWorkspaceEntity(older));
+    state = workspaceReducer(state, workspaceTaskStatsPushed('ws-1', latest));
+    state = workspaceReducer(state, setWorkspaceEntity(older, { detailRead: true }));
+    state = workspaceReducer(state, replaceWorkspaceList([older]));
+    expect(getItems(state.workspaces)[0].taskStats).toEqual(latest);
+    state = workspaceReducer(state, backendReconnected());
+    const reconnected = { total: 2, completed: 2, inProgress: 0 };
+    state = workspaceReducer(state, replaceWorkspaceList([{ ...older, taskStats: reconnected }]));
+    expect(getItems(state.workspaces)[0].taskStats).toEqual(reconnected);
+  });
+
   it('returns the initial state', () => {
     expect(workspaceReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
