@@ -26,7 +26,9 @@ vi.mock('@tanstack/react-router', () => ({
 // Admission and disclosure interaction are covered in their own native/owner tests.
 // This mount exercises actual message updates, canonical selectors/cache, and ToolBody rendering.
 vi.mock('@/store/workspace-lifecycle/workspace-lifecycle-selectors', () => ({
-  selectAdmittedWorkspaceReadContext: () => ({ value: 'test-admission' }),
+  selectAdmittedWorkspaceReadContext: Object.assign(() => ({ value: 'test-admission' }), {
+    select: () => 'test-admission',
+  }),
 }));
 vi.mock('@/features/chat/components/response-group', () => ({
   ResponseGroup: ({ children }: { children: ReactNode }) => <section>{children}</section>,

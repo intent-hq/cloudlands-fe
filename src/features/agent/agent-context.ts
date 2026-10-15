@@ -46,6 +46,17 @@ export interface ContextReference {
   metadata?: Record<string, any>;
 }
 
+/** Existing send API also accepts provider-specific opaque context reference kinds. */
+export type MessageContextReference =
+  | ContextReference
+  | {
+      type: string;
+      filePath?: string;
+      noteId?: string;
+      selectedText?: string;
+      [key: string]: unknown;
+    };
+
 /**
  * Agent context format for IPC communication
  */

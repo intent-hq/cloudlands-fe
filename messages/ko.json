@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "노트를 만드는 중입니다. 이 양식을 닫아도 이미 전송된 요청은 취소되지 않습니다.",
   "workspace_noteCreate_unknown_description": "생성 결과를 알 수 없습니다. 다른 노트를 만들기 전에 노트 목록을 확인하세요. 이 세션에서는 요청을 다시 보내지 않습니다.",
   "workspace_noteCreate_failed_description": "노트를 만들 수 없습니다. 제목은 유지됩니다. 노트 만들기를 선택하여 다시 시도하세요.",
-  "workspace_noteCreate_retired_description": "이 양식은 원래 워크스페이스 세션에 더 이상 연결되어 있지 않습니다. 닫은 후 새 노트를 다시 여세요."
+  "workspace_noteCreate_retired_description": "이 양식은 원래 워크스페이스 세션에 더 이상 연결되어 있지 않습니다. 닫은 후 새 노트를 다시 여세요.",
+  "chat_noteContext_add_label": "노트 컨텍스트 추가",
+  "chat_noteContext_search_placeholder": "워크스페이스 노트 찾기…",
+  "chat_noteContext_empty_description": "사용 가능한 일반 노트가 없습니다.",
+  "chat_noteContext_unavailable_error": "선택한 노트를 사용할 수 없습니다. 보내기 전에 노트를 새로 고치거나 참조를 제거하세요.",
+  "chat_noteContext_busy_description": "노트 컨텍스트를 보내기 전에 현재 응답을 기다리세요."
 }

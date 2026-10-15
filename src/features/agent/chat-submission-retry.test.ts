@@ -38,6 +38,7 @@ import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/ag
 import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import { requestChatMessageRetry } from './chat-submission-retry';
+import { createSubmissionRetry } from './chat-submission-retry-factory';
 import { queuedMessageMutationRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import type { QueuedMessageMutationOperation } from '$store/renderer/slices/agent-queue/agent-queue-types';
 import {
@@ -45,9 +46,10 @@ import {
   sendQueuedMessagesNowRequested,
   clearQueuedMessagesRequested,
   chatLastAttemptedMessageSet,
+  sendMessage as sendMessageAction,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
-import { submitChatMessage } from '$features/agent/chat-submission';
+import { admitChatMessage, submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import {
@@ -283,7 +285,7 @@ describe('conversation retry and evidence integration', () => {
 });
 
 const sends = () => wire.request.mock.calls.filter(([method]) => method === 'agent.sendMessage');
-async function failFirstSend(outcome: 'rejected' | 'uncertain') {
+async function failFirstSend(outcome: 'rejected' | 'uncertain', workspaceContextStr?: string) {
   startSending();
   let count = 0;
   wire.request.mockImplementation(async (method, params) => {
@@ -296,6 +298,19 @@ async function failFirstSend(outcome: 'rejected' | 'uncertain') {
   submitChatMessage(store, agent, {
     wsId: ws,
     text: 'retry payload',
+    ...(workspaceContextStr !== undefined ? { workspaceContextStr } : {}),
+    noteIds: ['selected-note'],
+    noteContextOwnerId: 'original-composer',
+    contextItems: [
+      {
+        id: 'note-pill',
+        type: 'note',
+        label: 'Selected',
+        noteId: 'selected-note',
+        workspaceId: ws,
+      },
+    ],
+    contextReferences: [{ type: 'note', noteId: 'selected-note', metadata: { workspaceId: ws } }],
     fileBlocks: [{ type: 'file', attachmentId: 'original-file', fileName: 'original.txt' }],
   });
   await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
@@ -312,8 +327,106 @@ function warningChoice() {
 }
 
 describe('explicit retry choices', () => {
+  it.each(['rejected', 'uncertain', 'legacy'] as const)(
+    'keeps the activating composer and raw text through the deliberate %s retry',
+    async (outcome) => {
+      const attempt = await failFirstSend(
+        outcome === 'legacy' ? 'rejected' : outcome,
+        'selected note context',
+      );
+      if (outcome === 'legacy')
+        store.dispatch(
+          chatLastAttemptedMessageSet(agent, { text: attempt.text, options: attempt.options }),
+        );
+      expect(attempt.options).not.toHaveProperty('noteContextOwnerId');
+      expect(attempt.options?.composerText).toBe('retry payload');
+      expect(attempt.text).toBe('selected note context\n\nretry payload');
+      let ownerId = 'composer-at-retry-activation';
+      let releaseRead!: () => void;
+      const readGate = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const retry = createSubmissionRetry({
+        store,
+        admitChatMessage,
+        submitChatMessage,
+        hydrateAgentQueue: async (...args) => {
+          if (outcome === 'uncertain') await readGate;
+          await hydrateAgentQueue(...args);
+        },
+        loadChatTranscript,
+        getNotify: async () => ({ warning: wire.warning }),
+      });
+      try {
+        const requested = retry.requestChatMessageRetry(agent, ws, undefined, undefined, ownerId);
+        ownerId = 'composer-mounted-during-reconcile';
+        releaseRead();
+        await requested;
+        if (outcome === 'uncertain') {
+          ownerId = 'composer-at-resend-click';
+          warningChoice().action.onClick();
+        }
+        const submitted = dispatch.mock.calls.find(
+          ([action]) => action.type === sendMessageAction.type,
+        );
+        expect(submitted).toBeDefined();
+        const action = submitted![0] as ReturnType<typeof sendMessageAction>;
+        expect(action.payload.payload).toMatchObject({
+          noteContextOwnerId: 'composer-at-retry-activation',
+          composerText: 'retry payload',
+          text: 'selected note context\n\nretry payload',
+          contextItems: [
+            {
+              id: 'note-pill',
+              type: 'note',
+              label: 'Selected',
+              noteId: 'selected-note',
+              workspaceId: ws,
+            },
+          ],
+        });
+        const entry = store.state.pendingSubmissions.byAgentId[agent];
+        const fresh = getItem(entry.submissions, action.payload.payload.submission!.id);
+        expect(fresh?.content).toBe('retry payload');
+        expect(fresh?.contextItems).toEqual([
+          {
+            id: 'note-pill',
+            type: 'note',
+            label: 'Selected',
+            noteId: 'selected-note',
+            workspaceId: ws,
+          },
+        ]);
+        expect(fresh).not.toHaveProperty('noteContextOwnerId');
+        expect(action.payload.payload.noteContextOwnerId).not.toBe(ownerId);
+        await vi.waitFor(() => expect(sends()).toHaveLength(2));
+        expect(sends()[1][1]).not.toHaveProperty('noteContextOwnerId');
+        expect(sends()[1][1]).not.toHaveProperty('composerText');
+        expect(sends()[1][1].content).toBe('selected note context\n\nretry payload');
+        expect(sends()[1][1].messageMetadata).toEqual({
+          contextReferences: [
+            { type: 'note', noteId: 'selected-note', metadata: { workspaceId: ws } },
+          ],
+        });
+        await vi.waitFor(() =>
+          expect(
+            getItem(
+              store.state.pendingSubmissions.byAgentId[agent].submissions,
+              action.payload.payload.submission!.id,
+            )?.status,
+          ).toBe('accepted'),
+        );
+        // Join the acknowledgement's canonical reads before disposing this Store.
+        await Promise.all([hydrateAgentQueue(agent, ws), loadChatTranscript(agent, ws)]);
+      } finally {
+        dispatch.mockRestore();
+      }
+    },
+  );
+
   it('stages a fresh UI retry synchronously before a deferred send and preserves a newer draft', async () => {
-    const attempt = await failFirstSend('rejected');
+    const attempt = await failFirstSend('rejected', 'selected note context');
     const originalId = sends()[0][1].messageId;
     store.dispatch(setChatDraft(ws, agent, 'new draft'));
     let reply!: (value: unknown) => void;
@@ -327,7 +440,17 @@ describe('explicit retry choices', () => {
     const retry = requestChatMessageRetry(agent, ws, 'retry-model');
     expect(display().conversation).toHaveLength(1);
     expect(display().conversation[0].id).not.toBe(originalId);
+    expect(display().conversation[0].content).toBe('retry payload');
     expect(display().conversation[0].fileBlocks).toEqual(attempt.options?.fileBlocks);
+    expect(display().conversation[0].contextItems).toEqual([
+      {
+        id: 'note-pill',
+        type: 'note',
+        label: 'Selected',
+        noteId: 'selected-note',
+        workspaceId: ws,
+      },
+    ]);
     expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
       'previous',
     ]);
@@ -336,6 +459,8 @@ describe('explicit retry choices', () => {
     expect(sends()[1][1]).toMatchObject({
       messageId: display().conversation[0].id,
       model: 'retry-model',
+      noteIds: ['selected-note'],
+      contextReferences: [{ type: 'note', noteId: 'selected-note', metadata: { workspaceId: ws } }],
     });
     wire.request.mockImplementation(baseReply);
     reply({ success: true, queued: false });

@@ -44,6 +44,33 @@ export function createSubmissionRetry({
     ): unknown;
   }>;
 }) {
+  function retryPayload(
+    workspaceId: string,
+    attempt: LastAttemptedMessage,
+    model?: string,
+    noteContextOwnerId?: string,
+  ) {
+    return {
+      wsId: workspaceId,
+      text: attempt.text,
+      ...(attempt.options?.composerText !== undefined
+        ? { composerText: attempt.options.composerText }
+        : {}),
+      imageBlocks: attempt.options?.imageBlocks,
+      fileBlocks: attempt.options?.fileBlocks,
+      noteIds: attempt.options?.noteIds,
+      ...(attempt.options?.contextItems !== undefined
+        ? { contextItems: attempt.options.contextItems }
+        : {}),
+      ...(attempt.options?.contextReferences !== undefined
+        ? { contextReferences: attempt.options.contextReferences }
+        : {}),
+      ...(noteContextOwnerId !== undefined ? { noteContextOwnerId } : {}),
+      messageMetadata: attempt.options?.messageMetadata,
+      model: model ?? attempt.options?.model,
+    };
+  }
+
   /** Prior identity is provenance, never permission to reuse an old admission. */
   async function prepareSubmissionRetry(
     agentId: string,
@@ -51,6 +78,7 @@ export function createSubmissionRetry({
     attempt: LastAttemptedMessage,
     model?: string,
     onAdmitted?: (id: string) => void,
+    noteContextOwnerId?: string,
   ) {
     const prior = attempt.submission;
     if (!prior) return 'legacy' as const;
@@ -64,14 +92,10 @@ export function createSubmissionRetry({
     const entry = current();
     if (!entry) return null;
     if (!entry.supported) return 'legacy' as const;
-    const payload = {
-      wsId: workspaceId,
-      text: attempt.text,
-      imageBlocks: attempt.options?.imageBlocks,
-      fileBlocks: attempt.options?.fileBlocks,
-      noteIds: attempt.options?.noteIds,
-      messageMetadata: attempt.options?.messageMetadata,
-      model: model ?? attempt.options?.model,
+    const admitRetry = () => {
+      const payload = retryPayload(workspaceId, attempt, model, noteContextOwnerId);
+      const admitted = admitChatMessage(store, agentId, payload);
+      return admitted ? { ...admitted, noteContextOwnerId: payload.noteContextOwnerId } : null;
     };
     if (prior.outcome === 'rejected') {
       const tombstone = getItem(entry.tombstones, reference.id);
@@ -80,9 +104,9 @@ export function createSubmissionRetry({
         (tombstone && tombstone.reason !== 'rejected')
       )
         return null;
-      return admitChatMessage(store, agentId, payload);
+      return admitRetry();
     }
-    if (prior.outcome === 'accepted') return admitChatMessage(store, agentId, payload);
+    if (prior.outcome === 'accepted') return admitRetry();
 
     // Queue absence is not delivery proof. Read both sources, with their normal
     // ownership/generation fences, before offering an explicitly warned resend.
@@ -118,7 +142,12 @@ export function createSubmissionRetry({
             getItem(latest.submissions, reference.id)?.status !== 'uncertain'
           )
             return;
-          submitChatMessage(store, agentId, payload, onAdmitted);
+          submitChatMessage(
+            store,
+            agentId,
+            retryPayload(workspaceId, attempt, model, noteContextOwnerId),
+            onAdmitted,
+          );
         },
       },
       cancel: { label: m.chat_richInput_cancel_label(), onClick: cancel },
@@ -127,19 +156,41 @@ export function createSubmissionRetry({
     return null;
   }
 
-  /** UI retries admit synchronously before the retry can enter the per-agent FIFO. */
+  /** UI retries admit synchronously before the per-agent FIFO. The activating
+   * composer's owner is captured once and never rebound after reconciliation. */
   async function requestChatMessageRetry(
     agentId: string,
     workspaceId: string,
     model?: string,
     onAdmitted?: (id: string) => void,
+    noteContextOwnerId?: string,
   ) {
     const attempt = getAgentChatState(store.state, agentId).lastAttemptedMessage;
     const admission = attempt?.submission
-      ? await prepareSubmissionRetry(agentId, workspaceId, attempt, model, onAdmitted)
+      ? await prepareSubmissionRetry(
+          agentId,
+          workspaceId,
+          attempt,
+          model,
+          onAdmitted,
+          noteContextOwnerId,
+        )
       : 'legacy';
     if (!admission) return;
     if (admission === 'legacy') {
+      if (
+        attempt &&
+        noteContextOwnerId !== undefined &&
+        attempt.options?.contextReferences?.some((reference) => reference.type === 'note')
+      ) {
+        submitChatMessage(
+          store,
+          agentId,
+          retryPayload(workspaceId, attempt, model, noteContextOwnerId),
+          onAdmitted,
+        );
+        return;
+      }
       await store.dispatch(
         model === undefined
           ? agentSessionRetryLastMessageRequested(agentId, workspaceId)
@@ -153,9 +204,21 @@ export function createSubmissionRetry({
       sendMessage(agentId, {
         wsId: workspaceId,
         text: attempt.text,
+        ...(attempt.options?.composerText !== undefined
+          ? { composerText: attempt.options.composerText }
+          : {}),
         imageBlocks: attempt.options?.imageBlocks,
         fileBlocks: attempt.options?.fileBlocks,
         noteIds: attempt.options?.noteIds,
+        ...(attempt.options?.contextItems !== undefined
+          ? { contextItems: attempt.options.contextItems }
+          : {}),
+        ...(admission.noteContextOwnerId !== undefined
+          ? { noteContextOwnerId: admission.noteContextOwnerId }
+          : {}),
+        ...(attempt.options?.contextReferences !== undefined
+          ? { contextReferences: attempt.options.contextReferences }
+          : {}),
         messageMetadata: attempt.options?.messageMetadata,
         model: model ?? attempt.options?.model,
         userAppMessageId: admission.submission.appMessageId,

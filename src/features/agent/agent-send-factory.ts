@@ -47,6 +47,7 @@ import { buildRecordedAttempt, buildQueuedRecordedAttempt } from './utils/build-
 import { replaceAgentQueue } from '../../store/renderer/slices/agent-queue/agent-queue-slice';
 import { workspaceMetrics } from '../../store/renderer/slices/workspace/utils/workspace-metrics';
 import { m } from '$shared/paraglide/messages.js';
+import type { MessageContextReference } from './agent-context';
 
 import type { StoreDispatch } from '@themislib/themis/types';
 import type { SubmissionProjectionState } from '../../store/renderer/slices/pending-submissions/pending-submissions-projections';
@@ -70,6 +71,7 @@ export function createAgentSender({
   hydrateAgentQueue,
   getAgentQueueEventSnapshotSeq,
   errorBoundary,
+  validateContextReferences,
 }: {
   appStore: {
     readonly state: SubmissionProjectionState & { chatState: ChatStateSlice };
@@ -85,6 +87,15 @@ export function createAgentSender({
   errorBoundary: {
     wrap<T>(operation: () => Promise<T>, name: string, options?: ErrorBoundaryOptions): Promise<T>;
   };
+  /** Optional presenter binding: reject references whose current eligibility changed.
+   * Runs after async setup and again at the transport's final dispatch boundary. */
+  validateContextReferences?: (context: {
+    agentId: string;
+    workspaceId: string;
+    noteIds?: readonly string[];
+    contextReferences?: readonly MessageContextReference[];
+    noteContextOwnerId?: string;
+  }) => void;
 }) {
   const logger = createLogger('AgentSend');
 
@@ -124,13 +135,12 @@ export function createAgentSender({
     workspace: Workspace,
     options: {
       submission?: SubmissionReference;
-      contextReferences?: Array<{
-        type: string;
-        filePath?: string;
-        noteId?: string;
-        selectedText?: string;
-        [key: string]: unknown;
-      }>;
+      contextReferences?: MessageContextReference[];
+      contextItems?: NonNullable<
+        import('../../store/renderer/slices/chat-state/chat-state-types').LastAttemptedMessage['options']
+      >['contextItems'];
+      noteContextOwnerId?: string;
+      composerText?: string;
       imageBlocks?: Array<{
         type: 'image';
         data?: string;
@@ -331,6 +341,13 @@ export function createAgentSender({
             }
           }
           const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
+          // The daemon persists this opaque object, not the transport's context
+          // hints. Keep selected note identity after transcript reload as well.
+          const messageMetadata = options.contextReferences?.some(
+            (reference) => reference.type === 'note',
+          )
+            ? { ...options.messageMetadata, contextReferences: options.contextReferences }
+            : options.messageMetadata;
           // Kept separate from the wire tag below so a failed send can roll the
           // optimistic row back to exactly this metadata.
           const baseUserMetadata = options.contextReferences?.length
@@ -347,7 +364,7 @@ export function createAgentSender({
               // Mirror the wire tag on the optimistic row so transcript-driven
               // derivations (the Q&A wizard's answer resolution) settle without
               // waiting for the daemon echo.
-              ...(options.messageMetadata ?? {}),
+              ...(messageMetadata ?? {}),
             },
           };
 
@@ -440,32 +457,53 @@ export function createAgentSender({
                   // persistence); legacy-only fields (messages, resetHistory,
                   // behaviorPrompt, specialist, personality) are no longer sent —
                   // edit/regenerate flows go through `agent.editAndRegenerate`.
-                  const response = await backendRequest<Record<string, unknown>>(
-                    'agent.sendMessage',
-                    {
-                      agentId,
-                      ...(supported && submission ? { messageId: submission.id } : {}),
-                      workspaceId: workspace.id,
-                      content,
-                      model: wireModel,
-                      contextReferences: options.contextReferences,
-                      imageBlocks: options.imageBlocks,
-                      fileBlocks: options.fileBlocks,
-                      noteIds: options.noteIds,
-                      stdinContext: options.stdinContext,
-                      // Pre-assigned assistant message ID so backend uses the same ID as the renderer
-                      assistantMessageId,
-                      userAppMessageId,
-                      assistantAppMessageId,
-                      // Message priority for force-send interrupt (PROTOCOL.md §5.5)
-                      priority: options.priority,
-                      // Opaque per-message tag persisted on the user row
-                      // (PROTOCOL.md §5.5) — omitted entirely when absent so
-                      // ordinary sends keep their exact request shape.
-                      ...(options.messageMetadata
-                        ? { messageMetadata: options.messageMetadata }
-                        : {}),
-                    },
+                  const validate = () => {
+                    try {
+                      if (validateContextReferences && !isCurrent())
+                        throw new Error(m.workspace_client_accessChanged_error());
+                      validateContextReferences?.({
+                        agentId,
+                        workspaceId: workspace.id,
+                        noteIds: options.noteIds,
+                        contextReferences: options.contextReferences,
+                        ...(options.noteContextOwnerId !== undefined
+                          ? { noteContextOwnerId: options.noteContextOwnerId }
+                          : {}),
+                      });
+                    } catch (error) {
+                      wireRejected = true;
+                      throw error;
+                    }
+                  };
+                  validate();
+                  const params = {
+                    agentId,
+                    ...(supported && submission ? { messageId: submission.id } : {}),
+                    workspaceId: workspace.id,
+                    content,
+                    model: wireModel,
+                    contextReferences: options.contextReferences,
+                    imageBlocks: options.imageBlocks,
+                    fileBlocks: options.fileBlocks,
+                    noteIds: options.noteIds,
+                    stdinContext: options.stdinContext,
+                    // Pre-assigned assistant message ID so backend uses the same ID as the renderer
+                    assistantMessageId,
+                    userAppMessageId,
+                    assistantAppMessageId,
+                    // Message priority for force-send interrupt (PROTOCOL.md §5.5)
+                    priority: options.priority,
+                    // Opaque per-message tag persisted on the user row
+                    // (PROTOCOL.md §5.5) — omitted entirely when absent so
+                    // ordinary sends keep their exact request shape.
+                    ...(messageMetadata ? { messageMetadata } : {}),
+                  };
+                  const response = await (
+                    validateContextReferences
+                      ? backendRequest<Record<string, unknown>>('agent.sendMessage', params, {
+                          onDispatch: validate,
+                        })
+                      : backendRequest<Record<string, unknown>>('agent.sendMessage', params)
                   ).catch((error: unknown) => {
                     if (isCurrent()) throw error;
                     return undefined;

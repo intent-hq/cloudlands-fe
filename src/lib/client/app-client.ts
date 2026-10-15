@@ -1814,6 +1814,9 @@ export interface DraftAttachment {
   type: string;
   label: string;
   description?: string;
+  /** Note references persist identity and display metadata, never the note body. */
+  noteId?: string;
+  workspaceId?: string;
   /** Opaque text carried by content-backed context items such as selections. */
   content?: string;
   path?: string;

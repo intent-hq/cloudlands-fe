@@ -20,8 +20,8 @@ export function createChatSubmission(
     agentId: string,
     payload: SendMessagePayload & { wsId: string },
   ) {
-    if (!payload.text.trim() && !payload.imageBlocks?.length && !payload.fileBlocks?.length)
-      return null;
+    const content = (payload.composerText ?? payload.text).trim();
+    if (!content && !payload.imageBlocks?.length && !payload.fileBlocks?.length) return null;
     const appMessageId = payload.userAppMessageId ?? createAppMessageId();
     const admitted = admitAgentSubmission(
       store,
@@ -29,7 +29,7 @@ export function createChatSubmission(
       payload.wsId,
       getPrincipalSnapshot(store.state)?.capabilities.submissionCorrelation,
       {
-        content: payload.text.trim(),
+        content,
         appMessageId,
         destination:
           !payload.forceSubmit && getAgentIsResponding(store.state, agentId)

@@ -65,6 +65,9 @@ export function buildRecordedAttempt(
   options: {
     submission?: import('../../../store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionReference;
     noteIds?: string[];
+    composerText?: string;
+    contextReferences?: NonNullable<LastAttemptedMessage['options']>['contextReferences'];
+    contextItems?: NonNullable<LastAttemptedMessage['options']>['contextItems'];
     model?: string;
     imageBlocks?: Array<{
       type: 'image';
@@ -83,7 +86,24 @@ export function buildRecordedAttempt(
   },
 ): LastAttemptedMessage {
   const recordedOptions = {
+    ...(options.composerText !== undefined ? { composerText: options.composerText } : {}),
+    // Retry admission needs the exact pill/note identities, never note bodies,
+    // File handles or arbitrary caches. Upload payloads live in their blocks.
+    ...(options.contextItems !== undefined
+      ? {
+          contextItems: options.contextItems.map(({ id, type, label, noteId, workspaceId }) => ({
+            id,
+            type,
+            label,
+            ...(noteId !== undefined ? { noteId } : {}),
+            ...(workspaceId !== undefined ? { workspaceId } : {}),
+          })),
+        }
+      : {}),
     ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
+    ...(options.contextReferences !== undefined
+      ? { contextReferences: options.contextReferences }
+      : {}),
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
     ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),

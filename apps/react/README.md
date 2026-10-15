@@ -92,6 +92,17 @@ Drafts queued under a retired account or backend are canceled. Reconnection resu
 without automatically resending an uncertain submission. An explicit retry may warn
 that delivery is uncertain before offering a resend.
 
+Use **Add note context** to select an existing ordinary Markdown note from this
+workspace. The picker shows note IDs to distinguish duplicate titles. Remove a
+note chip to exclude it. Acknowledged drafts restore references after reload;
+note bodies are read by the agent when it uses the selected context, not copied
+into the draft. Type a prompt and explicitly Send while the agent is idle.
+Unavailable notes remain visible and block sending until refreshed or removed.
+The daemon's busy-turn queue does not preserve every note hint, so this preview
+requires waiting for the current response; another client's simultaneous Send
+can still race that check. This is an internal same-workspace note picker, not the
+full desktop context or mention editor.
+
 Use the paperclip to select local images or files. Wait for upload completion before
 sending; registered attachments survive draft reload. Remove a chip to exclude it.
 An interrupted upload can be retried while its local file is still available. After

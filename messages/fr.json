@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "Création de la note. Fermer ce formulaire ne permet pas d’annuler une demande déjà envoyée.",
   "workspace_noteCreate_unknown_description": "Le résultat de la création est inconnu. Vérifiez la liste des notes avant d’en créer une autre. Cette session ne renverra pas la demande.",
   "workspace_noteCreate_failed_description": "La note n’a pas pu être créée. Votre titre est conservé ; choisissez Créer la note pour réessayer.",
-  "workspace_noteCreate_retired_description": "Ce formulaire n’est plus connecté à sa session d’espace de travail d’origine. Fermez-le et rouvrez Nouvelle note."
+  "workspace_noteCreate_retired_description": "Ce formulaire n’est plus connecté à sa session d’espace de travail d’origine. Fermez-le et rouvrez Nouvelle note.",
+  "chat_noteContext_add_label": "Ajouter une note au contexte",
+  "chat_noteContext_search_placeholder": "Rechercher une note de l’espace…",
+  "chat_noteContext_empty_description": "Aucune note ordinaire disponible.",
+  "chat_noteContext_unavailable_error": "Une note sélectionnée est indisponible. Actualisez les notes ou retirez sa référence avant l’envoi.",
+  "chat_noteContext_busy_description": "Attendez la réponse en cours avant d’envoyer du contexte de notes."
 }

@@ -24,6 +24,41 @@ const IMAGE_ITEM: ContextItem = {
 };
 
 describe('serializeDraftAttachments', () => {
+  it('persists and restores note identity and display metadata without note bodies or file data', () => {
+    const item: ContextItem = {
+      id: 'note-pill',
+      type: 'note',
+      label: 'Research',
+      description: 'Workspace note',
+      noteId: 'note-identity',
+      workspaceId: 'workspace-identity',
+      content: 'full private body',
+      metadata: { cachedNote: { content: 'stale copy' } },
+      path: 'not-a-note-identity',
+      file: new File(['secret'], 'note.txt'),
+      imageData: 'bytes',
+      imageMimeType: 'image/png',
+      attachmentId: 'not-a-file',
+    };
+    const expected = {
+      id: 'note-pill',
+      type: 'note',
+      label: 'Research',
+      description: 'Workspace note',
+      noteId: 'note-identity',
+      workspaceId: 'workspace-identity',
+    };
+    const persisted = serializeDraftAttachments([item]);
+    expect(persisted).toEqual([expected]);
+    expect(deserializeDraftAttachments(JSON.parse(JSON.stringify(persisted)))).toEqual([expected]);
+    // Also project an older/external row through the same whitelist on restore.
+    expect(deserializeDraftAttachments([item as DraftAttachment])).toEqual([expected]);
+    expect(serializeDraftAttachments([{ ...item, noteId: 'another-note' }])).not.toEqual(persisted);
+    expect(serializeDraftAttachments([{ ...item, workspaceId: 'another-workspace' }])).not.toEqual(
+      persisted,
+    );
+  });
+
   it('projects image context items to wire-safe attachments, dropping the File handle', () => {
     const attachments = serializeDraftAttachments([IMAGE_ITEM]);
 

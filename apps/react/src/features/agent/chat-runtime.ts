@@ -1,3 +1,5 @@
+import { selectChatDraftOwnerView } from '@/store/chat-drafts/chat-drafts-selectors';
+import { selectAvailableContextNotes } from '@/store/chat-drafts/note-context-selectors';
 import { placementApi } from './attachment-placement-runtime';
 import { createChatDraftOwnership } from '../../../../../src/features/agent/chat-draft-ownership';
 import { getWorkspaceParticipationContext } from '../../../../../src/store/renderer/slices/workspace/workspace-authority-projections';
@@ -84,7 +86,13 @@ export const draftsClient = createBackendDraftsClient(
       store.state.agentSessions.byAgentId[agentId]?.workspaceId === workspaceId &&
       ownership.isCurrent(workspaceId);
     if (!current()) throw new Error(m.workspace_client_accessChanged_error());
-    const result = await backend.backendRequest<T>(method, params, options);
+    const result = await backend.backendRequest<T>(method, params, {
+      ...options,
+      onDispatch: () => {
+        if (!current()) throw new Error(m.workspace_client_accessChanged_error());
+        options?.onDispatch?.();
+      },
+    });
     if (!current()) throw new Error(m.workspace_client_accessChanged_error());
     return result;
   },
@@ -113,6 +121,48 @@ export const sendAgentMessage = createAgentSender({
   hydrateAgentQueue: queueReads.hydrateAgentQueue,
   getAgentQueueEventSnapshotSeq: queueReads.getAgentQueueEventSnapshotSeq,
   errorBoundary: new ErrorBoundaryService(notify),
+  validateContextReferences: ({
+    agentId,
+    workspaceId,
+    noteIds,
+    contextReferences,
+    noteContextOwnerId,
+  }) => {
+    const references = contextReferences?.filter((ref) => ref.type === 'note') ?? [];
+    if (!references.length && !noteIds?.length) return;
+    const owner = noteContextOwnerId
+      ? selectChatDraftOwnerView.select(store.state, noteContextOwnerId)?.restore
+      : undefined;
+    if (
+      !owner ||
+      owner.status !== 'restored' ||
+      owner.workspaceId !== workspaceId ||
+      owner.agentId !== agentId
+    )
+      throw new Error(m.workspace_client_accessChanged_error());
+    const notes = selectAvailableContextNotes.select(store.state, workspaceId);
+    if (
+      !noteIds?.length ||
+      references.length !== noteIds.length ||
+      references.some(
+        (ref) =>
+          !ref.noteId ||
+          !noteIds.includes(ref.noteId) ||
+          !ref.metadata ||
+          typeof ref.metadata !== 'object' ||
+          !('workspaceId' in ref.metadata) ||
+          ref.metadata.workspaceId !== workspaceId,
+      ) ||
+      noteIds.some((id) => !notes.some((note) => note.id === id))
+    )
+      throw new Error(m.chat_noteContext_unavailable_error());
+    const session = store.state.agentSessions.byAgentId[agentId];
+    if (!session || session.workspaceId !== workspaceId)
+      throw new Error(m.workspace_client_accessChanged_error());
+    // Optimistic isStreaming belongs to this submission; only daemon turn facts block it.
+    if (session.isResponding || session.turnInFlight)
+      throw new Error(m.chat_noteContext_busy_description());
+  },
 });
 export const chatSubmission = createChatSubmission(
   createAgentSubmissionAdmitter(agentReadOwnership.captureAgentMutationOwnership),

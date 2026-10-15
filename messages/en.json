@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "Creating the note. Closing this form will not cancel a sent request.",
   "workspace_noteCreate_unknown_description": "The creation outcome is unknown. Check the notes list before creating another note. This session will not resend the request.",
   "workspace_noteCreate_failed_description": "The note could not be created. Your title is kept; choose Create note to try again.",
-  "workspace_noteCreate_retired_description": "This form is no longer connected to its original workspace session. Close it and reopen New note."
+  "workspace_noteCreate_retired_description": "This form is no longer connected to its original workspace session. Close it and reopen New note.",
+  "chat_noteContext_add_label": "Add note context",
+  "chat_noteContext_search_placeholder": "Find a workspace note…",
+  "chat_noteContext_empty_description": "No ordinary notes available.",
+  "chat_noteContext_unavailable_error": "A selected note is unavailable. Refresh notes or remove its reference before sending.",
+  "chat_noteContext_busy_description": "Wait for the current response before sending note context."
 }

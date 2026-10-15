@@ -59,6 +59,10 @@ type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload['imageBlocks'];
   fileBlocks?: SendMessagePayload['fileBlocks'];
   noteIds?: string[];
+  contextReferences?: SendMessagePayload['contextReferences'];
+  contextItems?: SendMessagePayload['contextItems'];
+  noteContextOwnerId?: string;
+  composerText?: string;
   messageMetadata?: SendMessagePayload['messageMetadata'];
   userAppMessageId?: string;
   model?: string;
@@ -83,6 +87,7 @@ export function createChatSendWorkers({
   sendAgentMessage,
   prepareImages,
   retryImages,
+  noteContextBusyError = m.agent_chatSend_sendNowRejected_error,
 }: {
   appClient: { agents: Pick<AgentsClient, 'queue' | 'stop' | 'sendQueuedNow' | 'rename'> };
   captureAgentMutationOwnership: ReturnType<
@@ -104,6 +109,8 @@ export function createChatSendWorkers({
   sendAgentMessage: ReturnType<typeof createAgentSender>;
   prepareImages: (wsId: string, images: Images, agentId: string) => Promise<Images>;
   retryImages: (error: unknown, images: Images) => Images;
+  /** Ordinary note references cannot use the daemon queue, which drops per-turn hints. */
+  noteContextBusyError?: () => string;
 }) {
   const logger = createLogger('ChatSendSaga');
   const CANCELLED_ERROR = 'Chat send operation cancelled';
@@ -275,6 +282,12 @@ export function createChatSendWorkers({
     if (!(yield* current())) return;
     const recordedAttempt = buildRecordedAttempt(content, options);
     const isResponding = yield* selectAgentIsResponding.effect(agentId);
+    if (isResponding && options.contextReferences?.some((reference) => reference.type === 'note')) {
+      yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
+      yield* settle('rejected');
+      yield* put(chatSendFailed(agentId, noteContextBusyError()));
+      return;
+    }
     if (!skipQueueCheck && isResponding) {
       if (!submission) yield* put(clearChatDraft(wsId, agentId));
       try {
@@ -439,6 +452,19 @@ export function createChatSendWorkers({
         imageBlocks: payload.imageBlocks,
         fileBlocks: payload.fileBlocks,
         noteIds: payload.noteIds,
+        ...(payload.contextReferences !== undefined
+          ? { contextReferences: payload.contextReferences }
+          : {}),
+        ...(payload.contextReferences?.some((reference) => reference.type === 'note') &&
+        payload.contextItems !== undefined
+          ? { contextItems: payload.contextItems }
+          : {}),
+        ...(payload.noteContextOwnerId !== undefined
+          ? { noteContextOwnerId: payload.noteContextOwnerId }
+          : {}),
+        ...(payload.contextReferences?.some((reference) => reference.type === 'note')
+          ? { composerText: payload.composerText ?? payload.text }
+          : {}),
         messageMetadata: payload.messageMetadata,
         userAppMessageId: payload.userAppMessageId,
         priority: forceSubmit ? 'interrupt' : undefined,

@@ -59,6 +59,16 @@ import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streamin
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import type { BrowserElementCapture } from '$store/renderer/slices/browser/browser-types';
 import { browserCaptureToContextItems } from '$lib/components/chat/browser-capture-context';
+import { prepareNoteContext } from '$lib/components/chat/chat-note-context';
+import { createAgentSender } from './agent-send-factory';
+import { captureAgentMutationOwnership } from './agent-read-ownership';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  chatDraftOwnerOpened,
+  chatDraftOwnerReleased,
+  chatDraftRestoreRequested,
+  chatDraftRestoreSettled,
+} from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
 
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { selectPendingSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
@@ -199,6 +209,76 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     expect(params).not.toHaveProperty('personality');
     expect(params).not.toHaveProperty('sessionId');
   }, 30000);
+
+  it.each([
+    { name: 'without existing metadata', metadata: undefined },
+    { name: 'preserving unrelated metadata', metadata: { source: 'fixture', tags: ['research'] } },
+  ])(
+    'sends prepared note pointers and image-resolution IDs through the canonical wire path $name',
+    async ({ metadata }) => {
+      const prepared = prepareNoteContext(WS, [
+        { id: 'pill', type: 'note', label: 'Research', noteId: 'note-123', workspaceId: WS },
+      ]);
+      if (!prepared.ok) throw new Error('Expected a valid local reference');
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.sendMessage')
+          return { success: true, queued: false, messageId: 'note-ack', turnId: 'note-turn' };
+        return {};
+      });
+      const content = `${prepared.workspaceContextStr}\n\nSummarize this note`;
+      await sendMessage(AGENT, content, workspace(), {
+        noteIds: prepared.noteIds,
+        contextReferences: prepared.contextReferences,
+        userAppMessageId: 'note-app-message',
+        messageMetadata: metadata,
+        noteContextOwnerId: 'composer-runtime-only',
+      });
+      const sends = backendRequestMock.mock.calls.filter(
+        ([method]) => method === 'agent.sendMessage',
+      );
+      expect(sends).toEqual([
+        [
+          'agent.sendMessage',
+          {
+            agentId: AGENT,
+            workspaceId: WS,
+            content,
+            model: 'opus4.7',
+            contextReferences: [
+              { type: 'note', noteId: 'note-123', metadata: { workspaceId: WS } },
+            ],
+            noteIds: ['note-123'],
+            imageBlocks: undefined,
+            fileBlocks: undefined,
+            stdinContext: undefined,
+            assistantMessageId: expect.any(String),
+            userAppMessageId: 'note-app-message',
+            assistantAppMessageId: expect.any(String),
+            priority: undefined,
+            messageMetadata: {
+              ...metadata,
+              contextReferences: [
+                { type: 'note', noteId: 'note-123', metadata: { workspaceId: WS } },
+              ],
+            },
+          },
+        ],
+      ]);
+      const messages = appStore.state.agentSessions.byAgentId[AGENT].messages.filter(
+        (m) => m.role === 'user',
+      );
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        appMessageId: 'note-app-message',
+        contentBlocks: [{ type: 'text', text: content }],
+        metadata: {
+          ...metadata,
+          contextReferences: [{ type: 'note', noteId: 'note-123', metadata: { workspaceId: WS } }],
+        },
+      });
+    },
+  );
 
   it.each([
     { type: 'image' as const, data: 'synthetic-base64', mimeType: 'image/png' },
@@ -896,6 +976,112 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       },
     };
   }
+
+  it.each([
+    'restore',
+    'dispatch',
+    'retired admission',
+    'composer departure',
+    'composer rebound',
+  ] as const)(
+    'rejects a selected note that becomes unavailable during %s without a send or automatic retry',
+    async (boundary) => {
+      const staged = stage('read the selected note');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let held = false;
+      let available = true;
+      const ownerId = 'note-context-composer';
+      appStore.dispatch(chatDraftOwnerOpened(ownerId));
+      appStore.dispatch(chatDraftRestoreRequested(ownerId, 'restore-note-owner', WS, AGENT));
+      appStore.dispatch(chatDraftRestoreSettled(ownerId, 'restore-note-owner', 'restored', null));
+      const validate = vi.fn((context) => {
+        expect(context).toEqual({
+          agentId: AGENT,
+          workspaceId: WS,
+          noteIds: ['selected-note'],
+          contextReferences: [{ type: 'note', noteId: 'selected-note' }],
+          noteContextOwnerId: ownerId,
+        });
+        const restore = getItem(
+          appStore.state.chatDrafts.owners,
+          context.noteContextOwnerId,
+        )?.restore;
+        if (
+          !available ||
+          restore?.status !== 'restored' ||
+          restore.workspaceId !== context.workspaceId ||
+          restore.agentId !== context.agentId
+        )
+          throw new Error('Selected note is unavailable');
+      });
+      if (boundary === 'restore') {
+        backendRequestMock.mockImplementation(async (method: string) => {
+          if (method === 'agent.get') {
+            if (!held) {
+              held = true;
+              await gate;
+            }
+            return { agent: daemonPendingAgent };
+          }
+          return {};
+        });
+      }
+      const guardedSend = createAgentSender({
+        appStore,
+        captureAgentMutationOwnership,
+        loadChatTranscript: async () => {},
+        hydrateAgentQueue: async () => {},
+        getAgentQueueEventSnapshotSeq: () => 0,
+        errorBoundary: { wrap: (operation) => operation() },
+        validateContextReferences: validate,
+        backendRequest: async (method, params, options) => {
+          if (boundary !== 'restore' && method === 'agent.sendMessage') {
+            held = true;
+            await gate;
+          }
+          options?.onDispatch?.();
+          return backendRequestMock(method, params);
+        },
+      });
+      const sent = guardedSend(AGENT, staged.submission.content, workspace(), {
+        ...staged.options,
+        noteIds: ['selected-note'],
+        contextReferences: [{ type: 'note', noteId: 'selected-note' }],
+        noteContextOwnerId: ownerId,
+      });
+      const completed =
+        boundary === 'retired admission'
+          ? expect(sent).resolves.toBeUndefined()
+          : expect(sent).rejects.toThrow('Selected note is unavailable');
+      await vi.waitFor(() => expect(held).toBe(true));
+      if (boundary === 'retired admission') appStore.dispatch(pendingScopeReleased(staged.scope));
+      else if (boundary === 'composer departure')
+        appStore.dispatch(chatDraftOwnerReleased(ownerId));
+      else if (boundary === 'composer rebound') {
+        appStore.dispatch(
+          chatDraftRestoreRequested(ownerId, 'restore-other-agent', WS, 'another-agent'),
+        );
+        appStore.dispatch(
+          chatDraftRestoreSettled(ownerId, 'restore-other-agent', 'restored', null),
+        );
+      } else available = false;
+      release();
+      await completed;
+      expect(
+        backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+      ).toEqual([]);
+      expect(validate).toHaveBeenCalledTimes(
+        boundary === 'restore' || boundary === 'retired admission' ? 1 : 2,
+      );
+      expect(staged.display().conversation).toEqual([]);
+      if (boundary !== 'retired admission')
+        expect(appStore.state.agentSessions.byAgentId[AGENT].isStreaming).toBe(false);
+      appStore.dispatch(chatDraftOwnerReleased(ownerId));
+    },
+  );
 
   it('does not downgrade a released submission into a legacy send', async () => {
     const staged = stage();

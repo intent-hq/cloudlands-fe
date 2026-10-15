@@ -83,13 +83,15 @@ export interface QuotaExceededInfo {
 }
 
 interface SendMessageOptions {
+  /** Authored text before note context was prefixed; retained for retry admission. */
+  composerText?: string;
   contextItems?: SerializableContextItem[];
   noteIds?: string[];
   personality?: string;
   resetHistory?: boolean;
   model?: string;
   agentId?: string;
-  contextReferences?: ContextReference[];
+  contextReferences?: MessageContextReference[];
   /**
    * Image blocks the original send carried, recorded so "Try again" resends
    * them with the message (#965). Inline arm carries plain base64 data;
@@ -383,6 +385,8 @@ export interface ChatAgentState {
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
+  /** Raw authored text for note retries; text remains the complete wire content. */
+  composerText?: string;
   /** Explicit retry model override, distinct from the displayed agent model. */
   model?: string;
   submission?: import('../pending-submissions/pending-submissions-types').SubmissionReference;
@@ -392,7 +396,10 @@ export interface SendMessagePayload {
   contextItems?: ChatInputContextItem[];
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;
+  /** Mounted composer authority for final note validation; never persisted or sent. */
+  noteContextOwnerId?: string;
   noteIds?: string[];
+  contextReferences?: MessageContextReference[];
   /** Image blocks extracted from serialized context items (inline or reference arm) */
   imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
   /** Attachment-reference file blocks extracted from context items */
@@ -437,7 +444,7 @@ export interface InitializeChatOptions {
 }
 
 import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-item';
-import type { ContextReference } from '../../../../features/agent/agent-context';
+import type { MessageContextReference } from '../../../../features/agent/agent-context';
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
 import type { Proposal } from '$shared/types/proposal';

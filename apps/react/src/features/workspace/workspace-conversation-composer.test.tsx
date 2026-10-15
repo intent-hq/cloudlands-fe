@@ -1,3 +1,17 @@
+import type { ComboboxProps } from '@/components/ui/combobox';
+import { NoteId } from '$shared/types/branded-ids';
+import { ContentType, type Note } from '$shared/types';
+import { setWorkspaceHasLoaded } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
+import { selectPrincipalActionContext } from '@/store/principal/principal-selectors';
+import {
+  loadWorkspaceNotesSucceeded,
+  applyNoteDeleted,
+} from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
+import {
+  selectComposerContextItems,
+  selectChatDraft,
+} from '@/store/chat-drafts/chat-drafts-selectors';
+import { setComposerContextItems } from '../../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
 import {
   agentModelMutationRequested,
   agentModelMutationConsumed,
@@ -23,13 +37,27 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { DraftsClient } from '$lib/client/app-client';
 import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
 
-const ui = vi.hoisted(() => ({ props: undefined as MessageComposerProps | undefined }));
-vi.mock('@/components/ui/message-composer', () => ({
-  MessageComposer: (props: MessageComposerProps) => {
-    ui.props = props;
+const ui = vi.hoisted(() => ({
+  real: false,
+  props: undefined as MessageComposerProps | undefined,
+  picker: undefined as ComboboxProps | undefined,
+}));
+vi.mock('@/components/ui/combobox', () => ({
+  Combobox: (props: ComboboxProps) => {
+    ui.picker = props;
     return <div />;
   },
 }));
+vi.mock('@/components/ui/message-composer', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/components/ui/message-composer')>();
+  return {
+    ...original,
+    MessageComposer: (props: MessageComposerProps) => {
+      ui.props = props;
+      return ui.real ? <original.MessageComposer {...props} /> : <div />;
+    },
+  };
+});
 vi.mock('@/features/agent/chat-runtime', async () => {
   const { createChatSubmission } =
     await import('../../../../../src/features/agent/chat-submission-factory');
@@ -55,6 +83,7 @@ async function settle() {
   });
 }
 beforeEach(() => {
+  ui.real = false;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const initial = createAdmittedLegacyPrincipal();
   initial.principal.snapshot!.capabilities.submissionCorrelation = 1;
@@ -524,3 +553,209 @@ it.each([
     }
   },
 );
+
+function seedContextNotes() {
+  store.dispatch(
+    setWorkspaceHasLoaded(
+      true,
+      store.state.connections.windowBackendId,
+      selectPrincipalActionContext.select(store.state),
+    ),
+  );
+  store.dispatch(
+    loadWorkspaceNotesSucceeded([ws], {
+      [ws]: ['note-one', 'note-two'].map(
+        (id) =>
+          ({
+            id: NoteId(id),
+            workspaceId: ws,
+            title: 'Duplicate title',
+            content: '',
+            contentLength: 300,
+            contentType: ContentType.Markdown,
+            isArchived: false,
+          }) as Note,
+      ),
+    }),
+  );
+}
+it('persists exact selected note identities without copying their content, deduplicates, and submits the context snapshot', async () => {
+  seedContextNotes();
+  await mount();
+  expect(ui.picker?.options?.map((item) => item.value)).toEqual(['note-one', 'note-two']);
+  await act(async () => {
+    ui.picker!.onChange!('note-two');
+    ui.picker!.onChange!('note-two');
+  });
+  const items = selectComposerContextItems.select(store.state, ws, agent);
+  expect(items).toEqual([
+    expect.objectContaining({ type: 'note', noteId: 'note-two', workspaceId: ws }),
+  ]);
+  expect(items[0]).not.toHaveProperty('content');
+  await vi.waitFor(() =>
+    expect(drafts.set).toHaveBeenCalledWith(ws, agent, 'saved draft', [
+      expect.objectContaining({ noteId: 'note-two', workspaceId: ws }),
+    ]),
+  );
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  expect(JSON.stringify(getItems(entry().submissions)[0])).toContain('note-two');
+  expect(JSON.stringify(getItems(entry().submissions)[0])).not.toContain('note-one');
+});
+it('rejects a deleted reference synchronously even before its disabled presentation renders', async () => {
+  seedContextNotes();
+  await mount();
+  await act(async () => ui.picker!.onChange!('note-one'));
+  const send = ui.props!.onSend!;
+  await act(async () => {
+    store.dispatch(applyNoteDeleted(ws, 'note-one'));
+    send('saved draft', []);
+  });
+  expect(entry()).toBeUndefined();
+  expect(selectComposerContextItems.select(store.state, ws, agent)[0].noteId).toBe('note-one');
+  await settle();
+  expect(ui.props?.sendDisabled).toBe(true);
+});
+it.each(['missing', 'cross-workspace', 'malformed'])(
+  'retains a restored %s note as a removable blocker without sending',
+  async (kind) => {
+    seedContextNotes();
+    vi.mocked(drafts.get).mockResolvedValue({
+      text: 'saved draft',
+      attachments: [
+        {
+          id: 'ref',
+          type: 'note',
+          label: 'Plan',
+          noteId: kind === 'missing' ? 'absent' : 'note-one',
+          workspaceId:
+            kind === 'cross-workspace' ? 'elsewhere' : kind === 'malformed' ? undefined : ws,
+        },
+      ],
+      updatedAt: '',
+    });
+    await mount();
+    await settle();
+    expect(ui.props?.sendDisabled).toBe(true);
+    await act(async () => ui.props!.onSend!('saved draft', []));
+    expect(entry()).toBeUndefined();
+    const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Remove"]');
+    expect(remove).toBeTruthy();
+    await act(async () => remove!.click());
+    expect(selectComposerContextItems.select(store.state, ws, agent)).toEqual([]);
+  },
+);
+it('retired picker and send callbacks cannot mutate or send after same-context reentry', async () => {
+  seedContextNotes();
+  await mount();
+  const pick = ui.picker!.onChange!,
+    send = ui.props!.onSend!;
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mount();
+  await act(async () => {
+    pick('note-one');
+    send('saved draft', []);
+  });
+  expect(selectComposerContextItems.select(store.state, ws, agent)).toEqual([]);
+  expect(entry()).toBeUndefined();
+});
+it.each(['new note', 'new whitespace'])(
+  'older acceptance preserves %s in the canonical draft',
+  async (kind) => {
+    seedContextNotes();
+    await mount();
+    await act(async () => ui.picker!.onChange!('note-one'));
+    await act(async () => ui.props!.onSend!('saved draft', []));
+    const first = getItems(entry().submissions)[0];
+    await act(async () => {
+      if (kind === 'new note')
+        store.dispatch(
+          setComposerContextItems(
+            ws,
+            agent,
+            [
+              {
+                id: 'new',
+                type: 'note',
+                workspaceId: ws,
+                noteId: 'note-two',
+                label: 'Duplicate title',
+              },
+            ],
+            true,
+          ),
+        );
+      else ui.props!.onValueChange!('saved draft\n');
+      store.dispatch(pendingSubmissionSettled(entry().scope, first.id, 'accepted', Date.now()));
+    });
+    await settle();
+    expect(drafts.clear).not.toHaveBeenCalled();
+    expect(selectComposerContextItems.select(store.state, ws, agent)).toHaveLength(1);
+  },
+);
+
+it.each(['saved draft', '  saved draft\n'])(
+  'real composer clears exact unchanged accepted note draft %j',
+  async (authored) => {
+    ui.real = true;
+    seedContextNotes();
+    vi.mocked(drafts.get).mockResolvedValue({ text: authored, attachments: [], updatedAt: '' });
+    await mount(authored);
+    await act(async () => ui.picker!.onChange!('note-one'));
+    await settle();
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    expect(textarea!.value).toBe(authored);
+    await act(async () => {
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }),
+      );
+    });
+    expect(getItems(entry().submissions)).toHaveLength(1);
+    const first = getItems(entry().submissions)[0];
+    await act(async () =>
+      store.dispatch(pendingSubmissionSettled(entry().scope, first.id, 'accepted', Date.now())),
+    );
+    await settle();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(ui.props?.value).toBe('');
+    });
+    expect(selectComposerContextItems.select(store.state, ws, agent)).toEqual([]);
+    expect(drafts.clear).toHaveBeenCalledWith(ws, agent);
+  },
+);
+
+it('real composer preserves a newer edit removing surrounding whitespace on old acknowledgement', async () => {
+  ui.real = true;
+  const authored = '  saved draft\n';
+  seedContextNotes();
+  vi.mocked(drafts.get).mockResolvedValue({ text: authored, attachments: [], updatedAt: '' });
+  await mount(authored);
+  await act(async () => ui.picker!.onChange!('note-one'));
+  await settle();
+  const textarea = container.querySelector('textarea')!;
+  await act(async () =>
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }),
+    ),
+  );
+  expect(getItems(entry().submissions)).toHaveLength(1);
+  const first = getItems(entry().submissions)[0];
+  await act(async () => ui.props!.onValueChange!('saved draft'));
+  expect(selectChatDraft.select(store.state, ws, agent)).toBe('saved draft');
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.value).toBe('saved draft');
+  });
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, first.id, 'accepted', Date.now())),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.disabled).toBe(false);
+  });
+  await settle();
+  expect(ui.props?.value).toBe('saved draft');
+  expect(drafts.clear).not.toHaveBeenCalled();
+});

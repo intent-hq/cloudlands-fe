@@ -35,6 +35,7 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
   return items
     .filter(
       (item) =>
+        item.type === 'note' ||
         (item.imageData && item.imageMimeType) ||
         item.attachmentId ||
         item.sourcePath ||
@@ -43,28 +44,32 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
         (item.type === 'folder' && item.path) ||
         (item.type === 'selection' && item.content),
     )
-    .map((item) => ({
-      id: item.id,
-      type: item.type,
-      label: item.label,
-      ...(item.description !== undefined ? { description: item.description } : {}),
-      ...(item.content !== undefined ? { content: item.content } : {}),
-      ...(item.path !== undefined ? { path: item.path } : {}),
-      ...(item.imageData !== undefined ? { imageData: item.imageData } : {}),
-      ...(item.imageMimeType !== undefined ? { imageMimeType: item.imageMimeType } : {}),
-      ...(item.attachmentId !== undefined ? { attachmentId: item.attachmentId } : {}),
-      ...(item.attachmentMimeType !== undefined
-        ? { attachmentMimeType: item.attachmentMimeType }
-        : {}),
-      ...(item.attachmentSize !== undefined ? { attachmentSize: item.attachmentSize } : {}),
-      ...(item.sourcePath !== undefined && !item.attachmentId
-        ? { sourcePath: item.sourcePath }
-        : {}),
-      ...((item.placementStatus === 'placing' || item.placementStatus === 'failed') &&
-      !item.attachmentId
-        ? { placementStatus: 'failed' as const }
-        : {}),
-    }));
+    .map((item) =>
+      item.type === 'note'
+        ? projectNoteReference(item)
+        : {
+            id: item.id,
+            type: item.type,
+            label: item.label,
+            ...(item.description !== undefined ? { description: item.description } : {}),
+            ...(item.content !== undefined ? { content: item.content } : {}),
+            ...(item.path !== undefined ? { path: item.path } : {}),
+            ...(item.imageData !== undefined ? { imageData: item.imageData } : {}),
+            ...(item.imageMimeType !== undefined ? { imageMimeType: item.imageMimeType } : {}),
+            ...(item.attachmentId !== undefined ? { attachmentId: item.attachmentId } : {}),
+            ...(item.attachmentMimeType !== undefined
+              ? { attachmentMimeType: item.attachmentMimeType }
+              : {}),
+            ...(item.attachmentSize !== undefined ? { attachmentSize: item.attachmentSize } : {}),
+            ...(item.sourcePath !== undefined && !item.attachmentId
+              ? { sourcePath: item.sourcePath }
+              : {}),
+            ...((item.placementStatus === 'placing' || item.placementStatus === 'failed') &&
+            !item.attachmentId
+              ? { placementStatus: 'failed' as const }
+              : {}),
+          },
+    );
 }
 
 /**
@@ -79,21 +84,42 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
  * they are never placed; the path rides as a context reference at send.
  */
 export function deserializeDraftAttachments(attachments: DraftAttachment[]): ContextItem[] {
-  return attachments.map((a) => ({
-    id: a.id,
-    type: (a.type as ContextItem['type']) || 'file',
-    label: a.label,
-    ...(a.description !== undefined ? { description: a.description } : {}),
-    ...(a.content !== undefined ? { content: a.content } : {}),
-    ...(a.path !== undefined ? { path: a.path } : {}),
-    ...(a.imageData !== undefined ? { imageData: a.imageData } : {}),
-    ...(a.imageMimeType !== undefined ? { imageMimeType: a.imageMimeType } : {}),
-    ...(a.attachmentId !== undefined ? { attachmentId: a.attachmentId } : {}),
-    ...(a.attachmentMimeType !== undefined ? { attachmentMimeType: a.attachmentMimeType } : {}),
-    ...(a.attachmentSize !== undefined ? { attachmentSize: a.attachmentSize } : {}),
-    ...(a.sourcePath !== undefined ? { sourcePath: a.sourcePath } : {}),
-    ...(a.placementStatus === 'failed' && a.attachmentId === undefined
-      ? { placementStatus: 'failed' as const }
-      : {}),
-  }));
+  return attachments.map((a) =>
+    a.type === 'note'
+      ? projectNoteReference(a)
+      : {
+          id: a.id,
+          type: (a.type as ContextItem['type']) || 'file',
+          label: a.label,
+          ...(a.description !== undefined ? { description: a.description } : {}),
+          ...(a.content !== undefined ? { content: a.content } : {}),
+          ...(a.path !== undefined ? { path: a.path } : {}),
+          ...(a.imageData !== undefined ? { imageData: a.imageData } : {}),
+          ...(a.imageMimeType !== undefined ? { imageMimeType: a.imageMimeType } : {}),
+          ...(a.attachmentId !== undefined ? { attachmentId: a.attachmentId } : {}),
+          ...(a.attachmentMimeType !== undefined
+            ? { attachmentMimeType: a.attachmentMimeType }
+            : {}),
+          ...(a.attachmentSize !== undefined ? { attachmentSize: a.attachmentSize } : {}),
+          ...(a.sourcePath !== undefined ? { sourcePath: a.sourcePath } : {}),
+          ...(a.placementStatus === 'failed' && a.attachmentId === undefined
+            ? { placementStatus: 'failed' as const }
+            : {}),
+        },
+  );
+}
+
+/** Keep malformed note references visible too; preparation blocks them instead
+ * of guessing identity from a label, path, legacy metadata or a pill id. */
+function projectNoteReference(
+  item: Pick<DraftAttachment, 'id' | 'label' | 'description' | 'noteId' | 'workspaceId'>,
+) {
+  return {
+    id: item.id,
+    type: 'note' as const,
+    label: item.label,
+    ...(item.description !== undefined ? { description: item.description } : {}),
+    ...(typeof item.noteId === 'string' ? { noteId: item.noteId } : {}),
+    ...(typeof item.workspaceId === 'string' ? { workspaceId: item.workspaceId } : {}),
+  };
 }

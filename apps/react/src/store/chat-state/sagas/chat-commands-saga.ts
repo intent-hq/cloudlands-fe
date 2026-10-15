@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { call, put, takeEvery, fork, join } from 'typed-redux-saga';
 import { takeEveryByContextFIFO } from '../../../../../../src/store/renderer/utils/context-saga-effects';
 import { createChatSendWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/chat-send-workers';
@@ -63,6 +64,7 @@ const workers = createChatSendWorkers({
   sendAgentMessage,
   prepareImages: prepareComposerImages,
   retryImages: imageRetryBlocks,
+  noteContextBusyError: () => m.chat_noteContext_busy_description(),
 });
 const activation = createAgentActivationWorkers({
   selectAgentSession,

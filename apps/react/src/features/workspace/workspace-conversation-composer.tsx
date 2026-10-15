@@ -1,9 +1,19 @@
+import { Combobox } from '@/components/ui/combobox';
+import { ContextChip } from '@/features/chat/components/context-chip';
+import { prepareNoteContext } from '$lib/components/chat/chat-note-context';
+import {
+  selectAvailableContextNotes,
+  selectNoteContextValid,
+} from '@/store/chat-drafts/note-context-selectors';
+import { selectWorkspaceNotesState } from '@/store/workspace-notes/workspace-notes-selectors';
+import { selectPrincipalConnectionContext } from '@/store/principal/principal-selectors';
+import { workspaceNotesHydrationRequested } from '../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { getChatDraftEntry } from '../../../../../src/store/renderer/slices/transient-ui/transient-ui-projections';
 import {
   setComposerContextItems,
   setChatDraft,
 } from '../../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { selectAgentModelSubmissionPending } from '@/store/agent-model/agent-model-selectors';
 import { WorkspaceConversationModel } from './workspace-conversation-model';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -79,6 +89,30 @@ export function WorkspaceConversationComposer({
   const chat = selectChatAgentState(agentId).value;
   const participation = selectWorkspaceParticipationContext(workspaceId).value;
   const principal = selectPrincipalSnapshot().value;
+  const connection = selectPrincipalConnectionContext().value;
+  const view = useMemo(
+    () => ({ workspaceId, agentId, connection, participation }),
+    [workspaceId, agentId, connection, participation],
+  );
+  const liveView = useRef<typeof view | null>(null);
+  useEffect(() => {
+    liveView.current = view;
+    return () => {
+      if (liveView.current === view) liveView.current = null;
+    };
+  }, [view]);
+  const currentView = useCallback(() => {
+    return (
+      liveView.current === view &&
+      mounted.current &&
+      !!participation &&
+      participation === selectWorkspaceParticipationContext.select(store.state, workspaceId) &&
+      connection === selectPrincipalConnectionContext.select(store.state) &&
+      store.state.agentSessions.byAgentId[agentId]?.workspaceId === workspaceId
+    );
+  }, [view, participation, connection, workspaceId, agentId]);
+  const notes = selectAvailableContextNotes(workspaceId).value;
+  const notesState = selectWorkspaceNotesState(workspaceId).value;
   const modelPending = selectAgentModelSubmissionPending(agentId, workspaceId).value;
   const pending =
     entry &&
@@ -87,16 +121,22 @@ export function WorkspaceConversationComposer({
     );
   const restored = drafts?.restore?.status === 'restored';
   const attachments = selectComposerContextItems(workspaceId, agentId).value;
-  const hasAttachments = attachments.length > 0;
+  const selectedNotes = attachments.filter((item) => item.type === 'note');
+  const notesValid = selectNoteContextValid(workspaceId, attachments).value;
+  const hasAttachments = attachments.some((item) => item.type !== 'note');
   const attachmentsBlocked = attachments.some(
     (item) =>
-      item.placementStatus === 'placing' ||
-      item.placementStatus === 'failed' ||
-      (!item.attachmentId && !(item.imageData && item.imageMimeType)),
+      item.type !== 'note' &&
+      (item.placementStatus === 'placing' ||
+        item.placementStatus === 'failed' ||
+        (!item.attachmentId && !(item.imageData && item.imageMimeType))),
   );
   const unsupportedAttachments = attachments.some(
     (item) =>
-      !item.placementStatus && !item.attachmentId && !(item.imageData && item.imageMimeType),
+      item.type !== 'note' &&
+      !item.placementStatus &&
+      !item.attachmentId &&
+      !(item.imageData && item.imageMimeType),
   );
   const attachmentSnapshot = JSON.stringify(serializeDraftAttachments(attachments));
   const dispatch = store.dispatch;
@@ -176,7 +216,8 @@ export function WorkspaceConversationComposer({
     );
   }, [drafts?.saves, dispatch, ownerId]);
   useEffect(() => {
-    if (!submitted || !entry || settledSubmission.current === submitted.id) return;
+    if (!currentView() || !submitted || !entry || settledSubmission.current === submitted.id)
+      return;
     const item = getItem(entry.submissions, submitted.id);
     const tombstone = getItem(entry.tombstones, submitted.id);
     if (tombstone?.reason === 'rejected') {
@@ -187,15 +228,34 @@ export function WorkspaceConversationComposer({
     if (item?.status !== 'accepted' && !tombstone) return;
     submitting.current = undefined;
     settledSubmission.current = submitted.id;
-    if (value.trim() !== submitted.text || attachmentSnapshot !== submitted.attachments) return;
+    if (
+      selectChatDraft.select(store.state, workspaceId, agentId) !== submitted.text ||
+      JSON.stringify(
+        serializeDraftAttachments(
+          selectComposerContextItems.select(store.state, workspaceId, agentId),
+        ),
+      ) !== submitted.attachments
+    )
+      return;
     dispatch(chatDraftSaveCancelled(ownerId));
     dispatch(chatDraftClearRequested(workspaceId, agentId));
     saveSnapshots.current.clear();
     lastPersisted.current = { text: '', attachments: [] };
     dispatch(setChatDraft(workspaceId, agentId, '', true));
     dispatch(setComposerContextItems(workspaceId, agentId, [], true));
-  }, [submitted, entry, value, attachmentSnapshot, dispatch, ownerId, workspaceId, agentId]);
+  }, [
+    submitted,
+    entry,
+    value,
+    attachmentSnapshot,
+    dispatch,
+    ownerId,
+    workspaceId,
+    agentId,
+    currentView,
+  ]);
   function edit(text: string) {
+    if (!currentView()) return;
     dispatch(setChatDraft(workspaceId, agentId, text, true));
     setLocalError(undefined);
     dispatch(
@@ -228,6 +288,7 @@ export function WorkspaceConversationComposer({
   }
   function send(text: string) {
     if (
+      !currentView() ||
       !restored ||
       !transcriptReady ||
       submitting.current ||
@@ -239,14 +300,35 @@ export function WorkspaceConversationComposer({
     )
       return;
     const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
+    const composerText = selectChatDraft.select(store.state, workspaceId, agentId);
     if (
       items.some((item) => item.placementStatus === 'placing' || item.placementStatus === 'failed')
     )
       return;
+    const context = prepareNoteContext(workspaceId, items);
+    if (!context.ok || !selectNoteContextValid.select(store.state, workspaceId, items)) {
+      setLocalError(m.chat_noteContext_unavailable_error());
+      return;
+    }
+    if (context.noteIds.length && selectAgentIsResponding.select(store.state, agentId)) {
+      setLocalError(m.chat_noteContext_busy_description());
+      return;
+    }
+    const noteContext = context.noteIds.length
+      ? {
+          noteIds: context.noteIds,
+          composerText,
+          noteContextOwnerId: ownerId,
+          contextReferences: context.contextReferences,
+          workspaceContextStr: context.workspaceContextStr,
+          contextItems: items,
+        }
+      : {};
     const blocks = extractAttachmentBlocks(items);
     const admitted = chatSubmission.admitChatMessage(store, agentId, {
       wsId: workspaceId,
       text,
+      ...noteContext,
       ...blocks,
     });
     if (!admitted) {
@@ -256,18 +338,65 @@ export function WorkspaceConversationComposer({
     submitting.current = admitted.submission.id;
     setSubmitted({
       id: admitted.submission.id,
-      text: text.trim(),
+      text: composerText,
       attachments: JSON.stringify(serializeDraftAttachments(items)),
     });
     dispatch(
       sendMessage(agentId, {
         wsId: workspaceId,
         text,
+        ...noteContext,
         ...blocks,
         userAppMessageId: admitted.submission.appMessageId,
         submission: { scope: admitted.scope, id: admitted.submission.id },
       }),
     );
+  }
+  function selectContextNote(noteId: string) {
+    if (!currentView() || !restored) return;
+    const note = selectAvailableContextNotes
+      .select(store.state, workspaceId)
+      .find((item) => item.id === noteId);
+    if (!note) return;
+    const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
+    if (
+      items.some(
+        (item) =>
+          item.type === 'note' && item.workspaceId === workspaceId && item.noteId === noteId,
+      )
+    )
+      return;
+    dispatch(
+      setComposerContextItems(
+        workspaceId,
+        agentId,
+        [
+          ...items,
+          {
+            id: crypto.randomUUID(),
+            type: 'note',
+            workspaceId,
+            noteId,
+            label: note.title,
+          },
+        ],
+        true,
+      ),
+    );
+    edit(selectChatDraft.select(store.state, workspaceId, agentId));
+  }
+  function removeContextNote(id: string) {
+    if (!currentView()) return;
+    const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
+    dispatch(
+      setComposerContextItems(
+        workspaceId,
+        agentId,
+        items.filter((item) => item.id !== id),
+        true,
+      ),
+    );
+    edit(selectChatDraft.select(store.state, workspaceId, agentId));
   }
   const error =
     localError ??
@@ -280,39 +409,74 @@ export function WorkspaceConversationComposer({
         <LoadingState density="compact" count={1} label={m.chat_draftGate_loading_label()} />
       )}
       <div className="flex min-w-0 flex-wrap gap-2" data-testid="composer-attachments">
-        {attachments.map((item) => (
-          <AttachmentPreview
+        {selectedNotes.map((item) => (
+          <ContextChip
             key={item.id}
-            id={item.id}
-            name={item.label}
-            type={item.attachmentMimeType ?? item.imageMimeType ?? ''}
-            size={item.attachmentSize}
-            imageData={item.imageData}
-            imageMimeType={item.imageMimeType}
-            placementStatus={item.placementStatus}
-            placementError={
-              item.placementStatus === 'failed' && !item.placementIdempotencyKey
-                ? m.chat_composer_attachmentReselect_description()
-                : item.placementError
-            }
-            onRemove={(id) =>
-              dispatch(composerAttachmentRemoved(ownerId, workspaceId, agentId, id))
-            }
-            onRetry={
-              item.placementIdempotencyKey
-                ? (id) =>
-                    dispatch(composerAttachmentRetryRequested(ownerId, workspaceId, agentId, id))
-                : undefined
-            }
+            type="note"
+            label={item.label}
+            tooltip={`${item.label} (${item.noteId ?? item.id})`}
+            removable
+            onRemove={() => removeContextNote(item.id)}
           />
         ))}
+        {attachments
+          .filter((item) => item.type !== 'note')
+          .map((item) => (
+            <AttachmentPreview
+              key={item.id}
+              id={item.id}
+              name={item.label}
+              type={item.attachmentMimeType ?? item.imageMimeType ?? ''}
+              size={item.attachmentSize}
+              imageData={item.imageData}
+              imageMimeType={item.imageMimeType}
+              placementStatus={item.placementStatus}
+              placementError={
+                item.placementStatus === 'failed' && !item.placementIdempotencyKey
+                  ? m.chat_composer_attachmentReselect_description()
+                  : item.placementError
+              }
+              onRemove={(id) =>
+                dispatch(composerAttachmentRemoved(ownerId, workspaceId, agentId, id))
+              }
+              onRetry={
+                item.placementIdempotencyKey
+                  ? (id) =>
+                      dispatch(composerAttachmentRetryRequested(ownerId, workspaceId, agentId, id))
+                  : undefined
+              }
+            />
+          ))}
       </div>
+      {!notesValid && (
+        <ErrorState
+          density="compact"
+          message={m.chat_noteContext_unavailable_error()}
+          retryLabel={m.ui_combobox_retry_label()}
+          onRetry={() => {
+            if (currentView())
+              dispatch(
+                workspaceNotesHydrationRequested(
+                  workspaceId,
+                  store.state.workspaceEvents.subscriptionGeneration,
+                  true,
+                ),
+              );
+          }}
+        />
+      )}
+      {selectedNotes.length > 0 && responding && (
+        <p className="type-caption text-muted-foreground">
+          {m.chat_noteContext_busy_description()}
+        </p>
+      )}
       {error && (
         <ErrorState
           density="compact"
           message={error}
           retryLabel={m.ui_combobox_retry_label()}
           onRetry={() => {
+            if (!currentView()) return;
             setLocalError(undefined);
             if (!restored)
               dispatch(
@@ -320,27 +484,80 @@ export function WorkspaceConversationComposer({
               );
             else if (chat.lastAttemptedMessage?.submission)
               void submissionRetry
-                .requestChatMessageRetry(agentId, workspaceId, undefined, (id) => {
-                  if (!mounted.current) return;
-                  submitting.current = id;
-                  const currentItems = selectComposerContextItems.select(
-                    store.state,
-                    workspaceId,
-                    agentId,
-                  );
-                  setSubmitted({
-                    id,
-                    text: chat.lastAttemptedMessage?.text ?? '',
-                    attachments: matchesAttachmentBlocks(
-                      currentItems,
-                      chat.lastAttemptedMessage?.options,
-                    )
-                      ? JSON.stringify(serializeDraftAttachments(currentItems))
-                      : '',
-                  });
-                })
-                .catch((e) => setLocalError(String(e)));
+                .requestChatMessageRetry(
+                  agentId,
+                  workspaceId,
+                  undefined,
+                  (id) => {
+                    if (!currentView()) return;
+                    submitting.current = id;
+                    const currentItems = selectComposerContextItems.select(
+                      store.state,
+                      workspaceId,
+                      agentId,
+                    );
+                    setSubmitted({
+                      id,
+                      text:
+                        chat.lastAttemptedMessage?.options?.composerText ??
+                        chat.lastAttemptedMessage?.text ??
+                        '',
+                      attachments:
+                        matchesAttachmentBlocks(currentItems, chat.lastAttemptedMessage?.options) &&
+                        JSON.stringify(prepareNoteContext(workspaceId, currentItems)) ===
+                          JSON.stringify(
+                            prepareNoteContext(
+                              workspaceId,
+                              chat.lastAttemptedMessage?.options?.contextItems ?? [],
+                            ),
+                          )
+                          ? JSON.stringify(serializeDraftAttachments(currentItems))
+                          : '',
+                    });
+                  },
+                  ownerId,
+                )
+                .catch((e) => {
+                  if (currentView()) setLocalError(String(e));
+                });
             else edit(value);
+          }}
+        />
+      )}
+      <Combobox
+        value=""
+        options={notes
+          .filter(
+            (note) =>
+              !selectedNotes.some(
+                (item) => item.noteId === note.id && item.workspaceId === workspaceId,
+              ),
+          )
+          .map((note) => ({ value: note.id, label: note.title, description: note.id }))}
+        ariaLabel={m.chat_noteContext_add_label()}
+        placeholder={m.chat_noteContext_add_label()}
+        searchPlaceholder={m.chat_noteContext_search_placeholder()}
+        emptyText={m.chat_noteContext_empty_description()}
+        loading={notesState.loading}
+        disabled={!restored || !participation}
+        onChange={(id) => {
+          if (typeof id === 'string') selectContextNote(id);
+        }}
+      />
+      {notesState.error && (
+        <ErrorState
+          density="compact"
+          message={notesState.error}
+          retryLabel={m.ui_combobox_retry_label()}
+          onRetry={() => {
+            if (currentView())
+              dispatch(
+                workspaceNotesHydrationRequested(
+                  workspaceId,
+                  store.state.workspaceEvents.subscriptionGeneration,
+                  true,
+                ),
+              );
           }}
         />
       )}
@@ -349,7 +566,12 @@ export function WorkspaceConversationComposer({
         onValueChange={edit}
         onSend={send}
         hasAttachments={hasAttachments}
-        sendDisabled={attachmentsBlocked || modelPending}
+        sendDisabled={
+          attachmentsBlocked ||
+          modelPending ||
+          !notesValid ||
+          (selectedNotes.length > 0 && responding)
+        }
         accept=""
         files={[]}
         onFilesChange={(files) => {

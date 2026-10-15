@@ -6,6 +6,9 @@ export interface ContextItem {
   type: 'file' | 'note' | 'selection' | 'workspace' | 'memory' | 'personality' | 'folder';
   label: string;
   description?: string;
+  /** Explicit note identity; never infer it from the pill id, label or path. */
+  noteId?: string;
+  workspaceId?: string;
   content?: string;
   path?: string; // For file items
   metadata?: Record<string, any>; // For additional data

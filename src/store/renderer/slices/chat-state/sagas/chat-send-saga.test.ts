@@ -1,3 +1,4 @@
+import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -311,6 +312,11 @@ describe('chatSendSaga', () => {
         forceSubmit: true,
         imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
         noteIds: ['note-1'],
+        contextReferences: [{ type: 'note', noteId: 'note-1' }],
+        noteContextOwnerId: 'composer-current',
+        contextItems: [
+          { id: 'note-pill', type: 'note', label: 'Note', noteId: 'note-1', workspaceId: WS },
+        ],
       }),
     );
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second', forceSubmit: true }));
@@ -330,8 +336,14 @@ describe('chatSendSaga', () => {
       {
         imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
         noteIds: ['note-1'],
+        contextReferences: [{ type: 'note', noteId: 'note-1' }],
+        noteContextOwnerId: 'composer-current',
+        contextItems: [
+          { id: 'note-pill', type: 'note', label: 'Note', noteId: 'note-1', workspaceId: WS },
+        ],
         userAppMessageId: 'app-message-first',
         priority: 'interrupt',
+        composerText: ' first ',
       },
     );
     resolveFirst();
@@ -759,6 +771,62 @@ describe('chatSendSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it.each([false, true])(
+    'blocks note context while busy without queueing or interrupting (force=%s)',
+    async (forceSubmit) => {
+      const run = harness(
+        session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+      );
+      run.channel.put(
+        sendMessage(AGENT, {
+          wsId: WS,
+          text: 'read the note',
+          forceSubmit,
+          workspaceContextStr: 'note context',
+          noteIds: ['selected-note'],
+          contextReferences: [{ type: 'note', noteId: 'selected-note' }],
+          noteContextOwnerId: 'departed-composer',
+          contextItems: [
+            {
+              id: 'note-pill',
+              type: 'note',
+              label: 'Selected',
+              noteId: 'selected-note',
+              workspaceId: WS,
+              content: 'body must not be cached',
+              metadata: { cached: true },
+              file: new File(['body'], 'note.txt'),
+            },
+          ],
+        }),
+      );
+      await settle();
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(mocks.queue).not.toHaveBeenCalled();
+      expect(run.dispatch).not.toHaveBeenCalledWith(clearChatDraft(WS, AGENT));
+      expect(run.state().chatState.byAgentId[AGENT].error).toEqual(expect.any(String));
+      expect(run.state().chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+        text: 'note context\n\nread the note',
+        options: {
+          noteIds: ['selected-note'],
+          composerText: 'read the note',
+          contextReferences: [{ type: 'note', noteId: 'selected-note' }],
+          contextItems: [
+            {
+              id: 'note-pill',
+              type: 'note',
+              label: 'Selected',
+              noteId: 'selected-note',
+              workspaceId: WS,
+            },
+          ],
+        },
+      });
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {
     mocks.queue.mockResolvedValue({

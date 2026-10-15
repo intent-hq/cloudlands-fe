@@ -184,6 +184,7 @@
   import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import { formatNoteContext } from './chat-note-context';
   import {
     appendContextItemContent,
     browserCaptureTargetsAgent,
@@ -5394,10 +5395,7 @@
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
       } else if (panel.type === 'note' && panel.noteId) {
-        parts.push(
-          // i18n-ignore (agent-directed context marker, not user-facing UI)
-          `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
-        );
+        parts.push(formatNoteContext(panel.noteId, panel.label));
       } else if (panel.type === 'spec') {
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push('[Currently viewing: Spec]');

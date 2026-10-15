@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "正在创建笔记。关闭此表单不会取消已发送的请求。",
   "workspace_noteCreate_unknown_description": "创建结果未知。创建其他笔记前，请检查笔记列表。本次会话不会重新发送请求。",
   "workspace_noteCreate_failed_description": "无法创建笔记。标题已保留，请选择“创建笔记”重试。",
-  "workspace_noteCreate_retired_description": "此表单已不再连接到原来的工作区会话。请关闭表单并重新打开“新建笔记”。"
+  "workspace_noteCreate_retired_description": "此表单已不再连接到原来的工作区会话。请关闭表单并重新打开“新建笔记”。",
+  "chat_noteContext_add_label": "添加笔记上下文",
+  "chat_noteContext_search_placeholder": "查找工作区笔记…",
+  "chat_noteContext_empty_description": "没有可用的普通笔记。",
+  "chat_noteContext_unavailable_error": "所选笔记不可用。请在发送前刷新笔记或移除其引用。",
+  "chat_noteContext_busy_description": "请等待当前回复完成后再发送笔记上下文。"
 }

@@ -216,7 +216,7 @@ export function Combobox({
       changeOpen(false);
     };
     const outside = (event: PointerEvent) => {
-      if (staticPosition && !contains(event.target)) changeOpen(false);
+      if (!contains(event.target)) changeOpen(false);
     };
     // Source floating and static content dismiss on outside pointer or explicit
     // keyboard actions, not programmatic focus changes to another control.
@@ -640,14 +640,14 @@ export function Combobox({
                 {body}
               </div>
             )
-          ) : (
+          ) : open ? (
             // Base UI requires Portal context even when the popup stays inside this control.
             <Primitive.Portal
               container={portal ? (dialogPortalTarget ?? undefined) : inlinePortalTarget}
             >
               {popup}
             </Primitive.Portal>
-          )}
+          ) : null}
         </Primitive.Root>
       </div>
     </SurfaceProvider>

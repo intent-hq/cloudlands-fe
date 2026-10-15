@@ -368,6 +368,18 @@ function* retryLastMessage(
         imageBlocks: lastAttempted.options?.imageBlocks,
         fileBlocks: lastAttempted.options?.fileBlocks,
         noteIds: lastAttempted.options?.noteIds,
+        ...(lastAttempted.options?.composerText !== undefined
+          ? { composerText: lastAttempted.options.composerText }
+          : {}),
+        ...(lastAttempted.options?.contextItems !== undefined
+          ? { contextItems: lastAttempted.options.contextItems }
+          : {}),
+        ...(retry !== 'legacy' && retry.noteContextOwnerId !== undefined
+          ? { noteContextOwnerId: retry.noteContextOwnerId }
+          : {}),
+        ...(lastAttempted.options?.contextReferences !== undefined
+          ? { contextReferences: lastAttempted.options.contextReferences }
+          : {}),
         messageMetadata: lastAttempted.options?.messageMetadata,
         model: model ?? lastAttempted.options?.model,
       },
@@ -609,6 +621,15 @@ function* handleRetryFromStalled(action: RetryFromStalledAction): SagaGenerator<
             imageBlocks: lastAttempted.options?.imageBlocks,
             fileBlocks: lastAttempted.options?.fileBlocks,
             noteIds: lastAttempted.options?.noteIds,
+            ...(lastAttempted.options?.composerText !== undefined
+              ? { composerText: lastAttempted.options.composerText }
+              : {}),
+            ...(lastAttempted.options?.contextItems !== undefined
+              ? { contextItems: lastAttempted.options.contextItems }
+              : {}),
+            ...(lastAttempted.options?.contextReferences !== undefined
+              ? { contextReferences: lastAttempted.options.contextReferences }
+              : {}),
             messageMetadata: lastAttempted.options?.messageMetadata,
             model: lastAttempted.options?.model,
             priority: 'interrupt' as const,

@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "正在建立筆記。關閉此表單不會取消已傳送的請求。",
   "workspace_noteCreate_unknown_description": "建立結果不明。建立其他筆記前，請檢查筆記清單。本次工作階段不會重新傳送請求。",
   "workspace_noteCreate_failed_description": "無法建立筆記。標題已保留，請選擇「建立筆記」重試。",
-  "workspace_noteCreate_retired_description": "此表單已不再連線至原本的工作區工作階段。請關閉表單並重新開啟「新增筆記」。"
+  "workspace_noteCreate_retired_description": "此表單已不再連線至原本的工作區工作階段。請關閉表單並重新開啟「新增筆記」。",
+  "chat_noteContext_add_label": "新增筆記上下文",
+  "chat_noteContext_search_placeholder": "尋找工作區筆記…",
+  "chat_noteContext_empty_description": "沒有可用的一般筆記。",
+  "chat_noteContext_unavailable_error": "所選筆記無法使用。請在傳送前重新整理筆記或移除其參照。",
+  "chat_noteContext_busy_description": "請等待目前回覆完成後再傳送筆記上下文。"
 }

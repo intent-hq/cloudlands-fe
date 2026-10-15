@@ -7583,5 +7583,10 @@
   "workspace_noteCreate_pending_description": "ノートを作成しています。このフォームを閉じても、送信済みのリクエストはキャンセルされません。",
   "workspace_noteCreate_unknown_description": "作成結果は不明です。別のノートを作成する前にノート一覧を確認してください。このセッションではリクエストを再送信しません。",
   "workspace_noteCreate_failed_description": "ノートを作成できませんでした。タイトルは保持されています。「ノートを作成」を選択して再試行してください。",
-  "workspace_noteCreate_retired_description": "このフォームは元のワークスペースセッションに接続されていません。閉じてから「新しいノート」を開き直してください。"
+  "workspace_noteCreate_retired_description": "このフォームは元のワークスペースセッションに接続されていません。閉じてから「新しいノート」を開き直してください。",
+  "chat_noteContext_add_label": "ノートをコンテキストに追加",
+  "chat_noteContext_search_placeholder": "ワークスペースのノートを検索…",
+  "chat_noteContext_empty_description": "利用可能な通常のノートはありません。",
+  "chat_noteContext_unavailable_error": "選択したノートを利用できません。送信前にノートを更新するか参照を削除してください。",
+  "chat_noteContext_busy_description": "ノートのコンテキストを送信する前に、現在の応答をお待ちください。"
 }

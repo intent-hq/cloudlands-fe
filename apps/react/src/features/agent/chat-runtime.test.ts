@@ -144,3 +144,127 @@ it.each(['authority', 'cancel'] as const)(
     expect(transport.request).toHaveBeenCalledTimes(1);
   },
 );
+
+it.each(['valid', 'deleted', 'retired', 'wrong-workspace', 'busy'] as const)(
+  'validates canonical note references at final transport dispatch (%s)',
+  async (scenario) => {
+    const { sendAgentMessage, chatSubmission } = await import('./chat-runtime');
+    const { setWorkspaceHasLoaded } =
+      await import('../../../../../src/store/renderer/slices/workspace/workspace-slice');
+    const { getPrincipalActionContext } =
+      await import('../../../../../src/store/renderer/slices/principal/principal-projections');
+    const { loadWorkspaceNotesSucceeded, applyNoteDeleted } =
+      await import('../../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const { chatDraftRestoreRequested, chatDraftRestoreSettled } =
+      await import('../../../../../src/store/renderer/slices/chat-drafts/chat-drafts-slice');
+    const initial = createAdmittedLegacyPrincipal();
+    initial.principal.snapshot!.capabilities.submissionCorrelation = 1;
+    const dispose = store.init(initial);
+    const workspace = {
+      id: 'workspace',
+      myRole: 'owner',
+      title: 'Owned',
+      worktreePath: '/owned/repo',
+    } as any;
+    const session = {
+      id: 'agent',
+      workspaceId: 'workspace',
+      status: 'idle',
+      backendSessionId: 'backend',
+      messages: [],
+      createdAt: '',
+      updatedAt: '',
+      isStreaming: true,
+      isResponding: false,
+      turnInFlight: false,
+    } as any;
+    store.dispatch(setWorkspaceEntity(workspace));
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        store.state.connections.windowBackendId,
+        getPrincipalActionContext(store.state),
+      ),
+    );
+    store.dispatch(bulkUpsertSessions([session]));
+    store.dispatch(
+      loadWorkspaceNotesSucceeded(['workspace'], {
+        workspace: [
+          {
+            id: 'note',
+            workspaceId: 'workspace',
+            title: 'Plan',
+            content: '',
+            contentType: 'markdown',
+            isArchived: false,
+          } as any,
+        ],
+      }),
+    );
+    store.dispatch(chatDraftOwnerOpened('context-owner'));
+    store.dispatch(chatDraftRestoreRequested('context-owner', 'restore', 'workspace', 'agent'));
+    store.dispatch(
+      chatDraftRestoreSettled('context-owner', 'restore', 'restored', {
+        text: 'Read this note',
+        attachments: [],
+      }),
+    );
+    const references = [
+      {
+        type: 'note',
+        noteId: 'note',
+        metadata: { workspaceId: scenario === 'wrong-workspace' ? 'other' : 'workspace' },
+      },
+    ];
+    const admitted = chatSubmission.admitChatMessage(store, 'agent', {
+      wsId: 'workspace',
+      text: 'Read this note',
+      contextItems: [
+        { id: 'ref', type: 'note', noteId: 'note', workspaceId: 'workspace', label: 'Plan' },
+      ],
+    });
+    expect(admitted).toBeTruthy();
+    const { createAgentActivationWorkers } =
+      await import('../../../../../src/store/renderer/slices/agent-session/sagas/agent-activation-workers');
+    const { agentReadOwnership, readAgentSession } = await import('./agent-read-service');
+    const { selectAgentSession } = await import('@/store/agent-session/agent-session-selectors');
+    const { restoreAgentSessionRequested } =
+      await import('../../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice');
+    const { takeEvery } = await import('typed-redux-saga');
+    const activation = createAgentActivationWorkers({
+      selectAgentSession,
+      captureAgentMutationOwnership: agentReadOwnership.captureAgentMutationOwnership,
+      readAgentSession,
+    });
+    const stop = store.runSaga(function* () {
+      yield* takeEvery(restoreAgentSessionRequested, activation.restoreAgent);
+    });
+    const wire: unknown[] = [];
+    transport.request.mockReset().mockImplementation(async (method, params, options) => {
+      if (method === 'agent.sendMessage') {
+        if (scenario === 'deleted') store.dispatch(applyNoteDeleted('workspace', 'note'));
+        if (scenario === 'retired') store.dispatch(chatDraftOwnerReleased('context-owner'));
+        if (scenario === 'busy')
+          store.dispatch(bulkUpsertSessions([{ ...session, isResponding: true }]));
+        options?.onDispatch?.();
+        wire.push(params);
+        return { success: true };
+      }
+      if (method === 'agent.get') return { agent: session };
+      if (method === 'agent.getConversation') return { agentId: 'agent', messages: [] };
+      return {};
+    });
+    try {
+      await sendAgentMessage('agent', 'Read this note', workspace, {
+        noteIds: ['note'],
+        contextReferences: references,
+        noteContextOwnerId: 'context-owner',
+        submission: { scope: admitted!.scope, id: admitted!.submission.id },
+      }).catch(() => {});
+      expect(wire).toHaveLength(scenario === 'valid' ? 1 : 0);
+    } finally {
+      stop();
+      dispose();
+    }
+  },
+);
