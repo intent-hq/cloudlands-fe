@@ -217,6 +217,10 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     expect(readJournal('protocol.jsonl').some(row => row.method === 'Runtime.callFunctionOn' && row.direction === 'receive')).toBe(true);
     expect(child.pid).toBeGreaterThan(0);
     process.kill(child.pid!, 0);
+    await expect.poll(() => {
+      try { return JSON.parse(readFileSync(join(diagnosticDir, 'native-observer-ready.json'), 'utf8')).pid; }
+      catch { return null; }
+    }).toBe(child.pid);
     record('all-probes-active');
     phase = 'load-failure';
     failConsoleRequests = true;

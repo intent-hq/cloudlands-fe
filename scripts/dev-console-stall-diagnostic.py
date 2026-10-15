@@ -19,7 +19,7 @@ SOURCE_FILES = ['test/electron-browser-lifetime-dev-console.fixture.ts',
                 'playwright.config.ts', 'src/features/dev-console/main/dev-console-window.ts',
                 'src/features/dev-console/main/dev-console-capture.ts',
                 'src/main/window-backend.ts', 'src/preload/index.template.ts',
-                'scripts/dev-console-stall-diagnostic.py',
+                'scripts/dev-console-stall-diagnostic.py', 'scripts/dev-console-native-observer.py',
                 '.github/workflows/nightly-browser-tests.yml', '.github/workflows/browser-tests.yml',
                 'package.json', 'pnpm-lock.yaml']
 
@@ -83,11 +83,17 @@ def ready():
         raise RuntimeError('Expected exactly one diagnostic case')
     write('ready.json', {'versions': json.loads(versions), 'electronSha256': digest,
                         'electronBytes': Path(executable).stat().st_size, 'generatedInputs': generated_hashes()})
+    capability_env = dict(os.environ, DEV_CONSOLE_DIAGNOSTIC_DIR=str(OUT))
+    subprocess.run([sys.executable, 'scripts/dev-console-native-observer.py', '--self-test'],
+                   cwd=ROOT, env=capability_env, check=True, timeout=10)
+    write('native-capability-ready.json', {'checked': True})
 
 
 def run():
     prepared = json.loads((OUT / 'prepared.json').read_text())
     readiness = json.loads((OUT / 'ready.json').read_text())
+    if json.loads((OUT / 'native-capability-ready.json').read_text()) != {'checked': True}:
+        raise RuntimeError('Native collector capability was not qualified')
     if prepared['inputs'] != tracked_hashes() or readiness['generatedInputs'] != generated_hashes():
         raise RuntimeError('Input drift before launch')
     if (OUT / 'runner-process.json').exists():
@@ -103,9 +109,10 @@ def run():
     log_bytes = 0
     started = time.time()
     with (OUT / 'output.log').open('w') as log, (OUT / 'protocol.jsonl').open('w', buffering=1) as protocol:
-        proc = subprocess.Popen(COMMAND, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+        observed_command = [sys.executable, 'scripts/dev-console-native-observer.py', '--', *COMMAND]
+        proc = subprocess.Popen(observed_command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
-        write('runner-process.json', {'pid': proc.pid, 'startedAt': started})
+        write('runner-process.json', {'pid': proc.pid, 'startedAt': started, 'command': observed_command})
         for raw in proc.stdout:
             line = ansi.sub('', raw).rstrip()
             at = time.time_ns() // 1000000

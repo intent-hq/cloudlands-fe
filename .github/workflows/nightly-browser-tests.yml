@@ -1,5 +1,5 @@
 # Diagnostic ref only. Never merge this workflow or fixture instrumentation.
-name: Dev Console Stall Diagnostic
+name: Dev Console Native Stack Diagnostic
 
 on:
   workflow_dispatch:
@@ -8,12 +8,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: dev-console-stall-diagnostic-${{ github.ref }}
+  group: dev-console-native-stack-diagnostic-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/diagnostic/dev-console-stall-20261015' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/diagnostic/dev-console-native-stack-20261015' }}
     runs-on: depot-ubuntu-24.04-8
     timeout-minutes: 30
     env:
@@ -87,7 +87,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: dev-console-stall-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          name: dev-console-native-stack-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
           path: .diagnostics/dev-console-stall/
           include-hidden-files: true
           if-no-files-found: error
