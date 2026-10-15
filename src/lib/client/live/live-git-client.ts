@@ -1,3 +1,4 @@
+import type { CommitHistoryPageOptions } from '../commit-history-types';
 import { cleanExplicitPaths, createBackendGitStageClient } from './backend-git-stage-client';
 import { createBackendGitReadRuntime } from './backend-git-read-runtime';
 import { createBackendGitDiffReader } from './backend-git-diff-reader';
@@ -298,12 +299,13 @@ export class LiveGitClient implements GitClient {
   commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
+    options?: Omit<CommitHistoryPageOptions, 'includeOlder'>,
   ): Promise<{
     commits: CommitInfo[];
     boundarySha: string | null;
     nextToken: string | null;
   }> {
-    return sourceReads.commitsWithBoundary(workspaceId, includeOlder);
+    return sourceReads.commitsWithBoundary(workspaceId, includeOlder, options);
   }
 
   // `git.getBranches` (PROTOCOL §5.6) keeps path-based repository selection.

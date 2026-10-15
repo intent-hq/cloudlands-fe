@@ -1,3 +1,4 @@
+import { isCommitHash, parseHistoryOrigin } from '@/features/workspace/workspace-history-target';
 import { parseGitDiffOrigin } from '@/features/workspace/workspace-diff-target';
 import { parseConversationFileOrigin } from '@/features/workspace/workspace-file-origin';
 import { createFileRoute, retainSearchParams } from '@tanstack/react-router';
@@ -26,6 +27,9 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     diff?: string;
     diffStage?: 'staged' | 'unstaged';
     diffOrigin?: string;
+    commitDiff?: string;
+    historyCommit?: string;
+    historyOrigin?: string;
     file?: string;
     fileOrigin?: string;
     attachment?: string;
@@ -48,8 +52,19 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
       ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
       ...(typeof search.diff === 'string' &&
       search.diff &&
-      (search.diffStage === 'staged' || search.diffStage === 'unstaged')
-        ? { diff: search.diff, diffStage: search.diffStage }
+      (search.diffStage === 'staged' ||
+        search.diffStage === 'unstaged' ||
+        isCommitHash(search.commitDiff))
+        ? {
+            diff: search.diff,
+            ...(isCommitHash(search.commitDiff)
+              ? { commitDiff: search.commitDiff }
+              : { diffStage: search.diffStage as 'staged' | 'unstaged' }),
+          }
+        : {}),
+      ...(isCommitHash(search.historyCommit) ? { historyCommit: search.historyCommit } : {}),
+      ...(parseHistoryOrigin(search.historyOrigin)
+        ? { historyOrigin: search.historyOrigin as string }
         : {}),
       ...(parseGitDiffOrigin(search.diffOrigin) ? { diffOrigin: search.diffOrigin as string } : {}),
       ...(typeof search.file === 'string' &&
@@ -92,6 +107,9 @@ function WorkspacePage() {
     diff,
     diffStage,
     diffOrigin,
+    commitDiff,
+    historyCommit,
+    historyOrigin,
     fileOrigin,
     line,
     fileQuery,
@@ -110,6 +128,9 @@ function WorkspacePage() {
       diffPath={diff}
       diffStaged={diffStage === 'staged'}
       diffOrigin={diffOrigin}
+      commitDiff={commitDiff}
+      historyCommit={historyCommit}
+      historyOrigin={historyOrigin}
       filePath={file}
       fileOrigin={parseConversationFileOrigin(fileOrigin)}
       attachmentId={attachment}

@@ -1,8 +1,10 @@
+import { toCommitInfo } from './utils/commit-history-wire';
+import { createBackendCommitHistoryReader } from './backend-commit-history-reader';
+import type { CommitHistoryPageOptions } from '../commit-history-types';
 import { GitFileStatus } from '$shared/types';
 import type { FileStatus, GitStatus, PullRequestInfo, PullRequestStatus } from '$shared/types';
 import { ChangeStage } from '../../../features/file-tracking/types';
 import type {
-  CommitFile,
   CommitInfo,
   FileChangeStatus,
   TrackedChange,
@@ -43,56 +45,6 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
     hasUncommittedChanges: Boolean(raw.hasUncommittedChanges),
     hasUntrackedFiles: Boolean(raw.hasUntrackedFiles),
   };
-}
-
-function dateToTimestamp(date: unknown): number {
-  if (typeof date !== 'string' || !date) return 0;
-  const t = Date.parse(date);
-  return Number.isFinite(t) ? t : 0;
-}
-
-/** Map a §5.19 `CommitWithAttribution` file entry into the renderer `CommitFile`. */
-function toCommitFile(raw: unknown): CommitFile | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const f = raw as Record<string, unknown>;
-  const path = typeof f.path === 'string' ? f.path : '';
-  if (!path) return null;
-  const file: CommitFile = { path };
-  if (typeof f.additions === 'number') file.additions = f.additions;
-  if (typeof f.deletions === 'number') file.deletions = f.deletions;
-  if (typeof f.status === 'string') file.status = f.status;
-  return file;
-}
-
-/**
- * Map a daemon `file-tracking.loadCommits` entry (§5.19 `CommitWithAttribution`:
- * hash/message/author/date/isPushed/files?/filesChanged?/agentId?/linkedNoteId?)
- * into the renderer `CommitInfo`. `files`/`filesChanged` are omitted by the
- * metadata-only list payload — carried through as absent (not healed to `[]`)
- * so consumers lazily fetch `git.commitDetails` on demand.
- */
-function toCommitInfo(raw: unknown): CommitInfo | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const hash = typeof r.hash === 'string' ? r.hash : '';
-  if (!hash) return null;
-  const isPushed = Boolean(r.isPushed);
-  const info: CommitInfo = {
-    hash,
-    message: typeof r.message === 'string' ? r.message : '',
-    author: typeof r.author === 'string' ? r.author : '',
-    timestamp: dateToTimestamp(r.date),
-    stage: isPushed ? 'pushed' : 'local',
-    isPushed,
-  };
-  if (Array.isArray(r.files)) {
-    info.files = r.files.map(toCommitFile).filter((f): f is CommitFile => f !== null);
-  }
-  if (typeof r.filesChanged === 'number') info.filesChanged = r.filesChanged;
-  if (typeof r.date === 'string') info.date = r.date;
-  if (typeof r.agentId === 'string') info.agentId = r.agentId;
-  if (typeof r.linkedNoteId === 'string') info.linkedNoteId = r.linkedNoteId;
-  return info;
 }
 
 /** Wire stage values (§5.19) — a 1:1 match with the renderer `ChangeStage` enum. */
@@ -218,14 +170,19 @@ export function createBackendGitReadRuntime(dependencies: GitReadRuntimeDependen
     }
   }
 
+  const readHistoryPage = createBackendCommitHistoryReader(dependencies);
+
   async function commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
+    options?: Omit<CommitHistoryPageOptions, 'includeOlder'>,
   ): Promise<{
     commits: CommitInfo[];
     boundarySha: string | null;
     nextToken: string | null;
   }> {
+    if (options)
+      return readHistoryPage(workspaceId, { ...options, includeOlder: includeOlder ?? false });
     try {
       assertCurrent();
       const result = await dependencies.request<{

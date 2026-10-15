@@ -1,3 +1,4 @@
+import type { CommitHistoryPageOptions } from './commit-history-types';
 // Canonical read contracts shared by renderer bindings; no transport or Store dependency.
 import type {
   AgentDelegatedCounts,
@@ -156,11 +157,14 @@ export interface GitReadClient {
   /**
    * `file-tracking.loadCommits` with full envelope — returns commits, boundarySha, and nextToken.
    * The `boundarySha` is the workspace boundary commit SHA or null when no boundary exists.
-   * When `includeOlder` is true, fetches commits before and including the workspace boundary.
+   * When `includeOlder` is true, walks backward from the workspace boundary (inclusive).
+   * Explicit pagination options select strict reads; errors/malformed envelopes reject.
+   * Callers without options retain the legacy best-effort response contract.
    */
   commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
+    options?: Omit<CommitHistoryPageOptions, 'includeOlder'>,
   ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,

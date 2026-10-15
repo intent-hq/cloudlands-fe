@@ -1,3 +1,4 @@
+import { createCommitHistoryWorkers } from '../../changes/sagas/commit-history-workers';
 import type { GenericAction } from '@themislib/themis/types';
 import { createChannelFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import type { EventChannel, Task } from 'redux-saga';
@@ -35,6 +36,7 @@ import {
   agentLineStatsRequestSucceeded,
   appendOlderCommits,
   loadOlderCommitsRequested,
+  loadMoreCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
   requestAgentLineStats,
@@ -441,6 +443,9 @@ export function createLifecycleReadSaga<
     });
   }
 
+  // Compatibility for captured Git ports, whose operation schema has no cursor yet.
+  // Remove these bounded legacy reads when that independently owned port admits pagination;
+  // the ordinary source path and React read-only history use the shared worker below.
   function* refreshScopedChanges(workspaceId: string): SagaGenerator<void> {
     yield* withScopedGit(workspaceId, function* ({ scope, current, putCurrent }) {
       const { status, trackedChanges, commitsEnvelope } = yield* all({
@@ -539,6 +544,13 @@ export function createLifecycleReadSaga<
     return getAdmittedWorkspaceReadContext(state, workspaceId, admissionSelectors);
   }
 
+  const historyWorkers = createCommitHistoryWorkers({
+    pageSize: 50,
+    admittedContext: admittedWorkspaceRead,
+    readPage: (workspaceId, { includeOlder, ...options }) =>
+      appClient.git.commitsWithBoundary(workspaceId, includeOlder, options),
+  });
+
   function* refreshChanges(workspaceId: string): SagaGenerator<void> {
     if (dependencies.scopedGit) {
       yield* refreshScopedChanges(workspaceId);
@@ -546,10 +558,10 @@ export function createLifecycleReadSaga<
     }
     const context = yield* admittedWorkspaceRead(workspaceId);
     if (!context) return;
-    const { status, trackedChanges, commitsEnvelope } = yield* all({
+    const { status, trackedChanges } = yield* all({
       status: call([appClient.git, appClient.git.status], workspaceId),
       trackedChanges: call([appClient.git, appClient.git.trackedChanges], workspaceId),
-      commitsEnvelope: call([appClient.git, appClient.git.commitsWithBoundary], workspaceId),
+      history: call(historyWorkers.refresh, workspaceId),
     });
     if (
       (yield* admittedWorkspaceRead(workspaceId)) !== context ||
@@ -559,7 +571,6 @@ export function createLifecycleReadSaga<
       return;
     const changes = reconcileGitStatusChanges(status.files, trackedChanges);
     yield* put(setChangesData(workspaceId, changes, false, changes.length));
-    yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
     yield* put(setHasLoadedInitialData(workspaceId, true));
   }
 
@@ -568,21 +579,16 @@ export function createLifecycleReadSaga<
       yield* refreshScopedOlderCommits(workspaceId);
       return;
     }
-    const context = yield* admittedWorkspaceRead(workspaceId);
-    if (!context) return;
-    yield* put(setLoadingOlderCommits(workspaceId, true));
-    try {
-      const envelope: Awaited<ReturnType<typeof appClient.git.commitsWithBoundary>> = yield* call(
-        [appClient.git, appClient.git.commitsWithBoundary],
-        workspaceId,
-        true,
-      );
-      if ((yield* admittedWorkspaceRead(workspaceId)) === context)
-        yield* put(appendOlderCommits(workspaceId, envelope.commits));
-    } finally {
-      if ((yield* admittedWorkspaceRead(workspaceId)) === context)
-        yield* put(setLoadingOlderCommits(workspaceId, false));
-    }
+    yield* historyWorkers.loadMore(workspaceId, true);
+  }
+
+  function* moreCommitsWorker(
+    scheduler: WorkspaceReadScheduler,
+    action: ReturnType<typeof loadMoreCommitsRequested>,
+  ) {
+    // Captured Git scopes cannot admit pagination; never fall through to an unscoped transport.
+    if (dependencies.scopedGit) return;
+    yield* runWorkspaceRead(scheduler, 'changes', action.payload[0], historyWorkers.loadMore);
   }
 
   function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerator<void> {
@@ -1713,6 +1719,7 @@ export function createLifecycleReadSaga<
           changesWorker,
           scheduler,
         ),
+        takeLeadingByWorkspace(loadMoreCommitsRequested, moreCommitsWorker, scheduler),
         takeLeadingInContext(
           loadOlderCommitsRequested,
           (action) => action.payload.wsId,

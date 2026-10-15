@@ -1,3 +1,9 @@
+import { fileTrackingReducer, loadMoreCommitsRequested } from '../../changes/changes-slice';
+import {
+  getCurrentCommits,
+  getOlderCommits,
+  getCommitHistory,
+} from '../../changes/changes-projections';
 import { initialState as workspaceShareInitialState } from '../../workspace-share/workspace-share-slice';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -163,6 +169,7 @@ function state(
       byWorkspaceId: {} as Record<string, { loading: boolean; initialized: boolean }>,
     },
     changes: {
+      ...fileTrackingReducer(undefined, { type: '@@init' }),
       agentStats: {} as Record<string, { additions: number; deletions: number; timestamp: string }>,
       agentLineStatsRequests: {},
     },
@@ -215,6 +222,7 @@ function start(current = state()) {
     {
       channel,
       dispatch: (action) => {
+        current.changes = fileTrackingReducer(current.changes, action);
         current.workspaceTasks = workspaceTasksReducer(current.workspaceTasks, action);
         current.scripts = scriptsReducer(current.scripts, action);
         if (
@@ -233,12 +241,14 @@ function start(current = state()) {
     channel: {
       ...channel,
       put: (action: { type: string }) => {
+        current.changes = fileTrackingReducer(current.changes, action);
         current.workspaceTasks = workspaceTasksReducer(current.workspaceTasks, action);
         channel.put(action);
       },
     },
     actions,
     task,
+    getChangesState: () => ({ changes: current.changes }),
   };
 }
 
@@ -1798,13 +1808,16 @@ describe('lifecycleReadSaga', () => {
     await settle();
     run.channel.put(loadWorkspaceDataRequested(WS));
     await settle();
+    expect(getCommitHistory(run.getChangesState(), WS).current.nextToken).toBe('wire-token');
     mocks.git.trackedChanges.mockRejectedValueOnce(new Error('changes failed'));
     run.channel.put(refreshRequested(WS));
     await settle();
 
     expect(mocks.git.status.mock.calls).toEqual([[WS], [WS], [WS]]);
     expect(mocks.git.trackedChanges.mock.calls).toEqual([[WS], [WS], [WS]]);
-    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS], [WS], [WS]]);
+    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual(
+      Array.from({ length: 3 }, () => [WS, false, { limit: 50 }]),
+    );
     const reconciled = [
       change,
       expect.objectContaining({
@@ -1814,26 +1827,22 @@ describe('lifecycleReadSaga', () => {
         stats: { additions: 0, deletions: 0 },
       }),
     ];
-    expect(run.actions).toEqual([
+    expect(run.actions.filter((action) => action.type === 'changes/setChangesData')).toEqual([
       {
         type: 'changes/setChangesData',
         payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 },
       },
       {
-        type: 'changes/setCommitsData',
-        payload: { wsId: WS, commits: [commit], boundarySha: 'abc' },
-      },
-      { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
-      {
         type: 'changes/setChangesData',
         payload: { wsId: WS, changes: reconciled, truncated: false, totalCount: 2 },
       },
-      {
-        type: 'changes/setCommitsData',
-        payload: { wsId: WS, commits: [commit], boundarySha: 'abc' },
-      },
-      { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
     ]);
+    expect(getCurrentCommits(run.getChangesState(), WS)).toEqual([commit]);
+    expect(getCommitHistory(run.getChangesState(), WS).current).toMatchObject({
+      loading: false,
+      nextToken: null,
+      loaded: false,
+    });
     await stop(run.task);
   });
 
@@ -1879,7 +1888,11 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.git.status).toHaveBeenCalledTimes(2);
     expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
-    expect(run.actions).toEqual([
+    expect(
+      run.actions.filter((action) =>
+        ['changes/setChangesData', 'changes/setHasLoadedInitialData'].includes(action.type),
+      ),
+    ).toEqual([
       {
         type: 'changes/setChangesData',
         payload: {
@@ -1895,7 +1908,6 @@ describe('lifecycleReadSaga', () => {
           totalCount: 1,
         },
       },
-      { type: 'changes/setCommitsData', payload: { wsId: WS, commits: [], boundarySha: null } },
       { type: 'changes/setHasLoadedInitialData', payload: [WS, true] },
     ]);
     await stop(run.task);
@@ -1999,7 +2011,7 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.git.status.mock.calls).toEqual([[WS]]);
     expect(mocks.git.trackedChanges.mock.calls).toEqual([[WS]]);
-    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS, false, { limit: 50 }]]);
 
     resolveStatus({
       branch: 'main',
@@ -2014,26 +2026,62 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.git.status.mock.calls).toEqual([[WS], [WS]]);
     expect(mocks.git.trackedChanges.mock.calls).toEqual([[WS], [WS]]);
-    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([
+      [WS, false, { limit: 50 }],
+      [WS, false, { limit: 50 }],
+    ]);
     await settle();
     expect(mocks.git.status).toHaveBeenCalledTimes(2);
     await stop(run.task);
   });
 
-  it('loads older commits and always clears loading on failure and cancellation', async () => {
-    const commit = { hash: 'old', message: 'old', wire_only: true };
+  it('preserves the source 50-row page size while continuing history without refreshing tracked changes', async () => {
+    const first = {
+      hash: 'first',
+      message: 'first',
+      author: 'Author',
+      timestamp: 1,
+      stage: 'local',
+    };
+    const second = { ...first, hash: 'second', message: 'second' };
+    mocks.git.commitsWithBoundary
+      .mockResolvedValueOnce({ commits: [first], boundarySha: 'base', nextToken: 'next' })
+      .mockResolvedValueOnce({ commits: [second], boundarySha: 'base', nextToken: null });
+    const run = start();
+    run.channel.put(refreshRequested(WS));
+    await settle();
+    run.channel.put(loadMoreCommitsRequested(WS));
+    await settle();
+    expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([
+      [WS, false, { limit: 50 }],
+      [WS, false, { limit: 50, pageToken: 'next' }],
+    ]);
+    expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    expect(getCurrentCommits(run.getChangesState(), WS)).toEqual([first, second]);
+    await stop(run.task);
+  });
+
+  it('loads older pages, keeps errors retryable, and retires pending replies on unmount', async () => {
+    const run = start();
+    run.channel.put(refreshRequested(WS));
+    await settle();
+    const commit = { hash: 'old', message: 'old', author: 'Author', timestamp: 1, stage: 'local' };
     mocks.git.commitsWithBoundary.mockResolvedValueOnce({
       commits: [commit],
       boundarySha: null,
-      nextToken: null,
+      nextToken: 'older-next',
     });
-    const run = start();
     run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
     await settle();
+    expect(getOlderCommits(run.getChangesState(), WS)).toEqual([commit]);
     mocks.git.commitsWithBoundary.mockRejectedValueOnce(new Error('older failed'));
     run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
     await settle();
-
+    expect(getCommitHistory(run.getChangesState(), WS).older).toMatchObject({
+      loading: false,
+      error: 'older failed',
+      nextToken: 'older-next',
+    });
     let pending!: () => void;
     mocks.git.commitsWithBoundary.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -2042,18 +2090,16 @@ describe('lifecycleReadSaga', () => {
     );
     run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
     await settle();
+    expect(getCommitHistory(run.getChangesState(), WS).older.loading).toBe(true);
     run.channel.put(workspaceUnmounted(WS));
     await settle();
     pending();
-
-    expect(run.actions).toEqual([
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, true] },
-      { type: 'changes/appendOlderCommits', payload: [WS, [commit]] },
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, false] },
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, true] },
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, false] },
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, true] },
-      { type: 'changes/setLoadingOlderCommits', payload: [WS, false] },
+    await settle();
+    expect(run.getChangesState().changes.byWorkspaceId[WS]).toBeUndefined();
+    expect(mocks.git.commitsWithBoundary.mock.calls.slice(1)).toEqual([
+      [WS, true, { limit: 50 }],
+      [WS, true, { limit: 50, pageToken: 'older-next' }],
+      [WS, true, { limit: 50, pageToken: 'older-next' }],
     ]);
     await stop(run.task);
   });
@@ -4306,7 +4352,11 @@ describe('M current workspace read admission', () => {
     vi.clearAllMocks();
     mocks.git.status.mockResolvedValue({ files: [] });
     mocks.git.trackedChanges.mockResolvedValue([]);
-    mocks.git.commitsWithBoundary.mockResolvedValue({ commits: [], boundarySha: null });
+    mocks.git.commitsWithBoundary.mockResolvedValue({
+      commits: [],
+      boundarySha: null,
+      nextToken: null,
+    });
   });
   function current(role: 'owner' | 'member' | 'guest') {
     const value = state();
@@ -4353,6 +4403,10 @@ describe('M current workspace read admission', () => {
     'M22 no stale older publication or loading fallback after rejected=%s original',
     async (rejected) => {
       const value = current('member');
+      const run = start(value);
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      run.actions.length = 0;
       let resolve!: (value: unknown) => void, reject!: (value: unknown) => void;
       mocks.git.commitsWithBoundary.mockReturnValue(
         new Promise((yes, no) => {
@@ -4360,16 +4414,17 @@ describe('M current workspace read admission', () => {
           reject = no;
         }),
       );
-      const run = start(value);
       run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
       await settle();
       value.principal.invalidation++;
       if (rejected) reject(new Error('original refusal'));
-      else resolve({ commits: [], boundarySha: null });
+      else resolve({ commits: [], boundarySha: null, nextToken: null });
       await settle();
-      expect(run.actions).toEqual([
-        { type: 'changes/setLoadingOlderCommits', payload: [WS, true] },
-      ]);
+      expect(run.actions).toHaveLength(1);
+      expect(run.actions[0]).toMatchObject({
+        type: 'changes/commitHistoryStarted',
+        payload: [WS, { list: 'older' }],
+      });
       await stop(run.task);
     },
   );

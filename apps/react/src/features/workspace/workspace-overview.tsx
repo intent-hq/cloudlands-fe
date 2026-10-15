@@ -1,3 +1,4 @@
+import { WorkspaceCommitHistory } from './workspace-commit-history';
 import { WorkspaceDiff } from './workspace-diff';
 import { matchingGitDiffOrigin } from './workspace-diff-target';
 import { WorkspaceCreate } from './workspace-create';
@@ -208,6 +209,9 @@ export function WorkspaceOverview({
   diffPath,
   diffStaged = false,
   diffOrigin,
+  commitDiff,
+  historyCommit,
+  historyOrigin,
   fileOrigin,
   attachmentId,
   attachmentAgentId,
@@ -225,6 +229,9 @@ export function WorkspaceOverview({
   diffPath?: string;
   diffStaged?: boolean;
   diffOrigin?: string;
+  commitDiff?: string;
+  historyCommit?: string;
+  historyOrigin?: string;
   fileOrigin?: ConversationFileOrigin;
   attachmentId?: string;
   attachmentAgentId?: string;
@@ -425,6 +432,8 @@ export function WorkspaceOverview({
                   workspaceId={workspaceId}
                   path={diffPath}
                   staged={diffStaged}
+                  commitHash={commitDiff}
+                  historyOrigin={historyOrigin}
                   query={query}
                   fileQuery={fileQuery}
                 />
@@ -474,6 +483,16 @@ export function WorkspaceOverview({
                     }
                   />
                 </>
+              )}
+              {!agentId && !noteId && !filePath && (
+                <WorkspaceCommitHistory
+                  workspaceId={workspaceId}
+                  query={query}
+                  fileQuery={fileQuery}
+                  expandedHash={historyCommit}
+                  origin={historyOrigin}
+                  hidden={Boolean(diffPath)}
+                />
               )}
             </div>
           </>

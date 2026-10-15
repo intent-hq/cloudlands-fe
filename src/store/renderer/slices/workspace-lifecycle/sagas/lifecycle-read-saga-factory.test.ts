@@ -868,7 +868,7 @@ describe('canonical receiver scoped workers with explicitly controlled ports', (
       expect(
         f.actions.filter((a) => a.type === 'changes/setLoadingOlderCommits').map((a) => a.payload),
       ).toEqual([[WS, true]]);
-      expect(store.state.changes.byWorkspaceId[WS].loadingOlderCommits).toBe(true);
+      expect(store.state.changes.byWorkspaceId[WS].history.older.loading).toBe(true);
     }));
 
   it('acquires Changes scopes only after six real scheduler slots while PR remains unscheduled', async () =>
@@ -937,7 +937,7 @@ describe('canonical receiver scoped workers with explicitly controlled ports', (
               ],
         );
         expect(f.scopes[0].releases).toEqual([WS]);
-        expect(store.state.changes.byWorkspaceId[WS].loadingOlderCommits).toBe(true);
+        expect(store.state.changes.byWorkspaceId[WS].history.older.loading).toBe(true);
         if (loading) expect(f.scopes[0].calls).toEqual([]);
       }),
   );

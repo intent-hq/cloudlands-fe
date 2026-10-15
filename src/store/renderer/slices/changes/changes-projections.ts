@@ -1,9 +1,11 @@
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   FileTrackingState,
+  CommitInfo,
   LineChangeStats,
   AgentLineStatsRequestState,
 } from './changes-types';
-import { emptyAgentLineStatsRequestState } from './changes-slice';
+import { emptyAgentLineStatsRequestState, emptyWorkspaceState } from './changes-slice';
 
 type ChangesProjectionState = { changes: FileTrackingState };
 
@@ -27,4 +29,24 @@ export const getShouldRequestAgentLineStats = (
   if (requestState.isLoading) return false;
   if (!forceRefresh && getAgentLineStats(state, agentId)) return false;
   return true;
+};
+
+export const getCommitHistory = (state: ChangesProjectionState, workspaceId: string) =>
+  (state.changes.byWorkspaceId[workspaceId] ?? emptyWorkspaceState).history;
+
+export const getCommitByHash = (state: ChangesProjectionState, workspaceId: string, hash: string) =>
+  getItem((state.changes.byWorkspaceId[workspaceId] ?? emptyWorkspaceState).commitEntities, hash);
+
+export const getCurrentCommits = (state: ChangesProjectionState, workspaceId: string) => {
+  const ws = state.changes.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
+  return ws.currentCommitIds
+    .map((hash) => getItem(ws.commitEntities, hash))
+    .filter((commit): commit is CommitInfo => commit !== undefined);
+};
+
+export const getOlderCommits = (state: ChangesProjectionState, workspaceId: string) => {
+  const ws = state.changes.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
+  return ws.olderCommitIds
+    .map((hash) => getItem(ws.commitEntities, hash))
+    .filter((commit): commit is CommitInfo => commit !== undefined);
 };

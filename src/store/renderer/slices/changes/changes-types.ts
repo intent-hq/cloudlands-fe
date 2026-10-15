@@ -1,4 +1,10 @@
 import type { NativeReviewOwner } from '$shared/types/native-review-operation';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { SagaGenerator } from 'typed-redux-saga';
+import type {
+  CommitHistoryPage,
+  CommitHistoryPageOptions,
+} from '../../../../lib/client/commit-history-types';
 
 /**
  * Changes Redux Slice — Types
@@ -102,10 +108,11 @@ export type MainPanelViewState = {
 export type FileTrackingWorkspaceState = {
   changes: TrackedChange[];
   transitions: StageTransition[];
-  commits: CommitInfo[];
+  commitEntities: Collection<CommitInfo, 'hash'>;
+  currentCommitIds: string[];
   boundarySha: string | null;
-  olderCommits: CommitInfo[];
-  loadingOlderCommits: boolean;
+  olderCommitIds: string[];
+  history: CommitHistoryState;
   loading: boolean;
   error: string | null;
   changesTruncated: boolean;
@@ -114,6 +121,46 @@ export type FileTrackingWorkspaceState = {
   acceptChanges: AcceptChangesState;
   coordination: ChangesCoordinationState;
 };
+
+type CommitHistoryList = 'current' | 'older';
+
+export interface CommitHistoryListState {
+  nextToken: string | null;
+  loaded: boolean;
+  loading: boolean;
+  error: string | null;
+  requestId: string | null;
+  consumedTokens: (string | null)[];
+}
+
+export interface CommitHistoryState {
+  context: string | null;
+  generation: string | null;
+  current: CommitHistoryListState;
+  older: CommitHistoryListState;
+}
+
+export interface CommitHistoryRequest {
+  context: string;
+  generation: string;
+  requestId: string;
+  list: CommitHistoryList;
+  pageToken: string | null;
+  reset: boolean;
+}
+
+export interface CommitHistoryWorkerDependencies {
+  /** Defaults to 20; the source timeline retains its existing 50-row first page. */
+  pageSize?: number;
+  readPage: (
+    workspaceId: string,
+    options: CommitHistoryPageOptions,
+    current: () => boolean,
+  ) => Promise<CommitHistoryPage>;
+  admittedContext: (workspaceId: string) => SagaGenerator<string | null>;
+  /** Synchronous admission check for transports that can defer actual dispatch. */
+  readCurrentContext?: (workspaceId: string) => string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Line-change stats types (absorbed from line-changes slice)

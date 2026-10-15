@@ -119,6 +119,17 @@ and staged changes before attempting another commit. The commit-message draft fo
 the existing workspace lifetime and is cleared when leaving that workspace; it is not
 a durable chat draft. No push, amend or remote review operation is included.
 
+The **Commits** section lists primary-root history in daemon-provided order. Expand
+a short SHA to inspect its exact metadata and changed paths, then open a path for
+that commit's read-only diff. **Back** returns to the expanded row and file. Load
+more current commits or earlier history across the workspace-start boundary when
+available; **Refresh** restarts paging. Root commits use the daemon's empty-parent
+diff, and deleted paths never fall back to current file contents. The pinned history
+protocol follows first-parent history and omits merge commits. Binary or omitted
+oversized bodies remain unavailable text diffs. This is a bounded history view,
+not the full desktop timeline or multi-root history. Browsing it does not resolve
+an unknown commit outcome or enable resending that request.
+
 ## Focused verification
 
 ```sh
@@ -158,6 +169,12 @@ both stages of the same file, added/deleted/renamed paths and binary/large-file
 responses. It verifies genuine Git payloads, refresh, reload, Back focus/position,
 containment and read/worker cleanup at desktop and narrow widths. It performs no
 Git writes; fixture preparation is a separate owned-repository step.
+
+`workspace-commit-history.extended.spec.mjs` checks real current/older paging,
+exact-SHA metadata and committed-file diffs, root/deleted/renamed/binary cases,
+both Back paths, reload and read cleanup at desktop and narrow widths. It requires
+an explicitly identified owned daemon and pre-recorded genuine repository evidence;
+the test itself performs no Git writes.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

@@ -105,9 +105,9 @@ describe('fileTrackingReducer', () => {
     let state = fileTrackingReducer(initialState, appendOlderCommits(WS, [mockCommit('old1')]));
     state = fileTrackingReducer(state, setCommitsData(WS, [mockCommit('c1')], 'sha-boundary'));
     const ws = state.byWorkspaceId[WS];
-    expect(ws.commits).toHaveLength(1);
+    expect(ws.currentCommitIds).toEqual(['c1']);
     expect(ws.boundarySha).toBe('sha-boundary');
-    expect(ws.olderCommits).toEqual([]);
+    expect(ws.olderCommitIds).toEqual([]);
   });
 
   it('appendOlderCommits deduplicates by hash', () => {
@@ -116,7 +116,7 @@ describe('fileTrackingReducer', () => {
       state,
       appendOlderCommits(WS, [mockCommit('h1'), mockCommit('h2')]),
     );
-    expect(state.byWorkspaceId[WS].olderCommits).toHaveLength(2);
+    expect(state.byWorkspaceId[WS].olderCommitIds).toHaveLength(2);
   });
 
   it('appendOlderCommits returns same ref when all duplicates', () => {
@@ -128,7 +128,7 @@ describe('fileTrackingReducer', () => {
   it('clearOlderCommits empties olderCommits', () => {
     let state = fileTrackingReducer(initialState, appendOlderCommits(WS, [mockCommit('h1')]));
     state = fileTrackingReducer(state, clearOlderCommits(WS));
-    expect(state.byWorkspaceId[WS].olderCommits).toEqual([]);
+    expect(state.byWorkspaceId[WS].olderCommitIds).toEqual([]);
   });
 
   it('clearOlderCommits returns same ref when already empty', () => {
@@ -138,7 +138,7 @@ describe('fileTrackingReducer', () => {
 
   it('setLoadingOlderCommits updates flag', () => {
     const state = fileTrackingReducer(initialState, setLoadingOlderCommits(WS, true));
-    expect(state.byWorkspaceId[WS].loadingOlderCommits).toBe(true);
+    expect(state.byWorkspaceId[WS].history.older.loading).toBe(true);
   });
 
   it('setChanges replaces changes array', () => {

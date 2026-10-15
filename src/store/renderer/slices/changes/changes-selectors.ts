@@ -1,5 +1,10 @@
 // Source compatibility bindings remain until the Svelte renderer cutover.
-import { getAgentLineStats, getShouldRequestAgentLineStats } from './changes-projections';
+import {
+  getAgentLineStats,
+  getShouldRequestAgentLineStats,
+  getCurrentCommits,
+  getOlderCommits,
+} from './changes-projections';
 /**
  * Changes Redux Slice — Selectors
  *
@@ -47,16 +52,16 @@ export const selectFileTrackingChanges: AppSelector<TrackedChange[], [wsId: stri
   store.createSelector((state, wsId: string): TrackedChange[] => getWs(state, wsId).changes);
 
 export const selectFileTrackingCommits: AppSelector<CommitInfo[], [wsId: string]> =
-  store.createSelector((state, wsId: string): CommitInfo[] => getWs(state, wsId).commits);
+  store.createSelector(getCurrentCommits);
 
 export const selectFileTrackingBoundarySha: AppSelector<string | null, [wsId: string]> =
   store.createSelector((state, wsId: string): string | null => getWs(state, wsId).boundarySha);
 
 export const selectFileTrackingOlderCommits: AppSelector<CommitInfo[], [wsId: string]> =
-  store.createSelector((state, wsId: string): CommitInfo[] => getWs(state, wsId).olderCommits);
+  store.createSelector(getOlderCommits);
 
 export const selectFileTrackingLoadingOlderCommits: AppSelector<boolean, [wsId: string]> =
-  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).loadingOlderCommits);
+  store.createSelector((state, wsId: string): boolean => getWs(state, wsId).history.older.loading);
 
 export const selectFileTrackingChangesTruncated: AppSelector<boolean, [wsId: string]> =
   store.createSelector((state, wsId: string): boolean => getWs(state, wsId).changesTruncated);
@@ -111,7 +116,7 @@ export const selectCurrentUnstagedWorkingChanges: AppSelector<
 export const selectCurrentCommits: AppSelector<CommitInfo[], [wsId: string | null | undefined]> =
   store.createSelector((state, wsId: string | null | undefined): CommitInfo[] => {
     if (!wsId) return [];
-    return getWs(state, wsId).commits;
+    return getCurrentCommits(state, wsId);
   });
 
 // ---------------------------------------------------------------------------

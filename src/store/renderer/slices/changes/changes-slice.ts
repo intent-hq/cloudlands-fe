@@ -1,3 +1,9 @@
+import {
+  createCollection,
+  addItems,
+  getItems,
+} from '@themislib/themis/utils/collections/collection-utils';
+import type { CommitHistoryPage } from '../../../../lib/client/commit-history-types';
 /**
  * Changes Redux Slice — Actions & Reducer
  *
@@ -20,6 +26,9 @@ import type {
   LineChangeStats,
   AgentLineStatsRequestState,
   ChangesCoordinationState,
+  CommitHistoryState,
+  CommitHistoryListState,
+  CommitHistoryRequest,
 } from './changes-types';
 
 // ---------------------------------------------------------------------------
@@ -58,13 +67,30 @@ function createEmptyChangesCoordinationState(): ChangesCoordinationState {
   };
 }
 
+const emptyCommitHistoryList: CommitHistoryListState = {
+  nextToken: null,
+  loaded: false,
+  loading: false,
+  error: null,
+  requestId: null,
+  consumedTokens: [],
+};
+
+const emptyCommitHistory: CommitHistoryState = {
+  context: null,
+  generation: null,
+  current: emptyCommitHistoryList,
+  older: emptyCommitHistoryList,
+};
+
 export const emptyWorkspaceState: FileTrackingWorkspaceState = {
   changes: [],
   transitions: [],
-  commits: [],
+  commitEntities: createCollection<CommitInfo, 'hash'>('hash'),
+  currentCommitIds: [],
   boundarySha: null,
-  olderCommits: [],
-  loadingOlderCommits: false,
+  olderCommitIds: [],
+  history: emptyCommitHistory,
   loading: false,
   error: null,
   changesTruncated: false,
@@ -123,6 +149,19 @@ export const setCommitsData = createAction(
     boundarySha,
   }),
 );
+
+export const loadMoreCommitsRequested = createAction<[wsId: string]>(
+  'changes/loadMoreCommitsRequested',
+);
+export const commitHistoryStarted = createAction<[wsId: string, request: CommitHistoryRequest]>(
+  'changes/commitHistoryStarted',
+);
+export const commitHistorySucceeded = createAction<
+  [wsId: string, request: CommitHistoryRequest, page: CommitHistoryPage]
+>('changes/commitHistorySucceeded');
+export const commitHistoryFailed = createAction<
+  [wsId: string, request: CommitHistoryRequest, error: string | null]
+>('changes/commitHistoryFailed');
 
 // Older commits
 export const appendOlderCommits = createAction<[wsId: string, commits: CommitInfo[]]>(
@@ -278,34 +317,142 @@ fileTrackingReducer.with(setChangesData, (state, action) => {
 fileTrackingReducer.with(setCommitsData, (state, action) => {
   const { wsId, commits, boundarySha } = action.payload;
   const ws = getWorkspaceState(state, wsId);
+  const commitEntities = createCollection('hash', commits);
   return setWorkspaceState(state, wsId, {
     ...ws,
-    commits,
+    commitEntities,
+    currentCommitIds: commitEntities.ids,
     boundarySha,
-    olderCommits: [], // Clear older commits when main commits change
+    olderCommitIds: [],
+    history: emptyCommitHistory,
   });
 });
 
-// Older commits
+// Legacy setters remain for source fixtures and source-only callers. Paged reads
+// use correlated outcomes below; remove these setters with those callers.
 fileTrackingReducer.with(appendOlderCommits, (state, { payload: [wsId, newCommits] }) => {
   const ws = getWorkspaceState(state, wsId);
-  // Deduplicate by hash
-  const existingHashes = new Set(ws.olderCommits.map((c) => c.hash));
-  const unique = newCommits.filter((c) => !existingHashes.has(c.hash));
-  if (unique.length === 0) return state;
+  const commitEntities = addItems(ws.commitEntities, newCommits);
+  if (commitEntities === ws.commitEntities) return state;
+  const current = new Set(ws.currentCommitIds);
   return setWorkspaceState(state, wsId, {
     ...ws,
-    olderCommits: [...ws.olderCommits, ...unique],
+    commitEntities,
+    olderCommitIds: commitEntities.ids.filter((hash) => !current.has(hash)),
   });
 });
 fileTrackingReducer.with(clearOlderCommits, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  if (ws.olderCommits.length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, olderCommits: [] });
+  if (ws.olderCommitIds.length === 0 && ws.history.older === emptyCommitHistoryList) return state;
+  const current = new Set(ws.currentCommitIds);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    commitEntities: createCollection(
+      'hash',
+      getItems(ws.commitEntities).filter((commit) => current.has(commit.hash)),
+    ),
+    olderCommitIds: [],
+    history: { ...ws.history, older: emptyCommitHistoryList },
+  });
 });
 fileTrackingReducer.with(setLoadingOlderCommits, (state, { payload: [wsId, loading] }) => {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { ...ws, loadingOlderCommits: loading });
+  if (ws.history.older.loading === loading) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    history: { ...ws.history, older: { ...ws.history.older, loading } },
+  });
+});
+
+fileTrackingReducer.with(commitHistoryStarted, (state, { payload: [wsId, request] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const { list, context, generation, requestId, reset } = request;
+  if (
+    !reset &&
+    (ws.history.context !== context ||
+      ws.history.generation !== generation ||
+      ws.history[list].loading)
+  )
+    return state;
+  const changedContext = ws.history.context !== context;
+  const history = reset
+    ? { context, generation, current: emptyCommitHistoryList, older: emptyCommitHistoryList }
+    : ws.history;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    ...(changedContext
+      ? {
+          commitEntities: createCollection<CommitInfo, 'hash'>('hash'),
+          currentCommitIds: [],
+          olderCommitIds: [],
+          boundarySha: null,
+        }
+      : {}),
+    history: {
+      ...history,
+      [list]: { ...history[list], loading: true, error: null, requestId },
+    },
+  });
+});
+fileTrackingReducer.with(commitHistorySucceeded, (state, { payload: [wsId, request, page] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (
+    !ws ||
+    ws.history.context !== request.context ||
+    ws.history.generation !== request.generation ||
+    ws.history[request.list].requestId !== request.requestId
+  )
+    return state;
+  const previous = ws.history[request.list];
+  if (previous.consumedTokens.includes(request.pageToken)) return state;
+  const existing = request.reset ? createCollection<CommitInfo, 'hash'>('hash') : ws.commitEntities;
+  const commitEntities = addItems(existing, page.commits);
+  const incoming = page.commits.map((commit) => commit.hash);
+  const currentCommitIds =
+    request.list === 'current'
+      ? [...new Set([...(request.reset ? [] : ws.currentCommitIds), ...incoming])]
+      : ws.currentCommitIds;
+  const current = new Set(currentCommitIds);
+  const olderCommitIds = request.reset
+    ? []
+    : [...new Set([...ws.olderCommitIds, ...(request.list === 'older' ? incoming : [])])].filter(
+        (hash) => !current.has(hash),
+      );
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    commitEntities,
+    currentCommitIds,
+    olderCommitIds,
+    boundarySha: page.boundarySha,
+    history: {
+      ...ws.history,
+      [request.list]: {
+        nextToken: page.nextToken,
+        loaded: true,
+        loading: false,
+        error: null,
+        requestId: null,
+        consumedTokens: [...previous.consumedTokens, request.pageToken],
+      },
+    },
+  });
+});
+fileTrackingReducer.with(commitHistoryFailed, (state, { payload: [wsId, request, error] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (
+    !ws ||
+    ws.history.context !== request.context ||
+    ws.history.generation !== request.generation ||
+    ws.history[request.list].requestId !== request.requestId
+  )
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    history: {
+      ...ws.history,
+      [request.list]: { ...ws.history[request.list], loading: false, requestId: null, error },
+    },
+  });
 });
 
 // Optimistic updates
