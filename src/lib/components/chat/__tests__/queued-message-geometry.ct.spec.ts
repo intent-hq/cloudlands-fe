@@ -218,20 +218,21 @@ test('preserves the edit, remove, and send-now callbacks', async ({ mount, page 
     props: { width: 360, zoom: 1, messageCount: 1 },
   });
   const row = component.getByTestId('queued-message-row');
+  const header = component.getByTestId('queued-messages-header');
   const actions = component.getByTestId('queued-message-actions').getByRole('button');
   const lastAction = component.getByTestId('queued-message-last-action');
 
   await expect(actions).toHaveCount(3);
   await row.hover();
 
-  await row.getByRole('button', { name: 'Send immediately' }).focus();
+  await header.getByRole('button', { name: 'Send immediately' }).focus();
   await page.keyboard.press('Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
   await row.getByTestId('queued-message-content').press('ControlOrMeta+Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
-  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await header.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(lastAction).toHaveText('remove:queued-geometry-0');
 
   await row.getByTestId('queued-message-content').dblclick();

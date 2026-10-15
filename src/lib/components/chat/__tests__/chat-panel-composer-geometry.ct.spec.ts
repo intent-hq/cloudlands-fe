@@ -329,17 +329,18 @@ test('shows and splits a queued append while preserving keyboard focus and defer
   };
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   const queue = component.getByTestId('queued-messages-container');
+  const header = queue.getByTestId('queued-messages-header');
   const editor = component.getByTestId('message-input').locator('.tiptap-editor');
   await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A');
   await editor.click();
   await editor.pressSequentially('Pending B');
   await editor.press('Enter');
   await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A\n\nPending B');
-  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Send immediately', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Send all ready messages now' })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Clear all queued messages' })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
+  await expect(
+    header.getByRole('button', { name: 'Send immediately', exact: true }),
+  ).toBeDisabled();
   await expect(editor).toBeFocused();
   await editor.pressSequentially('Keep newer draft');
   await expect
@@ -361,6 +362,8 @@ test('shows and splits a queued append while preserving keyboard focus and defer
     'Other participant',
     'Pending B',
   ]);
+  await expect(header.getByRole('button', { name: 'Send all ready messages now' })).toBeEnabled();
+  await expect(header.getByRole('button', { name: 'Clear all queued messages' })).toBeEnabled();
   await expect(
     queue
       .getByTestId('queued-message-row')

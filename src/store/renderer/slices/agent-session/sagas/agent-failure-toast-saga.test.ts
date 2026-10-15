@@ -91,6 +91,7 @@ function state(overrides: Record<string, unknown> = {}) {
     providerSettings: { enabledProviders: {}, activeProviderId: '' },
     model: { providerModels: {} },
     agentAvailability: { providerLoadingMap: {} },
+    tabState: { currentTabId: null },
     ...overrides,
   };
 }
@@ -105,6 +106,65 @@ describe('agentFailureToastSaga', () => {
   afterEach(() => {
     clearAgentFailureRegistry();
     vi.clearAllMocks();
+  });
+
+  it('suppresses current-workspace failures while preserving the registry and auth refresh', async () => {
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { dispatch, getState: () => state({ tabState: { currentTabId: 'ws-1' } }) },
+      agentFailureToastSaga,
+    );
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      error: 'Authentication required',
+    });
+    recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-2', error: 'spawn failed' });
+    await settle();
+
+    expect(lastToast('agent-failure:agent-1')).toBeUndefined();
+    expect(lastToast('agent-failure:agent-2')).toBeDefined();
+    expect(getAgentFailureEntry('agent-1')).toBeDefined();
+    expect(dispatch).toHaveBeenCalledWith(checkSingleProviderRequested('claude-code'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('suppresses a failure after switching to its workspace during toast loading', async () => {
+    let currentTabId = 'ws-2';
+    const task = runSaga(
+      { dispatch: vi.fn(), getState: () => state({ tabState: { currentTabId } }) },
+      agentFailureToastSaga,
+    );
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'spawn failed' });
+    currentTabId = 'ws-1';
+    await settle();
+
+    expect(mocks.agentFailure).not.toHaveBeenCalled();
+    expect(getAgentFailureEntry('agent-1')).toBeDefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('dismisses an existing toast when a failure updates in the current workspace', async () => {
+    let currentTabId = 'ws-2';
+    const task = runSaga(
+      { dispatch: vi.fn(), getState: () => state({ tabState: { currentTabId } }) },
+      agentFailureToastSaga,
+    );
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'first failure', at: 1 });
+    await settle();
+    expect(lastToast('agent-failure:agent-1')).toBeDefined();
+    mocks.agentFailure.mockClear();
+    currentTabId = 'ws-1';
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'new failure', at: 2 });
+    await settle();
+
+    expect(mocks.agentFailure).not.toHaveBeenCalled();
+    expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
+    expect(getAgentFailureEntry('agent-1')?.error).toBe('new failure');
+    task.cancel();
+    await task.toPromise();
   });
 
   it('renders one stable per-agent toast with per-agent props — no grouping', async () => {

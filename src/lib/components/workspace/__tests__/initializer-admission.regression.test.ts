@@ -457,6 +457,8 @@ it('drops an original submission held by setup-probe settlement after readmissio
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it('does not create after validation completes on an unmounted initializer', async () => {
+  // Keep the branch picker's independent autosave out of this submission check.
+  mocks.getBranches.mockReturnValue(new Promise(() => {}));
   let release!: (v: unknown) => void;
   mocks.validate.mockReturnValue(
     new Promise((r) => {
