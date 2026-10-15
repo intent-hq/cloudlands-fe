@@ -10,7 +10,7 @@
  * This utility extracts these into structured context items and clean user message.
  */
 
-import type { ContextItem } from '$lib/components/chat/input/context-api';
+import type { ContextItem } from '$lib/components/chat/input/context-item';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface ParsedMessage {
@@ -119,25 +119,40 @@ const contextPatterns: ContextPattern[] = [
  */
 export function parseStoredMessage(text: string): ParsedMessage {
   const contextItems: ContextItem[] = [];
-  let remaining = text;
-
-  // Keep parsing until no more context patterns match
-  let foundMatch = true;
-  while (foundMatch) {
-    foundMatch = false;
-    for (const pattern of contextPatterns) {
-      const match = remaining.match(pattern.regex);
-      if (match) {
-        foundMatch = true;
-        contextItems.push(pattern.getContextItem(match));
-        remaining = remaining.replace(pattern.regex, '');
-        break;
-      }
-    }
-  }
+  const remaining = consumeContextPrefixes(text, (pattern, match) => {
+    contextItems.push(pattern.getContextItem(match));
+  });
 
   return {
     contextItems,
     userMessage: remaining.trim(),
   };
+}
+
+/** Canonical stored context-prefix parsing without creating editable items or
+ * trimming authored whitespace. Clipboard text excludes context payloads; the
+ * existing editable-message API keeps its established trimming/defaults. */
+export function getStoredMessageText(text: string): string {
+  return consumeContextPrefixes(text, undefined, true);
+}
+
+function consumeContextPrefixes(
+  text: string,
+  onContext?: (pattern: ContextPattern, match: RegExpMatchArray) => void,
+  preserveBodyWhitespace = false,
+): string {
+  let remaining = text;
+  let bodyNewlines = '';
+  while (true) {
+    const pattern = contextPatterns.find((candidate) => candidate.regex.test(remaining));
+    if (!pattern) return bodyNewlines + remaining;
+    const match = remaining.match(pattern.regex)!;
+    onContext?.(pattern, match);
+    // Canonical send preparation separates context from authored text with two
+    // newlines. The edit parser historically consumes all of them; exact-text
+    // presentation retains any additional authored blank lines after the last
+    // prefix. Intermediate prefixes still use the same canonical patterns.
+    bodyNewlines = preserveBodyWhitespace ? (match[0].match(/\n*$/)?.[0] ?? '').slice(2) : '';
+    remaining = remaining.slice(match[0].length);
+  }
 }

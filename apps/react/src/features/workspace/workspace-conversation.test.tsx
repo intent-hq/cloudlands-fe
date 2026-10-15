@@ -573,3 +573,210 @@ it.each([
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  'confirmed',
+  'denied',
+  'unavailable',
+  'principal-before',
+  'root-before',
+  'removed-before',
+  'route-before',
+  'principal-pending',
+  'unmount-pending',
+  'replacement-pending',
+  'newer-before',
+  'newer-pending',
+  'partial-before',
+])('copies current complete text with exact acknowledgement: %s', async (mode) => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  access.authority = 'copy-authority';
+  access.root = '/copy-root';
+  const dispose = store.init();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  let mounted = true;
+  const workspaceId = WorkspaceId('copy-workspace'),
+    agentId = AgentId('owning-conversation');
+  route.location.search = { agent: agentId, message: 'unrelated-route-target' };
+  const message: AgentMessage = {
+    id: 'persisted-message',
+    agentId: AgentId('sender-is-not-owner'),
+    seq: 7,
+    role: 'user',
+    timestamp: '2026-10-15T00:00:00Z',
+    contentBlocks: [{ type: 'text', text: 'Persisted content' }],
+  };
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const pending = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  const writeText = vi.fn(() => pending);
+  const preload = Object.getOwnPropertyDescriptor(window, 'electronAPI');
+  Object.defineProperty(window, 'electronAPI', { configurable: true, value: undefined });
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: mode === 'unavailable' ? undefined : { writeText },
+  });
+  try {
+    store.dispatch(
+      bulkUpsertSessions([
+        {
+          id: agentId,
+          workspaceId,
+          backendSessionId: null,
+          name: 'Copy',
+          status: AgentStatus.Active,
+          messages: [
+            message,
+            { ...message, id: 'optimistic', seq: undefined },
+            { ...message, id: 'provisional', provisional: true },
+            { ...message, id: 'system', role: 'system' },
+          ],
+          createdAt: message.timestamp,
+          updatedAt: message.timestamp,
+        },
+      ]),
+    );
+    store.dispatch(chatTrackedWorkspaceSet(agentId, workspaceId));
+    store.dispatch(chatTranscriptSnapshotApplied(agentId, { truncated: false, totalMessages: 4 }));
+    store.dispatch(chatLiveStreamPhaseChanged(agentId, 'live'));
+    store.dispatch(transcriptHydrationSettled(agentId));
+    await act(async () =>
+      root.render(
+        <WorkspaceConversation
+          workspaceId={workspaceId}
+          agentId={agentId}
+          messageId="unrelated-route-target"
+        />,
+      ),
+    );
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('button')].filter((b) =>
+      b.textContent?.includes('Copy text'),
+    );
+    expect(buttons).toHaveLength(1);
+    const button = buttons[0];
+    if (mode === 'principal-before') access.authority = 'other';
+    if (mode === 'root-before') access.root = '/other';
+    if (mode === 'route-before') route.location.search = {};
+    await act(async () => {
+      if (mode === 'newer-before')
+        store.dispatch(
+          replaceMessages(agentId, [
+            {
+              ...message,
+              contentBlocks: [
+                { type: 'text', text: 'New canonical text 👩‍💻\n\n```ts\nnewText()\n```\n' },
+              ],
+            },
+          ]),
+        );
+      if (mode === 'partial-before')
+        store.dispatch(replaceMessages(agentId, [{ ...message, isStreaming: true }]));
+      if (mode === 'removed-before') store.dispatch(replaceMessages(agentId, []));
+      button.click();
+      button.click();
+    });
+    if (mode.endsWith('-before') && mode !== 'newer-before') {
+      expect(writeText).not.toHaveBeenCalled();
+      return;
+    }
+    if (mode === 'unavailable') {
+      expect(host.textContent).toContain('Could not copy.');
+      return;
+    }
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(
+      mode === 'newer-before'
+        ? 'New canonical text 👩‍💻\n\n```ts\nnewText()\n```\n'
+        : 'Persisted content',
+    );
+    expect(host.textContent).not.toContain('Message text copied');
+    if (mode === 'newer-pending')
+      await act(async () => {
+        store.dispatch(
+          replaceMessages(agentId, [
+            { ...message, contentBlocks: [{ type: 'text', text: 'Replacement canonical body' }] },
+          ]),
+        );
+      });
+    if (mode === 'principal-pending') access.authority = 'other';
+    if (mode === 'replacement-pending') {
+      access.authority = 'new-authority';
+      await act(async () =>
+        root.render(<WorkspaceConversation workspaceId={workspaceId} agentId={agentId} />),
+      );
+    }
+    if (mode === 'unmount-pending') {
+      await act(async () => root.unmount());
+      mounted = false;
+    }
+    await act(async () => {
+      if (mode === 'denied') reject(new Error('NotAllowedError'));
+      else resolve();
+      await pending.catch(() => {});
+    });
+    if (mode === 'denied') {
+      expect(host.textContent).toContain('Could not copy.');
+      writeText.mockResolvedValueOnce();
+      await act(async () => button.click());
+      expect(writeText).toHaveBeenCalledTimes(2);
+      expect(host.textContent).toContain('Message text copied');
+    } else if (mode === 'confirmed' || mode === 'newer-before')
+      expect(host.textContent).toContain('Message text copied');
+    else expect(host.textContent).not.toContain('Message text copied');
+  } finally {
+    if (mounted) await act(async () => root.unmount());
+    host.remove();
+    dispose();
+    if (preload) Object.defineProperty(window, 'electronAPI', preload);
+    else Reflect.deleteProperty(window, 'electronAPI');
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+    access.authority = 'test-admission';
+    access.root = '/original';
+    vi.unstubAllGlobals();
+  }
+});
+
+it('renders the same legacy and context-stripped user bytes offered by Copy text', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { WorkspaceConversationMessage } = await import('./workspace-conversation-message');
+  const { getCopyableMessageText } = await import('./message-copy-text');
+  const body = '\n\n  Visible legacy body Ω\n';
+  const message: AgentMessage = {
+    id: 'legacy-persisted',
+    role: 'user',
+    seq: 3,
+    timestamp: '2026-10-15',
+    contentBlocks: [{ type: 'text', content: '[Currently viewing note: Plan]\n\n' + body }],
+  };
+  const presented: ContentBlock[] = [];
+  renderToStaticMarkup(
+    <WorkspaceConversationMessage
+      message={message}
+      workspaceId="copy-workspace"
+      navigation={{
+        workspaceContext: { workspaceId: WorkspaceId('copy-workspace') },
+        onOpenLink: vi.fn(() => false),
+        onOpenFile: vi.fn(),
+        onOpenNote: vi.fn(),
+      }}
+      onOpenAgent={vi.fn()}
+      renderContent={(blocks) => {
+        presented.push(...blocks);
+        return null;
+      }}
+    />,
+  );
+  expect(
+    presented
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text ?? block.content ?? '')
+      .join(''),
+  ).toBe(body);
+  expect(getCopyableMessageText(message)).toBe(body);
+});

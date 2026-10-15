@@ -7615,5 +7615,8 @@
   "react_workspace_messageLink_copy_label": "複製訊息連結",
   "react_workspace_messageLink_copied_label": "已複製訊息連結",
   "react_workspace_messageLink_failed_description": "無法複製。請再次點選複製訊息連結。",
-  "react_workspace_messageLink_pending_label": "正在複製訊息連結…"
+  "react_workspace_messageLink_pending_label": "正在複製訊息連結…",
+  "react_workspace_messageText_copy_label": "複製文字",
+  "react_workspace_messageText_copied_label": "已複製訊息文字",
+  "react_workspace_messageText_unavailable_description": "無法取得完整訊息文字。不包含工具輸出和附件。"
 }

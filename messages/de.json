@@ -7615,5 +7615,8 @@
   "react_workspace_messageLink_copy_label": "Nachrichtenlink kopieren",
   "react_workspace_messageLink_copied_label": "Nachrichtenlink kopiert",
   "react_workspace_messageLink_failed_description": "Kopieren fehlgeschlagen. Versuche es erneut mit „Nachrichtenlink kopieren“.",
-  "react_workspace_messageLink_pending_label": "Nachrichtenlink wird kopiert…"
+  "react_workspace_messageLink_pending_label": "Nachrichtenlink wird kopiert…",
+  "react_workspace_messageText_copy_label": "Text kopieren",
+  "react_workspace_messageText_copied_label": "Nachrichtentext kopiert",
+  "react_workspace_messageText_unavailable_description": "Der vollständige Nachrichtentext ist nicht verfügbar. Werkzeugausgaben und Anhänge sind nicht enthalten."
 }

@@ -7615,5 +7615,8 @@
   "react_workspace_messageLink_copy_label": "メッセージのリンクをコピー",
   "react_workspace_messageLink_copied_label": "メッセージのリンクをコピーしました",
   "react_workspace_messageLink_failed_description": "コピーできませんでした。もう一度リンクをコピーしてください。",
-  "react_workspace_messageLink_pending_label": "メッセージのリンクをコピー中…"
+  "react_workspace_messageLink_pending_label": "メッセージのリンクをコピー中…",
+  "react_workspace_messageText_copy_label": "テキストをコピー",
+  "react_workspace_messageText_copied_label": "メッセージのテキストをコピーしました",
+  "react_workspace_messageText_unavailable_description": "メッセージ全文を利用できません。ツールの出力と添付ファイルは含まれません。"
 }

@@ -7615,5 +7615,8 @@
   "react_workspace_messageLink_copy_label": "Copy message link",
   "react_workspace_messageLink_copied_label": "Message link copied",
   "react_workspace_messageLink_failed_description": "Could not copy. Try Copy message link again.",
-  "react_workspace_messageLink_pending_label": "Copying message link…"
+  "react_workspace_messageLink_pending_label": "Copying message link…",
+  "react_workspace_messageText_copy_label": "Copy text",
+  "react_workspace_messageText_copied_label": "Message text copied",
+  "react_workspace_messageText_unavailable_description": "Complete message text is unavailable. Tool output and attachments are not included."
 }

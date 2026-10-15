@@ -433,6 +433,14 @@ guide is not promoted or published by this checkpoint.
 
 ## Links inside conversations (internal preview)
 
+Use **Copy text** to copy the available complete text/Markdown of a saved ordinary
+user or assistant message, preserving its code/link syntax and line breaks. Tool
+output, thinking, stored context payloads, and binary attachments are excluded.
+Copy text requires a saved, non-provisional row. Streaming, interrupted, empty, or
+unsupported text shows an unavailable notice; copying does not fetch additional
+content. Success appears only after clipboard acknowledgement;
+use the same button to retry a denied or unavailable clipboard.
+
 Use **Copy message link** on a saved ordinary user or assistant message. The control
 confirms when the clipboard accepts the link; if copying fails, use it again to retry.
 Unsaved and provisional rows do not offer links. A link identifies the owning

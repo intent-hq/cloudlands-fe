@@ -12,10 +12,11 @@ import {
   degradeLegacyFileBlocks,
   getPresentedUserMessageText,
 } from '$lib/utils/user-message-presentation';
+import { getConversationUserText } from './message-copy-text';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { WorkspaceMessageLink } from './workspace-message-link';
+import { WorkspaceMessageActions } from './workspace-message-link';
 
 type Navigation = Pick<
   MarkdownViewerProps,
@@ -27,7 +28,8 @@ export function WorkspaceConversationMessage({
   message,
   workspaceId,
   ownerAgentId,
-  canCopyLink,
+  ownerPrincipalId,
+  readCopyMessage,
   navigation,
   onOpenAgent,
   renderContent,
@@ -35,7 +37,8 @@ export function WorkspaceConversationMessage({
   message: AgentMessage;
   workspaceId: string;
   ownerAgentId?: string;
-  canCopyLink?: () => boolean;
+  ownerPrincipalId?: string;
+  readCopyMessage?: () => { message: AgentMessage; ownerPrincipalId?: string } | null;
   navigation: Navigation;
   onOpenAgent: (workspaceId: string, agentId: string) => void;
   renderContent: (blocks: ContentBlock[]) => ReactNode;
@@ -88,7 +91,7 @@ export function WorkspaceConversationMessage({
             >
               <MarkdownViewer
                 {...navigation}
-                content={getPresentedUserMessageText(message)}
+                content={getPresentedUserMessageText(message, ownerPrincipalId)}
                 renderRichFencesAsCode
               />
               {renderContent(
@@ -140,24 +143,36 @@ export function WorkspaceConversationMessage({
                 ? m.chat_agentThread_assistant_label()
                 : message.role}
           </p>
-          {renderContent(message.contentBlocks ?? [])}
+          {renderContent(
+            message.role === 'user'
+              ? [
+                  {
+                    type: 'text',
+                    text: getConversationUserText(message, ownerPrincipalId),
+                  },
+                  ...degradeLegacyFileBlocks(message.contentBlocks).filter(
+                    (block) => block.type !== 'text',
+                  ),
+                ]
+              : (message.contentBlocks ?? []),
+          )}
         </>
       )}
       {!eventWake &&
         !candidate &&
         !wake &&
         ownerAgentId &&
-        canCopyLink &&
+        readCopyMessage &&
         (message.role === 'user' || message.role === 'assistant') &&
         Number.isSafeInteger(message.seq) &&
         message.seq! >= 0 &&
         !message.provisional && (
-          <WorkspaceMessageLink
+          <WorkspaceMessageActions
             key={`${workspaceId}:${ownerAgentId}:${message.id}`}
             workspaceId={workspaceId}
             agentId={ownerAgentId}
-            messageId={message.id}
-            isCurrent={canCopyLink}
+            message={message}
+            readCurrent={readCopyMessage}
           />
         )}
       <ConversationTurnGap

@@ -7615,5 +7615,8 @@
   "react_workspace_messageLink_copy_label": "메시지 링크 복사",
   "react_workspace_messageLink_copied_label": "메시지 링크 복사됨",
   "react_workspace_messageLink_failed_description": "복사하지 못했습니다. 메시지 링크 복사를 다시 눌러 주세요.",
-  "react_workspace_messageLink_pending_label": "메시지 링크 복사 중…"
+  "react_workspace_messageLink_pending_label": "메시지 링크 복사 중…",
+  "react_workspace_messageText_copy_label": "텍스트 복사",
+  "react_workspace_messageText_copied_label": "메시지 텍스트를 복사했습니다",
+  "react_workspace_messageText_unavailable_description": "전체 메시지 텍스트를 사용할 수 없습니다. 도구 출력과 첨부 파일은 포함되지 않습니다."
 }

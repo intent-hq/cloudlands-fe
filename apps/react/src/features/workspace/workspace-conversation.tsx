@@ -208,7 +208,8 @@ export function WorkspaceConversation({
   const dispatch = store.dispatch;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const session = selectAgentSession(agentId).value;
-  const rootPath = selectWorkspaceById(workspaceId).value?.worktreePath;
+  const workspace = selectWorkspaceById(workspaceId).value;
+  const rootPath = workspace?.worktreePath;
   const linkView = useMemo(
     () => ({ workspaceId, agentId, authority, rootPath }),
     [workspaceId, agentId, authority, rootPath],
@@ -640,7 +641,8 @@ export function WorkspaceConversation({
                         message={message}
                         workspaceId={workspaceId}
                         ownerAgentId={agentId}
-                        canCopyLink={() => {
+                        ownerPrincipalId={workspace?.ownerPrincipalId}
+                        readCopyMessage={() => {
                           if (
                             liveLinkView.current !== linkView ||
                             router.state.location.search.agent !== agentId ||
@@ -650,7 +652,7 @@ export function WorkspaceConversation({
                             selectWorkspaceById.select(store.state, workspaceId)?.worktreePath !==
                               rootPath
                           )
-                            return false;
+                            return null;
                           const owner = selectAgentSession.select(store.state, agentId);
                           const currentChat = selectChatAgentState.select(store.state, agentId);
                           if (
@@ -659,21 +661,29 @@ export function WorkspaceConversation({
                             currentChat.trackedWorkspaceId !== workspaceId ||
                             currentChat.transcriptHydration !== 'settled'
                           )
-                            return false;
+                            return null;
                           const row =
                             owner.messages.find((row) => row.id === message.id) ??
                             selectAgentHistoryMessages
                               .select(store.state, agentId)
                               .find((row) => row.id === message.id);
-                          return (
+                          const admitted =
                             !!row &&
                             row.role === message.role &&
                             row.metadata === message.metadata &&
                             row.seq === message.seq &&
                             Number.isSafeInteger(row.seq) &&
                             row.seq! >= 0 &&
-                            !row.provisional
-                          );
+                            !row.provisional;
+                          return admitted
+                            ? {
+                                message: row!,
+                                ownerPrincipalId: selectWorkspaceById.select(
+                                  store.state,
+                                  workspaceId,
+                                )?.ownerPrincipalId,
+                              }
+                            : null;
                         }}
                         navigation={navigation}
                         onOpenAgent={(id, agent) => open(id, { agent })}
