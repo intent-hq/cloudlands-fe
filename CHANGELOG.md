@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.1...v2.219.2) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.49 ([#3423](https://github.com/intent-hq/cloudlands-fe/issues/3423)) ([406fcb7](https://github.com/intent-hq/cloudlands-fe/commit/406fcb71d82435329a8db3fbd4095c4c56ea30e3))
+* prioritize queued PR status on Home ([#3398](https://github.com/intent-hq/cloudlands-fe/issues/3398)) ([910e3ab](https://github.com/intent-hq/cloudlands-fe/commit/910e3ab5a097dccbfcda21a4b5f4ada0323d4aee))
+* retire obsolete merge-queue checks safely ([#3404](https://github.com/intent-hq/cloudlands-fe/issues/3404)) ([c7fc085](https://github.com/intent-hq/cloudlands-fe/commit/c7fc08503e2dbd36bffc961cd46b8dcf614e8d90))
+
 ## [2.219.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.0...v2.219.1) (2026-10-15)
 
 
