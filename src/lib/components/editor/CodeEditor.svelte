@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import {
+    MAX_CODE_EDITOR_CONTENT_SIZE,
+    getCodeEditorLanguage,
+  } from '$lib/utils/code-editor-policy';
   import { writable } from 'svelte/store';
   import { monaco, initializeMonaco, ensureMonacoInitialized } from '$lib/utils/monaco-workers';
   import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
@@ -29,7 +33,7 @@
   const logger = createLogger('CodeEditor');
 
   // Content size limit to prevent Monaco from freezing on large files
-  const MAX_CONTENT_SIZE_BYTES = 500 * 1024; // 500KB
+  const MAX_CONTENT_SIZE_BYTES = MAX_CODE_EDITOR_CONTENT_SIZE;
 
   interface Props {
     value?: string;
@@ -322,7 +326,7 @@
 
           defineMonacoThemes();
 
-          const languageId = getLanguageId(language);
+          const languageId = getCodeEditorLanguage(language);
           const selectedTheme = getActiveMonacoThemeName($isDarkTheme);
 
           // Final check before creating editor
@@ -531,7 +535,7 @@
     // Explicitly access language to create dependency
     const lang = language;
     if (editor && lang) {
-      const languageId = getLanguageId(lang);
+      const languageId = getCodeEditorLanguage(lang);
       const model = editor.getModel();
       if (model) {
         monaco.editor.setModelLanguage(model, languageId);
@@ -562,49 +566,6 @@
       monaco.editor.setTheme(getActiveMonacoThemeName(dark));
     }
   });
-
-  function getLanguageId(lang: string): string {
-    const langMap: Record<string, string> = {
-      js: 'javascript',
-      ts: 'typescript',
-      jsx: 'javascript',
-      tsx: 'typescript',
-      py: 'python',
-      rs: 'rust',
-      html: 'html',
-      css: 'css',
-      scss: 'scss',
-      less: 'less',
-      json: 'json',
-      md: 'markdown',
-      yaml: 'yaml',
-      yml: 'yaml',
-      xml: 'xml',
-      cpp: 'cpp',
-      c: 'c',
-      java: 'java',
-      sh: 'shell',
-      bash: 'shell',
-      zsh: 'shell',
-      sql: 'sql',
-      svelte: 'svelte',
-      vue: 'html', // Vue is similar to HTML
-      go: 'go',
-      rb: 'ruby',
-      php: 'php',
-      swift: 'swift',
-      kt: 'kotlin',
-      scala: 'scala',
-      r: 'r',
-      lua: 'lua',
-      dockerfile: 'dockerfile',
-      toml: 'ini',
-      ini: 'ini',
-      graphql: 'graphql',
-      gql: 'graphql',
-    };
-    return langMap[lang] || lang;
-  }
 
   onMount(async () => {
     if (!container) return;
@@ -644,7 +605,7 @@
       // Define custom themes before creating the editor
       defineMonacoThemes();
 
-      const languageId = getLanguageId(language);
+      const languageId = getCodeEditorLanguage(language);
 
       const selectedTheme = getActiveMonacoThemeName($isDarkTheme);
 
@@ -724,7 +685,7 @@
         await ensureMonacoInitialized();
 
         const fallbackValue = toEditorContent(value);
-        const fallbackModel = createEditorModel(fallbackValue, getLanguageId(language));
+        const fallbackModel = createEditorModel(fallbackValue, getCodeEditorLanguage(language));
         editor = monaco.editor.create(container, {
           model: fallbackModel,
           theme: getActiveMonacoThemeName($isDarkTheme),

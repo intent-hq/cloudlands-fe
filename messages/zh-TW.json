@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "檢查最新提交",
   "workspace_localCommit_confirmed_label": "提交已確認",
   "workspace_localCommit_unknown_description": "提交結果未知。繼續操作前，請檢查最新提交和暫存的變更。本工作階段不會重新傳送要求。重新載入會清除此警告；再次提交前請檢查歷程記錄。",
-  "workspace_localCommit_changed_error": "暫存的路徑已變更。提交前請檢查變更。"
+  "workspace_localCommit_changed_error": "暫存的路徑已變更。提交前請檢查變更。",
+  "workspace_fileEdit_editor_ariaLabel": "工作區文字編輯器",
+  "workspace_fileEdit_editorFailed_error": "無法載入編輯器。請重新開啟檔案。",
+  "workspace_fileEdit_readOnly_description": "可編輯最大500 KiB且換行符一致的完整文字檔案。",
+  "workspace_fileEdit_save_label": "儲存",
+  "workspace_fileEdit_saving_label": "正在儲存…",
+  "workspace_fileEdit_unsaved_label": "未儲存的變更",
+  "workspace_fileEdit_saved_label": "已儲存",
+  "workspace_fileEdit_explicit_description": "使用按鈕或Ctrl/Cmd+S儲存。離開時未儲存的編輯將遺失。儲存會取代目前檔案，不會合併外部變更。",
+  "workspace_fileEdit_uncertain_error": "儲存結果未知。本工作階段已禁止儲存。請先檢查檔案再決定下一步。重新載入不會重複儲存，並會清除此工作階段警告。"
 }

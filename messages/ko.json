@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "최신 커밋 확인",
   "workspace_localCommit_confirmed_label": "커밋 확인됨",
   "workspace_localCommit_unknown_description": "커밋 결과를 알 수 없습니다. 계속하기 전에 최신 커밋과 스테이징된 변경 사항을 확인하세요. 이 세션에서는 재전송하지 않습니다. 새로고침하면 이 경고가 사라지므로 다음 커밋 전에 기록을 확인하세요.",
-  "workspace_localCommit_changed_error": "스테이징된 경로가 변경되었습니다. 커밋 전에 변경 사항을 검토하세요."
+  "workspace_localCommit_changed_error": "스테이징된 경로가 변경되었습니다. 커밋 전에 변경 사항을 검토하세요.",
+  "workspace_fileEdit_editor_ariaLabel": "작업 공간 텍스트 편집기",
+  "workspace_fileEdit_editorFailed_error": "편집기를 불러오지 못했습니다. 파일을 다시 여세요.",
+  "workspace_fileEdit_readOnly_description": "줄바꿈이 일관된 500 KiB 이하의 완전한 텍스트 파일을 편집할 수 있습니다.",
+  "workspace_fileEdit_save_label": "저장",
+  "workspace_fileEdit_saving_label": "저장 중…",
+  "workspace_fileEdit_unsaved_label": "저장하지 않은 변경 사항",
+  "workspace_fileEdit_saved_label": "저장됨",
+  "workspace_fileEdit_explicit_description": "버튼이나 Ctrl/Cmd+S로 저장하세요. 나가면 저장하지 않은 편집은 사라집니다. 저장은 현재 파일을 대체하며 외부 변경 사항을 병합하지 않습니다.",
+  "workspace_fileEdit_uncertain_error": "저장 결과를 알 수 없습니다. 이 세션에서 저장이 차단되었습니다. 파일을 확인한 후 결정하세요. 새로고침은 저장을 반복하지 않고 이 세션 경고를 지웁니다."
 }

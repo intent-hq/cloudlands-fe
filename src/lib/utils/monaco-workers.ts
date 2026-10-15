@@ -78,7 +78,9 @@ export { monaco };
  * }
  * ```
  */
-export async function configureMonacoWorkers(): Promise<void> {
+export async function configureMonacoWorkers(
+  options: { filterKnownDevelopmentErrors?: boolean } = {},
+): Promise<void> {
   if (typeof window === 'undefined') {
     return;
   }
@@ -147,7 +149,7 @@ export async function configureMonacoWorkers(): Promise<void> {
     logger.info('[Monaco] Workers configured successfully (lazy loaded)');
 
     // Set up console.error filter for Monaco internal errors (only in development)
-    setupMonacoErrorFilter();
+    if (options.filterKnownDevelopmentErrors !== false) setupMonacoErrorFilter();
   } catch (error) {
     logger.error('[Monaco] Failed to configure Monaco workers', { error });
     throw error;

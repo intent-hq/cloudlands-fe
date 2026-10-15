@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "最新のコミットを確認",
   "workspace_localCommit_confirmed_label": "コミットを確認しました",
   "workspace_localCommit_unknown_description": "コミットの結果は不明です。続行する前に最新のコミットとステージ済み変更を確認してください。このセッションでは再送信しません。再読み込みするとこの警告は消えます。次のコミット前に履歴を確認してください。",
-  "workspace_localCommit_changed_error": "ステージ済みのパスが変更されました。コミット前に変更を確認してください。"
+  "workspace_localCommit_changed_error": "ステージ済みのパスが変更されました。コミット前に変更を確認してください。",
+  "workspace_fileEdit_editor_ariaLabel": "ワークスペースのテキストエディター",
+  "workspace_fileEdit_editorFailed_error": "エディターを読み込めませんでした。ファイルを開き直してください。",
+  "workspace_fileEdit_readOnly_description": "改行が統一された500 KiB以下の完全なテキストファイルを編集できます。",
+  "workspace_fileEdit_save_label": "保存",
+  "workspace_fileEdit_saving_label": "保存中…",
+  "workspace_fileEdit_unsaved_label": "未保存の変更",
+  "workspace_fileEdit_saved_label": "保存済み",
+  "workspace_fileEdit_explicit_description": "ボタンまたはCtrl/Cmd+Sで保存します。移動すると未保存の編集は失われます。保存は現在のファイルを置き換え、外部の変更は統合しません。",
+  "workspace_fileEdit_uncertain_error": "保存結果が不明です。このセッションでは保存をブロックしています。ファイルを確認してから判断してください。再読み込みは保存を再実行せず、このセッションの警告を消去します。"
 }

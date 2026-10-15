@@ -3,6 +3,7 @@ import { createAction, createAsyncAction } from '@themislib/themis/utils/store/c
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
+  filterCollection,
   getItem,
   removeItem,
   upsertItem,
@@ -17,6 +18,9 @@ import type {
   FileContent,
   FileContentUpdateOptions,
   FileDeleteOptions,
+  FileSaveOptions,
+  FileSaveOperation,
+  FileSaveStatus,
   FilesState,
   FilesWorkspaceState,
 } from './files-types';
@@ -125,16 +129,32 @@ export const restoreFileContentRequested = createAsyncAction<
 >('files/restoreFileContentRequested', 'files/restoreFileContent');
 
 export const saveFileContentRequested = createAction<
-  [wsId: string, path: string, absolutePath: string, content: EditableText]
+  [
+    wsId: string,
+    path: string,
+    absolutePath: string,
+    content: EditableText,
+    options?: FileSaveOptions,
+  ]
 >('files/saveFileContentRequested');
 
 export const saveFileContentSucceeded = createAction<
-  [wsId: string, path: string, content: EditableText | RestorableSnapshot]
+  [wsId: string, path: string, content: EditableText | RestorableSnapshot, requestId?: string]
 >('files/saveFileContentSucceeded');
 
-export const saveFileContentFailed = createAction<[wsId: string, path: string, error: string]>(
-  'files/saveFileContentFailed',
+export const saveFileContentFailed = createAction<
+  [wsId: string, path: string, error: string, requestId?: string]
+>('files/saveFileContentFailed');
+
+export const fileSaveOperationQueued = createAction<[operation: FileSaveOperation]>(
+  'files/fileSaveOperationQueued',
 );
+export const fileSaveOperationStarted = createAction<[requestId: string]>(
+  'files/fileSaveOperationStarted',
+);
+export const fileSaveOperationSettled = createAction<
+  [requestId: string, status: Exclude<FileSaveStatus, 'queued' | 'running'>, error?: string]
+>('files/fileSaveOperationSettled');
 
 export const filesReducer = createReducer<FilesState>(initialState);
 filesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
@@ -197,49 +217,127 @@ filesReducer.with(updateFileContent, (state, { payload: [wsId, path, content] })
     return { ...entry, localContent: content.content };
   }),
 );
-filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, absolutePath] }) =>
-  upsertFileEntry(state, wsId, path, (entry) => ({
-    ...entry,
-    absolutePath,
-    saving: true,
-    error: null,
-  })),
+filesReducer.with(
+  saveFileContentRequested,
+  (state, { payload: [wsId, path, absolutePath, , options] }) => {
+    // Explicit saves become visible only after the canonical worker admits them.
+    if (options) return state;
+    return upsertFileEntry(state, wsId, path, (entry) => ({
+      ...entry,
+      absolutePath,
+      saving: true,
+      error: null,
+    }));
+  },
 );
-filesReducer.with(saveFileContentSucceeded, (state, { payload: [wsId, path, content] }) =>
-  upsertFileEntry(state, wsId, path, (entry) => {
-    // A write already in flight cannot replace a newer binary read in the cache.
-    if (entry.isBinary || entry.kind === 'read-only-text' || entry.truncated)
-      return { ...entry, saving: false };
-    if (content.kind === 'restorable-snapshot' && content.isBinary) {
+filesReducer.with(
+  saveFileContentSucceeded,
+  (state, { payload: [wsId, path, content, requestId] }) =>
+    upsertFileEntry(state, wsId, path, (entry) => {
+      if (
+        requestId &&
+        (entry.saveRequestId !== requestId ||
+          entry.kind !== 'editable-text' ||
+          entry.loading ||
+          entry.error)
+      )
+        return entry;
+      // A write already in flight cannot replace a newer binary read in the cache.
+      if (entry.isBinary || entry.kind === 'read-only-text' || entry.truncated)
+        return { ...entry, saving: false };
+      if (content.kind === 'restorable-snapshot' && content.isBinary) {
+        return {
+          ...entry,
+          ...fileContentData(content),
+          lastUpdated: bumpLastUpdated(entry),
+          saving: false,
+          error: null,
+          truncated: false,
+        };
+      }
+      const hasPendingEdits =
+        entry.localContent !== null && entry.localContent !== entry.originalContent;
+      const nextLocal = requestId || hasPendingEdits ? entry.localContent : content.content;
       return {
         ...entry,
-        ...fileContentData(content),
+        kind: 'editable-text',
+        isBinary: false,
+        originalContent: content.content,
+        localContent: nextLocal ?? content.content,
         lastUpdated: bumpLastUpdated(entry),
         saving: false,
         error: null,
         truncated: false,
       };
-    }
-    const hasPendingEdits =
-      entry.localContent !== null && entry.localContent !== entry.originalContent;
-    const nextLocal = hasPendingEdits ? entry.localContent : content.content;
-    return {
-      ...entry,
-      kind: 'editable-text',
-      isBinary: false,
-      originalContent: content.content,
-      localContent: nextLocal ?? content.content,
-      lastUpdated: bumpLastUpdated(entry),
-      saving: false,
-      error: null,
-      truncated: false,
-    };
+    }),
+);
+filesReducer.with(saveFileContentFailed, (state, { payload: [wsId, path, error, requestId] }) =>
+  upsertFileEntry(state, wsId, path, (entry) => {
+    if (requestId && entry.saveRequestId !== requestId) return entry;
+    return { ...entry, saving: false, error };
   }),
 );
-filesReducer.with(saveFileContentFailed, (state, { payload: [wsId, path, error] }) =>
-  upsertFileEntry(state, wsId, path, (entry) => ({
+// Keep one settled receipt per resource/authority. Active and uncertain writes
+// remain until their own settlement; cache cleanup must never grant retry authority.
+function retainSaveOperation(
+  operations: NonNullable<FilesState['saveOperations']>,
+  operation: FileSaveOperation,
+) {
+  const retained =
+    operation.status === 'queued' || operation.status === 'running'
+      ? operations
+      : filterCollection(
+          operations,
+          (previous): previous is FileSaveOperation =>
+            previous.requestId === operation.requestId ||
+            previous.workspaceId !== operation.workspaceId ||
+            (previous.path !== operation.path &&
+              previous.absolutePath !== operation.absolutePath) ||
+            previous.authority !== operation.authority ||
+            previous.status === 'queued' ||
+            previous.status === 'running' ||
+            previous.status === 'uncertain',
+        );
+  return upsertItem(retained, operation);
+}
+
+filesReducer.with(fileSaveOperationQueued, (state, { payload: [operation] }) => {
+  const operations =
+    state.saveOperations ?? createCollection<FileSaveOperation, 'requestId'>('requestId');
+  if (getItem(operations, operation.requestId)) return state;
+  const next = { ...state, saveOperations: retainSaveOperation(operations, operation) };
+  if (operation.status !== 'queued') return next;
+  return upsertFileEntry(next, operation.workspaceId, operation.path, (entry) => ({
     ...entry,
-    saving: false,
-    error,
-  })),
-);
+    saveRequestId: operation.requestId,
+    saving: true,
+    error: null,
+  }));
+});
+filesReducer.with(fileSaveOperationStarted, (state, { payload: [requestId] }) => {
+  const operations = state.saveOperations;
+  if (!operations) return state;
+  const operation = getItem(operations, requestId);
+  if (!operation || operation.status !== 'queued') return state;
+  return {
+    ...state,
+    saveOperations: upsertItem(operations, { ...operation, status: 'running' }),
+  };
+});
+filesReducer.with(fileSaveOperationSettled, (state, { payload: [requestId, status, error] }) => {
+  const operations = state.saveOperations;
+  if (!operations) return state;
+  const operation = getItem(operations, requestId);
+  if (!operation || (operation.status !== 'queued' && operation.status !== 'running')) return state;
+  const next = {
+    ...state,
+    saveOperations: retainSaveOperation(operations, {
+      ...operation,
+      status,
+      ...(error ? { error } : {}),
+    }),
+  };
+  return upsertFileEntry(next, operation.workspaceId, operation.path, (entry) =>
+    entry.saveRequestId === requestId && entry.saving ? { ...entry, saving: false } : entry,
+  );
+});

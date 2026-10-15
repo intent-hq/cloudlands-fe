@@ -1,3 +1,4 @@
+import { WorkspaceFileEditor } from './workspace-file-editor';
 import { workspaceFileBackSearch, type ConversationFileOrigin } from './workspace-file-origin';
 import { Link } from '@tanstack/react-router';
 import { useLayoutEffect, useRef } from 'react';
@@ -5,7 +6,11 @@ import { CodeBlock } from '@/components/editor/code-block';
 import { Button } from '@/components/ui/button';
 import { LoadingState } from '@/components/patterns/screen';
 import { store } from '@/store';
-import { selectFileContentEntry, selectFileReadContext } from '@/store/files/files-selectors';
+import {
+  selectFileContentEntry,
+  selectFileReadContext,
+  selectFileAbsolutePath,
+} from '@/store/files/files-selectors';
 import { loadFileContentRequested } from '../../../../../src/store/renderer/slices/files/files-slice';
 import { getLanguageFromPath } from '$lib/utils/file-utils';
 import { formatBytesBinary } from '$lib/i18n/format';
@@ -40,6 +45,7 @@ export function WorkspaceFile({
     workspaceId,
     attachmentId ? (attachmentAgentId ?? '') : undefined,
   );
+  const absolutePath = selectFileAbsolutePath(workspaceId, path).value;
   const entry = selectFileContentEntry(workspaceId, path);
   const target = parseWorkspaceFileTarget(path);
   const current = authority.value ? entry.value : undefined;
@@ -48,8 +54,9 @@ export function WorkspaceFile({
     title.current?.focus();
   }, [path]);
   useLayoutEffect(() => {
-    if (settled) (current.error ? retry.current : title.current)?.focus();
-  }, [settled, current?.error]);
+    if (settled)
+      (current.error && current.kind !== 'editable-text' ? retry.current : title.current)?.focus();
+  }, [settled, current?.error, current?.kind]);
   useLayoutEffect(() => {
     if (settled && line) {
       code.current?.querySelectorAll('.code-line')[line - 1]?.scrollIntoView({ block: 'center' });
@@ -78,7 +85,7 @@ export function WorkspaceFile({
         <p role="alert">{m.fileExplorer_layout_loadFailed_error()}</p>
       ) : !current || current.loading ? (
         <LoadingState label={m.workspace_noteVersionHistory_loading_label()} />
-      ) : current.error ? (
+      ) : current.error && current.kind !== 'editable-text' ? (
         <>
           <p role="alert">{current.error}</p>
           <Button
@@ -90,7 +97,7 @@ export function WorkspaceFile({
                 loadFileContentRequested(
                   workspaceId,
                   path,
-                  '',
+                  absolutePath,
                   attachmentId
                     ? {
                         readOnlyPreview: true,
@@ -147,6 +154,8 @@ export function WorkspaceFile({
         </div>
       ) : current.kind !== 'editable-text' ? (
         <p>{m.editor_fileViewer_binary_label()}</p>
+      ) : !attachmentId ? (
+        <WorkspaceFileEditor workspaceId={workspaceId} path={path} entry={current} line={line} />
       ) : (
         <div ref={code} className="min-w-0" data-testid="workspace-file-content">
           <CodeBlock

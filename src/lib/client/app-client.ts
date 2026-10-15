@@ -1,3 +1,4 @@
+import type { FileWriteOptions, FileWriteResult } from './file-write-types';
 // Existing AppClient imports remain compatible until the Svelte renderer cutover.
 import type {
   AgentsReadClient,
@@ -910,7 +911,8 @@ export interface FilesClient {
     workspaceId: string,
     path: string,
     content: EditableText | RestorableSnapshot,
-  ): Promise<MutationResult>;
+    options?: FileWriteOptions,
+  ): Promise<FileWriteResult>;
   /** Delete a file (`file.delete`). */
   delete(workspaceId: string, path: string): Promise<MutationResult>;
   /** Create a directory (`file.mkdir`); create, so the live client attaches an idempotencyKey (§5.6). */

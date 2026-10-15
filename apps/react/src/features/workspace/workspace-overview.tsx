@@ -4,7 +4,7 @@ import { matchingGitDiffOrigin } from './workspace-diff-target';
 import { WorkspaceCreate } from './workspace-create';
 import { useWorkspaceViewLifetime } from './workspace-view-lifetime';
 import type { ConversationFileOrigin } from './workspace-file-origin';
-import { selectFileReadContext } from '@/store/files/files-selectors';
+import { selectFileAbsolutePath, selectFileReadContext } from '@/store/files/files-selectors';
 // i18n-ignore (internal unreleased workspace preview)
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useContext, useLayoutEffect, useRef } from 'react';
@@ -333,13 +333,14 @@ export function WorkspaceOverview({
     store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
     store.dispatch(loadGitStatus(workspaceId));
   }, [workspaceId, connection]);
+  const fileAbsolutePath = selectFileAbsolutePath(workspaceId, filePath).value;
   useLayoutEffect(() => {
     if (!fileAuthority || !filePath || !parseWorkspaceFileTarget(filePath).valid) return;
     store.dispatch(
       loadFileContentRequested(
         workspaceId,
         filePath,
-        '',
+        fileAbsolutePath,
         attachmentId
           ? {
               readOnlyPreview: true,
@@ -351,7 +352,7 @@ export function WorkspaceOverview({
     return () => {
       store.dispatch(removeFileContentEntry(workspaceId, filePath));
     };
-  }, [workspaceId, filePath, fileAuthority, attachmentId, attachmentAgentId]);
+  }, [workspaceId, filePath, fileAuthority, fileAbsolutePath, attachmentId, attachmentAgentId]);
   return (
     <Screen
       className="min-h-screen"

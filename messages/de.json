@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "Letzten Commit prüfen",
   "workspace_localCommit_confirmed_label": "Commit bestätigt",
   "workspace_localCommit_unknown_description": "Das Commit-Ergebnis ist unbekannt. Prüfen Sie den letzten Commit und vorgemerkte Änderungen, bevor Sie fortfahren. Diese Sitzung sendet nicht erneut. Neuladen entfernt diese Warnung; prüfen Sie vor einem weiteren Commit den Verlauf.",
-  "workspace_localCommit_changed_error": "Vorgemerkte Pfade haben sich geändert. Prüfen Sie die Änderungen vor dem Commit."
+  "workspace_localCommit_changed_error": "Vorgemerkte Pfade haben sich geändert. Prüfen Sie die Änderungen vor dem Commit.",
+  "workspace_fileEdit_editor_ariaLabel": "Texteditor des Arbeitsbereichs",
+  "workspace_fileEdit_editorFailed_error": "Der Editor konnte nicht geladen werden. Öffne die Datei erneut.",
+  "workspace_fileEdit_readOnly_description": "Vollständige Textdateien bis 500 KiB mit einheitlichen Zeilenenden können bearbeitet werden.",
+  "workspace_fileEdit_save_label": "Speichern",
+  "workspace_fileEdit_saving_label": "Wird gespeichert…",
+  "workspace_fileEdit_unsaved_label": "Ungespeicherte Änderungen",
+  "workspace_fileEdit_saved_label": "Gespeichert",
+  "workspace_fileEdit_explicit_description": "Speichere über die Schaltfläche oder Strg/Cmd+S. Ungespeicherte Änderungen gehen beim Verlassen verloren. Speichern ersetzt die aktuelle Datei; externe Änderungen werden nicht zusammengeführt.",
+  "workspace_fileEdit_uncertain_error": "Das Speicherergebnis ist unbekannt. Speichern ist in dieser Sitzung gesperrt. Prüfe zunächst die Datei. Neuladen wiederholt den Vorgang nicht und entfernt diese Sitzungswarnung."
 }

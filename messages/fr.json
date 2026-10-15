@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "Examiner le dernier commit",
   "workspace_localCommit_confirmed_label": "Commit confirmé",
   "workspace_localCommit_unknown_description": "Le résultat du commit est inconnu. Examinez le dernier commit et les modifications indexées avant de poursuivre. Cette session ne renverra pas la demande. Recharger efface cet avertissement ; consultez l’historique avant un autre commit.",
-  "workspace_localCommit_changed_error": "Les chemins indexés ont changé. Vérifiez les modifications avant de valider."
+  "workspace_localCommit_changed_error": "Les chemins indexés ont changé. Vérifiez les modifications avant de valider.",
+  "workspace_fileEdit_editor_ariaLabel": "Éditeur de texte de l’espace de travail",
+  "workspace_fileEdit_editorFailed_error": "Impossible de charger l’éditeur. Rouvrez le fichier pour réessayer.",
+  "workspace_fileEdit_readOnly_description": "Vous pouvez modifier les fichiers texte complets jusqu’à 500 Kio avec des fins de ligne uniformes.",
+  "workspace_fileEdit_save_label": "Enregistrer",
+  "workspace_fileEdit_saving_label": "Enregistrement…",
+  "workspace_fileEdit_unsaved_label": "Modifications non enregistrées",
+  "workspace_fileEdit_saved_label": "Enregistré",
+  "workspace_fileEdit_explicit_description": "Enregistrez avec le bouton ou Ctrl/Cmd+S. Les modifications non enregistrées sont perdues en quittant. L’enregistrement remplace le fichier actuel sans fusionner les modifications externes.",
+  "workspace_fileEdit_uncertain_error": "Le résultat de l’enregistrement est inconnu. L’enregistrement est bloqué dans cette session. Inspectez le fichier avant de décider. Recharger ne répète pas l’enregistrement et efface cet avertissement de session."
 }

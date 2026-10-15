@@ -19,6 +19,8 @@ import type {
 import type { FilesClient, MutationResult } from '../app-client';
 import type { FileReadTransportOptions } from '$store/renderer/slices/files/files-types';
 import { createFileRead } from './backend-file-read';
+import { createFileWrite } from './backend-file-write';
+import type { FileWriteOptions, FileWriteResult } from '../file-write-types';
 import { createFileListDirectory, toFileNodes } from './backend-file-list-directory';
 import { backendRequest } from './backend-transport';
 import { newIdempotencyKey, runMutation } from './live-support';
@@ -29,6 +31,13 @@ const readFile = createFileRead(<T>(...args: Parameters<typeof backendRequest>) 
 );
 const listFileDirectory = createFileListDirectory(<T>(...args: Parameters<typeof backendRequest>) =>
   backendRequest<T>(...args),
+);
+
+const writeFile = createFileWrite(
+  <T>(method: string, params?: unknown, options?: Partial<FileWriteOptions>) => {
+    options?.onDispatch?.();
+    return backendRequest<T>(method, params);
+  },
 );
 
 /** Build a two-char porcelain-style status code from a daemon single-char code. */
@@ -107,13 +116,9 @@ export class LiveFilesClient implements FilesClient {
     workspaceId: string,
     path: string,
     content: EditableText | RestorableSnapshot,
-  ): Promise<MutationResult> {
-    return runMutation('file.write', {
-      workspaceId,
-      path,
-      content: content.content,
-      idempotencyKey: newIdempotencyKey(),
-    });
+    options?: FileWriteOptions,
+  ): Promise<FileWriteResult> {
+    return writeFile(workspaceId, path, content, options);
   }
 
   async delete(workspaceId: string, path: string): Promise<MutationResult> {

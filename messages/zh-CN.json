@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "检查最新提交",
   "workspace_localCommit_confirmed_label": "提交已确认",
   "workspace_localCommit_unknown_description": "提交结果未知。继续操作前，请检查最新提交和暂存的更改。本会话不会重新发送请求。重新加载会清除此警告；再次提交前请检查历史记录。",
-  "workspace_localCommit_changed_error": "暂存的路径已更改。提交前请检查更改。"
+  "workspace_localCommit_changed_error": "暂存的路径已更改。提交前请检查更改。",
+  "workspace_fileEdit_editor_ariaLabel": "工作区文本编辑器",
+  "workspace_fileEdit_editorFailed_error": "无法加载编辑器。请重新打开文件。",
+  "workspace_fileEdit_readOnly_description": "可编辑最大500 KiB且换行符一致的完整文本文件。",
+  "workspace_fileEdit_save_label": "保存",
+  "workspace_fileEdit_saving_label": "正在保存…",
+  "workspace_fileEdit_unsaved_label": "未保存的更改",
+  "workspace_fileEdit_saved_label": "已保存",
+  "workspace_fileEdit_explicit_description": "使用按钮或Ctrl/Cmd+S保存。离开时未保存的编辑将丢失。保存会替换当前文件，不会合并外部更改。",
+  "workspace_fileEdit_uncertain_error": "保存结果未知。本会话已禁止保存。请先检查文件再决定下一步。重新加载不会重复保存，并会清除此会话警告。"
 }

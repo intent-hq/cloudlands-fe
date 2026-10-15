@@ -24,6 +24,7 @@ import { hasAutoUpdatePreload } from './features/auto-update/auto-update.client'
 import { notesContentReadSaga } from './store/workspace-notes/sagas/notes-content-read-saga';
 import { gitStatusReadSaga } from './store/git/sagas/git-status-read-saga';
 import { readOnlyChatSaga } from './store/chat-state/sagas/read-only-chat-saga';
+import { filesSaveSaga } from './store/files/sagas/files-save-saga';
 import { filesReadSaga } from './store/files/sagas/files-read-saga';
 import { initAutoUpdate } from '../../../src/store/renderer/slices/auto-update/auto-update-slice';
 // This entry runs only in the browser, before Start loads selector consumers.
@@ -46,6 +47,7 @@ const cancelCommitHistorySaga = store.runSaga(commitHistorySaga);
 const cancelGitConsumerReadSaga = store.runSaga(gitConsumerReadSaga);
 const cancelGitWriteSaga = store.runSaga(gitWriteSaga);
 const cancelGitStatusReadSaga = store.runSaga(gitStatusReadSaga);
+const cancelFilesSaveSaga = store.runSaga(filesSaveSaga);
 const cancelFilesReadSaga = store.runSaga(filesReadSaga);
 const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
 const cancelReadOnlyChatSaga = store.runSaga(readOnlyChatSaga);
@@ -77,6 +79,7 @@ function dispose() {
   cancelGitStatusReadSaga();
   cancelGitConsumerReadSaga();
   cancelCommitHistorySaga();
+  cancelFilesSaveSaga();
   cancelFilesReadSaga();
   cancelChatCommandsSaga();
   cancelReadOnlyChatSaga();

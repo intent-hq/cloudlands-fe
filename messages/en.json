@@ -7539,5 +7539,14 @@
   "workspace_localCommit_inspect_label": "Inspect latest commit",
   "workspace_localCommit_confirmed_label": "Commit confirmed",
   "workspace_localCommit_unknown_description": "The commit outcome is unknown. Inspect the latest commit and staged changes before taking further action. This session will not resend. Reload clears this warning; check history before another commit.",
-  "workspace_localCommit_changed_error": "Staged paths changed. Review the changes before committing."
+  "workspace_localCommit_changed_error": "Staged paths changed. Review the changes before committing.",
+  "workspace_fileEdit_editor_ariaLabel": "Workspace text editor",
+  "workspace_fileEdit_editorFailed_error": "The editor could not load. Reopen the file to try again.",
+  "workspace_fileEdit_readOnly_description": "Editing is available for complete text files up to 500 KiB with consistent line endings.",
+  "workspace_fileEdit_save_label": "Save",
+  "workspace_fileEdit_saving_label": "Saving…",
+  "workspace_fileEdit_unsaved_label": "Unsaved changes",
+  "workspace_fileEdit_saved_label": "Saved",
+  "workspace_fileEdit_explicit_description": "Save explicitly with the button or Ctrl/Cmd+S. Unsaved edits are lost when you leave. Saving replaces the current file; external edits are not merged.",
+  "workspace_fileEdit_uncertain_error": "The save outcome is unknown. Saving is blocked in this session. Inspect the file before deciding what to do. Reloading does not replay the save and clears this session warning."
 }

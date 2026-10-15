@@ -42,6 +42,8 @@ export type FileContentEntry = FileContentData & {
   lastUpdated: number;
   loading: boolean;
   saving: boolean;
+  /** Correlates only opt-in explicit saves; never a persisted document identity. */
+  saveRequestId?: string;
   error: string | null;
   truncated: boolean;
   /** [] = suffix resolution attempted, no matches; null/absent = not attempted. */
@@ -75,7 +77,22 @@ export type FilesWorkspaceState = {
   files: Collection<FileContentEntry, 'path'>;
 };
 
+export type FileSaveOptions = { requestId: string; authority: string };
+export type FileSaveStatus =
+  'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain';
+export type FileSaveOperation = {
+  requestId: string;
+  workspaceId: string;
+  path: string;
+  absolutePath: string;
+  authority: string;
+  status: FileSaveStatus;
+  error?: string;
+};
+
 export type FilesState = {
+  /** Latest settled receipt per resource/authority plus pending/uncertain outcomes; never persisted/replayed. */
+  saveOperations?: Collection<FileSaveOperation, 'requestId'>;
   byWorkspaceId: Record<string, FilesWorkspaceState>;
 };
 

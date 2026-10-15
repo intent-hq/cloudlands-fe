@@ -1,11 +1,9 @@
 import { editableText, fileSnapshot } from '$features/file/utils/file-content';
-import type { EditableText, RestorableSnapshot } from '../files-types';
+import type { RestorableSnapshot } from '../files-types';
 import {
   call,
   cancelled,
-  cancel,
   fork,
-  spawn,
   delay,
   put,
   race,
@@ -23,7 +21,8 @@ import { deleteWithUndo } from '$lib/utils/reversible-actions';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '../../../store';
-import { queueFileMutation } from '../../../utils/worktree-mutation-queue';
+import { serializeFileMutation } from '../utils/serialize-file-mutation';
+import { createFilesSaveSaga } from './files-save-saga-factory';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import {
   selectEffectiveFileExplorerWorkspacePath,
@@ -40,7 +39,6 @@ import {
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
   removeFileContentEntry,
-  saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
   updateFileContent,
@@ -48,50 +46,23 @@ import {
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
-function* serializeFileMutation<T>(
+function* serializeWorkspaceFileMutation<T>(
   workspaceId: string,
   path: string,
   run: (relativePath: string) => Promise<T>,
   observeRead?: (action: ReturnType<typeof loadFileContentSucceeded>) => void,
 ): SagaGenerator<T> {
-  // Tabs/cache entries retain their caller-facing paths. Only the transport and
-  // queue identity use the workspace-relative resource, for every mutation kind.
   const workspacePath = isAbsolutePath(path)
     ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
     : '';
-  const relativePath = stripWorkspacePrefix(path, workspacePath);
-  const execute = () => queueFileMutation(workspaceId, relativePath, () => run(relativePath));
-  if (!observeRead) return yield* call(execute);
-
-  // The transport queue outlives UI cancellation. Its task owns the observer,
-  // including after unmount/reopen, and releases it only when I/O settles.
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const completion = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  yield* spawn(function* () {
-    const reads = yield* fork(function* () {
-      while (true) observeRead(yield* take(loadFileContentSucceeded));
-    });
-    try {
-      resolve(yield* call(execute));
-    } catch (error) {
-      reject(error);
-    } finally {
-      yield* cancel(reads);
-    }
-  });
-  return yield* call(() => completion);
+  return yield* serializeFileMutation(
+    workspaceId,
+    stripWorkspacePrefix(path, workspacePath),
+    run,
+    observeRead,
+  );
 }
 
-type SaveRequest = {
-  workspaceId: string;
-  path: string;
-  absolutePath: string;
-  content: EditableText;
-};
 type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -125,66 +96,6 @@ function isSaveFor(
   return action.payload[1] === path || requestAbsolutePath === absolutePath;
 }
 
-function* saveFileContentWorker(request: SaveRequest) {
-  const { workspaceId, path, absolutePath, content } = request;
-  // The queue survives unmount, which clears the cache. Remember an observed
-  // binary/preview read until this write settles so teardown cannot admit a stale save.
-  const matchingEntries = selectAllFileContentEntries
-    .select(appStore.state, workspaceId)
-    .filter((entry) => entry.path === path || entry.absolutePath === absolutePath);
-  let becameBinary = matchingEntries.some((entry) => entry.isBinary);
-  let becamePreview = matchingEntries.some(
-    (entry) => entry.kind === 'read-only-text' || entry.truncated,
-  );
-  try {
-    const result = yield* call(
-      serializeFileMutation<MutationResult>,
-      workspaceId,
-      path,
-      (relativePath: string) => {
-        // Recheck at execution, after any queued mutation and intervening read.
-        // A queued text save must not overwrite binary or prefix-only content.
-        const entries = [path, absolutePath, relativePath].map((alias) =>
-          selectFileContentEntry.select(appStore.state, workspaceId, alias),
-        );
-        if (becameBinary || entries.some((entry) => entry?.isBinary))
-          throw new Error(m.editor_fileViewer_binary_label());
-        if (
-          becamePreview ||
-          entries.some((entry) => entry?.kind === 'read-only-text' || entry?.truncated)
-        )
-          throw new Error(m.files_read_previewReadOnly_error());
-        return appClient.files.write(workspaceId, relativePath, content);
-      },
-      ({ payload }: ReturnType<typeof loadFileContentSucceeded>) => {
-        if (payload[0] === workspaceId && (payload[1] === path || payload[2] === absolutePath)) {
-          if (
-            (payload[3].kind === 'restorable-snapshot' || payload[3].kind === 'preview-only') &&
-            payload[3].isBinary
-          )
-            becameBinary = true;
-          if (payload[3].kind === 'read-only-text' || payload[4]) becamePreview = true;
-        }
-      },
-    );
-    if (result.success) {
-      yield* put(saveFileContentSucceeded(workspaceId, path, content));
-      return;
-    }
-    yield* put(
-      saveFileContentFailed(
-        workspaceId,
-        path,
-        result.error ?? m.fileExplorer_layout_saveFailed_error(),
-      ),
-    );
-  } catch (error) {
-    logger.error('Failed to save file content', error);
-    const message = error instanceof Error ? error.message : String(error);
-    yield* put(saveFileContentFailed(workspaceId, path, message));
-  }
-}
-
 function* createFileWorker(workspaceId: string, folderPath: string, fileName: string) {
   const absoluteFilePath = `${folderPath}/${fileName}`;
   const explorer = yield* selectFileExplorerState.effect(workspaceId);
@@ -194,7 +105,7 @@ function* createFileWorker(workspaceId: string, folderPath: string, fileName: st
   }
   try {
     const result = yield* call(
-      serializeFileMutation<MutationResult>,
+      serializeWorkspaceFileMutation<MutationResult>,
       workspaceId,
       relativePath,
       (mutationPath: string) => appClient.files.write(workspaceId, mutationPath, editableText('')),
@@ -258,14 +169,6 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
   );
 }
 
-function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentRequested>) {
-  const [workspaceId, path, absolutePath, content] = action.payload;
-  yield* race({
-    save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
-  });
-}
-
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   const [workspaceId, path, options] = action.payload;
   const cannotRestore = (snapshot: RestorableSnapshot | undefined) =>
@@ -286,7 +189,7 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   };
   try {
     const { snapshot, relativePath } = yield* call(
-      serializeFileMutation<{ snapshot: RestorableSnapshot; relativePath: string }>,
+      serializeWorkspaceFileMutation<{ snapshot: RestorableSnapshot; relativePath: string }>,
       workspaceId,
       path,
       async (relativePath: string) => {
@@ -366,7 +269,7 @@ function* restoreFileWorker(action: ReturnType<typeof restoreFileContentRequeste
   const [workspaceId, path, absolutePath, snapshot] = action.payload;
   try {
     const result = yield* call(
-      serializeFileMutation<MutationResult>,
+      serializeWorkspaceFileMutation<MutationResult>,
       workspaceId,
       path,
       (relativePath: string) => appClient.files.write(workspaceId, relativePath, snapshot),
@@ -421,11 +324,20 @@ function* deleteFileWithUndoWorker(action: ReturnType<typeof deleteFileWithUndoR
   );
 }
 
+// Source binding remains lazy for app-client replacement in tests and at runtime.
+const filesSaveSaga = createFilesSaveSaga({
+  files: { write: (...args) => appClient.files.write(...args) },
+  readEntries: (workspaceId) => selectAllFileContentEntries.select(appStore.state, workspaceId),
+  resolveWorkspacePath: (workspaceId) =>
+    selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId),
+  onError: (error) => logger.error('Failed to save file content', error),
+});
+
 export function* filesWriteSaga() {
   yield* takeEvery(deleteFileWithUndoRequested, deleteFileWithUndoWorker);
   yield* takeEvery(deleteFileRequested, deleteFileActionWorker);
   yield* takeEvery(restoreFileContentRequested, restoreFileActionWorker);
   yield* takeEvery(createFileRequested, createFileActionWorker);
   yield* takeEvery(updateFileContent, updateFileContentWorker);
-  yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);
+  yield* fork(filesSaveSaga);
 }

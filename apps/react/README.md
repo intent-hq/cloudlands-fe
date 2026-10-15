@@ -130,6 +130,22 @@ oversized bodies remain unavailable text diffs. This is a bounded history view,
 not the full desktop timeline or multi-root history. Browsing it does not resolve
 an unknown commit outcome or enable resending that request.
 
+Open an existing primary-root text file to edit it, then choose **Save** or press
+**Ctrl/Cmd+S** while its editor has focus. Editing supports complete UTF-8 text up
+to 500 KiB with consistent LF or CRLF endings; BOM and existing line endings are
+preserved. Partial previews, larger files, binary content, attachments and mixed
+line endings remain read-only. This is a bounded Monaco host, not full desktop
+FileTab or rich Markdown editing.
+
+Edits stay in the canonical file draft until explicitly saved. An earlier save
+acknowledgement preserves newer edits. Leaving the file discards unsaved edits;
+there is no autosave. Save replaces the current file: external edits are not merged
+and the daemon provides no compare-and-swap guarantee. A definite refusal keeps
+the editor and draft available for deliberate retry. An unknown result blocks
+another save for that resource in the current session. Reload never replays the
+write, but clears this in-memory warning; inspect the actual file before deciding
+whether to edit and save again. Use **Changed files** to review the resulting diff.
+
 ## Focused verification
 
 ```sh
@@ -175,6 +191,14 @@ exact-SHA metadata and committed-file diffs, root/deleted/renamed/binary cases,
 both Back paths, reload and read cleanup at desktop and narrow widths. It requires
 an explicitly identified owned daemon and pre-recorded genuine repository evidence;
 the test itself performs no Git writes.
+
+`workspace-file-edit.extended.spec.mjs` requires a fresh owned daemon and disposable
+primary-root repositories. It checks native typing, explicit Save and the scoped
+shortcut, exact BOM/CRLF bytes, unchanged index and unrelated files, reopen and Git
+diff, read-only neighbors, model disposal, and desktop/narrow captures. A separate
+case makes only the owned fixture read-only to prove a genuine daemon refusal and
+explicit retry. Authority retirement, queued content-kind changes, unknown results
+and a later edit during an earlier save are policy tests, not injected native proof.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

@@ -4,6 +4,9 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   emptyFilesWorkspaceState,
+  fileSaveOperationQueued,
+  fileSaveOperationStarted,
+  fileSaveOperationSettled,
   filesReducer,
   initialState,
   loadFileContentFailed,
@@ -599,5 +602,161 @@ describe('filesReducer', () => {
     expect(
       filesReducer(loadedState, workspaceUnmounted(WS_ID)).byWorkspaceId[WS_ID],
     ).toBeUndefined();
+  });
+});
+
+describe('explicit file save operation facts', () => {
+  const operation = {
+    requestId: 'save-1',
+    workspaceId: WS_ID,
+    path: PATH,
+    absolutePath: ABS_PATH,
+    authority: 'view-1',
+    status: 'queued' as const,
+  };
+  it.each(['workspace', 'file'] as const)(
+    'retains settlement across %s cleanup without recreating the departed file',
+    (cleanup) => {
+      let state = filesReducer(
+        initialState,
+        loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'old' }),
+      );
+      state = filesReducer(state, fileSaveOperationQueued(operation));
+      state = filesReducer(state, fileSaveOperationStarted(operation.requestId));
+      state = filesReducer(
+        state,
+        cleanup === 'workspace' ? workspaceUnmounted(WS_ID) : removeFileContentEntry(WS_ID, PATH),
+      );
+      state = filesReducer(
+        state,
+        fileSaveOperationSettled(operation.requestId, 'uncertain', 'timeout'),
+      );
+      if (cleanup === 'workspace') expect(state.byWorkspaceId[WS_ID]).toBeUndefined();
+      else expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toBeUndefined();
+      expect(state.saveOperations?.map['save-1']).toMatchObject({
+        status: 'uncertain',
+        error: 'timeout',
+      });
+      expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+    },
+  );
+
+  it('ignores duplicate, unknown, and already settled operation transitions by reference', () => {
+    const queued = filesReducer(initialState, fileSaveOperationQueued(operation));
+    expect(filesReducer(queued, fileSaveOperationQueued(operation))).toBe(queued);
+    expect(filesReducer(queued, fileSaveOperationStarted('missing'))).toBe(queued);
+    expect(filesReducer(queued, fileSaveOperationSettled('missing', 'failed'))).toBe(queued);
+    const settled = filesReducer(queued, fileSaveOperationSettled('save-1', 'cancelled'));
+    expect(filesReducer(settled, fileSaveOperationStarted('save-1'))).toBe(settled);
+    expect(filesReducer(settled, fileSaveOperationSettled('save-1', 'succeeded'))).toBe(settled);
+  });
+
+  it('cannot apply an earlier request result to a later save or a failed read', () => {
+    let state = filesReducer(
+      initialState,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'old' }),
+    );
+    state = filesReducer(state, fileSaveOperationQueued({ ...operation, requestId: 'save-2' }));
+    expect(
+      filesReducer(
+        state,
+        saveFileContentSucceeded(
+          WS_ID,
+          PATH,
+          { kind: 'editable-text', content: 'stale' },
+          'save-1',
+        ),
+      ),
+    ).toBe(state);
+    expect(filesReducer(state, saveFileContentFailed(WS_ID, PATH, 'stale error', 'save-1'))).toBe(
+      state,
+    );
+    state = filesReducer(state, loadFileContentFailed(WS_ID, PATH, ABS_PATH, 'not available'));
+    expect(
+      filesReducer(
+        state,
+        saveFileContentSucceeded(
+          WS_ID,
+          PATH,
+          { kind: 'editable-text', content: 'stale' },
+          'save-2',
+        ),
+      ),
+    ).toBe(state);
+  });
+});
+
+describe('bounded save receipt retention', () => {
+  const operation = {
+    requestId: 'save',
+    workspaceId: WS_ID,
+    path: PATH,
+    absolutePath: ABS_PATH,
+    authority: 'view-1',
+    status: 'queued' as const,
+  };
+  it('keeps only the latest known settled receipt for repeated saves under one authority', () => {
+    let state = initialState;
+    for (let index = 0; index < 12; index++) {
+      const requestId = `save-${index}`;
+      state = filesReducer(state, fileSaveOperationQueued({ ...operation, requestId }));
+      state = filesReducer(state, fileSaveOperationStarted(requestId));
+      state = filesReducer(
+        state,
+        fileSaveOperationSettled(requestId, index % 2 ? 'failed' : 'succeeded'),
+      );
+      expect(state.saveOperations?.ids).toEqual([requestId]);
+    }
+    state = filesReducer(
+      state,
+      fileSaveOperationQueued({ ...operation, requestId: 'declined', status: 'cancelled' }),
+    );
+    expect(state.saveOperations?.ids).toEqual(['declined']);
+  });
+
+  it('retains running and uncertain outcomes when newer requests are declined', () => {
+    let state = filesReducer(initialState, fileSaveOperationQueued(operation));
+    state = filesReducer(state, fileSaveOperationStarted('save'));
+    state = filesReducer(
+      state,
+      fileSaveOperationQueued({ ...operation, requestId: 'declined-1', status: 'cancelled' }),
+    );
+    expect(state.saveOperations?.map.save.status).toBe('running');
+    state = filesReducer(state, fileSaveOperationSettled('save', 'uncertain'));
+    expect(state.saveOperations?.ids).toEqual(['save']);
+    state = filesReducer(
+      state,
+      fileSaveOperationQueued({ ...operation, requestId: 'declined-2', status: 'cancelled' }),
+    );
+    state = filesReducer(
+      state,
+      fileSaveOperationQueued({ ...operation, requestId: 'declined-3', status: 'cancelled' }),
+    );
+    expect(state.saveOperations?.ids).toEqual(['save', 'declined-3']);
+    expect(state.saveOperations?.map.save.status).toBe('uncertain');
+  });
+
+  it('does not retire another resource or authority receipt', () => {
+    let state = filesReducer(
+      initialState,
+      fileSaveOperationQueued({
+        ...operation,
+        requestId: 'other-path',
+        path: OTHER_PATH,
+        absolutePath: OTHER_ABS_PATH,
+        status: 'failed',
+      }),
+    );
+    state = filesReducer(
+      state,
+      fileSaveOperationQueued({
+        ...operation,
+        requestId: 'other-authority',
+        authority: 'view-2',
+        status: 'succeeded',
+      }),
+    );
+    state = filesReducer(state, fileSaveOperationQueued({ ...operation, status: 'cancelled' }));
+    expect(state.saveOperations?.ids).toEqual(['other-path', 'other-authority', 'save']);
   });
 });
