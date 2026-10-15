@@ -36,7 +36,7 @@ async function pickAlex() {
   const trigger = screen.getByRole('combobox', { name: 'Link audience' });
   trigger.focus();
   await fireEvent.keyDown(trigger, { key: 'Enter' });
-  await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Only a GitHub user' }), {
+  await fireEvent.pointerUp(await screen.findByRole('option', { name: 'A specific GitHub user' }), {
     pointerType: 'mouse',
   });
   await fireEvent.input(screen.getByRole('combobox', { name: 'Search GitHub users' }), {
@@ -134,7 +134,7 @@ it('does not reinterpret a selected GitHub recipient when GitHub disconnects', a
   await pickAlex();
   await rerender({ ...both, githubConnected: false });
   expect(screen.getByRole('combobox', { name: 'Link audience' }).textContent).toContain(
-    'Only a GitHub user',
+    'A specific GitHub user',
   );
   expect(copy().hasAttribute('disabled')).toBe(true);
   await fireEvent.submit(copy().closest('form')!);

@@ -101,8 +101,8 @@ async function chooseAudience(provider: 'anyone' | 'github' | 'gitlab') {
         provider === 'anyone'
           ? 'Anyone with the link'
           : provider === 'github'
-            ? 'Only a GitHub user'
-            : 'Only a GitLab user',
+            ? 'A specific GitHub user'
+            : 'A specific GitLab user',
       exact: true,
     }),
     { pointerType: 'mouse' },
@@ -371,7 +371,7 @@ describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
 
     await chooseAudience('gitlab');
     expect(screen.getByTestId('share-audience-trigger').textContent).toContain(
-      'Only a GitLab user',
+      'A specific GitLab user',
     );
     const pin = (await recipientField('gitlab')) as HTMLInputElement;
     await fireEvent.input(pin, { target: { value: 'dave' } });

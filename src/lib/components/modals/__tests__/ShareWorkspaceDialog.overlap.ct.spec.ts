@@ -34,7 +34,7 @@ const props = {
 
 async function pickGithub(page: Page) {
   await page.getByRole('combobox', { name: 'Link audience' }).click();
-  await page.getByRole('option', { name: 'Only a GitHub user', exact: true }).click();
+  await page.getByRole('option', { name: 'A specific GitHub user', exact: true }).click();
 }
 
 test('invite audience and creation field stay readable in a narrow dialog', async ({
@@ -237,7 +237,7 @@ test('the pin-provider picker stays inside the modal, and Escape closes it befor
   expect(closes).toBe(0);
 
   await page.getByRole('combobox', { name: 'Link audience' }).click();
-  await dialog.getByRole('option', { name: 'Only a GitLab user' }).click();
+  await dialog.getByRole('option', { name: 'A specific GitLab user' }).click();
   await expect(page.getByRole('combobox', { name: 'GitLab username' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect.poll(() => closes).toBe(1);

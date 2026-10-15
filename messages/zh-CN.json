@@ -7546,8 +7546,8 @@
   "workspace_discussion_tooLong_error": "消息过长，请缩短后重试。",
   "workspace_share_namedTitle_label": "共享{title}",
   "workspace_share_audience_ariaLabel": "链接受众",
-  "workspace_share_audienceGithub_label": "仅限一位 GitHub 用户",
-  "workspace_share_audienceGitlab_label": "仅限一位 GitLab 用户",
+  "workspace_share_audienceGithub_label": "指定的 GitHub 用户",
+  "workspace_share_audienceGitlab_label": "指定的 GitLab 用户",
   "workspace_share_invited_label": "已邀请",
   "workspace_share_guestCount_label": "{count} / {limit}"
 }

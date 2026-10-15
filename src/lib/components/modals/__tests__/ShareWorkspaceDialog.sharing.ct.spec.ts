@@ -36,7 +36,7 @@ test('enabling sharing keeps the recipient draft and waits for confirmed readine
     props: { ...props, ...callbacks, sharingEnabled: true },
   });
   await page.getByRole('combobox', { name: 'Link audience' }).click();
-  await page.getByRole('option', { name: 'Only a GitHub user' }).click();
+  await page.getByRole('option', { name: 'A specific GitHub user' }).click();
   const recipient = page.getByRole('combobox', { name: 'Search GitHub users' });
   const create = page.getByRole('button', { name: 'Copy link' });
   const enable = page.getByRole('switch', { name: 'Enable sharing' });

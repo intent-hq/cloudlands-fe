@@ -7546,8 +7546,8 @@
   "workspace_discussion_tooLong_error": "This message is too long. Shorten it and try again.",
   "workspace_share_namedTitle_label": "Share {title}",
   "workspace_share_audience_ariaLabel": "Link audience",
-  "workspace_share_audienceGithub_label": "Only a GitHub user",
-  "workspace_share_audienceGitlab_label": "Only a GitLab user",
+  "workspace_share_audienceGithub_label": "A specific GitHub user",
+  "workspace_share_audienceGitlab_label": "A specific GitLab user",
   "workspace_share_invited_label": "Invited",
   "workspace_share_guestCount_label": "{count} / {limit}"
 }

@@ -7546,8 +7546,8 @@
   "workspace_discussion_tooLong_error": "메시지가 너무 깁니다. 내용을 줄이고 다시 시도하세요.",
   "workspace_share_namedTitle_label": "{title} 공유",
   "workspace_share_audience_ariaLabel": "링크 대상",
-  "workspace_share_audienceGithub_label": "GitHub 사용자 한 명만",
-  "workspace_share_audienceGitlab_label": "GitLab 사용자 한 명만",
+  "workspace_share_audienceGithub_label": "특정 GitHub 사용자",
+  "workspace_share_audienceGitlab_label": "특정 GitLab 사용자",
   "workspace_share_invited_label": "초대됨",
   "workspace_share_guestCount_label": "{count} / {limit}"
 }
