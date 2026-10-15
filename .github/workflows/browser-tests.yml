@@ -79,6 +79,20 @@ jobs:
         # gitignored. (build-config / ipc-channels are main-process-only and
         # not needed by the CT vite build.)
         run: pnpm run generate:i18n
+      - name: Isolate component server port
+        # Multiple runner instances share a host. Pick a free loopback port once
+        # for this job; CT keeps its host-wide port lock as the final guard.
+        run: |
+          node --input-type=module -e '
+            import { createServer } from "node:net";
+            import { appendFileSync } from "node:fs";
+            const server = createServer();
+            server.on("error", (error) => { console.error(error); process.exitCode = 1; });
+            server.listen(0, "127.0.0.1", () => {
+              appendFileSync(process.env.GITHUB_ENV, `CT_PORT=${server.address().port}\n`);
+              server.close();
+            });
+          '
       - name: Resolve CT browser identity and paths
         id: ct-browser
         run: |
@@ -189,7 +203,7 @@ jobs:
         # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
         # Playwright CT has no standalone build command, so this uses
         # --only-changed=HEAD: dependency population runs the Vite build
-        # (and caches the bundle under playwright/.cache, shared with the
+        # (and caches the bundle under playwright/.cache-<port>, shared with the
         # test step below on the same runner) during test
         # loading, before the changed-file filter applies; on a fresh CI
         # checkout `git diff HEAD` is empty, so zero tests are selected and

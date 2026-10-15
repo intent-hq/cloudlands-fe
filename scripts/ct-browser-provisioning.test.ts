@@ -1,8 +1,12 @@
 // @vitest-environment node
 // @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/run-ct-tests.mjs, scripts/ct-browser.mjs
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import { createServer } from 'node:net';
+import { promisify } from 'node:util';
+import { ctLockKey } from './verification-lock.mjs';
+import { resolveCtPortConfig } from '../playwright/ct-port';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
@@ -84,6 +88,43 @@ describe('required CT self-hosted-first routing', () => {
     expect(activeSteps.includes('Harden apt against mirror stalls')).toBe(burst === 'true');
     expect(activeSteps).toContain('Isolate browser cache per runner');
     expect.soft(activeSteps).not.toContain('Install Playwright browsers (tinybox)');
+  });
+});
+
+describe('CT job port isolation', () => {
+  it('selects an available port and shares it across build and test steps', async () => {
+    const busy = createServer();
+    await new Promise<void>((resolve) => busy.listen(0, '127.0.0.1', resolve));
+    try {
+      const dir = mkdtempSync(join(os.tmpdir(), 'ct-ci-port-'));
+      dirs.push(dir);
+      const output = join(dir, 'env');
+      const busyPort = (busy.address() as { port: number }).port;
+      const result = await promisify(execFile)(
+        'bash',
+        ['-euo', 'pipefail', '-c', runBlock('Isolate component server port')],
+        {
+          cwd: root,
+          env: { ...process.env, GITHUB_ENV: output },
+        },
+      );
+      expect(result.stderr).not.toContain('Error');
+      const entry = readFileSync(output, 'utf8').trim();
+      expect(entry).toMatch(/^CT_PORT=\d+$/);
+      const env = { CT_PORT: entry.split('=')[1] };
+      const config = resolveCtPortConfig({ env });
+      expect(config.port).toBeGreaterThan(0);
+      expect(config.port).toBeLessThan(65536);
+      expect(config.port).not.toBe(busyPort);
+      expect(ctLockKey(env)).toBe(`ct-${config.port}`);
+      expect(config.cacheDir).toBe(`playwright/.cache-${config.port}`);
+      expect(ctJob.indexOf('name: Isolate component server port')).toBeLessThan(
+        ctJob.indexOf('name: Build CT bundle'),
+      );
+      expect(ctJob).not.toMatch(/^ +CT_PORT:/m);
+    } finally {
+      await new Promise<void>((resolve) => busy.close(() => resolve()));
+    }
   });
 });
 
