@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "メッセージのリンクをコピー中…",
   "react_workspace_messageText_copy_label": "テキストをコピー",
   "react_workspace_messageText_copied_label": "メッセージのテキストをコピーしました",
-  "react_workspace_messageText_unavailable_description": "メッセージ全文を利用できません。ツールの出力と添付ファイルは含まれません。"
+  "react_workspace_messageText_unavailable_description": "メッセージ全文を利用できません。ツールの出力と添付ファイルは含まれません。",
+  "workspace_taskStatus_unknown_description": "結果は不明です。この変更を繰り返さず、保存されたタスクを確認してから続行してください。",
+  "workspace_taskStatus_refresh_description": "再びステータスを変更する前に、保存済みのタスクを更新してください。",
+  "workspace_taskStatus_failed_description": "ステータスは変更されませんでした。再試行するにはステータスを選択してください。"
 }

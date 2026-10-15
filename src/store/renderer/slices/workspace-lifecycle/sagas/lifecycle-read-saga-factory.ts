@@ -1,3 +1,4 @@
+import { createWorkspaceTasksReadSaga } from '../../workspace-tasks/sagas/workspace-tasks-read-saga-factory';
 import { createCommitHistoryWorkers } from '../../changes/sagas/commit-history-workers';
 import type { GenericAction } from '@themislib/themis/types';
 import { createChannelFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
@@ -116,16 +117,8 @@ import {
   olderEventsLoaded,
   olderEventsLoadFailed,
 } from '../../workspace-events/workspace-events-slice';
-import {
-  acquireWorkspaceTasksDemand,
-  clearWorkspaceTasks,
-  ensureWorkspaceTasksLoaded,
-  workspaceTasksReadStarted,
-  loadWorkspaceTasksFailed,
-  loadWorkspaceTasksRequested,
-  loadWorkspaceTasksSucceeded,
-} from '../../workspace-tasks/workspace-tasks-slice';
-import { loadWorkspacesRequested, removeWorkspaceEntity } from '../../workspace/workspace-slice';
+import { ensureWorkspaceTasksLoaded } from '../../workspace-tasks/workspace-tasks-slice';
+import { loadWorkspacesRequested } from '../../workspace/workspace-slice';
 import {
   backendReconnected,
   workspaceDeleted,
@@ -229,21 +222,6 @@ export function createLifecycleReadSaga<
     return action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type
       ? { context, cancel: true as const }
       : context;
-  }
-
-  function* refreshTasks(workspaceId: string): SagaGenerator<void> {
-    if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
-    yield* put(workspaceTasksReadStarted(workspaceId));
-    try {
-      const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
-        [appClient.tasks, appClient.tasks.list],
-        workspaceId,
-      );
-      yield* put(loadWorkspaceTasksSucceeded(workspaceId, result.tasks, result.stats));
-    } catch (error) {
-      yield* put(loadWorkspaceTasksFailed(workspaceId, String(error)));
-      throw error;
-    }
   }
 
   function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
@@ -1417,34 +1395,9 @@ export function createLifecycleReadSaga<
     }
   }
 
-  type TasksReadAction = ReturnType<
-    | typeof acquireWorkspaceTasksDemand
-    | typeof ensureWorkspaceTasksLoaded
-    | typeof loadWorkspaceTasksRequested
-    | typeof workspaceUnmounted
-    | typeof clearWorkspaceTasks
-    | typeof removeWorkspaceEntity
-  >;
-
   type EventsReadAction = ReturnType<
     typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
   >;
-
-  function tasksReadContext(action: TasksReadAction) {
-    const workspaceId = action.payload[0];
-    if (
-      isWorkspaceCleanupAction(action) ||
-      action.type === clearWorkspaceTasks.type ||
-      action.type === removeWorkspaceEntity.type
-    ) {
-      return { context: workspaceId, cancel: true as const };
-    }
-    return workspaceId;
-  }
-
-  function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction) {
-    yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
-  }
 
   function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
     const workspaceId = action.payload[0];
@@ -1663,18 +1616,14 @@ export function createLifecycleReadSaga<
         // Attention events stay subscribed while unfocused. Reconcile missed
         // events on transport recovery, not focus or console ownership changes.
         fork(backendReconnectWorkspacesWatcher),
-        takeSingleFlightInContext(
-          [
-            acquireWorkspaceTasksDemand,
-            ensureWorkspaceTasksLoaded,
-            loadWorkspaceTasksRequested,
-            workspaceUnmounted,
-            clearWorkspaceTasks,
-            removeWorkspaceEntity,
-          ],
-          tasksReadContext,
-          tasksWorker,
-          scheduler,
+        call(
+          createWorkspaceTasksReadSaga({
+            tasks: appClient.tasks,
+            selectWorkspaceTasksShouldLoad,
+            runRead: function* (workspaceId, read) {
+              yield* runWorkspaceRead(scheduler, 'tasks', workspaceId, read, false);
+            },
+          }),
         ),
         takeSingleFlightInContext(
           [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],

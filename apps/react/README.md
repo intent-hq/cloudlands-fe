@@ -296,7 +296,7 @@ full reload clears this in-memory warning without replaying the request.
 Open an existing ordinary note from **Notes**, then choose **Edit Markdown**. Complete Markdown
 notes up to 500 KiB support source editing with **Save** or **Ctrl/Cmd+S**. **View saved
 note** returns to the accepted rendered content after saving. Spec/default notes, task
-notes, incomplete bodies and task-conversion directives stay read-only in this preview.
+note bodies, incomplete bodies and task-conversion directives stay read-only in this preview.
 This does not include note renaming, deletion, comments or the rich desktop editor.
 
 The canonical note writer sends the loaded revision as the daemon's merge base.
@@ -424,6 +424,32 @@ These operation receipts are not persisted across a full reload, and reload neve
 replays creation, closing or input. Buffer restoration has no exactly-once output
 claim across a disconnect. This is a bounded interactive host, without the desktop
 quake overlay, script manager or terminal history UI.
+
+## Existing task status (internal preview)
+
+Open an existing, unassigned ordinary task note and use **Change task status**.
+Choosing a different status sends one explicit update; Escape and selecting the
+current status send nothing. The note, task list and progress use canonical daemon
+reads; progress covers the daemon’s spec-linked task tree, not every standalone task note.
+A failed progress refresh offers Retry without repeating the status change.
+Bodies, titles, assignments, dependencies and other task controls remain
+outside this workflow.
+
+The pinned daemon rejects the tested stale revision with a conflict, but its success
+receipt can contain the pre-write revision. The control waits for a refreshed note
+before another change. A definite failure allows selecting a status again; an
+unknown result blocks replay in the current app session, including reconnect and
+navigation. Receipts are not durable across full reload. Reload never resends a
+change, and a later read alone does not prove a lost acknowledgement succeeded.
+
+`workspace-task-status.extended.spec.mjs` requires owned unassigned task fixtures
+and `ISOLATED_TASK_WRITES=owned-test-daemon`. It checks trusted status selection,
+actual receipts and refreshed revisions, progress, Back/reopen/reload/reconnect,
+unchanged sibling notes and repository bytes at desktop and narrow widths. The
+separate fixture probe records a real stale-revision conflict; delayed/unknown
+outcomes and retirement races use controlled owner tests. No provider turn is
+needed. This is internal and unreleased: the assistant app guide's task section is
+not promoted or published by this checkpoint; broader task management stays out of scope.
 
 ## Quick switcher (internal preview)
 

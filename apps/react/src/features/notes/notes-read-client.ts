@@ -14,3 +14,6 @@ export const notesReadClient = createBackendNotesReadClient({
   backendRequest: backend.backendRequest,
   ...discovery,
 });
+
+/** Shared discovery owner used by canonical task reads as well as notes. */
+export const rememberNoteWorkspace = discovery.rememberNoteWorkspace;

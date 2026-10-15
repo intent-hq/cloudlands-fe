@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "메시지 링크 복사 중…",
   "react_workspace_messageText_copy_label": "텍스트 복사",
   "react_workspace_messageText_copied_label": "메시지 텍스트를 복사했습니다",
-  "react_workspace_messageText_unavailable_description": "전체 메시지 텍스트를 사용할 수 없습니다. 도구 출력과 첨부 파일은 포함되지 않습니다."
+  "react_workspace_messageText_unavailable_description": "전체 메시지 텍스트를 사용할 수 없습니다. 도구 출력과 첨부 파일은 포함되지 않습니다.",
+  "workspace_taskStatus_unknown_description": "결과를 알 수 없습니다. 이 변경을 반복하지 말고 저장된 작업을 확인한 후 계속하세요.",
+  "workspace_taskStatus_refresh_description": "상태를 다시 변경하기 전에 저장된 작업을 새로 고침하세요.",
+  "workspace_taskStatus_failed_description": "상태가 변경되지 않았습니다. 다시 시도하려면 상태를 선택하세요."
 }

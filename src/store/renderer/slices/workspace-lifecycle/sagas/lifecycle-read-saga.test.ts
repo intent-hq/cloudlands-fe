@@ -165,9 +165,7 @@ function state(
   const original = {
     tabState: { currentTabId },
     workspaceShare: workspaceShareInitialState,
-    workspaceTasks: {
-      byWorkspaceId: {} as Record<string, { loading: boolean; initialized: boolean }>,
-    },
+    workspaceTasks: workspaceTasksReducer(undefined, { type: '@@init' }),
     changes: {
       ...fileTrackingReducer(undefined, { type: '@@init' }),
       agentStats: {} as Record<string, { additions: number; deletions: number; timestamp: string }>,

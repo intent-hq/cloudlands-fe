@@ -36,6 +36,12 @@ import {
   subscribeWorkspaceIds,
 } from './live-support';
 import { createBackendTasksClient } from './backend-tasks-client';
+import { createBackendTaskStatusClient } from './backend-task-status-client';
+
+const taskStatusWrites = createBackendTaskStatusClient(
+  (...args) => backendRequest(...args),
+  (...args) => runMutationWithId(...args),
+);
 import {
   conflictToTask,
   normalizeAgentLink,
@@ -125,7 +131,10 @@ export class LiveTasksClient implements TasksClient {
     status: TaskStatus,
     expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, 'task.updateNoteStatus', { status }, expectedVersion);
+    const workspaceId = await resolveNoteWorkspaceId(noteId);
+    if (!workspaceId)
+      return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
+    return taskStatusWrites.updateLegacy(workspaceId, noteId, status, expectedVersion);
   }
 
   async markAsTask(

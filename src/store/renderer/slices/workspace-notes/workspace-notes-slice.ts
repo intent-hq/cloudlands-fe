@@ -91,6 +91,11 @@ export const loadWorkspaceNotesFailed = createAction<[workspaceIds: string[], er
 export const workspaceNotesHydrationRequested = createAction<
   [workspaceId: string, generation: number, force: boolean]
 >('workspaceNotes/hydrationRequested');
+/** A validated task-status receipt updates only status/revision, preserving note body and projections. */
+export const taskStatusReceiptAccepted = createAction<
+  [workspaceId: string, noteId: string, status: TaskStatus, rev: number]
+>('workspaceNotes/taskStatusReceiptAccepted');
+
 export const applyTaskStatusChanged = createAction<
   [workspaceId: string, noteId: string, newStatus: TaskStatus]
 >('workspaceNotes/applyTaskStatusChanged');
@@ -807,8 +812,10 @@ workspaceNotesReducer.with(
       // keeping a possibly-outdated body whose contentPreview/contentLength
       // markers describe the new server content.
       const merged = (notesByWorkspace[workspaceId] ?? []).map((note) => {
-        if (!isNoteContentStale(note)) return note;
         const existing = getItem(workspaceState.notes, note.id);
+        if (existing?.rev !== undefined && note.rev !== undefined && existing.rev > note.rev)
+          return existing;
+        if (!isNoteContentStale(note)) return note;
         if (!existing?.content) return note;
         if (note.rev === undefined || existing.rev === undefined || note.rev > existing.rev) {
           return note;
@@ -837,6 +844,30 @@ workspaceNotesReducer.with(
         error,
       });
     }, state);
+  },
+);
+workspaceNotesReducer.with(
+  taskStatusReceiptAccepted,
+  (state, { payload: [workspaceId, noteId, status, rev] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws || ws.deletedNoteIds[noteId]) return state;
+    const note = getItem(ws.notes, noteId as Note['id']);
+    if (
+      !note?.metadata?.task ||
+      note.rev === undefined ||
+      note.rev > rev ||
+      (note.rev === rev && note.metadata.task.status === status)
+    )
+      return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      notes: updateItem(ws.notes, {
+        ...note,
+        rev,
+        metadata: { ...note.metadata, task: { ...note.metadata.task, status } },
+      }),
+      notesVersion: ws.notesVersion + 1,
+    });
   },
 );
 workspaceNotesReducer.with(

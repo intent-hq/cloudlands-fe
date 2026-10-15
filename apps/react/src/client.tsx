@@ -1,3 +1,4 @@
+import { taskStatusSaga } from './store/workspace-tasks/sagas/task-status-saga';
 import { agentRenameSaga } from './store/agent-session/sagas/agent-rename-saga';
 import { workspaceTitleSaga } from './store/workspace/sagas/workspace-title-saga';
 import { terminalInteractionSaga } from './store/terminals/sagas/terminal-interaction-saga';
@@ -49,6 +50,7 @@ const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
 const cancelNotesContentReadSaga = store.runSaga(notesContentReadSaga);
+const cancelTaskStatusSaga = store.runSaga(taskStatusSaga);
 const cancelNotesWriteSaga = store.runSaga(notesWriteSaga);
 const cancelCommitHistorySaga = store.runSaga(commitHistorySaga);
 const cancelGitConsumerReadSaga = store.runSaga(gitConsumerReadSaga);
@@ -87,6 +89,7 @@ function dispose() {
   cancelAgentRenameSaga();
   cancelNotesContentReadSaga();
   cancelNotesWriteSaga();
+  cancelTaskStatusSaga();
   cancelGitWriteSaga();
   cancelGitStatusReadSaga();
   cancelGitConsumerReadSaga();

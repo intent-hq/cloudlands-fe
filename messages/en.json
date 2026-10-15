@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "Copying message link…",
   "react_workspace_messageText_copy_label": "Copy text",
   "react_workspace_messageText_copied_label": "Message text copied",
-  "react_workspace_messageText_unavailable_description": "Complete message text is unavailable. Tool output and attachments are not included."
+  "react_workspace_messageText_unavailable_description": "Complete message text is unavailable. Tool output and attachments are not included.",
+  "workspace_taskStatus_unknown_description": "The outcome is unknown. Do not repeat this change; check the saved task before continuing.",
+  "workspace_taskStatus_refresh_description": "Refresh the saved task before another status change.",
+  "workspace_taskStatus_failed_description": "The status was not changed. Select a status to try again."
 }

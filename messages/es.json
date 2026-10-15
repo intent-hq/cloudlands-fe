@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "Copiando enlace del mensaje…",
   "react_workspace_messageText_copy_label": "Copiar texto",
   "react_workspace_messageText_copied_label": "Texto del mensaje copiado",
-  "react_workspace_messageText_unavailable_description": "El texto completo del mensaje no está disponible. No se incluyen los resultados de herramientas ni los archivos adjuntos."
+  "react_workspace_messageText_unavailable_description": "El texto completo del mensaje no está disponible. No se incluyen los resultados de herramientas ni los archivos adjuntos.",
+  "workspace_taskStatus_unknown_description": "El resultado es desconocido. No repitas este cambio; comprueba la tarea guardada antes de continuar.",
+  "workspace_taskStatus_refresh_description": "Actualiza la tarea guardada antes de volver a cambiar su estado.",
+  "workspace_taskStatus_failed_description": "El estado no cambió. Selecciona un estado para volver a intentarlo."
 }

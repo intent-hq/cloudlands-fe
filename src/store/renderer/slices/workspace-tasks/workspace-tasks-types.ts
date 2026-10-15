@@ -1,4 +1,6 @@
-import type { WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
+import type { SagaGenerator } from 'typed-redux-saga';
+import type { TasksReadClient } from '../../../../lib/client/lifecycle-read-client-types';
+import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 /** Per-workspace canonical task state. */
@@ -25,6 +27,9 @@ export interface WorkspaceTasksWorkspaceState {
 
 /** Root workspace-tasks state, keyed by workspace ID. */
 export interface WorkspaceTasksState {
+  explicitStatusViews: Collection<ExplicitTaskStatusView, 'viewId'>;
+  explicitStatusOperations: Collection<ExplicitTaskStatusOperation, 'requestId'>;
+  revokedStatusViews: Record<string, true>;
   byWorkspaceId: Record<string, WorkspaceTasksWorkspaceState>;
 }
 
@@ -37,3 +42,41 @@ export interface WorkspaceTaskProgress {
   completed: number;
   inProgress: number;
 }
+
+/** Captured principal/backend authority and root/connection lifetime; never inferred from active UI. */
+export type ExplicitTaskStatusIdentity = {
+  workspaceId: string;
+  noteId: string;
+  viewId: string;
+  consumerId: string;
+  authority: string;
+  context: string;
+};
+export type ExplicitTaskStatusRequest = ExplicitTaskStatusIdentity & {
+  requestId: string;
+  expectedVersion: number;
+};
+export type ExplicitTaskStatusView = ExplicitTaskStatusIdentity & {
+  /** Accepted note revision at this lease; rejected stale payloads cannot retire it. */
+  noteRevision: number;
+};
+export type ExplicitTaskStatusOperation = ExplicitTaskStatusRequest & {
+  requestedStatus: TaskStatus;
+  status: 'queued' | 'running' | 'confirmed' | 'failed' | 'conflict' | 'unknown';
+  echoedStatus?: TaskStatus;
+  echoedRev?: number;
+  error?: string;
+};
+
+export type WorkspaceTasksReadDependencies = {
+  tasks: Pick<TasksReadClient, 'list'>;
+  selectWorkspaceTasksShouldLoad: { effect(workspaceId: string): SagaGenerator<boolean> };
+  admittedContext?: { effect(workspaceId: string): SagaGenerator<string | null> };
+  /** Source retains its shared bounded scheduler; explicit hosts provide their admitted context. */
+  runRead?: (
+    workspaceId: string,
+    read: (workspaceId: string) => SagaGenerator<void>,
+  ) => SagaGenerator<void>;
+  /** Omit where the existing lifecycle reconnect watcher already owns task refresh. */
+  selectDemandedTaskWorkspaceIds?: { effect(): SagaGenerator<string[]> };
+};

@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "正在复制消息链接…",
   "react_workspace_messageText_copy_label": "复制文本",
   "react_workspace_messageText_copied_label": "已复制消息文本",
-  "react_workspace_messageText_unavailable_description": "无法获取完整消息文本。不包含工具输出和附件。"
+  "react_workspace_messageText_unavailable_description": "无法获取完整消息文本。不包含工具输出和附件。",
+  "workspace_taskStatus_unknown_description": "结果未知。请勿重复此更改；继续前请检查已保存的任务。",
+  "workspace_taskStatus_refresh_description": "再次更改状态前，请刷新已保存的任务。",
+  "workspace_taskStatus_failed_description": "状态未更改。请选择状态重试。"
 }

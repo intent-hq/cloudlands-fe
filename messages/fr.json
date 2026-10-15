@@ -7618,5 +7618,8 @@
   "react_workspace_messageLink_pending_label": "Copie du lien du message…",
   "react_workspace_messageText_copy_label": "Copier le texte",
   "react_workspace_messageText_copied_label": "Texte du message copié",
-  "react_workspace_messageText_unavailable_description": "Le texte complet du message est indisponible. Les sorties des outils et les pièces jointes ne sont pas incluses."
+  "react_workspace_messageText_unavailable_description": "Le texte complet du message est indisponible. Les sorties des outils et les pièces jointes ne sont pas incluses.",
+  "workspace_taskStatus_unknown_description": "Le résultat est inconnu. Ne répétez pas cette modification ; vérifiez la tâche enregistrée avant de continuer.",
+  "workspace_taskStatus_refresh_description": "Actualisez la tâche enregistrée avant de modifier à nouveau son statut.",
+  "workspace_taskStatus_failed_description": "Le statut n’a pas changé. Sélectionnez un statut pour réessayer."
 }

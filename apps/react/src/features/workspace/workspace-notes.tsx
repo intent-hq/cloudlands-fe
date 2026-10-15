@@ -28,6 +28,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 import { selectNoteEditReady } from '@/store/workspace-notes/note-edit-selectors';
 import { WorkspaceNoteEditor } from './workspace-note-editor';
+import { WorkspaceTaskStatus } from './workspace-task-status';
 import { WorkspaceNoteCreate } from './workspace-note-create';
 
 function NoteContent({
@@ -182,6 +183,7 @@ function NoteContent({
               </Button>
             )}
           </header>
+          <WorkspaceTaskStatus workspaceId={workspaceId} noteId={noteId} consumerId={consumerId} />
           {navigationMessage && (
             <output className="type-caption text-muted-foreground">{navigationMessage}</output>
           )}
