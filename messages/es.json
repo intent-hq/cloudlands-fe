@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "Quedarse",
   "workspace_fileNavigation_discard_label": "Descartar cambios sin guardar",
   "workspace_fileBrowser_scope_description": "Explora el repositorio principal de este espacio de trabajo.",
-  "workspace_fileBrowser_empty_label": "Directorio vacío"
+  "workspace_fileBrowser_empty_label": "Directorio vacío",
+  "workspace_terminal_scope_description": "Consola en la carpeta principal del espacio de trabajo. El terminal sigue activo al salir de esta vista.",
+  "workspace_terminal_unknown_description": "No se pudo confirmar la operación del terminal. Actualiza la lista y revisa los terminales existentes antes de continuar. Esta sesión no volverá a enviarla.",
+  "workspace_terminal_close_description": "¿Cerrar este terminal y detener su proceso en ejecución?",
+  "workspace_terminal_reconnect_label": "Reconectar",
+  "workspace_terminal_detach_label": "Ocultar terminal",
+  "workspace_terminal_ready_label": "Terminal listo"
 }

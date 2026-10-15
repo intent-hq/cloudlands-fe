@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "留まる",
   "workspace_fileNavigation_discard_label": "未保存の編集を破棄",
   "workspace_fileBrowser_scope_description": "このワークスペースのプライマリリポジトリを参照します。",
-  "workspace_fileBrowser_empty_label": "空のディレクトリ"
+  "workspace_fileBrowser_empty_label": "空のディレクトリ",
+  "workspace_terminal_scope_description": "ワークスペースの主フォルダー内のシェルです。この画面を離れてもターミナルは動作し続けます。",
+  "workspace_terminal_unknown_description": "ターミナル操作を確認できませんでした。続行する前に一覧を更新し、既存のターミナルを確認してください。このセッションでは再送信しません。",
+  "workspace_terminal_close_description": "このターミナルを閉じて実行中のプロセスを停止しますか？",
+  "workspace_terminal_reconnect_label": "再接続",
+  "workspace_terminal_detach_label": "ターミナルを隠す",
+  "workspace_terminal_ready_label": "ターミナル準備完了"
 }

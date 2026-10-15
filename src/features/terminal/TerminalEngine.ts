@@ -1,0 +1,2236 @@
+/** Shared imperative xterm engine. Application state and transport are host-owned. */
+
+import { Terminal, IDisposable } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
+import * as AddOnSearch from '@xterm/addon-search';
+const SearchAddon = AddOnSearch.SearchAddon;
+import '@xterm/xterm/css/xterm.css';
+import { Logger } from '../../shared/logger';
+import type { TerminalsClient } from '$lib/client/app-client';
+import type { TerminalSubscription } from '$lib/client/terminal-client-types';
+import type {
+  TerminalCallbacks,
+  TerminalEngineOptions,
+  TerminalHostCallbacks,
+  TerminalInfo,
+} from './terminal-engine-options';
+import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
+import { TerminalBufferManager } from './terminal-buffer-manager';
+import { TerminalThemeManager } from './terminal-theme-manager';
+import { disposeXtermAfterViewportSync } from './utils/xterm-lifecycle';
+import { m } from '$shared/paraglide/messages.js';
+import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
+
+const logger = new Logger('TerminalEngine');
+
+// In some browser builds (prod), `process` may be undefined. Guard access.
+const isWindowsPlatform = typeof process !== 'undefined' && process.platform === 'win32';
+
+/** Quiet period after the last size change before a reattached terminal is fitted. */
+const REATTACH_FIT_SETTLE_MS = 100;
+
+export class TerminalEngine {
+  private xterm!: Terminal;
+  private fitAddon!: FitAddon;
+  private searchAddon: any; // SearchAddon type issues
+  private webLinksAddon!: WebLinksAddon;
+  private webglAddon: WebglAddon | null = null;
+
+  private stateMachine: TerminalStateMachine;
+  private bufferManager: TerminalBufferManager | null;
+  private themeManager: TerminalThemeManager;
+
+  private terminalId: string;
+  private workspaceId: string;
+  private container: HTMLElement | null;
+
+  private eventListeners: Array<() => void> = [];
+  private resizeObserver: ResizeObserver | null = null;
+  private reattachFitObserver: ResizeObserver | null = null;
+  private reattachFitTimer: NodeJS.Timeout | null = null;
+  private visibilityObserver: IntersectionObserver | null = null;
+  private wasVisible: boolean = true;
+  private isVisible: boolean = true;
+  private lastFittedSize: { width: number; height: number } | null = null;
+  private resizeDebounceTimer: NodeJS.Timeout | null = null;
+  private bufferSaveTimer: NodeJS.Timeout | null = null;
+  private dataDisposable: IDisposable | null = null;
+  private resizeDisposable: IDisposable | null = null;
+  private selectionDisposable: IDisposable | null = null;
+  private searchResultsDisposable: IDisposable | null = null;
+  private pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+  private pendingFrames = new Set<number>();
+  private ipcCleanup: (() => void) | null = null; // Cleanup function for IPC handlers
+  private themeCleanup: (() => void) | null = null; // Cleanup function for theme handler
+  private webglContextLostCleanup: (() => void) | null = null; // Cleanup for WebGL context loss listener
+
+  private isDisposed: boolean = false;
+  private isXtermOpened: boolean = false; // Track if xterm.open() has been called
+
+  // Auto-reconnect state
+  private autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoReconnectAttempts: number = 0;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 5;
+  private static readonly BASE_RECONNECT_DELAY_MS = 1000; // 1s, 2s, 4s, 8s, 16s
+
+  // IPC health check / heartbeat
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+  private static readonly HEARTBEAT_TIMEOUT_MS = 10_000; // 10 seconds
+
+  // WebGL context loss recovery
+  private webglRecoveryAttempts: number = 0;
+  private static readonly MAX_WEBGL_RECOVERY_ATTEMPTS = 3;
+
+  private exitedNormally: boolean = false; // Track normal shell exit vs unexpected disconnect
+
+  private lastCwd: string | undefined;
+  private isExecuting: boolean = false;
+  private startTime: number = Date.now();
+
+  // Command tracking
+  private commandBuffer = ''; // Track the current command being typed
+  private currentLineBuffer = ''; // Track the current line
+  private isAtPrompt = false; // Track if we're at a command prompt
+
+  // Callbacks
+  private callbacks: TerminalCallbacks;
+
+  /** The host supplies the client, including its authority and transport policy. */
+  private terminals: TerminalsClient;
+  private readonly attachOnly: boolean;
+  private readonly isCurrent: () => boolean;
+  private readonly autoFocus: boolean;
+  private readonly host: TerminalHostCallbacks;
+  private attachmentGeneration = 0;
+  private isDetached = false;
+  private pendingOutput: string[] = [];
+  private subscriptionError: Error | null = null;
+
+  private isActive(): boolean {
+    return !this.isDisposed && this.isCurrent() && (!this.attachOnly || !this.isDetached);
+  }
+
+  private scheduleTimer(callback: () => void, delay: number): void {
+    const timer = setTimeout(() => {
+      this.pendingTimers.delete(timer);
+      if (this.isActive()) callback();
+    }, delay);
+    this.pendingTimers.add(timer);
+  }
+
+  private scheduleFrame(callback: () => void): void {
+    const frame = requestAnimationFrame(() => {
+      this.pendingFrames.delete(frame);
+      if (this.isActive()) callback();
+    });
+    this.pendingFrames.add(frame);
+  }
+
+  private cancelPendingLayout(): void {
+    for (const timer of this.pendingTimers) clearTimeout(timer);
+    this.pendingTimers.clear();
+    for (const frame of this.pendingFrames) cancelAnimationFrame(frame);
+    this.pendingFrames.clear();
+  }
+
+  private assertCurrent(generation: number): void {
+    if (!this.isActive() || generation !== this.attachmentGeneration) {
+      throw new Error('Terminal attachment is no longer current');
+    }
+  }
+
+  constructor(options: TerminalEngineOptions) {
+    if (options.lifecycle === 'attach-only' && !options.terminalId?.trim()) {
+      throw new Error('Attach-only terminals require a daemon terminal ID');
+    }
+    this.attachOnly = options.lifecycle === 'attach-only';
+    this.isCurrent = options.isCurrent ?? (() => true);
+    this.autoFocus = options.autoFocus ?? true;
+    this.host = options;
+    this.workspaceId = options.workspaceId;
+    this.terminalId =
+      options.terminalId || `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    this.container = options.container;
+    this.terminals = options.terminals;
+    this.callbacks = {
+      onReady: options.onReady,
+      onExit: options.onExit,
+      onCommandStart: options.onCommandStart,
+      onCommandFinished: options.onCommandFinished,
+      onCwdChanged: options.onCwdChanged,
+      onError: options.onError,
+      onToggleSearch: options.onToggleSearch,
+      onSearchResultsChange: options.onSearchResultsChange,
+    };
+
+    // Initialize state machine
+    this.stateMachine = new TerminalStateMachine(this.terminalId);
+    this.setupStateMachineListeners();
+
+    // Initialize managers
+    this.bufferManager = this.attachOnly
+      ? null
+      : new TerminalBufferManager(this.workspaceId, this.terminalId);
+    this.themeManager = new TerminalThemeManager(this.container);
+
+    try {
+      // The host supplies the current font preference and forwards later changes.
+      const initialFontFamily = options.fontFamily;
+      this.xterm = new Terminal({
+        allowProposedApi: true,
+        fontFamily: initialFontFamily,
+        fontSize: 13,
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        cursorBlink: true,
+        cursorStyle: 'block',
+        cursorWidth: 1,
+        scrollback: 10000,
+        allowTransparency: true,
+        windowsPty: isWindowsPlatform ? { backend: 'conpty' } : undefined,
+        macOptionIsMeta: true,
+        rightClickSelectsWord: true,
+        convertEol: true,
+        drawBoldTextInBrightColors: true,
+        scrollSensitivity: 1,
+        theme: this.themeManager.getCurrentTheme(),
+      });
+
+      // Load addons
+      this.fitAddon = new FitAddon();
+      this.xterm.loadAddon(this.fitAddon);
+
+      // Custom link handler to open URLs in browser panel instead of popup
+      this.webLinksAddon = new WebLinksAddon((_event, uri) => {
+        if (this.isActive()) this.host.onOpenLink?.(uri);
+      });
+      this.xterm.loadAddon(this.webLinksAddon);
+
+      this.searchAddon = new SearchAddon();
+      this.xterm.loadAddon(this.searchAddon);
+
+      // Listen for search result changes
+      this.searchResultsDisposable = this.searchAddon.onDidChangeResults(
+        (results: { resultIndex: number; resultCount: number }) => {
+          if (this.isActive())
+            this.callbacks.onSearchResultsChange?.(results.resultIndex, results.resultCount);
+        },
+      );
+    } catch (error) {
+      this.dispose({ killPty: false });
+      throw error;
+    }
+  }
+
+  /**
+   * Search decoration options for highlighting matches
+   * Uses different colors for active match vs other matches
+   */
+  private getSearchDecorations() {
+    return {
+      matchBackground: '#515c6a',
+      matchBorder: '#515c6a',
+      matchOverviewRuler: '#515c6a',
+      activeMatchBackground: '#eab308',
+      activeMatchBorder: '#ca8a04',
+      activeMatchColorOverviewRuler: '#eab308',
+    };
+  }
+
+  /**
+   * Setup state machine event listeners
+   */
+  private setupStateMachineListeners(): void {
+    // Listen for state transitions
+    this.stateMachine.onTransition((from, to) => {
+      // Note: onReady callback is NOT called here to avoid duplicate calls.
+      // It is called explicitly after initialization/reconnection is complete.
+      if (to === TerminalState.ERROR && !this.attachOnly) {
+        this.handleError(new Error(`Terminal entered error state from ${from}`));
+      }
+
+      // Auto-reconnect when entering DISCONNECTED or ERROR state
+      if (to === TerminalState.DISCONNECTED || to === TerminalState.ERROR) {
+        this.stopHeartbeat();
+        // Don't auto-reconnect if the shell exited normally
+        if (!this.exitedNormally) {
+          this.scheduleAutoReconnect();
+        }
+      }
+
+      // Reset reconnect attempts on successful connection and start heartbeat
+      if (to === TerminalState.CONNECTED) {
+        for (const chunk of this.pendingOutput.splice(0)) {
+          if (!this.isActive()) break;
+          this.xterm.write(chunk);
+          this.parseTerminalOutput(chunk);
+        }
+        this.autoReconnectAttempts = 0;
+        this.cancelAutoReconnect();
+        this.startHeartbeat();
+      }
+    });
+
+    // Listen for errors
+    this.stateMachine.onError((error) => {
+      this.handleError(error);
+    });
+  }
+
+  /**
+   * Initialize the terminal
+   */
+  async initialize(skipBufferRestore: boolean = false): Promise<void> {
+    if (!this.isActive()) {
+      throw new Error('Cannot initialize inactive terminal');
+    }
+    const generation = this.attachmentGeneration;
+
+    if (!this.container) {
+      throw new Error('Cannot initialize terminal without a container');
+    }
+
+    const container = this.container;
+
+    if (!this.stateMachine.canTransition('initialize')) {
+      throw new Error(`Cannot initialize terminal in state ${this.stateMachine.getState()}`);
+    }
+
+    this.stateMachine.transition('initialize');
+
+    try {
+      // Open XTerm in the container - only if not already opened
+      if (!this.isXtermOpened) {
+        this.xterm.open(container);
+        this.isXtermOpened = true;
+        logger.info(`[initialize] XTerm opened for terminal ${this.terminalId}`);
+      } else {
+        logger.warn(
+          `[initialize] XTerm already opened for terminal ${this.terminalId}, skipping open()`,
+        );
+      }
+
+      // Load WebGL addon only for dark themes
+      // Light themes use the Canvas renderer for proper CSS font-smoothing/anti-aliasing
+      // WebGL uses greyscale anti-aliasing which looks poor on light backgrounds
+      const currentTheme = this.themeManager.getCurrentTheme();
+      if (currentTheme.isDark) {
+        this.loadWebglAddon();
+      } else {
+        logger.debug('[Renderer] Using Canvas renderer for light theme (better anti-aliasing)');
+      }
+
+      // Apply theme
+      this.themeManager.applyTheme(this.xterm);
+
+      // Ensure container has dimensions before fitting
+      if (!this.fitTerminalToContainer()) {
+        logger.warn('Container has no dimensions, delaying fit');
+        this.scheduleTimer(() => {
+          this.fitTerminalToContainer();
+        }, 100);
+      }
+
+      // Setup resize observer with debouncing
+      this.setupResizeObserver();
+
+      // Setup XTerm event handlers
+      this.setupXTermEventHandlers();
+
+      // Setup theme change listener
+      this.setupThemeChangeListener();
+
+      // Get terminal dimensions
+      const cols = this.xterm.cols;
+      const rows = this.xterm.rows;
+
+      // Check if terminal exists on backend (daemon `terminal.list` per
+      // PROTOCOL §5.9; entries are `{ id, name, cwd, isExecutingCommand }`,
+      // matched on `TerminalTab.id`).
+      const backendTerminal = await this.findBackendTerminal();
+      this.assertCurrent(generation);
+      const terminalExists = backendTerminal !== null;
+      if (this.attachOnly && !terminalExists) {
+        throw new Error(m.terminal_ipc_notFoundWithId_error({ terminalId: this.terminalId }));
+      }
+
+      // Restore buffer based on whether terminal exists on backend
+      // - If terminal exists on backend: use backend buffer (has real PTY output)
+      // - If terminal doesn't exist: use local buffer (from localStorage)
+      if (!skipBufferRestore || this.attachOnly) {
+        if (terminalExists) {
+          // Terminal exists on backend - restore from `terminal.getBuffer`
+          // (PROTOCOL §5.13); the live client decodes the base64 payload.
+          try {
+            const buffer = await this.terminals.getBuffer(
+              this.terminalId,
+              undefined,
+              this.workspaceId,
+            );
+            this.assertCurrent(generation);
+            if (buffer) {
+              logger.info(`Restoring ${buffer.length} bytes of buffered output from backend`);
+              this.xterm.write(buffer);
+              this.parseTerminalOutput(buffer);
+            }
+          } catch (error) {
+            if (this.attachOnly) throw error;
+            logger.warn('Could not restore terminal buffer from backend:', error);
+          }
+        } else {
+          // Terminal doesn't exist on backend - try local buffer
+          const snapshot = await this.bufferManager?.restoreBuffer();
+          this.assertCurrent(generation);
+          if (snapshot) {
+            logger.info('Restoring terminal buffer from local storage');
+            this.restoreFromSnapshot(snapshot);
+          }
+        }
+      }
+
+      this.assertCurrent(generation);
+      // Start buffer auto-save
+      this.startBufferAutoSave();
+
+      // Transition to connecting state
+      this.stateMachine.transition('connect');
+
+      if (!terminalExists) {
+        // Open new PTY connection
+        logger.debug(`[initialize] Terminal ${this.terminalId} creating new PTY`);
+        await this.openPtyConnection(cols, rows);
+      } else {
+        // Terminal already exists on backend - reconnect to it
+        const ready = this.setupIpcEventHandlers();
+        if (this.attachOnly) {
+          await ready;
+          this.assertCurrent(generation);
+          if (this.subscriptionError) throw this.subscriptionError;
+          if (this.exitedNormally) throw new Error(m.terminal_quakeOverlay_status_exited());
+        }
+
+        // Mark as connected
+        this.stateMachine.transition('connected');
+
+        // Resize the backend PTY to match current xterm dimensions (must be after CONNECTED state)
+        this.resize(cols, rows);
+
+        // Hydrating a terminal whose process already exited
+        // (`isExecutingCommand: false` on the daemon `terminal.list` entry):
+        // suppress the cursor just like a live `terminal:exit`.
+        if (backendTerminal?.isExecuting === false) {
+          this.hideCursorOnExit();
+        }
+
+        // Notify ready
+        this.callbacks.onReady?.();
+      }
+
+      // Focus the terminal after initialization - use requestAnimationFrame to ensure DOM is ready
+      this.scheduleFrame(() => {
+        if (this.autoFocus && this.isActive() && this.isVisible) {
+          this.xterm.focus();
+        }
+      });
+    } catch (error) {
+      if (this.attachOnly && generation === this.attachmentGeneration) this.releaseSubscription();
+      if (this.isActive() && generation === this.attachmentGeneration) {
+        this.stateMachine.reportError(error as Error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Open connection to PTY process via `terminal.create` (PROTOCOL §5.13).
+   * The daemon assigns the PTY id; we adopt it as `this.terminalId` so all
+   * subsequent `terminal.write/resize/kill/getBuffer` calls hit the same PTY.
+   */
+  private async openPtyConnection(cols: number, rows: number): Promise<void> {
+    if (this.attachOnly) throw new Error('Attach-only terminals cannot create a PTY');
+    const generation = this.attachmentGeneration;
+    try {
+      const result = await this.terminals.create({
+        workspaceId: this.workspaceId,
+        cols,
+        rows,
+      });
+
+      this.assertCurrent(generation);
+      if (!result.success) {
+        throw new Error(result.error || m.terminal_adapter_openFailed_error());
+      }
+      if (result.id) {
+        this.terminalId = result.id;
+      }
+
+      // Setup event subscription for the (now-known) PTY id.
+      this.setupIpcEventHandlers();
+
+      // Mark as connected
+      this.stateMachine.transition('connected');
+
+      // Fresh PTY — make sure the cursor is visible/blinking again after a
+      // previous exit suppressed it.
+      this.restoreCursor();
+
+      // Notify ready
+      this.callbacks.onReady?.();
+    } catch (error) {
+      this.stateMachine.reportError(error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch this PTY's `terminal.list` entry from the daemon, or `null` when it
+   * is not listed. Only the source-compatible lifecycle folds transport
+   * errors to null; attach-only callers must distinguish failure from absence.
+   */
+  private async findBackendTerminal(): Promise<
+    Awaited<ReturnType<TerminalsClient['list']>>['terminals'][number] | null
+  > {
+    try {
+      const { terminals } = await this.terminals.list(this.workspaceId);
+      return terminals.find((t) => t.id === this.terminalId) ?? null;
+    } catch (error) {
+      if (this.attachOnly) throw error;
+      logger.warn('Could not check terminal existence:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check whether the daemon currently has a PTY with `this.terminalId`.
+   */
+  private async terminalExistsOnBackend(): Promise<boolean> {
+    return (await this.findBackendTerminal()) !== null;
+  }
+
+  /**
+   * Stop the blinking cursor once the terminal's process has exited: disable
+   * xterm's cursor blink and hide the cursor (DECTCEM `\x1b[?25l`). Applied on
+   * live `terminal:exit` and when hydrating an already-exited terminal.
+   */
+  private hideCursorOnExit(): void {
+    if (!this.isActive()) return;
+    this.xterm.options.cursorBlink = false;
+    this.xterm.write('\x1b[?25l');
+  }
+
+  /**
+   * Restore cursor visibility/blink when a fresh PTY is (re)created for this
+   * adapter after a previous exit.
+   */
+  private restoreCursor(): void {
+    if (!this.isActive()) return;
+    this.xterm.options.cursorBlink = true;
+    this.xterm.write('\x1b[?25h');
+  }
+
+  /**
+   * Setup XTerm event handlers
+   */
+  private setupXTermEventHandlers(): void {
+    if (!this.container) {
+      return;
+    }
+
+    // Dispose old handlers if they exist to prevent duplicates
+    if (this.dataDisposable) {
+      this.dataDisposable.dispose();
+      this.dataDisposable = null;
+    }
+    if (this.resizeDisposable) {
+      this.resizeDisposable.dispose();
+      this.resizeDisposable = null;
+    }
+    if (this.selectionDisposable) {
+      this.selectionDisposable.dispose();
+      this.selectionDisposable = null;
+    }
+
+    // Handle custom keyboard shortcuts
+    this.xterm.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (!this.isActive()) return false;
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const isMod = isMac ? event.metaKey : event.ctrlKey;
+
+      // Cmd+K on macOS to clear terminal (like Terminal.app)
+      if (
+        event.metaKey &&
+        event.key === 'k' &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        if (event.type === 'keydown') {
+          this.clear();
+        }
+        // Return false to prevent the event from being passed to the terminal
+        return false;
+      }
+
+      // Cmd+J (Mac) / Ctrl+J (Win/Linux) - toggle terminal overlay
+      // xterm captures keyboard events before document-level handlers; the
+      // host chooses the appropriate overlay or navigation action.
+      if (isMod && event.key === 'j' && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          this.host.onShortcut?.('toggle-overlay');
+        }
+        return false;
+      }
+
+      // Cmd+F (Mac) / Ctrl+F (Win/Linux) - toggle search
+      // Routed via per-terminal callback so only the originating terminal's
+      // search bar toggles.
+      if (isMod && event.key === 'f' && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          this.callbacks.onToggleSearch?.();
+        }
+        return false; // Prevent terminal from handling
+      }
+
+      // Cmd+T (Mac) / Ctrl+T (Win/Linux) - create new terminal
+      // When the terminal is focused, Cmd+T should create a new terminal
+      // instead of the default "new tab" behavior
+      if (isMod && (event.key === 't' || event.key === 'T') && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          this.host.onShortcut?.('new-terminal');
+        }
+        return false;
+      }
+
+      // Cmd+W (Mac) / Ctrl+W (Win/Linux) - close active terminal tab
+      if (isMod && (event.key === 'w' || event.key === 'W') && !event.shiftKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          this.host.onShortcut?.('close-terminal');
+        }
+        return false;
+      }
+
+      // Cmd+Shift+] / Cmd+Shift+[ - cycle terminal tabs
+      // Return false to let the overlay's window keydown handler pick these up
+      if (
+        isMod &&
+        event.shiftKey &&
+        !event.altKey &&
+        (event.key === ']' || event.key === '}' || event.key === '[' || event.key === '{')
+      ) {
+        return false;
+      }
+
+      // Ctrl+` or Ctrl+Shift+` (tilde) - toggle/create terminal
+      if (
+        event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.key === '`' || event.key === '~')
+      ) {
+        if (event.type === 'keydown') {
+          if (event.shiftKey || event.key === '~') {
+            this.host.onShortcut?.('new-terminal');
+          } else {
+            this.host.onShortcut?.('toggle-overlay');
+          }
+        }
+        return false;
+      }
+
+      // Return true to allow all other key events to be handled normally
+      return true;
+    });
+
+    // Handle user input - write method handles state checks
+    this.dataDisposable = this.xterm.onData((data) => {
+      if (!this.isDisposed) {
+        this.write(data);
+      }
+    });
+
+    // Handle resize
+    this.resizeDisposable = this.xterm.onResize(({ cols, rows }) => {
+      if (!this.isDisposed && this.stateMachine.canAcceptInput()) {
+        this.resize(cols, rows);
+      }
+    });
+
+    // Handle selection - no-op for now, but keep the listener for future features
+    this.selectionDisposable = this.xterm.onSelectionChange(() => {});
+  }
+
+  /**
+   * Subscribe to daemon `terminal:*` events for this PTY (PROTOCOL §6.5):
+   * `terminal:data` (decoded chunk), `terminal:exit`, and `terminal:cwd`. The
+   * adapter derives command-start/finished locally from the data stream, so no
+   * BE command-tracking events are consumed here.
+   */
+  private setupIpcEventHandlers(): Promise<void> | undefined {
+    this.releaseSubscription();
+    this.subscriptionError = null;
+
+    // Closure flag to short-circuit handlers immediately on cleanup — survives
+    // any race where the unsubscribe runs after an event has already been
+    // dispatched into the queue.
+    let handlerDisabled = false;
+
+    const unsubscribe = this.terminals.subscribeEvents(
+      this.terminalId,
+      {
+        onData: ({ chunk }) => {
+          if (handlerDisabled || !this.isActive()) return;
+          if (!this.stateMachine.canAcceptInput()) {
+            const state = this.stateMachine.getState();
+            if (
+              this.attachOnly &&
+              (state === TerminalState.CONNECTING || state === TerminalState.RECONNECTING)
+            ) {
+              this.pendingOutput.push(chunk);
+            }
+            return;
+          }
+          this.xterm.write(chunk);
+          this.parseTerminalOutput(chunk);
+        },
+        onExit: ({ exitCode }) => {
+          if (handlerDisabled || !this.isActive()) return;
+          this.exitedNormally = true;
+          this.hideCursorOnExit();
+          this.callbacks.onExit?.(exitCode);
+          this.stateMachine.transition('disconnect');
+        },
+        onError: (error: Error) => {
+          if (handlerDisabled || !this.isActive()) return;
+          this.subscriptionError = error;
+          this.stateMachine.reportError(error);
+        },
+        onCwd: ({ cwd }) => {
+          if (handlerDisabled || !this.isActive()) return;
+          this.lastCwd = cwd;
+          this.callbacks.onCwdChanged?.(cwd);
+        },
+      },
+      this.workspaceId,
+    );
+
+    this.ipcCleanup = () => {
+      handlerDisabled = true;
+      try {
+        unsubscribe();
+      } catch (error) {
+        logger.warn('Failed to unsubscribe terminal events:', error);
+      }
+    };
+    return (unsubscribe as TerminalSubscription).ready;
+  }
+
+  private releaseSubscription(): void {
+    this.ipcCleanup?.();
+    this.ipcCleanup = null;
+    this.pendingOutput = [];
+  }
+
+  /**
+   * Setup resize observer with debouncing
+   */
+  private setupResizeObserver(): void {
+    if (!this.container || !this.isVisible) {
+      return;
+    }
+
+    const container = this.container;
+
+    // Disconnect old observer if it exists to prevent duplicates
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // Clear any pending resize timer
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
+    }
+
+    this.resizeObserver = new ResizeObserver(() => {
+      // Debounce resize events
+      if (this.resizeDebounceTimer) {
+        clearTimeout(this.resizeDebounceTimer);
+      }
+
+      this.resizeDebounceTimer = setTimeout(() => {
+        this.fitTerminalToContainer();
+      }, 100);
+    });
+
+    this.resizeObserver.observe(container);
+
+    // Setup visibility observer to reconnect ResizeObserver when container becomes visible
+    this.setupVisibilityObserver();
+  }
+
+  /**
+   * Setup IntersectionObserver to detect when the terminal container becomes visible.
+   * When the container transitions from hidden → visible, we reconnect the ResizeObserver
+   * and call fitAddon.fit() so PTY dimensions stay in sync.
+   */
+  private setupVisibilityObserver(): void {
+    if (!this.container) {
+      return;
+    }
+
+    const container = this.container;
+
+    // Clean up existing observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
+    }
+
+    this.visibilityObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const isVisible = entry.isIntersecting;
+
+        if (isVisible && !this.wasVisible) {
+          // Container transitioned from hidden → visible
+          logger.debug(
+            `[visibility] Terminal ${this.terminalId} became visible, reconnecting ResizeObserver`,
+          );
+
+          // Reconnect ResizeObserver if it was disconnected
+          if (!this.resizeObserver) {
+            this.resizeObserver = new ResizeObserver(() => {
+              if (this.resizeDebounceTimer) {
+                clearTimeout(this.resizeDebounceTimer);
+              }
+              this.resizeDebounceTimer = setTimeout(() => {
+                this.fitTerminalToContainer();
+              }, 100);
+            });
+            this.resizeObserver.observe(container);
+          }
+
+          // Fit immediately to sync PTY dimensions
+          this.fitTerminalToContainer();
+        }
+
+        this.wasVisible = isVisible;
+      }
+    });
+
+    this.visibilityObserver.observe(container);
+  }
+
+  /**
+   * Load the WebGL addon and attach a context loss recovery listener.
+   * On context loss, the addon is disposed and recreated automatically.
+   * Falls back to Canvas renderer if recreation fails.
+   */
+  private loadWebglAddon(): void {
+    // Clean up any existing WebGL addon and listener first
+    this.disposeWebglAddon();
+
+    try {
+      this.webglAddon = new WebglAddon();
+      this.xterm.loadAddon(this.webglAddon);
+
+      // Listen for WebGL context loss on the canvas element
+      const canvas = this.xterm.element?.querySelector('canvas');
+      if (canvas) {
+        const handleContextLost = (event: Event) => {
+          event.preventDefault();
+          logger.warn(
+            // i18n-ignore (log message, not user-facing)
+            `[WebGL] Context lost for terminal ${this.terminalId}, recovering...`,
+          );
+
+          if (!this.isActive()) return;
+
+          // Dispose the broken addon
+          this.disposeWebglAddon();
+
+          // Attempt to recreate after a short delay to let the GPU recover
+          this.scheduleTimer(() => {
+            if (!this.isActive()) return;
+
+            const currentTheme = this.themeManager.getCurrentTheme();
+            if (!currentTheme.isDark) {
+              logger.info(
+                // i18n-ignore (log message, not user-facing)
+                '[WebGL] Skipping WebGL recovery on light theme, using Canvas renderer',
+              );
+              return;
+            }
+
+            // Guard against infinite recovery loops
+            if (this.webglRecoveryAttempts >= TerminalEngine.MAX_WEBGL_RECOVERY_ATTEMPTS) {
+              logger.warn(
+                // i18n-ignore (log message, not user-facing)
+                `[WebGL] Max recovery attempts (${TerminalEngine.MAX_WEBGL_RECOVERY_ATTEMPTS}) reached for terminal ${this.terminalId}, staying on Canvas renderer`,
+              );
+              return;
+            }
+
+            this.webglRecoveryAttempts++;
+
+            try {
+              this.loadWebglAddon();
+              logger.info(
+                // i18n-ignore (log message, not user-facing)
+                `[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`,
+              );
+            } catch (error) {
+              logger.warn(
+                // i18n-ignore (log message, not user-facing)
+                '[WebGL] Failed to recover from context loss, falling back to Canvas renderer:',
+                error,
+              );
+              this.webglAddon = null;
+            }
+          }, 100);
+        };
+
+        canvas.addEventListener('webglcontextlost', handleContextLost);
+        this.webglContextLostCleanup = () => {
+          canvas.removeEventListener('webglcontextlost', handleContextLost);
+        };
+      }
+    } catch (error) {
+      logger.warn('Failed to load WebGL renderer, falling back to Canvas renderer:', error);
+      this.webglAddon = null;
+    }
+  }
+
+  /**
+   * Dispose the WebGL addon and its context loss listener.
+   */
+  private disposeWebglAddon(): void {
+    if (this.webglContextLostCleanup) {
+      this.webglContextLostCleanup();
+      this.webglContextLostCleanup = null;
+    }
+
+    if (this.webglAddon) {
+      try {
+        this.webglAddon.dispose();
+      } catch (error) {
+        logger.warn('Error disposing WebGL addon:', error);
+      }
+      this.webglAddon = null;
+    }
+  }
+
+  /**
+   * Setup theme change listener
+   *
+   * On light themes, we disable WebGL and use the Canvas renderer instead.
+   * The Canvas renderer respects CSS font-smoothing properties, which allows
+   * for proper subpixel anti-aliasing on light backgrounds.
+   * WebGL renders directly to a GPU canvas using greyscale anti-aliasing,
+   * which looks poor on light backgrounds.
+   */
+  private setupThemeChangeListener(): void {
+    // Clean up old theme handler if it exists
+    if (this.themeCleanup) {
+      this.themeCleanup();
+      this.themeCleanup = null;
+    }
+
+    // Listen for terminal theme changes
+    const handleThemeChange = (event: CustomEvent) => {
+      const newTheme = event.detail?.theme;
+      if (newTheme && this.xterm && this.isActive()) {
+        logger.info(`[Theme] Theme changed to: ${newTheme.name} (isDark: ${newTheme.isDark})`);
+        this.themeManager.applyTheme(this.xterm, newTheme);
+
+        // Toggle WebGL based on theme:
+        // - Dark theme: use WebGL for better performance
+        // - Light theme: use Canvas renderer for proper font-smoothing/anti-aliasing
+        if (newTheme.isDark) {
+          // Enable WebGL for dark themes if not already loaded
+          if (!this.webglAddon) {
+            this.loadWebglAddon();
+          }
+        } else {
+          // Dispose WebGL for light themes to use Canvas renderer with proper anti-aliasing
+          if (this.webglAddon) {
+            this.disposeWebglAddon();
+            logger.info('[WebGL] Disposed WebGL addon for light theme (using Canvas renderer)');
+          }
+        }
+      }
+    };
+
+    window.addEventListener('terminal-theme-changed', handleThemeChange as EventListener);
+
+    // Store cleanup function
+    this.themeCleanup = () => {
+      window.removeEventListener('terminal-theme-changed', handleThemeChange as EventListener);
+    };
+  }
+
+  /**
+   * Parse terminal output for shell integration
+   */
+  private parseTerminalOutput(data: string): void {
+    // Track output for history
+    this.host.history?.onOutput(this.terminalId, this.workspaceId, data);
+
+    // Check for command start/end markers
+    if (data.includes('\x1b]133;C\x07')) {
+      // Command finished
+      if (this.isExecuting) {
+        this.isExecuting = false;
+        this.callbacks.onCommandFinished?.();
+        this.host.history?.onCommandFinish(this.terminalId, this.workspaceId);
+      }
+      // Reset command buffer when command finishes
+      this.commandBuffer = '';
+      this.isAtPrompt = true;
+    } else if (data.includes('\x1b]133;A\x07')) {
+      // Command started (prompt appeared)
+      if (!this.isExecuting) {
+        this.isExecuting = true;
+        this.callbacks.onCommandStart?.();
+      }
+      // We're at a new prompt
+      this.isAtPrompt = true;
+      this.commandBuffer = '';
+    }
+
+    // Detect prompts to track when commands finish
+    // Match $ or % at the end of a line as a prompt
+    // Common prompt formats: "user@host:dir$ ", "[user@host dir]$ ", "➜ dir $", etc.
+    const promptPattern = /[\$%]\s*$/;
+
+    // Pattern to detect command lines echoed in the output
+    // This matches lines like "$ bash /path/to/script.sh" or "user@host:~$ npm install"
+    const commandLinePattern = /^.*[\$%]\s+(.+)$/;
+
+    const lines = data.split(/\r?\n/);
+    for (const line of lines) {
+      // Strip ALL ANSI/terminal escape codes more comprehensively
+      const cleanLine = line
+        .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') // CSI sequences like [?2004h
+        .replace(/\x1b\][^\x07]*\x07/g, '') // OSC sequences (terminated by BEL)
+        .replace(/\x1b\][^\x1b]*\x1b\\/g, '') // OSC sequences (terminated by ST)
+        .replace(/\x1b[()][AB0-2]/g, '') // Character set selection
+        .replace(/\x1b[=>]/g, '') // Application/Normal keypad
+        .replace(/\x1b[78]/g, '') // Save/restore cursor
+        .replace(/\x1b[DME]/g, '') // Line feed, reverse line feed, next line
+        .replace(/\x1b[HZ]/g, '') // Tab set, tab clear
+        .replace(/\x1b[c]/g, '') // Reset
+        .replace(/\[\?[0-9;]*[a-zA-Z]/g, '') // Remaining CSI without ESC (partial)
+        .replace(/\x07/g, '') // Bell character
+        .replace(/\x00-\x08\x0b\x0c\x0e-\x1f/g, '') // Other control characters
+        .trim();
+
+      // Skip empty lines or pure terminal control sequences
+      if (!cleanLine || /^\[[\?0-9;]*[a-zA-Z]$/.test(cleanLine)) {
+        continue;
+      }
+
+      // Try to detect a command being executed from output
+      // This helps for initial terminals where we restore from buffer
+      const commandMatch = cleanLine.match(commandLinePattern);
+      if (commandMatch && commandMatch[1]) {
+        const command = commandMatch[1].trim();
+        // Only track if it looks like a real command (not just a prompt)
+        // Also validate that the command looks reasonable (starts with alphanumeric, /, ., or ~)
+        // This helps filter out false positives from malformed escape code stripping
+        const looksLikeCommand = /^[a-zA-Z0-9.\/~]/.test(command);
+        if (command.length > 0 && !this.isExecuting && looksLikeCommand) {
+          logger.info(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalEngine] Detected command from output: ${sanitizeCommandForDisplay(command)}`,
+          );
+          this.host.history?.onCommandStart(this.terminalId, this.workspaceId, command);
+          this.isExecuting = true;
+          this.callbacks.onCommandStart?.();
+        } else if (command.length > 0 && !looksLikeCommand) {
+          logger.debug(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalEngine] Skipping suspicious command detection: ${sanitizeCommandForDisplay(command)}`,
+          );
+        }
+      }
+
+      // Check for a prompt pattern (command finished)
+      // A line ending with $ or % is likely a prompt (but NOT followed by a command)
+      // Only match prompts that are JUST a prompt, not a prompt + command
+      if (promptPattern.test(cleanLine) && !commandMatch) {
+        // If we were executing a command and now see a prompt, command has finished
+        if (this.isExecuting) {
+          this.isExecuting = false;
+          this.callbacks.onCommandFinished?.();
+          this.host.history?.onCommandFinish(this.terminalId, this.workspaceId);
+          logger.debug(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalEngine] Command finished, prompt detected: ${sanitizeCommandForDisplay(cleanLine)}`,
+          );
+        }
+        this.isAtPrompt = true;
+        this.commandBuffer = '';
+      }
+    }
+
+    // Check for CWD changes
+    const cwdMatch = data.match(/\x1b\]7;file:\/\/[^/]*([^\x07]*)\x07/);
+    if (cwdMatch) {
+      const cwd = decodeURIComponent(cwdMatch[1]);
+      if (cwd !== this.lastCwd) {
+        this.lastCwd = cwd;
+        this.callbacks.onCwdChanged?.(cwd);
+      }
+    }
+  }
+
+  /**
+   * Start automatic buffer saving
+   */
+  private startBufferAutoSave(): void {
+    if (this.attachOnly) return;
+    // Save buffer every 5 seconds if there are changes
+    this.bufferSaveTimer = setInterval(() => {
+      if (this.stateMachine?.canAcceptInput()) {
+        this.saveBuffer();
+      }
+    }, 5000);
+  }
+
+  /**
+   * Save current buffer to storage
+   */
+  private async saveBuffer(): Promise<void> {
+    if (this.attachOnly) return;
+    try {
+      const buffer = this.xterm.buffer.active;
+      const lines: string[] = [];
+
+      for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line) {
+          lines.push(line.translateToString(true));
+        }
+      }
+
+      await this.bufferManager?.saveBuffer(lines, buffer.cursorX, buffer.cursorY);
+    } catch (error) {
+      logger.error('Failed to save buffer:', error);
+    }
+  }
+
+  /**
+   * Restore terminal from buffer snapshot
+   */
+  private restoreFromSnapshot(snapshot: any): void {
+    if (snapshot.lines && snapshot.lines.length > 0) {
+      this.xterm.clear();
+
+      // Restore the buffer content but remove any trailing prompt lines
+      const lines = [...snapshot.lines];
+
+      // Remove empty lines from the end
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+        lines.pop();
+      }
+
+      // Now check if the last non-empty lines form a prompt
+      // We need to handle various prompt formats:
+      // 1. Single line: "user@host path % "
+      // 2. Two lines: "user@host path" + "% "
+      // 3. Wrapped: "user@host long-pa" + "th % "
+
+      const promptSymbolPattern = /[\$>#%]\s*$/;
+      const userHostPattern = /@[\w-]+/;
+
+      // Strategy: Look for prompt patterns and remove them
+      if (lines.length > 0) {
+        const lastLine = lines[lines.length - 1];
+        const secondLastLine = lines.length > 1 ? lines[lines.length - 2] : '';
+
+        // Case 1: Complete prompt on one line
+        if (promptSymbolPattern.test(lastLine) && userHostPattern.test(lastLine)) {
+          lines.pop();
+        }
+        // Case 2: Prompt symbol alone on last line (like "eec21b % ")
+        else if (promptSymbolPattern.test(lastLine) && lastLine.trim().length < 80) {
+          lines.pop();
+          // Also remove the previous line if it has the username
+          if (lines.length > 0 && userHostPattern.test(lines[lines.length - 1])) {
+            lines.pop();
+          }
+        }
+        // Case 3: Check for wrapped prompts across 3 lines
+        // Sometimes the prompt can be: "user@host very-long-path-that-wr"
+        //                               "aps-to-next-li"
+        //                               "ne % "
+        else if (lines.length >= 2) {
+          // Join the last few lines to check if they form a prompt
+          const combined = secondLastLine + lastLine;
+          if (promptSymbolPattern.test(combined) && userHostPattern.test(combined)) {
+            lines.pop();
+            lines.pop();
+          }
+        }
+      }
+
+      // Write the cleaned buffer content
+      for (let i = 0; i < lines.length; i++) {
+        if (i < lines.length - 1) {
+          this.xterm.writeln(lines[i]);
+        } else {
+          // For the last line, write without newline if it has content
+          if (lines[i].trim()) {
+            this.xterm.writeln(lines[i]);
+          }
+        }
+      }
+
+      logger.debug(
+        // i18n-ignore (log message, not user-facing)
+        `Restored terminal buffer for ${this.terminalId} with ${lines.length} lines (prompt removed)`,
+      );
+    }
+  }
+
+  /**
+   * Read the actual command text from xterm's buffer at the current cursor line.
+   * This captures the fully rendered text including tab completions and shell-side edits,
+   * which the raw keystroke-based commandBuffer misses.
+   */
+  private getCommandFromXtermBuffer(): string | null {
+    try {
+      const buffer = this.xterm.buffer.active;
+      const cursorY = buffer.cursorY + buffer.baseY;
+      const line = buffer.getLine(cursorY);
+      if (!line) return null;
+
+      const lineText = line.translateToString(true);
+      if (!lineText || !lineText.trim()) return null;
+
+      // Strip ANSI escape sequences that might be embedded in the buffer
+      const cleanText = lineText
+        .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+        .replace(/\x1b\][^\x07]*\x07/g, '')
+        .replace(/\x1b[()][AB0-2]/g, '')
+        .replace(/\x07/g, '')
+        .trim();
+
+      if (!cleanText) return null;
+
+      // Strip the prompt prefix to get just the command.
+      // Use greedy match to find the LAST $ or % followed by space(s) and the command.
+      // This avoids matching $ or % that appear earlier in the prompt text.
+      const promptMatch = cleanText.match(/^.*[\$%#❯➜]\s+(.+)$/);
+      if (promptMatch && promptMatch[1]) {
+        return promptMatch[1].trim();
+      }
+
+      // If no prompt detected, return null and let caller fall back
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Write data to terminal
+   */
+  write(data: string): void {
+    if (
+      !this.isActive() ||
+      !this.stateMachine.canAcceptInput() ||
+      (this.attachOnly && this.exitedNormally)
+    ) {
+      return;
+    }
+
+    const generation = this.attachmentGeneration;
+    // Track command buffer as user types
+    if (data === '\r' || data === '\n') {
+      // Enter key pressed - execute command.
+      // Try to read the actual command from xterm's buffer first, which includes
+      // tab completions, arrow-key history, and other shell-side edits.
+      // Fall back to commandBuffer for cases where the buffer read fails.
+      const xtermCommand = this.getCommandFromXtermBuffer();
+      const command = xtermCommand || this.commandBuffer.trim();
+
+      if (command) {
+        // Track the command that's about to be executed
+        this.host.history?.onCommandStart(this.terminalId, this.workspaceId, command);
+        // Mark as executing so we know to finish tracking when prompt appears
+        this.isExecuting = true;
+        logger.debug(
+          // i18n-ignore (log message, not user-facing)
+          `Command executed: ${sanitizeCommandForDisplay(command)}${xtermCommand ? ' (from xterm buffer)' : ' (from keystroke buffer)'}`,
+        );
+      }
+      // Clear the command buffer
+      this.commandBuffer = '';
+      this.currentLineBuffer = '';
+    } else if (data === '\x7f' || data === '\b') {
+      // Backspace - remove last character from buffer
+      if (this.commandBuffer.length > 0) {
+        this.commandBuffer = this.commandBuffer.slice(0, -1);
+      }
+    } else if (data === '\x03') {
+      // Ctrl+C - clear the buffer
+      this.commandBuffer = '';
+      this.currentLineBuffer = '';
+    } else if (data === '\x15') {
+      // Ctrl+U - clear line
+      this.commandBuffer = '';
+      this.currentLineBuffer = '';
+    } else if (!data.match(/[\x00-\x1F\x7F]/)) {
+      // Regular character - add to buffer
+      this.commandBuffer += data;
+      this.currentLineBuffer += data;
+    }
+
+    this.terminals
+      .write(this.terminalId, data, this.workspaceId)
+      .then((result) => {
+        if (!this.isActive() || generation !== this.attachmentGeneration) return;
+        if (!result.success) {
+          if (this.attachOnly)
+            this.stateMachine.reportError(
+              new Error(result.error || m.terminal_ipc_unknown_error()),
+            );
+          logger.error(`[write] Terminal ${this.terminalId}: write failed - ${result.error}`);
+        }
+      })
+      .catch((error) => {
+        logger.error(`[write] Terminal ${this.terminalId}: transport error - ${error}`);
+        if (this.isActive() && generation === this.attachmentGeneration) {
+          this.stateMachine.reportError(error);
+        }
+      });
+  }
+
+  /**
+   * Resize terminal via `terminal.resize` (PROTOCOL §5.13).
+   */
+  resize(cols: number, rows: number): void {
+    if (
+      !this.isActive() ||
+      !this.stateMachine.canAcceptInput() ||
+      (this.attachOnly && this.exitedNormally)
+    ) {
+      return;
+    }
+
+    const generation = this.attachmentGeneration;
+    this.terminals
+      .resize(this.terminalId, cols, rows, this.workspaceId)
+      .then((result) => {
+        if (
+          this.attachOnly &&
+          this.isActive() &&
+          generation === this.attachmentGeneration &&
+          !result.success
+        ) {
+          this.stateMachine.reportError(new Error(result.error || m.terminal_ipc_unknown_error()));
+        }
+      })
+      .catch((error) => {
+        if (this.attachOnly && this.isActive() && generation === this.attachmentGeneration)
+          this.stateMachine.reportError(error);
+        logger.error('Failed to resize terminal:', error);
+      });
+  }
+
+  /**
+   * Focus the terminal
+   */
+  focus(): void {
+    if (this.isActive() && this.isVisible) {
+      this.xterm.focus();
+    }
+  }
+
+  /**
+   * Blur the terminal
+   */
+  blur(): void {
+    if (!this.isDisposed) {
+      this.xterm.blur();
+    }
+  }
+
+  setVisible(visible: boolean): void {
+    if (!this.isActive() || this.isVisible === visible) return;
+    this.isVisible = visible;
+    this.wasVisible = visible;
+    if (!visible) {
+      this.xterm.blur();
+      this.disconnectLayoutObservers();
+      return;
+    }
+    this.setupResizeObserver();
+    this.scheduleFrame(() => this.fitTerminalToContainer());
+  }
+
+  private fitTerminalToContainer(): boolean {
+    if (!this.isActive() || !this.isVisible || !this.container) return false;
+    const { width, height } = this.container.getBoundingClientRect();
+    if (width <= 0 || height <= 0) return false;
+    if (this.lastFittedSize?.width === width && this.lastFittedSize.height === height) return true;
+    this.fitAddon.fit();
+    this.lastFittedSize = { width, height };
+    return true;
+  }
+
+  private disconnectLayoutObservers(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.visibilityObserver?.disconnect();
+    this.visibilityObserver = null;
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
+    }
+  }
+
+  /**
+   * Fit and repaint the terminal in `container` once it has a layout box.
+   * The root overlay slides in (height-animated) and panels animate their
+   * resize, so the container is often 0×0 right after a move; fitting then
+   * would shrink the terminal and lose the output. Fit synchronously when the
+   * size is already there. Otherwise observe the container and fit once its
+   * size has stopped changing for REATTACH_FIT_SETTLE_MS, so an intermediate
+   * frame of the animation is never sent to the PTY.
+   */
+  private fitAfterReattach(container: HTMLElement): void {
+    this.cancelReattachFit();
+    if (this.fitReattachedContainer(container)) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (this.reattachFitObserver !== observer) {
+        observer.disconnect();
+        return;
+      }
+      if (!this.hasReattachedContainerBox(container)) return;
+      if (this.reattachFitTimer) {
+        clearTimeout(this.reattachFitTimer);
+      }
+      this.reattachFitTimer = setTimeout(() => {
+        this.reattachFitTimer = null;
+        if (this.fitReattachedContainer(container)) {
+          this.cancelReattachFit();
+        }
+      }, REATTACH_FIT_SETTLE_MS);
+    });
+    this.reattachFitObserver = observer;
+    observer.observe(container);
+  }
+
+  /**
+   * Fit + repaint if `container` is still ours and has a layout box. Returns
+   * true when the fit ran or is no longer wanted (disposed / moved elsewhere),
+   * false when it should be retried once the container has a size.
+   */
+  private fitReattachedContainer(container: HTMLElement): boolean {
+    if (!this.isActive() || this.container !== container) return true;
+    if (!this.hasReattachedContainerBox(container)) return false;
+    const { width, height } = container.getBoundingClientRect();
+    this.fitAddon.fit();
+    this.lastFittedSize = { width, height };
+    this.xterm.refresh(0, this.xterm.rows - 1);
+    return true;
+  }
+
+  private hasReattachedContainerBox(container: HTMLElement): boolean {
+    if (!this.isVisible) return false;
+    const { width, height } = container.getBoundingClientRect();
+    return width > 0 && height > 0;
+  }
+
+  private cancelReattachFit(): void {
+    this.reattachFitObserver?.disconnect();
+    this.reattachFitObserver = null;
+    if (this.reattachFitTimer) {
+      clearTimeout(this.reattachFitTimer);
+      this.reattachFitTimer = null;
+    }
+  }
+
+  /**
+   * Clear the terminal
+   */
+  clear(): void {
+    if (!this.isDisposed) {
+      this.xterm.clear();
+    }
+  }
+
+  /**
+   * Reattach terminal to a new container
+   */
+  async reattach(container: HTMLElement): Promise<void> {
+    if (this.isDisposed || this.stateMachine.isDisposed()) {
+      throw new Error('Cannot reattach disposed terminal');
+    }
+
+    if (this.attachOnly) {
+      if (
+        this.stateMachine.getState() !== TerminalState.CONNECTED &&
+        !this.stateMachine.canTransition('reconnect')
+      ) {
+        throw new Error(`Cannot reattach in state ${this.stateMachine.getState()}`);
+      }
+      this.isDetached = false;
+      const generation = this.attachmentGeneration;
+      this.assertCurrent(generation);
+      try {
+        await this.reconnect();
+        this.assertCurrent(generation);
+      } catch (error) {
+        if (!this.isDisposed && generation === this.attachmentGeneration) this.detach();
+        throw error;
+      }
+    }
+
+    // Cancel any pending auto-reconnect since we're manually reattaching
+    this.cancelAutoReconnect();
+    this.autoReconnectAttempts = 0;
+    this.webglRecoveryAttempts = 0;
+    this.exitedNormally = false;
+
+    // Ensure IPC handlers are set up (they may have been cleaned up on detach or during refresh)
+    if (!this.attachOnly) this.setupIpcEventHandlers();
+
+    // Ensure state machine is in CONNECTED state for input to work
+    // This handles the case where the terminal was reattached after a renderer refresh
+    const currentState = this.stateMachine.getState();
+    if (currentState !== TerminalState.CONNECTED) {
+      logger.info(
+        `[reattach] Terminal ${this.terminalId} not in CONNECTED state (${currentState}), attempting to restore`,
+      );
+      // Check if terminal exists on backend and transition accordingly
+      const backendTerminal = await this.findBackendTerminal();
+      if (backendTerminal) {
+        if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
+          this.stateMachine.transition('reconnect');
+          this.stateMachine.transition('reconnected');
+        } else if (currentState === TerminalState.CONNECTING) {
+          this.stateMachine.transition('connected');
+        }
+        // Reattached to a PTY whose process already exited — keep the cursor
+        // suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
+        }
+        logger.info(
+          `[reattach] Terminal ${this.terminalId} state restored to ${this.stateMachine.getState()}`,
+        );
+      }
+    }
+
+    // If the terminal element exists, try to move it instead of recreating
+    // Note: We check for terminalElement existence, not parentNode, because
+    // the old container may have been removed from the DOM (e.g., when drawer closes)
+    const terminalElement = this.xterm.element;
+    if (terminalElement) {
+      // Move the existing terminal element to the new container
+      // This works even if the element has no parent (was detached)
+      container.appendChild(terminalElement);
+
+      // Update container reference
+      this.container = container;
+      this.themeManager.setContainer(container);
+
+      // Dispose and recreate WebGL addon (it loses context when moved)
+      this.disposeWebglAddon();
+
+      // Re-apply theme
+      this.themeManager.applyTheme(this.xterm);
+
+      // Re-initialize WebGL addon only for dark themes (light themes use Canvas renderer)
+      const currentTheme = this.themeManager.getCurrentTheme();
+      if (currentTheme.isDark) {
+        this.loadWebglAddon();
+      } else {
+        logger.debug('[Renderer] Using Canvas renderer after move (light theme)');
+      }
+
+      // Refit to new container once it has dimensions
+      this.fitAfterReattach(container);
+
+      // Setup resize observer for new container
+      this.setupResizeObserver();
+
+      // Re-setup XTerm event handlers to ensure input works after reattachment
+      this.setupXTermEventHandlers();
+
+      // Reset command buffer state when reattaching
+      this.commandBuffer = '';
+      this.currentLineBuffer = '';
+      this.isAtPrompt = false;
+
+      // Restart heartbeat since reattach doesn't trigger a state transition to CONNECTED
+      this.startHeartbeat();
+
+      // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
+      this.scheduleFrame(() => {
+        if (this.autoFocus && this.isActive() && this.isVisible) {
+          this.xterm.focus();
+        }
+      });
+
+      return;
+    }
+
+    // Fallback: If we can't move the element, recreate it
+    // This should rarely happen since we now check for terminalElement existence, not parentNode
+    logger.warn(`Could not move terminal element, recreating for terminal ${this.terminalId}`);
+
+    // Clear old container
+    if (this.container) {
+      this.container.innerHTML = '';
+    }
+
+    // Dispose old WebGL addon if it exists
+    this.disposeWebglAddon();
+
+    // Remove old data handler if it exists
+    if (this.dataDisposable) {
+      this.dataDisposable.dispose();
+      this.dataDisposable = null;
+    }
+
+    // Set new container
+    this.container = container;
+    this.themeManager.setContainer(container);
+
+    // Reopen xterm in new container - but warn if already opened (indicates a problem)
+    if (this.isXtermOpened) {
+      logger.warn(
+        `[reattach] XTerm was already opened for terminal ${this.terminalId}, calling open() again may cause duplicate handlers`,
+      );
+    }
+    this.xterm.open(container);
+    this.isXtermOpened = true;
+
+    // Re-apply theme first to get current theme
+    this.themeManager.applyTheme(this.xterm);
+
+    // Re-initialize WebGL addon only for dark themes (light themes use Canvas renderer)
+    const currentTheme = this.themeManager.getCurrentTheme();
+    if (currentTheme.isDark) {
+      this.loadWebglAddon();
+    } else {
+      logger.debug('[Renderer] Using Canvas renderer on reattach (light theme)');
+    }
+
+    // Refit once the container has dimensions
+    this.fitAfterReattach(container);
+
+    // Re-setup XTerm event handlers (including onData for user input)
+    this.setupXTermEventHandlers();
+
+    // Setup resize observer for new container
+    this.setupResizeObserver();
+
+    // Reset command buffer state when reattaching
+    this.commandBuffer = '';
+    this.currentLineBuffer = '';
+    this.isAtPrompt = false;
+
+    // Restart heartbeat since reattach doesn't trigger a state transition to CONNECTED
+    this.startHeartbeat();
+
+    // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
+    this.scheduleFrame(() => {
+      if (this.isActive() && this.isVisible) {
+        this.xterm.focus();
+      }
+    });
+
+    // The terminal content should already be there from the backend PTY session
+    // No need to send newlines or refresh commands
+  }
+
+  /**
+   * Update callbacks
+   */
+  updateCallbacks(callbacks: Partial<TerminalCallbacks>): void {
+    Object.assign(this.callbacks, callbacks);
+  }
+
+  /**
+   * Update the XTerm font-family on the live instance. Callers observe the
+   * canonical selectCodeFontFamilyCSS selector and forward changes here; the
+   * adapter itself does not subscribe to Redux. No-op after disposal.
+   */
+  updateFontFamily(fontFamily: string): void {
+    if (!this.isActive()) return;
+    if (this.xterm.options.fontFamily === fontFamily) return;
+    this.xterm.options.fontFamily = fontFamily;
+  }
+
+  /**
+   * Search in terminal
+   */
+  findNext(
+    term: string,
+    options?: { caseSensitive?: boolean; wholeWord?: boolean; regex?: boolean },
+  ): boolean {
+    return this.searchAddon.findNext(term, {
+      caseSensitive: options?.caseSensitive ?? false,
+      wholeWord: options?.wholeWord ?? false,
+      regex: options?.regex ?? false,
+      incremental: false,
+      decorations: this.getSearchDecorations(),
+    });
+  }
+
+  /**
+   * Search backwards
+   */
+  findPrevious(
+    term: string,
+    options?: { caseSensitive?: boolean; wholeWord?: boolean; regex?: boolean },
+  ): boolean {
+    return this.searchAddon.findPrevious(term, {
+      caseSensitive: options?.caseSensitive ?? false,
+      wholeWord: options?.wholeWord ?? false,
+      regex: options?.regex ?? false,
+      incremental: false,
+      decorations: this.getSearchDecorations(),
+    });
+  }
+
+  /**
+   * Clear search highlighting
+   */
+  clearSearch(): void {
+    this.searchAddon.clearDecorations();
+  }
+
+  getSelection(): string {
+    return this.xterm.getSelection();
+  }
+
+  /**
+   * Get terminal information
+   */
+  getInfo(): TerminalInfo {
+    const bufferStats = this.bufferManager?.getStats();
+
+    return {
+      id: this.terminalId,
+      workspaceId: this.workspaceId,
+      state: this.stateMachine.getState(),
+      cwd: this.lastCwd,
+      isExecuting: this.isExecuting,
+      stats: bufferStats
+        ? {
+            bufferSize: bufferStats.size,
+            lineCount: bufferStats.lineCount,
+            uptime: Date.now() - this.startTime,
+          }
+        : undefined,
+    };
+  }
+
+  /**
+   * Start the periodic IPC heartbeat.
+   * Only runs while the terminal is in CONNECTED state.
+   * Pings the backend PTY at regular intervals; on failure or timeout,
+   * transitions to DISCONNECTED which triggers auto-reconnect.
+   */
+  private startHeartbeat(): void {
+    // Don't start if already running or disposed
+    if (this.heartbeatTimer || !this.isActive()) {
+      return;
+    }
+
+    logger.debug(
+      `[heartbeat] Starting for terminal ${this.terminalId} (every ${TerminalEngine.HEARTBEAT_INTERVAL_MS}ms)`,
+    );
+
+    this.heartbeatTimer = setInterval(() => {
+      this.performHealthCheck();
+    }, TerminalEngine.HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Stop the periodic IPC heartbeat.
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      logger.debug(`[heartbeat] Stopped for terminal ${this.terminalId}`);
+    }
+  }
+
+  /**
+   * Perform a single health check by asking the daemon whether the PTY is
+   * still in `terminal.list`. If the lookup fails or times out, transition to
+   * DISCONNECTED to trigger auto-reconnect.
+   */
+  private async performHealthCheck(): Promise<void> {
+    // Only check while CONNECTED and IPC handlers are set up
+    if (
+      !this.isActive() ||
+      !this.ipcCleanup ||
+      this.stateMachine.getState() !== TerminalState.CONNECTED
+    ) {
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      // Race the existence check against a timeout — the daemon either lists
+      // the PTY in `terminal.list` (PROTOCOL §5.9) or it has been killed/lost.
+      const alive = await Promise.race([
+        this.terminalExistsOnBackend(),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Heartbeat timeout')),
+            TerminalEngine.HEARTBEAT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (!this.isActive()) return;
+
+      if (!alive) {
+        if (this.attachOnly)
+          throw new Error(m.terminal_ipc_notFoundWithId_error({ terminalId: this.terminalId }));
+        logger.warn(
+          `[heartbeat] Terminal ${this.terminalId}: PTY not found on backend, transitioning to DISCONNECTED`,
+        );
+        this.stopHeartbeat();
+        this.stateMachine.transition('disconnect');
+      }
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (!this.isActive()) return;
+
+      logger.warn(`[heartbeat] Terminal ${this.terminalId}: health check failed:`, error);
+      this.stopHeartbeat();
+      if (this.attachOnly) this.stateMachine.reportError(error as Error);
+      else this.stateMachine.transition('disconnect');
+    }
+  }
+
+  /**
+   * Schedule an auto-reconnect attempt with exponential backoff.
+   * Called when the terminal enters DISCONNECTED or ERROR state.
+   */
+  private scheduleAutoReconnect(): void {
+    // Attach-only hosts own reconnect admission after transport/context changes.
+    // Preserve the source adapter's automatic recovery policy.
+    if (this.attachOnly || !this.isActive()) {
+      return;
+    }
+
+    if (this.autoReconnectAttempts >= TerminalEngine.MAX_RECONNECT_ATTEMPTS) {
+      logger.warn(
+        `[auto-reconnect] Terminal ${this.terminalId}: max reconnect attempts (${TerminalEngine.MAX_RECONNECT_ATTEMPTS}) reached, giving up`,
+      );
+      return;
+    }
+
+    // Cancel any existing reconnect timer
+    this.cancelAutoReconnect();
+
+    const delay = TerminalEngine.BASE_RECONNECT_DELAY_MS * Math.pow(2, this.autoReconnectAttempts);
+    this.autoReconnectAttempts++;
+
+    logger.info(
+      `[auto-reconnect] Terminal ${this.terminalId}: scheduling attempt ${this.autoReconnectAttempts}/${TerminalEngine.MAX_RECONNECT_ATTEMPTS} in ${delay}ms`,
+    );
+
+    this.autoReconnectTimer = setTimeout(() => {
+      this.autoReconnectTimer = null;
+      this.attemptAutoReconnect();
+    }, delay);
+  }
+
+  /**
+   * Cancel any pending auto-reconnect timer.
+   */
+  private cancelAutoReconnect(): void {
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
+    }
+  }
+
+  /**
+   * Attempt to auto-reconnect the terminal.
+   * Checks if the PTY still exists on the backend and re-establishes the connection.
+   */
+  private async attemptAutoReconnect(): Promise<void> {
+    if (!this.isActive()) {
+      return;
+    }
+
+    const currentState = this.stateMachine.getState();
+    // Only reconnect from DISCONNECTED or ERROR states
+    if (currentState !== TerminalState.DISCONNECTED && currentState !== TerminalState.ERROR) {
+      logger.debug(
+        `[auto-reconnect] Terminal ${this.terminalId}: skipping, state is ${currentState}`,
+      );
+      return;
+    }
+
+    this.exitedNormally = false;
+
+    logger.info(
+      `[auto-reconnect] Terminal ${this.terminalId}: attempting reconnect (attempt ${this.autoReconnectAttempts})`,
+    );
+
+    try {
+      if (this.attachOnly) {
+        await this.reconnect();
+        return;
+      }
+      // Check if PTY still exists on backend via daemon `terminal.list`
+      const backendTerminal = await this.findBackendTerminal();
+
+      if (!this.isActive()) return; // Check again after async call
+
+      if (backendTerminal) {
+        // PTY exists — re-setup IPC handlers and transition back to CONNECTED
+        logger.info(
+          `[auto-reconnect] Terminal ${this.terminalId}: PTY exists on backend, re-establishing connection`,
+        );
+
+        this.setupIpcEventHandlers();
+        this.stateMachine.transition('reconnect');
+        this.stateMachine.transition('reconnected');
+
+        // Resize to match current xterm dimensions
+        if (this.xterm.cols && this.xterm.rows) {
+          this.resize(this.xterm.cols, this.xterm.rows);
+        }
+
+        // Reconnected to a PTY whose process already exited — keep the
+        // cursor suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
+        }
+
+        this.callbacks.onReady?.();
+        logger.info(`[auto-reconnect] Terminal ${this.terminalId}: reconnected successfully`);
+      } else {
+        // PTY doesn't exist — try to create a new one via the existing reconnect() method
+        logger.info(
+          `[auto-reconnect] Terminal ${this.terminalId}: PTY not found, creating new PTY`,
+        );
+        await this.reconnect();
+        logger.info(`[auto-reconnect] Terminal ${this.terminalId}: new PTY created successfully`);
+      }
+    } catch (error) {
+      logger.error(
+        `[auto-reconnect] Terminal ${this.terminalId}: attempt ${this.autoReconnectAttempts} failed:`,
+        error,
+      );
+      // Explicitly re-schedule — the state listener may not trigger if no transition occurred
+      this.scheduleAutoReconnect();
+    }
+  }
+
+  /**
+   * Handle errors
+   */
+  private handleError(error: Error): void {
+    logger.error(`Terminal ${this.terminalId} error:`, error);
+    this.callbacks.onError?.(error);
+
+    // Show error in terminal
+    if (!this.isDisposed) {
+      this.xterm.writeln(
+        `\r\n\x1b[31m${m.terminal_adapter_errorLine_label({ message: error.message })}\x1b[0m\r\n`,
+      );
+    }
+  }
+
+  /**
+   * Reconnect to terminal
+   */
+  async reconnect(): Promise<void> {
+    if (!this.isActive()) {
+      throw new Error('Cannot reconnect inactive terminal');
+    }
+    const generation = this.attachmentGeneration;
+    if (this.attachOnly && this.stateMachine.getState() === TerminalState.CONNECTED) {
+      this.stateMachine.transition('disconnect');
+    }
+    this.cancelAutoReconnect();
+
+    if (!this.stateMachine.canTransition('reconnect')) {
+      throw new Error(`Cannot reconnect in state ${this.stateMachine.getState()}`);
+    }
+
+    this.exitedNormally = false;
+    this.stateMachine.transition('reconnect');
+
+    try {
+      const cols = this.xterm.cols;
+      const rows = this.xterm.rows;
+
+      if (this.attachOnly) {
+        this.releaseSubscription();
+        const terminal = await this.findBackendTerminal();
+        this.assertCurrent(generation);
+        if (!terminal)
+          throw new Error(m.terminal_ipc_notFoundWithId_error({ terminalId: this.terminalId }));
+        const buffer = await this.terminals.getBuffer(this.terminalId, undefined, this.workspaceId);
+        this.assertCurrent(generation);
+        // Replace the previous view, never append a second copy of the snapshot.
+        this.xterm.reset();
+        if (buffer) this.xterm.write(buffer);
+        await this.setupIpcEventHandlers();
+        this.assertCurrent(generation);
+        if (this.subscriptionError) throw this.subscriptionError;
+        if (this.exitedNormally) throw new Error(m.terminal_quakeOverlay_status_exited());
+        this.stateMachine.transition('reconnected');
+        this.resize(cols, rows);
+        if (terminal.isExecuting === false) this.hideCursorOnExit();
+        else this.restoreCursor();
+        this.callbacks.onReady?.();
+        return;
+      }
+
+      // Create new PTY via `terminal.create`; the daemon assigns the new id.
+      const result = await this.terminals.create({
+        workspaceId: this.workspaceId,
+        cols,
+        rows,
+      });
+
+      this.assertCurrent(generation);
+      if (!result.success) {
+        throw new Error(result.error || m.terminal_adapter_reconnectFailed_error());
+      }
+      if (result.id) {
+        this.terminalId = result.id;
+      }
+
+      this.setupIpcEventHandlers();
+      this.stateMachine.transition('reconnected');
+      this.restoreCursor();
+      this.callbacks.onReady?.();
+    } catch (error) {
+      if (this.attachOnly && generation === this.attachmentGeneration) this.releaseSubscription();
+      if (this.isActive() && generation === this.attachmentGeneration) {
+        this.stateMachine.reportError(error as Error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Detach terminal from container (for reuse)
+   */
+  detach(): void {
+    this.isDetached = true;
+    this.pendingOutput = [];
+    this.attachmentGeneration++;
+    // Clean up IPC handlers to prevent stale handlers during detach
+    if (this.ipcCleanup) {
+      this.ipcCleanup();
+      this.ipcCleanup = null;
+    }
+
+    // Stop heartbeat and cancel auto-reconnect to prevent IPC calls on detached terminal
+    this.stopHeartbeat();
+    this.cancelAutoReconnect();
+    this.cancelReattachFit();
+    this.cancelPendingLayout();
+
+    // Disconnect resize observer for the current container
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // Disconnect visibility observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
+    }
+
+    // Clear resize timer if active
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
+    }
+
+    // Remove the xterm element from the container so it doesn't conflict
+    // with other terminals that may be attached to the same container
+    const terminalElement = this.xterm.element;
+    if (terminalElement && terminalElement.parentNode) {
+      terminalElement.parentNode.removeChild(terminalElement);
+    }
+
+    // Note: We don't dispose xterm here as we want to reuse it
+    // The terminal remains in memory for reattachment
+    this.themeManager.setContainer(null);
+    this.container = null;
+  }
+
+  /**
+   * Dispose of the terminal
+   */
+  dispose(options: { killPty?: boolean } = {}): void {
+    if (this.isDisposed || this.stateMachine.isDisposed()) {
+      return;
+    }
+
+    // Mark as disposed first
+    this.isDisposed = true;
+    this.pendingOutput = [];
+    this.attachmentGeneration++;
+
+    // Cancel any pending auto-reconnect and heartbeat
+    this.cancelAutoReconnect();
+    this.stopHeartbeat();
+    this.cancelReattachFit();
+    this.cancelPendingLayout();
+
+    // Transition to disposed state
+    this.stateMachine.transition('dispose');
+
+    // Save buffer one last time
+    this.saveBuffer().catch(() => {});
+
+    // Clear timers
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
+    }
+
+    if (this.bufferSaveTimer) {
+      clearInterval(this.bufferSaveTimer);
+      this.bufferSaveTimer = null;
+    }
+
+    // Disconnect resize observer
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    // Disconnect visibility observer
+    if (this.visibilityObserver) {
+      this.visibilityObserver.disconnect();
+      this.visibilityObserver = null;
+    }
+
+    // Dispose XTerm event handlers
+    if (this.dataDisposable) {
+      try {
+        this.dataDisposable.dispose();
+      } catch (error) {
+        logger.error('Error disposing data handler:', error);
+      }
+      this.dataDisposable = null;
+    }
+    if (this.resizeDisposable) {
+      try {
+        this.resizeDisposable.dispose();
+      } catch (error) {
+        logger.error('Error disposing resize handler:', error);
+      }
+      this.resizeDisposable = null;
+    }
+    if (this.selectionDisposable) {
+      try {
+        this.selectionDisposable.dispose();
+      } catch (error) {
+        logger.error('Error disposing selection handler:', error);
+      }
+      this.selectionDisposable = null;
+    }
+
+    // Clean up IPC handlers
+    if (this.ipcCleanup) {
+      try {
+        this.ipcCleanup();
+      } catch (error) {
+        logger.error('Error cleaning up IPC handlers:', error);
+      }
+      this.ipcCleanup = null;
+    }
+
+    // Clean up theme listener
+    if (this.themeCleanup) {
+      try {
+        this.themeCleanup();
+      } catch (error) {
+        logger.error('Error cleaning up theme listener:', error);
+      }
+      this.themeCleanup = null;
+    }
+
+    // Remove any remaining event listeners
+    this.eventListeners.forEach((cleanup) => {
+      try {
+        cleanup();
+      } catch (error) {
+        logger.error('Error cleaning up event listener:', error);
+      }
+    });
+    this.eventListeners = [];
+
+    if (!this.attachOnly && options.killPty !== false) {
+      // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
+      // emits `terminal:exit` once the PTY is reaped.
+      this.terminals.kill(this.terminalId, this.workspaceId).catch((error) => {
+        logger.error('Error killing PTY connection:', error);
+      });
+    }
+
+    // Release each owned resource even if another disposal throws.
+    for (const resource of [
+      this.searchResultsDisposable,
+      this.searchAddon,
+      this.webLinksAddon,
+      this.fitAddon,
+    ]) {
+      try {
+        resource?.dispose();
+      } catch (error) {
+        logger.error('Error disposing terminal resource:', error);
+      }
+    }
+    this.searchResultsDisposable = null;
+    this.disposeWebglAddon();
+
+    // Dispose managers
+    try {
+      this.themeManager.dispose();
+    } catch (error) {
+      logger.error('Error disposing theme manager:', error);
+    }
+
+    try {
+      this.stateMachine.dispose();
+    } catch (error) {
+      logger.error('Error disposing state machine:', error);
+    }
+
+    this.container = null;
+
+    // xterm 5.x leaves a viewport sync timer queued by open()/fit(). Dispose on
+    // the next task so that callback cannot read an already-cleared renderer.
+    if (this.xterm)
+      disposeXtermAfterViewportSync(this.xterm, (error) => {
+        logger.error('Error disposing xterm:', error);
+      });
+  }
+}

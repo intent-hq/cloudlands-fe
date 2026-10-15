@@ -1,3 +1,5 @@
+import type { TerminalOperation, TerminalReadState } from './terminal-interaction-types';
+import type { TerminalMutationResult } from '../../../../lib/client/terminal-client-types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -7,6 +9,7 @@ import {
   updateItem,
   getItem,
   getItemIndex,
+  getItems,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -93,6 +96,8 @@ export interface PersistedWorkspaceState {
 }
 
 export type TerminalOverlayState = {
+  operations?: Collection<TerminalOperation, 'id'>;
+  reads?: Record<string, TerminalReadState>;
   /** Fallback height for workspaces without their own (legacy global value or default). */
   height: number;
   /**
@@ -649,3 +654,167 @@ terminalsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
     isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
   });
 });
+
+/** Explicit-host extension; legacy overlay actions retain their source semantics. */
+export const terminalOperationRequested = createAction<[operation: TerminalOperation]>(
+  'terminals/operationRequested',
+);
+export const terminalOperationStarted = createAction<[requestId: string]>(
+  'terminals/operationStarted',
+);
+export const terminalOperationFinished = createAction<
+  [requestId: string, result: TerminalMutationResult]
+>('terminals/operationFinished');
+export const terminalViewOpened =
+  createAction<[workspaceId: string, context: string, viewId: string]>('terminals/viewOpened');
+export const terminalReadStarted =
+  createAction<[workspaceId: string, context: string, requestId: string, viewId: string]>(
+    'terminals/readStarted',
+  );
+export const terminalReadFinished =
+  createAction<
+    [
+      workspaceId: string,
+      context: string,
+      requestId: string,
+      terminals: TerminalTab[] | null,
+      error?: string,
+    ]
+  >('terminals/readFinished');
+export const terminalViewRetired =
+  createAction<[workspaceId: string, context: string, viewId: string]>('terminals/viewRetired');
+
+terminalsReducer.with(terminalOperationRequested, (state, { payload: [operation] }) => {
+  const view = state.reads?.[operation.workspaceId];
+  if (!view || view.viewId !== operation.viewId || view.context !== operation.context) return state;
+  const entries = state.operations ?? createCollection<TerminalOperation, 'id'>('id');
+  if (getItem(entries, operation.id) || operation.status !== 'queued') return state;
+  if (
+    getItems(entries).some(
+      (entry) =>
+        entry &&
+        entry.workspaceId === operation.workspaceId &&
+        (entry.status === 'queued' || entry.status === 'running' || entry.status === 'unknown') &&
+        (operation.kind === 'create'
+          ? entry.kind === 'create'
+          : entry.terminalId === operation.terminalId),
+    )
+  )
+    return state;
+  return { ...state, operations: addItem(entries, operation) };
+});
+terminalsReducer.with(terminalOperationStarted, (state, { payload: [id] }) => {
+  const operation = state.operations && getItem(state.operations, id);
+  if (!state.operations || operation?.status !== 'queued') return state;
+  return {
+    ...state,
+    operations: updateItem(state.operations, {
+      ...operation,
+      status: 'running',
+    }),
+  };
+});
+terminalsReducer.with(terminalOperationFinished, (state, { payload: [id, result] }) => {
+  const operation = state.operations && getItem(state.operations, id);
+  if (
+    !operation ||
+    !state.operations ||
+    (operation.status !== 'queued' && operation.status !== 'running')
+  )
+    return state;
+  return {
+    ...state,
+    operations: updateItem(state.operations, {
+      ...operation,
+      result,
+      status: result.success
+        ? 'confirmed'
+        : result.terminalOutcome === 'unknown'
+          ? 'unknown'
+          : 'failed',
+    }),
+  };
+});
+terminalsReducer.with(terminalViewOpened, (state, { payload: [wsId, context, viewId] }) =>
+  setWs(
+    {
+      ...state,
+      reads: { ...state.reads, [wsId]: { context, viewId, requestId: '', loading: true } },
+    },
+    wsId,
+    {
+      ...getWs(state, wsId),
+      terminals: createCollection<TerminalTab, 'id'>('id'),
+      activeTerminalId: null,
+    },
+  ),
+);
+terminalsReducer.with(
+  terminalReadStarted,
+  (state, { payload: [wsId, context, requestId, viewId] }) => {
+    if (state.reads?.[wsId]?.viewId !== viewId || state.reads[wsId].context !== context)
+      return state;
+    const ws = getWs(state, wsId);
+    const next = {
+      ...state,
+      reads: { ...state.reads, [wsId]: { context, viewId, requestId, loading: true } },
+    };
+    return state.reads?.[wsId]?.context === context
+      ? next
+      : setWs(next, wsId, {
+          ...ws,
+          terminals: createCollection<TerminalTab, 'id'>('id'),
+          activeTerminalId: null,
+        });
+  },
+);
+terminalsReducer.with(
+  terminalReadFinished,
+  (state, { payload: [wsId, context, requestId, terminals, error] }) => {
+    const read = state.reads?.[wsId];
+    if (!read || read.context !== context || read.requestId !== requestId) return state;
+    const next = {
+      ...state,
+      reads: { ...state.reads, [wsId]: { ...read, loading: false, error } },
+    };
+    if (!terminals) return next;
+    const ws = getWs(state, wsId);
+    return setWs(next, wsId, {
+      ...ws,
+      terminals: terminals.reduce(
+        (items, terminal) => addItem(items, terminal),
+        createCollection<TerminalTab, 'id'>('id'),
+      ),
+      terminalsLoaded: true,
+      activeTerminalId: terminals.some((t) => t.id === ws.activeTerminalId)
+        ? ws.activeTerminalId
+        : null,
+    });
+  },
+);
+terminalsReducer.with(terminalViewRetired, (state, { payload: [wsId, context, viewId] }) => {
+  let operations = state.operations;
+  if (operations)
+    for (const operation of getItems(operations)) {
+      if (
+        operation.workspaceId === wsId &&
+        operation.context === context &&
+        operation.viewId === viewId &&
+        !operation.retired &&
+        (operation.status === 'queued' || operation.status === 'running')
+      )
+        operations = updateItem(operations, { ...operation, retired: true });
+    }
+  if (state.reads?.[wsId]?.context !== context || state.reads[wsId].viewId !== viewId)
+    return operations === state.operations ? state : { ...state, operations };
+  const reads = { ...state.reads };
+  delete reads[wsId];
+  const workspaces = { ...state.workspaces };
+  delete workspaces[wsId];
+  return { ...state, reads, workspaces, operations };
+});
+
+/** Strict interactive-host refresh; legacy source hydration retains its own admission. */
+export const terminalViewRefreshRequested = createAction<[workspaceId: string, viewId: string]>(
+  'terminals/viewRefreshRequested',
+);

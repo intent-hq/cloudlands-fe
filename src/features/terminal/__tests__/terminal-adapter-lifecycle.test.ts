@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalAdapter } from '../TerminalAdapter';
+import { TerminalEngine } from '../TerminalEngine';
+import type { TerminalEngineOptions } from '../terminal-engine-options';
+import type { TerminalEventHandlers } from '$lib/client/app-client';
 import type { TerminalsClient } from '$lib/client';
 
 /** Build a TerminalsClient stub that swallows daemon traffic for DOM-focused tests. */
@@ -17,7 +20,7 @@ function fakeTerminalsClient(): TerminalsClient {
   };
 }
 
-const xtermMock = vi.hoisted(() => ({ instances: [] as any[] }));
+const xtermMock = vi.hoisted(() => ({ instances: [] as any[], failAddonAt: 0 }));
 const fitMock = vi.hoisted(() => ({ instances: [] as any[] }));
 
 const fontMock = vi.hoisted(() => ({
@@ -33,7 +36,11 @@ vi.mock('@xterm/xterm', () => {
     options: any = {};
     buffer = { active: { length: 0, cursorX: 0, cursorY: 0, getLine: vi.fn() } };
     open = vi.fn((container: HTMLElement) => container.appendChild(this.element));
-    loadAddon = vi.fn();
+    loadAddon = vi.fn(() => {
+      if (xtermMock.failAddonAt && this.loadAddon.mock.calls.length === xtermMock.failAddonAt) {
+        throw new Error('Addon setup failed');
+      }
+    });
     attachCustomKeyEventHandler = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     onResize = vi.fn(() => ({ dispose: vi.fn() }));
@@ -41,6 +48,7 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     blur = vi.fn();
     clear = vi.fn();
+    reset = vi.fn();
     write = vi.fn();
     writeln = vi.fn();
     refresh = vi.fn();
@@ -73,6 +81,7 @@ vi.mock('@xterm/addon-fit', () => ({
 vi.mock('@xterm/addon-web-links', () => ({
   WebLinksAddon: class {
     dispose = vi.fn();
+    constructor(public handler: (_event: MouseEvent, uri: string) => void) {}
   },
 }));
 vi.mock('@xterm/addon-webgl', () => ({
@@ -82,7 +91,7 @@ vi.mock('@xterm/addon-webgl', () => ({
 }));
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: class {
-    onDidChangeResults = vi.fn();
+    onDidChangeResults = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = vi.fn();
   },
 }));
@@ -942,5 +951,456 @@ describe('TerminalAdapter code-font preference wiring', () => {
     adapter.updateFontFamily("'JetBrains Mono', monospace");
 
     expect(xterm.options.fontFamily).toBe(before);
+  });
+});
+
+describe('shared terminal engine attach-only lifecycle', () => {
+  const engines: TerminalEngine[] = [];
+  const subscriptions: Array<{
+    handlers: TerminalEventHandlers;
+    unsubscribe: ReturnType<typeof vi.fn>;
+  }> = [];
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, resolve, reject };
+  }
+
+  function client(): TerminalsClient {
+    const terminals = fakeTerminalsClient();
+    vi.mocked(terminals.list).mockResolvedValue({
+      terminals: [{ id: 'daemon-pty', name: 'Shell', isExecuting: true }],
+      daemonBootId: 'boot-test',
+    });
+    vi.mocked(terminals.getBuffer).mockResolvedValue('previous output\r\n');
+    vi.mocked(terminals.subscribeEvents).mockImplementation((_id, handlers) => {
+      const unsubscribe = vi.fn();
+      subscriptions.push({ handlers, unsubscribe });
+      return Object.assign(unsubscribe, { ready: Promise.resolve() });
+    });
+    return terminals;
+  }
+
+  function engine(terminals: TerminalsClient, options: Partial<TerminalEngineOptions> = {}) {
+    const instance = new TerminalEngine({
+      workspaceId: 'ws-1',
+      container: document.createElement('div'),
+      terminals,
+      fontFamily: 'monospace',
+      lifecycle: 'attach-only',
+      terminalId: 'daemon-pty',
+      ...options,
+    } as TerminalEngineOptions);
+    engines.push(instance);
+    return instance;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.clearAllMocks();
+    xtermMock.instances.length = 0;
+    xtermMock.failAddonAt = 0;
+    fitMock.instances.length = 0;
+    subscriptions.length = 0;
+    document.documentElement.classList.add('light');
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+  });
+
+  afterEach(async () => {
+    for (const instance of engines.splice(0)) instance.dispose();
+    await vi.runOnlyPendingTimersAsync();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each(['', '   ', undefined])(
+    'rejects an absent daemon ID before allocating resources (%s)',
+    (terminalId) => {
+      expect(() => engine(client(), { terminalId })).toThrow(/daemon terminal ID/);
+      expect(xtermMock.instances).toHaveLength(0);
+    },
+  );
+
+  it('leaves focus with the host when attach-only initialization disables autofocus', async () => {
+    const terminals = client();
+    const instance = engine(terminals, { autoFocus: false });
+    await instance.initialize();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(xtermMock.instances.at(-1).focus).not.toHaveBeenCalled();
+    instance.focus();
+    expect(xtermMock.instances.at(-1).focus).toHaveBeenCalledTimes(1);
+    expect(terminals.write).not.toHaveBeenCalled();
+  });
+
+  it('restores daemon output, forwards real input/resize, and never saves locally or kills on dispose', async () => {
+    const terminals = client();
+    const readLocal = vi.spyOn(Storage.prototype, 'getItem');
+    const writeLocal = vi.spyOn(Storage.prototype, 'setItem');
+    const onReady = vi.fn();
+    const instance = engine(terminals, { onReady });
+    await instance.initialize(true);
+    const xterm = xtermMock.instances.at(-1);
+    expect(terminals.list).toHaveBeenCalledWith('ws-1');
+    expect(terminals.getBuffer).toHaveBeenCalledWith('daemon-pty', undefined, 'ws-1');
+    expect(terminals.subscribeEvents).toHaveBeenCalledWith(
+      'daemon-pty',
+      expect.any(Object),
+      'ws-1',
+    );
+    expect(xterm.write).toHaveBeenCalledWith('previous output\r\n');
+    expect(onReady).toHaveBeenCalledOnce();
+    xterm.dataHandler('printf café\r');
+    instance.resize(113, 31);
+    expect(terminals.write).toHaveBeenCalledExactlyOnceWith('daemon-pty', 'printf café\r', 'ws-1');
+    expect(terminals.resize).toHaveBeenLastCalledWith('daemon-pty', 113, 31, 'ws-1');
+    subscriptions[0].handlers.onData?.({ terminalId: 'daemon-pty', chunk: 'café\r\n' });
+    expect(xterm.write).toHaveBeenLastCalledWith('café\r\n');
+    await vi.advanceTimersByTimeAsync(5100);
+    instance.dispose({ killPty: true });
+    await vi.runOnlyPendingTimersAsync();
+    expect(terminals.create).not.toHaveBeenCalled();
+    expect(terminals.kill).not.toHaveBeenCalled();
+    expect(readLocal).not.toHaveBeenCalled();
+    expect(writeLocal).not.toHaveBeenCalled();
+    expect(subscriptions[0].unsubscribe).toHaveBeenCalledOnce();
+    expect(xterm.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(['missing', 'lookup', 'buffer'])(
+    'reports %s failure instead of creating or showing ready',
+    async (failure) => {
+      const terminals = client();
+      if (failure === 'missing')
+        vi.mocked(terminals.list).mockResolvedValue({ terminals: [], daemonBootId: 'boot-test' });
+      if (failure === 'lookup')
+        vi.mocked(terminals.list).mockRejectedValue(new Error('Lookup unavailable'));
+      if (failure === 'buffer')
+        vi.mocked(terminals.getBuffer).mockRejectedValue(new Error('Buffer unavailable'));
+      const onReady = vi.fn();
+      const onError = vi.fn();
+      const instance = engine(terminals, { onReady, onError });
+      await expect(instance.initialize()).rejects.toThrow();
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onReady).not.toHaveBeenCalled();
+      expect(instance.getInfo().state).toBe('error');
+      instance.write('must not send');
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(terminals.create).not.toHaveBeenCalled();
+      expect(terminals.write).not.toHaveBeenCalled();
+      expect(terminals.subscribeEvents).not.toHaveBeenCalled();
+    },
+  );
+
+  it('waits for subscription acknowledgement before admitting input and flushes output received during acknowledgement', async () => {
+    const terminals = client();
+    const ready = deferred<void>();
+    const onReady = vi.fn();
+    let handlers!: TerminalEventHandlers;
+    vi.mocked(terminals.subscribeEvents).mockImplementation((_id, sink) => {
+      handlers = sink;
+      return Object.assign(vi.fn(), { ready: ready.promise });
+    });
+    const instance = engine(terminals, { onReady });
+    const pending = instance.initialize();
+    await vi.waitFor(() => expect(terminals.subscribeEvents).toHaveBeenCalledOnce());
+    instance.write('too early');
+    handlers.onData?.({ terminalId: 'daemon-pty', chunk: 'live before ack' });
+    expect(onReady).not.toHaveBeenCalled();
+    expect(terminals.write).not.toHaveBeenCalled();
+    ready.resolve();
+    await pending;
+    expect(onReady).toHaveBeenCalledOnce();
+    expect(xtermMock.instances.at(-1).write).toHaveBeenLastCalledWith('live before ack');
+    instance.write('accepted');
+    expect(terminals.write).toHaveBeenCalledExactlyOnceWith('daemon-pty', 'accepted', 'ws-1');
+  });
+
+  it('releases a rejected subscription without claiming readiness', async () => {
+    const terminals = client();
+    const ready = deferred<void>();
+    const unsubscribe = vi.fn();
+    const onReady = vi.fn();
+    const onError = vi.fn();
+    vi.mocked(terminals.subscribeEvents).mockReturnValue(
+      Object.assign(unsubscribe, { ready: ready.promise }),
+    );
+    const instance = engine(terminals, { onReady, onError });
+    const pending = expect(instance.initialize()).rejects.toThrow('Subscription rejected');
+    await vi.waitFor(() => expect(terminals.subscribeEvents).toHaveBeenCalledOnce());
+    ready.reject(new Error('Subscription rejected'));
+    await pending;
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(onReady).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Subscription rejected' }),
+    );
+  });
+
+  it.each(['lookup', 'buffer', 'subscription'])(
+    'fences retirement during pending %s work',
+    async (stage) => {
+      const terminals = client();
+      const lookup = deferred<Awaited<ReturnType<TerminalsClient['list']>>>();
+      const buffer = deferred<string>();
+      const subscription = deferred<void>();
+      const unsubscribe = vi.fn();
+      let current = true;
+      const onReady = vi.fn();
+      if (stage === 'lookup') vi.mocked(terminals.list).mockReturnValue(lookup.promise);
+      if (stage === 'buffer') vi.mocked(terminals.getBuffer).mockReturnValue(buffer.promise);
+      if (stage === 'subscription')
+        vi.mocked(terminals.subscribeEvents).mockReturnValue(
+          Object.assign(unsubscribe, { ready: subscription.promise }),
+        );
+      const instance = engine(terminals, { isCurrent: () => current, onReady });
+      const pending = expect(instance.initialize()).rejects.toThrow(/no longer current/);
+      await vi.waitFor(() =>
+        expect(
+          stage === 'lookup'
+            ? terminals.list
+            : stage === 'buffer'
+              ? terminals.getBuffer
+              : terminals.subscribeEvents,
+        ).toHaveBeenCalledOnce(),
+      );
+      current = false;
+      lookup.resolve({
+        terminals: [{ id: 'daemon-pty', name: 'Shell' }],
+        daemonBootId: 'boot-test',
+      });
+      buffer.resolve('stale snapshot');
+      subscription.resolve();
+      await pending;
+      expect(onReady).not.toHaveBeenCalled();
+      expect(xtermMock.instances.at(-1).write).not.toHaveBeenCalledWith('stale snapshot');
+      expect(terminals.create).not.toHaveBeenCalled();
+      expect(terminals.write).not.toHaveBeenCalled();
+      if (stage === 'subscription') expect(unsubscribe).toHaveBeenCalledOnce();
+      else expect(terminals.subscribeEvents).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['detach', 'dispose'] as const)(
+    'cancels late initialization after %s without subscribing',
+    async (operation) => {
+      const terminals = client();
+      const lookup = deferred<Awaited<ReturnType<TerminalsClient['list']>>>();
+      vi.mocked(terminals.list).mockReturnValue(lookup.promise);
+      const onReady = vi.fn();
+      const instance = engine(terminals, { onReady });
+      const pending = expect(instance.initialize()).rejects.toThrow(/no longer current/);
+      instance[operation]();
+      lookup.resolve({
+        terminals: [{ id: 'daemon-pty', name: 'Shell' }],
+        daemonBootId: 'boot-test',
+      });
+      await pending;
+      expect(terminals.subscribeEvents).not.toHaveBeenCalled();
+      expect(terminals.getBuffer).not.toHaveBeenCalled();
+      expect(onReady).not.toHaveBeenCalled();
+      expect(terminals.kill).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reconnects, reattaches, and reloads the same PTY without replaying input or creating one', async () => {
+    const terminals = client();
+    const instance = engine(terminals);
+    await instance.initialize();
+    instance.write('once\r');
+    const originalHandlers = subscriptions[0].handlers;
+    vi.mocked(terminals.getBuffer).mockResolvedValue('snapshot after disconnect');
+    await instance.reconnect();
+    expect(xtermMock.instances[0].reset).toHaveBeenCalledOnce();
+    expect(xtermMock.instances[0].write).toHaveBeenCalledWith('snapshot after disconnect');
+    expect(subscriptions[0].unsubscribe).toHaveBeenCalledOnce();
+    originalHandlers.onData?.({ terminalId: 'daemon-pty', chunk: 'stale event' });
+    expect(xtermMock.instances[0].write).not.toHaveBeenCalledWith('stale event');
+    instance.detach();
+    xtermMock.instances[0].dataHandler('detached input');
+    await instance.reattach(document.createElement('div'));
+    instance.dispose();
+    const reloaded = engine(terminals);
+    await reloaded.initialize();
+    expect(terminals.write).toHaveBeenCalledExactlyOnceWith('daemon-pty', 'once\r', 'ws-1');
+    expect(terminals.create).not.toHaveBeenCalled();
+    expect(terminals.kill).not.toHaveBeenCalled();
+    expect(terminals.getBuffer).toHaveBeenCalledTimes(4);
+    expect(reloaded.getInfo().id).toBe('daemon-pty');
+  });
+
+  it.each(['missing', 'lookup', 'buffer'])(
+    'reconnect reports %s failure and leaves input disabled',
+    async (failure) => {
+      const terminals = client();
+      const onReady = vi.fn();
+      const instance = engine(terminals, { onReady });
+      await instance.initialize();
+      if (failure === 'missing')
+        vi.mocked(terminals.list).mockResolvedValue({ terminals: [], daemonBootId: 'boot-test' });
+      if (failure === 'lookup')
+        vi.mocked(terminals.list).mockRejectedValue(new Error('Lookup unavailable'));
+      if (failure === 'buffer')
+        vi.mocked(terminals.getBuffer).mockRejectedValue(new Error('Buffer unavailable'));
+      await expect(instance.reconnect()).rejects.toThrow();
+      instance.write('not sent');
+      expect(onReady).toHaveBeenCalledOnce();
+      expect(terminals.write).not.toHaveBeenCalled();
+      expect(terminals.create).not.toHaveBeenCalled();
+      expect(terminals.subscribeEvents).toHaveBeenCalledOnce();
+      expect(subscriptions[0].unsubscribe).toHaveBeenCalledOnce();
+      expect(instance.getInfo().state).toBe('error');
+    },
+  );
+
+  it.each(['retired', 'disposed', 'exited'])(
+    'ignores retained input and event callbacks after %s',
+    async (state) => {
+      const terminals = client();
+      let current = true;
+      const instance = engine(terminals, { isCurrent: () => current });
+      await instance.initialize();
+      if (state === 'retired') current = false;
+      if (state === 'disposed') instance.dispose();
+      if (state === 'exited')
+        subscriptions[0].handlers.onExit?.({ terminalId: 'daemon-pty', exitCode: 0 });
+      const xterm = xtermMock.instances.at(-1);
+      const writesBefore = xterm.write.mock.calls.length;
+      xterm.dataHandler('must not send');
+      subscriptions[0].handlers.onData?.({ terminalId: 'daemon-pty', chunk: 'late output' });
+      instance.resize(120, 40);
+      expect(terminals.write).not.toHaveBeenCalled();
+      expect(terminals.resize).toHaveBeenCalledOnce();
+      expect(xterm.write).toHaveBeenCalledTimes(writesBefore);
+    },
+  );
+
+  it('reports failed input without retrying it', async () => {
+    const terminals = client();
+    const onError = vi.fn();
+    vi.mocked(terminals.write).mockResolvedValue({
+      success: false,
+      error: 'Write acknowledgement unknown',
+    });
+    const instance = engine(terminals, { onError });
+    await instance.initialize();
+    instance.write('one command\r');
+    await vi.advanceTimersByTimeAsync(3000);
+    instance.write('ignored while unhealthy');
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Write acknowledgement unknown' }),
+    );
+    expect(terminals.write).toHaveBeenCalledOnce();
+    expect(terminals.create).not.toHaveBeenCalled();
+  });
+
+  it('cleans up every other addon even when one disposal throws', async () => {
+    const instance = engine(client());
+    await instance.initialize();
+    const xterm = xtermMock.instances.at(-1);
+    const addons = xterm.loadAddon.mock.calls.map(([addon]: [any]) => addon);
+    addons[2].dispose.mockImplementation(() => {
+      throw new Error('Search teardown failed');
+    });
+    instance.dispose();
+    await vi.runOnlyPendingTimersAsync();
+    expect(addons[0].dispose).toHaveBeenCalledOnce();
+    expect(addons[1].dispose).toHaveBeenCalledOnce();
+    expect(xterm.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('routes link, shortcut, output, and command tracking to injected host callbacks', async () => {
+    const terminals = client();
+    const onOpenLink = vi.fn();
+    const onShortcut = vi.fn();
+    const onSearchResultsChange = vi.fn();
+    const history = { onOutput: vi.fn(), onCommandStart: vi.fn(), onCommandFinish: vi.fn() };
+    const instance = engine(terminals, { onOpenLink, onShortcut, onSearchResultsChange, history });
+    await instance.initialize();
+    const xterm = xtermMock.instances.at(-1);
+    const [, links, search] = xterm.loadAddon.mock.calls.map(([addon]: [any]) => addon);
+    links.handler(new MouseEvent('click'), 'https://example.test/path');
+    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith('https://example.test/path');
+    const keyHandler = xterm.attachCustomKeyEventHandler.mock.calls[0][0];
+    keyHandler(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+    keyHandler(new KeyboardEvent('keydown', { key: 't', ctrlKey: true }));
+    keyHandler(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true }));
+    expect(onShortcut.mock.calls).toEqual([
+      ['toggle-overlay'],
+      ['new-terminal'],
+      ['close-terminal'],
+    ]);
+    search.onDidChangeResults.mock.calls[0][0]({ resultIndex: 1, resultCount: 3 });
+    expect(onSearchResultsChange).toHaveBeenCalledExactlyOnceWith(1, 3);
+    instance.write('pwd');
+    instance.write('\r');
+    expect(history.onCommandStart).toHaveBeenCalledWith('daemon-pty', 'ws-1', 'pwd');
+    subscriptions[0].handlers.onData?.({ terminalId: 'daemon-pty', chunk: 'user@host $ ' });
+    expect(history.onOutput).toHaveBeenCalledWith('daemon-pty', 'ws-1', 'user@host $ ');
+    expect(history.onCommandFinish).toHaveBeenCalledWith('daemon-pty', 'ws-1');
+  });
+
+  it('preserves the source wrapper creation and shortcut policy after a failed lookup', async () => {
+    const terminals = client();
+    vi.mocked(terminals.list).mockRejectedValue(new Error('Source lookup unavailable'));
+    const instance = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      container: document.createElement('div'),
+      appClient: { terminals },
+    });
+    engines.push(instance);
+    await instance.initialize(true);
+    expect(terminals.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+    });
+    expect(instance.getInfo().id).toBe('term-1');
+    const keyHandler = xtermMock.instances.at(-1).attachCustomKeyEventHandler.mock.calls[0][0];
+    const actions = await import('$store/renderer/slices/terminals/terminals-slice');
+    const events = await import('$lib/utils/window-events');
+    keyHandler(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+    keyHandler(new KeyboardEvent('keydown', { key: 't', ctrlKey: true }));
+    keyHandler(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true }));
+    expect(actions.toggleTerminalOverlay).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(events.dispatchWindowEvent).toHaveBeenCalledWith('workspace:new-terminal', {
+      workspaceId: 'ws-1',
+    });
+    expect(actions.closeActiveTerminalRequested).toHaveBeenCalledExactlyOnceWith('ws-1');
+    instance.dispose();
+    expect(terminals.kill).toHaveBeenCalledExactlyOnceWith('term-1', 'ws-1');
+  });
+
+  it('releases partially allocated constructor resources if loading an addon fails', async () => {
+    xtermMock.failAddonAt = 2;
+    const terminals = client();
+    expect(() => engine(terminals)).toThrow('Addon setup failed');
+    xtermMock.failAddonAt = 0;
+    await vi.runOnlyPendingTimersAsync();
+    expect(fitMock.instances[0].dispose).toHaveBeenCalledOnce();
+    expect(xtermMock.instances[0].dispose).toHaveBeenCalledOnce();
+    expect(terminals.kill).not.toHaveBeenCalled();
   });
 });

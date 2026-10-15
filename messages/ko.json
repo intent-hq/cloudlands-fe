@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "머무르기",
   "workspace_fileNavigation_discard_label": "저장하지 않은 편집 버리기",
   "workspace_fileBrowser_scope_description": "이 작업 공간의 기본 저장소를 탐색합니다.",
-  "workspace_fileBrowser_empty_label": "빈 디렉터리"
+  "workspace_fileBrowser_empty_label": "빈 디렉터리",
+  "workspace_terminal_scope_description": "작업 공간의 기본 폴더에 있는 셸입니다. 이 화면을 떠나도 터미널은 계속 실행됩니다.",
+  "workspace_terminal_unknown_description": "터미널 작업을 확인하지 못했습니다. 계속하기 전에 목록을 새로 고치고 기존 터미널을 확인하세요. 이 세션에서는 다시 전송하지 않습니다.",
+  "workspace_terminal_close_description": "이 터미널을 닫고 실행 중인 프로세스를 중지할까요?",
+  "workspace_terminal_reconnect_label": "다시 연결",
+  "workspace_terminal_detach_label": "터미널 숨기기",
+  "workspace_terminal_ready_label": "터미널 준비 완료"
 }

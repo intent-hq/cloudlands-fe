@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "Bleiben",
   "workspace_fileNavigation_discard_label": "Ungespeicherte Änderungen verwerfen",
   "workspace_fileBrowser_scope_description": "Durchsuche das primäre Repository dieses Arbeitsbereichs.",
-  "workspace_fileBrowser_empty_label": "Leeres Verzeichnis"
+  "workspace_fileBrowser_empty_label": "Leeres Verzeichnis",
+  "workspace_terminal_scope_description": "Shell im primären Arbeitsbereichsordner. Beim Verlassen dieser Ansicht läuft das Terminal weiter.",
+  "workspace_terminal_unknown_description": "Der Terminalvorgang konnte nicht bestätigt werden. Aktualisiere die Liste und prüfe vorhandene Terminals, bevor du fortfährst. Diese Sitzung sendet den Vorgang nicht erneut.",
+  "workspace_terminal_close_description": "Dieses Terminal schließen und seinen laufenden Prozess beenden?",
+  "workspace_terminal_reconnect_label": "Neu verbinden",
+  "workspace_terminal_detach_label": "Terminal ausblenden",
+  "workspace_terminal_ready_label": "Terminal bereit"
 }

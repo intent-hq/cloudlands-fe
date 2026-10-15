@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "Rester",
   "workspace_fileNavigation_discard_label": "Abandonner les modifications",
   "workspace_fileBrowser_scope_description": "Parcourez le dépôt principal de cet espace de travail.",
-  "workspace_fileBrowser_empty_label": "Dossier vide"
+  "workspace_fileBrowser_empty_label": "Dossier vide",
+  "workspace_terminal_scope_description": "Shell dans le dossier principal de l’espace de travail. Le terminal reste actif lorsque vous quittez cette vue.",
+  "workspace_terminal_unknown_description": "L’opération du terminal n’a pas pu être confirmée. Actualisez la liste et examinez les terminaux existants avant de continuer. Cette session ne la renverra pas.",
+  "workspace_terminal_close_description": "Fermer ce terminal et arrêter son processus en cours ?",
+  "workspace_terminal_reconnect_label": "Reconnecter",
+  "workspace_terminal_detach_label": "Masquer le terminal",
+  "workspace_terminal_ready_label": "Terminal prêt"
 }

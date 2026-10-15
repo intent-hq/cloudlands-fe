@@ -1,3 +1,4 @@
+import { m } from '../../../shared/paraglide/messages.js';
 import type { TerminalTab } from '../../../store/renderer/slices/terminals/terminals-slice';
 import type { TerminalListResult, TerminalsReadClient } from '../lifecycle-read-client-types';
 import type { BackendRuntime } from './backend-transport-runtime';
@@ -30,6 +31,7 @@ function toTerminalTab(raw: unknown, fallbackWorkspaceId?: string): TerminalTab 
 
 export function createBackendTerminalsClient(
   backend: Pick<BackendRuntime, 'backendRequest'>,
+  options: { strict?: boolean } = {},
 ): TerminalsReadClient {
   const { backendRequest } = backend;
   return {
@@ -37,6 +39,23 @@ export function createBackendTerminalsClient(
       const result = await backendRequest<
         { terminals?: unknown[]; daemonBootId?: unknown } | unknown[]
       >('terminal.list', { workspaceId });
+      if (options.strict) {
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          !('terminals' in result) ||
+          !Array.isArray(result.terminals) ||
+          result.terminals.some(
+            (entry) =>
+              !entry ||
+              typeof entry !== 'object' ||
+              typeof (entry as { id?: unknown }).id !== 'string' ||
+              !(entry as { id: string }).id ||
+              ('workspaceId' in entry && entry.workspaceId !== workspaceId),
+          )
+        )
+          throw new Error(m.terminal_ipc_listFailed_error());
+      }
       // Envelope shape (PROTOCOL §5.13): { terminals, daemonBootId }. A legacy
       // pre-envelope daemon returns a bare array — tolerated by shape detection
       // and treated as carrying no boot metadata (daemonBootId omitted), which

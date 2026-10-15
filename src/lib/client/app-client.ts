@@ -832,6 +832,8 @@ export interface TerminalTitleEvent {
 
 /** Per-terminal event sink registered via `TerminalsClient.subscribeEvents`. */
 export interface TerminalEventHandlers {
+  onError?(error: Error): void;
+  onReady?(): void;
   onData?(event: TerminalDataEvent): void;
   onExit?(event: TerminalExitEvent): void;
   onCwd?(event: TerminalCwdEvent): void;

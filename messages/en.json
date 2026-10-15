@@ -7555,5 +7555,11 @@
   "workspace_fileNavigation_stay_label": "Stay",
   "workspace_fileNavigation_discard_label": "Discard unsaved edits",
   "workspace_fileBrowser_scope_description": "Browse this workspace’s primary repository.",
-  "workspace_fileBrowser_empty_label": "Empty directory"
+  "workspace_fileBrowser_empty_label": "Empty directory",
+  "workspace_terminal_scope_description": "Shell in the primary workspace folder. Leaving this view keeps the terminal running.",
+  "workspace_terminal_unknown_description": "The terminal operation could not be confirmed. Refresh the list and inspect existing terminals before taking further action. This session will not resend it.",
+  "workspace_terminal_close_description": "Close this terminal and stop its running process?",
+  "workspace_terminal_reconnect_label": "Reconnect",
+  "workspace_terminal_detach_label": "Hide terminal",
+  "workspace_terminal_ready_label": "Terminal ready"
 }

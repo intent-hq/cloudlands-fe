@@ -1,3 +1,4 @@
+import { terminalInteractionSaga } from './store/terminals/sagas/terminal-interaction-saga';
 import { fileExplorerSaga } from './store/file-explorer/sagas/file-explorer-saga';
 import { commitHistorySaga } from './store/changes/sagas/commit-history-saga';
 import { gitWriteSaga } from './store/git/sagas/git-write-saga';
@@ -50,6 +51,7 @@ const cancelGitWriteSaga = store.runSaga(gitWriteSaga);
 const cancelGitStatusReadSaga = store.runSaga(gitStatusReadSaga);
 const cancelFilesSaveSaga = store.runSaga(filesSaveSaga);
 const cancelFilesReadSaga = store.runSaga(filesReadSaga);
+const cancelTerminalInteractionSaga = store.runSaga(terminalInteractionSaga);
 const cancelFileExplorerSaga = store.runSaga(fileExplorerSaga);
 const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
 const cancelReadOnlyChatSaga = store.runSaga(readOnlyChatSaga);
@@ -84,6 +86,7 @@ function dispose() {
   cancelFilesSaveSaga();
   cancelFilesReadSaga();
   cancelFileExplorerSaga();
+  cancelTerminalInteractionSaga();
   cancelChatCommandsSaga();
   cancelReadOnlyChatSaga();
   cancelWorkspaceInitializerSaga();

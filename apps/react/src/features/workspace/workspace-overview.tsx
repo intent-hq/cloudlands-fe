@@ -1,3 +1,4 @@
+import { WorkspaceTerminals } from './workspace-terminal';
 import { WorkspaceFileBrowser } from './workspace-file-browser';
 import { WorkspaceCommitHistory } from './workspace-commit-history';
 import { WorkspaceDiff } from './workspace-diff';
@@ -473,6 +474,7 @@ export function WorkspaceOverview({
                     />
                   )}
                   {!noteId && <WorkspaceAgents workspaceId={workspaceId} />}
+                  {!noteId && <WorkspaceTerminals workspaceId={workspaceId} />}
                   {!noteId && (
                     <WorkspaceGitStatus
                       workspaceId={workspaceId}

@@ -273,3 +273,23 @@ Git fixture and `ISOLATED_GIT_WRITES=owned-test-daemon`. It uses native keyboard
 pointer activation, actual daemon stage/unstage, mixed index/worktree diffs,
 reload, bounded return anchoring, and canonical read/write cleanup. Never run
 this mutation acceptance against a user workspace.
+
+## Workspace terminal
+
+In a workspace, choose **New Terminal**, or **Open** beside a listed terminal.
+The shell starts in the primary workspace folder and does not need a configured
+provider. Type commands directly; the terminal follows the view's size. **Hide
+terminal**, navigation and reload detach the view without closing the daemon PTY.
+After returning or reconnecting the app connection, open the listed terminal again
+to restore its available buffer. **Reconnect**
+reattaches to that same ID; a missing terminal is reported and is never recreated
+automatically. Use **Close Terminal** and confirm to stop its process.
+
+Creation and closing remain pending until their actual responses arrive. If a
+response is lost, the preview reports an unknown outcome and blocks resending that
+operation in the current application session. Refresh and inspect the daemon's
+terminal list; a list entry alone does not correlate a lost creation request.
+These operation receipts are not persisted across a full reload, and reload never
+replays creation, closing or input. Buffer restoration has no exactly-once output
+claim across a disconnect. This is a bounded interactive host, without the desktop
+quake overlay, script manager or terminal history UI.
