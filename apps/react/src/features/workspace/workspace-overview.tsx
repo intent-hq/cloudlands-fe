@@ -92,7 +92,9 @@ function WorkspaceRow({
       >
         <span className="flex min-w-0 items-center gap-2">
           <HomeWorkspaceStatus workspace={workspace.value} />
-          <span className="truncate">{workspace.value.title}</span>
+          <span className="truncate">
+            {workspace.value.title || m.workspace_links_untitled_label()}
+          </span>
         </span>
         {workspace.value.statusMessage && (
           <span className="type-caption text-muted-foreground">
@@ -371,7 +373,9 @@ export function WorkspaceOverview({
         leading={<SidebarTrigger />}
         title={
           <h1 ref={title} tabIndex={-1}>
-            {row?.title ?? m.workspace_page_workspaceResource_label()}
+            {row
+              ? row.title || m.workspace_links_untitled_label()
+              : m.workspace_page_workspaceResource_label()}
           </h1>
         }
         description={m.settings_gitWorkspace_experimental_badge()}

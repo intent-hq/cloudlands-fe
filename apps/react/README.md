@@ -12,24 +12,59 @@ Use the Node version in the root `package.json` `engines.node` range and the pin
 pnpm install --frozen-lockfile
 ```
 
-Start intentd separately with a configured provider. Have an existing local Git
-repository available on that daemon host, or use a workspace already listed there.
-From the repository root, the single frontend startup command is:
+Start intentd separately. Local workspace creation, file browsing/editing and local
+Git commits do not require provider sign-in. A configured provider is needed for
+agent conversations. Have an existing local Git repository on the daemon host with
+at least one commit, a valid base branch/ref, and a Git author configured. You can
+also use a workspace already listed there. From this frontend repository's root:
 
 ```sh
 INTENT_DEV_DAEMON_BRIDGE=1 pnpm --filter @intent/react dev
 ```
 
-Open the printed loopback URL at `/workspaces`. Choose **New workspace**, select or
-enter an existing local repository folder, and enter its base branch or ref. The
-preview creates an isolated checkout without running the repository’s setup script.
-It waits for the saved creation request before submitting; repeated activation does
+Open the printed loopback URL at `/workspaces`.
+
+The bridge uses `~/Library/Application Support/intentd/intentd.sock` on macOS and
+`${XDG_DATA_HOME:-$HOME/.local/share}/intentd/intentd.sock` on Linux. For an isolated
+installation, prefix the same command with `INTENTD_SOCKET=/absolute/owned/intentd.sock`.
+`DEV_PORT` selects the frontend port. The dev-only bridge grants the browser full
+access to that daemon; use an owned test daemon/workspace for mutation acceptance.
+No Electron preload, protected local Themis patch, or live user workspace is required.
+
+## First local editing workflow
+
+1. On Home, choose **New workspace**, enter the local repository folder and its
+   base branch/ref, then choose **Create workspace**. This creates an isolated
+   checkout without running the repository's setup script.
+2. Expand **Files** directories and open an existing small text file. Type an edit.
+   Try **Back**, then **Stay** to keep the unsaved text and editor position.
+3. Choose **Save**, then **Back**. The original repository remains unchanged;
+   the edit is saved in the new workspace checkout.
+4. In **Changed files**, choose **Refresh git status**, open the file's unstaged
+   row and inspect the diff. Choose
+   **Stage**, then **Back** to review its staged row.
+5. Enter a **Commit Message** and choose **Commit**. The confirmation shows the
+   actual local commit SHA. This commits the current index, so check for unrelated
+   staged files first; it does not push anything.
+6. In **Commits**, choose **Refresh**, expand that SHA, and open its file to inspect
+   the committed diff. **Back** restores the originating history row.
+7. Reload and reopen the file through **Files** to see the saved content. Reload
+   does not replay Save or Commit. Unsaved drafts are not persisted across reload.
+
+This sequence is verified on an owned Linux daemon without credentials at desktop
+and narrow widths. Provider-backed chat acceptance is a separate checkpoint.
+The following sections describe the supported boundaries and recovery behavior.
+
+## Workspace creation and conversations
+
+Local creation waits for the saved creation request before submitting; repeated activation does
 not issue another request. If the outcome is uncertain, **Recover creation** reuses
 the same request key. Closing the form cannot undo a workspace already created by
 the daemon. Local repository creation currently requires host-owner access; GitHub
 cloning, new-repository initialization and the full desktop initializer are outside
 this preview.
 
+For chat, configure and sign in to a provider through the desktop app first.
 After creation, or after selecting a listed workspace, open **Agents**.
 Choose an existing agent or **Create new agent**, including when the list is empty.
 Creation uses the workspace's configured default provider and model, waits for its
@@ -46,13 +81,6 @@ through a temporary disconnect and saved after reconnection.
 Drafts queued under a retired account or backend are canceled. Reconnection resubscribes
 without automatically resending an uncertain submission. An explicit retry may warn
 that delivery is uncertain before offering a resend.
-
-The bridge uses `~/Library/Application Support/intentd/intentd.sock` on macOS and
-`${XDG_DATA_HOME:-$HOME/.local/share}/intentd/intentd.sock` on Linux. For an isolated
-installation, prefix the same command with `INTENTD_SOCKET=/absolute/owned/intentd.sock`.
-`DEV_PORT` selects the frontend port. The dev-only bridge grants the browser full
-access to that daemon; use an owned test daemon/workspace for mutation acceptance.
-No Electron preload, protected local Themis patch, or live user workspace is required.
 
 Use the paperclip to select local images or files. Wait for upload completion before
 sending; registered attachments survive draft reload. Remove a chip to exclude it.
@@ -94,6 +122,7 @@ each group. The diff view shows line numbers and additions/deletions, with
 **Refresh** and **Back** to the originating row and filter. Deleted files do not
 require current file contents. This checkpoint covers the primary Git root only;
 workspace owners can **Stage** or **Unstage** one file from its row or diff view.
+After saving an editor file, use **Refresh git status** to update this list.
 These actions update the index and preserve the working file. Pending writes stay
 owned while navigating; locked files and unavailable write admission disable the
 actions. After a category disappears, **Back** focuses the same file in its
@@ -168,6 +197,14 @@ pnpm --filter @intent/react typecheck
 pnpm --filter @intent/react build
 pnpm run test:unit apps/react/src/features/workspace/workspace-conversation-composer.test.tsx
 ```
+
+`workspace-local-workflow.extended.spec.mjs` is the integrated local acceptance
+journey: Home creation, nested-file edit, dirty-navigation Stay, Save, exact diff,
+Stage, explicit current-index Commit, exact SHA/tree and history-file inspection,
+reload and cleanup at desktop/narrow widths. It uses native UI input and a guarded
+owned no-credential daemon, corroborates the actual checkout, disk and Git index,
+and checks that the source repository and unrelated files remain unchanged. It
+does not create an agent, send a prompt or claim current-head chat verification.
 
 The maintained native test `packages/view-parity/tests/workspace-chat-send.extended.spec.mjs`
 is mutating and fails closed without explicit owned-daemon fixture and socket-peer

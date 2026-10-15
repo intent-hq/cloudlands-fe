@@ -50,7 +50,9 @@ function WorkspaceNavigationRow({
           }}
         >
           <WorkspaceStatusIcon status={resolveWorkspaceStatusState(workspace.value)} />
-          <span className="min-w-0 truncate">{workspace.value.title}</span>
+          <span className="min-w-0 truncate">
+            {workspace.value.title || m.workspace_links_untitled_label()}
+          </span>
         </Link>
       </Sidebar.MenuButton>
     </Sidebar.MenuItem>
