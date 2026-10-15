@@ -123,13 +123,17 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
   selectNoteFontStyle: () => mockState.noteFontStyle,
   selectSpellcheckEnabled: () => mockState.spellcheckEnabled,
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
-  setNoteFontStyle: (style: string) => ({
-    type: 'fontSettings/setNoteFontStyle',
-    payload: [style],
+vi.mock(
+  '$store/renderer/slices/user-preferences/user-preferences-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    setNoteFontStyle: (style: string) => ({
+      type: 'fontSettings/setNoteFontStyle',
+      payload: [style],
+    }),
+    toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
   }),
-  toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
-}));
+);
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectAllScrollPositions: () => mockState.scrollPositions,
   selectCurrentWorkspaceTabId: () => mockState.currentWorkspace,
