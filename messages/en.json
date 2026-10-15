@@ -7520,5 +7520,15 @@
   "workspace_hoverCard_reviews_label": "Pull/merge requests",
   "home_status_waiting_description": "Waiting for external events or delegated work.",
   "browser_activity_browsing_label": "Browsing {host}",
-  "browser_activity_unavailable_tooltip": "This browser tab is no longer available"
+  "browser_activity_unavailable_tooltip": "This browser tab is no longer available",
+  "workspace_peopleActivity_messagedAgent_label": "Sent a message to {agent}",
+  "workspace_peopleActivity_load_error": "Could not load activity.",
+  "workspace_peopleActivity_sentMessage_label": "Sent a message",
+  "workspace_peopleActivity_empty_label": "No recorded activity from people yet.",
+  "workspace_peopleActivity_loadMore_label": "Load more",
+  "workspace_peopleActivity_loading_label": "Loading activity…",
+  "workspace_peopleActivity_actorAction_label": "{name}: {action}",
+  "workspace_peopleActivity_loadOlder_error": "Could not load older activity.",
+  "workspace_peopleTile_title": "People",
+  "workspace_peopleActivity_recentEmpty_label": "No activity from people in these recent events."
 }

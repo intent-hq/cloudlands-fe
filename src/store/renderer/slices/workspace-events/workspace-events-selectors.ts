@@ -50,3 +50,17 @@ export const selectOlderEventsEndReached = store.createSelector<[workspaceId: st
       .endReached;
   },
 );
+
+export const selectPeopleEventsLoading = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) =>
+    (state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleRequestId ?? null) !== null,
+);
+
+export const selectPeopleEventsError = store.createSelector<[workspaceId: string], string | null>(
+  (state, workspaceId) => state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleError ?? null,
+);
+
+export const selectPeopleEventsInitialized = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) =>
+    state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleInitialized ?? false,
+);

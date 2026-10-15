@@ -7520,5 +7520,15 @@
   "workspace_hoverCard_reviews_label": "拉取/合併請求",
   "home_status_waiting_description": "正在等待外部事件或委派的工作。",
   "browser_activity_browsing_label": "正在瀏覽 {host}",
-  "browser_activity_unavailable_tooltip": "此瀏覽器分頁已無法使用"
+  "browser_activity_unavailable_tooltip": "此瀏覽器分頁已無法使用",
+  "workspace_peopleActivity_messagedAgent_label": "向 {agent} 傳送了訊息",
+  "workspace_peopleActivity_load_error": "無法載入活動。",
+  "workspace_peopleActivity_sentMessage_label": "傳送了訊息",
+  "workspace_peopleActivity_empty_label": "尚未記錄任何使用者活動。",
+  "workspace_peopleActivity_loadMore_label": "載入更多",
+  "workspace_peopleActivity_loading_label": "正在載入活動…",
+  "workspace_peopleActivity_actorAction_label": "{name}：{action}",
+  "workspace_peopleActivity_loadOlder_error": "無法載入更早的活動。",
+  "workspace_peopleTile_title": "人員",
+  "workspace_peopleActivity_recentEmpty_label": "這些近期事件中沒有使用者活動。"
 }

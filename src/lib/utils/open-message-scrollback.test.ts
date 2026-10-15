@@ -37,7 +37,7 @@ import {
   historySeekRequested,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
-import { seekConversationToMessage } from './open-message';
+import { openMessage, seekConversationToMessage } from './open-message';
 
 const AGENT = 'seek-agent';
 const WS = 'seek-workspace';
@@ -92,6 +92,75 @@ function harness() {
 
 describe('direct message seek pagination ownership', () => {
   afterEach(() => vi.resetAllMocks());
+  it('loads an old message into history before handing off to the exact tab', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    const handoff = vi.fn();
+    window.addEventListener('chat:open-message', handoff);
+    try {
+      mock.getConversation.mockResolvedValueOnce(page(498));
+      const opening = openMessage({
+        workspaceId: WS,
+        agentId: AGENT,
+        messageId: 'm-500',
+        contentAlreadyOpen: true,
+        targetTabId: 'right-agent-tab',
+      });
+      await vi.runAllTimersAsync();
+      await opening;
+      expect(mock.getConversation).toHaveBeenCalledWith(
+        AGENT,
+        5,
+        undefined,
+        'm-500',
+        undefined,
+        WS,
+      );
+      expect(run.tail()?.map((message) => message.id)).toEqual(
+        rows(995).map((message) => message.id),
+      );
+      expect(run.history()?.messages.map((message) => message.id)).toContain('m-500');
+      expect(handoff).toHaveBeenCalled();
+      expect(handoff.mock.calls[0][0].detail).toMatchObject({
+        agentId: AGENT,
+        messageId: 'm-500',
+        targetTabId: 'right-agent-tab',
+      });
+    } finally {
+      window.removeEventListener('chat:open-message', handoff);
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancelled seeks leave history and cursors intact and release their loading state', async () => {
+    const run = harness();
+    try {
+      let finishSeek!: (value: ReturnType<typeof page>) => void;
+      mock.getConversation.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishSeek = resolve;
+        }),
+      );
+      const controller = new AbortController();
+      const seeking = seekConversationToMessage(AGENT, 'm-500', WS, controller.signal);
+      expect(run.chat()?.fetchingHistorySeek).toBe(true);
+      controller.abort();
+      finishSeek(page(498));
+      await expect(seeking).resolves.toBe(false);
+      expect(run.history()).toBeUndefined();
+      expect(run.tail()?.map((message) => message.id)).toEqual(
+        rows(995).map((message) => message.id),
+      );
+      expect(run.chat()?.scrollbackOlderToken).toBe('before-995');
+      expect(run.chat()?.fetchingHistorySeek).toBe(false);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('defers a direct seek until initial completion installs the cursor', async () => {
     vi.useFakeTimers();
     const run = harness();

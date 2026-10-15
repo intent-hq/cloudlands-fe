@@ -7520,5 +7520,15 @@
   "workspace_hoverCard_reviews_label": "풀 리퀘스트/병합 요청",
   "home_status_waiting_description": "외부 이벤트 또는 위임한 작업을 기다리는 중입니다.",
   "browser_activity_browsing_label": "{host} 탐색 중",
-  "browser_activity_unavailable_tooltip": "이 브라우저 탭은 더 이상 사용할 수 없습니다"
+  "browser_activity_unavailable_tooltip": "이 브라우저 탭은 더 이상 사용할 수 없습니다",
+  "workspace_peopleActivity_messagedAgent_label": "{agent}에게 메시지를 보냄",
+  "workspace_peopleActivity_load_error": "활동을 불러올 수 없습니다.",
+  "workspace_peopleActivity_sentMessage_label": "메시지를 보냄",
+  "workspace_peopleActivity_empty_label": "아직 기록된 사용자 활동이 없습니다.",
+  "workspace_peopleActivity_loadMore_label": "더 불러오기",
+  "workspace_peopleActivity_loading_label": "활동을 불러오는 중…",
+  "workspace_peopleActivity_actorAction_label": "{name} — {action}",
+  "workspace_peopleActivity_loadOlder_error": "이전 활동을 불러올 수 없습니다.",
+  "workspace_peopleTile_title": "사용자",
+  "workspace_peopleActivity_recentEmpty_label": "최근 이벤트에 사용자 활동이 없습니다."
 }
