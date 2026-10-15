@@ -732,6 +732,39 @@ describe('sharing prerequisite settlements', () => {
     expect(settled.principals).toBe(state.principals);
   });
 
+  it('clears invite errors during explicit setup but preserves them during passive checks', () => {
+    const original = opened();
+    const scoped = { ...target(original), authority: 'host-a' };
+    const failedInvite = reduce(
+      original,
+      shareInviteCreateRequested({ pinLogin: 'unknown' }),
+      shareInviteCreateFailed({ target: scoped, request: 1, error: 'invite failure' }),
+    );
+    const checking = reduce(
+      failedInvite,
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+    );
+    expect(checking.createError).toBe('invite failure');
+    const checked = reduce(
+      checking,
+      sharePrerequisitesSettled({ target: scoped, enabled: false, error: null }),
+    );
+    expect(checked.createError).toBe('invite failure');
+    const enabling = reduce(checked, sharePrerequisitesStarted({ target: scoped, enabling: true }));
+    expect(enabling.createError).toBeNull();
+    const blockedInvite = reduce(
+      enabling,
+      shareInviteCreateRequested({ pinLogin: '' }),
+      shareInviteCreateFailed({ target: scoped, request: 2, error: 'setup still running' }),
+    );
+    const enabled = reduce(
+      blockedInvite,
+      sharePrerequisitesSettled({ target: scoped, enabled: true, error: null }),
+    );
+    expect(enabled.createError).toBeNull();
+    expect(enabled.creating).toBe(false);
+  });
+
   it('rejects replies from an old authority, closed dialog, and previous session', () => {
     const original = opened();
     const scoped = { ...target(original), authority: 'host-a' };

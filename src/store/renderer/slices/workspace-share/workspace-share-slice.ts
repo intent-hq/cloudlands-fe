@@ -370,6 +370,7 @@ workspaceShareReducer.with(
     return {
       ...state,
       sharingContext: target.authority,
+      createError: enabling ? null : state.createError,
       sharingEnabled: null,
       sharingChecking: !enabling,
       sharingEnabling: enabling,
@@ -385,6 +386,7 @@ workspaceShareReducer.with(
     return {
       ...state,
       sharingEnabled: enabled,
+      createError: state.sharingEnabling && enabled === true ? null : state.createError,
       sharingChecking: false,
       sharingEnabling: false,
       sharingError: error,

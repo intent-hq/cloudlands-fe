@@ -1553,6 +1553,60 @@ describe('inline sharing prerequisites', () => {
     },
   );
 
+  it.each(['missing', 'checking', 'enabling'])(
+    'settles invite requests without a wire call while sharing is %s',
+    async (phase) => {
+      const pending = deferred<ReturnType<typeof settingReply>>();
+      replyByMethod({
+        'settings.get': ({ path }: { path: string }) =>
+          phase === 'missing' ? settingReply(path, false) : pending.promise,
+      });
+      const h = harness(opened());
+      try {
+        h.dispatch(phase === 'enabling' ? shareEnableRequested() : sharePrerequisitesRequested());
+        if (phase === 'missing')
+          await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+        h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+        await settle();
+        expect(calls('workspace.invite.create')).toHaveLength(0);
+        expect(h.state().creating).toBe(false);
+        expect(h.state().createError).toEqual(expect.any(String));
+      } finally {
+        h.task.cancel();
+        pending.resolve(settingReply('unused', false));
+      }
+    },
+  );
+
+  it('allows invite creation after explicit setup clears the prior setup error', async () => {
+    let enabled = false;
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => settingReply(path, enabled),
+      'settings.update': () => {
+        enabled = true;
+        return { applied: [], revision: 2 };
+      },
+      'workspace.invite.create': createReply(),
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+      h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await settle();
+      expect(h.state().createError).not.toBeNull();
+      h.dispatch(shareEnableRequested());
+      expect(h.state().createError).toBeNull();
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      expect(h.state().createError).toBeNull();
+      h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await vi.waitFor(() => expect(calls('workspace.invite.create')).toHaveLength(1));
+      expect(h.state().createError).toBeNull();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
   it('does not claim success when the daemon returns unchanged effective settings', async () => {
     replyByMethod({
       'settings.get': ({ path }: { path: string }) => settingReply(path, false),

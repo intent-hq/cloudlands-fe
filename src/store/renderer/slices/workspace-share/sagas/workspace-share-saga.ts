@@ -361,6 +361,21 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   const target = yield* manageableTarget();
   if (!target) return;
   const request = yield* selectShareCreateRequest.effect();
+  if (
+    (yield* selectCanAdministerHost.effect()) &&
+    ((yield* selectShareSharingEnabled.effect()) === false ||
+      (yield* selectShareSharingChecking.effect()) ||
+      (yield* selectShareSharingEnabling.effect()))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({
+        target,
+        request,
+        error: m.workspace_share_sharingRequired_notice(),
+      }),
+    );
+    return;
+  }
   const [{ pinLogin, pin }] = action.payload;
   const requestedPin = pinLogin.trim();
   const independentPins = (yield* selectCollaborationCapabilities.effect()).hostMembership;
