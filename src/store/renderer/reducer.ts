@@ -55,7 +55,6 @@ import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
-import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
@@ -179,7 +178,6 @@ export const reducers = {
   githubRepoSearch: githubRepoSearchReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
-  legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
   identity: identityReducer,
   voiceSettings: voiceSettingsReducer,

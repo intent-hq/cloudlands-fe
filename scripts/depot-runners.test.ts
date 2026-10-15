@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, .github/workflows/manual-signed-build.yml, scripts/setup-depot-sccache.py
+// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-depot-sccache.py
 // @vitest-environment node
 import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -72,15 +72,22 @@ describe('Depot CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
-  it('uses Depot for static jobs except the admitted immutable package replay', () => {
+  it('uses Depot except for isolated retirement cleanup and immutable package replay', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
-      for (const [name, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
+      for (const [id, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
         const runner = job['runs-on'];
+        // Retirement must stay available independently of the managed runner fleet.
+        if (file === 'retire-obsolete-merge-runs.yml' && id === 'cleanup') {
+          expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
+          continue;
+        }
         // Immutable package replay retains its strict GitHub-hosted admission.
-        if (file === 'manual-signed-build.yml' && name === 'replay-isolated-macos') {
+        if (file === 'manual-signed-build.yml' && id === 'replay-isolated-macos') {
           expect(runner).toBe('macos-15-xlarge');
-        } else if (runner && !runner.includes('${{')) expect(runner, file).toMatch(/^depot-/);
+          continue;
+        }
+        if (runner && !runner.includes('${{')) expect(runner, file).toMatch(/^depot-/);
       }
     }
   });
