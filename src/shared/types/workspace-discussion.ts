@@ -1,5 +1,5 @@
 /** Plain-text human discussion wire contract. Sequence is monotonic per workspace. */
-export interface DiscussionAuthor {
+interface DiscussionAuthor {
   principalId: string;
   login: string | null;
   displayName: string | null;
