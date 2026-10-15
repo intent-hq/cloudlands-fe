@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "Vista previa parcial: los primeros {shown} de {total}. El archivo puede cambiar después de esta lectura.",
   "files_read_previewReadOnly_error": "Esta es una vista previa de solo lectura.",
   "chat_inlinePermission_submitting_label": "Enviando decisión…",
-  "chat_inlinePermission_responseFailed_error": "No se pudo confirmar la decisión. Elige una opción para reintentarlo."
+  "chat_inlinePermission_responseFailed_error": "No se pudo confirmar la decisión. Elige una opción para reintentarlo.",
+  "react_providerSettings_scope_description": "Esta vista previa interna muestra los proveedores configurados sin cambiar sus ajustes. Configura los proveedores en la aplicación de escritorio. El modelo y el esfuerzo de razonamiento solo se aplican a esta conversación."
 }

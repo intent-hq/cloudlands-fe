@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "Teilvorschau: die ersten {shown} von {total}. Die Datei kann sich nach diesem Lesen ändern.",
   "files_read_previewReadOnly_error": "Dies ist eine schreibgeschützte Vorschau.",
   "chat_inlinePermission_submitting_label": "Entscheidung wird gesendet…",
-  "chat_inlinePermission_responseFailed_error": "Die Entscheidung konnte nicht bestätigt werden. Wählen Sie eine Option, um es erneut zu versuchen."
+  "chat_inlinePermission_responseFailed_error": "Die Entscheidung konnte nicht bestätigt werden. Wählen Sie eine Option, um es erneut zu versuchen.",
+  "react_providerSettings_scope_description": "Diese interne Vorschau zeigt konfigurierte Anbieter, ohne deren Einstellungen zu ändern. Konfiguriere Anbieter in der Desktop-App. Modell und Denkaufwand gelten nur für diese Unterhaltung."
 }

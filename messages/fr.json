@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "Aperçu partiel : les premiers {shown} sur {total}. Le fichier peut changer après cette lecture.",
   "files_read_previewReadOnly_error": "Cet aperçu est en lecture seule.",
   "chat_inlinePermission_submitting_label": "Envoi de la décision…",
-  "chat_inlinePermission_responseFailed_error": "La décision n’a pas pu être confirmée. Choisissez une option pour réessayer."
+  "chat_inlinePermission_responseFailed_error": "La décision n’a pas pu être confirmée. Choisissez une option pour réessayer.",
+  "react_providerSettings_scope_description": "Cet aperçu interne affiche les fournisseurs configurés sans modifier leurs paramètres. Configurez les fournisseurs dans l’application de bureau. Le modèle et l’effort de raisonnement s’appliquent uniquement à cette conversation."
 }

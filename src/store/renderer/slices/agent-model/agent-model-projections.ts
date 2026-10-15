@@ -43,3 +43,22 @@ export const getAgentModelWriteSnapshot = (
       !getIsWorkspaceCollaborator(state, workspaceId),
   };
 };
+
+/** Only the current agent mutation lease can hold its next submission. */
+export const getAgentModelSubmissionPending = (
+  state: AgentModelProjectionState,
+  agentId: string,
+  workspaceId: string,
+): boolean => {
+  const connection = getPrincipalConnectionContext(state);
+  return (
+    connection !== null &&
+    getItems(state.agentModel.mutations).some(
+      (entry) =>
+        entry.agentId === agentId &&
+        entry.workspaceId === workspaceId &&
+        entry.connection === connection &&
+        entry.status === 'pending',
+    )
+  );
+};

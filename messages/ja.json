@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "部分プレビュー：{total} のうち先頭 {shown}。読み取り後にファイルが変更される場合があります。",
   "files_read_previewReadOnly_error": "これは読み取り専用のプレビューです。",
   "chat_inlinePermission_submitting_label": "選択を送信中…",
-  "chat_inlinePermission_responseFailed_error": "選択を確認できませんでした。もう一度オプションを選んでください。"
+  "chat_inlinePermission_responseFailed_error": "選択を確認できませんでした。もう一度オプションを選んでください。",
+  "react_providerSettings_scope_description": "この内部プレビューでは、設定を変更せずに構成済みのプロバイダーを表示します。プロバイダーの設定はデスクトップアプリで行ってください。モデルと思考の深さの選択は、この会話にのみ適用されます。"
 }

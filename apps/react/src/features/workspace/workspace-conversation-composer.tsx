@@ -4,6 +4,8 @@ import {
   setChatDraft,
 } from '../../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
 import { useEffect, useId, useRef, useState } from 'react';
+import { selectAgentModelSubmissionPending } from '@/store/agent-model/agent-model-selectors';
+import { WorkspaceConversationModel } from './workspace-conversation-model';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '@/store';
 import { PaperclipIcon } from '@phosphor-icons/react';
@@ -77,6 +79,7 @@ export function WorkspaceConversationComposer({
   const chat = selectChatAgentState(agentId).value;
   const participation = selectWorkspaceParticipationContext(workspaceId).value;
   const principal = selectPrincipalSnapshot().value;
+  const modelPending = selectAgentModelSubmissionPending(agentId, workspaceId).value;
   const pending =
     entry &&
     getItems(entry.submissions).some(
@@ -229,6 +232,7 @@ export function WorkspaceConversationComposer({
       !transcriptReady ||
       submitting.current ||
       attachmentsBlocked ||
+      selectAgentModelSubmissionPending.select(store.state, agentId, workspaceId) ||
       pending ||
       !participation ||
       principal?.capabilities.submissionCorrelation !== 1
@@ -345,7 +349,7 @@ export function WorkspaceConversationComposer({
         onValueChange={edit}
         onSend={send}
         hasAttachments={hasAttachments}
-        sendDisabled={attachmentsBlocked}
+        sendDisabled={attachmentsBlocked || modelPending}
         accept=""
         files={[]}
         onFilesChange={(files) => {
@@ -353,15 +357,25 @@ export function WorkspaceConversationComposer({
             dispatch(composerAttachmentsSelected(ownerId, workspaceId, agentId, files));
         }}
         leftSlot={({ openFilePicker }) => (
-          <Button
-            variant="plain"
-            size="icon-sm"
-            iconOnly
-            aria-label={m.chat_richInput_attachFiles_label()}
-            onClick={() => openFilePicker()}
-          >
-            <PaperclipIcon size={16} />
-          </Button>
+          <>
+            <WorkspaceConversationModel
+              workspaceId={workspaceId}
+              agentId={agentId}
+              disabled={
+                !restored || !transcriptReady || !participation || (!!pending && !responding)
+              }
+              responding={responding}
+            />
+            <Button
+              variant="plain"
+              size="icon-sm"
+              iconOnly
+              aria-label={m.chat_richInput_attachFiles_label()}
+              onClick={() => openFilePicker()}
+            >
+              <PaperclipIcon size={16} />
+            </Button>
+          </>
         )}
         status={responding ? 'streaming' : 'idle'}
         disabled={

@@ -1,3 +1,11 @@
+import {
+  agentModelMutationRequested,
+  agentModelMutationConsumed,
+} from '../../../../../src/store/renderer/slices/agent-model/agent-model-slice';
+import { createAgentModelSaga } from '../../../../../src/store/renderer/slices/agent-model/sagas/agent-model-saga-factory';
+import { selectAgentModelWriteSnapshot } from '@/store/agent-model/agent-model-selectors';
+import { selectProviderModelsCacheEntry } from '@/store/provider-models/provider-models-selectors';
+import { selectPrincipalConnectionContext } from '@/store/principal/principal-selectors';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -400,3 +408,119 @@ it('clears the matching attachment draft after a rejected send is retried from a
   });
   expect(drafts.clear).toHaveBeenCalledOnce();
 });
+
+it('holds the next send until this agent model mutation settles, without blocking another agent', async () => {
+  await mount();
+  const action = agentModelMutationRequested({
+    requestId: 'model-request',
+    consumerId: 'picker',
+    workspaceId: ws,
+    agentId: agent,
+    connection: selectPrincipalConnectionContext.select(store.state),
+    operation: { kind: 'model', model: 'next', commit: true },
+  });
+  await act(async () => {
+    store.dispatch(action);
+  });
+  await settle();
+  expect(ui.props?.sendDisabled).toBe(true);
+  await act(async () => ui.props?.onSend?.('blocked', []));
+  expect(entry()?.submissions?.ids ?? []).toEqual([]);
+  await act(async () => {
+    store.dispatch(action.success({ status: 'success' }));
+  });
+  await settle();
+  expect(ui.props?.sendDisabled).toBe(false);
+  const other = agentModelMutationRequested({
+    requestId: 'other-model',
+    consumerId: 'other',
+    workspaceId: ws,
+    agentId: 'other-agent',
+    connection: selectPrincipalConnectionContext.select(store.state),
+    operation: { kind: 'effort', effort: 'low', previous: null },
+  });
+  await act(async () => {
+    store.dispatch(other);
+  });
+  await settle();
+  expect(ui.props?.sendDisabled).toBe(false);
+  await act(async () => {
+    store.dispatch(other.success({ status: 'cancelled' }));
+  });
+});
+
+it.each([
+  ['model', false],
+  ['effort', false],
+  ['model', true],
+  ['effort', true],
+] as const)(
+  'holds Send through the actual %s write (retired picker: %s)',
+  async (kind, retired) => {
+    await mount();
+    let release!: () => void;
+    const pendingWire = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const setModel = vi.fn(async () => {
+      await pendingWire;
+      return { ok: true as const, data: { success: true } };
+    });
+    const setReasoningEffort = vi.fn(async () => {
+      await pendingWire;
+      return { success: true };
+    });
+    const stopModel = store.runSaga(
+      createAgentModelSaga({
+        snapshotEffect: selectAgentModelWriteSnapshot.effect,
+        catalogEffect: selectProviderModelsCacheEntry.effect,
+        setModel,
+        setReasoningEffort,
+        notifyError: vi.fn(),
+      }),
+    );
+    const action = agentModelMutationRequested({
+      requestId: 'pending-model-choice',
+      consumerId: 'picker',
+      agentId: agent,
+      workspaceId: ws,
+      connection: selectAgentModelWriteSnapshot.select(store.state, agent, ws).connection,
+      operation:
+        kind === 'model'
+          ? { kind: 'model', model: 'new-model', providerId: 'codex', commit: true }
+          : { kind: 'effort', effort: 'high', previous: null },
+    });
+    try {
+      await act(async () => {
+        void store.dispatch(action).catch(() => {});
+      });
+      await settle();
+      expect(kind === 'model' ? setModel : setReasoningEffort).toHaveBeenCalledOnce();
+      if (retired) {
+        await act(async () => {
+          store.dispatch(agentModelMutationConsumed(action.payload[0].requestId, 'picker'));
+        });
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        await mount();
+      }
+      await settle();
+      expect(ui.props!.sendDisabled).toBe(true);
+      await act(async () => ui.props!.onSend!('saved draft', []));
+      expect(entry()?.submissions?.ids ?? []).toEqual([]);
+      release();
+      await act(async () => {
+        await action.promise;
+      });
+      await settle();
+      expect(ui.props!.sendDisabled).toBe(false);
+      if (retired) expect(getItems(store.state.agentModel.mutations)).toEqual([]);
+    } finally {
+      release();
+      await act(async () => {
+        await action.promise;
+      });
+      stopModel();
+    }
+  },
+);

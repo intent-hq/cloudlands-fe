@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "Partial preview: first {shown} of {total}. The file may change after this read.",
   "files_read_previewReadOnly_error": "This is a read-only preview.",
   "chat_inlinePermission_submitting_label": "Sending decision…",
-  "chat_inlinePermission_responseFailed_error": "The decision could not be confirmed. Choose an option to retry."
+  "chat_inlinePermission_responseFailed_error": "The decision could not be confirmed. Choose an option to retry.",
+  "react_providerSettings_scope_description": "This internal preview shows configured providers without changing their settings. Configure providers in the desktop app. Model and reasoning choices apply only to this conversation."
 }

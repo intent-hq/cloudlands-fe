@@ -7523,5 +7523,6 @@
   "files_read_partialPreview_label": "部分预览：共 {total}，显示前 {shown}。读取后文件可能会发生变化。",
   "files_read_previewReadOnly_error": "此预览为只读。",
   "chat_inlinePermission_submitting_label": "正在发送决定…",
-  "chat_inlinePermission_responseFailed_error": "无法确认决定。请选择一个选项重试。"
+  "chat_inlinePermission_responseFailed_error": "无法确认决定。请选择一个选项重试。",
+  "react_providerSettings_scope_description": "此内部预览显示已配置的提供商，但不会更改其设置。请在桌面应用中配置提供商。模型和推理强度选择仅适用于此对话。"
 }

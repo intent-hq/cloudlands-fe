@@ -41,6 +41,8 @@ export type AgentModelOutcome = {
 
 export type AgentModelMutation = Omit<AgentModelRequest, 'operation'> & {
   status: 'pending' | AgentModelOutcome['status'];
+  /** Presentation released its lease; transport settlement still owns the pending record. */
+  consumerRetired?: boolean;
   modelAccepted?: boolean;
   error?: string;
 };

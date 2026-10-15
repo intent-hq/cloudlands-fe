@@ -59,6 +59,8 @@ agentModelReducer.with(
   ) => {
     const current = getItem(state.mutations, request.requestId);
     if (!matches(current, request)) return state;
+    if (current?.consumerRetired)
+      return { ...state, mutations: removeItem(state.mutations, request.requestId) };
     return {
       ...state,
       mutations: updateItem(state.mutations, {
@@ -81,7 +83,10 @@ agentModelReducer.with(
       },
     },
   ) => {
-    if (!matches(getItem(state.mutations, request.requestId), request)) return state;
+    const current = getItem(state.mutations, request.requestId);
+    if (!matches(current, request)) return state;
+    if (current?.consumerRetired)
+      return { ...state, mutations: removeItem(state.mutations, request.requestId) };
     return {
       ...state,
       mutations: updateItem(state.mutations, {
@@ -95,7 +100,15 @@ agentModelReducer.with(
 agentModelReducer.with(
   agentModelMutationConsumed,
   (state, { payload: [requestId, consumerId] }) => {
-    if (getItem(state.mutations, requestId)?.consumerId !== consumerId) return state;
+    const current = getItem(state.mutations, requestId);
+    if (current?.consumerId !== consumerId) return state;
+    if (current.status === 'pending') {
+      if (current.consumerRetired) return state;
+      return {
+        ...state,
+        mutations: updateItem(state.mutations, { requestId, consumerRetired: true }),
+      };
+    }
     return { ...state, mutations: removeItem(state.mutations, requestId) };
   },
 );

@@ -7,3 +7,7 @@ export const selectAgentModelMutationPending = store.createSelector(
 export const selectAgentModelWriteSnapshot = store.createSelector(
   projections.getAgentModelWriteSnapshot,
 );
+
+export const selectAgentModelSubmissionPending = store.createSelector(
+  projections.getAgentModelSubmissionPending,
+);

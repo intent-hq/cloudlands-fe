@@ -54,6 +54,15 @@ Clearing browser storage removes this browser's client identity and its access t
 client-scoped drafts; it does not delete the daemon's chat history. If browser
 storage is unavailable, client identity lasts for the tab session.
 
+Choose the model beside the paperclip to change this conversation's model and
+reasoning effort. A conversation that has already started asks for confirmation
+before a model or provider switch. A choice made during a response waits until
+that response finishes; Send waits for active model/effort writes to settle.
+These controls do not change the workspace or global default. The picker’s
+settings action opens a read-only view of configured providers; configuration
+and sign-in remain in the desktop app. The native connected checkpoint covers
+one configured Codex provider, not cross-provider switching or onboarding.
+
 Pending permission requests appear in their agent conversation. Inspect the
 request details, then choose one of the provider's available one-time options.
 Submitting disables the choices; a failed response keeps the request visible for

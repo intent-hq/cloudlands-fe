@@ -84,4 +84,31 @@ describe('agent model mutation outcomes', () => {
     expect(state.mutations.map.request.status).toBe('success');
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
+  it.each(['success', 'failure', 'cancelled', 'execution-error'] as const)(
+    'retains an unmounted consumer write until %s and then retires it',
+    (status) => {
+      const action = agentModelMutationRequested(request);
+      let state = agentModelReducer(undefined, action);
+      const consume = agentModelMutationConsumed('request', 'picker');
+      expect(agentModelReducer(state, agentModelMutationConsumed('request', 'other'))).toBe(state);
+      state = agentModelReducer(state, consume);
+      expect(state.mutations.map.request).toMatchObject({
+        status: 'pending',
+        consumerRetired: true,
+      });
+      expect(structuredClone(state)).toEqual(state);
+      expect(agentModelReducer(state, consume)).toBe(state);
+      const stale = agentModelMutationRequested({ ...request, connection: 'retired' });
+      expect(agentModelReducer(state, stale.success({ status: 'success' }))).toBe(state);
+      state = agentModelReducer(
+        state,
+        status === 'execution-error'
+          ? action.failure(new Error('transport'))
+          : action.success({ status }),
+      );
+      expect(state.mutations.ids).toEqual([]);
+      expect(agentModelReducer(state, consume)).toBe(state);
+      expect(agentModelReducer(state, action.success({ status: 'success' }))).toBe(state);
+    },
+  );
 });
