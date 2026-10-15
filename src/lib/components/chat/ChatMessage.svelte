@@ -1360,7 +1360,12 @@
     // image-reference block (monorepo#3338); inline imageData items re-send
     // inline (the edit saga places them and swaps to references).
     const imageBlocks: ImageBlock[] = editContextItems
-      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
+      .filter(
+        (item) =>
+          !('repositoryFile' in item) &&
+          (item.imageData || item.attachmentId) &&
+          item.imageMimeType,
+      )
       .map((item) =>
         item.attachmentId
           ? {
@@ -1378,7 +1383,7 @@
             },
       );
     const fileBlocks: FileBlock[] = editContextItems
-      .filter((item) => item.attachmentId && !item.imageMimeType)
+      .filter((item) => !('repositoryFile' in item) && item.attachmentId && !item.imageMimeType)
       .map((item) => ({
         type: 'file' as const,
         attachmentId: item.attachmentId!,

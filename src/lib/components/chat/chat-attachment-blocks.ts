@@ -3,7 +3,10 @@ import type { ContextItem } from './input/context-item';
 /** Canonical image/reference/file projection shared by source and connected composers. */
 export function extractAttachmentBlocks(items: ContextItem[]) {
   const imageBlocks = items
-    .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
+    .filter(
+      (item) =>
+        !('repositoryFile' in item) && (item.imageData || item.attachmentId) && item.imageMimeType,
+    )
     .map((item) =>
       item.attachmentId
         ? {
@@ -21,7 +24,7 @@ export function extractAttachmentBlocks(items: ContextItem[]) {
           },
     );
   const fileBlocks = items
-    .filter((item) => item.attachmentId && !item.imageMimeType)
+    .filter((item) => !('repositoryFile' in item) && item.attachmentId && !item.imageMimeType)
     .map((item) => ({
       type: 'file' as const,
       attachmentId: item.attachmentId!,

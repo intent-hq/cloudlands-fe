@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "Retrait du message en attente…",
   "chat_connectedQueue_absent_description": "Ce message n’est plus en attente. Il a peut-être déjà été transmis.",
   "chat_connectedQueue_unknown_description": "Résultat du retrait inconnu. Actualiser vérifie la file sans répéter le retrait.",
-  "chat_connectedQueue_merged_description": "Messages de suivi regroupés. Supprimer s’applique à toute cette entrée."
+  "chat_connectedQueue_merged_description": "Messages de suivi regroupés. Supprimer s’applique à toute cette entrée.",
+  "chat_fileContext_add_label": "Ajouter un fichier du dépôt",
+  "chat_fileContext_picker_description": "Choisissez un fichier par nom ou chemin. Son contenu est vérifié à l’envoi ; l’agent lit le fichier actuel.",
+  "chat_fileContext_unavailable_error": "Un fichier sélectionné est indisponible, hors de cet espace ou ne contient pas de texte complet pris en charge. Retirez-le ou réessayez.",
+  "chat_fileContext_busy_description": "Attendez la fin de la réponse avant d’envoyer des notes ou fichiers sélectionnés."
 }

@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "Removing queued message…",
   "chat_connectedQueue_absent_description": "No longer queued. It may already have been delivered.",
   "chat_connectedQueue_unknown_description": "Removal outcome unknown. Refresh checks the queue without repeating the removal.",
-  "chat_connectedQueue_merged_description": "Combined follow-ups. Remove applies to this whole entry."
+  "chat_connectedQueue_merged_description": "Combined follow-ups. Remove applies to this whole entry.",
+  "chat_fileContext_add_label": "Add repository file",
+  "chat_fileContext_picker_description": "Choose a file by name or path. Its current contents are read when you send; the agent reads the live file.",
+  "chat_fileContext_unavailable_error": "A selected repository file is unavailable, outside this workspace, or not supported complete text. Remove it or retry.",
+  "chat_fileContext_busy_description": "Wait for the current response before sending selected notes or repository files."
 }

@@ -1,3 +1,10 @@
+import { selectFileReadContext } from '@/store/files/files-selectors';
+import { createFileRead } from '$lib/client/live/backend-file-read';
+import {
+  selectFileExplorerContext,
+  selectFileExplorerRoot,
+} from '@/store/file-explorer/file-explorer-selectors';
+import { prepareRepositoryFileContext } from '$lib/components/chat/chat-repository-file-context';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import { getPrincipalConnectionContext } from '../../../../../src/store/renderer/slices/principal/principal-context';
@@ -75,16 +82,27 @@ export async function prepareComposerImages(workspaceId: string, images: Images,
 export function imageRetryBlocks(error: unknown, images: Images): Images {
   return retryImageBlocks(error, images as WireImageBlock[]);
 }
-export const chatCommands = createBackendChatCommands(backend.backendRequest, { strictQueue: true });
-export function validateQueueAdmission(agentId: string, workspaceId: string, ownerId: string,
-  submission: SubmissionReference | undefined) {
+export const chatCommands = createBackendChatCommands(backend.backendRequest, {
+  strictQueue: true,
+});
+export function validateQueueAdmission(
+  agentId: string,
+  workspaceId: string,
+  ownerId: string,
+  submission: SubmissionReference | undefined,
+) {
   const owner = selectChatDraftOwnerView.select(store.state, ownerId)?.restore;
-  if (!owner || owner.status !== 'restored' || owner.workspaceId !== workspaceId ||
-    owner.agentId !== agentId || !submission ||
+  if (
+    !owner ||
+    owner.status !== 'restored' ||
+    owner.workspaceId !== workspaceId ||
+    owner.agentId !== agentId ||
+    !submission ||
     !selectSubmissionIsCurrent.select(store.state, submission) ||
     submission.scope.authority !== getPrincipalConnectionContext(store.state) ||
     !getWorkspaceParticipationContext(store.state, workspaceId) ||
-    store.state.agentSessions.byAgentId[agentId]?.workspaceId !== workspaceId)
+    store.state.agentSessions.byAgentId[agentId]?.workspaceId !== workspaceId
+  )
     throw new Error(m.workspace_client_accessChanged_error());
 }
 export const draftsClient = createBackendDraftsClient(
@@ -119,14 +137,24 @@ export const queueReads = createAgentQueueReadService({
   agents: chatCommands,
   claimAgentReadOwnership: (agentId, workspaceId) => {
     const lease = agentReadOwnership.claimAgentReadOwnership(agentId, workspaceId);
-    const context = workspaceId ? selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) : null;
+    const context = workspaceId
+      ? selectAdmittedWorkspaceReadContext.select(store.state, workspaceId)
+      : null;
     const draftOwners = store.state.chatDrafts.owners;
     // A queue read belongs to this admitted conversation lifetime, not merely its ID.
-    const owner = getItems(draftOwners).find((entry) => entry.restore?.agentId === agentId && entry.restore.workspaceId === workspaceId);
-    return { ...lease, key: JSON.stringify([lease.key, context, owner?.id]),
-      isCurrent: () => !!workspaceId && !!context && !!owner &&
+    const owner = getItems(draftOwners).find(
+      (entry) => entry.restore?.agentId === agentId && entry.restore.workspaceId === workspaceId,
+    );
+    return {
+      ...lease,
+      key: JSON.stringify([lease.key, context, owner?.id]),
+      isCurrent: () =>
+        !!workspaceId &&
+        !!context &&
+        !!owner &&
         selectChatDraftOwnerView.select(store.state, owner.id)?.restore?.agentId === agentId &&
-        selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) === context && lease.isCurrent(),
+        selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) === context &&
+        lease.isCurrent(),
     };
   },
   onBackendReconnected,
@@ -140,6 +168,86 @@ export const chatReads = createChatReadService({
   readAgentSession,
   beginSubmissionRead: submissionEvidence.beginSubmissionRead,
 });
+function validateComposerReferences({
+  agentId,
+  workspaceId,
+  noteIds,
+  contextReferences,
+  noteContextOwnerId,
+}: Parameters<
+  NonNullable<Parameters<typeof createAgentSender>[0]['validateContextReferences']>
+>[0]) {
+  const references = contextReferences?.filter((ref) => ref.type === 'note') ?? [];
+  const files = contextReferences?.filter((ref) => ref.type === 'file') ?? [];
+  if (!references.length && !noteIds?.length && !files.length) return;
+  const owner = noteContextOwnerId
+    ? selectChatDraftOwnerView.select(store.state, noteContextOwnerId)?.restore
+    : undefined;
+  if (
+    !owner ||
+    owner.status !== 'restored' ||
+    owner.workspaceId !== workspaceId ||
+    owner.agentId !== agentId
+  )
+    throw new Error(m.workspace_client_accessChanged_error());
+  const notes = selectAvailableContextNotes.select(store.state, workspaceId);
+  if (
+    references.length !== (noteIds?.length ?? 0) ||
+    references.some(
+      (ref) =>
+        !ref.noteId ||
+        !noteIds?.includes(ref.noteId) ||
+        !ref.metadata ||
+        typeof ref.metadata !== 'object' ||
+        !('workspaceId' in ref.metadata) ||
+        ref.metadata.workspaceId !== workspaceId,
+    ) ||
+    noteIds?.some((id) => !notes.some((note) => note.id === id))
+  )
+    throw new Error(m.chat_noteContext_unavailable_error());
+  if (files.length) {
+    if (!selectFileReadContext.select(store.state, workspaceId, agentId))
+      throw new Error(m.chat_fileContext_unavailable_error());
+    const root = selectFileExplorerRoot.select(store.state, workspaceId);
+    if (
+      !selectFileExplorerContext.select(store.state, workspaceId) ||
+      !prepareRepositoryFileContext(
+        workspaceId,
+        root,
+        files.map((ref, index) => ({
+          id: String(index),
+          type: 'file',
+          label: '',
+          repositoryFile: {
+            workspaceId:
+              ref.metadata &&
+              typeof ref.metadata === 'object' &&
+              'workspaceId' in ref.metadata &&
+              typeof ref.metadata.workspaceId === 'string'
+                ? ref.metadata.workspaceId
+                : '',
+            rootPath:
+              ref.metadata &&
+              typeof ref.metadata === 'object' &&
+              'rootPath' in ref.metadata &&
+              typeof ref.metadata.rootPath === 'string'
+                ? ref.metadata.rootPath
+                : '',
+            path: ref.filePath ?? '',
+          },
+        })),
+      ).ok
+    )
+      throw new Error(m.chat_fileContext_unavailable_error());
+  }
+  const session = store.state.agentSessions.byAgentId[agentId];
+  if (!session || session.workspaceId !== workspaceId)
+    throw new Error(m.workspace_client_accessChanged_error());
+  // Optimistic isStreaming belongs to this submission; only daemon turn facts block it.
+  if (session.isResponding || session.turnInFlight)
+    throw new Error(m.chat_fileContext_busy_description());
+}
+
 export const sendAgentMessage = createAgentSender({
   appStore: store,
   backendRequest: backend.backendRequest,
@@ -148,47 +256,31 @@ export const sendAgentMessage = createAgentSender({
   hydrateAgentQueue: queueReads.hydrateAgentQueue,
   getAgentQueueEventSnapshotSeq: queueReads.getAgentQueueEventSnapshotSeq,
   errorBoundary: new ErrorBoundaryService(notify),
-  validateContextReferences: ({
-    agentId,
-    workspaceId,
-    noteIds,
-    contextReferences,
-    noteContextOwnerId,
-  }) => {
-    const references = contextReferences?.filter((ref) => ref.type === 'note') ?? [];
-    if (!references.length && !noteIds?.length) return;
-    const owner = noteContextOwnerId
-      ? selectChatDraftOwnerView.select(store.state, noteContextOwnerId)?.restore
-      : undefined;
-    if (
-      !owner ||
-      owner.status !== 'restored' ||
-      owner.workspaceId !== workspaceId ||
-      owner.agentId !== agentId
-    )
-      throw new Error(m.workspace_client_accessChanged_error());
-    const notes = selectAvailableContextNotes.select(store.state, workspaceId);
-    if (
-      !noteIds?.length ||
-      references.length !== noteIds.length ||
-      references.some(
-        (ref) =>
-          !ref.noteId ||
-          !noteIds.includes(ref.noteId) ||
-          !ref.metadata ||
-          typeof ref.metadata !== 'object' ||
-          !('workspaceId' in ref.metadata) ||
-          ref.metadata.workspaceId !== workspaceId,
-      ) ||
-      noteIds.some((id) => !notes.some((note) => note.id === id))
-    )
-      throw new Error(m.chat_noteContext_unavailable_error());
-    const session = store.state.agentSessions.byAgentId[agentId];
-    if (!session || session.workspaceId !== workspaceId)
-      throw new Error(m.workspace_client_accessChanged_error());
-    // Optimistic isStreaming belongs to this submission; only daemon turn facts block it.
-    if (session.isResponding || session.turnInFlight)
-      throw new Error(m.chat_noteContext_busy_description());
+  validateContextReferences: validateComposerReferences,
+  prepareContextReferences: async (context) => {
+    const files = context.contextReferences?.filter((ref) => ref.type === 'file') ?? [];
+    if (!files.length) return;
+    const admission = selectFileExplorerContext.select(store.state, context.workspaceId);
+    const validate = () => {
+      if (
+        !context.isCurrent() ||
+        !admission ||
+        selectFileExplorerContext.select(store.state, context.workspaceId) !== admission
+      )
+        throw new Error(m.workspace_client_accessChanged_error());
+      validateComposerReferences(context);
+    };
+    const read = createFileRead((method, params, options) => {
+      validate();
+      return backend.backendRequest(method, params, { ...options, onDispatch: validate });
+    });
+    for (const reference of files) {
+      validate();
+      const entry = await read(context.workspaceId, reference.filePath!, { readOnlyPreview: true });
+      validate();
+      if (!entry || entry.kind !== 'read-only-text' || entry.truncated || entry.error)
+        throw new Error(m.chat_fileContext_unavailable_error());
+    }
   },
 });
 export const chatSubmission = createChatSubmission(

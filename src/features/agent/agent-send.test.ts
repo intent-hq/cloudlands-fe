@@ -60,6 +60,7 @@ import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/ag
 import type { BrowserElementCapture } from '$store/renderer/slices/browser/browser-types';
 import { browserCaptureToContextItems } from '$lib/components/chat/browser-capture-context';
 import { prepareNoteContext } from '$lib/components/chat/chat-note-context';
+import { prepareRepositoryFileContext } from '$lib/components/chat/chat-repository-file-context';
 import { createAgentSender } from './agent-send-factory';
 import { captureAgentMutationOwnership } from './agent-read-ownership';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -1082,6 +1083,193 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       appStore.dispatch(chatDraftOwnerReleased(ownerId));
     },
   );
+
+  it.each([
+    'success',
+    'read failure',
+    'changed during read',
+    'released during read',
+    'changed at dispatch',
+  ] as const)('prepares repository context within the admitted send: %s', async (boundary) => {
+    const staged = stage('inspect repository file');
+    const prepared = prepareRepositoryFileContext(WS, '/repo', [
+      {
+        id: 'repository-pill',
+        type: 'file',
+        label: 'main.ts',
+        repositoryFile: { workspaceId: WS, rootPath: '/repo', path: 'src/main.ts' },
+      },
+    ]);
+    if (!prepared.ok) throw new Error('Expected local repository reference');
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let available = true;
+    const validate = vi.fn(() => {
+      if (!available) throw new Error('Repository file is unavailable');
+    });
+    const prepare = vi.fn(async (context) => {
+      expect(context).toEqual({
+        agentId: AGENT,
+        workspaceId: WS,
+        noteIds: undefined,
+        contextReferences: [
+          {
+            type: 'file',
+            filePath: 'src/main.ts',
+            metadata: { workspaceId: WS, rootPath: '/repo' },
+          },
+        ],
+        noteContextOwnerId: 'repository-composer',
+        isCurrent: expect.any(Function),
+      });
+      expect(context.isCurrent()).toBe(true);
+      await gate;
+      if (boundary === 'read failure') throw new Error('Repository file is unavailable');
+    });
+    backendRequestMock.mockImplementation(async (method, params) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: false, messageId: params.messageId };
+      return {};
+    });
+    const guardedSend = createAgentSender({
+      appStore,
+      captureAgentMutationOwnership,
+      loadChatTranscript: async () => {},
+      hydrateAgentQueue: async () => {},
+      getAgentQueueEventSnapshotSeq: () => 0,
+      errorBoundary: { wrap: (operation) => operation() },
+      validateContextReferences: validate,
+      prepareContextReferences: prepare,
+      backendRequest: async (method, params, options) => {
+        if (method === 'agent.sendMessage' && boundary === 'changed at dispatch') available = false;
+        options?.onDispatch?.();
+        return backendRequestMock(method, params);
+      },
+    });
+    const content = `${prepared.workspaceContextStr}\n\ninspect repository file`;
+    const sending = guardedSend(AGENT, content, workspace(), {
+      submission: staged.options.submission,
+      userAppMessageId: staged.options.userAppMessageId,
+      contextReferences: prepared.contextReferences,
+      noteContextOwnerId: 'repository-composer',
+    });
+    const completed =
+      boundary === 'success' || boundary === 'released during read'
+        ? expect(sending).resolves.toBeUndefined()
+        : expect(sending).rejects.toThrow('Repository file is unavailable');
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    expect(
+      backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+    ).toEqual([]);
+    if (boundary === 'changed during read') available = false;
+    if (boundary === 'released during read') appStore.dispatch(pendingScopeReleased(staged.scope));
+    release();
+    await completed;
+    const sends = backendRequestMock.mock.calls.filter(
+      ([method]) => method === 'agent.sendMessage',
+    );
+    if (boundary === 'success') {
+      expect(sends).toEqual([
+        [
+          'agent.sendMessage',
+          {
+            agentId: AGENT,
+            workspaceId: WS,
+            messageId: staged.submission.id,
+            content,
+            model: 'opus4.7',
+            contextReferences: [
+              {
+                type: 'file',
+                filePath: 'src/main.ts',
+                metadata: { workspaceId: WS, rootPath: '/repo' },
+              },
+            ],
+            imageBlocks: undefined,
+            fileBlocks: undefined,
+            noteIds: undefined,
+            stdinContext: undefined,
+            assistantMessageId: expect.any(String),
+            assistantAppMessageId: expect.any(String),
+            userAppMessageId: 'logical-user-id',
+            priority: undefined,
+            messageMetadata: {
+              contextReferences: [
+                {
+                  type: 'file',
+                  filePath: 'src/main.ts',
+                  metadata: { workspaceId: WS, rootPath: '/repo' },
+                },
+              ],
+            },
+          },
+        ],
+      ]);
+      expect(
+        getItem(
+          appStore.state.pendingSubmissions.byAgentId[AGENT].submissions,
+          staged.submission.id,
+        )?.status,
+      ).toBe('accepted');
+      expect(validate).toHaveBeenCalledTimes(3);
+    } else {
+      expect(sends).toEqual([]);
+      expect(staged.display().conversation).toEqual([]);
+      if (boundary !== 'released during read') {
+        expect(
+          getItem(
+            appStore.state.pendingSubmissions.byAgentId[AGENT].tombstones,
+            staged.submission.id,
+          )?.reason,
+        ).toBe('rejected');
+        expect(appStore.state.agentSessions.byAgentId[AGENT].isStreaming).toBe(false);
+      }
+    }
+    expect(prepare).toHaveBeenCalledOnce();
+  });
+
+  it('does not automatically repeat a legacy repository read rejected before dispatch', async () => {
+    const prepare = vi.fn(async () => {
+      throw new Error('File disappeared');
+    });
+    const wrap = vi.fn(
+      async (operation: () => Promise<unknown>, _name: string, _options?: { retries?: number }) =>
+        operation(),
+    );
+    const guardedSend = createAgentSender({
+      appStore,
+      captureAgentMutationOwnership,
+      backendRequest: backendRequestMock,
+      loadChatTranscript: async () => {},
+      hydrateAgentQueue: async () => {},
+      getAgentQueueEventSnapshotSeq: () => 0,
+      errorBoundary: {
+        wrap: wrap as Parameters<typeof createAgentSender>[0]['errorBoundary']['wrap'],
+      },
+      prepareContextReferences: prepare,
+    });
+    await expect(
+      guardedSend(AGENT, 'inspect repository file', workspace(), {
+        contextReferences: [
+          {
+            type: 'file',
+            filePath: 'src/main.ts',
+            metadata: { workspaceId: WS, rootPath: '/repo' },
+          },
+        ],
+      }),
+    ).rejects.toThrow('File disappeared');
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(wrap).toHaveBeenCalledOnce();
+    expect(wrap.mock.calls[0][2]).toMatchObject({ retries: 0 });
+    expect(
+      backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+    ).toEqual([]);
+    expect(appStore.state.agentSessions.byAgentId[AGENT].isStreaming).toBe(false);
+  });
 
   it('does not downgrade a released submission into a legacy send', async () => {
     const staged = stage();

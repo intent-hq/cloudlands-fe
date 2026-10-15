@@ -1837,6 +1837,8 @@ export interface DraftAttachment {
   /** Note references persist identity and display metadata, never the note body. */
   noteId?: string;
   workspaceId?: string;
+  /** Repository pointers persist identity only, never file bytes or upload metadata. */
+  repositoryFile?: { workspaceId: string; rootPath: string; path: string };
   /** Opaque text carried by content-backed context items such as selections. */
   content?: string;
   path?: string;

@@ -99,7 +99,7 @@ whole displayed entry. A confirmed receipt means it is no longer queued, but it 
 already have been delivered. Failed removals keep the row available for deliberate
 retry. An unknown removal stays blocked in this app session; **Refresh** only reads
 the queue. Reload/reconnect reads the actual queue and never replays input or removal.
-The queue control does not accept attachments or note context, and does not edit,
+The queue control does not accept attachments, note context or repository file context, and does not edit,
 reorder, send immediately, or clear the entire queue. Stop remains available while
 typing a follow-up. Removal receipts are not persisted across page reload or process restart.
 
@@ -113,6 +113,17 @@ The daemon's busy-turn queue does not preserve every note hint, so this preview
 requires waiting for the current response; another client's simultaneous Send
 can still race that check. This is an internal same-workspace note picker, not the
 full desktop context or mention editor.
+
+Use **Add repository file** to search the primary workspace repository by filename
+or path. Select the exact path, then type a prompt and **Send** while idle. Remove
+its chip to exclude it. Acknowledged drafts retain only the workspace, root and
+path across reload/reconnect. This bounded preview checks complete ordinary text
+up to 16 KiB through the canonical file reader before sending. Missing, incomplete,
+non-text or retired-root references remain in the draft and report an error;
+remove or deliberately retry them. The agent reads the live file: selection does
+not freeze bytes, and another client can change the file or start a turn after
+validation. Repository references follow the same idle-only limitation as notes.
+Folders, secondary roots, external paths and content search are not supported.
 
 Use the paperclip to select local images or files. Wait for upload completion before
 sending; registered attachments survive draft reload. Remove a chip to exclude it.

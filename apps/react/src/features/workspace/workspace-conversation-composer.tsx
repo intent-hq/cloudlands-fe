@@ -1,3 +1,6 @@
+import { WorkspaceConversationFilePicker } from './workspace-conversation-file-picker';
+import { prepareRepositoryFileContext } from '$lib/components/chat/chat-repository-file-context';
+import { selectFileExplorerRoot } from '@/store/file-explorer/file-explorer-selectors';
 import { WorkspaceConversationQueue } from './workspace-conversation-queue';
 import { Combobox } from '@/components/ui/combobox';
 import { ContextChip } from '@/features/chat/components/context-chip';
@@ -122,12 +125,18 @@ export function WorkspaceConversationComposer({
     );
   const restored = drafts?.restore?.status === 'restored';
   const attachments = selectComposerContextItems(workspaceId, agentId).value;
+  const repositoryRoot = selectFileExplorerRoot(workspaceId).value;
+  const selectedFiles = attachments.filter((item) => 'repositoryFile' in item);
+  const filesValid = prepareRepositoryFileContext(workspaceId, repositoryRoot, attachments).ok;
   const selectedNotes = attachments.filter((item) => item.type === 'note');
   const notesValid = selectNoteContextValid(workspaceId, attachments).value;
-  const hasAttachments = attachments.some((item) => item.type !== 'note');
+  const hasAttachments = attachments.some(
+    (item) => item.type !== 'note' && !('repositoryFile' in item),
+  );
   const attachmentsBlocked = attachments.some(
     (item) =>
       item.type !== 'note' &&
+      !('repositoryFile' in item) &&
       (item.placementStatus === 'placing' ||
         item.placementStatus === 'failed' ||
         (!item.attachmentId && !(item.imageData && item.imageMimeType))),
@@ -135,6 +144,7 @@ export function WorkspaceConversationComposer({
   const unsupportedAttachments = attachments.some(
     (item) =>
       item.type !== 'note' &&
+      !('repositoryFile' in item) &&
       !item.placementStatus &&
       !item.attachmentId &&
       !(item.imageData && item.imageMimeType),
@@ -309,24 +319,39 @@ export function WorkspaceConversationComposer({
     )
       return;
     const context = prepareNoteContext(workspaceId, items);
+    const fileContext = prepareRepositoryFileContext(
+      workspaceId,
+      selectFileExplorerRoot.select(store.state, workspaceId),
+      items,
+    );
+    if (!fileContext.ok) {
+      setLocalError(m.chat_fileContext_unavailable_error());
+      return;
+    }
     if (!context.ok || !selectNoteContextValid.select(store.state, workspaceId, items)) {
       setLocalError(m.chat_noteContext_unavailable_error());
       return;
     }
-    if (context.noteIds.length && selectAgentIsResponding.select(store.state, agentId)) {
-      setLocalError(m.chat_noteContext_busy_description());
+    if (
+      (context.noteIds.length || fileContext.contextReferences.length) &&
+      selectAgentIsResponding.select(store.state, agentId)
+    ) {
+      setLocalError(m.chat_fileContext_busy_description());
       return;
     }
-    const noteContext = context.noteIds.length
-      ? {
-          noteIds: context.noteIds,
-          composerText,
-          noteContextOwnerId: ownerId,
-          contextReferences: context.contextReferences,
-          workspaceContextStr: context.workspaceContextStr,
-          contextItems: items,
-        }
-      : {};
+    const noteContext =
+      context.noteIds.length || fileContext.contextReferences.length
+        ? {
+            noteIds: context.noteIds,
+            composerText,
+            noteContextOwnerId: ownerId,
+            contextReferences: [...context.contextReferences, ...fileContext.contextReferences],
+            workspaceContextStr: [context.workspaceContextStr, fileContext.workspaceContextStr]
+              .filter(Boolean)
+              .join('\n'),
+            contextItems: items,
+          }
+        : {};
     const blocks = extractAttachmentBlocks(items);
     const admitted = chatSubmission.admitChatMessage(store, agentId, {
       wsId: workspaceId,
@@ -390,6 +415,33 @@ export function WorkspaceConversationComposer({
     );
     edit(selectChatDraft.select(store.state, workspaceId, agentId));
   }
+  function selectContextFile(path: string, root: string) {
+    if (
+      !currentView() ||
+      !restored ||
+      selectFileExplorerRoot.select(store.state, workspaceId) !== root
+    )
+      return;
+    const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
+    if (
+      items.some(
+        (item) =>
+          item.repositoryFile?.workspaceId === workspaceId &&
+          item.repositoryFile?.rootPath === root &&
+          item.repositoryFile?.path === path,
+      )
+    )
+      return;
+    const item = {
+      id: crypto.randomUUID(),
+      type: 'file' as const,
+      label: path,
+      repositoryFile: { workspaceId, rootPath: root, path },
+    };
+    if (!prepareRepositoryFileContext(workspaceId, root, [item]).ok) return;
+    dispatch(setComposerContextItems(workspaceId, agentId, [...items, item], true));
+    edit(selectChatDraft.select(store.state, workspaceId, agentId));
+  }
   function removeContextNote(id: string) {
     if (!currentView()) return;
     const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
@@ -414,6 +466,16 @@ export function WorkspaceConversationComposer({
         <LoadingState density="compact" count={1} label={m.chat_draftGate_loading_label()} />
       )}
       <div className="flex min-w-0 flex-wrap gap-2" data-testid="composer-attachments">
+        {selectedFiles.map((item) => (
+          <ContextChip
+            key={item.id}
+            type="file"
+            label={item.repositoryFile?.path ?? item.label}
+            tooltip={item.repositoryFile?.path ?? item.label}
+            removable
+            onRemove={() => removeContextNote(item.id)}
+          />
+        ))}
         {selectedNotes.map((item) => (
           <ContextChip
             key={item.id}
@@ -425,7 +487,7 @@ export function WorkspaceConversationComposer({
           />
         ))}
         {attachments
-          .filter((item) => item.type !== 'note')
+          .filter((item) => item.type !== 'note' && !('repositoryFile' in item))
           .map((item) => (
             <AttachmentPreview
               key={item.id}
@@ -470,9 +532,12 @@ export function WorkspaceConversationComposer({
           }}
         />
       )}
-      {selectedNotes.length > 0 && responding && (
+      {!filesValid && (
+        <ErrorState density="compact" message={m.chat_fileContext_unavailable_error()} />
+      )}
+      {(selectedNotes.length > 0 || selectedFiles.length > 0) && responding && (
         <p className="type-caption text-muted-foreground">
-          {m.chat_noteContext_busy_description()}
+          {m.chat_fileContext_busy_description()}
         </p>
       )}
       {error && (
@@ -509,11 +574,18 @@ export function WorkspaceConversationComposer({
                         '',
                       attachments:
                         matchesAttachmentBlocks(currentItems, chat.lastAttemptedMessage?.options) &&
-                        JSON.stringify(prepareNoteContext(workspaceId, currentItems)) ===
+                        JSON.stringify(
+                          serializeDraftAttachments(
+                            currentItems.filter(
+                              (item) => item.type === 'note' || 'repositoryFile' in item,
+                            ),
+                          ),
+                        ) ===
                           JSON.stringify(
-                            prepareNoteContext(
-                              workspaceId,
-                              chat.lastAttemptedMessage?.options?.contextItems ?? [],
+                            serializeDraftAttachments(
+                              (chat.lastAttemptedMessage?.options?.contextItems ?? []).filter(
+                                (item) => item.type === 'note' || 'repositoryFile' in item,
+                              ),
                             ),
                           )
                           ? JSON.stringify(serializeDraftAttachments(currentItems))
@@ -566,6 +638,11 @@ export function WorkspaceConversationComposer({
           }}
         />
       )}
+      <WorkspaceConversationFilePicker
+        workspaceId={workspaceId}
+        disabled={!restored || !participation}
+        onSelect={selectContextFile}
+      />
       <WorkspaceConversationQueue workspaceId={workspaceId} agentId={agentId} ownerId={ownerId} />
       <MessageComposer
         value={value}
@@ -578,7 +655,8 @@ export function WorkspaceConversationComposer({
           attachmentsBlocked ||
           modelPending ||
           !notesValid ||
-          (selectedNotes.length > 0 && responding)
+          !filesValid ||
+          ((selectedNotes.length > 0 || selectedFiles.length > 0) && responding)
         }
         accept=""
         files={[]}
@@ -586,9 +664,22 @@ export function WorkspaceConversationComposer({
           if (files.length)
             dispatch(composerAttachmentsSelected(ownerId, workspaceId, agentId, files));
         }}
-        rightSlot={() => responding && value.trim() && !attachments.length ? <Button size="sm" variant="plain" onClick={() => {
-          if (currentView()) void dispatch(agentSessionStopChatRequested(agentId)).catch((error) => setLocalError(String(error)));
-        }}>{m.chat_richInput_stop_label()}</Button> : null}
+        rightSlot={() =>
+          responding && value.trim() && !attachments.length ? (
+            <Button
+              size="sm"
+              variant="plain"
+              onClick={() => {
+                if (currentView())
+                  void dispatch(agentSessionStopChatRequested(agentId)).catch((error) =>
+                    setLocalError(String(error)),
+                  );
+              }}
+            >
+              {m.chat_richInput_stop_label()}
+            </Button>
+          ) : null
+        }
         leftSlot={({ openFilePicker }) => (
           <>
             <WorkspaceConversationModel

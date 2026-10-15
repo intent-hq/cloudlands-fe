@@ -821,3 +821,39 @@ it('explicit enqueue admits once, preserves a newer draft, and never auto-sends 
   enqueue('stale callback');
   expect(getItems(entry().submissions).map((s) => s.id)).toEqual([submissions[0].id]);
 });
+
+it.each(['valid', 'other-root', 'malformed'] as const)(
+  'restores repository reference without upload (%s)',
+  async (kind) => {
+    store.dispatch(
+      setWorkspaceEntity({ id: ws, myRole: 'owner', worktreePath: '/owned/repo' } as Workspace),
+    );
+    const ref = {
+      id: 'repo-ref',
+      type: 'file' as const,
+      label: 'same.txt',
+      repositoryFile: {
+        workspaceId: ws,
+        rootPath: kind === 'other-root' ? '/retired' : '/owned/repo',
+        path: kind === 'malformed' ? '../outside' : 'nested/same.txt',
+      },
+    };
+    vi.mocked(drafts.get).mockResolvedValue({
+      text: 'saved draft',
+      attachments: [ref],
+      updatedAt: '',
+    });
+    await mount();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(selectComposerContextItems.select(store.state, ws, agent)).toEqual([ref]);
+    });
+    expect(container.textContent).toContain(ref.repositoryFile.path);
+    expect(ui.props?.sendDisabled).toBe(kind !== 'valid');
+    const contexts = selectComposerContextItems.select(store.state, ws, agent);
+    expect(contexts).toEqual([ref]);
+    await act(async () => ui.props!.onSend!('saved draft', []));
+    expect(entry() ? getItems(entry().submissions) : []).toHaveLength(kind === 'valid' ? 1 : 0);
+    expect(drafts.clear).not.toHaveBeenCalled();
+  },
+);

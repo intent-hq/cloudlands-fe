@@ -57,6 +57,24 @@ export type MessageContextReference =
       [key: string]: unknown;
     };
 
+/** Composer-owned note/repository pointers need fresh validation and cannot be
+ * queued. The explicit root marker distinguishes repository files from legacy
+ * unscoped file hints; malformed marker values must not bypass these guards. */
+export function hasComposerContextReferences(
+  references: readonly MessageContextReference[] | undefined,
+): boolean {
+  return (
+    references?.some(
+      (reference) =>
+        reference.type === 'note' ||
+        (reference.type === 'file' &&
+          typeof reference.metadata === 'object' &&
+          reference.metadata !== null &&
+          'rootPath' in reference.metadata),
+    ) ?? false
+  );
+}
+
 /**
  * Agent context format for IPC communication
  */

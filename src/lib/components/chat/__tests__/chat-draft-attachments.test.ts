@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { DraftAttachment } from '$lib/client/app-client';
 import { deserializeDraftAttachments, serializeDraftAttachments } from '../chat-draft-attachments';
 import { hasBlockingAttachments, type ContextItem } from '../input/context-api';
+import { prepareRepositoryFileContext } from '../chat-repository-file-context';
 
 const IMAGE_ITEM: ContextItem = {
   id: 'file-upload-1721650000000-screenshot.png',
@@ -24,6 +25,82 @@ const IMAGE_ITEM: ContextItem = {
 };
 
 describe('serializeDraftAttachments', () => {
+  it('projects malformed repository display fields to renderable strings without inferring identity', () => {
+    const malformed = {
+      id: { bad: true },
+      type: 'file',
+      label: 42,
+      description: { body: 'private' },
+      repositoryFile: null,
+      content: 'private',
+    } as unknown as ContextItem;
+    const expected = {
+      id: '',
+      type: 'file',
+      label: '',
+      repositoryFile: { workspaceId: '', rootPath: '', path: '' },
+    };
+    expect(serializeDraftAttachments([malformed])).toEqual([expected]);
+    const restored = deserializeDraftAttachments([malformed as DraftAttachment]);
+    expect(restored).toEqual([expected]);
+    expect(prepareRepositoryFileContext('workspace', '/repo', restored)).toEqual({
+      ok: false,
+      itemId: '',
+      reason: 'invalid-reference',
+    });
+  });
+
+  it('round-trips repository identities while dropping every upload and body field', () => {
+    const repositoryFile = { workspaceId: 'workspace', rootPath: '/repo', path: 'src/main.ts' };
+    const item: ContextItem = {
+      ...IMAGE_ITEM,
+      id: 'repository-pill',
+      label: 'main.ts',
+      repositoryFile,
+      content: 'stale text',
+      metadata: { content: 'another stale copy' },
+      attachmentId: 'unrelated-upload',
+      attachmentMimeType: 'text/plain',
+      attachmentSize: 25,
+      sourcePath: '/repo/src/main.ts',
+      placementStatus: 'placing',
+      placementAttachmentId: 'placed-image',
+      placementIdempotencyKey: 'upload-key',
+    };
+    const expected = {
+      id: 'repository-pill',
+      type: 'file',
+      label: 'main.ts',
+      description: IMAGE_ITEM.description,
+      repositoryFile,
+    };
+    const persisted = serializeDraftAttachments([item]);
+    expect(persisted).toEqual([expected]);
+    expect(deserializeDraftAttachments(JSON.parse(JSON.stringify(persisted)))).toEqual([expected]);
+    expect(deserializeDraftAttachments([item as DraftAttachment])).toEqual([expected]);
+  });
+
+  it.each([undefined, null, {}, { workspaceId: 'workspace', rootPath: '/repo', path: 42 }])(
+    'keeps malformed repository marker %j visible and blocked after persistence',
+    (repositoryFile) => {
+      const item = { ...IMAGE_ITEM, repositoryFile } as ContextItem;
+      for (const restored of [
+        deserializeDraftAttachments(serializeDraftAttachments([item])),
+        deserializeDraftAttachments([item as DraftAttachment]),
+      ]) {
+        expect(restored).toHaveLength(1);
+        expect(restored[0]).toHaveProperty('repositoryFile');
+        expect(restored[0]).not.toHaveProperty('imageData');
+        expect(restored[0]).not.toHaveProperty('file');
+        expect(prepareRepositoryFileContext('workspace', '/repo', restored)).toEqual({
+          ok: false,
+          itemId: item.id,
+          reason: 'invalid-reference',
+        });
+      }
+    },
+  );
+
   it('persists and restores note identity and display metadata without note bodies or file data', () => {
     const item: ContextItem = {
       id: 'note-pill',

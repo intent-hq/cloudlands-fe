@@ -219,6 +219,7 @@ it.each(['valid', 'deleted', 'retired', 'wrong-workspace', 'busy'] as const)(
     const admitted = chatSubmission.admitChatMessage(store, 'agent', {
       wsId: 'workspace',
       text: 'Read this note',
+      contextReferences: references,
       contextItems: [
         { id: 'ref', type: 'note', noteId: 'note', workspaceId: 'workspace', label: 'Plan' },
       ],
@@ -262,6 +263,159 @@ it.each(['valid', 'deleted', 'retired', 'wrong-workspace', 'busy'] as const)(
         submission: { scope: admitted!.scope, id: admitted!.submission.id },
       }).catch(() => {});
       expect(wire).toHaveLength(scenario === 'valid' ? 1 : 0);
+    } finally {
+      stop();
+      dispose();
+    }
+  },
+);
+
+it.each([
+  'valid',
+  'missing',
+  'binary',
+  'partial',
+  'retired-at-read',
+  'retired',
+  'node-owned',
+  'root-change',
+  'wrong-workspace',
+  'busy',
+] as const)(
+  'validates repository file references and read admission at final transport dispatch (%s)',
+  async (scenario) => {
+    const { sendAgentMessage, chatSubmission } = await import('./chat-runtime');
+    const { setWorkspaceHasLoaded } =
+      await import('../../../../../src/store/renderer/slices/workspace/workspace-slice');
+    const { getPrincipalActionContext } =
+      await import('../../../../../src/store/renderer/slices/principal/principal-projections');
+    const { chatDraftRestoreRequested, chatDraftRestoreSettled } =
+      await import('../../../../../src/store/renderer/slices/chat-drafts/chat-drafts-slice');
+    const initial = createAdmittedLegacyPrincipal();
+    initial.principal.snapshot!.capabilities.submissionCorrelation = 1;
+    const dispose = store.init(initial);
+    const workspace = {
+      id: 'workspace',
+      myRole: 'owner',
+      title: 'Owned',
+      worktreePath: '/owned/repo',
+    } as any;
+    const session = {
+      id: 'agent',
+      workspaceId: 'workspace',
+      status: 'idle',
+      backendSessionId: 'backend',
+      messages: [],
+      createdAt: '',
+      updatedAt: '',
+      isStreaming: true,
+      isResponding: false,
+      turnInFlight: false,
+    } as any;
+    store.dispatch(setWorkspaceEntity(workspace));
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        store.state.connections.windowBackendId,
+        getPrincipalActionContext(store.state),
+      ),
+    );
+    store.dispatch(bulkUpsertSessions([session]));
+    store.dispatch(chatDraftOwnerOpened('context-owner'));
+    store.dispatch(chatDraftRestoreRequested('context-owner', 'restore', 'workspace', 'agent'));
+    store.dispatch(
+      chatDraftRestoreSettled('context-owner', 'restore', 'restored', {
+        text: 'Read this note',
+        attachments: [],
+      }),
+    );
+    const references = [
+      {
+        type: 'file',
+        filePath: 'plans/plan.txt',
+        metadata: {
+          workspaceId: 'workspace',
+          rootPath: '/owned/repo',
+        },
+      },
+    ];
+    const admitted = chatSubmission.admitChatMessage(store, 'agent', {
+      wsId: 'workspace',
+      text: 'Read this note',
+      contextReferences: references,
+      contextItems: [
+        {
+          id: 'ref',
+          type: 'file',
+          label: 'Plan',
+          repositoryFile: {
+            workspaceId: 'workspace',
+            rootPath: '/owned/repo',
+            path: 'plans/plan.txt',
+          },
+        },
+      ],
+    });
+    expect(admitted).toBeTruthy();
+    if (scenario === 'wrong-workspace') references[0].metadata.workspaceId = 'other';
+    const { createAgentActivationWorkers } =
+      await import('../../../../../src/store/renderer/slices/agent-session/sagas/agent-activation-workers');
+    const { agentReadOwnership, readAgentSession } = await import('./agent-read-service');
+    const { selectAgentSession } = await import('@/store/agent-session/agent-session-selectors');
+    const { restoreAgentSessionRequested } =
+      await import('../../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice');
+    const { takeEvery } = await import('typed-redux-saga');
+    const activation = createAgentActivationWorkers({
+      selectAgentSession,
+      captureAgentMutationOwnership: agentReadOwnership.captureAgentMutationOwnership,
+      readAgentSession,
+    });
+    const stop = store.runSaga(function* () {
+      yield* takeEvery(restoreAgentSessionRequested, activation.restoreAgent);
+    });
+    const wire: unknown[] = [];
+    transport.request.mockReset().mockImplementation(async (method, params, options) => {
+      if (method === 'agent.sendMessage') {
+        if (scenario === 'node-owned')
+          store.dispatch(bulkUpsertSessions([{ ...session, nodePath: '/node/repo' }]));
+        if (scenario === 'root-change')
+          store.dispatch(setWorkspaceEntity({ ...workspace, worktreePath: '/other' }));
+        if (scenario === 'retired') store.dispatch(chatDraftOwnerReleased('context-owner'));
+        if (scenario === 'busy')
+          store.dispatch(bulkUpsertSessions([{ ...session, isResponding: true }]));
+        options?.onDispatch?.();
+        wire.push(params);
+        return { success: true };
+      }
+      if (method === 'file.readChunk') {
+        if (scenario === 'retired-at-read') store.dispatch(chatDraftOwnerReleased('context-owner'));
+        options?.onDispatch?.();
+        if (scenario === 'missing') throw new Error('File missing');
+        const bytes = Buffer.from(scenario === 'binary' ? '\0binary' : 'content');
+        return {
+          content: bytes.toString('base64'),
+          bytesRead: bytes.length,
+          size: scenario === 'partial' ? 20000 : bytes.length,
+        };
+      }
+      if (method === 'agent.get') return { agent: session };
+      if (method === 'agent.getConversation') return { agentId: 'agent', messages: [] };
+      return {};
+    });
+    try {
+      await sendAgentMessage('agent', 'Read this note', workspace, {
+        noteIds: [],
+        contextReferences: references,
+        noteContextOwnerId: 'context-owner',
+        submission: { scope: admitted!.scope, id: admitted!.submission.id },
+      }).catch(() => {});
+      expect(wire).toHaveLength(scenario === 'valid' ? 1 : 0);
+      expect(
+        transport.request.mock.calls.some(
+          ([method]) => method === 'file.placeAttachment' || method === 'file.write',
+        ),
+      ).toBe(false);
+      expect(store.state.files.byWorkspaceId).toEqual({});
     } finally {
       stop();
       dispose();

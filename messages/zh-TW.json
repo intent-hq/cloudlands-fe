@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "正在移除佇列中的訊息…",
   "chat_connectedQueue_absent_description": "已不在佇列中。此訊息可能已經傳送。",
   "chat_connectedQueue_unknown_description": "移除結果未知。重新整理只檢查佇列，不會重複移除。",
-  "chat_connectedQueue_merged_description": "後續訊息已合併。移除會套用至整個項目。"
+  "chat_connectedQueue_merged_description": "後續訊息已合併。移除會套用至整個項目。",
+  "chat_fileContext_add_label": "新增儲存庫檔案",
+  "chat_fileContext_picker_description": "依名稱或路徑選擇檔案。傳送時檢查目前內容，代理讀取即時檔案。",
+  "chat_fileContext_unavailable_error": "所選儲存庫檔案無法使用、位於此工作區之外，或不是支援的完整文字。請移除或重試。",
+  "chat_fileContext_busy_description": "請等待目前回覆結束後再傳送所選筆記或儲存庫檔案。"
 }

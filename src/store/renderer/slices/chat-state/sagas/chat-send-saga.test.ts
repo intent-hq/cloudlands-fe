@@ -877,6 +877,62 @@ describe('chatSendSaga', () => {
     },
   );
 
+  it.each([false, true])(
+    'blocks repository context while busy (force=%s) and records only identity',
+    async (forceSubmit) => {
+      const run = harness(
+        session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+      );
+      const repositoryFile = { workspaceId: WS, rootPath: '/repo', path: 'src/main.ts' };
+      const contextReferences = [
+        {
+          type: 'file' as const,
+          filePath: 'src/main.ts',
+          metadata: { workspaceId: WS, rootPath: '/repo' },
+        },
+      ];
+      run.channel.put(
+        sendMessage(AGENT, {
+          wsId: WS,
+          text: ' inspect file ',
+          forceSubmit,
+          workspaceContextStr: '[Currently viewing file: src/main.ts]',
+          contextReferences,
+          noteContextOwnerId: 'runtime-composer',
+          contextItems: [
+            {
+              id: 'repository-pill',
+              type: 'file',
+              label: 'main.ts',
+              repositoryFile,
+              content: 'stale file body',
+              file: new File(['private'], 'main.ts'),
+              sourcePath: '/repo/src/main.ts',
+              imageData: 'stale-image',
+              attachmentId: 'unrelated',
+            },
+          ],
+        }),
+      );
+      await settle();
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(mocks.queue).not.toHaveBeenCalled();
+      expect(mocks.toImageReferenceBlocks).not.toHaveBeenCalled();
+      expect(run.dispatch).not.toHaveBeenCalledWith(clearChatDraft(WS, AGENT));
+      expect(run.state().chatState.byAgentId[AGENT].error).toEqual(expect.any(String));
+      expect(run.state().chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+        text: '[Currently viewing file: src/main.ts]\n\ninspect file',
+        options: {
+          composerText: ' inspect file ',
+          contextReferences,
+          contextItems: [{ id: 'repository-pill', type: 'file', label: 'main.ts', repositoryFile }],
+        },
+      });
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {
     mocks.queue.mockResolvedValue({
       success: true,

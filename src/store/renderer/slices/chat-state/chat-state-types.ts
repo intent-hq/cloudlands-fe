@@ -83,7 +83,7 @@ export interface QuotaExceededInfo {
 }
 
 interface SendMessageOptions {
-  /** Authored text before note context was prefixed; retained for retry admission. */
+  /** Authored text before composer context was prefixed; retained for retry admission. */
   composerText?: string;
   contextItems?: SerializableContextItem[];
   noteIds?: string[];
@@ -385,7 +385,7 @@ export interface ChatAgentState {
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
-  /** Raw authored text for note retries; text remains the complete wire content. */
+  /** Raw authored text for context retries; text remains the complete wire content. */
   composerText?: string;
   /** Explicit retry model override, distinct from the displayed agent model. */
   model?: string;
@@ -396,7 +396,8 @@ export interface SendMessagePayload {
   contextItems?: ChatInputContextItem[];
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;
-  /** Mounted composer authority for final note validation; never persisted or sent. */
+  /** Mounted composer authority for note/repository validation; never persisted or sent.
+   * The existing name is retained for caller compatibility. */
   noteContextOwnerId?: string;
   /** Explicit plain-text queue activation; runtime-only composer identity. */
   queueOwnerId?: string;

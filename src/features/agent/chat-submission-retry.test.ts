@@ -67,8 +67,14 @@ import {
 } from '$features/agent/agent-queue-read-service';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
-import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
-import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+import {
+  setChatDraft,
+  setComposerContextItems,
+} from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import {
+  selectChatDraft,
+  selectComposerContextItems,
+} from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 const ws = 'independent-workspace';
 let agent: string;
 let cleanups: (() => void)[];
@@ -285,7 +291,11 @@ describe('conversation retry and evidence integration', () => {
 });
 
 const sends = () => wire.request.mock.calls.filter(([method]) => method === 'agent.sendMessage');
-async function failFirstSend(outcome: 'rejected' | 'uncertain', workspaceContextStr?: string) {
+async function failFirstSend(
+  outcome: 'rejected' | 'uncertain',
+  workspaceContextStr?: string,
+  repository = false,
+) {
   startSending();
   let count = 0;
   wire.request.mockImplementation(async (method, params) => {
@@ -299,19 +309,43 @@ async function failFirstSend(outcome: 'rejected' | 'uncertain', workspaceContext
     wsId: ws,
     text: 'retry payload',
     ...(workspaceContextStr !== undefined ? { workspaceContextStr } : {}),
-    noteIds: ['selected-note'],
+    ...(repository ? {} : { noteIds: ['selected-note'] }),
     noteContextOwnerId: 'original-composer',
-    contextItems: [
-      {
-        id: 'note-pill',
-        type: 'note',
-        label: 'Selected',
-        noteId: 'selected-note',
-        workspaceId: ws,
-      },
-    ],
-    contextReferences: [{ type: 'note', noteId: 'selected-note', metadata: { workspaceId: ws } }],
-    fileBlocks: [{ type: 'file', attachmentId: 'original-file', fileName: 'original.txt' }],
+    contextItems: repository
+      ? [
+          {
+            id: 'repository-pill',
+            type: 'file',
+            label: 'main.ts',
+            repositoryFile: { workspaceId: ws, rootPath: '/repo', path: 'src/main.ts' },
+            content: 'must not be recorded',
+          },
+        ]
+      : [
+          {
+            id: 'note-pill',
+            type: 'note',
+            label: 'Selected',
+            noteId: 'selected-note',
+            workspaceId: ws,
+          },
+        ],
+    contextReferences: repository
+      ? [
+          {
+            type: 'file',
+            filePath: 'src/main.ts',
+            metadata: { workspaceId: ws, rootPath: '/repo' },
+          },
+        ]
+      : [{ type: 'note', noteId: 'selected-note', metadata: { workspaceId: ws } }],
+    ...(repository
+      ? {}
+      : {
+          fileBlocks: [
+            { type: 'file' as const, attachmentId: 'original-file', fileName: 'original.txt' },
+          ],
+        }),
   });
   await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
   return store.state.chatState.byAgentId[agent].lastAttemptedMessage!;
@@ -327,6 +361,131 @@ function warningChoice() {
 }
 
 describe('explicit retry choices', () => {
+  it.each(['missing', 'mismatched', 'malformed'] as const)(
+    'rejects a restored repository draft with %s wire identity before cleanup',
+    async (kind) => {
+      startSending();
+      const contextItems = [
+        {
+          id: 'repository-pill',
+          type: 'file' as const,
+          label: 'main.ts',
+          repositoryFile: {
+            workspaceId: ws,
+            rootPath: '/repo',
+            path: kind === 'malformed' ? '../outside.ts' : 'src/main.ts',
+          },
+        },
+      ];
+      store.dispatch(setChatDraft(ws, agent, 'keep this draft'));
+      store.dispatch(setComposerContextItems(ws, agent, contextItems));
+      const onAdmitted = vi.fn();
+      const accepted = submitChatMessage(
+        store,
+        agent,
+        {
+          wsId: ws,
+          text: 'keep this draft',
+          contextItems,
+          ...(kind === 'missing'
+            ? {}
+            : {
+                contextReferences: [
+                  {
+                    type: 'file' as const,
+                    filePath: kind === 'malformed' ? '../outside.ts' : 'src/other.ts',
+                    metadata: { workspaceId: ws, rootPath: '/repo' },
+                  },
+                ],
+              }),
+        },
+        onAdmitted,
+      );
+      expect(accepted).toBe(false);
+      expect(onAdmitted).not.toHaveBeenCalled();
+      expect(selectChatDraft.select(store.state, ws, agent)).toBe('keep this draft');
+      expect(selectComposerContextItems.select(store.state, ws, agent)).toEqual(contextItems);
+      expect(store.state.chatState.byAgentId[agent]?.error).toEqual(expect.any(String));
+      expect(sends()).toEqual([]);
+      const entry = store.state.pendingSubmissions.byAgentId[agent];
+      expect(entry ? getItems(entry.submissions) : []).toEqual([]);
+    },
+  );
+
+  it.each(['rejected', 'legacy'] as const)(
+    'preserves repository identity with a new composer on %s retry',
+    async (outcome) => {
+      const attempt = await failFirstSend(
+        'rejected',
+        '[Currently viewing file: src/main.ts]',
+        true,
+      );
+      if (outcome === 'legacy')
+        store.dispatch(
+          chatLastAttemptedMessageSet(agent, { text: attempt.text, options: attempt.options }),
+        );
+      const expectedItem = {
+        id: 'repository-pill',
+        type: 'file',
+        label: 'main.ts',
+        repositoryFile: { workspaceId: ws, rootPath: '/repo', path: 'src/main.ts' },
+      };
+      expect(attempt.options?.contextItems).toEqual([expectedItem]);
+      expect(attempt.options?.composerText).toBe('retry payload');
+      expect(attempt.options).not.toHaveProperty('noteContextOwnerId');
+      const dispatch = vi.spyOn(store, 'dispatch');
+      const retry = createSubmissionRetry({
+        store,
+        admitChatMessage,
+        submitChatMessage,
+        hydrateAgentQueue,
+        loadChatTranscript,
+        getNotify: async () => ({ warning: wire.warning }),
+      });
+      try {
+        await retry.requestChatMessageRetry(
+          agent,
+          ws,
+          undefined,
+          undefined,
+          'current-repository-composer',
+        );
+        const sent = dispatch.mock.calls.find(
+          ([action]) => action.type === sendMessageAction.type,
+        )![0] as ReturnType<typeof sendMessageAction>;
+        expect(sent.payload.payload).toMatchObject({
+          noteContextOwnerId: 'current-repository-composer',
+          composerText: 'retry payload',
+          text: '[Currently viewing file: src/main.ts]\n\nretry payload',
+          contextItems: [expectedItem],
+        });
+        await vi.waitFor(() => expect(sends()).toHaveLength(2));
+        const params = sends()[1][1];
+        expect(params.contextReferences).toEqual([
+          {
+            type: 'file',
+            filePath: 'src/main.ts',
+            metadata: { workspaceId: ws, rootPath: '/repo' },
+          },
+        ]);
+        expect(params.content).toBe('[Currently viewing file: src/main.ts]\n\nretry payload');
+        expect(params).not.toHaveProperty('noteContextOwnerId');
+        expect(params.fileBlocks).toBeUndefined();
+        await vi.waitFor(() =>
+          expect(
+            getItem(
+              store.state.pendingSubmissions.byAgentId[agent].submissions,
+              sent.payload.payload.submission!.id,
+            )?.status,
+          ).toBe('accepted'),
+        );
+        await Promise.all([hydrateAgentQueue(agent, ws), loadChatTranscript(agent, ws)]);
+      } finally {
+        dispatch.mockRestore();
+      }
+    },
+  );
+
   it.each(['rejected', 'uncertain', 'legacy'] as const)(
     'keeps the activating composer and raw text through the deliberate %s retry',
     async (outcome) => {

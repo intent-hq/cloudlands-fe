@@ -1120,7 +1120,7 @@
    */
   async function runPlacement(itemId: string) {
     const item = contextItems.find((i) => i.id === itemId);
-    if (!item) return;
+    if (!item || 'repositoryFile' in item) return;
 
     const patchItem = (patch: Partial<ContextItem>) => {
       contextItems = contextItems.map((i) => (i.id === itemId ? { ...i, ...patch } : i));

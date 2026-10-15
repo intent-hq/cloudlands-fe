@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "待機中のメッセージを削除しています…",
   "chat_connectedQueue_absent_description": "待機中ではなくなりました。すでに配信された可能性があります。",
   "chat_connectedQueue_unknown_description": "削除結果は不明です。更新すると、削除を繰り返さずにキューを確認します。",
-  "chat_connectedQueue_merged_description": "追加メッセージがまとめられています。削除はこの項目全体に適用されます。"
+  "chat_connectedQueue_merged_description": "追加メッセージがまとめられています。削除はこの項目全体に適用されます。",
+  "chat_fileContext_add_label": "リポジトリのファイルを追加",
+  "chat_fileContext_picker_description": "名前またはパスでファイルを選択します。送信時に内容を確認し、エージェントが現在のファイルを読み取ります。",
+  "chat_fileContext_unavailable_error": "選択したファイルが利用できない、ワークスペース外にある、または対応する完全なテキストではありません。削除するか再試行してください。",
+  "chat_fileContext_busy_description": "現在の応答が終わってから、選択したノートやファイルを送信してください。"
 }

@@ -35,6 +35,7 @@ vi.mock('$lib/client', () => ({ appClient: { agents: { queue: pipeline.queue } }
 vi.mock('./agent-queue-read-service', () => ({
   hydrateAgentQueue: async () => {},
   getAgentQueueEventSnapshotSeq: () => 0,
+  noteAgentQueueEventSnapshotApplied: () => {},
 }));
 vi.mock('./chat-read-service', () => ({ loadChatTranscript: async () => {} }));
 let store: StreamingStore<typeof reducers>;

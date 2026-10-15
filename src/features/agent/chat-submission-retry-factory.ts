@@ -15,6 +15,7 @@ import { getAgentChatState } from '../../store/renderer/slices/chat-state/chat-s
 import type { ChatStateSlice } from '../../store/renderer/slices/chat-state/chat-state-types';
 import type { StoreDispatch } from '@themislib/themis/types';
 import type { createChatSubmission } from './chat-submission-factory';
+import { hasComposerContextReferences } from './agent-context';
 export function createSubmissionRetry({
   store,
   admitChatMessage,
@@ -181,7 +182,7 @@ export function createSubmissionRetry({
       if (
         attempt &&
         noteContextOwnerId !== undefined &&
-        attempt.options?.contextReferences?.some((reference) => reference.type === 'note')
+        hasComposerContextReferences(attempt.options?.contextReferences)
       ) {
         submitChatMessage(
           store,

@@ -2,8 +2,15 @@ import type { StoreAction } from '@themislib/themis/types';
 import { store } from '@/store';
 import { captureQueueRemovalAuthority } from '@/features/agent/queue-runtime';
 import { createQueueRemovalWorkers } from '../../../../../../src/store/renderer/slices/agent-queue/sagas/queue-removal-workers';
-import { queuedMessageMutationRequested, queuedMessageMutationFinished, refreshAgentQueueRequested } from '../../../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
-import { selectQueuedMessageMutation, selectQueueRemovalUncertain } from '@/store/agent-queue/agent-queue-selectors';
+import {
+  queuedMessageMutationRequested,
+  queuedMessageMutationFinished,
+  refreshAgentQueueRequested,
+} from '../../../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
+import {
+  selectQueuedMessageMutation,
+  selectQueueRemovalUncertain,
+} from '@/store/agent-queue/agent-queue-selectors';
 import { selectChatDraftOwnerView } from '@/store/chat-drafts/chat-drafts-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, takeEvery, fork, join } from 'typed-redux-saga';
@@ -72,7 +79,7 @@ const workers = createChatSendWorkers({
   sendAgentMessage,
   prepareImages: prepareComposerImages,
   retryImages: imageRetryBlocks,
-  noteContextBusyError: () => m.chat_noteContext_busy_description(),
+  noteContextBusyError: () => m.chat_fileContext_busy_description(),
   validateQueueAdmission,
 });
 const activation = createAgentActivationWorkers({
@@ -81,9 +88,14 @@ const activation = createAgentActivationWorkers({
   readAgentSession,
 });
 const removal = createQueueRemovalWorkers({
-  agents: chatCommands, dispatch: (action: StoreAction<unknown>) => store.dispatch(action), captureAuthority: captureQueueRemovalAuthority,
-  selectQueuedMessageMutation, selectQueueRemovalUncertain, selectAgentQueueMessages,
-  selectQueueMutationBlocked, hydrateAgentQueue: queueReads.hydrateAgentQueue,
+  agents: chatCommands,
+  dispatch: (action: StoreAction<unknown>) => store.dispatch(action),
+  captureAuthority: captureQueueRemovalAuthority,
+  selectQueuedMessageMutation,
+  selectQueueRemovalUncertain,
+  selectAgentQueueMessages,
+  selectQueueMutationBlocked,
+  hydrateAgentQueue: queueReads.hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied: queueReads.noteAgentQueueEventSnapshotApplied,
   getAgentQueueEventSnapshotSeq: queueReads.getAgentQueueEventSnapshotSeq,
 });
@@ -108,11 +120,14 @@ export function* chatCommandsSaga() {
         yield* call(chatReads.loadChatTranscript, agentId, workspaceId);
       },
     );
-    yield* takeEvery(refreshAgentQueueRequested, function* ({payload:[agentId, workspaceId, consumerId]}) {
-      const view = yield* selectChatDraftOwnerView.effect(consumerId);
-      if (view?.restore?.agentId === agentId && view.restore.workspaceId === workspaceId)
-        yield* call(queueReads.hydrateAgentQueue, agentId, workspaceId);
-    });
+    yield* takeEvery(
+      refreshAgentQueueRequested,
+      function* ({ payload: [agentId, workspaceId, consumerId] }) {
+        const view = yield* selectChatDraftOwnerView.effect(consumerId);
+        if (view?.restore?.agentId === agentId && view.restore.workspaceId === workspaceId)
+          yield* call(queueReads.hydrateAgentQueue, agentId, workspaceId);
+      },
+    );
     const commands = yield* takeEveryByContextFIFO(
       [sendMessage, queuedMessageMutationRequested],
       (action: Command) => {
@@ -125,7 +140,10 @@ export function* chatCommandsSaga() {
       },
       function* (command: Command) {
         if (command.type === queuedMessageMutationRequested.type) {
-          yield* call(removal.handleRemove, command as ReturnType<typeof queuedMessageMutationRequested>);
+          yield* call(
+            removal.handleRemove,
+            command as ReturnType<typeof queuedMessageMutationRequested>,
+          );
           return;
         }
         const action = command as ReturnType<typeof sendMessage>;
@@ -140,10 +158,17 @@ export function* chatCommandsSaga() {
           );
         }
       },
-      {onDiscardPending: function* (action: Command) {
-        if (action.type === queuedMessageMutationRequested.type)
-          yield* put(queuedMessageMutationFinished((action as ReturnType<typeof queuedMessageMutationRequested>).payload[0].requestId, {status:'cancelled'}));
-      }},
+      {
+        onDiscardPending: function* (action: Command) {
+          if (action.type === queuedMessageMutationRequested.type)
+            yield* put(
+              queuedMessageMutationFinished(
+                (action as ReturnType<typeof queuedMessageMutationRequested>).payload[0].requestId,
+                { status: 'cancelled' },
+              ),
+            );
+        },
+      },
     );
     yield* join(commands);
   } finally {

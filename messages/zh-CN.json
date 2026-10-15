@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "正在移除排队中的消息…",
   "chat_connectedQueue_absent_description": "已不在队列中。此消息可能已经发送。",
   "chat_connectedQueue_unknown_description": "移除结果未知。刷新只检查队列，不会重复移除。",
-  "chat_connectedQueue_merged_description": "后续消息已合并。移除会作用于整个条目。"
+  "chat_connectedQueue_merged_description": "后续消息已合并。移除会作用于整个条目。",
+  "chat_fileContext_add_label": "添加仓库文件",
+  "chat_fileContext_picker_description": "按名称或路径选择文件。发送时检查当前内容，代理读取实时文件。",
+  "chat_fileContext_unavailable_error": "所选仓库文件不可用、位于此工作区之外，或不是受支持的完整文本。请移除或重试。",
+  "chat_fileContext_busy_description": "请等待当前回复结束后再发送所选笔记或仓库文件。"
 }

@@ -3,6 +3,7 @@ import type { AgentSession, Workspace, QueuedMessage } from '$shared/types';
 import type { AgentsClient } from '$lib/client/app-client';
 import type { createAgentReadOwnership } from '../../../../../features/agent/agent-read-ownership-factory';
 import type { createAgentSender } from '../../../../../features/agent/agent-send-factory';
+import { hasComposerContextReferences } from '../../../../../features/agent/agent-context';
 import { reconcileQueuedMessage } from '../../../../../features/agent/utils/reconcile-queued-message';
 import {
   buildRecordedAttempt,
@@ -111,7 +112,8 @@ export function createChatSendWorkers({
   sendAgentMessage: ReturnType<typeof createAgentSender>;
   prepareImages: (wsId: string, images: Images, agentId: string) => Promise<Images>;
   retryImages: (error: unknown, images: Images) => Images;
-  /** Ordinary note references cannot use the daemon queue, which drops per-turn hints. */
+  /** Composer references cannot use the daemon queue, which drops per-turn hints.
+   * The existing note-specific callback name is retained for compatibility. */
   noteContextBusyError?: () => string;
   validateQueueAdmission?: (
     agentId: string,
@@ -307,7 +309,7 @@ export function createChatSendWorkers({
     if (!(yield* current())) return;
     const recordedAttempt = buildRecordedAttempt(content, options);
     const isResponding = yield* selectAgentIsResponding.effect(agentId);
-    if (isResponding && options.contextReferences?.some((reference) => reference.type === 'note')) {
+    if (isResponding && hasComposerContextReferences(options.contextReferences)) {
       yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
       yield* settle('rejected');
       yield* put(chatSendFailed(agentId, noteContextBusyError()));
@@ -493,7 +495,7 @@ export function createChatSendWorkers({
         ...(payload.contextReferences !== undefined
           ? { contextReferences: payload.contextReferences }
           : {}),
-        ...(payload.contextReferences?.some((reference) => reference.type === 'note') &&
+        ...(hasComposerContextReferences(payload.contextReferences) &&
         payload.contextItems !== undefined
           ? { contextItems: payload.contextItems }
           : {}),
@@ -501,7 +503,7 @@ export function createChatSendWorkers({
           ? { noteContextOwnerId: payload.noteContextOwnerId }
           : {}),
         ...(payload.queueOwnerId !== undefined ? { queueOwnerId: payload.queueOwnerId } : {}),
-        ...(payload.contextReferences?.some((reference) => reference.type === 'note')
+        ...(hasComposerContextReferences(payload.contextReferences)
           ? { composerText: payload.composerText ?? payload.text }
           : {}),
         messageMetadata: payload.messageMetadata,

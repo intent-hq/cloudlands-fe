@@ -9,6 +9,8 @@ export interface ContextItem {
   /** Explicit note identity; never infer it from the pill id, label or path. */
   noteId?: string;
   workspaceId?: string;
+  /** Presence marks a repository pointer, even when malformed. Never upload it. */
+  repositoryFile?: { workspaceId: string; rootPath: string; path: string };
   content?: string;
   path?: string; // For file items
   metadata?: Record<string, any>; // For additional data

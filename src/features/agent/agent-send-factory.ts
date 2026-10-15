@@ -47,7 +47,7 @@ import { buildRecordedAttempt, buildQueuedRecordedAttempt } from './utils/build-
 import { replaceAgentQueue } from '../../store/renderer/slices/agent-queue/agent-queue-slice';
 import { workspaceMetrics } from '../../store/renderer/slices/workspace/utils/workspace-metrics';
 import { m } from '$shared/paraglide/messages.js';
-import type { MessageContextReference } from './agent-context';
+import { hasComposerContextReferences, type MessageContextReference } from './agent-context';
 
 import type { StoreDispatch } from '@themislib/themis/types';
 import type { SubmissionProjectionState } from '../../store/renderer/slices/pending-submissions/pending-submissions-projections';
@@ -72,6 +72,7 @@ export function createAgentSender({
   getAgentQueueEventSnapshotSeq,
   errorBoundary,
   validateContextReferences,
+  prepareContextReferences,
 }: {
   appStore: {
     readonly state: SubmissionProjectionState & { chatState: ChatStateSlice };
@@ -96,6 +97,17 @@ export function createAgentSender({
     contextReferences?: readonly MessageContextReference[];
     noteContextOwnerId?: string;
   }) => void;
+  /** Optional current-admission read check, before each wire attempt. Resolve with
+   * no body/cache payload or throw to reject; final synchronous validation still
+   * runs after the read and at onDispatch. Omission preserves source behavior. */
+  prepareContextReferences?: (context: {
+    agentId: string;
+    workspaceId: string;
+    noteIds?: readonly string[];
+    contextReferences?: readonly MessageContextReference[];
+    noteContextOwnerId?: string;
+    isCurrent: () => boolean;
+  }) => Promise<void>;
 }) {
   const logger = createLogger('AgentSend');
 
@@ -196,6 +208,11 @@ export function createAgentSender({
     const supported =
       !!submission &&
       getPendingSubmissionEntry(appStore.state, submission.scope)?.supported === true;
+    // An explicitly prepared composer reference must be re-admitted by the user
+    // after rejection, including on legacy daemons. Do not replay its read/send.
+    const singleAttempt =
+      supported ||
+      (!!prepareContextReferences && hasComposerContextReferences(options.contextReferences));
     const settle = (
       outcome: 'accepted' | 'rejected' | 'uncertain',
       queued?: QueuedMessage,
@@ -342,10 +359,8 @@ export function createAgentSender({
           }
           const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
           // The daemon persists this opaque object, not the transport's context
-          // hints. Keep selected note identity after transcript reload as well.
-          const messageMetadata = options.contextReferences?.some(
-            (reference) => reference.type === 'note',
-          )
+          // hints. Keep selected note/repository identity after transcript reload.
+          const messageMetadata = hasComposerContextReferences(options.contextReferences)
             ? { ...options.messageMetadata, contextReferences: options.contextReferences }
             : options.messageMetadata;
           // Kept separate from the wire tag below so a failed send can roll the
@@ -457,25 +472,35 @@ export function createAgentSender({
                   // persistence); legacy-only fields (messages, resetHistory,
                   // behaviorPrompt, specialist, personality) are no longer sent —
                   // edit/regenerate flows go through `agent.editAndRegenerate`.
+                  const referenceContext = {
+                    agentId,
+                    workspaceId: workspace.id,
+                    noteIds: options.noteIds,
+                    contextReferences: options.contextReferences,
+                    ...(options.noteContextOwnerId !== undefined
+                      ? { noteContextOwnerId: options.noteContextOwnerId }
+                      : {}),
+                  };
                   const validate = () => {
                     try {
-                      if (validateContextReferences && !isCurrent())
+                      if ((validateContextReferences || prepareContextReferences) && !isCurrent())
                         throw new Error(m.workspace_client_accessChanged_error());
-                      validateContextReferences?.({
-                        agentId,
-                        workspaceId: workspace.id,
-                        noteIds: options.noteIds,
-                        contextReferences: options.contextReferences,
-                        ...(options.noteContextOwnerId !== undefined
-                          ? { noteContextOwnerId: options.noteContextOwnerId }
-                          : {}),
-                      });
+                      validateContextReferences?.(referenceContext);
                     } catch (error) {
                       wireRejected = true;
                       throw error;
                     }
                   };
                   validate();
+                  if (prepareContextReferences) {
+                    try {
+                      await prepareContextReferences({ ...referenceContext, isCurrent });
+                      validate();
+                    } catch (error) {
+                      wireRejected = true;
+                      throw error;
+                    }
+                  }
                   const params = {
                     agentId,
                     ...(supported && submission ? { messageId: submission.id } : {}),
@@ -499,7 +524,7 @@ export function createAgentSender({
                     ...(messageMetadata ? { messageMetadata } : {}),
                   };
                   const response = await (
-                    validateContextReferences
+                    validateContextReferences || prepareContextReferences
                       ? backendRequest<Record<string, unknown>>('agent.sendMessage', params, {
                           onDispatch: validate,
                         })
@@ -686,12 +711,12 @@ export function createAgentSender({
                 },
                 'send message',
                 {
-                  retries: supported ? 0 : 2,
+                  retries: singleAttempt ? 0 : 2,
                   notify: false,
                   context: { agentId, workspace: workspace.id },
                 },
               );
-            const result = supported
+            const result = singleAttempt
               ? await sendAttempt().then(() => ({ success: true, error: undefined }))
               : await errorRecovery.executeWithRecovery(
                   sendAttempt,

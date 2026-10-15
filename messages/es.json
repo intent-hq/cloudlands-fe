@@ -7594,5 +7594,9 @@
   "chat_connectedQueue_removing_description": "Eliminando mensaje de la cola…",
   "chat_connectedQueue_absent_description": "Ya no está en cola. Es posible que ya se haya entregado.",
   "chat_connectedQueue_unknown_description": "Resultado de eliminación desconocido. Actualizar consulta la cola sin repetir la eliminación.",
-  "chat_connectedQueue_merged_description": "Mensajes de seguimiento combinados. Quitar afecta a toda esta entrada."
+  "chat_connectedQueue_merged_description": "Mensajes de seguimiento combinados. Quitar afecta a toda esta entrada.",
+  "chat_fileContext_add_label": "Añadir archivo del repositorio",
+  "chat_fileContext_picker_description": "Elige un archivo por nombre o ruta. Su contenido se comprueba al enviar; el agente lee el archivo actual.",
+  "chat_fileContext_unavailable_error": "Un archivo seleccionado no está disponible, está fuera de este espacio o no es texto completo compatible. Elimínalo o reintenta.",
+  "chat_fileContext_busy_description": "Espera a que termine la respuesta antes de enviar notas o archivos seleccionados."
 }

@@ -1,5 +1,6 @@
 import type { LastAttemptedMessage } from '../../../store/renderer/slices/chat-state/chat-state-types';
 import type { QueuedMessage } from '$shared/types';
+import { projectRepositoryFileContextItem } from '$lib/components/chat/chat-repository-file-context';
 
 /** A queue append can retain an older ID and accumulate text and attachments. */
 export function buildQueuedRecordedAttempt(
@@ -87,17 +88,21 @@ export function buildRecordedAttempt(
 ): LastAttemptedMessage {
   const recordedOptions = {
     ...(options.composerText !== undefined ? { composerText: options.composerText } : {}),
-    // Retry admission needs the exact pill/note identities, never note bodies,
+    // Retry admission needs exact pill/note/repository identities, never bodies,
     // File handles or arbitrary caches. Upload payloads live in their blocks.
     ...(options.contextItems !== undefined
       ? {
-          contextItems: options.contextItems.map(({ id, type, label, noteId, workspaceId }) => ({
-            id,
-            type,
-            label,
-            ...(noteId !== undefined ? { noteId } : {}),
-            ...(workspaceId !== undefined ? { workspaceId } : {}),
-          })),
+          contextItems: options.contextItems.map((item) => {
+            if ('repositoryFile' in item) return projectRepositoryFileContextItem(item);
+            const { id, type, label, noteId, workspaceId } = item;
+            return {
+              id,
+              type,
+              label,
+              ...(noteId !== undefined ? { noteId } : {}),
+              ...(workspaceId !== undefined ? { workspaceId } : {}),
+            };
+          }),
         }
       : {}),
     ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),

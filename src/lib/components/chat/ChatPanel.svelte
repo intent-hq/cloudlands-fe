@@ -185,6 +185,7 @@
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import { formatNoteContext } from './chat-note-context';
+  import { formatRepositoryFileContext } from './chat-repository-file-context';
   import {
     appendContextItemContent,
     browserCaptureTargetsAgent,
@@ -5389,8 +5390,7 @@
     });
     for (const panel of checkedPanels) {
       if (panel.type === 'file' && panel.filePath) {
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push(`[Currently viewing file: ${panel.filePath}]`);
+        parts.push(formatRepositoryFileContext(panel.filePath));
       } else if (panel.type === 'diff' && panel.filePath) {
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
