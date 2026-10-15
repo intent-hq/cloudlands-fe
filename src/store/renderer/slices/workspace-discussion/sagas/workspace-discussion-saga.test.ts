@@ -4,7 +4,7 @@ import type { Workspace } from '$shared/types';
 import type { DiscussionMessage } from '$shared/types/workspace-discussion';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '../../../store';
-import { connectionsListReceived } from '../../connections/connections-slice';
+import { authRejectedReceived, connectionsListReceived } from '../../connections/connections-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-slice';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
@@ -23,6 +23,7 @@ import {
   selectDiscussionMessages,
   selectDiscussionPending,
   selectDiscussionTarget,
+  selectDiscussionReady,
   selectWorkspaceDiscussion,
 } from '../workspace-discussion-selectors';
 import { workspaceDiscussionSaga } from './workspace-discussion-saga';
@@ -310,7 +311,7 @@ describe('workspace discussion transport', () => {
     expect(store.state.workspaceEvents.byWorkspaceId.ws).toBe(activity);
     store.dispatch(connectionStatusChanged('disconnected'));
     emit({ workspaceId: 'ws', message: message(2) });
-    expect(messages()).toEqual([]);
+    expect(messages()).toEqual([message(1)]);
   });
   it('reopens a removed workspace while the old list is still unresolved', async () => {
     const old = deferred<ReturnType<typeof page>>();
@@ -387,4 +388,75 @@ describe('workspace discussion transport', () => {
     expect(row().error).toBe('forbidden');
     expect(wire.request).toHaveBeenCalledTimes(1);
   });
+  it('admits the first pane before its row exists, so ready-driven mounting starts a load', async () => {
+    expect(store.state.workspaceDiscussion.byWorkspaceId.ws).toBeUndefined();
+    expect(selectDiscussionReady.select(store.state, 'ws')).toBe(true);
+    expect(selectDiscussionReady.select(store.state, 'missing')).toBe(false);
+    wire.request.mockResolvedValueOnce(page(1, 1));
+    if (selectDiscussionReady.select(store.state, 'ws')) store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row().initialized).toBe(true);
+    expect(messages()).toEqual([message(1)]);
+  });
+  it('keeps draft and history visible during reconnect admission while sending stays disabled', async () => {
+    wire.request.mockResolvedValueOnce(page(1, 1));
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'unsent draft'));
+    store.dispatch(connectionStatusChanged('disconnected'));
+    // Match principalSaga, which drops the authoritative snapshot on disconnect.
+    store.dispatch(principalContextChanged(null));
+    await settle();
+    expect(messages()).toEqual([message(1)]);
+    expect(row().draft).toBe('unsent draft');
+    expect(selectDiscussionReady.select(store.state, 'ws')).toBe(false);
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request.mock.calls.filter(([m]) => m === 'discussion.send')).toEqual([]);
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    store.dispatch(principalContextChanged(selectPrincipalConnectionContext.select(store.state)));
+    await settle();
+    expect(messages()).toEqual([message(1)]);
+    expect(row().draft).toBe('unsent draft');
+    expect(selectDiscussionReady.select(store.state, 'ws')).toBe(false);
+    wire.request.mockResolvedValueOnce(page(1, 2));
+    admit();
+    await settle();
+    expect(messages()).toEqual([message(1), message(2)]);
+    expect(row().draft).toBe('unsent draft');
+    expect(selectDiscussionReady.select(store.state, 'ws')).toBe(true);
+  });
+  it.each(['identity', 'backend', 'denial'] as const)(
+    'withholds reconnect cache immediately on %s change',
+    async (change) => {
+      wire.request.mockResolvedValueOnce(page(1, 1));
+      await open();
+      store.dispatch(discussionDraftChanged('ws', 'private draft'));
+      store.dispatch(connectionStatusChanged('disconnected'));
+      store.dispatch(principalContextChanged(null));
+      await settle();
+      expect(row().draft).toBe('private draft');
+      if (change === 'identity') {
+        store.dispatch(connectionStatusChanged('connected'));
+        store.dispatch(daemonEventsSubscribed());
+        admit('different-person');
+      } else if (change === 'backend') {
+        store.dispatch(
+          connectionsListReceived({
+            connections: [],
+            activeId: 'another',
+            windowBackendId: 'another',
+          }),
+        );
+      } else {
+        store.dispatch(
+          authRejectedReceived({ id: 'local' } as Parameters<typeof authRejectedReceived>[0]),
+        );
+      }
+      expect(messages()).toEqual([]);
+      expect(row().draft).toBe('');
+      await settle();
+      expect(row().draft).toBe('');
+    },
+  );
 });
