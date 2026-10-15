@@ -14,24 +14,6 @@ import {
 
 const listDirectory = createFileListDirectory(backendRequest, { strict: true });
 
-const readExplorer = createFileExplorerReadSaga({
-  files: {
-    listDirectory,
-    explorerTree: async (workspaceId, current) => {
-      const path = selectFileExplorerRoot.select(store.state, workspaceId);
-      const children = await listDirectory(workspaceId, '', current);
-      return { name: path.split('/').at(-1) || path, path, type: 'directory', children };
-    },
-  },
-  selectFileExplorerState,
-  admission: {
-    readCurrentContext: (workspaceId) => selectFileExplorerContext.select(store.state, workspaceId),
-    dispatch: (action) => store.dispatch(action),
-  },
-  compactChains: false,
-  bounded: true,
-});
-
 const searchFiles = createFileSearchSaga({
   read: createBackendFileNameSearch(backendRequest),
   admission: {
@@ -43,7 +25,26 @@ const searchFiles = createFileSearchSaga({
   skipWhitespaceOnly: true,
 });
 
-export function* fileExplorerSaga() {
+export function* fileExplorerSaga(mode: 'browser' | 'desktop' = 'browser') {
+  const readExplorer = createFileExplorerReadSaga({
+    files: {
+      listDirectory,
+      explorerTree: async (workspaceId, current) => {
+        const path = selectFileExplorerRoot.select(store.state, workspaceId);
+        const children = await listDirectory(workspaceId, '', current);
+        return { name: path.split('/').at(-1) || path, path, type: 'directory', children };
+      },
+    },
+    selectFileExplorerState,
+    admission: {
+      readCurrentContext: (workspaceId) =>
+        selectFileExplorerContext.select(store.state, workspaceId),
+      dispatch: (action) => store.dispatch(action),
+    },
+    compactChains: mode === 'desktop',
+    bounded: mode !== 'desktop',
+  });
+
   yield* fork(readExplorer);
   yield* fork(searchFiles);
 }

@@ -11,6 +11,7 @@
  * subscription is owned by daemon-events-saga's scoped `file:*` lease.
  */
 import type { FileGitStatus, FileNode } from '$shared/types';
+import { toFilePorcelainStatus } from '../file-git-status';
 import type {
   EditableText,
   RestorableSnapshot,
@@ -39,13 +40,6 @@ const writeFile = createFileWrite(
     return backendRequest<T>(method, params);
   },
 );
-
-/** Build a two-char porcelain-style status code from a daemon single-char code. */
-function toPorcelain(status: string, staged: boolean): string {
-  const code = status.trim();
-  if (code === '?') return '??';
-  return staged ? `${code} ` : ` ${code}`;
-}
 
 export class LiveFilesClient implements FilesClient {
   // The daemon's `file.list` is a directory listing, not the per-file content
@@ -94,7 +88,7 @@ export class LiveFilesClient implements FilesClient {
         const path = String(file.path ?? '');
         if (!path) continue;
         map[path] = {
-          status: toPorcelain(String(file.status ?? ''), Boolean(file.staged)),
+          status: toFilePorcelainStatus(String(file.status ?? ''), Boolean(file.staged)),
         };
       }
       return map;

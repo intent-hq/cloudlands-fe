@@ -1,3 +1,4 @@
+import { DesktopFiles } from './desktop-files';
 import { startDesktopTheme } from '@/store/desktop/desktop-runtime';
 import { KebabIcon } from '@/components/icons/kebab-icon';
 import { resolveWorkspaceReopenTarget } from '../../../../../src/features/workspace/utils/workspace-reopen-target';
@@ -366,7 +367,8 @@ function DesktopWorkspace({
   const [query, setQuery] = useState('');
   const contextOpen = selected.includes('context');
   const agentsOpen = selected.includes('agents');
-  const sidebarOpen = contextOpen || agentsOpen;
+  const filesOpen = selected.includes('files');
+  const sidebarOpen = contextOpen || agentsOpen || filesOpen;
   const titles = [
     m.workspace_multiSelectSidebar_agentsTab_label(),
     m.workspace_multiSelectSidebar_contextTab_label(),
@@ -378,6 +380,9 @@ function DesktopWorkspace({
   const icons = [RobotIcon, TextAlignLeftIcon, CodeIcon, FoldersIcon, GlobeIcon, TerminalIcon];
   function showAgents() {
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, agentsOpen ? [] : ['agents']));
+  }
+  function showFiles() {
+    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, filesOpen ? [] : ['files']));
   }
   function showContext() {
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, contextOpen ? [] : ['context']));
@@ -433,7 +438,14 @@ function DesktopWorkspace({
             </div>
           </div>
           <div className="desktop-sidebar-fill" />
-          {agentsOpen ? (
+          <DesktopFiles
+            workspaceId={workspaceId}
+            active={active}
+            visible={filesOpen}
+            onClose={showFiles}
+            onUnavailable={onUnavailable}
+          />
+          {filesOpen ? null : agentsOpen ? (
             <DesktopAgents
               workspaceId={workspaceId}
               active={active}
@@ -491,7 +503,13 @@ function DesktopWorkspace({
                   className="desktop-launcher"
                   variant="outline"
                   onClick={() =>
-                    index === 0 ? showAgents() : index === 1 ? showContext() : onUnavailable(title)
+                    index === 0
+                      ? showAgents()
+                      : index === 1
+                        ? showContext()
+                        : index === 3
+                          ? showFiles()
+                          : onUnavailable(title)
                   }
                 >
                   <span className="desktop-launcher-icon">
@@ -517,7 +535,7 @@ function DesktopWorkspace({
             {sidebarOpen && (
               <span
                 className="desktop-sidebar-dock-indicator"
-                style={{ transform: `translateX(${agentsOpen ? 0 : 100}%)` }}
+                style={{ transform: `translateX(${agentsOpen ? 0 : filesOpen ? 300 : 100}%)` }}
                 aria-hidden="true"
               />
             )}
@@ -529,13 +547,25 @@ function DesktopWorkspace({
                   variant="plain"
                   size="icon-compact"
                   aria-label={
-                    (index === 1 && contextOpen) || (index === 0 && agentsOpen)
+                    (index === 1 && contextOpen) ||
+                    (index === 0 && agentsOpen) ||
+                    (index === 3 && filesOpen)
                       ? m.ui_tab_close_ariaLabel()
                       : title
                   }
-                  aria-pressed={(index === 1 && contextOpen) || (index === 0 && agentsOpen)}
+                  aria-pressed={
+                    (index === 1 && contextOpen) ||
+                    (index === 0 && agentsOpen) ||
+                    (index === 3 && filesOpen)
+                  }
                   onClick={() =>
-                    index === 0 ? showAgents() : index === 1 ? showContext() : onUnavailable(title)
+                    index === 0
+                      ? showAgents()
+                      : index === 1
+                        ? showContext()
+                        : index === 3
+                          ? showFiles()
+                          : onUnavailable(title)
                   }
                 >
                   <Icon size={16} />

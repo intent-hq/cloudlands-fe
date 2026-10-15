@@ -61,7 +61,11 @@ const cancelFilesSaveSaga = store.runSaga(filesSaveSaga);
 const cancelFilesReadSaga = store.runSaga(filesReadSaga);
 const cancelTerminalInteractionSaga = store.runSaga(terminalInteractionSaga);
 const cancelWorkspaceTitleSaga = store.runSaga(workspaceTitleSaga);
-const cancelFileExplorerSaga = store.runSaga(fileExplorerSaga);
+const cancelFileExplorerSaga = store.runSaga(function* () {
+  yield* fileExplorerSaga(
+    /^\/workspace(?:\/|$)/.test(window.location.pathname) ? 'desktop' : 'browser',
+  );
+});
 const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
 const cancelReadOnlyChatSaga = store.runSaga(readOnlyChatSaga);
 const disposeDesktop = /^\/workspace(?:\/|$)/.test(window.location.pathname)

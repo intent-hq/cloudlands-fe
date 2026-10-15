@@ -51,7 +51,7 @@ owner. Supported primary-root file-name actions open the desktop editor. Running
 comparison establishes the persisted completed states, not every tool family.
 
 Existing ordinary primary-root text files open from a note file link (including a
-line suffix) or an actual tool file reference. The desktop editor follows the source
+line suffix), an actual tool file reference, or the desktop Files sidebar. The desktop editor follows the source
 1500 ms autosave and configured Ctrl/Cmd-S shortcut. Closing flushes the latest edit;
 pending writes serialize through the existing file owner. Reopening retains failed
 or uncertain drafts: a known failure offers deliberate Retry, while an unknown
@@ -68,12 +68,24 @@ correction, not a passing source close-flush claim. Its line-link autofocus also
 scrolls a hidden ancestor; that source observation is recorded separately from the
 normal matched pane capture.
 
+The desktop **Files** dock browses existing primary-root files with the source tree,
+compact directory chains, filename search and canonical changed-files filter. Click
+or use Space/Right to open a file; Ctrl/Cmd-Enter opens an unopened file beside the
+current pane, while existing tabs are reused. Search Enter opens the selected result.
+Tree Enter and visible mutation controls disclose their unported scope. Expansion,
+reading position and search stay local to the retained workspace; reload rebuilds
+the tree and reveals its focused file. Search is bounded to the existing 100-result
+contract and discloses truncation. The target derives Expand/Collapse from canonical
+expansion; the frozen source label can remain stale after individual folder toggles.
+No new-file or other filesystem mutation is added by this sidebar. Git status colors
+use semantic tokens instead of the source's legacy physical color classes.
+
 This is not full ChatPanel or desktop parity. Rich mentions,
 attachments/context intake, rich diff/terminal/ContextEngine tool bodies,
 permission/question bodies, message actions and
 history navigation remain unported in this desktop surface. Model controls are reused
 but model changes are not native acceptance in this checkpoint. Rich note editing,
-terminal/browser bodies, the Files tree, workspace creation, Settings, PR/issue previews, full
+terminal/browser bodies, workspace creation, Settings, PR/issue previews, full
 Home detail, pane dragging and the complete leader-key system remain separate work.
 No provider is needed for the workspace/notes shell. Acceptance is limited to actual
 Linux Electron windows and owned data; historical browser or narrow-width checks are
