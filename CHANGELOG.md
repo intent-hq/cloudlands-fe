@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.3...v2.219.4) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* prioritize unfinished PRs in Home badges ([#3422](https://github.com/intent-hq/cloudlands-fe/issues/3422)) ([2a99e31](https://github.com/intent-hq/cloudlands-fe/commit/2a99e310a4a6b9f0ebfab0d2c8a6fbd330192c25))
+
 ## [2.219.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.2...v2.219.3) (2026-10-15)
 
 
