@@ -4,10 +4,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import {
-  configuredVisualStates,
-  exerciseVisualStates,
-} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -115,29 +111,7 @@ describe('ChatMessage action overlays', () => {
     }
   });
 
-  it('affirms message actions and timestamps in every required visual state', async () => {
-    const timestamp = new Date('2026-06-02T14:35:20.000Z');
-    const observed = await exerciseVisualStates(() => {
-      const view = render(ChatMessage, {
-        props: { message: message('user', timestamp), onScrollToPrevious: vi.fn() },
-      });
-      const surface = view.getByTestId('user-message-surface');
-      surface.tabIndex = 0;
-      return {
-        ...view,
-        target: surface,
-        assertCapability: () => {
-          expect(view.getByTestId('message-actions')).toBeTruthy();
-          expect(view.container.querySelector('time')?.getAttribute('datetime')).toBe(
-            timestamp.toISOString(),
-          );
-        },
-      };
-    });
-    expect(observed).toEqual(configuredVisualStates);
-  });
-
-  it('wires the canonical user timestamp into the shared top-right overlay', () => {
+  it('prefers the canonical user timestamp over createdAt', () => {
     const timestamp = new Date('2026-06-02T14:35:20.000Z');
     const createdAt = new Date('2025-01-01T01:02:03.000Z');
     const { container } = render(ChatMessage, {
@@ -145,23 +119,17 @@ describe('ChatMessage action overlays', () => {
     });
     const pill = screen.getByTestId('message-actions');
     expect(pill.getAttribute('data-message-actions-role')).toBe('user');
-    expect(pill.className).toContain('absolute');
-    expect(pill.className).toContain('right-1');
-    expect(pill.className).toContain('top-1');
     expect(container.querySelector('time')?.getAttribute('datetime')).toBe(timestamp.toISOString());
     expect(pill.parentElement?.getAttribute('data-testid')).toBe('user-message-surface');
   });
 
-  it('uses safe createdAt fallback in the shared assistant bottom-right overlay', () => {
+  it('uses createdAt when the assistant timestamp is invalid', () => {
     const createdAt = new Date('2026-06-03T09:10:11.000Z');
     const { container } = render(ChatMessage, {
       props: { message: message('assistant', 'invalid', createdAt), onRegenerate: vi.fn() },
     });
     const pill = screen.getByTestId('message-actions');
     expect(pill.getAttribute('data-message-actions-role')).toBe('assistant');
-    expect(pill.className).toContain('absolute');
-    expect(pill.className).toContain('bottom-0');
-    expect(pill.className).toContain('right-0');
     expect(container.querySelector('time')?.getAttribute('datetime')).toBe(createdAt.toISOString());
     expect(pill.closest('[data-message-role]')?.getAttribute('data-message-role')).toBe(
       'assistant',

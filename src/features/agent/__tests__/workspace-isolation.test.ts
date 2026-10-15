@@ -222,14 +222,6 @@ describe('Workspace Isolation', () => {
         expect(filePath.includes('\x00')).toBe(true);
       }
     });
-
-    it('should validate path strings do not contain null bytes', () => {
-      const validPath = 'src/file.ts';
-      const invalidPath = 'src/file\x00.ts';
-
-      expect(validPath.includes('\x00')).toBe(false);
-      expect(invalidPath.includes('\x00')).toBe(true);
-    });
   });
 
   describe('Symlink and Special File Prevention', () => {

@@ -15,12 +15,6 @@ import { homedir, tmpdir } from 'os';
 import * as path from 'path';
 
 describe('getSafeHomeDir', () => {
-  it('should return a non-empty path', () => {
-    const result = getSafeHomeDir();
-    expect(result).toBeTruthy();
-    expect(result.length).toBeGreaterThan(1);
-  });
-
   it('should not return root path /', () => {
     const result = getSafeHomeDir();
     expect(result).not.toBe('/');

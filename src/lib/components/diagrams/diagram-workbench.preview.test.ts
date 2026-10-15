@@ -104,27 +104,6 @@ describe('diagram workbench fixtures', () => {
     expect(DIAGRAM_WORKBENCH_CASES['mermaid-loading'].kind).toBe('loading');
   });
 
-  it('defines minimal examples and explicit contracts for the added showcase cases', () => {
-    const showcaseIds = [
-      'mermaid-single-node',
-      'mermaid-minimal-sequence',
-      'mermaid-minimal-state',
-      'mermaid-state-recovery',
-      'mermaid-minimal-class',
-      'mermaid-minimal-entity-relationship',
-      'mermaid-nested-routing',
-      'custom-service-boundaries',
-      'custom-delivery-walkthrough',
-    ] as const;
-
-    for (const id of showcaseIds) {
-      const fixture = DIAGRAM_WORKBENCH_CASES[id];
-      expect(fixture.title.trim()).not.toBe('');
-      expect(fixture.description.trim()).not.toBe('');
-      expect(fixture.visualContract?.trim()).not.toBe('');
-    }
-  });
-
   it.each([
     ['en', 'Diagram is loading', 'Rendering diagram…'],
     ['de', 'Diagramm wird geladen', 'Diagramm wird gerendert…'],

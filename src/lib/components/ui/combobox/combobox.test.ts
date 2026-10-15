@@ -1,5 +1,5 @@
 // @ui-invariant
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
@@ -70,11 +70,15 @@ describe('Combobox behavior', () => {
     expect(input.getAttribute('aria-labelledby')).toBe(listbox.getAttribute('aria-labelledby'));
     expect(listbox.getAttribute('data-combobox-viewport')).not.toBeNull();
     expect(listbox.getAttribute('tabindex')).toBe('0');
-    expect(screen.getByRole('option', { name: 'Grace Hopper' })).toBeTruthy();
+    const graceOption = within(listbox).getByRole('option', { name: 'Grace Hopper' });
     await waitFor(() => expect(screen.queryByRole('option', { name: 'Ada Lovelace' })).toBeNull());
 
-    await waitFor(() => expect(input.getAttribute('aria-activedescendant')).toBeTruthy());
     await fireEvent.keyDown(input, { key: 'Home' });
+    await waitFor(() => {
+      const activeId = input.getAttribute('aria-activedescendant');
+      expect(activeId && document.getElementById(activeId)).toBe(graceOption);
+      expect(listbox.contains(graceOption)).toBe(true);
+    });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByTestId('combobox-value').textContent).toBe('"grace"'));
     expect(screen.queryByRole('listbox')).toBeNull();
