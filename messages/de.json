@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "Unterhaltung umbenennen",
   "workspace_agentRename_saving_label": "Name der Unterhaltung wird gespeichert…",
   "workspace_agentRename_failed_description": "Der Name wurde nicht gespeichert. Öffne ihn, um es erneut zu versuchen.",
-  "workspace_agentRename_unknown_description": "Das Ergebnis der Umbenennung ist unbekannt. Weitere Umbenennungen sind gesperrt, um die Anfrage nicht zu wiederholen."
+  "workspace_agentRename_unknown_description": "Das Ergebnis der Umbenennung ist unbekannt. Weitere Umbenennungen sind gesperrt, um die Anfrage nicht zu wiederholen.",
+  "workspace_quickSwitcher_open_label": "Schnellwechsel",
+  "workspace_quickSwitcher_scope_description": "Arbeitsbereiche und Vordergrundgespräche im aktuellen Arbeitsbereich.",
+  "workspace_quickSwitcher_conversations_label": "Gespräche in {workspace}",
+  "workspace_quickSwitcher_unavailable_error": "Die Liste oder der gewählte Eintrag ist nicht verfügbar. Zum Aktualisieren erneut versuchen.",
+  "workspace_quickSwitcher_loadingConversations_description": "Gespräche in diesem Arbeitsbereich werden geladen…",
+  "workspace_quickSwitcher_search_ariaLabel": "Arbeitsbereiche und Gespräche suchen",
+  "workspace_quickSwitcher_search_placeholder": "Nach Name oder ID suchen…",
+  "workspace_quickSwitcher_conversationsError_error": "Gespräche konnten nicht geladen werden."
 }

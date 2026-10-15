@@ -139,3 +139,8 @@ export const getWorkspaceUpdateContext = (
     ? context
     : null;
 };
+
+export const getWorkspaceListReadStatus = (state: WorkspaceAuthorityProjectionState) => {
+  const read = state.workspace.listReadStatus;
+  return read?.context === getPrincipalActionContext(state) ? read.status : undefined;
+};

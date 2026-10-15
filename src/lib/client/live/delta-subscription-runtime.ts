@@ -152,7 +152,12 @@ interface DynamicChannelScope {
   subscribeIds: (listener: (ids: readonly string[]) => void) => Unsubscribe;
   /** Registration params for one id, e.g. `(id) => ({ workspaceId: id })`. */
   paramsForId: (id: string) => Record<string, unknown>;
+  /** Optional explicit retry source; only a failed, still-desired channel can retry. */
+  subscribeRetry?: (listener: (id: string) => void) => Unsubscribe;
 }
+
+export type DeltaSubscriptionStatus =
+  { status: 'loading' | 'ready' } | { status: 'error'; error: string };
 
 /**
  * Descriptor for a typed snapshot+delta channel (PROTOCOL §6.9). Registered
@@ -184,6 +189,8 @@ export interface DeltaSubscriptionConfig<T> {
   normalize: (raw: Record<string, unknown>) => T | null;
   /** Receives the reconciled collection on every change. */
   handler: (snapshot: T[], readyWorkspaceIds?: readonly string[]) => void;
+  /** Dynamic channel readiness; registration acknowledgement alone is not ready. */
+  onStatus?: (id: string, status: DeltaSubscriptionStatus) => void;
 }
 
 /**
@@ -411,6 +418,7 @@ export function createDeltaSubscriptionRuntime<T>(
     }
     state.generation += 1;
     const generation = state.generation;
+    config.onStatus?.(id, { status: 'loading' });
     backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, state.params)
       .then((result) => {
         const sid = result?.subscriptionId;
@@ -437,6 +445,7 @@ export function createDeltaSubscriptionRuntime<T>(
             state.retryTimer = undefined;
             if (!disposed && dynamicChannels.get(id) === state) registerDynamicChannel(id, state);
           }, delay);
+          config.onStatus?.(id, { status: 'error', error: 'Missing subscription identifier' });
           return;
         }
         state.subscriptionId = sid;
@@ -444,7 +453,7 @@ export function createDeltaSubscriptionRuntime<T>(
         drainBufferedPushes(sid);
         pruneForeignBufferedPushes();
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (disposed || dynamicChannels.get(id) !== state || generation !== state.generation) {
           return;
         }
@@ -454,6 +463,10 @@ export function createDeltaSubscriptionRuntime<T>(
           state.retryTimer = undefined;
           if (!disposed && dynamicChannels.get(id) === state) registerDynamicChannel(id, state);
         }, delay);
+        config.onStatus?.(id, {
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
   };
 
@@ -544,6 +557,13 @@ export function createDeltaSubscriptionRuntime<T>(
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
           emit();
+          if (
+            !disposed &&
+            dynamicChannels.get(id) === state &&
+            state.seeded &&
+            state.subscriptionId === push.subscriptionId
+          )
+            config.onStatus?.(id, { status: 'ready' });
         } else if (!state.awaitingResnapshot) {
           if (state.reconciler.applyDelta(push.seq, push.delta ?? {})) {
             emit();
@@ -615,6 +635,11 @@ export function createDeltaSubscriptionRuntime<T>(
   const offIds: Unsubscribe | undefined = dynamic
     ? dynamic.subscribeIds(reconcileDesiredIds)
     : undefined;
+  const offRetry = dynamic?.subscribeRetry?.((id) => {
+    const state = dynamicChannels.get(id);
+    if (disposed || !state || state.retryTimer === undefined) return;
+    registerDynamicChannel(id, state);
+  });
   if (!dynamic) registerChannel();
 
   return () => {
@@ -626,6 +651,7 @@ export function createDeltaSubscriptionRuntime<T>(
     off();
     offReconnect();
     offIds?.();
+    offRetry?.();
     unregisterChannel();
     for (const state of dynamicChannels.values()) unregisterDynamicChannel(state);
     dynamicChannels.clear();

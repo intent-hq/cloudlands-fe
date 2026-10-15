@@ -416,3 +416,17 @@ These operation receipts are not persisted across a full reload, and reload neve
 replays creation, closing or input. Buffer restoration has no exactly-once output
 claim across a disconnect. This is a bounded interactive host, without the desktop
 quake overlay, script manager or terminal history UI.
+
+## Quick switcher (internal preview)
+
+Choose **Quick switcher** above the workspace content, or press **Cmd/Ctrl-K**.
+Search by name or ID, use the arrow keys and Enter, or select a result. Escape
+closes the dialog and restores focus. Home offers workspaces; inside a workspace,
+the switcher also offers its confirmed foreground conversations. It does not search
+conversations across workspaces. IDs distinguish conversations with the same name.
+Loading and retry states come from the existing scoped readers. Editor and terminal
+shortcuts retain their own handling. Navigation uses the existing unsaved-edit
+Stay/Discard dialog; switching does not save or change files, notes, or conversations.
+
+This remains an internal, unreleased React workflow. The released assistant app
+guide is not promoted or published by this checkpoint.

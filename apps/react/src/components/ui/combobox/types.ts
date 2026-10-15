@@ -55,6 +55,9 @@ export interface ComboboxProps {
   header?: string;
   headerAction?: ReactNode;
   footer?: ReactNode;
+  /** Null accepts already-ranked canonical results without a second text filter. */
+  filterOption?: ((option: ComboboxOption, query: string) => boolean) | null;
+  optionLabel?: (option: ComboboxOption) => ReactNode;
   optionDescription?: (option: ComboboxOption) => ReactNode;
   optionActions?: (option: ComboboxOption) => ReactNode;
   groupDescription?: (group: ComboboxGroup) => ReactNode;
@@ -65,7 +68,14 @@ export interface ComboboxProps {
   onQueryChange?: (query: string) => void;
   onSearchError?: (error: unknown, query: string) => void;
   onChange?: (value: string | string[], option?: ComboboxOption) => void;
+  /** Final synchronous admission; false leaves the query and popup intact. */
+  onBeforeCommit?: (option: ComboboxOption) => boolean;
   /** Accepted activation, including explicit reselection of the current value. */
   onCommit?: (value: string | string[], option: ComboboxOption) => void;
+  /** A containing dialog may retain the picker while focus moves to sibling controls. */
+  onBeforeOpenChange?: (
+    open: boolean,
+    reason: 'escape' | 'outside' | 'tab' | 'selection' | 'other',
+  ) => boolean;
   onOpenChange?: (open: boolean) => void;
 }

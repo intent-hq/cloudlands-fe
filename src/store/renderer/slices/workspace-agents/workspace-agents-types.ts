@@ -1,6 +1,11 @@
 import type { AgentSessionProjectionState } from '../agent-session/agent-session-projections';
 import type { WorkspaceAgentsState } from './workspace-agents-slice';
 
+/** Current subscription completeness, independent of previously cached session records. */
+export type WorkspaceAgentMetadataStatus = { context: string } & (
+  { status: 'loading' | 'ready' } | { status: 'error'; error: string }
+);
+
 /** Mount-scoped consumer identity plus the resource whose creation is single-flight. */
 export interface AgentCreationConsumer {
   id: string;

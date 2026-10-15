@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "Renommer la conversation",
   "workspace_agentRename_saving_label": "Enregistrement du nom de la conversation…",
   "workspace_agentRename_failed_description": "Le nom n’a pas été enregistré. Ouvrez-le pour réessayer.",
-  "workspace_agentRename_unknown_description": "Le résultat du renommage est inconnu. Le renommage est bloqué pour éviter de répéter la demande."
+  "workspace_agentRename_unknown_description": "Le résultat du renommage est inconnu. Le renommage est bloqué pour éviter de répéter la demande.",
+  "workspace_quickSwitcher_open_label": "Navigation rapide",
+  "workspace_quickSwitcher_scope_description": "Espaces de travail et conversations au premier plan dans l’espace actuel.",
+  "workspace_quickSwitcher_conversations_label": "Conversations dans {workspace}",
+  "workspace_quickSwitcher_unavailable_error": "La liste ou l’élément sélectionné est indisponible. Réessayez pour actualiser.",
+  "workspace_quickSwitcher_loadingConversations_description": "Chargement des conversations de cet espace…",
+  "workspace_quickSwitcher_search_ariaLabel": "Rechercher des espaces et des conversations",
+  "workspace_quickSwitcher_search_placeholder": "Rechercher par nom ou identifiant…",
+  "workspace_quickSwitcher_conversationsError_error": "Impossible de charger les conversations."
 }

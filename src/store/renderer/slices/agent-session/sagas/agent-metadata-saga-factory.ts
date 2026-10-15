@@ -3,6 +3,7 @@ import { call, fork, join, put, take, takeEvery } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelSelector } from '@themislib/themis/saga';
 import type { AgentSession } from '$shared/types/agent-session';
 import type { createBackendAgentClient } from '$lib/client/live/backend-agent-client';
+import type { DeltaSubscriptionStatus } from '$lib/client/live/delta-subscription-runtime';
 import type { createAgentReadService } from '../../../../../features/agent/agent-read-service-factory';
 import type { createAgentReadOwnership } from '../../../../../features/agent/agent-read-ownership-factory';
 import {
@@ -11,7 +12,12 @@ import {
   removeSession,
   pendingQuestionMarkersFromWorkspaceEvent,
 } from '../agent-session-slice';
-import { setAgents, setAgentsLoaded } from '../../workspace-agents/workspace-agents-slice';
+import {
+  setAgents,
+  setAgentsLoaded,
+  workspaceAgentMetadataRetryRequested,
+  workspaceAgentMetadataStatusChanged,
+} from '../../workspace-agents/workspace-agents-slice';
 import { eventReceived } from '../../workspace-events/workspace-events-slice';
 
 type Lease = { workspaceId: string; agentId?: string };
@@ -32,6 +38,7 @@ export function createAgentMetadataSaga<State>({
     const leases = new Map<string, Lease>();
     let context: string | null = null;
     let notifyIds: ((ids: readonly string[]) => void) | undefined;
+    let retryWorkspace: ((workspaceId: string) => void) | undefined;
     const desiredIds = () => [...new Set([...leases.values()].map((lease) => lease.workspaceId))];
     const refreshIds = () => notifyIds?.(context ? desiredIds() : []);
     function releaseDetail(lease: Lease | undefined) {
@@ -54,6 +61,8 @@ export function createAgentMetadataSaga<State>({
           leases.set(consumerId, { workspaceId, agentId });
           releaseDetail(previous);
           refreshIds();
+          if (previous && !desiredIds().includes(previous.workspaceId))
+            yield* put(workspaceAgentMetadataStatusChanged(previous.workspaceId, null));
           if (context && agentId) yield* call(reads.ensureAgentSession, agentId, workspaceId);
         },
       );
@@ -62,7 +71,22 @@ export function createAgentMetadataSaga<State>({
         leases.delete(consumerId);
         releaseDetail(previous);
         refreshIds();
+        if (previous && !desiredIds().includes(previous.workspaceId))
+          yield* put(workspaceAgentMetadataStatusChanged(previous.workspaceId, null));
       });
+      yield* takeEvery(
+        workspaceAgentMetadataRetryRequested,
+        function* ({ payload: [consumerId, workspaceId, requestedContext] }) {
+          if (
+            !context ||
+            context !== requestedContext ||
+            leases.get(consumerId)?.workspaceId !== workspaceId ||
+            (yield* contextSelector.effect()) !== requestedContext
+          )
+            return;
+          retryWorkspace?.(workspaceId);
+        },
+      );
       yield* takeEvery(eventReceived, function* ({ payload: [workspaceId, event] }) {
         if (
           !context ||
@@ -92,11 +116,13 @@ export function createAgentMetadataSaga<State>({
         function* ({ payload: nextContext }) {
           context = nextContext;
           reads.invalidate();
-          if (!context) return;
-          const snapshots = eventChannel<{
-            sessions: AgentSession[];
-            workspaceIds: readonly string[];
-          }>(
+          if (!nextContext) return;
+          let active = true;
+          const statuses = new Set<string>();
+          const snapshots = eventChannel<
+            | { sessions: AgentSession[]; workspaceIds: readonly string[] }
+            | { workspaceId: string; status: DeltaSubscriptionStatus }
+          >(
             (emit) =>
               client.subscribeWorkspaces(
                 (listener) => {
@@ -106,7 +132,20 @@ export function createAgentMetadataSaga<State>({
                     if (notifyIds === listener) notifyIds = undefined;
                   };
                 },
-                (sessions, workspaceIds) => emit({ sessions, workspaceIds: workspaceIds ?? [] }),
+                (sessions, workspaceIds) => {
+                  if (active) emit({ sessions, workspaceIds: workspaceIds ?? [] });
+                },
+                {
+                  onStatus: (workspaceId, status) => {
+                    if (active) emit({ workspaceId, status });
+                  },
+                  subscribeRetry: (listener) => {
+                    retryWorkspace = listener;
+                    return () => {
+                      if (retryWorkspace === listener) retryWorkspace = undefined;
+                    };
+                  },
+                },
               ),
             buffers.expanding(),
           );
@@ -117,7 +156,20 @@ export function createAgentMetadataSaga<State>({
                 yield* fork(reads.ensureAgentSession, lease.agentId, lease.workspaceId);
             }
             while (true) {
-              const { sessions, workspaceIds } = yield* take(snapshots);
+              const update = yield* take(snapshots);
+              if ((yield* contextSelector.effect()) !== nextContext) continue;
+              if ('status' in update) {
+                if (!desiredIds().includes(update.workspaceId)) continue;
+                statuses.add(update.workspaceId);
+                yield* put(
+                  workspaceAgentMetadataStatusChanged(update.workspaceId, {
+                    context: nextContext,
+                    ...update.status,
+                  }),
+                );
+                continue;
+              }
+              const { sessions, workspaceIds } = update;
               // The shared dynamic engine emits confirmed siblings while another workspace registers.
               // Seeded workspace IDs include empty snapshots; unseeded siblings are left untouched.
               const groups = new Map<string, AgentSession[]>();
@@ -144,8 +196,12 @@ export function createAgentMetadataSaga<State>({
               }
             }
           } finally {
+            active = false;
             snapshots.close();
             notifyIds = undefined;
+            retryWorkspace = undefined;
+            for (const workspaceId of statuses)
+              yield* put(workspaceAgentMetadataStatusChanged(workspaceId, null));
           }
         },
       );

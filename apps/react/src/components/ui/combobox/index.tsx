@@ -64,6 +64,8 @@ export function Combobox({
   header,
   headerAction,
   footer,
+  filterOption,
+  optionLabel,
   optionDescription,
   optionActions,
   groupDescription,
@@ -72,8 +74,10 @@ export function Combobox({
   onQueryChange,
   onSearchError,
   onChange,
+  onBeforeCommit,
   onCommit,
   onOpenChange,
+  onBeforeOpenChange,
 }: ComboboxProps) {
   const uid = React.useId();
   const dialogPortalTarget = useDialogPortalTarget();
@@ -171,8 +175,12 @@ export function Combobox({
     previousOpen.current = open;
   });
 
-  function changeOpen(next: boolean) {
+  function changeOpen(
+    next: boolean,
+    reason: 'escape' | 'outside' | 'tab' | 'selection' | 'other' = 'other',
+  ) {
     if (next === open || (next && disabled)) return;
+    if (onBeforeOpenChange?.(next, reason) === false) return;
     if (!next) resetSearch();
     setLocalOpen(next);
     onOpenChange?.(next);
@@ -213,10 +221,10 @@ export function Combobox({
       event.preventDefault();
       event.stopPropagation();
       focusInput();
-      changeOpen(false);
+      changeOpen(false, 'escape');
     };
     const outside = (event: PointerEvent) => {
-      if (!contains(event.target)) changeOpen(false);
+      if (!contains(event.target)) changeOpen(false, 'outside');
     };
     // Source floating and static content dismiss on outside pointer or explicit
     // keyboard actions, not programmatic focus changes to another control.
@@ -280,7 +288,12 @@ export function Combobox({
       options: group.options.filter(
         (option) =>
           !normalizedQuery ||
-          `${option.label} ${option.description ?? ''}`.toLowerCase().includes(normalizedQuery),
+          filterOption === null ||
+          (filterOption
+            ? filterOption(option, query)
+            : `${option.label} ${option.description ?? ''}`
+                .toLowerCase()
+                .includes(normalizedQuery)),
       ),
     }))
     .filter((group) => group.options.length);
@@ -350,6 +363,7 @@ export function Combobox({
 
   function accept(option: ComboboxOption) {
     if (busy || disabled || option.disabled || !open) return;
+    if (onBeforeCommit?.(option) === false) return;
     const nextValue = multiple
       ? selectedValues.includes(option.value)
         ? selectedValues.filter((id) => id !== option.value)
@@ -359,7 +373,7 @@ export function Combobox({
     setLocalValue(nextValue);
     resetSearch();
     focusInput();
-    if (!multiple) changeOpen(false);
+    if (!multiple) changeOpen(false, 'selection');
     if (multiple) onChange?.(nextValue);
     else if (value !== nextValue) onChange?.(nextValue, option);
     onCommit?.(nextValue, option);
@@ -482,7 +496,7 @@ export function Combobox({
                     <span className="min-w-0 flex-1 truncate">
                       {option === customOption
                         ? m.ui_combobox_useCustom_label({ value: option.label })
-                        : option.label}
+                        : (optionLabel?.(option) ?? option.label)}
                     </span>
                     {optionDescription
                       ? optionDescription(option)
@@ -611,7 +625,7 @@ export function Combobox({
                 retry.current?.focus();
               } else if (event.key === 'Tab' && open) {
                 event.preventBaseUIHandler();
-                changeOpen(false);
+                changeOpen(false, 'tab');
               } else navigate(event);
             }}
             className={cn(

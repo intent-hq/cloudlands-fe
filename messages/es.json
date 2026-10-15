@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "Cambiar nombre de la conversación",
   "workspace_agentRename_saving_label": "Guardando el nombre de la conversación…",
   "workspace_agentRename_failed_description": "No se guardó el nombre. Ábrelo para volver a intentarlo.",
-  "workspace_agentRename_unknown_description": "Se desconoce el resultado del cambio de nombre. Se bloquean nuevos cambios para evitar repetir la solicitud."
+  "workspace_agentRename_unknown_description": "Se desconoce el resultado del cambio de nombre. Se bloquean nuevos cambios para evitar repetir la solicitud.",
+  "workspace_quickSwitcher_open_label": "Selector rápido",
+  "workspace_quickSwitcher_scope_description": "Espacios de trabajo y conversaciones en primer plano del espacio actual.",
+  "workspace_quickSwitcher_conversations_label": "Conversaciones en {workspace}",
+  "workspace_quickSwitcher_unavailable_error": "La lista o el elemento seleccionado no está disponible. Reintenta para actualizar.",
+  "workspace_quickSwitcher_loadingConversations_description": "Cargando conversaciones de este espacio…",
+  "workspace_quickSwitcher_search_ariaLabel": "Buscar espacios y conversaciones",
+  "workspace_quickSwitcher_search_placeholder": "Buscar por nombre o ID…",
+  "workspace_quickSwitcher_conversationsError_error": "No se pudieron cargar las conversaciones."
 }

@@ -1,3 +1,4 @@
+import { WorkspaceQuickSwitcher } from './workspace-quick-switcher';
 import { Link, Outlet, useParams, useSearch } from '@tanstack/react-router';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/logo';
@@ -124,6 +125,7 @@ export function WorkspaceShell() {
         </Sidebar.Content>
       </Sidebar.Root>
       <Sidebar.Inset as="div" className="min-w-0">
+        <WorkspaceQuickSwitcher />
         <WorkspaceReturnFocus value={consumeReturnFocus}>
           <Outlet />
         </WorkspaceReturnFocus>

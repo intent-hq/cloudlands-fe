@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "会話の名前を変更",
   "workspace_agentRename_saving_label": "会話名を保存中…",
   "workspace_agentRename_failed_description": "会話名を保存できませんでした。名前を開いて再試行してください。",
-  "workspace_agentRename_unknown_description": "名前変更の結果が不明です。同じリクエストの繰り返しを防ぐため、名前変更はブロックされています。"
+  "workspace_agentRename_unknown_description": "名前変更の結果が不明です。同じリクエストの繰り返しを防ぐため、名前変更はブロックされています。",
+  "workspace_quickSwitcher_open_label": "クイック切り替え",
+  "workspace_quickSwitcher_scope_description": "ワークスペースと、現在のワークスペースのフォアグラウンド会話。",
+  "workspace_quickSwitcher_conversations_label": "{workspace} の会話",
+  "workspace_quickSwitcher_unavailable_error": "一覧または選択した項目を利用できません。再試行して更新してください。",
+  "workspace_quickSwitcher_loadingConversations_description": "このワークスペースの会話を読み込み中…",
+  "workspace_quickSwitcher_search_ariaLabel": "ワークスペースと会話を検索",
+  "workspace_quickSwitcher_search_placeholder": "名前または ID で検索…",
+  "workspace_quickSwitcher_conversationsError_error": "会話を読み込めませんでした。"
 }

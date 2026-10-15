@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "Rename conversation",
   "workspace_agentRename_saving_label": "Saving conversation name…",
   "workspace_agentRename_failed_description": "The conversation name was not saved. Open the name to try again.",
-  "workspace_agentRename_unknown_description": "The rename outcome is unknown. Renaming is blocked to avoid repeating the request."
+  "workspace_agentRename_unknown_description": "The rename outcome is unknown. Renaming is blocked to avoid repeating the request.",
+  "workspace_quickSwitcher_open_label": "Quick switcher",
+  "workspace_quickSwitcher_scope_description": "Workspaces and foreground conversations in the current workspace.",
+  "workspace_quickSwitcher_conversations_label": "Conversations in {workspace}",
+  "workspace_quickSwitcher_unavailable_error": "The list or selected item is unavailable. Retry to refresh it.",
+  "workspace_quickSwitcher_loadingConversations_description": "Loading conversations in this workspace…",
+  "workspace_quickSwitcher_search_ariaLabel": "Search workspaces and conversations",
+  "workspace_quickSwitcher_search_placeholder": "Search by name or ID…",
+  "workspace_quickSwitcher_conversationsError_error": "Conversations could not be loaded."
 }

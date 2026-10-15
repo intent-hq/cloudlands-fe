@@ -57,6 +57,7 @@ export type WorkspaceState = {
    */
   loadedBackendId: string | null;
   capabilityContext: string | null;
+  listReadStatus?: { context: string; status: 'loading' | 'ready' | 'error' };
   isCreating: boolean;
   pendingDeletions: Record<string, boolean>;
   deletionTokens: Record<string, string>;
@@ -979,3 +980,13 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   detailHydrated: {},
   recency: defaultWorkspaceRecencyState,
 }));
+
+/** Status of the canonical complete-list read, scoped to its admitted principal. */
+export const workspaceListReadStatusChanged = createAction<
+  [context: string, status: 'loading' | 'ready' | 'error']
+>('workspace/listReadStatusChanged');
+workspaceReducer.with(workspaceListReadStatusChanged, (state, { payload: [context, status] }) =>
+  state.listReadStatus?.context === context && state.listReadStatus.status === status
+    ? state
+    : { ...state, listReadStatus: { context, status } },
+);

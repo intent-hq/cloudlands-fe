@@ -16,6 +16,7 @@ import {
   bulkUpdateWorkspaceEntities,
   loadRecencyData,
   loadWorkspacesRequested,
+  workspaceListReadStatusChanged,
   replaceWorkspaceList,
   removeWorkspaceEntity,
   setWorkspaceEntity,
@@ -70,6 +71,7 @@ export function createWorkspaceAuthoritySaga({
       buffers.expanding<WorkspaceProjectionAction>(),
     );
     try {
+      yield* put(workspaceListReadStatusChanged(context, 'loading'));
       const deletionTokens = yield* deletionTokensEffect();
       const result = yield* call(listWorkspaces);
       if (
@@ -103,6 +105,7 @@ export function createWorkspaceAuthoritySaga({
         }),
       );
       yield* put(setWorkspaceHasLoaded(true, backendId, context));
+      yield* put(workspaceListReadStatusChanged(context, 'ready'));
       if (!recentViews) return;
       const views = yield* call(recentViews);
       if (
@@ -112,6 +115,14 @@ export function createWorkspaceAuthoritySaga({
       )
         return;
       yield* put(loadRecencyData({ lastViewedAt: views }));
+    } catch (error) {
+      if (
+        dispatchIdentity() === dispatch &&
+        backendId === (yield* backendIdEffect()) &&
+        context === (yield* principalContextEffect())
+      )
+        yield* put(workspaceListReadStatusChanged(context, 'error'));
+      throw error;
     } finally {
       changes.close();
     }

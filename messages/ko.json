@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "대화 이름 변경",
   "workspace_agentRename_saving_label": "대화 이름 저장 중…",
   "workspace_agentRename_failed_description": "대화 이름을 저장하지 못했습니다. 이름을 열어 다시 시도하세요.",
-  "workspace_agentRename_unknown_description": "이름 변경 결과를 확인할 수 없습니다. 요청이 반복되지 않도록 이름 변경이 차단되었습니다."
+  "workspace_agentRename_unknown_description": "이름 변경 결과를 확인할 수 없습니다. 요청이 반복되지 않도록 이름 변경이 차단되었습니다.",
+  "workspace_quickSwitcher_open_label": "빠른 전환",
+  "workspace_quickSwitcher_scope_description": "워크스페이스 및 현재 워크스페이스의 포그라운드 대화입니다.",
+  "workspace_quickSwitcher_conversations_label": "{workspace}의 대화",
+  "workspace_quickSwitcher_unavailable_error": "목록 또는 선택한 항목을 사용할 수 없습니다. 다시 시도하여 새로 고치세요.",
+  "workspace_quickSwitcher_loadingConversations_description": "이 워크스페이스의 대화 불러오는 중…",
+  "workspace_quickSwitcher_search_ariaLabel": "워크스페이스 및 대화 검색",
+  "workspace_quickSwitcher_search_placeholder": "이름 또는 ID로 검색…",
+  "workspace_quickSwitcher_conversationsError_error": "대화를 불러오지 못했습니다."
 }

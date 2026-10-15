@@ -20,7 +20,11 @@ import {
   removeItem,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type { AgentCreationConsumer, AgentCreationOutcome } from './workspace-agents-types';
+import type {
+  AgentCreationConsumer,
+  AgentCreationOutcome,
+  WorkspaceAgentMetadataStatus,
+} from './workspace-agents-types';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
@@ -36,6 +40,7 @@ export interface WorkspaceAgentState {
   /** Ordered list of foreground agent IDs belonging to this workspace. */
   foregroundAgentIds: AgentId[];
   agentsLoaded: boolean;
+  metadataSubscription: WorkspaceAgentMetadataStatus | null;
   isLoadingAgents: boolean;
   initialAgentId: string | null;
   recentlyCreatedAgents: string[];
@@ -278,6 +283,7 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   agentIds: [],
   foregroundAgentIds: [],
   agentsLoaded: false,
+  metadataSubscription: null,
   isLoadingAgents: false,
   initialAgentId: null,
   recentlyCreatedAgents: [],
@@ -339,6 +345,12 @@ export const setInitialAgentId = createAction<[wsId: string, agentId: string | n
 export const setAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
   'workspaceAgents/setAgentsLoaded',
 );
+export const workspaceAgentMetadataStatusChanged = createAction<
+  [wsId: string, status: WorkspaceAgentMetadataStatus | null]
+>('workspaceAgents/metadataStatusChanged');
+export const workspaceAgentMetadataRetryRequested = createAction<
+  [consumerId: string, wsId: string, context: string]
+>('workspaceAgents/metadataRetryRequested');
 export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>(
   'workspaceAgents/setIsLoadingAgents',
 );
@@ -802,6 +814,22 @@ workspaceAgentsReducer.with(setInitialAgentId, (state, { payload: [wsId, initial
   }
   return setWorkspaceState(state, wsId, { ...workspaceState, initialAgentId });
 });
+workspaceAgentsReducer.with(
+  workspaceAgentMetadataStatusChanged,
+  (state, { payload: [wsId, status] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const previous = workspaceState.metadataSubscription;
+    if (
+      previous === status ||
+      (previous?.context === status?.context &&
+        previous?.status === status?.status &&
+        (previous?.status !== 'error' ||
+          (status?.status === 'error' && previous.error === status.error)))
+    )
+      return state;
+    return setWorkspaceState(state, wsId, { ...workspaceState, metadataSubscription: status });
+  },
+);
 workspaceAgentsReducer.with(setAgentsLoaded, (state, { payload: [wsId, agentsLoaded] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
   if (workspaceState.agentsLoaded === agentsLoaded) {

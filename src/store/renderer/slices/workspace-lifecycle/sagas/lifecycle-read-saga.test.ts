@@ -392,11 +392,13 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
+      { type: 'workspace/listReadStatusChanged', payload: [context, 'loading'] },
       {
         type: 'workspace/replaceWorkspaceList',
         payload: [[workspace], { complete: false, deletionTokens: {} }],
       },
       { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', context] },
+      { type: 'workspace/listReadStatusChanged', payload: [context, 'ready'] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
     await stop(run.task);

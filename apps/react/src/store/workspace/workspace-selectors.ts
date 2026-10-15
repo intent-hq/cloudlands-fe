@@ -62,3 +62,7 @@ export const selectWorkspaceDeletionTokens = store.createSelector(
 export const selectWorkspaceUpdateContext = store.createSelector(
   authority.getWorkspaceUpdateContext,
 );
+
+export const selectWorkspaceListReadStatus = store.createSelector(
+  authority.getWorkspaceListReadStatus,
+);

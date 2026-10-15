@@ -68,6 +68,15 @@ export const getAgentsLoaded = (state: WorkspaceAgentsProjectionState, wsId: str
   return getWorkspaceAgentState(state, wsId).agentsLoaded;
 };
 
+export function getWorkspaceAgentMetadataStatus(
+  state: Pick<WorkspaceAgentsProjectionState, 'workspaceAgents'>,
+  wsId: string,
+  context: string | null,
+) {
+  const status = state.workspaceAgents.byWorkspaceId[wsId]?.metadataSubscription;
+  return context && status?.context === context ? status : null;
+}
+
 export const getRetiredAgentsLoaded = (state: WorkspaceAgentsProjectionState, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).retiredAgentsLoaded;
 };

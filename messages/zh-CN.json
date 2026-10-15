@@ -7602,5 +7602,13 @@
   "workspace_agentRename_edit_label": "重命名对话",
   "workspace_agentRename_saving_label": "正在保存对话名称…",
   "workspace_agentRename_failed_description": "对话名称未保存。打开名称以重试。",
-  "workspace_agentRename_unknown_description": "重命名结果未知。为避免重复请求，重命名已被阻止。"
+  "workspace_agentRename_unknown_description": "重命名结果未知。为避免重复请求，重命名已被阻止。",
+  "workspace_quickSwitcher_open_label": "快速切换",
+  "workspace_quickSwitcher_scope_description": "工作区及当前工作区中的前台对话。",
+  "workspace_quickSwitcher_conversations_label": "{workspace} 中的对话",
+  "workspace_quickSwitcher_unavailable_error": "列表或所选项目不可用。请重试以刷新。",
+  "workspace_quickSwitcher_loadingConversations_description": "正在加载此工作区的对话…",
+  "workspace_quickSwitcher_search_ariaLabel": "搜索工作区和对话",
+  "workspace_quickSwitcher_search_placeholder": "按名称或 ID 搜索…",
+  "workspace_quickSwitcher_conversationsError_error": "无法加载对话。"
 }

@@ -60,3 +60,7 @@ export const selectFilteredForegroundWorkspaceAgents = store.createSelector(
       : agents;
   },
 );
+
+export const selectWorkspaceAgentMetadataStatus = store.createSelector(
+  projections.getWorkspaceAgentMetadataStatus,
+);

@@ -8,7 +8,10 @@ import type { AgentListOptions, AgentListResult } from '../lifecycle-read-client
 import type { AgentModelResult } from '../../../store/renderer/slices/agent-model/agent-model-types';
 import type { Unsubscribe } from '../client-types';
 import type { BackendRuntime } from './backend-transport-runtime';
-import { createDeltaSubscriptionRuntime } from './delta-subscription-runtime';
+import {
+  createDeltaSubscriptionRuntime,
+  type DeltaSubscriptionStatus,
+} from './delta-subscription-runtime';
 import { createRunMutation, mutationErrorMessage } from './backend-mutation';
 import { normalizeAgent } from './agent-normalization';
 
@@ -131,17 +134,26 @@ export function createBackendAgentClient(backend: AgentBackend) {
     subscribeWorkspaces(
       subscribeIds: (handler: (ids: readonly string[]) => void) => Unsubscribe,
       handler: (snapshot: AgentSession[], readyWorkspaceIds?: readonly string[]) => void,
+      options?: {
+        onStatus?: (workspaceId: string, status: DeltaSubscriptionStatus) => void;
+        subscribeRetry?: (listener: (workspaceId: string) => void) => Unsubscribe;
+      },
     ): Unsubscribe {
       return createDeltaSubscriptionRuntime(
         {
           channel: {
             subscribeMethod: 'agent.subscribe',
             unsubscribeMethod: 'events.unsubscribe',
-            dynamic: { subscribeIds, paramsForId: (workspaceId) => ({ workspaceId }) },
+            dynamic: {
+              subscribeIds,
+              paramsForId: (workspaceId) => ({ workspaceId }),
+              subscribeRetry: options?.subscribeRetry,
+            },
           },
           getId: (raw) => String(raw.id ?? ''),
           normalize: normalizeAgent,
           handler,
+          onStatus: options?.onStatus,
         },
         backend,
       );
