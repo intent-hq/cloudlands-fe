@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import ShareWorkspaceDialog from '../ShareWorkspaceDialog.svelte';
 import type { WorkspaceInvite } from '$features/workspace-sharing/types';
 
@@ -70,34 +71,73 @@ it('starts with anyone, no recipient field or empty guest notice, and copies onl
     expect(navigator.clipboard.writeText).toHaveBeenCalledExactlyOnceWith(settled.inviteLinks.new),
   );
 });
-it('requires a picked GitHub account, preserves its chip, copies on settlement and reuses at the cap', async () => {
+it('clears the recipient after creation and keeps the invite copyable at the cap', async () => {
   const onCreateInvite = vi.fn();
-  const { rerender } = render(ShareWorkspaceDialog, { props: { ...props, onCreateInvite } });
+  const onSearchUsers = vi.fn();
+  const callbacks = { onCreateInvite, onSearchUsers };
+  const { rerender } = render(ShareWorkspaceDialog, { props: { ...props, ...callbacks } });
   await pickAlex();
   expect(onCreateInvite).not.toHaveBeenCalled();
   await fireEvent.click(copy());
   expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('alex');
   expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
-  await rerender({ ...props, onCreateInvite, ...settled, guestCount: 1, guestLimit: 1 });
+  onSearchUsers.mockClear();
+  await rerender({ ...props, ...callbacks, ...settled, guestCount: 1, guestLimit: 1 });
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1));
-  expect(screen.getByTestId('share-pin-selected').dataset.login).toBe('alex');
+  expect(screen.queryByTestId('share-pin-selected')).toBeNull();
+  expect(
+    (screen.getByRole('combobox', { name: 'Search GitHub users' }) as HTMLInputElement).value,
+  ).toBe('');
+  expect(onSearchUsers).toHaveBeenLastCalledWith('');
+  expect(copy().hasAttribute('disabled')).toBe(true);
   expect(screen.getByText('Invited')).toBeTruthy();
   expect(screen.queryByTestId('share-member-row')).toBeNull();
-  await fireEvent.click(copy());
+  await fireEvent.click(screen.getByTestId('share-invite-copy'));
   expect(onCreateInvite).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2));
+  await pickAlex();
+  await fireEvent.click(copy());
+  expect(onCreateInvite).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(3));
 });
-it('allows a manual copy retry after the clipboard rejects, without minting another invite', async () => {
+it('allows copy retry from the invite row after clearing the recipient, without minting another invite', async () => {
   vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('permission denied'));
   const onCreateInvite = vi.fn();
   const { rerender } = render(ShareWorkspaceDialog, { props: { ...props, onCreateInvite } });
   await pickAlex();
   await fireEvent.click(copy());
   await rerender({ ...props, onCreateInvite, ...settled });
-  await waitFor(() => expect(copy().hasAttribute('disabled')).toBe(false));
-  await fireEvent.click(copy());
+  await waitFor(() => expect(screen.queryByTestId('share-pin-selected')).toBeNull());
+  await fireEvent.click(screen.getByTestId('share-invite-copy'));
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2));
   expect(onCreateInvite).toHaveBeenCalledTimes(1);
+});
+it('retains the recipient when creation fails so it can be retried', async () => {
+  const onCreateInvite = vi.fn();
+  const { rerender } = render(ShareWorkspaceDialog, { props: { ...props, onCreateInvite } });
+  await pickAlex();
+  await fireEvent.click(copy());
+  await rerender({ ...props, onCreateInvite, createError: 'Could not create invite' });
+  expect(screen.getByTestId('share-pin-selected').dataset.login).toBe('alex');
+  await fireEvent.click(copy());
+  expect(onCreateInvite).toHaveBeenCalledTimes(2);
+});
+it('does not clear a new search when the earlier clipboard write finishes', async () => {
+  let finishCopy!: () => void;
+  vi.mocked(navigator.clipboard.writeText).mockImplementationOnce(
+    () => new Promise<void>((resolve) => (finishCopy = resolve)),
+  );
+  const { rerender } = render(ShareWorkspaceDialog, {
+    props: { ...props, onCreateInvite: vi.fn() },
+  });
+  await pickAlex();
+  await fireEvent.click(copy());
+  await rerender({ ...props, ...settled });
+  const input = screen.getByRole('combobox', { name: 'Search GitHub users' }) as HTMLInputElement;
+  await fireEvent.input(input, { target: { value: 'sam' } });
+  finishCopy();
+  await tick();
+  expect(input.value).toBe('sam');
 });
 it.each([
   { open: false },

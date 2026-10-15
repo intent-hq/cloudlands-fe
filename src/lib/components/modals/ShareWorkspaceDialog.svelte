@@ -45,6 +45,8 @@
 
   /** Rows shown in the pin typeahead (the daemon default page size). */
   const MAX_USER_SUGGESTIONS = 8;
+  const sharingActionStyle =
+    '--color-primary: var(--color-foreground); --color-primary-foreground: var(--color-background)';
 
   interface Props {
     open?: boolean;
@@ -380,6 +382,7 @@
     );
     if (!invite) return;
     pendingCopy = null;
+    untrack(() => void clearSelectedUser());
     void copyLink(inviteLinks[invite.id]);
   });
 
@@ -429,6 +432,8 @@
   async function clearSelectedUser() {
     selectedUser = null;
     pinLogin = '';
+    dismissSuggestions();
+    onSearchUsers?.('');
     await tick();
     pinInput?.focus();
   }
@@ -629,7 +634,12 @@
                 : m.workspace_share_githubRequired_description()}
             </p>
             <div class="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
+              <Button
+                variant="primary"
+                style={sharingActionStyle}
+                size="sm"
+                onclick={() => onConnectGitHub?.()}
+              >
                 {m.workspace_share_connectGithub_label()}
               </Button>
               {#if gitlabEnabled}
@@ -707,7 +717,8 @@
                   </Select.Root>
                 </div>
                 <Button
-                  variant="secondary"
+                  variant="primary"
+                  style={sharingActionStyle}
                   size="sm"
                   disabled={!selectedPrincipal || loading || busy || atGuestCap}
                   title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
@@ -781,14 +792,14 @@
               {#if restricted && forgeConnected}
                 {#if selectedUser}
                   <div
-                    class="flex h-(--control-height-medium) min-w-0 flex-1 basis-60 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
+                    class="flex min-h-(--control-height-medium) min-w-0 flex-1 basis-60 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2 py-1.5"
                     role="group"
                     aria-label={m.workspace_share_pinLogin_placeholder()}
                     data-testid="share-pin-selected"
                     data-login={selectedUser.login}
                   >
                     <span
-                      class="flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-1.5 py-0.5"
+                      class="flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5"
                     >
                       {@render userAvatar(selectedUser)}
                       <span class="min-w-0 truncate text-xs">@{selectedUser.login}</span>
@@ -923,6 +934,8 @@
               <Button
                 type="submit"
                 variant="primary"
+                style={sharingActionStyle}
+                class="h-auto min-h-(--control-height-medium) self-stretch"
                 disabled={!sharingReady ||
                   creating ||
                   !!pendingCopy ||

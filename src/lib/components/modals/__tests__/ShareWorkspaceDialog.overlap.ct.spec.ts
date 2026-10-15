@@ -111,7 +111,7 @@ test('Tab dismisses suggestions; Copy remains disabled until a recipient is pick
   page,
 }) => {
   let invitedLogin: string | undefined;
-  await mount(ShareWorkspaceDialog, {
+  const component = await mount(ShareWorkspaceDialog, {
     props: { ...props, onCreateInvite: (login: string) => (invitedLogin = login) },
   });
   await pickGithub(page);
@@ -131,6 +131,28 @@ test('Tab dismisses suggestions; Copy remains disabled until a recipient is pick
   await create.focus();
   await create.press('Enter');
   await expect.poll(() => invitedLogin).toBe('wattenberger0');
+  await component.update({
+    props: {
+      ...props,
+      createdLink: { inviteId: 'created', pinLogin: 'wattenberger0' },
+      invites: [
+        {
+          id: 'created',
+          workspaceId: props.workspaceId,
+          createdByPrincipalId: 'owner',
+          pinLogin: 'wattenberger0',
+          pinGithubUserId: 1,
+          createdAt: '2026-10-15T00:00:00Z',
+          expiresAt: '2099-10-16T00:00:00Z',
+        },
+      ],
+      inviteLinks: { created: 'intent://invite?fixture=created' },
+    },
+  });
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+  await expect(page.getByTestId('share-pin-selected')).toBeHidden();
+  await expect(page.getByTestId('share-invite-copy')).toBeEnabled();
 });
 
 test('opening the other picker dismisses suggestions, and Escape closes one layer at a time', async ({
