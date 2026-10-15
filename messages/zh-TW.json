@@ -7621,5 +7621,6 @@
   "react_workspace_messageText_unavailable_description": "無法取得完整訊息文字。不包含工具輸出和附件。",
   "workspace_taskStatus_unknown_description": "結果未知。請勿重複此變更；繼續前請檢查已儲存的任務。",
   "workspace_taskStatus_refresh_description": "再次變更狀態前，請重新整理已儲存的任務。",
-  "workspace_taskStatus_failed_description": "狀態未變更。請選擇狀態重試。"
+  "workspace_taskStatus_failed_description": "狀態未變更。請選擇狀態重試。",
+  "desktop_shell_unported_description": "桌面移植版尚未包含此檢視。"
 }

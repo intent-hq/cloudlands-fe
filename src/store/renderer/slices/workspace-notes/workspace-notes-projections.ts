@@ -151,3 +151,12 @@ export function isExplicitNoteContentSupported(content: string): boolean {
     new TextDecoder().decode(encoded) === content
   );
 }
+
+export const getSpec = (
+  state: WorkspaceNotesProjectionState,
+  workspaceId: string,
+): Note | undefined => {
+  const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
+  if (!ws) return undefined;
+  return getItem(ws.notes, SPEC_NOTE_ID as Note['id']);
+};

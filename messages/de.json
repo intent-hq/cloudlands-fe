@@ -7621,5 +7621,6 @@
   "react_workspace_messageText_unavailable_description": "Der vollständige Nachrichtentext ist nicht verfügbar. Werkzeugausgaben und Anhänge sind nicht enthalten.",
   "workspace_taskStatus_unknown_description": "Das Ergebnis ist unbekannt. Wiederhole diese Änderung nicht; prüfe zuerst die gespeicherte Aufgabe.",
   "workspace_taskStatus_refresh_description": "Aktualisiere die gespeicherte Aufgabe vor einer weiteren Statusänderung.",
-  "workspace_taskStatus_failed_description": "Der Status wurde nicht geändert. Wähle einen Status, um es erneut zu versuchen."
+  "workspace_taskStatus_failed_description": "Der Status wurde nicht geändert. Wähle einen Status, um es erneut zu versuchen.",
+  "desktop_shell_unported_description": "Diese Ansicht ist noch nicht in der Desktop-Portierung enthalten."
 }

@@ -7621,5 +7621,6 @@
   "react_workspace_messageText_unavailable_description": "Complete message text is unavailable. Tool output and attachments are not included.",
   "workspace_taskStatus_unknown_description": "The outcome is unknown. Do not repeat this change; check the saved task before continuing.",
   "workspace_taskStatus_refresh_description": "Refresh the saved task before another status change.",
-  "workspace_taskStatus_failed_description": "The status was not changed. Select a status to try again."
+  "workspace_taskStatus_failed_description": "The status was not changed. Select a status to try again.",
+  "desktop_shell_unported_description": "This view is not included in the desktop port yet."
 }

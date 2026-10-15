@@ -1,3 +1,4 @@
+import { resolveWorkspaceReopenTarget } from './workspace-reopen-target';
 import type { StoreState } from '$store/renderer/types';
 import {
   closeWorkspaceTab,
@@ -294,11 +295,8 @@ export function reopenPanelOrWorkspaceTab(
   const lastClosedWorkspace = selectLastClosedWorkspaceTab.select(store.state);
   const lastPanelClose = workspaceId ? selectLastPanelClose.select(store.state, workspaceId) : null;
 
-  if (
-    workspaceId &&
-    lastPanelClose &&
-    (!lastClosedWorkspace || lastPanelClose.closedAt >= lastClosedWorkspace.closedAt)
-  ) {
+  const target = resolveWorkspaceReopenTarget(workspaceId, lastPanelClose, lastClosedWorkspace);
+  if (workspaceId && lastPanelClose && (target === 'column' || target === 'tab')) {
     if (lastPanelClose.kind === 'column') {
       store.dispatch(reopenClosedPanelColumn(workspaceId));
       return 'column';

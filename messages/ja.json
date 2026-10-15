@@ -7621,5 +7621,6 @@
   "react_workspace_messageText_unavailable_description": "メッセージ全文を利用できません。ツールの出力と添付ファイルは含まれません。",
   "workspace_taskStatus_unknown_description": "結果は不明です。この変更を繰り返さず、保存されたタスクを確認してから続行してください。",
   "workspace_taskStatus_refresh_description": "再びステータスを変更する前に、保存済みのタスクを更新してください。",
-  "workspace_taskStatus_failed_description": "ステータスは変更されませんでした。再試行するにはステータスを選択してください。"
+  "workspace_taskStatus_failed_description": "ステータスは変更されませんでした。再試行するにはステータスを選択してください。",
+  "desktop_shell_unported_description": "このビューはデスクトップ版への移植にまだ含まれていません。"
 }

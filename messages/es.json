@@ -7621,5 +7621,6 @@
   "react_workspace_messageText_unavailable_description": "El texto completo del mensaje no está disponible. No se incluyen los resultados de herramientas ni los archivos adjuntos.",
   "workspace_taskStatus_unknown_description": "El resultado es desconocido. No repitas este cambio; comprueba la tarea guardada antes de continuar.",
   "workspace_taskStatus_refresh_description": "Actualiza la tarea guardada antes de volver a cambiar su estado.",
-  "workspace_taskStatus_failed_description": "El estado no cambió. Selecciona un estado para volver a intentarlo."
+  "workspace_taskStatus_failed_description": "El estado no cambió. Selecciona un estado para volver a intentarlo.",
+  "desktop_shell_unported_description": "Esta vista aún no está incluida en la adaptación de escritorio."
 }

@@ -1,3 +1,4 @@
+import { startDesktopRuntime } from './store/desktop/desktop-runtime';
 import { taskStatusSaga } from './store/workspace-tasks/sagas/task-status-saga';
 import { agentRenameSaga } from './store/agent-session/sagas/agent-rename-saga';
 import { workspaceTitleSaga } from './store/workspace/sagas/workspace-title-saga';
@@ -63,6 +64,9 @@ const cancelWorkspaceTitleSaga = store.runSaga(workspaceTitleSaga);
 const cancelFileExplorerSaga = store.runSaga(fileExplorerSaga);
 const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
 const cancelReadOnlyChatSaga = store.runSaga(readOnlyChatSaga);
+const disposeDesktop = /^\/workspace(?:\/|$)/.test(window.location.pathname)
+  ? startDesktopRuntime()
+  : undefined;
 if (hasAutoUpdatePreload()) store.dispatch(initAutoUpdate());
 let root: ReturnType<typeof hydrateRoot>;
 startTransition(() => {
@@ -74,8 +78,13 @@ startTransition(() => {
   );
 });
 
+let disposed = false;
 function dispose() {
+  if (disposed) return;
+  disposed = true;
+  window.removeEventListener('pagehide', dispose);
   root?.unmount();
+  disposeDesktop?.();
   cancelCatalogSaga();
   cancelSidebarPreferencesSaga();
   cancelAutoUpdateSaga();
@@ -106,6 +115,8 @@ function dispose() {
   cancelBackendConnectionSaga();
   disposeStore();
 }
+
+window.addEventListener('pagehide', dispose, { once: true });
 
 if (import.meta.hot) {
   import.meta.hot.dispose(dispose);

@@ -1,0 +1,586 @@
+/* Source geometry: WindowTitleBar, WorkspaceLayout, MultiSelectTabbedSidebar,
+   PanelCanvasFrame, Panel/PanelTabBar and RenderedNotePreview. */
+.desktop-app {
+  height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  font-family: var(--font-ui);
+}
+.desktop-titlebar {
+  height: 35px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 2px 8px 0;
+  -webkit-app-region: drag;
+}
+.desktop-titlebar button {
+  -webkit-app-region: no-drag;
+}
+.desktop-titlebar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+}
+.desktop-titlebar-drag {
+  width: 24px;
+  flex: none;
+}
+.desktop-workspace-tabs {
+  display: flex;
+  align-self: stretch;
+  padding-left: 12px;
+  gap: 6px;
+}
+.desktop-workspace-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+.desktop-workspace-tab.active {
+  z-index: 1;
+  background: var(--color-sidebar);
+  border-color: var(--color-border);
+}
+.desktop-workspace-tab-title {
+  padding: 0 !important;
+  height: 33px !important;
+  font-size: 13px;
+  letter-spacing: inherit;
+  gap: 4px !important;
+  padding: 0 4px 0 12px !important;
+  text-align: left;
+}
+.desktop-workspace-tab [data-workspace-tab-close] {
+  position: absolute;
+  right: 4px;
+  width: 28px !important;
+  height: 28px !important;
+  color: var(--color-subtle);
+  border-radius: 4px;
+}
+.desktop-workspace-frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin: 0 8px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-sidebar);
+  box-shadow: var(--shadow-sm);
+}
+.desktop-surfaces {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.desktop-retained-surface {
+  position: absolute;
+  inset: 0;
+}
+.desktop-workspace-page {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  background: var(--color-sidebar);
+}
+.desktop-sidebar {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100%;
+  flex: none;
+  min-width: 280px;
+}
+.desktop-sidebar-header {
+  padding: 21px 24px 8px;
+}
+.desktop-sidebar-header h1 {
+  margin: 0 0 2px;
+}
+.desktop-sidebar-fill {
+  flex: 1;
+  min-height: 0;
+}
+.desktop-context-card {
+  margin: 0 16px;
+  height: 600px;
+  flex-shrink: 1;
+  min-height: 120px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-sidebar);
+  overflow: auto;
+}
+.desktop-context-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 2px;
+}
+.desktop-context-heading h2 {
+  margin: 0;
+}
+.desktop-context-card p {
+  margin: 0;
+}
+.desktop-sidebar-dock {
+  display: flex;
+  justify-content: center;
+  flex: none;
+  padding: 12px 24px;
+  gap: 3px;
+}
+.desktop-sidebar-dock.expanded {
+  align-self: center;
+  margin: 12px 16px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.desktop-sidebar-dock .resource-icon-tile {
+  width: 24px;
+  height: 24px;
+}
+.desktop-launchers {
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.desktop-launcher {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start !important;
+  height: 94px !important;
+  padding: 8px !important;
+  gap: 8px !important;
+  border-radius: 12px !important;
+}
+.desktop-launcher-icon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.desktop-panel-viewport {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px 12px 12px 0;
+}
+.desktop-panel-canvas {
+  flex: none;
+  height: 100%;
+}
+.desktop-panel-split {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+}
+.desktop-panel-split.vertical {
+  flex-direction: column;
+}
+.desktop-split-child {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.desktop-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  outline: none;
+  background: var(--color-sidebar);
+}
+.desktop-panel.populated {
+  background: var(--color-background);
+}
+.desktop-panel-header {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px;
+}
+.desktop-panel-picker {
+  max-width: calc(100% - 72px);
+  height: 36px !important;
+  gap: 8px !important;
+  padding: 4px 11px 4px 4px !important;
+  border: 1px solid var(--color-border);
+  border-radius: 9px !important;
+  font-size: 13px;
+}
+.desktop-panel-picker .resource-icon-tile {
+  width: 26px;
+  height: 26px;
+}
+.desktop-panel-content {
+  min-height: 0;
+  flex: 1;
+  position: relative;
+}
+.desktop-panel-tab-content {
+  height: 100%;
+}
+.desktop-panel-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.desktop-resize-handle {
+  border-radius: 0 !important;
+  padding: 0 !important;
+  min-width: 0 !important;
+  flex: none;
+  background: transparent !important;
+  z-index: 20;
+  touch-action: none;
+}
+.desktop-resize-handle.sidebar {
+  position: absolute !important;
+  right: -3px;
+  width: 6px !important;
+  height: 100% !important;
+  cursor: col-resize;
+}
+.desktop-resize-handle.horizontal {
+  width: 8px !important;
+  height: 100% !important;
+  cursor: col-resize;
+}
+.desktop-resize-handle.vertical {
+  height: 8px !important;
+  width: 100% !important;
+  cursor: row-resize;
+}
+.desktop-workspace-directory {
+  width: 360px;
+  padding: 24px;
+}
+.desktop-titlebar {
+  padding-right: 16px;
+}
+.desktop-titlebar-tabs {
+  flex: 1;
+}
+.desktop-workspace-tab {
+  min-width: 160px;
+}
+.desktop-workspace-tab-title {
+  flex: 1;
+  justify-content: flex-start !important;
+}
+.desktop-workspace-tab [data-workspace-tab-close] {
+  opacity: 0;
+}
+.desktop-workspace-tab.active [data-workspace-tab-close] {
+  opacity: 0.7;
+}
+
+.desktop-workspace-tab:hover [data-workspace-tab-close],
+.desktop-workspace-tab:focus-within [data-workspace-tab-close] {
+  opacity: 1;
+}
+.desktop-sidebar-dock.expanded {
+  width: 200px;
+  height: 40px;
+  margin: 8px auto 12px;
+  padding: 3px;
+  gap: 0;
+}
+.desktop-sidebar-dock.expanded button {
+  flex: 1 1 0;
+  height: 32px !important;
+  min-width: 0;
+  color: var(--color-subtle);
+  gap: 0;
+  border-radius: var(--radius-md);
+  padding: 8px !important;
+}
+.desktop-sidebar-dock.expanded button[aria-pressed='true'] {
+  color: var(--color-foreground);
+}
+.desktop-panel {
+  box-shadow: var(--elevation-raised);
+  border: 1px solid transparent;
+}
+.desktop-panel[data-panel-focused='true'] {
+  border-color: var(--color-border);
+}
+.desktop-panel-header {
+  padding: 0 8px;
+}
+.desktop-panel-header button svg {
+  width: 16px;
+  height: 16px;
+}
+.desktop-panel-picker {
+  background: var(--color-sidebar) !important;
+}
+.desktop-panel-empty {
+  padding: 32px 24px;
+}
+.desktop-home {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+.desktop-home-sidebar {
+  flex: none;
+  width: 224px;
+  padding: 18px 8px 12px;
+}
+.desktop-home-destinations {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--color-background);
+}
+.desktop-home-destinations button {
+  padding: 4px !important;
+  height: 28px !important;
+}
+.desktop-home-main {
+  flex: 1;
+  min-width: 0;
+  margin: 12px 12px 12px 0;
+  background: var(--color-background);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.desktop-home-header {
+  height: 48px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+.desktop-home-header > button[aria-pressed='true'] {
+  border-radius: 0;
+  height: 100%;
+  border-bottom: 1px solid var(--color-foreground);
+}
+.desktop-home-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+}
+.desktop-home-filters input {
+  width: 192px;
+  background: var(--color-sidebar);
+  border: 0;
+  border-radius: 12px;
+}
+.desktop-home-row {
+  width: 100%;
+  height: 48px !important;
+  display: flex;
+  gap: 16px;
+  padding: 4px 16px !important;
+  border-bottom: 1px solid var(--color-border);
+  justify-content: flex-start !important;
+  font-size: 16px;
+}
+.desktop-home-preview {
+  width: 460px;
+  flex: none;
+  margin: 12px 12px 12px 0;
+  border-radius: 12px;
+  background: var(--color-background);
+}
+.desktop-home-preview header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+/* Mounted source app-layout.css platform chrome stack; MarkdownViewer retains Inter. */
+.desktop-app {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+.desktop-titlebar-drag {
+  width: 17px;
+}
+.desktop-titlebar-tabs > button:first-of-type {
+  width: 48px !important;
+}
+.desktop-workspace-tabs {
+  padding-left: 0;
+  margin-left: -1px;
+  height: 32px;
+  align-self: flex-end;
+}
+.desktop-workspace-tab-title {
+  font-weight: 500;
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: calc(100% + 2px);
+  border-radius: inherit;
+}
+.desktop-sidebar-header h1 {
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 30px;
+  font-weight: 600;
+  margin: 0;
+}
+.desktop-sidebar-header > div:first-child {
+  gap: 0;
+}
+.desktop-sidebar-header > div:first-child > button {
+  align-self: flex-start;
+  margin-right: -8px;
+  width: 28px !important;
+  color: var(--color-subtle);
+  opacity: 0.5;
+}
+.desktop-sidebar-header > div:last-child {
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: -0.01em;
+  gap: 10px;
+  margin-top: 1px;
+}
+.desktop-context-card {
+  margin-bottom: 4px;
+}
+.desktop-context-card > div:last-child {
+  padding-left: 4px;
+  padding-right: 4px;
+  padding-top: 12px;
+}
+.desktop-context-card [data-slot='list-item-row'] {
+  min-height: 34px;
+}
+.desktop-context-card [data-slot='list-item-row'] .type-body {
+  font-size: 15px;
+  font-family: inherit;
+  line-height: 22px;
+}
+.desktop-context-heading {
+  padding-top: 16px;
+  gap: 4px;
+}
+.desktop-context-heading h2 {
+  font-family: inherit;
+}
+.desktop-panel-picker {
+  width: 194px;
+  padding: 4px 11px 4px 4px !important;
+  gap: 8px !important;
+}
+.desktop-panel-picker .truncate {
+  flex: 1;
+  text-align: left;
+  font-size: 12px;
+  line-height: 14.4px;
+  font-weight: 500;
+}
+.desktop-workspace-page.sidebar-right {
+  flex-direction: row-reverse;
+}
+.desktop-workspace-page.sidebar-right .desktop-panel-viewport {
+  padding-left: 12px;
+  padding-right: 0;
+}
+.desktop-resize-handle.sidebar.right {
+  right: auto;
+  left: -3px;
+}
+
+.desktop-panel-header > button:not(.desktop-panel-picker) {
+  color: var(--color-subtle);
+}
+.desktop-sidebar-header > div:first-child > button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Source WindowTitleBar control sizes and PanelTabBar leading/caret artwork. */
+.desktop-home-tab {
+  align-self: flex-end;
+  height: 32px !important;
+  border-radius: 0;
+  color: var(--color-subtle);
+}
+.desktop-home-tab svg,
+.desktop-settings svg,
+.desktop-sidebar-dock button svg {
+  width: 16px;
+  height: 16px;
+}
+.desktop-new-workspace {
+  align-self: flex-end;
+  width: 32px !important;
+  height: 32px !important;
+  margin-left: 2px;
+}
+.desktop-daemon-status {
+  margin-right: 4px;
+}
+.desktop-settings {
+  width: 32px !important;
+  height: 32px !important;
+}
+.desktop-workspace-tab-close-space {
+  width: 28px;
+  flex: none;
+}
+.desktop-panel-picker .resource-icon-tile {
+  --resource-icon-glyph-size: 16px;
+  flex: none;
+}
+.desktop-panel-picker svg.desktop-panel-picker-caret {
+  width: 8px;
+  height: 14px;
+  flex: none;
+}
+.desktop-sidebar-dock.expanded {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: calc(var(--radius-lg) + 3px);
+  background: var(--color-sidebar);
+  box-shadow: var(--elevation-raised);
+}
+.desktop-sidebar-dock-indicator {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: calc((100% - 8px) / 6);
+  transform: translateX(100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}

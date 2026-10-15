@@ -1,7 +1,46 @@
-# React application preview
+# React desktop port and application preview
 
-This is an internal, unreleased application preview. `/workspaces` connects to an
-existing local Intent daemon; `/sandbox` is the component catalog.
+Both routes below are internal and unreleased. The desktop port follows the mounted
+Svelte workspace shell. The older `/workspaces` browser preview is a separate
+integration surface; its receipts do not establish desktop fidelity. `/sandbox`
+remains the component catalog.
+
+## Faithful desktop shell checkpoint
+
+Install the committed dependency graph with the root Node/pnpm versions, then use
+the existing Electron launcher from the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+INTENT_DEV_REACT_DESKTOP=1 pnpm run dev:cdp -- --react
+```
+
+This opens `/workspace` through the real Electron main process and preload. For an
+owned daemon, also set `INTENTD_SIDECAR=0` and
+`INTENTD_SOCKET=/absolute/owned/intentd.sock`; keep its profile and data separate from
+a live user app. The normal Svelte launcher remains `pnpm run dev:cdp`. This is a
+development renderer choice, not a packaged application cutover.
+
+Select an existing workspace on Home and choose **Open workspace**. The port uses
+the source desktop tab strip, floating workspace frame, Context sidebar and bottom
+dock. Open a genuine note from **Context**; Ctrl/Cmd-click another note to open it
+adjacent. Select panes from their header picker, drag the divider or sidebar edge,
+and use Ctrl/Cmd-Backslash to split a column or Ctrl/Cmd-W to close focused content. Ctrl/Cmd-Shift-T
+reopens the most recently closed panel content or workspace tab, using the source
+close timestamps. Closing a pane and closing a whole column are distinct operations. Workspace switching retains mounted panels;
+reload restores the canonical saved layout and sidebar width.
+
+This checkpoint renders notes in **Rendered preview**, paired against that explicit
+Svelte mode. Rich note editing, agent/chat/terminal/browser/file bodies, workspace
+creation, Settings, PR/issue previews and the full Home detail surface are not
+ported here. Their entrypoints disclose this boundary. This is not full desktop
+parity: pane dragging, the complete leader-key system and remaining inner-view
+actions still require source-matched migration. No provider is needed for the
+workspace/notes shell. Acceptance is limited to actual Linux Electron windows and
+owned data; historical browser or narrow-width checks are not desktop proof.
+
+Guide impact: internal development entrypoint and bounded shell only. The released
+assistant app guide remains unchanged; no companion release is requested.
 
 ## Fresh checkout on macOS or Linux
 

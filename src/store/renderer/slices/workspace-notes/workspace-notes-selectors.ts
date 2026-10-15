@@ -6,8 +6,6 @@
 
 import { store } from '../../store';
 import * as projections from './workspace-notes-projections';
-import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import type { Note } from '$shared/types';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
 import type { NoteVersionsState } from './workspace-notes-types';
@@ -79,11 +77,7 @@ export const selectNoteAttributionView = store.createSelector(
 
 export const selectNoteById = store.createSelector(projections.getNoteById);
 
-export const selectSpec = store.createSelector((state, workspaceId: string): Note | undefined => {
-  const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
-  if (!ws) return undefined;
-  return getItem(ws.notes, SPEC_NOTE_ID as Note['id']);
-});
+export const selectSpec = store.createSelector(projections.getSpec);
 
 export const selectAllNotes = store.createSelector(projections.getAllNotes);
 

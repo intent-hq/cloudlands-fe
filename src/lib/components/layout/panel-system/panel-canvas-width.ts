@@ -8,7 +8,7 @@ import {
   PANEL_SPLIT_GUTTER_WIDTH,
   type PanelCanvasSizing,
 } from '$shared/panel-layout-sizing';
-import type { PanelCanvasWidthSource } from '$store/renderer/slices/panel-layout/panel-layout-width-provenance';
+import type { PanelCanvasWidthSource } from '../../../../store/renderer/slices/panel-layout/panel-layout-width-provenance';
 
 /** Convert a padding-inclusive DOM client width to the usable canvas viewport. */
 export function getPanelViewportContentWidth(

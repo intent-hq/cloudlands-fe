@@ -3,7 +3,13 @@
  */
 
 import { store } from '../../store';
-import { getMultiSelectSidebarSelectedTabIds } from './sidebar-nav-projections';
+import {
+  getMultiSelectSidebarSelectedTabIds,
+  getPinnedWorkspaceIds,
+  getChiefActiveAgentId,
+  getWorkspaceNoteOrder,
+  getWorkspaceCollapsedNoteIds,
+} from './sidebar-nav-projections';
 import type { StoreState } from '../../types';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type ChiefThreadSummary } from './sidebar-nav-types';
@@ -93,27 +99,17 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectPinnedWorkspaceIds = store.createSelector(
-  (state) => state.sidebarNav.pinnedWorkspaceIds,
-);
+export const selectPinnedWorkspaceIds = store.createSelector(getPinnedWorkspaceIds);
 
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
   getMultiSelectSidebarSelectedTabIds,
 );
 
-export const selectWorkspaceNoteOrder = store.createSelector(
-  (state, workspaceId: string): string[] =>
-    state.sidebarNav.noteOrderByWorkspaceId[workspaceId] ?? [],
-);
+export const selectWorkspaceNoteOrder = store.createSelector(getWorkspaceNoteOrder);
 
-export const selectWorkspaceCollapsedNoteIds = store.createSelector(
-  (state, workspaceId: string): string[] =>
-    state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
-);
+export const selectWorkspaceCollapsedNoteIds = store.createSelector(getWorkspaceCollapsedNoteIds);
 
-export const selectChiefActiveAgentId = store.createSelector(
-  (state): string | null => state.sidebarNav.chiefActiveAgentId,
-);
+export const selectChiefActiveAgentId = store.createSelector(getChiefActiveAgentId);
 
 export const selectAssistantThreadActivity = store.createSelector((state, agentId: string) => {
   const session = state.agentSessions.byAgentId[agentId];

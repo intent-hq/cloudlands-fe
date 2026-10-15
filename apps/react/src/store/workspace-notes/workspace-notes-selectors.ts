@@ -5,3 +5,5 @@ export const selectWorkspaceNotesState = store.createSelector(projections.getWor
 export const selectNoteById = store.createSelector(projections.getNoteById);
 export const selectNoteContentView = store.createSelector(projections.getNoteContentView);
 export const selectAllNotes = store.createSelector(projections.getAllNotes);
+
+export const selectSpec = store.createSelector(projections.getSpec);

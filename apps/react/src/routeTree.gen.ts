@@ -10,15 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
 import { Route as SandboxIndexRouteImport } from './routes/sandbox.index'
 import { Route as SandboxSplatRouteImport } from './routes/sandbox.$'
+import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as WorkspaceWorkspaceIdRouteImport } from './routes/workspace.$workspaceId'
 import { Route as WorkspacesIndexRouteImport } from './routes/workspaces.index'
 import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspacesRoute = WorkspacesRouteImport.update({
@@ -36,6 +44,16 @@ const SandboxSplatRoute = SandboxSplatRouteImport.update({
   path: '/sandbox/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceWorkspaceIdRoute = WorkspaceWorkspaceIdRouteImport.update({
+  id: '/$workspaceId',
+  path: '/$workspaceId',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -49,52 +67,73 @@ const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/sandbox/$': typeof SandboxSplatRoute
+  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/sandbox/': typeof SandboxIndexRoute
+  '/workspace/': typeof WorkspaceIndexRoute
   '/workspaces/': typeof WorkspacesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sandbox/$': typeof SandboxSplatRoute
+  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/sandbox': typeof SandboxIndexRoute
+  '/workspace': typeof WorkspaceIndexRoute
   '/workspaces': typeof WorkspacesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/sandbox/$': typeof SandboxSplatRoute
+  '/workspace/$workspaceId': typeof WorkspaceWorkspaceIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/sandbox/': typeof SandboxIndexRoute
+  '/workspace/': typeof WorkspaceIndexRoute
   '/workspaces/': typeof WorkspacesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/workspace'
     | '/workspaces'
     | '/sandbox/$'
+    | '/workspace/$workspaceId'
     | '/workspaces/$workspaceId'
     | '/sandbox/'
+    | '/workspace/'
     | '/workspaces/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/sandbox/$' | '/workspaces/$workspaceId' | '/sandbox' | '/workspaces'
+    | '/'
+    | '/sandbox/$'
+    | '/workspace/$workspaceId'
+    | '/workspaces/$workspaceId'
+    | '/sandbox'
+    | '/workspace'
+    | '/workspaces'
   id:
     | '__root__'
     | '/'
+    | '/workspace'
     | '/workspaces'
     | '/sandbox/$'
+    | '/workspace/$workspaceId'
     | '/workspaces/$workspaceId'
     | '/sandbox/'
+    | '/workspace/'
     | '/workspaces/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  WorkspaceRoute: typeof WorkspaceRouteWithChildren
   WorkspacesRoute: typeof WorkspacesRouteWithChildren
   SandboxSplatRoute: typeof SandboxSplatRoute
   SandboxIndexRoute: typeof SandboxIndexRoute
@@ -107,6 +146,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspaces': {
@@ -130,6 +176,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SandboxSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/': {
+      id: '/workspace/'
+      path: '/'
+      fullPath: '/workspace/'
+      preLoaderRoute: typeof WorkspaceIndexRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/$workspaceId': {
+      id: '/workspace/$workspaceId'
+      path: '/$workspaceId'
+      fullPath: '/workspace/$workspaceId'
+      preLoaderRoute: typeof WorkspaceWorkspaceIdRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
     '/workspaces/': {
       id: '/workspaces/'
       path: '/'
@@ -147,6 +207,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface WorkspaceRouteChildren {
+  WorkspaceWorkspaceIdRoute: typeof WorkspaceWorkspaceIdRoute
+  WorkspaceIndexRoute: typeof WorkspaceIndexRoute
+}
+
+const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceWorkspaceIdRoute: WorkspaceWorkspaceIdRoute,
+  WorkspaceIndexRoute: WorkspaceIndexRoute,
+}
+
+const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
+  WorkspaceRouteChildren,
+)
+
 interface WorkspacesRouteChildren {
   WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
   WorkspacesIndexRoute: typeof WorkspacesIndexRoute
@@ -163,6 +237,7 @@ const WorkspacesRouteWithChildren = WorkspacesRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  WorkspaceRoute: WorkspaceRouteWithChildren,
   WorkspacesRoute: WorkspacesRouteWithChildren,
   SandboxSplatRoute: SandboxSplatRoute,
   SandboxIndexRoute: SandboxIndexRoute,

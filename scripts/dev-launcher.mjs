@@ -132,7 +132,12 @@ function runDev(ports, cdpMode = false, devName = '', reactPreview = false) {
   if (reactPreview) process.env.NODE_ENV = 'development';
 
   console.log(`\n🚀 Starting Intent [${label}]...\n`);
-  if (reactPreview) console.log('  React migration preview: opening /sandbox');
+  if (reactPreview)
+    console.log(
+      process.env.INTENT_DEV_REACT_DESKTOP === '1'
+        ? '  React desktop shell: opening /workspace'
+        : '  React migration preview: opening /sandbox',
+    );
 
   // Set environment variables directly on process.env for cross-platform compatibility
   process.env.DEV_PORT = String(ports.devPort);
