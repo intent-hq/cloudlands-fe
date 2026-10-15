@@ -4,6 +4,7 @@ import { selectWorkspaceById } from '../workspace/workspace-selectors';
 import {
   projectFileExplorerState,
   projectFlattenedNodes,
+  getFileSearch,
 } from '../../../../../src/store/renderer/slices/file-explorer/file-explorer-projections';
 
 export const selectFileExplorerRoot = store.createSelector((state, workspaceId: string) => {
@@ -20,4 +21,9 @@ export const selectFileExplorerState = store.createSelector((state, workspaceId:
 );
 export const selectFileExplorerRows = store.createSelector((state, workspaceId: string) =>
   projectFlattenedNodes(selectFileExplorerState.select(state, workspaceId), false),
+);
+
+export const selectFileSearch = store.createSelector(
+  (state, workspaceId: string, consumerId: string, context?: string) =>
+    getFileSearch(state.fileExplorer, workspaceId, consumerId, context),
 );

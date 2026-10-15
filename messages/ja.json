@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "このターミナルを閉じて実行中のプロセスを停止しますか？",
   "workspace_terminal_reconnect_label": "再接続",
   "workspace_terminal_detach_label": "ターミナルを隠す",
-  "workspace_terminal_ready_label": "ターミナル準備完了"
+  "workspace_terminal_ready_label": "ターミナル準備完了",
+  "workspace_fileFinder_invalid_error": "検索結果に無効なワークスペースのパスが含まれています。",
+  "workspace_fileFinder_limited_description": "最初の100件を表示しています。検索条件を絞り込んでください。"
 }

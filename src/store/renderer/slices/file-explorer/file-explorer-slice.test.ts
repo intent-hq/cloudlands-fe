@@ -2,10 +2,12 @@ import type { FileGitStatus, FileNode } from '$shared/types';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { getFileSearch } from './file-explorer-projections';
 import {
   addExpandedPath,
   emptyFileExplorerWorkspaceState,
   fileExplorerReducer,
+  fileSearchOpened,
   fileSearchRequested,
   fileSearchLoading,
   fileSearchSettled,
@@ -29,6 +31,61 @@ const MODIFIED: FileGitStatus = { status: ' M', additions: 2, deletions: 1 };
 const ADDED: FileGitStatus = { status: 'A ', additions: 5, deletions: 0 };
 
 describe('fileExplorerReducer — search request identity', () => {
+  it('projects only the captured workspace/context and clears paths across context changes', () => {
+    let state = fileExplorerReducer(undefined, fileSearchOpened('ws', 'reader', 'a'));
+    state = fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r1', 'first', 'a'));
+    expect(getFileSearch(state, 'ws', 'reader', 'a')).toMatchObject({
+      query: 'first',
+      settled: false,
+      loading: false,
+    });
+    state = fileExplorerReducer(state, fileSearchSettled('ws', 'reader', 'r1', ['first.ts'], null));
+    expect(getFileSearch(state, 'other', 'reader')).toBeUndefined();
+    expect(getFileSearch(state, 'ws', 'reader', 'b')).toBeUndefined();
+    state = fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r2', 'next', 'a'));
+    expect(getFileSearch(state, 'ws', 'reader', 'a')).toMatchObject({
+      paths: ['first.ts'],
+      settled: false,
+    });
+    expect(fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r3', 'next', 'b'))).toBe(
+      state,
+    );
+    state = fileExplorerReducer(state, fileSearchOpened('ws', 'reader', 'b'));
+    state = fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r3', 'next', 'b'));
+    expect(getFileSearch(state, 'ws', 'reader', 'b')).toMatchObject({ paths: [], settled: false });
+    expect(
+      fileExplorerReducer(state, fileSearchSettled('ws', 'reader', 'r2', ['stale.ts'], null)),
+    ).toBe(state);
+    state = fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r4', '', 'b'));
+    expect(getFileSearch(state, 'ws', 'reader', 'b')).toMatchObject({
+      query: '',
+      paths: [],
+      settled: true,
+    });
+    expect(structuredClone(state)).toEqual(state);
+  });
+
+  it('does not recreate a released registered search from a delayed request', () => {
+    expect(
+      fileExplorerReducer(initialState, fileSearchRequested('ws', 'reader', 'r1', 'file', 'a')),
+    ).toBe(initialState);
+    let state = fileExplorerReducer(initialState, fileSearchOpened('ws', 'reader', 'a'));
+    state = fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r1', 'file', 'a'));
+    state = fileExplorerReducer(
+      state,
+      fileSearchSettled('ws', 'reader', 'r1', ['file'], null, true),
+    );
+    expect(getFileSearch(state, 'ws', 'reader', 'a')).toMatchObject({
+      paths: ['file'],
+      truncated: true,
+      settled: true,
+    });
+    state = fileExplorerReducer(state, fileSearchReleased('ws', 'reader'));
+    expect(fileExplorerReducer(state, fileSearchRequested('ws', 'reader', 'r2', 'file', 'a'))).toBe(
+      state,
+    );
+  });
+
   it('accepts only the current request and releases only the captured consumer/workspace', () => {
     let state = fileExplorerReducer(undefined, fileSearchRequested('ws-1', 'tree', 'old', 'a'));
     state = fileExplorerReducer(state, fileSearchRequested('ws-2', 'tree', 'new', 'b'));

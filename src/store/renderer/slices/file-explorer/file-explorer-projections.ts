@@ -5,11 +5,24 @@ import type { FileGitStatus } from '$shared/types';
 import { emptyFileExplorerWorkspaceState } from './file-explorer-slice';
 import type {
   FileExplorerState,
+  FileExplorerSearch,
   FileExplorerTreeNode,
   FileExplorerWorkspaceState,
   FlattenedFileNode,
 } from './file-explorer-types';
 import { flattenVisibleNodes } from './file-explorer-utils';
+
+export function getFileSearch(
+  state: FileExplorerState,
+  wsId: string,
+  consumerId: string,
+  context?: string,
+): FileExplorerSearch | undefined {
+  const search = getItem(state.searches, consumerId);
+  return search?.workspaceId === wsId && (context === undefined || search.context === context)
+    ? search
+    : undefined;
+}
 
 export function projectFileExplorerState(
   state: FileExplorerState,

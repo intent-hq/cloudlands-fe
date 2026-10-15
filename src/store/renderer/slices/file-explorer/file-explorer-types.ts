@@ -77,6 +77,13 @@ export interface FileExplorerSearch {
   consumerId: string;
   workspaceId: string;
   requestId: string;
+  query: string;
+  /** Captured backend/principal/root identity for readers that opt into admission. */
+  context: string | null;
+  /** False during debounce and transport, independently of the delayed loading indicator. */
+  settled: boolean;
+  /** Null until an actual backend response supplies its bound indicator. */
+  truncated: boolean | null;
   paths: string[];
   loading: boolean;
   error: string | null;

@@ -1,4 +1,7 @@
 import { createFileExplorerReadSaga } from '../../../../../../src/store/renderer/slices/file-explorer/sagas/file-explorer-read-saga-factory';
+import { createFileSearchSaga } from '../../../../../../src/store/renderer/slices/file-explorer/sagas/file-search-saga-factory';
+import { createBackendFileNameSearch } from '$lib/client/live/backend-file-name-search';
+import { fork } from 'typed-redux-saga';
 import { createFileListDirectory } from '$lib/client/live/backend-file-list-directory';
 import { backendRequest } from '@/features/backend/backend-transport';
 import { store } from '@/store';
@@ -6,11 +9,12 @@ import {
   selectFileExplorerContext,
   selectFileExplorerRoot,
   selectFileExplorerState,
+  selectFileSearch,
 } from '../file-explorer-selectors';
 
 const listDirectory = createFileListDirectory(backendRequest, { strict: true });
 
-export const fileExplorerSaga = createFileExplorerReadSaga({
+const readExplorer = createFileExplorerReadSaga({
   files: {
     listDirectory,
     explorerTree: async (workspaceId, current) => {
@@ -27,3 +31,19 @@ export const fileExplorerSaga = createFileExplorerReadSaga({
   compactChains: false,
   bounded: true,
 });
+
+const searchFiles = createFileSearchSaga({
+  read: createBackendFileNameSearch(backendRequest),
+  admission: {
+    readCurrentContext: (workspaceId) => selectFileExplorerContext.select(store.state, workspaceId),
+    readSearch: (workspaceId, consumerId) =>
+      selectFileSearch.select(store.state, workspaceId, consumerId),
+    dispatch: (action) => store.dispatch(action),
+  },
+  skipWhitespaceOnly: true,
+});
+
+export function* fileExplorerSaga() {
+  yield* fork(readExplorer);
+  yield* fork(searchFiles);
+}

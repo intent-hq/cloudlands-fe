@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "이 터미널을 닫고 실행 중인 프로세스를 중지할까요?",
   "workspace_terminal_reconnect_label": "다시 연결",
   "workspace_terminal_detach_label": "터미널 숨기기",
-  "workspace_terminal_ready_label": "터미널 준비 완료"
+  "workspace_terminal_ready_label": "터미널 준비 완료",
+  "workspace_fileFinder_invalid_error": "검색 결과에 잘못된 작업 공간 경로가 포함되어 있습니다.",
+  "workspace_fileFinder_limited_description": "처음 100개의 결과를 표시합니다. 검색 범위를 좁혀 더 많은 결과를 찾으세요."
 }

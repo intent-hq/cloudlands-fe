@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "關閉此終端機並停止其正在執行的程序？",
   "workspace_terminal_reconnect_label": "重新連線",
   "workspace_terminal_detach_label": "隱藏終端機",
-  "workspace_terminal_ready_label": "終端機已就緒"
+  "workspace_terminal_ready_label": "終端機已就緒",
+  "workspace_fileFinder_invalid_error": "搜尋結果包含無效的工作區路徑。",
+  "workspace_fileFinder_limited_description": "顯示前100個符合項目。請縮小搜尋範圍以尋找更多結果。"
 }

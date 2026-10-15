@@ -77,6 +77,12 @@ beforeEach(async () => {
   };
   request.mockReset().mockImplementation(async (_method, params, options) => {
     options?.onDispatch?.();
+    if (_method === 'search.fileNames')
+      return {
+        files: ['left/same.txt', 'right/same.txt'],
+        truncated: false,
+        requestId: 'daemon-search',
+      };
     if (error && params.path === 'nested') throw new Error(error);
     return listings[params.path] ?? [];
   });
@@ -206,4 +212,139 @@ it('retires an in-flight read without recreating removed explorer state', async 
   await act(async () => finish([{ name: 'late.txt', type: 'file' }]));
   expect(store.state.fileExplorer.byWorkspaceId[ws]).toBeUndefined();
   root = createRoot(container);
+});
+
+async function searchFor(query: string) {
+  if (!container.querySelector('input')) {
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-sidebar-search=files] button',
+    )!;
+    await act(async () => trigger.click());
+  }
+  const input = container.querySelector<HTMLInputElement>('input')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, query);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  return input;
+}
+
+it('finds unchanged duplicate names, restores the exact result on Back and retains expanded tree state on clear', async () => {
+  await click('nested');
+  await vi.waitFor(() => expect(row('nested/deeper')).not.toBeNull());
+  const input = await searchFor('same');
+  const result = () =>
+    container.querySelector<HTMLButtonElement>('[data-finder-path="right/same.txt"]');
+  await vi.waitFor(() => expect(result()).not.toBeNull());
+  expect(container.querySelector('[role=tree]')).toBeNull();
+  expect(request.mock.calls.filter((c) => c[0] === 'search.fileNames').map((c) => c[1])).toEqual([
+    { workspaceId: ws, pattern: 'same', limit: 100 },
+  ]);
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+  });
+  expect(document.activeElement).toBe(result());
+  await act(async () => result()!.click());
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-opened]')?.getAttribute('data-opened')).toBe(
+      'right/same.txt',
+    ),
+  );
+  await act(async () => container.querySelector<HTMLAnchorElement>('a')!.click());
+  await vi.waitFor(() => expect(document.activeElement).toBe(result()));
+  expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('same');
+  await searchFor('');
+  await vi.waitFor(() => expect(row('nested/deeper')).not.toBeNull());
+  expect(row('nested').getAttribute('aria-expanded')).toBe('true');
+  expect(request.mock.calls.filter((c) => c[0] === 'search.fileNames')).toHaveLength(1);
+});
+
+it('never opens prior results while a newer query is pending and rejects an escaped result', async () => {
+  await searchFor('same');
+  await vi.waitFor(() => expect(container.querySelector('[data-finder-path]')).not.toBeNull());
+  let finish!: (value: unknown) => void;
+  request.mockImplementation((_method, _params, options) => {
+    options?.onDispatch?.();
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const oldResult = container.querySelector<HTMLButtonElement>('[data-finder-path]')!;
+  await searchFor('newer');
+  await act(async () => oldResult.click());
+  expect(container.querySelector('[data-opened]')).toBeNull();
+  await vi.waitFor(() => expect(container.querySelector('[data-finder-path]')).toBeNull());
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await act(async () =>
+    finish({ files: ['../escaped.txt'], truncated: false, requestId: 'unsafe' }),
+  );
+  await vi.waitFor(() => expect(container.querySelector('[role=alert]')).not.toBeNull());
+  expect(container.querySelector('[data-finder-path]')).toBeNull();
+  expect(container.querySelector('[data-opened]')).toBeNull();
+});
+
+it('retires pending search on release and leaves no search state or late result after unmount', async () => {
+  let finish!: (value: unknown) => void;
+  request.mockImplementation((_method, _params, options) => {
+    options?.onDispatch?.();
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  await searchFor('held');
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await act(async () => root.unmount());
+  await act(async () => finish({ files: ['late.txt'], truncated: false, requestId: 'late' }));
+  expect(Object.keys(store.state.fileExplorer.searches.map)).toHaveLength(0);
+  root = createRoot(container);
+});
+
+it('keeps a returned row anchored through sibling layout changes, then yields to user scrolling and disposes', async () => {
+  const Native = globalThis.ResizeObserver;
+  const observed: {
+    callback: ResizeObserverCallback;
+    disconnected: boolean;
+    targets: Element[];
+  }[] = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class extends Native {
+      record: (typeof observed)[number];
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        this.record = { callback, disconnected: false, targets: [] };
+        observed.push(this.record);
+      }
+      observe(target: Element) {
+        this.record.targets.push(target);
+        super.observe(target);
+      }
+      disconnect() {
+        this.record.disconnected = true;
+        super.disconnect();
+      }
+    },
+  );
+  await searchFor('same');
+  const result = () =>
+    container.querySelector<HTMLButtonElement>('[data-finder-path="right/same.txt"]')!;
+  await vi.waitFor(() => expect(result()).not.toBeNull());
+  await act(async () => result().click());
+  await vi.waitFor(() => expect(container.querySelector('[data-opened]')).not.toBeNull());
+  await act(async () => container.querySelector<HTMLAnchorElement>('a')!.click());
+  await vi.waitFor(() => expect(document.activeElement).toBe(result()));
+  const anchor = observed.find((record) => record.targets.includes(document.body))!;
+  expect(anchor).toBeDefined();
+  vi.spyOn(result(), 'getBoundingClientRect').mockReturnValue({ y: 122 } as DOMRect);
+  vi.mocked(window.scrollBy).mockClear();
+  await act(async () => anchor.callback([], {} as ResizeObserver));
+  expect(window.scrollBy).toHaveBeenCalledWith({ top: 122, behavior: 'instant' });
+  await act(async () => window.dispatchEvent(new WheelEvent('wheel')));
+  expect(anchor.disconnected).toBe(true);
+  vi.mocked(window.scrollBy).mockClear();
+  await act(async () => anchor.callback([], {} as ResizeObserver));
+  expect(window.scrollBy).not.toHaveBeenCalled();
 });

@@ -5,7 +5,11 @@ import type {
   FileExplorerWorkspaceState,
   FlattenedFileNode,
 } from './file-explorer-types';
-import { projectFileExplorerState, projectFlattenedNodes } from './file-explorer-projections';
+import {
+  getFileSearch,
+  projectFileExplorerState,
+  projectFlattenedNodes,
+} from './file-explorer-projections';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectWorkspaceById,
@@ -24,10 +28,7 @@ export const selectFileExplorerState = store.createSelector<
 });
 
 export const selectFileExplorerSearch = store.createSelector(
-  (state, wsId: string, consumerId: string) => {
-    const search = getItem(state.fileExplorer.searches, consumerId);
-    return search?.workspaceId === wsId ? search : undefined;
-  },
+  (state, wsId: string, consumerId: string) => getFileSearch(state.fileExplorer, wsId, consumerId),
 );
 
 // ---------------------------------------------------------------------------

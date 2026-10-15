@@ -1,25 +1,22 @@
-import { call, cancel, cancelled, delay, fork, put, race, take } from 'typed-redux-saga';
+import { call, cancelled, fork, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { createBackendFileNameSearch } from '$lib/client/live/backend-file-name-search';
 import { createLogger } from '$lib/utils/client-logger';
 import { getAgentFileEdits, propagateAgentEditsToParents } from '$lib/utils/agent-file-edits';
 import type { FileGitStatus, FileNode } from '$shared/types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestByContext,
-  takeLatestInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { mapFileNode } from '../file-explorer-utils';
 import { createFileExplorerReadSaga } from './file-explorer-read-saga-factory';
+import { createFileSearchSaga } from './file-search-saga-factory';
 import { selectFileExplorerState } from '../file-explorer-selectors';
 import {
   addExpandedPath,
-  fileSearchRequested,
-  fileSearchReleased,
-  fileSearchLoading,
-  fileSearchSettled,
   hydrateFileExplorerRequested,
   removeAgentFileEditsEntries,
   setFileExplorerFileCount,
@@ -143,46 +140,10 @@ function* refreshAgentEditsWorker(action: EditRefreshAction) {
   });
 }
 
-function* searchFiles(action: ReturnType<typeof fileSearchRequested>) {
-  const [wsId, consumerId, requestId, query] = action.payload;
-  if (!query || !wsId) return;
-  yield* delay(50);
-  const loader = yield* fork(function* () {
-    yield* delay(500);
-    yield* put(fileSearchLoading(wsId, consumerId, requestId));
-  });
-  try {
-    const response = yield* call(backendRequest<{ files: string[] }>, 'search.fileNames', {
-      workspaceId: wsId,
-      pattern: query,
-      limit: 100,
-    });
-    yield* put(fileSearchSettled(wsId, consumerId, requestId, response.files, null));
-  } catch (error) {
-    logger.error('Search failed', error);
-    yield* put(
-      fileSearchSettled(
-        wsId,
-        consumerId,
-        requestId,
-        [],
-        error instanceof Error ? error.message : String(error),
-      ),
-    );
-  } finally {
-    yield* cancel(loader);
-  }
-}
-
-function* searchFilesWorker(
-  action: ReturnType<typeof fileSearchRequested> | ReturnType<typeof fileSearchReleased>,
-) {
-  if (action.type !== fileSearchRequested.type) return;
-  yield* race({
-    search: call(searchFiles, action as ReturnType<typeof fileSearchRequested>),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, action.payload[0])),
-  });
-}
+const searchFiles = createFileSearchSaga({
+  read: createBackendFileNameSearch(backendRequest),
+  onError: (error) => logger.error('Search failed', error),
+});
 
 const readFileExplorer = createFileExplorerReadSaga({
   files: appClient.files,
@@ -192,11 +153,7 @@ const readFileExplorer = createFileExplorerReadSaga({
 });
 
 export function* fileExplorerSaga() {
-  yield* takeLatestInContext(
-    [fileSearchRequested, fileSearchReleased],
-    (action) => JSON.stringify([action.payload[0], action.payload[1]]),
-    searchFilesWorker,
-  );
+  yield* fork(searchFiles);
   yield* fork(readFileExplorer);
   yield* takeLatestByContext(
     hydrateFileExplorerRequested,

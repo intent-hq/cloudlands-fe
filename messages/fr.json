@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "Fermer ce terminal et arrêter son processus en cours ?",
   "workspace_terminal_reconnect_label": "Reconnecter",
   "workspace_terminal_detach_label": "Masquer le terminal",
-  "workspace_terminal_ready_label": "Terminal prêt"
+  "workspace_terminal_ready_label": "Terminal prêt",
+  "workspace_fileFinder_invalid_error": "Les résultats contiennent un chemin d’espace de travail non valide.",
+  "workspace_fileFinder_limited_description": "Les 100 premiers résultats sont affichés. Affinez votre recherche pour en trouver davantage."
 }

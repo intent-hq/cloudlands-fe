@@ -78,9 +78,9 @@ describe('fileExplorerSaga', () => {
 
   it('isolates search consumers and workspaces, rejects stale results, and cancels released loaders', async () => {
     vi.useFakeTimers();
-    const old = deferred<{ files: string[] }>();
-    const latest = deferred<{ files: string[] }>();
-    const independent = deferred<{ files: string[] }>();
+    const old = deferred<{ files: string[]; requestId: string; truncated: boolean }>();
+    const latest = deferred<{ files: string[]; requestId: string; truncated: boolean }>();
+    const independent = deferred<{ files: string[]; requestId: string; truncated: boolean }>();
     vi.mocked(backendRequest)
       .mockReturnValueOnce(old.promise)
       .mockReturnValueOnce(independent.promise)
@@ -93,26 +93,38 @@ describe('fileExplorerSaga', () => {
       h.dispatch(fileSearchRequested('ws-1', 'tree-1', 'r3', 'latest'));
       await vi.advanceTimersByTimeAsync(50);
       expect(vi.mocked(backendRequest).mock.calls).toEqual([
-        ['search.fileNames', { workspaceId: 'ws-1', pattern: 'old', limit: 100 }],
-        ['search.fileNames', { workspaceId: 'ws-2', pattern: 'other', limit: 100 }],
-        ['search.fileNames', { workspaceId: 'ws-1', pattern: 'latest', limit: 100 }],
+        [
+          'search.fileNames',
+          { workspaceId: 'ws-1', pattern: 'old', limit: 100 },
+          { onDispatch: expect.any(Function) },
+        ],
+        [
+          'search.fileNames',
+          { workspaceId: 'ws-2', pattern: 'other', limit: 100 },
+          { onDispatch: expect.any(Function) },
+        ],
+        [
+          'search.fileNames',
+          { workspaceId: 'ws-1', pattern: 'latest', limit: 100 },
+          { onDispatch: expect.any(Function) },
+        ],
       ]);
       expect(h.search('tree-1')?.loading).toBe(false);
       await vi.advanceTimersByTimeAsync(500);
       expect(h.search('tree-1')?.loading).toBe(true);
-      latest.resolve({ files: ['src/latest.ts'] });
-      independent.resolve({ files: ['other.ts'] });
+      latest.resolve({ files: ['src/latest.ts'], requestId: 'wire-request', truncated: false });
+      independent.resolve({ files: ['other.ts'], requestId: 'wire-request', truncated: false });
       await settle();
-      old.resolve({ files: ['stale.ts'] });
+      old.resolve({ files: ['stale.ts'], requestId: 'wire-request', truncated: false });
       await settle();
       expect(h.search('tree-1')).toMatchObject({ paths: ['src/latest.ts'], loading: false });
       expect(h.search('tree-2')).toMatchObject({ paths: ['other.ts'], loading: false });
-      const abandoned = deferred<{ files: string[] }>();
+      const abandoned = deferred<{ files: string[]; requestId: string; truncated: boolean }>();
       vi.mocked(backendRequest).mockReturnValueOnce(abandoned.promise);
       h.dispatch(fileSearchRequested('ws-1', 'tree-1', 'r4', 'abandoned'));
       await vi.advanceTimersByTimeAsync(50);
       h.dispatch(fileSearchReleased('ws-1', 'tree-1'));
-      abandoned.resolve({ files: ['late.ts'] });
+      abandoned.resolve({ files: ['late.ts'], requestId: 'wire-request', truncated: false });
       await vi.advanceTimersByTimeAsync(500);
       expect(h.search('tree-1')).toBeUndefined();
       expect(h.search('tree-2')?.paths).toEqual(['other.ts']);
@@ -124,7 +136,7 @@ describe('fileExplorerSaga', () => {
 
   it('retains search failures and ignores late completions after workspace teardown', async () => {
     vi.useFakeTimers();
-    const pending = deferred<{ files: string[] }>();
+    const pending = deferred<{ files: string[]; requestId: string; truncated: boolean }>();
     vi.mocked(backendRequest)
       .mockRejectedValueOnce(new Error('search unavailable'))
       .mockReturnValueOnce(pending.promise);
@@ -140,9 +152,40 @@ describe('fileExplorerSaga', () => {
       h.dispatch(fileSearchRequested('ws-1', 'tree', 'r2', 'pending'));
       await vi.advanceTimersByTimeAsync(50);
       h.dispatch(workspaceUnmounted('ws-1'));
-      pending.resolve({ files: ['late.ts'] });
+      pending.resolve({ files: ['late.ts'], requestId: 'wire-request', truncated: false });
       await vi.advanceTimersByTimeAsync(500);
       expect(h.search('tree')).toBeUndefined();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('preserves source empty-query suppression and whitespace-query dispatch', async () => {
+    vi.useFakeTimers();
+    vi.mocked(backendRequest).mockResolvedValue({
+      files: [],
+      requestId: 'wire-request',
+      truncated: false,
+    });
+    const h = startExplorer();
+    try {
+      h.dispatch(fileSearchRequested('ws-1', 'tree', 'empty', ''));
+      await vi.advanceTimersByTimeAsync(550);
+      expect(backendRequest).not.toHaveBeenCalled();
+      h.dispatch(fileSearchRequested('ws-1', 'tree', 'whitespace', '  '));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(backendRequest).toHaveBeenCalledExactlyOnceWith(
+        'search.fileNames',
+        { workspaceId: 'ws-1', pattern: '  ', limit: 100 },
+        { onDispatch: expect.any(Function) },
+      );
+      expect(h.search('tree')).toMatchObject({
+        paths: [],
+        loading: false,
+        error: null,
+        settled: true,
+      });
     } finally {
       h.task.cancel();
       await h.task.toPromise();

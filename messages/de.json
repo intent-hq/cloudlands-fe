@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "Dieses Terminal schließen und seinen laufenden Prozess beenden?",
   "workspace_terminal_reconnect_label": "Neu verbinden",
   "workspace_terminal_detach_label": "Terminal ausblenden",
-  "workspace_terminal_ready_label": "Terminal bereit"
+  "workspace_terminal_ready_label": "Terminal bereit",
+  "workspace_fileFinder_invalid_error": "Die Suchergebnisse enthalten einen ungültigen Arbeitsbereichspfad.",
+  "workspace_fileFinder_limited_description": "Die ersten 100 Treffer werden angezeigt. Grenzen Sie Ihre Suche ein, um weitere zu finden."
 }

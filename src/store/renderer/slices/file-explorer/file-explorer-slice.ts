@@ -111,8 +111,11 @@ export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
   'fileExplorer/syncGitStatusFromStoresRequested',
 );
 
+export const fileSearchOpened = createAction<[wsId: string, consumerId: string, context: string]>(
+  'fileExplorer/fileSearchOpened',
+);
 export const fileSearchRequested = createAction<
-  [wsId: string, consumerId: string, requestId: string, query: string]
+  [wsId: string, consumerId: string, requestId: string, query: string, context?: string]
 >('fileExplorer/fileSearchRequested');
 export const fileSearchReleased = createAction<[wsId: string, consumerId: string]>(
   'fileExplorer/fileSearchReleased',
@@ -121,7 +124,14 @@ export const fileSearchLoading = createAction<
   [wsId: string, consumerId: string, requestId: string]
 >('fileExplorer/fileSearchLoading');
 export const fileSearchSettled = createAction<
-  [wsId: string, consumerId: string, requestId: string, paths: string[], error: string | null]
+  [
+    wsId: string,
+    consumerId: string,
+    requestId: string,
+    paths: string[],
+    error: string | null,
+    truncated?: boolean,
+  ]
 >('fileExplorer/fileSearchSettled');
 
 // ---------------------------------------------------------------------------
@@ -375,16 +385,46 @@ fileExplorerReducer.with(retireFileExplorer, (state, { payload: [wsId] }) => {
   return { ...state, byWorkspaceId };
 });
 fileExplorerReducer.with(
+  fileSearchOpened,
+  (state, { payload: [workspaceId, consumerId, context] }) => ({
+    ...state,
+    searches: upsertItem(state.searches, {
+      workspaceId,
+      consumerId,
+      context,
+      requestId: '',
+      query: '',
+      paths: [],
+      settled: true,
+      truncated: null,
+      loading: false,
+      error: null,
+    }),
+  }),
+);
+fileExplorerReducer.with(
   fileSearchRequested,
-  (state, { payload: [workspaceId, consumerId, requestId, query] }) => {
+  (state, { payload: [workspaceId, consumerId, requestId, query, context] }) => {
     const previous = getItem(state.searches, consumerId);
+    if (
+      context !== undefined &&
+      (previous?.workspaceId !== workspaceId || previous.context !== context)
+    )
+      return state;
     return {
       ...state,
       searches: upsertItem(state.searches, {
         workspaceId,
         consumerId,
         requestId,
-        paths: query && previous?.workspaceId === workspaceId ? previous.paths : [],
+        query,
+        context: context ?? null,
+        settled: !query,
+        truncated: null,
+        paths:
+          query && previous?.workspaceId === workspaceId && previous.context === (context ?? null)
+            ? previous.paths
+            : [],
         loading: false,
         error: null,
       }),
@@ -399,12 +439,19 @@ fileExplorerReducer.with(fileSearchLoading, (state, { payload: [wsId, consumerId
 });
 fileExplorerReducer.with(
   fileSearchSettled,
-  (state, { payload: [wsId, consumerId, requestId, paths, error] }) => {
+  (state, { payload: [wsId, consumerId, requestId, paths, error, truncated] }) => {
     const search = getItem(state.searches, consumerId);
     if (!search || search.workspaceId !== wsId || search.requestId !== requestId) return state;
     return {
       ...state,
-      searches: upsertItem(state.searches, { ...search, paths, error, loading: false }),
+      searches: upsertItem(state.searches, {
+        ...search,
+        paths,
+        error,
+        loading: false,
+        settled: true,
+        truncated: truncated ?? null,
+      }),
     };
   },
 );

@@ -36,7 +36,8 @@ No Electron preload, protected local Themis patch, or live user workspace is req
 1. On Home, choose **New workspace**, enter the local repository folder and its
    base branch/ref, then choose **Create workspace**. This creates an isolated
    checkout without running the repository's setup script.
-2. Expand **Files** directories and open an existing small text file. Type an edit.
+2. Expand **Files** directories or use its search control to find a filename/path,
+   then open an existing small text file. Type an edit.
    Try **Back**, then **Stay** to keep the unsaved text and editor position.
 3. Choose **Save**, then **Back**. The original repository remains unchanged;
    the edit is saved in the new workspace checkout.
@@ -171,6 +172,19 @@ directory reads show an error and **Retry**, separately from empty directories.
 Reload starts a fresh tree. This browser has no file-management actions, recursive
 expand-all, drag and drop or secondary-root browsing. Out-of-workspace symlink
 targets remain subject to the daemon's containment checks.
+
+Use the search control inside **Files** to find unchanged as well as changed files
+by workspace-relative name/path. Plain text matches case-insensitively; glob patterns
+are supported by the daemon. Searches respect its ignore rules and return at most
+100 matches; a notice appears when more exist. Refine the query rather than paging.
+Use Up/Down and Enter, or click a result, to open it. Back retains the query and
+restores the result's focus and position; clearing the query restores the expanded
+tree. Search is independent of the **Changed files** filter. Invalid patterns and
+read failures show an error with Retry; an empty query sends no search. Workspace
+or connection changes and full reload retire the search; queries are not persisted.
+This is a file-name finder, not content search or a cross-repository index. The
+pinned daemon normalizes path separators; literal POSIX backslash filenames are
+not a supported round-trip through this search.
 
 Open an existing primary-root text file to edit it, then choose **Save** or press
 **Ctrl/Cmd+S** while its editor has focus. Editing supports complete UTF-8 text up

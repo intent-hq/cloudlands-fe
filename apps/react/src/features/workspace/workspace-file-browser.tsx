@@ -23,6 +23,12 @@ import { workspaceRelativeFilePath } from '../../../../../src/features/file/util
 import { nextFileTreeIndex, parentFileTreeIndex } from '$lib/utils/file-tree-navigation';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 import { m } from '$shared/paraglide/messages.js';
+import { WorkspaceFileFinder } from './workspace-file-finder';
+import { selectFileSearch } from '@/store/file-explorer/file-explorer-selectors';
+import {
+  fileSearchOpened,
+  fileSearchReleased,
+} from '../../../../../src/store/renderer/slices/file-explorer/file-explorer-slice';
 
 /** Read-only primary-root host. Canonical explorer owns nodes, ordering and expansion. */
 export function WorkspaceFileBrowser({
@@ -36,22 +42,59 @@ export function WorkspaceFileBrowser({
   query?: string;
   fileQuery?: string;
 }) {
-  const navigate = useNavigate();
   const context = selectFileExplorerContext(workspaceId).value;
   const root = selectFileExplorerRoot(workspaceId).value;
+  return (
+    <WorkspaceFileBrowserScope
+      key={JSON.stringify([workspaceId, context])}
+      workspaceId={workspaceId}
+      hidden={hidden}
+      query={query}
+      fileQuery={fileQuery}
+      context={context}
+      root={root}
+    />
+  );
+}
+
+function WorkspaceFileBrowserScope({
+  workspaceId,
+  hidden,
+  query,
+  fileQuery,
+  context,
+  root,
+}: {
+  workspaceId: string;
+  hidden: boolean;
+  query?: string;
+  fileQuery?: string;
+  context: string | null;
+  root: string;
+}) {
+  const navigate = useNavigate();
+  const [consumerId] = useState(() => crypto.randomUUID());
+  const search = selectFileSearch(workspaceId, consumerId, context ?? undefined).value;
   const state = selectFileExplorerState(workspaceId).value;
   const rows = selectFileExplorerRows(workspaceId).value;
   const host = useRef<HTMLElement>(null);
   const [focused, setFocused] = useState<string>();
-  const opened = useRef<{ path: string; y: number; context: string } | null>(null);
+  const opened = useRef<{
+    path: string;
+    y: number;
+    context: string;
+    kind: 'explorer' | 'finder';
+  } | null>(null);
   const wasHidden = useRef(hidden);
 
   useLayoutEffect(() => {
     opened.current = null;
+    if (context) store.dispatch(fileSearchOpened(workspaceId, consumerId, context));
     return () => {
+      store.dispatch(fileSearchReleased(workspaceId, consumerId));
       store.dispatch(retireFileExplorer(workspaceId));
     };
-  }, [workspaceId, context]);
+  }, [workspaceId, context, consumerId]);
   useLayoutEffect(() => {
     if (context && !hidden)
       store.dispatch(initializeFileExplorer(workspaceId, { workspacePath: root }));
@@ -62,12 +105,41 @@ export function WorkspaceFileBrowser({
     const origin = opened.current;
     if (!returning || !origin || origin.context !== context) return;
     const opener = host.current?.querySelector<HTMLElement>(
-      `[data-explorer-path="${CSS.escape(origin.path)}"]`,
+      `[data-${origin.kind}-path="${CSS.escape(origin.path)}"]`,
     );
     if (!opener) return;
     opener.focus({ preventScroll: true });
-    window.scrollBy({ top: opener.getBoundingClientRect().y - origin.y, behavior: 'instant' });
-  }, [hidden, context]);
+    let active = true;
+    const restore = () => {
+      if (
+        !active ||
+        document.activeElement !== opener ||
+        opened.current !== origin ||
+        selectFileExplorerContext.select(store.state, workspaceId) !== context
+      )
+        return;
+      window.scrollBy({ top: opener.getBoundingClientRect().y - origin.y, behavior: 'instant' });
+    };
+    restore();
+    // Returning sibling panels may finish hydration after this commit. Keep the
+    // focused row anchored until the user takes over scrolling or navigation.
+    const frame = requestAnimationFrame(restore);
+    const observer = new ResizeObserver(restore);
+    observer.observe(document.body);
+    if (host.current?.parentElement) observer.observe(host.current.parentElement);
+    const interactions = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    const stop = () => {
+      active = false;
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      for (const event of interactions) window.removeEventListener(event, stop, true);
+      opener.removeEventListener('blur', stop);
+    };
+    for (const event of interactions)
+      window.addEventListener(event, stop, { capture: true, passive: true });
+    opener.addEventListener('blur', stop);
+    return stop;
+  }, [hidden, context, workspaceId]);
 
   function activate(row: FlattenedFileNode) {
     if (!context || selectFileExplorerContext.select(store.state, workspaceId) !== context) return;
@@ -75,12 +147,16 @@ export function WorkspaceFileBrowser({
       store.dispatch(toggleDirectoryRequested(workspaceId, row.node.path));
       return;
     }
-    const path = workspaceRelativeFilePath(row.node.path, root);
+    openFile(row.node.path, 'explorer');
+  }
+  function openFile(rawPath: string, kind: 'explorer' | 'finder') {
+    if (!context || selectFileExplorerContext.select(store.state, workspaceId) !== context) return;
+    const path = workspaceRelativeFilePath(rawPath, root);
     if (!path || !parseWorkspaceFileTarget(path).valid) return;
     const element = host.current?.querySelector<HTMLElement>(
-      `[data-explorer-path="${CSS.escape(row.node.path)}"]`,
+      `[data-${kind}-path="${CSS.escape(rawPath)}"]`,
     );
-    opened.current = { path: row.node.path, y: element?.getBoundingClientRect().y ?? 0, context };
+    opened.current = { path: rawPath, y: element?.getBoundingClientRect().y ?? 0, context, kind };
     void navigate({
       to: '/workspaces/$workspaceId',
       params: { workspaceId },
@@ -145,7 +221,16 @@ export function WorkspaceFileBrowser({
       <p className="mb-3 type-caption text-muted-foreground">
         {m.workspace_fileBrowser_scope_description()}
       </p>
-      {!context ? (
+      {context && (
+        <WorkspaceFileFinder
+          workspaceId={workspaceId}
+          consumerId={consumerId}
+          context={context}
+          root={root}
+          onOpen={(path) => openFile(path, 'finder')}
+        />
+      )}
+      {search?.query.trim() ? null : !context ? (
         <p role="alert">{m.fileExplorer_layout_loadFailed_error()}</p>
       ) : !current || (!state.isInitialized && !state.error) ? (
         <LoadingState recipe="list" label={m.ui_spinner_loading_ariaLabel()} />

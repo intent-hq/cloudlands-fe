@@ -7561,5 +7561,7 @@
   "workspace_terminal_close_description": "¿Cerrar este terminal y detener su proceso en ejecución?",
   "workspace_terminal_reconnect_label": "Reconectar",
   "workspace_terminal_detach_label": "Ocultar terminal",
-  "workspace_terminal_ready_label": "Terminal listo"
+  "workspace_terminal_ready_label": "Terminal listo",
+  "workspace_fileFinder_invalid_error": "Los resultados contienen una ruta de espacio de trabajo no válida.",
+  "workspace_fileFinder_limited_description": "Se muestran las primeras 100 coincidencias. Refina la búsqueda para encontrar más."
 }
