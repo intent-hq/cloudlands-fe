@@ -1,0 +1,229 @@
+<script module lang="ts">
+  import { definePreview } from '$lib/component-catalog/preview-definition';
+
+  interface Props {
+    count?: number;
+    offline?: boolean;
+    sidebar?: boolean;
+    shared?: boolean;
+    expanded?: boolean;
+    guest?: boolean;
+    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older';
+  }
+
+  export const preview = definePreview<Props>({
+    id: 'workspace-people-tile',
+    title: 'Workspace people tile',
+    defaultState: 'sidebar',
+    states: {
+      sidebar: { props: { sidebar: true } },
+      tile: { props: {} },
+      overflow: { props: { count: 8 } },
+      offline: { props: { offline: true } },
+      unshared: { props: { shared: false, sidebar: true } },
+      expanded: { props: { sidebar: true, expanded: true } },
+      guest: { props: { sidebar: true, expanded: true, guest: true } },
+      empty: { props: { sidebar: true, expanded: true, activityState: 'empty' } },
+      loading: { props: { sidebar: true, expanded: true, activityState: 'loading' } },
+      error: { props: { sidebar: true, expanded: true, activityState: 'error' } },
+      older: { props: { sidebar: true, expanded: true, activityState: 'older' } },
+    },
+  });
+</script>
+
+<script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
+  import WorkspacePeopleTile from './WorkspacePeopleTile.svelte';
+  import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+  import { store } from '$store/renderer/store';
+  import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+  import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
+  import {
+    presenceContextReceived,
+    presenceReset,
+    presenceMembersReceived,
+    presenceRosterReceived,
+    presenceWorkspacesReceived,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import {
+    setWorkspaceEntity,
+    removeWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { WorkspaceStatus } from '$shared/types';
+  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
+  import {
+    eventsLoaded,
+    eventsCleared,
+    peopleEventsLoadStarted,
+    peopleEventsLoadFinished,
+  } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import type { WorkspaceEvent } from '$features/events/types';
+
+  let {
+    count = 3,
+    offline = false,
+    sidebar = false,
+    shared = true,
+    expanded = false,
+    guest = false,
+    activityState = 'ready',
+  }: Props = $props();
+  const workspaceId = 'people-tile-preview';
+  const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
+
+  untrack(() => {
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    admitLegacyPrincipal(guest ? 'guest' : 'owner');
+    store.dispatch(
+      setWorkspaceEntity({
+        id: WorkspaceId(workspaceId),
+        title: 'Redesign the workspace',
+        repositoryName: 'intent',
+        branch: 'feat/sidebar-people-tile',
+        status: WorkspaceStatus.Active,
+        myRole: guest ? 'collaborator' : 'owner',
+        ownerPrincipalId: 'person-0',
+        memberCount: shared ? Math.max(2, count) : 1,
+        statusMessage: 'Bringing people and their work together.',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        ...PREVIEW_FIXTURE_TIMESTAMPS,
+      }),
+    );
+    store.dispatch(
+      setMultiSelectSidebarSelectedTabs(workspaceId, [expanded ? 'people' : 'overview']),
+    );
+    store.dispatch(presenceContextReceived(selectPresenceContext.select(store.state)!, 'person-0'));
+    store.dispatch(presenceWorkspacesReceived([workspaceId]));
+    const names = ['Sam', 'Luke', 'Morgan', 'Taylor', 'Robin', 'Jamie', 'Casey', 'Charlie'];
+    const people = names.slice(0, count).map((name, index) => ({
+      principalId: `person-${index}`,
+      login: name.toLowerCase(),
+      displayName: name,
+      avatarUrl:
+        index === 0
+          ? 'https://avatars.githubusercontent.com/u/84644?v=4'
+          : index === 1
+            ? 'https://avatars.githubusercontent.com/u/296156?v=4'
+            : null,
+      role: 'collaborator' as const,
+      addedAt: PREVIEW_FIXTURE_TIMESTAMPS.createdAt,
+    }));
+    store.dispatch(presenceMembersReceived(workspaceId, people));
+    store.dispatch(
+      presenceRosterReceived({
+        workspaceId,
+        members: offline
+          ? []
+          : people.map((person) => ({ ...person, focus: [{ workspaceId }], typing: [] })),
+      }),
+    );
+    const now = Date.now();
+    const activity: WorkspaceEvent[] = [
+      {
+        id: 'people-activity-luke-message',
+        workspaceId,
+        type: 'agent:message',
+        timestamp: new Date(now - 2 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
+        data: { role: 'user', agentId: 'planner', messageId: 'message-2', author: people[1] },
+      },
+      {
+        id: 'people-activity-luke-preview',
+        workspaceId,
+        type: 'agent:last-message' as WorkspaceEvent['type'],
+        timestamp: new Date(now - 2 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
+        data: {
+          role: 'user',
+          agentId: 'planner',
+          messageId: 'message-2',
+          lastMessageRole: 'user',
+          lastMessageId: 'message-2',
+          lastUserMessage:
+            'Can we make each activity link jump to the original message in the conversation?',
+          author: people[1],
+        },
+      },
+      {
+        id: 'people-activity-note',
+        workspaceId,
+        type: 'note:updated',
+        timestamp: new Date(now - 5 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-1', name: 'Luke' },
+        data: { noteId: 'sidebar-mockup', title: 'Sidebar mockup' },
+      },
+      {
+        id: 'people-activity-comment',
+        workspaceId,
+        type: 'agent:message',
+        timestamp: new Date(now - 12 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-0', name: 'Sam' },
+        data: { role: 'user', agentId: 'planner', messageId: 'message-1', author: people[0] },
+      },
+      {
+        id: 'people-activity-message-preview',
+        workspaceId,
+        type: 'agent:last-message' as WorkspaceEvent['type'],
+        timestamp: new Date(now - 12 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-0', name: 'Sam' },
+        data: {
+          role: 'user',
+          agentId: 'planner',
+          messageId: 'message-1',
+          lastMessageRole: 'user',
+          lastMessageId: 'message-1',
+          lastUserMessage: 'Let’s keep the People panel open while we review the sidebar together.',
+          author: people[0],
+        },
+      },
+      {
+        id: 'people-activity-created',
+        workspaceId,
+        type: 'note:created',
+        timestamp: new Date(now - 24 * 60_000).toISOString(),
+        actor: { type: 'user', id: 'person-2', name: 'Morgan' },
+        data: { noteId: 'group-chat', title: 'Group chat plan' },
+      },
+    ];
+    store.dispatch(
+      eventsLoaded(
+        workspaceId,
+        activityState === 'ready' || activityState === 'older' ? activity : [],
+        activityState === 'older' ? 'older-page' : null,
+      ),
+    );
+    store.dispatch(peopleEventsLoadStarted(workspaceId, 'preview-load'));
+    if (activityState !== 'loading') {
+      store.dispatch(
+        peopleEventsLoadFinished(
+          workspaceId,
+          'preview-load',
+          true,
+          activityState === 'error' ? 'Activity could not be loaded.' : null,
+        ),
+      );
+    }
+  });
+
+  onDestroy(() => {
+    store.dispatch(presenceReset());
+    store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
+    store.dispatch(removeWorkspaceEntity(workspaceId));
+    store.dispatch(eventsCleared(workspaceId));
+  });
+</script>
+
+{#if sidebar}
+  <div class="h-[780px] w-full max-w-[346px] bg-sidebar" data-people-sidebar-preview>
+    <MultiSelectTabbedSidebar {workspaceId} />
+  </div>
+{:else}
+  <div class="w-full max-w-[298px]" data-people-tile-preview>
+    <WorkspacePeopleTile {workspaceId} />
+  </div>
+{/if}

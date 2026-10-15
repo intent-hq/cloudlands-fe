@@ -3,7 +3,7 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 /**
  * @vitest-environment jsdom
  *
- * The workspace sidebar's presence row: the production people selectors run
+ * The workspace sidebar's people tile: the production people selectors run
  * over real presence + workspace state, and each avatar takes the viewer to
  * where that person looks (agent chat, else note), with no Share fallback.
  */
@@ -105,26 +105,11 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selector(() => mocks.notes),
 }));
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasksInitialized: mocks.selector(() => true),
-  selectWorkspaceTaskProgress: mocks.selector(() => ({ total: 0, completed: 0, inProgress: 0 })),
-}));
-vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors', () => ({
-  selectUnreadNoteIds: mocks.selector(() => []),
-}));
+
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: mocks.selector(() => mocks.agents),
 }));
-vi.mock('$store/renderer/slices/git/git-selectors', () => ({
-  selectAcceptChangesStatus: mocks.selector(() => null),
-  selectAcceptChangesStatusLoading: mocks.selector(() => false),
-}));
-vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
-  selectSidebarSide: mocks.selector(() => 'left'),
-}));
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: vi.fn(), archive: vi.fn(), unarchive: vi.fn() },
-}));
+
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
   AcceptChangesClient: { getStatus: vi.fn().mockResolvedValue({}) },
 }));
@@ -208,7 +193,7 @@ const roster = presenceRosterReceived({
   ],
 });
 
-async function renderProgressCard({
+async function renderPeopleTile({
   presence = presenceState(membership, roster, presenceOwnPrincipalReceived('me')),
   myRole = 'owner' as Workspace['myRole'],
   memberCount = 4,
@@ -241,8 +226,10 @@ async function renderProgressCard({
     mocks.state.presenceFollow = follow;
   }
   mocks.workspaceEntity = { ...mocks.workspaceEntity, myRole } as Workspace;
-  const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
-  const view = render(WorkspaceProgressCard, { props: { workspaceId: 'ws-1' } });
+  const WorkspacePeopleTile = (
+    await import('$features/presence/components/WorkspacePeopleTile.svelte')
+  ).default;
+  const view = render(WorkspacePeopleTile, { props: { workspaceId: 'ws-1' } });
   await tick();
   // The store mock reads readable selector args once per notification; the
   // card sets its workspace-id store in an $effect, so re-notify to pick it up.
@@ -252,7 +239,7 @@ async function renderProgressCard({
   return view;
 }
 
-const presenceRow = () => document.querySelector('[data-sidebar-presence-row]');
+const presenceRow = () => document.querySelector('[data-sidebar-people-tile]');
 const personButton = (principalId: string) =>
   document.querySelector<HTMLButtonElement>(`[data-presence-person-button="${principalId}"]`)!;
 
@@ -261,9 +248,9 @@ warmImport(() => import('./mocks/MockSimple.svelte'));
 warmImport(() => import('./mocks/MockTooltip.svelte'));
 warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
-warmImport(() => import('../WorkspaceProgressCard.svelte'));
+warmImport(() => import('$features/presence/components/WorkspacePeopleTile.svelte'));
 
-describe('WorkspaceProgressCard presence row', () => {
+describe('WorkspacePeopleTile presence row', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.navigateToNote.mockClear();
@@ -272,8 +259,8 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.state.userPreferences = { labsMultiplayerEnabled: true };
   });
 
-  it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
-    const { container } = await renderProgressCard({
+  it('renders nothing for an unshared workspace', async () => {
+    const { container } = await renderPeopleTile({
       presence: presenceState(
         presenceMembersReceived('ws-1', [accepted('me', 'owner')]),
         presenceOwnPrincipalReceived('me'),
@@ -281,32 +268,11 @@ describe('WorkspaceProgressCard presence row', () => {
       memberCount: 1,
     });
     expect(presenceRow()).toBeNull();
-    expect(container.querySelector('[data-sidebar-repository-branch-metadata]')).toBeTruthy();
+    expect(container.textContent).toBe('');
   });
 
-  /**
-   * The ring is a box-shadow on the avatar element; a CSS `filter` greyscales
-   * everything that element paints, ring included. So the greyscale must sit
-   * on a descendant tile (image or initials) and never on the ringed element.
-   */
-  const greyscaleTile = (avatar: HTMLElement) =>
-    avatar.querySelector<HTMLElement>('[data-presence-avatar-tile]');
-  const expectGreyscaleBelowRing = (avatar: HTMLElement) => {
-    expect(avatar.classList.contains('grayscale')).toBe(false);
-    expect(avatar.classList.contains('opacity-50')).toBe(false);
-    const tile = greyscaleTile(avatar);
-    expect(tile).not.toBeNull();
-    expect(tile).not.toBe(avatar);
-    expect(avatar.contains(tile)).toBe(true);
-    expect(tile!.classList.contains('grayscale')).toBe(true);
-  };
-  const expectFullColour = (avatar: HTMLElement) => {
-    expect(avatar.classList.contains('grayscale')).toBe(false);
-    expect(greyscaleTile(avatar)!.classList.contains('grayscale')).toBe(false);
-  };
-
-  it('badges each member with their identity forge and names it on hover; a row without one stays neutral', async () => {
-    await renderProgressCard({
+  it('names each member with their identity forge; a member without one has no forge attribution', async () => {
+    await renderPeopleTile({
       presence: presenceState(
         presenceMembersReceived('ws-1', [
           accepted('me', 'owner'),
@@ -324,37 +290,25 @@ describe('WorkspaceProgressCard presence row', () => {
         presenceOwnPrincipalReceived('me'),
       ),
     });
-    const badge = (principalId: string) =>
-      presenceRow()!.querySelector<HTMLElement>(
-        `[data-presence-avatar="${principalId}"] [data-presence-identity-provider]`,
-      );
-    expect(badge('ada')?.getAttribute('data-presence-identity-provider')).toBe('gitlab');
-    expect(badge('ada')?.getAttribute('data-presence-identity-host')).toBe('gitlab.example.com');
-    expect(badge('ada')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('gitlab');
-    expect(badge('bob')?.getAttribute('data-presence-identity-provider')).toBe('github');
-    expect(badge('bob')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('github');
-    expect(badge('cy')).toBeNull();
-
     expect(personButton('ada').getAttribute('aria-label')).toContain('@ada on gitlab.example.com');
     expect(personButton('bob').getAttribute('aria-label')).toContain('@bob on GitHub');
     expect(personButton('cy').getAttribute('aria-label')).not.toMatch(/GitHub|gitlab/);
   });
 
-  it('still shows every other member, each greyscale with a grey ring, while nobody else is online', async () => {
-    await renderProgressCard({
+  it('still shows every other member as offline while nobody else is online', async () => {
+    await renderPeopleTile({
       presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
     });
     const row = presenceRow()!;
     const avatars = Array.from(row.querySelectorAll<HTMLElement>('[data-presence-avatar]'));
     expect(avatars.map((a) => a.getAttribute('data-presence-avatar'))).toEqual([
+      'me',
       'ada',
       'bob',
       'cy',
     ]);
-    for (const avatar of avatars) {
+    for (const avatar of avatars.slice(1)) {
       expect(avatar.hasAttribute('data-presence-offline')).toBe(true);
-      expect(avatar.getAttribute('data-presence-ring')).toBe('offline');
-      expectGreyscaleBelowRing(avatar);
     }
     expect(personButton('cy').getAttribute('aria-disabled')).toBe('true');
     // The group name must not announce the offline members as present.
@@ -369,7 +323,7 @@ describe('WorkspaceProgressCard presence row', () => {
   ] as const)(
     'does not repeat fallback handles in $provider offline tooltips',
     async ({ provider, host, platform }) => {
-      await renderProgressCard({
+      await renderPeopleTile({
         presence: presenceState(
           presenceMembersReceived('ws-1', [
             accepted('me', 'owner'),
@@ -395,7 +349,7 @@ describe('WorkspaceProgressCard presence row', () => {
   );
 
   it('names the group by the people present, leaving the listed offline members out of the count', async () => {
-    await renderProgressCard({
+    await renderPeopleTile({
       presence: presenceState(
         membership,
         presenceRosterReceived({
@@ -409,14 +363,14 @@ describe('WorkspaceProgressCard presence row', () => {
       ),
     });
     const row = presenceRow()!;
-    expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(3);
+    expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(4);
     expect(row.querySelector('[data-presence-avatar-stack]')!.getAttribute('aria-label')).toBe(
       '1 other person here',
     );
   });
 
-  it('keeps the owner ring on an offline owner and greys only online-less members, never an online one', async () => {
-    await renderProgressCard({
+  it('keeps the viewer first, then the offline owner and other members', async () => {
+    await renderPeopleTile({
       presence: presenceState(
         membership,
         presenceRosterReceived({
@@ -433,45 +387,39 @@ describe('WorkspaceProgressCard presence row', () => {
     const row = presenceRow()!;
     const avatar = (principalId: string) =>
       row.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
-    // Owner first (even offline), then the online member, then the offline one.
     expect(
       Array.from(row.querySelectorAll('[data-presence-avatar]')).map((a) =>
         a.getAttribute('data-presence-avatar'),
       ),
-    ).toEqual(['me', 'bob', 'cy']);
-    expect(avatar('me').getAttribute('data-presence-ring')).toBe('owner');
+    ).toEqual(['ada', 'me', 'bob', 'cy']);
     expect(avatar('me').hasAttribute('data-presence-offline')).toBe(true);
-    expectGreyscaleBelowRing(avatar('me'));
-    expect(avatar('cy').getAttribute('data-presence-ring')).toBe('offline');
     expect(avatar('cy').hasAttribute('data-presence-offline')).toBe(true);
-    expectGreyscaleBelowRing(avatar('cy'));
-    expect(avatar('bob').getAttribute('data-presence-ring')).toBe('member');
     expect(avatar('bob').hasAttribute('data-presence-offline')).toBe(false);
-    expectFullColour(avatar('bob'));
-    expect(presenceRow()!.querySelector('[data-presence-avatar="ada"]')).toBeNull();
+    expect(avatar('ada').hasAttribute('data-presence-self')).toBe(true);
   });
 
-  it('shows one button per other member after the repo/branch row, never the viewer', async () => {
-    const { container } = await renderProgressCard();
+  it('shows the viewer first without offering to follow yourself', async () => {
+    await renderPeopleTile();
     const row = presenceRow()!;
-    expect(
-      row.previousElementSibling?.hasAttribute('data-sidebar-repository-branch-metadata'),
-    ).toBe(true);
-    expect(container.querySelector('[data-sidebar-workspace-metadata]')?.contains(row)).toBe(true);
     const buttons = Array.from(row.querySelectorAll<HTMLElement>('[data-presence-person-button]'));
     expect(buttons.map((b) => b.getAttribute('data-presence-person-button'))).toEqual([
+      'me',
       'ada',
       'bob',
       'cy',
     ]);
-    expect(row.querySelector('[data-presence-avatar="me"]')).toBeNull();
+    expect(personButton('me').getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(personButton('me'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
+    );
     expect(screen.getByRole('button', { name: /^ada/ })).toBe(personButton('ada'));
   });
 
   it('requests following the agent chat or note a person is on', async () => {
     mocks.agents.push({ id: 'agent-1', name: 'Coordinator', isStreaming: false });
     mocks.notes.push({ id: 'note-1', title: 'Design' } as Note);
-    await renderProgressCard();
+    await renderPeopleTile();
 
     expect(personButton('ada').getAttribute('aria-label')).toContain('Coordinator');
     await fireEvent.click(personButton('ada'));
@@ -500,7 +448,7 @@ describe('WorkspaceProgressCard presence row', () => {
     { label: 'online without a known destination', members: [rosterMember('cy', [])] },
   ])('does not open Share for an $label person', async ({ members }) => {
     mocks.state.userPreferences = { labsMultiplayerEnabled: true };
-    await renderProgressCard({
+    await renderPeopleTile({
       myRole: 'owner',
       focusTargets: {},
       presence: presenceState(
@@ -522,7 +470,7 @@ describe('WorkspaceProgressCard presence row', () => {
   });
 
   it('names a reachable closed workspace and requests its reported view', async () => {
-    await renderProgressCard({
+    await renderPeopleTile({
       otherWorkspaces: [{ id: WorkspaceId('closed'), title: 'Shared destination' } as Workspace],
       focusTargets: { ada: { workspaceId: 'closed', noteId: 'spec' } },
     });
@@ -537,7 +485,7 @@ describe('WorkspaceProgressCard presence row', () => {
   });
 
   it('does not expose an unreachable destination in text or attributes and stays inert', async () => {
-    await renderProgressCard({
+    await renderPeopleTile({
       focusTargets: { ada: { workspaceId: 'hidden-workspace', noteId: 'secret-note' } },
     });
     expect(presenceRow()!.outerHTML).not.toMatch(/hidden-workspace|secret-note/);
@@ -549,7 +497,7 @@ describe('WorkspaceProgressCard presence row', () => {
   });
 
   it('follows a bare workspace without inventing an agent or note', async () => {
-    await renderProgressCard();
+    await renderPeopleTile();
     await fireEvent.click(personButton('cy'));
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -560,7 +508,7 @@ describe('WorkspaceProgressCard presence row', () => {
   });
 
   it('refuses a captured click after focus changed without a render', async () => {
-    await renderProgressCard();
+    await renderPeopleTile();
     const button = personButton('ada');
     const follow = mocks.state.presenceFollow as ReturnType<typeof presenceFollowReducer>;
     mocks.state.presenceFollow = presenceFollowReducer(
@@ -575,7 +523,7 @@ describe('WorkspaceProgressCard presence row', () => {
 
   it('opens the agent chat in an adjacent panel on a modifier click from within a panel', async () => {
     mocks.agents.push({ id: 'agent-1', name: 'Coordinator', isStreaming: false });
-    const { container } = await renderProgressCard();
+    const { container } = await renderPeopleTile();
     const panel = document.createElement('div');
     panel.setAttribute('data-panel-id', 'panel-7');
     panel.append(container);
@@ -591,7 +539,7 @@ describe('WorkspaceProgressCard presence row', () => {
   });
 
   it('leaves such a person inert for a non-owner, without dimming the avatar', async () => {
-    await renderProgressCard({
+    await renderPeopleTile({
       myRole: 'collaborator',
       focusTargets: { ada: { workspaceId: 'ws-1', agentId: 'agent-1' } },
     });
@@ -622,14 +570,14 @@ describe('WorkspaceProgressCard presence row', () => {
 describe('presence rollout mounted boundary', () => {
   it('hides the complete row when Multiplayer is disabled, including focused avatars', async () => {
     mocks.state.userPreferences = { labsMultiplayerEnabled: false };
-    await renderProgressCard();
+    await renderPeopleTile();
     expect(presenceRow()).toBeNull();
     expect(document.querySelector('[data-presence-person-button]')).toBeNull();
   });
   it('refuses a captured avatar click after admission invalidation', async () => {
     mocks.state.userPreferences = { labsMultiplayerEnabled: true };
     mocks.dispatch.mockClear();
-    await renderProgressCard();
+    await renderPeopleTile();
     const button = personButton('ada');
     mocks.state.userPreferences = { labsMultiplayerEnabled: false };
     await fireEvent.click(button);

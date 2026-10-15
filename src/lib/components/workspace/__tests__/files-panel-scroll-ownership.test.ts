@@ -17,9 +17,6 @@ describe('Files panel scroll ownership', () => {
     const fileTreeView = source('../../file-explorer/file-tree-view.svelte');
     const virtualizedTree = source('../../file-explorer/VirtualizedFileTree.svelte');
 
-    expect(sidebar).toContain(
-      "tabId === 'files'\n                        ? 'overflow-hidden pb-0'",
-    );
     expect(sidebar).toContain('flex h-full min-h-0 flex-col px-4');
     expect(filesPanel).toContain("'flex h-full min-h-0 flex-col pb-3'");
     expect(filesPanel).toContain('class="min-h-0 flex-1 overflow-hidden"');

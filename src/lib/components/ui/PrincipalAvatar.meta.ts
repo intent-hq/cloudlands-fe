@@ -12,6 +12,7 @@ export const principalAvatarMetadata = parseUiComponentMetadata({
   callers: [
     'src/features/notes/note-presence/NotePresenceAvatars.svelte',
     'src/features/presence/components/PresenceAvatarStack.svelte',
+    'src/features/presence/components/WorkspacePeopleActivity.svelte',
     'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte',
     'src/lib/components/chat/ChatMessage.svelte',
     'src/lib/components/chat/input/EnhancedMentionList.svelte',

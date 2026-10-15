@@ -29,6 +29,7 @@
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
+  import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
@@ -906,6 +907,7 @@
                             workspaces={filteredWorkspaces}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
+                            showRepositoryOwner={!selectedOrg}
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
@@ -1005,6 +1007,12 @@
                                       ></Tooltip.Provider
                                     >
                                   </span>
+                                  {#if !selectedRepository}
+                                    <HomeWorkspaceRepositoryLabel
+                                      workspace={item}
+                                      showOwner={!selectedOrg}
+                                    />
+                                  {/if}
                                 </span>
                               {/snippet}
                               {#snippet trailing()}<span

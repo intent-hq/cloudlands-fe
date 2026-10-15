@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { faEllipsis, faFolder, faRobot, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
@@ -222,7 +223,9 @@
           <Sidebar.MenuItem>
             <Sidebar.MenuButton label="Unread navigation" status="unread" />
             <Sidebar.MenuBadge>3</Sidebar.MenuBadge>
-            <Sidebar.MenuAction showOnHover aria-label="Unread row actions">⋯</Sidebar.MenuAction>
+            <Sidebar.MenuAction showOnHover aria-label="Unread row actions">
+              <KebabIcon orientation="horizontal" />
+            </Sidebar.MenuAction>
           </Sidebar.MenuItem>
           <Sidebar.MenuItem
             ><Sidebar.MenuButton label="Disabled navigation" disabled /></Sidebar.MenuItem

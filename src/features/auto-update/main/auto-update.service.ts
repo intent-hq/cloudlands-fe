@@ -23,6 +23,7 @@ import {
   unmarkWindowSessionTeardown,
 } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
+import { configureMacUpdateCompatibility, macUpdateChannel } from './mac-update-compatibility';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -120,6 +121,7 @@ class AutoUpdateService {
     autoUpdater.autoDownload = true; // Auto-download updates in background
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
+    configureMacUpdateCompatibility(autoUpdater);
 
     // Load persisted channel setting from electron-store
     await this.loadChannelFromSettings();
@@ -304,7 +306,7 @@ class AutoUpdateService {
       // For manual checks, send an "up to date" notification to the renderer
       if (this.isManualCheck) {
         this.isManualCheck = false;
-        this.sendToRenderer('auto-update:up-to-date', { version: info.version });
+        this.sendToRenderer('auto-update:up-to-date', { version: this.state.currentVersion });
       }
     });
 
@@ -426,7 +428,9 @@ class AutoUpdateService {
       return;
     }
     const feedUrl = `${baseUrl}/${channel}`;
-    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, ...macUpdateChannel() });
+    // Setting a channel must never permit the no-history legacy feed to downgrade.
+    autoUpdater.allowDowngrade = false;
     logger.info('Update channel set', { channel, feedUrl });
   }
 

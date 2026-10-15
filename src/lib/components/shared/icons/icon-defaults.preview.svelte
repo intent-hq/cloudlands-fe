@@ -18,12 +18,12 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { initializeIconPreview } from './icon-defaults.fixture';
   import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { faArrowRightArrowLeft, faCopy, faGithub } from '$lib/icons/phosphor-icons';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
 
   let { layout = 'menu' }: Props = $props();

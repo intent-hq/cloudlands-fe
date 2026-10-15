@@ -19,6 +19,11 @@ import {
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  noteContentViewRequested,
+  noteContentViewReleased,
+  noteContentInvalidated,
+  noteContentReadApplied,
+  noteMetadataPushed,
   noteAttributionInvalidated,
   noteAttributionViewRequested,
   readNoteRequested,
@@ -79,6 +84,16 @@ function harness(seed: Note[] = []) {
       ? loadWorkspaceNotesSucceeded([WS], { [WS]: seed })
       : ({ type: '@@init' } as never),
   );
+  for (const [wsId, noteId] of [
+    [WS, 'note-1'],
+    [WS, 'note-created'],
+    ['ws-other', 'note-2'],
+  ]) {
+    workspaceNotes = workspaceNotesReducer(
+      workspaceNotes,
+      noteContentViewRequested(`view:${noteId}`, 'initial', wsId, noteId),
+    );
+  }
   let palette = paletteReducer(undefined, { type: '@@init' });
   const state = () => ({
     workspaceNotes,
@@ -95,6 +110,8 @@ function harness(seed: Note[] = []) {
       action.type !== readNoteRequested.type &&
       action.type !== readNoteRequested.success.type &&
       action.type !== readNoteRequested.failure.type &&
+      action.type !== noteContentInvalidated.type &&
+      action.type !== noteContentReadApplied.type &&
       action.type !== refreshNoteFromEventRequested.type
     ) {
       actions.push(action);
@@ -117,6 +134,79 @@ function harness(seed: Note[] = []) {
 
 describe('notesReadSaga', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('invalidates unmounted notes without fetching their bodies', async () => {
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('hidden'));
+    const run = harness([note('hidden')]);
+    run.dispatch(noteEventReceived(WS, 'hidden', 'note:updated'));
+    await settle();
+    expect(get).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('refreshes on show and keeps another consumer alive after one releases', async () => {
+    const get = vi
+      .spyOn(appClient.notes, 'get')
+      .mockResolvedValue(note('hidden', { content: 'fresh' }));
+    const run = harness([note('hidden')]);
+    run.dispatch(noteEventReceived(WS, 'hidden', 'note:updated'));
+    await settle();
+    expect(get).not.toHaveBeenCalled();
+    run.dispatch(noteContentViewRequested('first', '1', WS, 'hidden'));
+    run.dispatch(noteContentViewRequested('second', '2', WS, 'hidden'));
+    await settle();
+    expect(get).toHaveBeenCalledTimes(1);
+    run.dispatch(noteContentViewReleased(WS, 'first'));
+    run.dispatch(noteEventReceived(WS, 'hidden', 'note:updated'));
+    await settle();
+    expect(get).toHaveBeenCalledTimes(2);
+    run.dispatch(noteContentViewReleased(WS, 'second'));
+    run.dispatch(noteEventReceived(WS, 'hidden', 'note:updated'));
+    await settle();
+    expect(get).toHaveBeenCalledTimes(2);
+    run.dispatch(noteContentViewRequested('second', '3', WS, 'hidden'));
+    await settle();
+    expect(get).toHaveBeenCalledTimes(3);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not start a trailing event read after its last visible consumer hides', async () => {
+    const pending = deferred<Note>();
+    const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
+    const run = harness([note('note-1')]);
+    run.dispatch(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.dispatch(noteEventReceived(WS, 'note-1', 'note:updated'));
+    run.dispatch(noteContentViewReleased(WS, 'view:note-1'));
+    pending.resolve(note('note-1'));
+    await settle();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(
+      run.state().workspaceNotes.byWorkspaceId[WS].staleContentByNoteId['note-1'],
+    ).toBeTruthy();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retains metadata pushes and deletions delivered during initial hydration', async () => {
+    const pending = deferred<Note[]>();
+    vi.spyOn(appClient.notes, 'list').mockReturnValue(pending.promise);
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(null);
+    const run = harness([note('deleted'), note('changed', { rev: 1 })]);
+    run.dispatch(workspaceNotesHydrationRequested(WS, 2, true));
+    const { content: _body, ...metadata } = note('changed', { rev: 3, title: 'New title' });
+    run.dispatch(noteMetadataPushed(WS, metadata));
+    run.dispatch(noteEventReceived(WS, 'deleted', 'note:deleted'));
+    pending.resolve([note('deleted'), note('changed', { rev: 1 }), note('untouched')]);
+    await settle();
+    const notes = run.state().workspaceNotes.byWorkspaceId[WS].notes.map;
+    expect(notes.deleted).toBeUndefined();
+    expect(notes.changed).toMatchObject({ title: 'New title', rev: 3 });
+    expect(notes.untouched).toBeDefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 
   it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
     const spec = {

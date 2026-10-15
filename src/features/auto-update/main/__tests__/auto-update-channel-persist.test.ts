@@ -265,3 +265,30 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     expect(result.data.channel).toBe('stable');
   });
 });
+
+it.each(['x64', 'arm64'] as const)(
+  'keeps %s channel switches architecture-safe and disables downgrades',
+  async (arch) => {
+    const { autoUpdateService } = await import('../auto-update.service');
+    const { default: updaterModule } = await import('electron-updater');
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const archDescriptor = Object.getOwnPropertyDescriptor(process, 'arch')!;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      Object.defineProperty(process, 'arch', { value: arch });
+      for (const channel of ['alpha', 'beta', 'stable'] as const) {
+        updaterModule.autoUpdater.allowDowngrade = true;
+        await autoUpdateService.setChannel(channel);
+        expect(updaterModule.autoUpdater.allowDowngrade).toBe(false);
+        expect(updaterModule.autoUpdater.setFeedURL).toHaveBeenLastCalledWith({
+          provider: 'generic',
+          url: `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}`,
+          ...(arch === 'arm64' ? { channel: 'latest-arm64' } : {}),
+        });
+      }
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+      Object.defineProperty(process, 'arch', archDescriptor);
+    }
+  },
+);

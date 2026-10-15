@@ -64,6 +64,8 @@ function temp() {
   dirs.push(dir);
   mkdirSync(join(dir, 'bin'));
   mkdirSync(join(dir, 'scripts'));
+  mkdirSync(join(dir, '.release-tools/scripts'), { recursive: true });
+  symlinkSync(resolve('node_modules'), join(dir, '.release-tools/node_modules'));
   for (const file of [
     'package-mac.mjs',
     'assemble-release-assets.mjs',
@@ -71,9 +73,28 @@ function temp() {
     'validate-release-asset-names.mjs',
     'verify-macos-build.sh',
     'macos-native.cjs',
-  ])
+    'fetch-sidecar-lib.mjs',
+    'mac-channel-feeds.mjs',
+  ]) {
     copyFileSync(resolve('scripts', file), join(dir, 'scripts', file));
+    copyFileSync(resolve('scripts', file), join(dir, '.release-tools/scripts', file));
+  }
   symlinkSync(resolve('node_modules'), join(dir, 'node_modules'));
+  writeFileSync(join(dir, 'intentd.version'), '0.10.46');
+  writeFileSync(
+    join(dir, 'sidecar-assets.json'),
+    JSON.stringify({
+      assets: [
+        { name: 'intentd-x86_64-apple-darwin.tar.xz', size: 100 },
+        { name: 'intentd-x86_64-apple-darwin.tar.xz.sha256', size: 100 },
+      ],
+    }),
+  );
+  stub(
+    dir,
+    'gh',
+    'printf "%s\\n" "$*" >> "$RUNNER_TEMP/gh-calls"; cat "$RUNNER_TEMP/sidecar-assets.json"',
+  );
   return dir;
 }
 afterEach(() => {
@@ -160,13 +181,13 @@ describe('release artifact assembly through the publish workflow', () => {
     expect(readFileSync(join(output, 'Intent.Setup.1.2.3.exe'), 'utf8')).toBe(
       'release-windows payload',
     );
-    expect(readdirSync(output)).toHaveLength(15);
+    expect(readdirSync(output)).toHaveLength(16);
     expect(existsSync(join(dir, 'release-downloads/release-macos-arm64/latest-mac.yml'))).toBe(
       true,
     );
   });
   it.each([
-    'missing Intel',
+    'missing ARM',
     'missing DMG',
     'missing ZIP',
     'corrupt archive',
@@ -177,8 +198,8 @@ describe('release artifact assembly through the publish workflow', () => {
   ])('rejects %s before anything can be published', (failure) => {
     const dir = temp();
     const downloads = fixtures(dir);
-    const intel = join(downloads, 'release-macos-x64');
-    if (failure === 'missing Intel') rmSync(intel, { recursive: true });
+    const intel = join(downloads, 'release-macos-arm64');
+    if (failure === 'missing ARM') rmSync(intel, { recursive: true });
     if (failure === 'missing DMG' || failure === 'missing ZIP') {
       const path = join(intel, 'latest-mac.yml');
       const feed = load(readFileSync(path, 'utf8'));
@@ -190,7 +211,7 @@ describe('release artifact assembly through the publish workflow', () => {
       writeFileSync(path, dump(feed));
     }
     if (failure === 'corrupt archive')
-      writeFileSync(join(intel, 'Intent-1.2.3-x64-mac.zip'), 'corrupted');
+      writeFileSync(join(intel, 'Intent-1.2.3-arm64-mac.zip'), 'corrupted');
     if (failure === 'collision')
       writeFileSync(join(downloads, 'release-windows/Intent-1.2.3-x64.dmg'), 'overwritten');
     if (failure === 'symlink') symlinkSync('/dev/null', join(intel, 'extra.blockmap'));
@@ -200,6 +221,28 @@ describe('release artifact assembly through the publish workflow', () => {
     expect(result.status, result.stdout).not.toBe(0);
     expect(existsSync(join(dir, 'dist-electron'))).toBe(false);
   });
+  it.each(['absent', 'corrupt', 'partial', 'extra'])(
+    'omits the entire optional Intel artifact when %s',
+    (failure) => {
+      const dir = temp();
+      const downloads = fixtures(dir);
+      const intel = join(downloads, 'release-macos-x64');
+      if (failure === 'absent') rmSync(intel, { recursive: true });
+      if (failure === 'corrupt') writeFileSync(join(intel, 'Intent-1.2.3-x64-mac.zip'), 'bad');
+      if (failure === 'partial') rmSync(join(intel, 'Intent-1.2.3-x64.dmg.blockmap'));
+      if (failure === 'extra') writeFileSync(join(intel, 'unverified.zip'), 'bad');
+      const result = assemble(dir);
+      expect(result.status, result.stderr).toBe(0);
+      const files = readdirSync(join(dir, 'dist-electron'));
+      expect(files.some((name) => name.includes('-x64'))).toBe(false);
+      expect(files).not.toContain('unverified.zip');
+      const feed = load(readFileSync(join(dir, 'dist-electron/latest-mac.yml'), 'utf8'));
+      expect(feed.files.map((file: { url: string }) => file.url)).toEqual([
+        'Intent-1.2.3-arm64-mac.zip',
+        'Intent-1.2.3-arm64.dmg',
+      ]);
+    },
+  );
   it('refuses existing output without deleting it', () => {
     const dir = temp();
     fixtures(dir);
@@ -226,7 +269,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
     ).include;
     expect(matrix.map((m) => [m.arch, m.runner, m.intentd_target])).toEqual([
       ['arm64', 'depot-macos-latest', 'aarch64-apple-darwin'],
-      ['x64', 'macos-latest-large', 'x86_64-apple-darwin'],
+      ...(name === 'release-alpha' ? [['x64', 'macos-latest-large', 'x86_64-apple-darwin']] : []),
     ]);
     for (const row of matrix) {
       const dir = temp();
@@ -319,7 +362,8 @@ describe.each(['beta', 'stable'])('%s promotion', (channel) => {
     const dir = temp();
     const original =
       'version: 1.2.3\nsha512: unchanged-intel-hash\nfiles:\n  - url: Intent-arm64-mac.zip\n    sha512: arm-hash\n';
-    writeFileSync(join(dir, 'versioned.yml'), original);
+    mkdirSync(join(dir, 'release-assets'));
+    writeFileSync(join(dir, 'release-assets/latest-mac.yml'), original);
     writeFileSync(
       join(dir, 'channel.yml'),
       corrupt ? original.replace('arm-hash', 'corrupt-arm-hash') : original,
@@ -456,9 +500,16 @@ describe.each(['x64', 'arm64'])('%s differential update artifacts', (arch) => {
     const archive = kind === 'dmg' ? `Intent-1.2.3-${arch}.dmg` : `Intent-1.2.3-${arch}-mac.zip`;
     rmSync(join(downloads, `release-macos-${arch}`, `${archive}.blockmap`));
     const result = assemble(dir);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(`${archive}.blockmap`);
-    expect(existsSync(join(dir, 'dist-electron'))).toBe(false);
+    if (arch === 'arm64') {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(`${archive}.blockmap`);
+      expect(existsSync(join(dir, 'dist-electron'))).toBe(false);
+    } else {
+      expect(result.status, result.stderr).toBe(0);
+      expect(readdirSync(join(dir, 'dist-electron')).some((name) => name.includes('-x64'))).toBe(
+        false,
+      );
+    }
   });
 });
 
@@ -471,7 +522,8 @@ it.each(['empty', 'symlink'])('rejects an %s blockmap beside the native archive'
     rmSync(map);
     symlinkSync('Intent-1.2.3-x64-mac.zip', map);
   }
-  expect(assemble(dir).status).not.toBe(0);
+  expect(assemble(dir).status).toBe(0);
+  expect(readdirSync(join(dir, 'dist-electron')).some((name) => name.includes('-x64'))).toBe(false);
 });
 
 function manualPlan(dir: string, arch?: string) {
@@ -509,11 +561,9 @@ it('runs the packaged smoke admission and executable regressions for both native
 
 describe('manual Mac architecture selection', () => {
   const cases = [
-    { choice: 'both', arches: ['arm64', 'x64'] },
     { choice: 'arm64', arches: ['arm64'] },
-    { choice: 'x64', arches: ['x64'] },
-    { choice: '', arches: ['arm64', 'x64'] },
-    { choice: undefined, arches: ['arm64', 'x64'] },
+    { choice: '', arches: ['arm64'] },
+    { choice: undefined, arches: ['arm64'] },
   ];
 
   it('offers an optional architecture choice while keeping the platform opt-in', () => {
@@ -521,8 +571,8 @@ describe('manual Mac architecture selection', () => {
     expect(inputs.macos_arch).toMatchObject({
       required: false,
       type: 'choice',
-      default: 'both',
-      options: ['both', 'arm64', 'x64'],
+      default: 'arm64',
+      options: ['arm64'],
     });
     expect(inputs.build_macos).toMatchObject({ type: 'boolean', default: false });
   });
@@ -601,9 +651,12 @@ describe('manual Mac architecture selection', () => {
     expect(shell(temp(), check.run!, env).status === 0).toBe(valid);
   });
 
-  it('rejects unsupported architecture values instead of scheduling unintended builds', () => {
-    expect(() => manualPlan(temp(), 'universal')).toThrow('macos_arch must be both, arm64, or x64');
-  });
+  it.each(['universal', 'both', 'x64'])(
+    'rejects %s instead of scheduling Intel manual builds',
+    (arch) => {
+      expect(() => manualPlan(temp(), arch)).toThrow('Manual Mac builds support arm64 only');
+    },
+  );
 });
 
 describe.each(['arm64', 'x64'])(
@@ -684,7 +737,7 @@ it('rebuilds an ARM-only tag without invoking the new dual-CPU assembler or depe
       step('release-alpha', 'publish', 'Install feed assembly dependencies'),
       false,
     ),
-  ).toBe(false);
+  ).toBe(true);
 });
 
 const nativeReleaseTools = [
@@ -713,6 +766,27 @@ function releasePlan(dir: string) {
 }
 
 describe('release tag capability routing', () => {
+  it.each(['missing archive', 'missing checksum', 'empty archive', 'lookup failure'])(
+    'does not schedule Intel when its exact pinned sidecar has %s',
+    (failure) => {
+      const dir = temp();
+      const assets = [
+        { name: 'intentd-x86_64-apple-darwin.tar.xz', size: 100 },
+        { name: 'intentd-x86_64-apple-darwin.tar.xz.sha256', size: 100 },
+      ];
+      if (failure === 'missing archive') assets.shift();
+      if (failure === 'missing checksum') assets.pop();
+      if (failure === 'empty archive') assets[0].size = 0;
+      writeFileSync(join(dir, 'sidecar-assets.json'), JSON.stringify({ assets }));
+      if (failure === 'lookup failure') stub(dir, 'gh', 'exit 1');
+      expect(JSON.parse(releasePlan(dir).matrix).include.map((row: Matrix) => row.arch)).toEqual([
+        'arm64',
+      ]);
+      if (failure !== 'lookup failure')
+        expect(readFileSync(join(dir, 'gh-calls'), 'utf8')).toContain('v0.10.46');
+    },
+  );
+
   it.each([false, true])('assembles the correct artifacts for dual-CPU tag=%s', (modern) => {
     const dir = temp();
     if (!modern) legacyCheckout(dir);
@@ -749,6 +823,12 @@ describe('release tag capability routing', () => {
       const result = shell(dir, assembleStep.run!, { VERSION: '1.2.3' });
       expect(result.status, result.stderr).toBe(0);
     }
+    stub(dir, 'gh', 'echo "gh: Not Found (HTTP 404)" >&2; exit 1');
+    const prepared = shell(
+      dir,
+      step('release-alpha', 'publish', 'Prepare architecture-safe Mac channel feeds').run!,
+    );
+    expect(prepared.status, prepared.stderr).toBe(0);
     const verified = shell(
       dir,
       step('release-alpha', 'publish', 'Verify collected release assets').run!,
@@ -759,11 +839,7 @@ describe('release tag capability routing', () => {
       feed.files
         .filter((f: { url: string }) => f.url.endsWith('.zip'))
         .map((f: { url: string }) => f.url),
-    ).toEqual(
-      modern
-        ? ['Intent-1.2.3-x64-mac.zip', 'Intent-1.2.3-arm64-mac.zip']
-        : ['Intent-1.2.3-arm64-mac.zip'],
-    );
+    ).toEqual(modern ? ['Intent-1.2.3-x64-mac.zip', 'Intent-1.2.3-arm64-mac.zip'] : []);
     expect(
       releaseStepEnabled(step('release-alpha', 'build-macos', 'Verify packaged Mac build'), modern),
     ).toBe(modern);
@@ -772,7 +848,7 @@ describe('release tag capability routing', () => {
         step('release-alpha', 'publish', 'Install feed assembly dependencies'),
         modern,
       ),
-    ).toBe(modern);
+    ).toBe(true);
     const summary = shell(dir, step('release-alpha', 'publish', 'Post summary').run!, {
       VERSION: '1.2.3',
       GITHUB_STEP_SUMMARY: join(dir, 'summary'),
@@ -789,3 +865,116 @@ describe('release tag capability routing', () => {
     expect(() => releasePlan(dir)).toThrow('Incomplete native Mac release tooling');
   });
 });
+
+it.each(['alpha', 'beta', 'stable'])(
+  'does not switch %s feeds after a failed payload upload',
+  (channel) => {
+    const dir = temp();
+    fixtures(dir);
+    expect(assemble(dir).status).toBe(0);
+    symlinkSync(join(dir, 'dist-electron'), join(dir, 'release-assets'));
+    stub(
+      dir,
+      'gh',
+      `
+    printf '%s\\n' "$*" >> "$RUNNER_TEMP/publish-calls"
+    if [ "$1 $2" = 'release upload' ]; then exit 42; fi
+  `,
+    );
+    const publish =
+      channel === 'alpha'
+        ? step('release-alpha', 'publish', 'Publish to GitHub Releases (rolling alpha tag)')
+        : step(
+            channel === 'beta' ? 'promote-beta' : 'release-stable',
+            `promote-to-${channel}`,
+            `Upload new assets to ${channel}`,
+          );
+    expect(
+      shell(dir, publish.run!, { VERSION: '1.2.3', GITHUB_OUTPUT: join(dir, 'outputs') }).status,
+    ).toBe(42);
+    const calls = readFileSync(join(dir, 'publish-calls'), 'utf8');
+    expect(calls).toContain('Intent-1.2.3-arm64-mac.zip');
+    expect(calls).not.toContain('latest-mac.yml');
+    expect(calls).not.toContain('latest-arm64-mac.yml');
+    expect(calls).not.toContain('delete-asset');
+  },
+);
+
+it.each(['beta', 'stable'])(
+  'reads %s advancement from the ARM feed, with legacy fallback only on 404',
+  (channel) => {
+    for (const status of ['200', '404', '503']) {
+      const dir = temp();
+      stub(
+        dir,
+        'curl',
+        `
+      out=''; while [ "$#" -gt 0 ]; do
+        if [ "$1" = '-o' ]; then out="$2"; shift 2; else url="$1"; shift; fi
+      done
+      printf '%s\\n' "$url" >> "$RUNNER_TEMP/urls"
+      case "$url" in
+        *latest-arm64-mac.yml) echo 'version: 3.0.0' > "$out"; printf '%s' '${status}' ;;
+        *) echo 'version: 2.0.0' > "$out"; printf '200' ;;
+      esac
+    `,
+      );
+      const run = step(
+        channel === 'beta' ? 'promote-beta' : 'release-stable',
+        `promote-to-${channel}`,
+        `Read current ${channel} version`,
+      ).run!;
+      const result = shell(dir, run, { GITHUB_OUTPUT: join(dir, 'outputs') });
+      if (status === '503') expect(result.status).not.toBe(0);
+      else {
+        expect(result.status, result.stderr).toBe(0);
+        expect(readFileSync(join(dir, 'outputs'), 'utf8')).toContain(
+          `prev_${channel}=${status === '200' ? '3.0.0' : '2.0.0'}`,
+        );
+      }
+      expect(readFileSync(join(dir, 'urls'), 'utf8').trim().split('\n')).toHaveLength(
+        status === '404' ? 2 : 1,
+      );
+    }
+  },
+);
+
+it('blocks required Mac failures while allowing only the Intel matrix leg to fail', () => {
+  const jobs = workflow('release-alpha').jobs;
+  const optional = jobs['build-macos'] as Job & { 'continue-on-error': string };
+  for (const arch of ['arm64', 'x64']) {
+    const allowed = JSON.parse(
+      render(optional['continue-on-error'], { "matrix.arch == 'x64'": String(arch === 'x64') }),
+    );
+    expect(allowed).toBe(arch === 'x64');
+  }
+  expect(jobs.publish.needs).toEqual(['resolve', 'build-macos', 'build-windows', 'build-linux']);
+  expect((jobs['build-windows'] as Record<string, unknown>)['continue-on-error']).toBeUndefined();
+  expect((jobs['build-linux'] as Record<string, unknown>)['continue-on-error']).toBeUndefined();
+  expect(jobs['build-macos'].strategy).toMatchObject({ 'fail-fast': false });
+});
+
+it.each([
+  ['push', 'v1.2.3', '', 'present', true],
+  ['push', 'main', '', 'present', false],
+  ['workflow_dispatch', 'main', 'v1.2.3', 'present', true],
+  ['workflow_dispatch', 'main', 'v1.2.3', 'absent', false],
+  ['workflow_dispatch', 'main', 'main', 'present', false],
+])(
+  'admits only actual release tags: %s pushed=%s input=%s exists=%s',
+  (event, pushed, input, exists, valid) => {
+    const dir = temp();
+    stub(dir, 'gh', exists === 'present' ? 'exit 0' : 'exit 1');
+    const output = join(dir, 'tag-output');
+    const result = shell(dir, step('release-alpha', 'resolve', 'Resolve release tag').run!, {
+      EVENT_NAME: String(event),
+      PUSHED_TAG: String(pushed),
+      INPUT_TAG: String(input),
+      REPO: 'intent-hq/cloudlands-fe',
+      GITHUB_OUTPUT: output,
+    });
+    expect(result.status === 0).toBe(valid);
+    if (valid) expect(readFileSync(output, 'utf8')).toContain('tag=v1.2.3');
+    else expect(existsSync(output)).toBe(false);
+  },
+);
