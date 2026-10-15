@@ -156,13 +156,16 @@ not freeze bytes, and another client can change the file or start a turn after
 validation. Repository references follow the same idle-only limitation as notes.
 Folders, secondary roots, external paths and content search are not supported.
 
-Use the paperclip to select local images or files. Wait for upload completion before
-sending; registered attachments survive draft reload. Remove a chip to exclude it.
+Use the paperclip to select local images or files, paste a clipboard image into the
+composer, or drop a file from the file manager. These use the same attachment
+upload flow; paste and drop do not send a message. Ordinary text paste keeps its
+text and line breaks. Wait for upload completion, then explicitly **Send**;
+registered attachments survive draft reload. Remove a chip to exclude it.
 An interrupted upload can be retried while its local file is still available. After
 a reload, an unfinished browser upload must be removed and reselected. Existing
-unsupported draft items remain visible and block sending until removed. The native
-connected checkpoint covers PNG and small text files through the chooser; other
-formats, clipboard attachments, and external file drop are not established here.
+unsupported draft items remain visible and block sending until removed. This remains
+an internal browser workflow. Clipboard and file-manager behavior depends on the
+browser and operating system; it does not establish macOS, Electron, or OS-IME parity.
 Clearing browser storage removes this browser's client identity and its access to
 client-scoped drafts; it does not delete the daemon's chat history. If browser
 storage is unavailable, client identity lasts for the tab session.
@@ -341,7 +344,12 @@ message identity, navigation cleanup, and desktop/narrow captures. The companion
 `workspace-chat-attachments.extended.spec.mjs` uses authored safe PNG and text files,
 corroborates registered bytes and persisted blocks, and exercises draft reload,
 removal/reselection, cancellation of a pending upload and actual provider output.
-These tests require the same owned-daemon guards. The companion
+`workspace-clipboard-drop.extended.spec.mjs` separately exercises trusted PNG paste
+and external PCManFM/X11 file drop at 1280/420, followed by draft recovery and an
+explicit provider Send. It verifies delivered clipboard bytes (which the browser
+may re-encode), pixel equivalence, and exact registered/persisted attachments.
+These tests require the same owned-daemon guards and a task-owned clipboard/display;
+they do not establish other operating systems or native IME behavior. The companion
 `workspace-agent-create.extended.spec.mjs` starts from an empty isolated workspace,
 corroborates exactly one created agent and its configured provider/model, sends the
 first message, checks genuine streaming and persisted IDs, then verifies reload,

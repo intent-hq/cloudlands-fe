@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -193,7 +194,8 @@ export function MessageComposer({
   const currentQueue = useRef(queue);
   const previousStatus = useRef(status);
   const supportsFiles = onFilesChange !== undefined;
-  const supportsQueue = status !== undefined && onQueueChange !== undefined && onEnqueue === undefined;
+  const supportsQueue =
+    status !== undefined && onQueueChange !== undefined && onEnqueue === undefined;
   const streaming = status === 'streaming';
   const canSend =
     !disabled && !sendDisabled && (value.trim().length > 0 || files.length > 0 || hasAttachments);
@@ -446,7 +448,7 @@ export function MessageComposer({
   }
 
   function addFiles(incoming: File[]) {
-    if (!onFilesChange) return;
+    if (!onFilesChange || disabled) return false;
     const seen = new Set(files.map(fileKey));
     const accepted = incoming.filter((file) => {
       const key = fileKey(file);
@@ -454,8 +456,26 @@ export function MessageComposer({
       seen.add(key);
       return true;
     });
-    const next = [...files, ...accepted];
-    if (accepted.length) onFilesChange(maxFiles === undefined ? next : next.slice(0, maxFiles));
+    const combined = [...files, ...accepted];
+    const next = maxFiles === undefined ? combined : combined.slice(0, maxFiles);
+    if (next.length <= files.length) return false;
+    onFilesChange(next);
+    return true;
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    textareaProps?.onPaste?.(event);
+    if (event.defaultPrevented || disabled || !supportsFiles || !event.clipboardData) return;
+    const incoming: File[] = [];
+    for (const item of Array.from(event.clipboardData.items ?? [])) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) incoming.push(file);
+    }
+    // FileList can wrap these same native items with different timestamps.
+    // Use it only as a fallback so one clipboard file is admitted once.
+    if (!incoming.length) incoming.push(...Array.from(event.clipboardData.files ?? []));
+    if (addFiles(incoming)) event.preventDefault();
   }
 
   function openFilePicker(acceptOverride?: string) {
@@ -662,6 +682,7 @@ export function MessageComposer({
               updateValue(event.currentTarget.value);
             }}
             onKeyDown={handleKeydown}
+            onPaste={handlePaste}
             onFocus={(event) => {
               setFocused(true);
               textareaProps?.onFocus?.(event);

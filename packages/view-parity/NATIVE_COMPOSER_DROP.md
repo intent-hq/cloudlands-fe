@@ -63,5 +63,5 @@ observers in finally. Stop the task-owned browser, previews and desktop/containe
 at handoff. Do not touch an unrelated maintained preview.
 
 This establishes Linux X11/PCManFM automated OS-input coverage only. It does not
-establish Wayland/macOS/Windows delivery, file paste (not a composer contract),
+establish Wayland/macOS/Windows delivery, clipboard file paste,
 strict native IME completion trust, or live product composer behavior.
