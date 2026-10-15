@@ -7598,5 +7598,9 @@
   "chat_fileContext_add_label": "リポジトリのファイルを追加",
   "chat_fileContext_picker_description": "名前またはパスでファイルを選択します。送信時に内容を確認し、エージェントが現在のファイルを読み取ります。",
   "chat_fileContext_unavailable_error": "選択したファイルが利用できない、ワークスペース外にある、または対応する完全なテキストではありません。削除するか再試行してください。",
-  "chat_fileContext_busy_description": "現在の応答が終わってから、選択したノートやファイルを送信してください。"
+  "chat_fileContext_busy_description": "現在の応答が終わってから、選択したノートやファイルを送信してください。",
+  "workspace_agentRename_edit_label": "会話の名前を変更",
+  "workspace_agentRename_saving_label": "会話名を保存中…",
+  "workspace_agentRename_failed_description": "会話名を保存できませんでした。名前を開いて再試行してください。",
+  "workspace_agentRename_unknown_description": "名前変更の結果が不明です。同じリクエストの繰り返しを防ぐため、名前変更はブロックされています。"
 }

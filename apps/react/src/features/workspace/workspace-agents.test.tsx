@@ -41,7 +41,7 @@ vi.mock('@/store/workspace-agents/workspace-agents-selectors', async () => {
       { select: getAgentCreationOutcome },
     ),
     selectAgentCreationResource: () => ({ value: harness.resource }),
-    selectForegroundWorkspaceAgents: () => ({ value: [] }),
+    selectFilteredForegroundWorkspaceAgents: () => ({ value: [] }),
     selectAgentsLoaded: () => ({ value: true }),
   };
 });
@@ -63,7 +63,7 @@ const requests: ReturnType<typeof createAgentFromConfigRequested>[] = [];
 async function render() {
   await act(async () => root.render(<WorkspaceAgents workspaceId="workspace" />));
 }
-const button = () => container.querySelector('button')!;
+const button = () => container.querySelector('[data-testid=workspace-agent-creation] button')! as HTMLButtonElement;
 const outcome = () =>
   getAgentCreationOutcome(
     { workspaceAgents: state } as Parameters<typeof getAgentCreationOutcome>[0],

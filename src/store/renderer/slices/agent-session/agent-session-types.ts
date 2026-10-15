@@ -1,3 +1,7 @@
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { StoreAction } from '@themislib/themis/types';
+import type { SagaGenerator } from 'typed-redux-saga';
+import type { AgentsClient } from '$lib/client/app-client';
 import type { AgentSession, AgentMessage } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 
@@ -209,6 +213,11 @@ export interface AgentHistorySegment {
  * Messages are stored as an ordered, serializable array.
  */
 export interface AgentSessionState {
+  /** Monotonic identity revisions survive removal/reset to reject stale edit-start captures. */
+  renameRevisions?: Record<string, number>;
+  renameOperations?: Collection<AgentRenameOperation, 'requestId'>;
+  /** Released IDs remain tombstoned for this Store lifetime. */
+  renameViews?: Collection<AgentRenameView, 'viewId'>;
   /** In-flight mode mutations; never persisted with agent sessions. */
   backgroundModePending?: Record<string, true>;
   /** Agent sessions keyed by agentId */
@@ -228,4 +237,63 @@ export interface AgentSessionState {
    * agent has been detail-hydrated (equivalent to an empty record).
    */
   detailHydrated?: Record<string, true>;
+}
+
+/** Explicit host admission captured when editing starts, never reconstructed by the worker. */
+export interface AgentRenameRequestMetadata {
+  requestId: string;
+  authority: string;
+  context: string;
+  viewId: string;
+  expectedRevision: number;
+  previousName: string;
+}
+export interface AgentRenameRequest extends AgentRenameRequestMetadata {
+  workspaceId: string;
+  agentId: string;
+  name: string;
+}
+export interface AgentRenameOperation extends AgentRenameRequest {
+  observedRevision: number;
+  status: 'queued' | 'running' | 'confirmed' | 'failed' | 'unknown';
+  acknowledgedName?: string;
+  error?: string;
+}
+export interface AgentRenameView {
+  viewId: string;
+  workspaceId: string;
+  agentId: string;
+  authority: string;
+  context: string;
+  released: boolean;
+}
+export interface AgentRenameSagaDependencies {
+  rename: AgentsClient['rename'];
+  selectSession(agentId: string): SagaGenerator<StoredAgentSession | undefined>;
+  selectRevision(agentId: string): SagaGenerator<number>;
+  captureOwnership?(
+    agentId: string,
+    workspaceId: string,
+  ): {
+    key: string;
+    isCurrent(workspaceId: string | undefined): boolean;
+  };
+  admission?: {
+    selectOperations(agentId: string): SagaGenerator<AgentRenameOperation[]>;
+    readRevision(agentId: string): number;
+    isCurrent(request: AgentRenameRequest): boolean;
+    canPublish(request: AgentRenameRequest): boolean;
+    dispatch(action: StoreAction<unknown>): unknown;
+  };
+}
+type AgentRenameIdentity = Pick<AgentSession, 'name' | 'nameExplicitlySet'>;
+export interface AgentRenameAttempt {
+  identity: AgentRenameIdentity;
+  status: 'pending' | 'succeeded' | 'failed';
+}
+export interface AgentRenameSequence {
+  initial: AgentRenameIdentity;
+  published: AgentRenameIdentity;
+  revision: number;
+  attempts: AgentRenameAttempt[];
 }

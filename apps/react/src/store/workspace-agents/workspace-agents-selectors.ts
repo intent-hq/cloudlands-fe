@@ -1,3 +1,4 @@
+import { sidebarSearchMatches } from '$lib/components/workspace/sidebar/sidebar-search';
 import { store } from '../index';
 import * as projections from '../../../../../src/store/renderer/slices/workspace-agents/workspace-agents-projections';
 
@@ -49,4 +50,13 @@ export const selectAgentCreationOutcome = store.createSelector(projections.getAg
 
 export const selectAgentCreationResource = store.createSelector(
   projections.getAgentCreationResource,
+);
+
+export const selectFilteredForegroundWorkspaceAgents = store.createSelector(
+  (state, workspaceId: string, query: string) => {
+    const agents = selectForegroundWorkspaceAgents.select(state, workspaceId);
+    return query.trim()
+      ? agents.filter((agent) => sidebarSearchMatches(query, [agent.name]))
+      : agents;
+  },
 );

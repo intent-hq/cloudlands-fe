@@ -4,6 +4,8 @@ import type {
   ImageBlock,
   FileBlock,
   MutationResult,
+  AgentRenameOptions,
+  AgentRenameResult,
   QueueRemovalOptions,
   QueueRemovalResult,
 } from '../app-client';
@@ -242,8 +244,8 @@ export function createBackendChatCommands(
       agentId: string,
       name: string,
       workspaceId?: string,
-      options?: { skipIfExplicitlySet?: boolean },
-    ): Promise<MutationResult> {
+      options?: AgentRenameOptions,
+    ): Promise<AgentRenameResult> {
       // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
       // returns `{ success: true, name }`; an applied rename emits
       // `agent:renamed` (in AGENT_LIFECYCLE_EVENTS), which reconciles the list.
@@ -257,7 +259,41 @@ export function createBackendChatCommands(
         ...(workspaceId !== undefined ? { workspaceId } : {}),
       };
       if (options?.skipIfExplicitlySet === true) params.skipIfExplicitlySet = true;
-      return runMutation('agent.rename', params);
+      if (!options?.requireRenameReceipt) return runMutation('agent.rename', params);
+      let dispatched = false;
+      if (!workspaceId || !agentId || !name.trim() || options.skipIfExplicitlySet)
+        return { success: false, renameOutcome: 'failed', dispatched };
+      try {
+        const result = await backendRequest<unknown>('agent.rename', params, {
+          onDispatch: () => {
+            options.onDispatch();
+            dispatched = true;
+          },
+        });
+        if (result && typeof result === 'object' && !Array.isArray(result)) {
+          const receipt = result as { success?: unknown; name?: unknown; skipped?: unknown };
+          if (
+            dispatched &&
+            receipt.success === true &&
+            typeof receipt.name === 'string' &&
+            receipt.name.trim() &&
+            receipt.skipped === undefined
+          )
+            return { success: true, renameOutcome: 'confirmed', dispatched, name: receipt.name };
+        }
+        return { success: false, renameOutcome: dispatched ? 'unknown' : 'failed', dispatched };
+      } catch (error) {
+        const rpcCode = (error as { rpcCode?: unknown } | null)?.rpcCode;
+        const refused =
+          [-32600, -32601, -32602, -32003].includes(rpcCode as number) ||
+          isForbiddenErrorResponse(error);
+        return {
+          success: false,
+          error: mutationErrorMessage(error),
+          renameOutcome: !dispatched || refused ? 'failed' : 'unknown',
+          dispatched,
+        };
+      }
     },
   };
 }

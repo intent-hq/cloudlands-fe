@@ -1,3 +1,4 @@
+import { WorkspaceAgentName, WorkspaceAgentNameStatus } from './workspace-agent-name';
 import { WorkspaceConversationPermissions } from './workspace-conversation-permissions';
 import {
   agentMetadataAcquired,
@@ -436,9 +437,7 @@ export function WorkspaceConversation({
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <h2 id={`${consumer}-conversation`} ref={heading} tabIndex={-1} className="break-words">
-          {session?.workspaceId === workspaceId
-            ? session.name
-            : m.log_friendlyLabels_agentFallback_label()}
+          <WorkspaceAgentName workspaceId={workspaceId} agentId={agentId} />
         </h2>
         <Link
           to="/workspaces/$workspaceId"
@@ -449,6 +448,7 @@ export function WorkspaceConversation({
           {m.workspace_filesPage_backToWorkspace_label()}
         </Link>
       </div>
+      <WorkspaceAgentNameStatus workspaceId={workspaceId} agentId={agentId} />
       <LiveStreamPhaseIndicator phase={authority ? chat.liveStreamPhase : 'connecting'} />
       {failed ? (
         <ErrorState

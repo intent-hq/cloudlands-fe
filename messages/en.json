@@ -7598,5 +7598,9 @@
   "chat_fileContext_add_label": "Add repository file",
   "chat_fileContext_picker_description": "Choose a file by name or path. Its current contents are read when you send; the agent reads the live file.",
   "chat_fileContext_unavailable_error": "A selected repository file is unavailable, outside this workspace, or not supported complete text. Remove it or retry.",
-  "chat_fileContext_busy_description": "Wait for the current response before sending selected notes or repository files."
+  "chat_fileContext_busy_description": "Wait for the current response before sending selected notes or repository files.",
+  "workspace_agentRename_edit_label": "Rename conversation",
+  "workspace_agentRename_saving_label": "Saving conversation name…",
+  "workspace_agentRename_failed_description": "The conversation name was not saved. Open the name to try again.",
+  "workspace_agentRename_unknown_description": "The rename outcome is unknown. Renaming is blocked to avoid repeating the request."
 }

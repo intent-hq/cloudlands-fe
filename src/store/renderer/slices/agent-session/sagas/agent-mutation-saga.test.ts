@@ -808,6 +808,25 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it('does not roll back daemon name ABA to the optimistic name', async () => {
+    const pending = Promise.withResolvers<{ success: false }>();
+    mocks.rename.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const request = renameAgentSessionRequested(WS, A1, 'Pending edit');
+    dispatch(request);
+    dispatch(
+      bulkUpsertSessions([session(A1, { name: 'Other authoritative', nameExplicitlySet: true })]),
+    );
+    dispatch(bulkUpsertSessions([session(A1, { name: 'Pending edit', nameExplicitlySet: true })]));
+    pending.resolve({ success: false });
+    await expect(request.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Pending edit',
+      nameExplicitlySet: true,
+    });
+    await stop(task);
+  });
+
   it('does not roll back a daemon identity that replaces a pending rename', async () => {
     const pending = Promise.withResolvers<{ success: false }>();
     mocks.rename.mockReturnValueOnce(pending.promise);

@@ -315,6 +315,17 @@ export interface QueueRemovalOptions {
   onDispatch(): void;
 }
 
+/** Strict rename receipts preserve the daemon's acknowledged name and dispatch evidence. */
+export interface AgentRenameResult extends MutationResult {
+  name?: string;
+  dispatched?: boolean;
+  renameOutcome?: 'confirmed' | 'failed' | 'unknown';
+}
+export type AgentRenameOptions = { skipIfExplicitlySet?: boolean } & (
+  | { requireRenameReceipt: true; onDispatch(): void }
+  | { requireRenameReceipt?: false; onDispatch?: never }
+);
+
 export interface AgentsClient extends PermissionResponder, AgentsReadClient {
   get(agentId: string, workspaceId?: string): Promise<AgentSession | null>;
   /**
@@ -628,9 +639,7 @@ export interface AgentsClient extends PermissionResponder, AgentsReadClient {
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
-   * other windows. `workspaceId` is accepted for caller parity with `delete`
-   * but is not part of the wire contract — the daemon resolves the workspace
-   * itself. `options.skipIfExplicitlySet` forwards the §5.5 rename guard for
+   * other windows. `workspaceId` carries the captured origin when supplied. `options.skipIfExplicitlySet` forwards the §5.5 rename guard for
    * automated renames (e.g. the chief first-message rename): the daemon
    * leaves a session whose name was explicitly set by the user untouched and
    * acks `{ success: true, skipped: true }`. User-initiated renames omit it.
@@ -639,8 +648,8 @@ export interface AgentsClient extends PermissionResponder, AgentsReadClient {
     agentId: string,
     name: string,
     workspaceId?: string,
-    options?: { skipIfExplicitlySet?: boolean },
-  ): Promise<MutationResult>;
+    options?: AgentRenameOptions,
+  ): Promise<AgentRenameResult>;
   /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is

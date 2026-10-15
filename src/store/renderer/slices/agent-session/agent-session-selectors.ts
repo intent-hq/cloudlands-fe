@@ -546,3 +546,5 @@ export const selectAgentPreview = store.createSelector(
     return preview ? { ...preview, isLive } : null;
   },
 );
+
+export const selectAgentRenameRevision = store.createSelector(projections.getAgentRenameRevision);

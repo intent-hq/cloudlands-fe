@@ -5,14 +5,14 @@ import {
   createAgentFromConfigRequested,
   clearAgentCreationOutcome,
 } from '../../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { store } from '@/store';
 import {
   selectAgentCreationOutcome,
   selectAgentCreationResource,
   selectAgentsLoaded,
-  selectForegroundWorkspaceAgents,
+  selectFilteredForegroundWorkspaceAgents,
 } from '@/store/workspace-agents/workspace-agents-selectors';
 import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import {
@@ -23,6 +23,7 @@ import { AgentAvatarWithState } from '@/features/agent/components/agent-avatar/a
 import { getAvatarStateForSession } from '../../../../../src/features/agent/components/agent-avatar/avatar-state-core';
 import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
 import { ListRow, ListView } from '@/components/patterns/collection';
+import { SidebarExpandableSearch } from '@/components/workspace/sidebar/sidebar-expandable-search';
 import { m } from '$shared/paraglide/messages.js';
 
 function WorkspaceAgentCreation({ workspaceId }: { workspaceId: string }) {
@@ -116,7 +117,8 @@ function WorkspaceAgentCreation({ workspaceId }: { workspaceId: string }) {
 
 function WorkspaceAgentRows({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
-  const agents = selectForegroundWorkspaceAgents(workspaceId);
+  const [query, setQuery] = useState('');
+  const agents = selectFilteredForegroundWorkspaceAgents(workspaceId, query);
   const loaded = selectAgentsLoaded(workspaceId);
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
   useLayoutEffect(() => {
@@ -128,35 +130,44 @@ function WorkspaceAgentRows({ workspaceId }: { workspaceId: string }) {
     };
   }, [workspaceId, authority]);
   return (
-    <ListView
-      items={authority ? agents.value : []}
-      status={authority && loaded.value ? 'ready' : 'loading'}
-      ariaLabel={m.workspace_multiSelectSidebar_agentsTab_label()}
-      onActivate={(agent) =>
-        void navigate({
-          to: '/workspaces/$workspaceId',
-          params: { workspaceId },
-          search: (previous) => ({ ...previous, agent: agent.id }),
-        })
-      }
-      getKey={(agent) => agent.id}
-      getText={(agent) => agent.name}
-      row={({ item: agent }) => (
-        <ListRow
-          data-workspace-agent={agent.id}
-          title={agent.name}
-          leading={
-            <AgentAvatarWithState
-              agentId={agent.id}
-              specialist={agent.metadata?.specialist}
-              provider={agent.provider}
-              variant="compact"
-              state={getAvatarStateForSession(agent)}
-            />
-          }
-        />
-      )}
-    />
+    <div className="grid min-w-0 gap-2">
+      <SidebarExpandableSearch
+        scope="agents"
+        placement="toolbar"
+        query={query}
+        onQueryChange={setQuery}
+        placeholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
+      />
+      <ListView
+        items={authority ? agents.value : []}
+        status={authority && loaded.value ? 'ready' : 'loading'}
+        ariaLabel={m.workspace_multiSelectSidebar_agentsTab_label()}
+        onActivate={(agent) =>
+          void navigate({
+            to: '/workspaces/$workspaceId',
+            params: { workspaceId },
+            search: (previous) => ({ ...previous, agent: agent.id }),
+          })
+        }
+        getKey={(agent) => agent.id}
+        getText={(agent) => agent.name}
+        row={({ item: agent }) => (
+          <ListRow
+            data-workspace-agent={agent.id}
+            title={agent.name}
+            leading={
+              <AgentAvatarWithState
+                agentId={agent.id}
+                specialist={agent.metadata?.specialist}
+                provider={agent.provider}
+                variant="compact"
+                state={getAvatarStateForSession(agent)}
+              />
+            }
+          />
+        )}
+      />
+    </div>
   );
 }
 

@@ -1,3 +1,5 @@
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import type { AgentRenameRequest } from './agent-session-types';
 import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import type { AgentSession } from '$shared/types/agent-session';
 import { getAgentProvider } from '$shared/types/agent-session';
@@ -72,4 +74,35 @@ export const getAgentIsResponding = (
 ): boolean => {
   const stored = state.agentSessions?.byAgentId[agentId];
   return !!stored && isAgentRunningState(stored);
+};
+
+export const getAgentRenameRevision = (
+  state: { agentSessions: AgentSessionState },
+  agentId: string,
+): number => state.agentSessions.renameRevisions?.[agentId] ?? 0;
+export const getAgentRenameOperations = (
+  state: { agentSessions: AgentSessionState },
+  agentId: string,
+) =>
+  state.agentSessions.renameOperations
+    ? getItems(state.agentSessions.renameOperations).filter(
+        (operation) => operation.agentId === agentId,
+      )
+    : [];
+export const getAgentRenameViewCurrent = (
+  state: { agentSessions: AgentSessionState },
+  request: Pick<AgentRenameRequest, 'viewId' | 'workspaceId' | 'agentId' | 'authority' | 'context'>,
+): boolean => {
+  const view =
+    state.agentSessions.renameViews && getItem(state.agentSessions.renameViews, request.viewId);
+  const session = state.agentSessions.byAgentId[request.agentId];
+  return (
+    !!view &&
+    !view.released &&
+    view.workspaceId === request.workspaceId &&
+    view.agentId === request.agentId &&
+    view.authority === request.authority &&
+    view.context === request.context &&
+    session?.workspaceId === request.workspaceId
+  );
 };

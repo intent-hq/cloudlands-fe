@@ -1,3 +1,4 @@
+import { agentRenameSaga } from './store/agent-session/sagas/agent-rename-saga';
 import { workspaceTitleSaga } from './store/workspace/sagas/workspace-title-saga';
 import { terminalInteractionSaga } from './store/terminals/sagas/terminal-interaction-saga';
 import { fileExplorerSaga } from './store/file-explorer/sagas/file-explorer-saga';
@@ -40,6 +41,7 @@ const cancelUiLayoutPersistenceSaga = store.runSaga(uiLayoutPersistenceSaga);
 const cancelBackendConnectionSaga = store.runSaga(backendConnectionSaga);
 const disposeProviderRuntime = startProviderRuntime();
 const cancelWorkspaceInitializerSaga = store.runSaga(workspaceInitializerSaga);
+const cancelAgentRenameSaga = store.runSaga(agentRenameSaga);
 const cancelAgentCreationSaga = store.runSaga(agentCreationSaga);
 const cancelAgentMetadataSaga = store.runSaga(agentMetadataSaga);
 const cancelAgentModelSaga = store.runSaga(agentModelSaga);
@@ -82,6 +84,7 @@ function dispose() {
   cancelAgentModelSaga();
   cancelAgentMetadataSaga();
   cancelAgentCreationSaga();
+  cancelAgentRenameSaga();
   cancelNotesContentReadSaga();
   cancelNotesWriteSaga();
   cancelGitWriteSaga();

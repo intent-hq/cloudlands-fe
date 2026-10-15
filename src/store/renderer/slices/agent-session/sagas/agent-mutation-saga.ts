@@ -1,3 +1,4 @@
+import { createAgentRenameSaga } from './agent-rename-saga-factory';
 import { mutationError } from './agent-mutation-error';
 import { createAgentActivationWorkers } from './agent-activation-workers';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
@@ -28,7 +29,6 @@ import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { AgentSession } from '$shared/types';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import { pruneRecentlyClosed } from '../../panel-layout/panel-layout-slice';
 import {
@@ -67,7 +67,11 @@ import {
 } from '../../workspace-agents/workspace-agents-slice';
 import { removeSession, restoreStoredSessions } from '../agent-session-slice';
 import type { StoredAgentSession } from '../agent-session-types';
-import { selectAgentBackgroundPending, selectAgentSession } from '../agent-session-selectors';
+import {
+  selectAgentBackgroundPending,
+  selectAgentSession,
+  selectAgentRenameRevision,
+} from '../agent-session-selectors';
 import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
@@ -299,85 +303,6 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
   } finally {
     if (!settled && (yield* cancelled())) {
       yield* put(action.failure(new Error(m.errors_catalog_storageWriteFailed_friendly())));
-    }
-  }
-}
-
-type RenameIdentity = Pick<AgentSession, 'name' | 'nameExplicitlySet'>;
-interface RenameAttempt {
-  identity: RenameIdentity;
-  status: 'pending' | 'succeeded' | 'failed';
-}
-interface RenameSequence {
-  initial: RenameIdentity;
-  published: RenameIdentity;
-  attempts: RenameAttempt[];
-}
-
-function* renameAgent(
-  sequences: Map<string, RenameSequence>,
-  action: ReturnType<typeof renameAgentSessionRequested>,
-): SagaGenerator<void> {
-  const [wsId, agentId, name] = action.payload;
-  const previous = yield* selectAgentSession.effect(agentId);
-  const ownership =
-    !previous || previous.workspaceId === wsId
-      ? captureAgentMutationOwnership(agentId, wsId)
-      : undefined;
-  const key = `${ownership?.key}:${agentId}`;
-  let sequence = sequences.get(key);
-  const attempt: RenameAttempt = { identity: { name, nameExplicitlySet: true }, status: 'pending' };
-  if (previous && ownership) {
-    if (
-      !sequence ||
-      previous.name !== sequence.published.name ||
-      previous.nameExplicitlySet !== sequence.published.nameExplicitlySet
-    ) {
-      // A daemon hydration supersedes the earlier optimistic identity. A new
-      // rename starts from that authoritative identity, not the stale chain.
-      const initial = { name: previous.name, nameExplicitlySet: previous.nameExplicitlySet };
-      sequence = { initial, published: initial, attempts: [] };
-      sequences.set(key, sequence);
-    }
-    sequence.attempts.push(attempt);
-    sequence.published = attempt.identity;
-    yield* put(updateSession(agentId, attempt.identity));
-  }
-  let settled = false;
-  try {
-    const result = yield* call([appClient.agents, appClient.agents.rename], agentId, name, wsId);
-    if (!result.success) throw new Error(result.error || m.agent_mutation_renameFailed_error());
-    attempt.status = 'succeeded';
-    yield* put(action.success(undefined as never));
-    settled = true;
-  } catch (error) {
-    attempt.status = 'failed';
-    yield* put(action.failure(mutationError(error, m.agent_mutation_renameSessionFailed_error())));
-    settled = true;
-  } finally {
-    if (!settled && (yield* cancelled())) {
-      attempt.status = 'failed';
-      yield* put(action.failure(new Error(m.agent_mutation_renameSessionFailed_error())));
-    }
-    if (sequence && sequences.get(key) === sequence) {
-      if (attempt.status === 'failed') {
-        const current = yield* selectAgentSession.effect(agentId);
-        // Compare ownership AND the write sequence, not just the name: two
-        // requests can use the same name and the newer one may have succeeded.
-        const identity =
-          sequence.attempts.findLast((item) => item.status !== 'failed')?.identity ??
-          sequence.initial;
-        if (
-          current &&
-          ownership?.isCurrent(current.workspaceId) &&
-          current.name === sequence.published.name &&
-          current.nameExplicitlySet === sequence.published.nameExplicitlySet
-        ) {
-          yield* put(updateSession(agentId, identity));
-          sequence.published = identity;
-        }
-      }
-      if (sequence.attempts.every((item) => item.status !== 'pending')) sequences.delete(key);
     }
   }
 }
@@ -904,7 +829,12 @@ function* mutateFromUi(
 
 export function* agentMutationSaga(): SagaGenerator<void> {
   // In-flight write identities are runtime ownership, never persisted state.
-  const renames = new Map<string, RenameSequence>();
+  const renameSaga = createAgentRenameSaga({
+    rename: (...args) => appClient.agents.rename(...args),
+    selectSession: (id) => selectAgentSession.effect(id),
+    selectRevision: (id) => selectAgentRenameRevision.effect(id),
+    captureOwnership: captureAgentMutationOwnership,
+  });
   const uiRequests = new Set<string>();
   yield* all([
     takeEvery(agentMutationUiRequested, mutateFromUi, uiRequests),
@@ -914,7 +844,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(agentRetirementSupportRequested, loadRetirementSupport),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
-    takeEvery(renameAgentSessionRequested, renameAgent, renames),
+    call(renameSaga),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
     takeEvery(setAgentBackgroundRequested, setBackground),

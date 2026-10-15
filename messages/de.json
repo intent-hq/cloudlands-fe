@@ -7598,5 +7598,9 @@
   "chat_fileContext_add_label": "Repository-Datei hinzufügen",
   "chat_fileContext_picker_description": "Datei nach Name oder Pfad auswählen. Beim Senden wird ihr aktueller Inhalt geprüft; der Agent liest die aktuelle Datei.",
   "chat_fileContext_unavailable_error": "Eine ausgewählte Repository-Datei ist nicht verfügbar, liegt außerhalb dieses Arbeitsbereichs oder ist kein unterstützter vollständiger Text. Entfernen Sie sie oder versuchen Sie es erneut.",
-  "chat_fileContext_busy_description": "Warten Sie auf die aktuelle Antwort, bevor Sie ausgewählte Notizen oder Repository-Dateien senden."
+  "chat_fileContext_busy_description": "Warten Sie auf die aktuelle Antwort, bevor Sie ausgewählte Notizen oder Repository-Dateien senden.",
+  "workspace_agentRename_edit_label": "Unterhaltung umbenennen",
+  "workspace_agentRename_saving_label": "Name der Unterhaltung wird gespeichert…",
+  "workspace_agentRename_failed_description": "Der Name wurde nicht gespeichert. Öffne ihn, um es erneut zu versuchen.",
+  "workspace_agentRename_unknown_description": "Das Ergebnis der Umbenennung ist unbekannt. Weitere Umbenennungen sind gesperrt, um die Anfrage nicht zu wiederholen."
 }

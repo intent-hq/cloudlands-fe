@@ -1,3 +1,4 @@
+import type { AgentRenameRequestMetadata } from '../agent-session/agent-session-types';
 import type { NodeCapabilities } from '../../../../features/agent/services/node-execution-types';
 import type {
   AgentSession,
@@ -548,7 +549,7 @@ export const saveAgentSessionRequested = createAsyncAction<
   void
 >('workspaceAgents/saveAgentSession', 'workspaceAgents/saveAgentSessionRequested');
 export const renameAgentSessionRequested = createAsyncAction<
-  [wsId: string, agentId: string, name: string],
+  [wsId: string, agentId: string, name: string, request?: AgentRenameRequestMetadata],
   void
 >('workspaceAgents/renameAgentSession', 'workspaceAgents/renameAgentSessionRequested');
 export const stopAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(

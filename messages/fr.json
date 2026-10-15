@@ -7598,5 +7598,9 @@
   "chat_fileContext_add_label": "Ajouter un fichier du dépôt",
   "chat_fileContext_picker_description": "Choisissez un fichier par nom ou chemin. Son contenu est vérifié à l’envoi ; l’agent lit le fichier actuel.",
   "chat_fileContext_unavailable_error": "Un fichier sélectionné est indisponible, hors de cet espace ou ne contient pas de texte complet pris en charge. Retirez-le ou réessayez.",
-  "chat_fileContext_busy_description": "Attendez la fin de la réponse avant d’envoyer des notes ou fichiers sélectionnés."
+  "chat_fileContext_busy_description": "Attendez la fin de la réponse avant d’envoyer des notes ou fichiers sélectionnés.",
+  "workspace_agentRename_edit_label": "Renommer la conversation",
+  "workspace_agentRename_saving_label": "Enregistrement du nom de la conversation…",
+  "workspace_agentRename_failed_description": "Le nom n’a pas été enregistré. Ouvrez-le pour réessayer.",
+  "workspace_agentRename_unknown_description": "Le résultat du renommage est inconnu. Le renommage est bloqué pour éviter de répéter la demande."
 }

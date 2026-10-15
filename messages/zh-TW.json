@@ -7598,5 +7598,9 @@
   "chat_fileContext_add_label": "新增儲存庫檔案",
   "chat_fileContext_picker_description": "依名稱或路徑選擇檔案。傳送時檢查目前內容，代理讀取即時檔案。",
   "chat_fileContext_unavailable_error": "所選儲存庫檔案無法使用、位於此工作區之外，或不是支援的完整文字。請移除或重試。",
-  "chat_fileContext_busy_description": "請等待目前回覆結束後再傳送所選筆記或儲存庫檔案。"
+  "chat_fileContext_busy_description": "請等待目前回覆結束後再傳送所選筆記或儲存庫檔案。",
+  "workspace_agentRename_edit_label": "重新命名對話",
+  "workspace_agentRename_saving_label": "正在儲存對話名稱…",
+  "workspace_agentRename_failed_description": "對話名稱未儲存。開啟名稱以重試。",
+  "workspace_agentRename_unknown_description": "重新命名的結果未知。為避免重複請求，已封鎖重新命名。"
 }

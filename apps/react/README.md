@@ -106,6 +106,15 @@ cannot be confirmed, check the agents list: the preview blocks another create fr
 that control rather than automatically risking a duplicate. Leaving the workspace
 does not delete an agent that the daemon may already have created.
 
+Select the conversation heading to rename an existing agent. Enter or clicking
+away saves a nonblank changed name; Escape cancels. The accepted name appears in
+**Agents**, its name search, and the conversation after reload. This does not send
+a provider prompt. Failed requests allow a deliberate retry; an unknown outcome
+blocks another rename for the current session, including reconnect. Check the
+current name before making further changes; full reload clears the in-memory
+receipt without replaying it. Freshness checks protect local drafts and late replies,
+but do not provide atomic comparison with another client’s simultaneous rename.
+
 The composer sends text and selected image/file
 attachments; **Stop** interrupts an active response. Acknowledged drafts and
 messages survive reload. A local edit, including clearing the text, is retained

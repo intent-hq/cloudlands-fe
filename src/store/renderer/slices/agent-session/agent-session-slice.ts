@@ -1,3 +1,11 @@
+import {
+  addItem,
+  createCollection,
+  getItem,
+  getItems,
+  removeItem,
+  updateItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
@@ -6,6 +14,8 @@ import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/event
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
+  AgentRenameOperation,
+  AgentRenameView,
   AgentHistorySegment,
   AgentSessionForkOptions,
   AgentSessionLaunchConfig,
@@ -25,7 +35,10 @@ import {
 } from '$shared/utils/message-dedup';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatSendStarted,
   chatSendFailed,
@@ -381,8 +394,27 @@ function setSession(
   agentId: string,
   session: StoredAgentSession,
 ): AgentSessionState {
+  const previous = state.byAgentId[agentId];
+  const becameRetired = !previous?.retiredAt && !!session.retiredAt;
+  // Record retirement before observers run so immediate restoration cannot revive an edit.
+  if (becameRetired || (previous && previous.workspaceId !== session.workspaceId))
+    state = retireAgentRenameViews(state, undefined, agentId);
+  const changedIdentity =
+    !previous ||
+    becameRetired ||
+    previous.workspaceId !== session.workspaceId ||
+    previous.name !== session.name ||
+    previous.nameExplicitlySet !== session.nameExplicitlySet;
   return {
     ...state,
+    ...(changedIdentity
+      ? {
+          renameRevisions: {
+            ...state.renameRevisions,
+            [agentId]: (state.renameRevisions?.[agentId] ?? 0) + 1,
+          },
+        }
+      : {}),
     byAgentId: { ...state.byAgentId, [agentId]: session },
   };
 }
@@ -1726,11 +1758,150 @@ export const clearHistorySegment = createAction<[agentId: string]>(
   'agentSessions/clearHistorySegment',
 );
 
+export const agentRenameViewOpened = createAction<
+  [viewId: string, workspaceId: string, agentId: string, authority: string, context: string]
+>('agentSessions/agentRenameViewOpened');
+export const agentRenameViewReleased = createAction<[viewId: string]>(
+  'agentSessions/agentRenameViewReleased',
+);
+export const agentRenameOperationQueued = createAction<[operation: AgentRenameOperation]>(
+  'agentSessions/agentRenameOperationQueued',
+);
+export const agentRenameOperationStarted = createAction<[requestId: string]>(
+  'agentSessions/agentRenameOperationStarted',
+);
+export const agentRenameOperationSettled = createAction<
+  [
+    requestId: string,
+    status: 'confirmed' | 'failed' | 'unknown',
+    error?: string,
+    acknowledgedName?: string,
+    publish?: boolean,
+  ]
+>('agentSessions/agentRenameOperationSettled');
+
+function retireAgentRenameViews(
+  state: AgentSessionState,
+  workspaceId?: string,
+  agentId?: string,
+): AgentSessionState {
+  let views = state.renameViews;
+  if (!views) return state;
+  for (const view of getItems(views)) {
+    if (
+      !view.released &&
+      (!workspaceId || view.workspaceId === workspaceId) &&
+      (!agentId || view.agentId === agentId)
+    )
+      views = updateItem(views, { ...view, released: true });
+  }
+  return views === state.renameViews ? state : { ...state, renameViews: views };
+}
+
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState);
+agentSessionReducer.with(
+  agentRenameViewOpened,
+  (state, { payload: [viewId, workspaceId, agentId, authority, context] }) => {
+    const views = state.renameViews ?? createCollection<AgentRenameView, 'viewId'>('viewId');
+    if (getItem(views, viewId)) return state;
+    return {
+      ...state,
+      renameViews: addItem(views, {
+        viewId,
+        workspaceId,
+        agentId,
+        authority,
+        context,
+        released: false,
+      }),
+    };
+  },
+);
+agentSessionReducer.with(agentRenameViewReleased, (state, { payload: [viewId] }) => {
+  const views = state.renameViews ?? createCollection<AgentRenameView, 'viewId'>('viewId');
+  const view = getItem(views, viewId);
+  if (view?.released) return state;
+  return {
+    ...state,
+    renameViews: view
+      ? updateItem(views, { ...view, released: true })
+      : addItem(views, {
+          viewId,
+          workspaceId: '',
+          agentId: '',
+          authority: '',
+          context: '',
+          released: true,
+        }),
+  };
+});
+agentSessionReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) =>
+  retireAgentRenameViews(state, workspaceId),
+);
+agentSessionReducer.with(agentRenameOperationQueued, (state, { payload: [operation] }) => {
+  const operations =
+    state.renameOperations ?? createCollection<AgentRenameOperation, 'requestId'>('requestId');
+  if (getItem(operations, operation.requestId)) return state;
+  return { ...state, renameOperations: addItem(operations, operation) };
+});
+agentSessionReducer.with(agentRenameOperationStarted, (state, { payload: [requestId] }) => {
+  if (!state.renameOperations) return state;
+  const operation = getItem(state.renameOperations, requestId);
+  if (operation?.status !== 'queued') return state;
+  return {
+    ...state,
+    renameOperations: updateItem(state.renameOperations, { ...operation, status: 'running' }),
+  };
+});
+agentSessionReducer.with(
+  agentRenameOperationSettled,
+  (state, { payload: [requestId, status, error, acknowledgedName, publish] }) => {
+    if (!state.renameOperations) return state;
+    const operation = getItem(state.renameOperations, requestId);
+    if (!operation || operation.status === 'confirmed' || operation.status === 'failed')
+      return state;
+    if (
+      operation.status === status &&
+      operation.error === error &&
+      operation.acknowledgedName === acknowledgedName
+    )
+      return state;
+    let operations = updateItem(state.renameOperations, {
+      ...operation,
+      status,
+      error,
+      acknowledgedName,
+    });
+    // Keep every unresolved receipt; bound only completed history, including concurrent completions.
+    const completed = getItems(operations).filter(
+      (op) => op.status === 'confirmed' || op.status === 'failed',
+    );
+    for (const old of completed.slice(0, Math.max(0, completed.length - 32)))
+      operations = removeItem(operations, old.requestId);
+    let next: AgentSessionState = { ...state, renameOperations: operations };
+    const session = state.byAgentId[operation.agentId];
+    if (
+      publish &&
+      status === 'confirmed' &&
+      typeof acknowledgedName === 'string' &&
+      session?.workspaceId === operation.workspaceId &&
+      session.name === operation.previousName &&
+      (state.renameRevisions?.[operation.agentId] ?? 0) === operation.observedRevision
+    ) {
+      next = setSession(next, operation.agentId, {
+        ...session,
+        name: acknowledgedName,
+        nameExplicitlySet: true,
+      });
+    }
+    return next;
+  },
+);
+
 agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId, pending] }) => {
   if (pending)
     return { ...state, backgroundModePending: { ...state.backgroundModePending, [agentId]: true } };
@@ -1738,10 +1909,18 @@ agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId,
   return { ...state, backgroundModePending: rest };
 });
 agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
+  state = retireAgentRenameViews(state, undefined, agentId);
   if (!state.byAgentId[agentId]) return state;
 
   const { [agentId]: _, ...rest } = state.byAgentId;
-  let next: AgentSessionState = { ...state, byAgentId: rest };
+  let next: AgentSessionState = {
+    ...state,
+    byAgentId: rest,
+    renameRevisions: {
+      ...state.renameRevisions,
+      [agentId]: (state.renameRevisions?.[agentId] ?? 0) + 1,
+    },
+  };
   next = removeFromWorkspaceIndex(next, agentId);
   next = removeHistorySegment(next, agentId);
   next = removeDetailHydrated(next, agentId);
@@ -1912,6 +2091,7 @@ agentSessionReducer.with(restoreStoredSessions, (state, { payload: [sessions] })
   return next;
 });
 agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) => {
+  state = retireAgentRenameViews(state, wsId);
   const agentIds = state.agentIdsByWorkspace[wsId] ?? [];
   if (agentIds.length === 0 && !state.agentIdsByWorkspace[wsId]) return state;
   const byAgentId = { ...state.byAgentId };
@@ -1929,6 +2109,7 @@ agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) =
   );
 });
 agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
+  state = retireAgentRenameViews(state, wsId);
   const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];
   const doomed = new Set<string>([...indexedAgentIds, ...agentIds]);
   if (doomed.size === 0 && !state.agentIdsByWorkspace[wsId]) return state;
@@ -1947,7 +2128,16 @@ agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }
     doomed,
   );
 });
-agentSessionReducer.with(clearAllSessions, () => initialState);
+agentSessionReducer.with(clearAllSessions, (state) =>
+  !state.renameViews && !state.renameOperations
+    ? initialState
+    : {
+        ...initialState,
+        renameOperations: state.renameOperations,
+        renameViews: retireAgentRenameViews(state).renameViews,
+        renameRevisions: state.renameRevisions,
+      },
+);
 // -----------------------------------------------------------------------
 // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
 // -----------------------------------------------------------------------
