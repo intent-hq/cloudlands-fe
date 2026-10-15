@@ -38,7 +38,7 @@ test('enabling sharing keeps the recipient draft and waits for confirmed readine
   await page.getByRole('combobox', { name: 'Link audience' }).click();
   await page.getByRole('option', { name: 'A specific GitHub user' }).click();
   const recipient = page.getByRole('combobox', { name: 'Search GitHub users' });
-  const create = page.getByRole('button', { name: 'Copy link' });
+  const create = page.getByTestId('share-link-submit');
   const enable = page.getByRole('switch', { name: 'Enable sharing' });
   await recipient.fill('sam');
   await expect(recipient).toHaveAttribute('aria-expanded', 'true');
@@ -129,7 +129,7 @@ test('workspace managers can invite without permission to read host settings', a
     },
   });
   await expect(page.getByRole('switch', { name: 'Enable sharing' })).toHaveCount(0);
-  const create = page.getByRole('button', { name: 'Copy link' });
+  const create = page.getByTestId('share-link-submit');
   await expect(create).toBeEnabled();
   await create.click();
   await expect.poll(() => created).toBe(true);

@@ -6792,6 +6792,7 @@
   "workspace_share_userSuggestions_ariaLabel": "GitHub-Benutzervorschläge",
   "workspace_share_pinSelected_clear_ariaLabel": "Ausgewählten GitHub-Benutzer {login} entfernen",
   "workspace_share_createLink_label": "Einladungslink erstellen",
+  "workspace_share_createRecipientLink_label": "Link erstellen",
   "workspace_share_creating_label": "Wird erstellt…",
   "workspace_share_newLink_label": "Neuer Einladungslink",
   "workspace_share_copyLink_label": "Link kopieren",

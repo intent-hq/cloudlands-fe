@@ -121,7 +121,7 @@ test('Tab dismisses suggestions; Copy remains disabled until a recipient is pick
   await expect(input).toBeFocused();
   await input.press('Tab');
   await expect(page.getByTestId('share-pin-suggestions')).toBeHidden();
-  const create = page.getByRole('button', { name: 'Copy link' });
+  const create = page.getByRole('button', { name: 'Create link' });
   await expect(create).toBeDisabled();
   await input.fill('wa');
   await input.fill('wat');

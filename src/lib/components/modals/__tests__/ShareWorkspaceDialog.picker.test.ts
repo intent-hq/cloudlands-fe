@@ -32,7 +32,7 @@ const settled = {
   inviteLinks: { new: 'intent://invite?fixture=new' },
   createdLink: { inviteId: 'new', pinLogin: 'alex' },
 };
-const copy = () => screen.getByRole('button', { name: 'Copy link', exact: true });
+const copy = () => screen.getByTestId('share-link-submit');
 async function pickAlex() {
   const trigger = screen.getByRole('combobox', { name: 'Link audience' });
   trigger.focus();
@@ -78,9 +78,14 @@ it('clears the recipient after creation and keeps the invite copyable at the cap
   const { rerender } = render(ShareWorkspaceDialog, { props: { ...props, ...callbacks } });
   await pickAlex();
   expect(onCreateInvite).not.toHaveBeenCalled();
+  expect(copy().textContent).toContain('Create link');
   await fireEvent.click(copy());
   expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('alex');
   expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  expect(copy().getAttribute('aria-busy')).toBe('true');
+  expect(copy().querySelector('[data-slot="button-spinner"]')).toBeTruthy();
+  await fireEvent.submit(copy().closest('form')!);
+  expect(onCreateInvite).toHaveBeenCalledTimes(1);
   onSearchUsers.mockClear();
   await rerender({ ...props, ...callbacks, ...settled, guestCount: 1, guestLimit: 1 });
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1));
@@ -96,6 +101,7 @@ it('clears the recipient after creation and keeps the invite copyable at the cap
   expect(onCreateInvite).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2));
   await pickAlex();
+  expect(copy().textContent).toContain('Copy link');
   await fireEvent.click(copy());
   expect(onCreateInvite).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(3));
@@ -119,6 +125,8 @@ it('retains the recipient when creation fails so it can be retried', async () =>
   await fireEvent.click(copy());
   await rerender({ ...props, onCreateInvite, createError: 'Could not create invite' });
   expect(screen.getByTestId('share-pin-selected').dataset.login).toBe('alex');
+  expect(copy().hasAttribute('aria-busy')).toBe(false);
+  expect(copy().textContent).toContain('Create link');
   await fireEvent.click(copy());
   expect(onCreateInvite).toHaveBeenCalledTimes(2);
 });

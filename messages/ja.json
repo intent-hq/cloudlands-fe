@@ -6792,6 +6792,7 @@
   "workspace_share_userSuggestions_ariaLabel": "GitHub ユーザーの候補",
   "workspace_share_pinSelected_clear_ariaLabel": "選択した GitHub ユーザー {login} を解除",
   "workspace_share_createLink_label": "招待リンクを作成",
+  "workspace_share_createRecipientLink_label": "リンクを作成",
   "workspace_share_creating_label": "作成中…",
   "workspace_share_newLink_label": "新しい招待リンク",
   "workspace_share_copyLink_label": "リンクをコピー",

@@ -12,6 +12,7 @@
   } from '$features/workspace-sharing/utils/invite-audience';
   import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
   import { tick, untrack } from 'svelte';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faCopy, faGlobe, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
@@ -254,6 +255,11 @@
     host: pinProvider === 'gitlab' ? (selectedPinHost ?? '') : 'github.com',
   });
   const matchingInvite = $derived(findCopyableInvite(invites, inviteLinks, audience));
+  const linkActionLabel = $derived(
+    restricted && (creating || pendingCopy || !matchingInvite)
+      ? m.workspace_share_createRecipientLink_label()
+      : m.workspace_share_copyLink_label(),
+  );
   const recipientReady = $derived(
     !restricted ||
       (!!audience.login &&
@@ -930,6 +936,11 @@
                 type="submit"
                 variant="primary"
                 style={sharingActionStyle}
+                loading={creating || !!pendingCopy || copying}
+                aria-label={creating || pendingCopy
+                  ? m.workspace_share_creating_label()
+                  : undefined}
+                data-testid="share-link-submit"
                 disabled={!sharingReady ||
                   creating ||
                   !!pendingCopy ||
@@ -940,7 +951,7 @@
                   ? m.workspace_share_guestLimitReached_notice()
                   : undefined}
               >
-                {creating ? m.workspace_share_creating_label() : m.workspace_share_copyLink_label()}
+                {linkActionLabel}
               </Button>
             </div>
             {#if atGuestCap}
@@ -1088,9 +1099,14 @@
               </ListView>
             {/if}
             {#if invites.length > 0}
-              <section class="space-y-2" aria-label={m.workspace_share_openInvites_label()}>
+              <section
+                transition:slide={{ tier: 'moderate' }}
+                class="space-y-2"
+                aria-label={m.workspace_share_openInvites_label()}
+              >
                 <ListView
                   virtualize={false}
+                  animateRows
                   items={invites}
                   getKey={(invite) => invite.id}
                   getText={(invite) => inviteAudience(invite)}

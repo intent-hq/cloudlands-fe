@@ -28,6 +28,7 @@
     canAdministerHost?: boolean;
     workspaceTitle?: string;
     guestLimit?: number;
+    inviteDelayMs?: number;
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -135,6 +136,7 @@
     defaultState: 'both-connected',
     states: {
       'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
+      'link-slow': { props: { ...sharingSetup, sharingEnabled: true, inviteDelayMs: 750 } },
       'sharing-disabled': { props: sharingSetup },
       'sharing-checking': {
         props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
@@ -185,16 +187,14 @@
   let query = $state('');
   let addedInvites = $state<WorkspaceInvite[]>([]);
   let createdLink = $state<WorkspaceShareCreatedLink | null>(null);
-  const suggestions = $derived(
-    query
-      ? ['alex', 'alexchen', 'alex-k'].map((login, index) => ({
-          login,
-          githubUserId: index + 1,
-          avatarUrl: null,
-          htmlUrl: null,
-        }))
-      : [],
-  );
+  let creating = $state(false);
+  const previewUsers = ['alex', 'alexchen', 'alex-k'].map((login, index) => ({
+    login,
+    githubUserId: index + 1,
+    avatarUrl: null,
+    htmlUrl: null,
+  }));
+  const suggestions = $derived(query ? previewUsers : []);
 </script>
 
 <div class="relative min-h-[1000px] w-full">
@@ -209,14 +209,20 @@
     {...props}
     invites={[...props.invites, ...addedInvites]}
     {createdLink}
+    {creating}
     inviteLinks={Object.fromEntries(
       addedInvites.map((invite) => [invite.id, `intent://invite?preview=${invite.id}`]),
     )}
     userSearchQuery={query}
     userSuggestions={suggestions}
     onSearchUsers={(value) => (query = value)}
-    onCreateInvite={(login, pin) => {
+    onCreateInvite={async (login, pin) => {
+      creating = true;
+      // Fixture latency makes the real in-button pending state reviewable.
+      if (props.inviteDelayMs)
+        await new Promise((resolve) => setTimeout(resolve, props.inviteDelayMs));
       const id = `preview-${addedInvites.length}`;
+      const userId = previewUsers.find((user) => user.login === login)?.githubUserId ?? 1;
       addedInvites = [
         ...addedInvites,
         {
@@ -224,12 +230,12 @@
           workspaceId: WORKSPACE_ID,
           createdByPrincipalId: owner.principalId,
           pinLogin: login || undefined,
-          pinGithubUserId: login ? 1 : undefined,
+          pinGithubUserId: login ? userId : undefined,
           pinIdentity: login
             ? {
                 provider: pin?.provider ?? 'github',
                 host: pin?.host ?? 'github.com',
-                externalUserId: '1',
+                externalUserId: String(userId),
               }
             : undefined,
           createdAt: '2026-10-15T00:00:00Z',
@@ -238,6 +244,7 @@
         },
       ];
       createdLink = { inviteId: id, pinLogin: login || undefined };
+      creating = false;
     }}
     onRevokeInvite={(id) => (addedInvites = addedInvites.filter((invite) => invite.id !== id))}
   />

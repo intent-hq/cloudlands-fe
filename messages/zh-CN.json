@@ -6792,6 +6792,7 @@
   "workspace_share_userSuggestions_ariaLabel": "GitHub 用户建议",
   "workspace_share_pinSelected_clear_ariaLabel": "清除已选择的 GitHub 用户 {login}",
   "workspace_share_createLink_label": "创建邀请链接",
+  "workspace_share_createRecipientLink_label": "创建链接",
   "workspace_share_creating_label": "正在创建…",
   "workspace_share_newLink_label": "新邀请链接",
   "workspace_share_copyLink_label": "复制链接",
