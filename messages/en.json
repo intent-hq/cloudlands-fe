@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "Saving…",
   "workspace_fileEdit_unsaved_label": "Unsaved changes",
   "workspace_fileEdit_saved_label": "Saved",
-  "workspace_fileEdit_explicit_description": "Save explicitly with the button or Ctrl/Cmd+S. Unsaved edits are lost when you leave. Saving replaces the current file; external edits are not merged.",
-  "workspace_fileEdit_uncertain_error": "The save outcome is unknown. Saving is blocked in this session. Inspect the file before deciding what to do. Reloading does not replay the save and clears this session warning."
+  "workspace_fileEdit_explicit_description": "Save explicitly with the button or Ctrl/Cmd+S. Leaving asks before discarding unsaved edits. Saving replaces the current file; external edits are not merged.",
+  "workspace_fileEdit_uncertain_error": "The save outcome is unknown. Saving is blocked in this session. Inspect the file before deciding what to do. Reloading does not replay the save and clears this session warning.",
+  "workspace_fileNavigation_title_label": "Leave this file?",
+  "workspace_fileNavigation_discard_description": "Discard local unsaved edits and leave this file?",
+  "workspace_fileNavigation_save_description": "A save is pending or its outcome is unknown. Leaving does not cancel a write already sent. Its result remains tracked for this session.",
+  "workspace_fileNavigation_stay_label": "Stay",
+  "workspace_fileNavigation_discard_label": "Discard unsaved edits"
 }

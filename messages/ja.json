@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "保存中…",
   "workspace_fileEdit_unsaved_label": "未保存の変更",
   "workspace_fileEdit_saved_label": "保存済み",
-  "workspace_fileEdit_explicit_description": "ボタンまたはCtrl/Cmd+Sで保存します。移動すると未保存の編集は失われます。保存は現在のファイルを置き換え、外部の変更は統合しません。",
-  "workspace_fileEdit_uncertain_error": "保存結果が不明です。このセッションでは保存をブロックしています。ファイルを確認してから判断してください。再読み込みは保存を再実行せず、このセッションの警告を消去します。"
+  "workspace_fileEdit_explicit_description": "ボタンまたはCtrl/Cmd+Sで保存してください。離れる前に未保存の編集の破棄を確認します。保存は現在のファイルを置き換えます。外部の変更は統合されません。",
+  "workspace_fileEdit_uncertain_error": "保存結果が不明です。このセッションでは保存をブロックしています。ファイルを確認してから判断してください。再読み込みは保存を再実行せず、このセッションの警告を消去します。",
+  "workspace_fileNavigation_title_label": "このファイルを離れますか？",
+  "workspace_fileNavigation_discard_description": "未保存のローカル編集を破棄して、このファイルを離れますか？",
+  "workspace_fileNavigation_save_description": "保存が処理中か、結果が不明です。画面を離れても送信済みの書き込みは取り消されません。このセッション中は結果の追跡が続きます。",
+  "workspace_fileNavigation_stay_label": "留まる",
+  "workspace_fileNavigation_discard_label": "未保存の編集を破棄"
 }

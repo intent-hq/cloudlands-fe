@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "正在保存…",
   "workspace_fileEdit_unsaved_label": "未保存的更改",
   "workspace_fileEdit_saved_label": "已保存",
-  "workspace_fileEdit_explicit_description": "使用按钮或Ctrl/Cmd+S保存。离开时未保存的编辑将丢失。保存会替换当前文件，不会合并外部更改。",
-  "workspace_fileEdit_uncertain_error": "保存结果未知。本会话已禁止保存。请先检查文件再决定下一步。重新加载不会重复保存，并会清除此会话警告。"
+  "workspace_fileEdit_explicit_description": "请使用按钮或 Ctrl/Cmd+S 保存。离开前会确认是否放弃未保存的编辑。保存会替换当前文件，不会合并外部修改。",
+  "workspace_fileEdit_uncertain_error": "保存结果未知。本会话已禁止保存。请先检查文件再决定下一步。重新加载不会重复保存，并会清除此会话警告。",
+  "workspace_fileNavigation_title_label": "离开此文件？",
+  "workspace_fileNavigation_discard_description": "放弃未保存的本地编辑并离开此文件？",
+  "workspace_fileNavigation_save_description": "保存正在进行或结果未知。离开不会取消已经发送的写入。本次会话仍会跟踪其结果。",
+  "workspace_fileNavigation_stay_label": "留下",
+  "workspace_fileNavigation_discard_label": "放弃未保存的编辑"
 }

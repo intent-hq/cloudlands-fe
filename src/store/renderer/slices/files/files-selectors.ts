@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyFilesWorkspaceState } from './files-slice';
-import { getFileContentEntry } from './files-projections';
+import { getFileContentEntry, getFileIsDirty } from './files-projections';
 import type { FileContentEntry, FilesWorkspaceState } from './files-types';
 
 const selectFilesWorkspaceState = store.createSelector(
@@ -57,9 +57,4 @@ export const selectFileIsBinary = store.createSelector(
     selectFileContentEntry.select(state, wsId, path)?.isBinary ?? false,
 );
 
-export const selectFileIsDirty = store.createSelector(
-  (state, wsId: string, path: string | null | undefined): boolean => {
-    const entry = selectFileContentEntry.select(state, wsId, path);
-    return entry ? entry.localContent !== entry.originalContent : false;
-  },
-);
+export const selectFileIsDirty = store.createSelector(getFileIsDirty);

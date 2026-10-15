@@ -12,6 +12,16 @@ export function getFileContentEntry(
   return workspace ? getItem(workspace.files, path) : undefined;
 }
 
+/** Shared source/host dirty semantics; a save acknowledgement may leave newer local edits. */
+export function getFileIsDirty(
+  state: { files: FilesState },
+  workspaceId: string,
+  path: string | null | undefined,
+): boolean {
+  const entry = getFileContentEntry(state, workspaceId, path);
+  return entry ? entry.localContent !== entry.originalContent : false;
+}
+
 /** Operation facts are independent of the current file view and its authority. */
 export function getFileSaveOperation(state: { files: FilesState }, requestId: string) {
   return state.files.saveOperations ? getItem(state.files.saveOperations, requestId) : undefined;

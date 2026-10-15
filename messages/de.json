@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "Wird gespeichert…",
   "workspace_fileEdit_unsaved_label": "Ungespeicherte Änderungen",
   "workspace_fileEdit_saved_label": "Gespeichert",
-  "workspace_fileEdit_explicit_description": "Speichere über die Schaltfläche oder Strg/Cmd+S. Ungespeicherte Änderungen gehen beim Verlassen verloren. Speichern ersetzt die aktuelle Datei; externe Änderungen werden nicht zusammengeführt.",
-  "workspace_fileEdit_uncertain_error": "Das Speicherergebnis ist unbekannt. Speichern ist in dieser Sitzung gesperrt. Prüfe zunächst die Datei. Neuladen wiederholt den Vorgang nicht und entfernt diese Sitzungswarnung."
+  "workspace_fileEdit_explicit_description": "Speichere ausdrücklich mit der Schaltfläche oder Strg/Cmd+S. Vor dem Verlassen wird das Verwerfen ungespeicherter Änderungen bestätigt. Speichern ersetzt die aktuelle Datei; externe Änderungen werden nicht zusammengeführt.",
+  "workspace_fileEdit_uncertain_error": "Das Speicherergebnis ist unbekannt. Speichern ist in dieser Sitzung gesperrt. Prüfe zunächst die Datei. Neuladen wiederholt den Vorgang nicht und entfernt diese Sitzungswarnung.",
+  "workspace_fileNavigation_title_label": "Diese Datei verlassen?",
+  "workspace_fileNavigation_discard_description": "Lokale ungespeicherte Änderungen verwerfen und diese Datei verlassen?",
+  "workspace_fileNavigation_save_description": "Ein Speichervorgang läuft oder sein Ergebnis ist unbekannt. Das Verlassen bricht bereits gesendete Schreibvorgänge nicht ab. Das Ergebnis wird für diese Sitzung weiter verfolgt.",
+  "workspace_fileNavigation_stay_label": "Bleiben",
+  "workspace_fileNavigation_discard_label": "Ungespeicherte Änderungen verwerfen"
 }

@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "Enregistrement…",
   "workspace_fileEdit_unsaved_label": "Modifications non enregistrées",
   "workspace_fileEdit_saved_label": "Enregistré",
-  "workspace_fileEdit_explicit_description": "Enregistrez avec le bouton ou Ctrl/Cmd+S. Les modifications non enregistrées sont perdues en quittant. L’enregistrement remplace le fichier actuel sans fusionner les modifications externes.",
-  "workspace_fileEdit_uncertain_error": "Le résultat de l’enregistrement est inconnu. L’enregistrement est bloqué dans cette session. Inspectez le fichier avant de décider. Recharger ne répète pas l’enregistrement et efface cet avertissement de session."
+  "workspace_fileEdit_explicit_description": "Enregistrez avec le bouton ou Ctrl/Cmd+S. Une confirmation précède l’abandon des modifications en quittant. L’enregistrement remplace le fichier actuel ; les modifications externes ne sont pas fusionnées.",
+  "workspace_fileEdit_uncertain_error": "Le résultat de l’enregistrement est inconnu. L’enregistrement est bloqué dans cette session. Inspectez le fichier avant de décider. Recharger ne répète pas l’enregistrement et efface cet avertissement de session.",
+  "workspace_fileNavigation_title_label": "Quitter ce fichier ?",
+  "workspace_fileNavigation_discard_description": "Abandonner les modifications locales non enregistrées et quitter ce fichier ?",
+  "workspace_fileNavigation_save_description": "Un enregistrement est en cours ou son résultat est inconnu. Quitter ne peut pas annuler une écriture déjà envoyée. Son résultat reste suivi pendant cette session.",
+  "workspace_fileNavigation_stay_label": "Rester",
+  "workspace_fileNavigation_discard_label": "Abandonner les modifications"
 }

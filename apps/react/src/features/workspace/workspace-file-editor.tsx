@@ -1,10 +1,11 @@
+import { useRef } from 'react';
 import { CodeEditor } from '@/components/editor/code-editor';
 import { CodeBlock } from '@/components/editor/code-block';
 import { Button } from '@/components/ui/button';
 import { store } from '@/store';
 import { selectIsDarkTheme } from '@/store/theme/theme-selectors';
 import { selectCodeFontFamilyCSS } from '@/store/user-preferences/user-preferences-selectors';
-import { selectFileSaveState } from '@/store/files/files-selectors';
+import { selectFileIsDirty, selectFileSaveState } from '@/store/files/files-selectors';
 import { selectGitWriteContext } from '@/store/git/git-write-selectors';
 import {
   updateFileContent,
@@ -15,6 +16,7 @@ import { getLanguageFromPath } from '$lib/utils/file-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { captureFileSaveAuthority } from './file-save-runtime';
 import { canEditWorkspaceText } from './workspace-file-edit-policy';
+import { WorkspaceFileNavigation } from './workspace-file-navigation';
 
 export function WorkspaceFileEditor({
   workspaceId,
@@ -27,6 +29,7 @@ export function WorkspaceFileEditor({
   entry: Extract<FileContentEntry, { kind: 'editable-text' }>;
   line?: number;
 }) {
+  const editorHost = useRef<HTMLDivElement>(null);
   const dark = selectIsDarkTheme().value;
   const fontFamily = selectCodeFontFamilyCSS().value;
   const saveState = selectFileSaveState(workspaceId, path).value;
@@ -34,7 +37,7 @@ export function WorkspaceFileEditor({
   const authority = context
     ? captureFileSaveAuthority(workspaceId, path, entry.absolutePath ?? '')
     : null;
-  const dirty = entry.localContent !== entry.originalContent;
+  const dirty = selectFileIsDirty(workspaceId, path).value;
   const editable = !!authority && !entry.truncated && canEditWorkspaceText(entry.originalContent);
   const bounded = canEditWorkspaceText(entry.localContent);
   const canSave = editable && bounded && dirty && !saveState.pending && !saveState.uncertain;
@@ -68,10 +71,12 @@ export function WorkspaceFileEditor({
     );
   return (
     <div
+      ref={editorHost}
       className="grid min-w-0 gap-3"
       data-testid="workspace-file-content"
       data-file-dirty={dirty}
     >
+      <WorkspaceFileNavigation workspaceId={workspaceId} path={path} editorHost={editorHost} />
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={save} disabled={!canSave} data-testid="workspace-file-save">
           {saveState.pending

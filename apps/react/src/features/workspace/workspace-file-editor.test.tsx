@@ -33,6 +33,7 @@ vi.mock('@/components/editor/code-editor', () => ({
   },
 }));
 vi.mock('@tanstack/react-router', () => ({
+  useBlocker: () => undefined,
   Link: ({ children }: { children: React.ReactNode }) => <a href="/workspaces">{children}</a>,
 }));
 const ws = WorkspaceId('file-ui'),

@@ -7547,6 +7547,11 @@
   "workspace_fileEdit_saving_label": "正在儲存…",
   "workspace_fileEdit_unsaved_label": "未儲存的變更",
   "workspace_fileEdit_saved_label": "已儲存",
-  "workspace_fileEdit_explicit_description": "使用按鈕或Ctrl/Cmd+S儲存。離開時未儲存的編輯將遺失。儲存會取代目前檔案，不會合併外部變更。",
-  "workspace_fileEdit_uncertain_error": "儲存結果未知。本工作階段已禁止儲存。請先檢查檔案再決定下一步。重新載入不會重複儲存，並會清除此工作階段警告。"
+  "workspace_fileEdit_explicit_description": "請使用按鈕或 Ctrl/Cmd+S 儲存。離開前會確認是否捨棄未儲存的編輯。儲存會取代目前檔案，不會合併外部修改。",
+  "workspace_fileEdit_uncertain_error": "儲存結果未知。本工作階段已禁止儲存。請先檢查檔案再決定下一步。重新載入不會重複儲存，並會清除此工作階段警告。",
+  "workspace_fileNavigation_title_label": "離開此檔案？",
+  "workspace_fileNavigation_discard_description": "捨棄未儲存的本機編輯並離開此檔案？",
+  "workspace_fileNavigation_save_description": "儲存正在進行或結果未知。離開不會取消已傳送的寫入。本次工作階段仍會追蹤其結果。",
+  "workspace_fileNavigation_stay_label": "留下",
+  "workspace_fileNavigation_discard_label": "捨棄未儲存的編輯"
 }

@@ -138,8 +138,13 @@ line endings remain read-only. This is a bounded Monaco host, not full desktop
 FileTab or rich Markdown editing.
 
 Edits stay in the canonical file draft until explicitly saved. An earlier save
-acknowledgement preserves newer edits. Leaving the file discards unsaved edits;
-there is no autosave. Save replaces the current file: external edits are not merged
+acknowledgement preserves newer edits. In-app navigation with unsaved edits asks
+for **Stay** or **Discard unsaved edits**. Stay keeps the draft and editor selection;
+discard leaves without saving. A pending or unknown save remains tracked after
+departure: leaving does not cancel a write already sent. Clean files leave normally.
+The browser can show its standard unload warning for a dirty editor on reload or
+tab close; accepting unload loses the in-memory draft. There is no autosave or
+persistent draft recovery. Save replaces the current file: external edits are not merged
 and the daemon provides no compare-and-swap guarantee. A definite refusal keeps
 the editor and draft available for deliberate retry. An unknown result blocks
 another save for that resource in the current session. Reload never replays the

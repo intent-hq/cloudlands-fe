@@ -7,6 +7,7 @@ import { store } from '../index';
 import {
   getFileContentEntry,
   getFileSaveOperations,
+  getFileIsDirty,
 } from '../../../../../src/store/renderer/slices/files/files-projections';
 
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
@@ -14,6 +15,7 @@ import { selectAdmittedWorkspaceReadContext } from '../workspace-lifecycle/works
 import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
 
 export const selectFileContentEntry = store.createSelector(getFileContentEntry);
+export const selectFileIsDirty = store.createSelector(getFileIsDirty);
 
 /** Shared by publication and presentation, so node reassignment retires cached previews too. */
 export const selectFileReadContext = store.createSelector(
