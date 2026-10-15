@@ -69,3 +69,42 @@ it('updates counts and estimates, hides stale work and never treats N/N as ready
   expect(view.getByRole('heading').textContent).toMatch(/Starting/);
   expect(view.queryByText(/20 of 20/)).toBeNull();
 });
+
+it('shows no-count startup through services and ready without inventing indexing work', async () => {
+  const preparing: StartupSnapshot = {
+    startupStatus: 1,
+    attemptId: 'lazy-boot',
+    phase: 'preparing',
+    elapsedMs: 1000,
+    phaseElapsedMs: 1000,
+    progressAgeMs: 0,
+    retryAfterMs: 1000,
+  };
+  const view = render(StartupProgress, { state: { snapshot: preparing, available: true } });
+  expect(view.getByRole('heading').textContent).toBe('Starting intentd');
+  const expectNoIndexing = () => {
+    expect(view.getByText(/Elapsed:/)).toBeTruthy();
+    expect(
+      view.queryByText(
+        /Notes indexed|Rebuilding note indexes|Estimating remaining|About .*remaining/,
+      ),
+    ).toBeNull();
+  };
+  expectNoIndexing();
+  await view.rerender({
+    state: {
+      available: true,
+      snapshot: { ...preparing, phase: 'finalizing', finalizingStep: 'services' },
+    },
+  });
+  expect(view.getByRole('heading').textContent).toBe('Finishing startup');
+  expectNoIndexing();
+  await view.rerender({
+    state: {
+      available: true,
+      snapshot: { ...preparing, phase: 'ready', retryAfterMs: undefined },
+    },
+  });
+  expect(view.getByRole('heading').textContent).toBe('Finishing startup');
+  expectNoIndexing();
+});
