@@ -5,7 +5,7 @@
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { m } from '$shared/paraglide/messages.js';
-  import { getLocale } from '$shared/paraglide/runtime';
+  import { formatFullDateTime, formatTime } from '$lib/i18n/format';
   import {
     DISCUSSION_MAX_BODY_BYTES,
     type DiscussionMessage,
@@ -188,12 +188,9 @@
               <time
                 class="shrink-0 text-muted-foreground"
                 datetime={message.createdAt}
-                title={new Date(message.createdAt).toLocaleString(getLocale())}
+                title={formatFullDateTime(message.createdAt)}
               >
-                {new Date(message.createdAt).toLocaleTimeString(getLocale(), {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
+                {formatTime(message.createdAt)}
               </time>
             </div>
             <p
