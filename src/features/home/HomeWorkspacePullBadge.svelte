@@ -37,6 +37,8 @@
     };
     // Enrichment is optional. Missing values retain the explicit lifecycle state.
     if (pull.status !== PullRequestStatus.Open || pull.isDraft) return base;
+    if (pull.isInMergeQueue === true)
+      return { ...base, label: m.workspace_prSection_statusQueued_label(), icon: faClock };
     if (pull.mergeConflicts === true || pull.mergeableState === 'dirty')
       return {
         ...base,
@@ -69,8 +71,6 @@
         color: 'text-muted-foreground',
         background: 'bg-muted',
       };
-    if (pull.isInMergeQueue === true)
-      return { ...base, label: m.workspace_prSection_statusQueued_label(), icon: faClock };
     if (pull.reviewDecision === 'REVIEW_REQUIRED')
       return {
         ...base,
