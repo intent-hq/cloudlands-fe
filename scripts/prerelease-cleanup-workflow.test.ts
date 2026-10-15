@@ -18,12 +18,17 @@ describe('prerelease cleanup writer coordination', () => {
     expect(source).toMatch(lock);
     expect(source.match(/^ *concurrency:/gm)).toHaveLength(1);
     if (name === 'release-please') {
-      expect(source.match(/^  [\w-]+:/gm)).toEqual(['  push:', '  release-please:']);
+      expect(source.match(/^  [\w-]+:/gm)).toEqual([
+        '  push:',
+        '  runner-route:',
+        '  release-please:',
+      ]);
       expect(source).toMatch(/^    concurrency:/m);
     } else {
       expect(source.indexOf('concurrency:')).toBeLessThan(source.indexOf('\njobs:'));
     }
-    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
+    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\/(?!runner-route\.yml)/m);
+    expect(workflow('runner-route')).not.toMatch(/^\s*concurrency:/m);
     // Dispatching downstream builds is asynchronous; never wait while holding the lock.
     expect(source).not.toMatch(/gh (run watch|workflow run[^\n]*--wait)/);
   });
@@ -43,7 +48,7 @@ describe('prerelease cleanup writer coordination', () => {
     expect(source).toMatch(lock);
     expect(source.match(/^ *concurrency:/gm)).toHaveLength(1);
     expect(source.indexOf('concurrency:')).toBeLessThan(source.indexOf('\njobs:'));
-    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
+    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\/(?!runner-route\.yml)/m);
   });
 
   it('defaults manual runs to preview and schedules the component daily', () => {
@@ -71,7 +76,7 @@ describe('prerelease cleanup writer coordination', () => {
     expect(source).toContain('EVENT_NAME: ${{ github.event_name }}');
     expect(source).toContain('REQUESTED_MODE: ${{ inputs.mode }}');
     expect(source).not.toContain('secrets.GITHUB_TOKEN');
-    expect(source).not.toMatch(/continue-on-error: true|permissions:\n/);
+    expect(source).not.toMatch(/continue-on-error: true/);
     expect(source).toContain('if: always()');
     expect(source).toContain('path: cleanup-audit.json');
   });

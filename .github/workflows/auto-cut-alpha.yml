@@ -118,6 +118,14 @@ concurrency:
   queue: max
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   # Read-only queries authenticate with the implicit GITHUB_TOKEN, so the
   # job grants it exactly the read scopes those queries need (top-level
   # permissions stay `{}`); the RELEASE_PAT PAT is used only for the final
@@ -125,7 +133,8 @@ jobs:
   auto-merge-release-pr:
     name: Auto-merge green Release PR
     # API-driven check: use ubuntu-latest so a self-hosted slot is not wasted.
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     # Self-retrigger guard: the cut's own squash-merge push to main
     # (release-please writes the `chore(release): X.Y.Z` commit title) fires
     # the broadened push trigger — skip it at the job level so the run never

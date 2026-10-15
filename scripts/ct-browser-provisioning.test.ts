@@ -33,20 +33,20 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
   const residue = source.replace(
-    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\s]/g,
+    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\[\]\s]/g,
     '',
   );
   if (residue !== '') throw new Error(`unsupported workflow expression: ${residue}`);
   return new Function('fromJSON', `return (${source});`)(JSON.parse);
 }
 
-describe('required CT hosted routing', () => {
+describe('required CT self-hosted-first routing', () => {
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
     ['schedule', 'false'],
     ['workflow_dispatch', 'true'],
-  ])('uses hosted provisioning on %s with global linux_burst=%s', (event, burst) => {
+  ])('uses the selected runner and provisioning on %s with linux_burst=%s', (event, burst) => {
     const context = {
       'github.event_name': event,
       'github.event.pull_request.head.repo.full_name': 'intent-hq/cloudlands-fe',
@@ -54,9 +54,11 @@ describe('required CT hosted routing', () => {
       'inputs.suite': 'ct',
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
-      'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'linux', 'tinybox'],
-      ),
+      'runner.environment': burst === 'true' ? 'github-hosted' : 'self-hosted',
+      'needs.runner-route.outputs.runners': JSON.stringify({
+        'depot-ubuntu-24.04-8':
+          burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64'],
+      }),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'pull_request' ? 'true' : '',
     };
@@ -64,22 +66,23 @@ describe('required CT hosted routing', () => {
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(true);
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['depot-ubuntu-24.04-8']);
-    expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
+    expect
+      .soft(Array.isArray(runner) ? runner : [runner])
+      .toEqual(burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64']);
+    expect
+      .soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1]))
+      .toBe(burst === 'true' ? 'pnpm' : '');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]
       .map((match) => match[1])
       .filter((name) => evaluate(step(name).match(/^        if: (.*)$/m)?.[1] ?? 'true', context));
-    for (const name of [
-      'Resolve CT browser identity and paths',
-      'Cache Playwright browsers',
-      'Harden apt against mirror stalls',
-      'Install Playwright browsers',
-    ]) {
+    for (const name of ['Resolve CT browser identity and paths', 'Install Playwright browsers']) {
       expect.soft(activeSteps).toContain(name);
     }
-    expect.soft(activeSteps).not.toContain('Point Playwright at per-slot paths (tinybox)');
+    expect(activeSteps.includes('Cache Playwright browsers')).toBe(burst === 'true');
+    expect(activeSteps.includes('Harden apt against mirror stalls')).toBe(burst === 'true');
+    expect(activeSteps).toContain('Isolate browser cache per runner');
     expect.soft(activeSteps).not.toContain('Install Playwright browsers (tinybox)');
   });
 });

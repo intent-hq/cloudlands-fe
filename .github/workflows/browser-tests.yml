@@ -4,6 +4,9 @@ name: Browser Tests
 
 on:
   workflow_call:
+    secrets:
+      CI_QUEUE_READ_TOKEN:
+        required: false
     inputs:
       suite:
         description: 'Full suite to run: ct, root, or electron'
@@ -14,11 +17,20 @@ permissions:
   contents: read
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
-    # Four hosted shards, one worker each; preserve the pinned CT browser.
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
+    # Four shards, one worker each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -38,6 +50,8 @@ jobs:
       # before V8 GC engaged, exhausting the 16 GB VM until the runner was
       # killed mid-run (monorepo#3352). Heap caps are scoped per step below.
     steps:
+      - name: Isolate browser cache per runner
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup pnpm
@@ -48,11 +62,11 @@ jobs:
           # Keep concurrent runner installations isolated.
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # This job always uses the ephemeral hosted runner and its cache.
+        # Persistent runners keep their own pnpm store.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+          cache: ${{ runner.environment != 'self-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -74,12 +88,14 @@ jobs:
           console.log(`readiness-marker=${plan.readinessMarker}`);
           ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
+        if: runner.environment != 'self-hosted'
         uses: actions/cache@v6
         id: playwright-cache
         with:
           path: ${{ steps.ct-browser.outputs.cache-dir }}
           key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
       - name: Harden apt against mirror stalls
+        if: runner.environment != 'self-hosted'
         # The runner image prefers the azure.archive.ubuntu.com mirror, which
         # has stalled mid-transfer until the 30-min job budget expired —
         # twice, before any test ran (monorepo#2832). The image routes apt
@@ -285,11 +301,12 @@ jobs:
           overwrite: true
 
   # The top-level Playwright runner has a distinct browser cache from CT.
-  # Four hosted shards retain one worker each and the existing 45-minute budget.
+  # Four shards retain one worker each and the existing 45-minute budget.
   test-playwright:
     name: Playwright (root ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -301,6 +318,8 @@ jobs:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
+      - name: Isolate browser cache per runner
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup pnpm
@@ -314,7 +333,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+          cache: ${{ runner.environment != 'self-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -338,20 +357,26 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
+        if: runner.environment != 'self-hosted'
         # Distinct key prefix from test-ct's so the versions never alias.
         uses: actions/cache@v6
         with:
-          path: ~/.cache/ms-playwright
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
       - name: Install Playwright browsers
-        # The gh-linux-8x image already ships every Chromium
-        # shared library, and --with-deps only adds the fonts-*/xfonts-*
-        # packages whose fetch blew test-ct's budget (intent#4723) — so
-        # install the browser alone; a missing lib fails the first spec
-        # loudly rather than silently. Step-level timeout so a download
-        # stall fails here in minutes instead of exhausting the overall job budget.
+        # Hosted images already provide Chromium libraries. Persistent runners
+        # install missing OS dependencies, retrying shared apt lock contention.
         timeout-minutes: 8
-        run: pnpm exec playwright install chromium
+        run: |
+          if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
+            for attempt in 1 2 3; do
+              if pnpm exec playwright install --with-deps chromium; then exit 0; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep 15
+            done
+          else
+            pnpm exec playwright install chromium
+          fi
       - name: Root Playwright tests
         id: tests
         # --workers=1: playwright.config.ts already pins CI to one worker;
@@ -386,7 +411,8 @@ jobs:
   test-electron:
     name: Electron Browser Lifetime
     if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
     # single-worker run takes ~2-3 min plus setup.
     timeout-minutes: 30
@@ -396,6 +422,8 @@ jobs:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
+      - name: Isolate browser cache per runner
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup pnpm
@@ -409,7 +437,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+          cache: ${{ runner.environment != 'self-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Electron binary
@@ -437,6 +465,13 @@ jobs:
         timeout-minutes: 5
         run: |
           set -euo pipefail
+          if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
+            for attempt in 1 2 3; do
+              if pnpm exec playwright install-deps chromium; then break; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep 15
+            done
+          fi
           if command -v xvfb-run >/dev/null 2>&1; then
             echo "xvfb-run present; skipping apt."
             exit 0

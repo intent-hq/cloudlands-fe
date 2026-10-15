@@ -15,9 +15,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   manifest:
     name: Expected browser reports
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -37,16 +46,31 @@ jobs:
           retention-days: 7
 
   test-ct:
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: ct
 
   test-playwright:
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: root
 
   test-electron:
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: electron

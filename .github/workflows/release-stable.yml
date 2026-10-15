@@ -35,13 +35,22 @@ concurrency:
   queue: max
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   promote-to-stable:
     # GH-hosted larger runner (ephemeral): download/re-upload-heavy promotion
     # work. Scratch files still live under RUNNER_TEMP — harmless on an
     # ephemeral runner and it keeps the guarantee that a previous run's
     # assets can never leak into this promotion (#553) even if this ever
     # moves back to a persistent runner.
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     timeout-minutes: 30
 
     steps:

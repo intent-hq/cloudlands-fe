@@ -9,6 +9,14 @@ concurrency:
   group: b76t-boundary-admission-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   admission:
     if: >-
       github.repository == 'intent-hq/cloudlands-fe' &&
@@ -18,7 +26,8 @@ jobs:
       github.run_attempt == 1 &&
       github.event.before == 'b7997f3e2e8dd80d0fd6c36752e4ad230fcace9d' &&
       github.event.created == false && github.event.deleted == false && github.event.forced == false
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     timeout-minutes: 8
     env:
       B76_EVENT_BEFORE_SHA: ${{ github.event.before }}

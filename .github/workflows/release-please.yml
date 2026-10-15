@@ -24,12 +24,21 @@ on:
     branches: [main]
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   # The single job never uses the implicit GITHUB_TOKEN (the action
   # authenticates with the RELEASE_PAT PAT), so it inherits the top-level
   # `permissions: {}` and the implicit token stays powerless.
   release-please:
     name: Release-please
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     if: ${{ github.repository_owner == 'intent-hq' }}
     # Source release creation shares the publication/promotion/cleanup lock.
     # The tag triggers alpha asynchronously; do not wait for it under this lock.

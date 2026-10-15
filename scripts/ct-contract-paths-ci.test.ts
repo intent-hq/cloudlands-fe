@@ -56,6 +56,16 @@ function jobField(lines: string[], key: string): string {
   return line.slice(`    ${key}:`.length).trim();
 }
 
+// Execute the actual runner expression with available or unavailable fleet outputs.
+function selectedRunner(lines: string[], burst: boolean): unknown {
+  const labels = burst ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64'];
+  const outputs = JSON.stringify({ 'depot-ubuntu-24.04-8': labels });
+  const expression = jobField(lines, 'runs-on')
+    .slice(3, -2)
+    .replaceAll('needs.runner-route.outputs.runners', JSON.stringify(outputs));
+  return new Function('fromJSON', `return (${expression});`)(JSON.parse);
+}
+
 // Body of a `run: |` block for the named step, dedented to column 0.
 function stepRunBlock(lines: string[], stepName: string): string {
   const step = lines.indexOf(`      - name: ${stepName}`);
@@ -412,6 +422,7 @@ function evaluateCondition(expression: string, context: Context): boolean {
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
     'needs.route.outputs.linux_burst': context.linuxBurst ?? 'false',
+    'runner.environment': context.linuxBurst === 'true' ? 'github-hosted' : 'self-hosted',
     [ELECTRON_OUTPUT]: context.electronRequired ?? 'false',
     'inputs.suite': context.suite ?? '',
     'github.event.pull_request.head.repo.full_name': context.fork
@@ -788,7 +799,8 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+      expect(selectedRunner(lines, false)).toEqual(['self-hosted', 'Linux', 'X64']);
+      expect(selectedRunner(lines, true)).toEqual(['depot-ubuntu-24.04-8']);
     },
   );
 
@@ -996,7 +1008,7 @@ describe('shared browser jobs and nightly routing', () => {
   );
 });
 
-describe('root Playwright hosted shards', () => {
+describe('root Playwright routed shards', () => {
   const testPlaywright = jobLines(
     'test-playwright',
     readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split('\n'),
@@ -1049,13 +1061,19 @@ describe('root Playwright hosted shards', () => {
     ['pull_request', 'true'],
     ['schedule', 'false'],
     ['workflow_dispatch', 'true'],
-  ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
+  ])('provisions selected runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe('depot-ubuntu-24.04-8');
-    expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
+    expect(selectedRunner(testPlaywright, linuxBurst === 'true')).toEqual(
+      linuxBurst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64'],
+    );
+    expect(evaluateCondition(field(step('Setup Node.js'), 'cache'), context)).toBe(
+      linuxBurst === 'true',
+    );
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
-      expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(true);
+      expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(
+        name === 'Install Playwright browsers' || linuxBurst === 'true',
+      );
     }
     expect(field(step('Install Playwright browsers'), 'timeout-minutes')).toBe('8');
     expect(
@@ -1091,7 +1109,7 @@ describe('root Playwright hosted shards', () => {
         ]);
       }
       const install = bash(
-        field(step('Install Playwright browsers'), 'run'),
+        stepRunBlock(testPlaywright, 'Install Playwright browsers'),
         {
           PATH: `${root}:${process.env.PATH}`,
           TEST_EXIT: '7',
@@ -1624,4 +1642,44 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
       expect(result.stdout).toMatch(/^route result 'failure' not acceptable/m);
     },
   );
+});
+
+describe('persistent browser runner dependencies', () => {
+  it.each([
+    ['test-playwright', 'Install Playwright browsers'],
+    ['test-electron', 'Ensure Xvfb'],
+  ])('%s retries transient package locks and rejects an unavailable dependency', (job, name) => {
+    const root = temporaryDirectory('browser-dependency-retry-');
+    const attempts = join(root, 'attempts');
+    writeFileSync(
+      join(root, 'pnpm'),
+      `#!/bin/sh
+n=0
+if [ -f "$ATTEMPTS" ]; then n=$(cat "$ATTEMPTS"); fi
+n=$((n + 1))
+printf '%s' "$n" > "$ATTEMPTS"
+if [ "$FAIL_ALWAYS" = true ] || [ "$n" -eq 1 ]; then exit 7; fi
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    for (const name of ['sleep', 'xvfb-run'])
+      writeFileSync(join(root, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const script = stepRunBlock(jobLines(job, browserWorkflow), name);
+    for (const fail of ['false', 'true']) {
+      writeFileSync(attempts, '0');
+      const result = bash(
+        script,
+        {
+          PATH: `${root}:${process.env.PATH}`,
+          RUNNER_ENVIRONMENT: 'self-hosted',
+          ATTEMPTS: attempts,
+          FAIL_ALWAYS: fail,
+        },
+        root,
+      );
+      expect(result.status, result.stderr).toBe(fail === 'true' ? 1 : 0);
+      expect(Number(readFileSync(attempts, 'utf8'))).toBe(fail === 'true' ? 3 : 2);
+    }
+  });
 });

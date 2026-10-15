@@ -16,13 +16,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   report:
     if: >-
       github.repository == 'intent-hq/cloudlands-fe' &&
       github.event.workflow_run.head_repository.full_name == 'intent-hq/cloudlands-fe' &&
       github.event.workflow_run.head_branch == 'main' &&
       (github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'workflow_dispatch')
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

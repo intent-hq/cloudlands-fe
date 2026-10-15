@@ -589,9 +589,12 @@ describe('manual Mac architecture selection', () => {
     );
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
-      expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe(
-        row.arch === 'arm64' ? 'depot-macos-latest' : 'macos-latest-large',
-      );
+      expect(
+        render(build['runs-on']!, {
+          ["fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner"]:
+            row.runner,
+        }),
+      ).toBe(row.arch === 'arm64' ? 'depot-macos-latest' : 'macos-latest-large');
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
       ).toBe(row.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin');
@@ -948,7 +951,13 @@ it('blocks required Mac failures while allowing only the Intel matrix leg to fai
     );
     expect(allowed).toBe(arch === 'x64');
   }
-  expect(jobs.publish.needs).toEqual(['resolve', 'build-macos', 'build-windows', 'build-linux']);
+  expect(jobs.publish.needs).toEqual([
+    'resolve',
+    'build-macos',
+    'build-windows',
+    'build-linux',
+    'runner-route',
+  ]);
   expect((jobs['build-windows'] as Record<string, unknown>)['continue-on-error']).toBeUndefined();
   expect((jobs['build-linux'] as Record<string, unknown>)['continue-on-error']).toBeUndefined();
   expect(jobs['build-macos'].strategy).toMatchObject({ 'fail-fast': false });
