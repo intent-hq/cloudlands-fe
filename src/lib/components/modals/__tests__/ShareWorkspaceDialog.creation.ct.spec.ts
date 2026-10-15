@@ -40,6 +40,18 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await page.getByRole('option', { name: '@alex', exact: true }).click();
       const submit = page.getByTestId('share-link-submit');
       await expect(submit).toHaveAccessibleName('Create link');
+      await expect
+        .poll(() =>
+          page
+            .getByTestId('share-dialog-height')
+            .evaluate((node) =>
+              Math.abs(
+                node.getBoundingClientRect().height -
+                  node.firstElementChild!.getBoundingClientRect().height,
+              ),
+            ),
+        )
+        .toBe(0);
       const restingButton = await submit.boundingBox();
       await submit.click();
       await expect.poll(() => requests).toBe(1);
@@ -90,13 +102,14 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await expect(submit).not.toHaveAttribute('aria-busy', 'true');
       await expect
         .poll(() =>
-          page.evaluate(
-            () =>
-              document
-                .getAnimations()
-                .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
-                .length,
-          ),
+          page
+            .getByTestId('share-dialog-height')
+            .evaluate((node) =>
+              Math.abs(
+                node.getBoundingClientRect().height -
+                  node.firstElementChild!.getBoundingClientRect().height,
+              ),
+            ),
         )
         .toBe(0);
       const finalHeight = (await dialog.boundingBox())!.height;
