@@ -4,6 +4,32 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.0...v2.219.1) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.48 ([#3418](https://github.com/intent-hq/cloudlands-fe/issues/3418)) ([9eb775e](https://github.com/intent-hq/cloudlands-fe/commit/9eb775e0eda4079cb88e668a9e9ceb01205f338a))
+
+## [2.219.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.218.0...v2.219.0) (2026-10-15)
+
+
+### 🚀 Features
+
+* add a sidebar People tile with workspace activity ([#3410](https://github.com/intent-hq/cloudlands-fe/issues/3410)) ([556c429](https://github.com/intent-hq/cloudlands-fe/commit/556c429c176e6cdb53caf9b608c57eb99211d762))
+
+
+### 🐛 Bug Fixes
+
+* apply task pushes and refresh only visible notes ([#3381](https://github.com/intent-hq/cloudlands-fe/issues/3381)) ([05a4bbf](https://github.com/intent-hq/cloudlands-fe/commit/05a4bbf1810027ca1b104a9ca332293d4cad365e))
+* bump intentd sidecar to v0.10.47 ([#3416](https://github.com/intent-hq/cloudlands-fe/issues/3416)) ([a6616b3](https://github.com/intent-hq/cloudlands-fe/commit/a6616b36ac397c1a28e67934dc1f72262e16702e))
+* clarify workspace repository labels on Home ([#3408](https://github.com/intent-hq/cloudlands-fe/issues/3408)) ([34d1df4](https://github.com/intent-hq/cloudlands-fe/commit/34d1df4df2472dbe80f7d873c77efc23f6ebb277))
+* consolidate single-message queue controls in the header ([#3414](https://github.com/intent-hq/cloudlands-fe/issues/3414)) ([88dde9e](https://github.com/intent-hq/cloudlands-fe/commit/88dde9e9f579ce9ebce5b26ad78d49ce3b79c9ac))
+* make desktop Intel releases optional and release-only ([#3388](https://github.com/intent-hq/cloudlands-fe/issues/3388)) ([e331d59](https://github.com/intent-hq/cloudlands-fe/commit/e331d5973b78cbd5d84aae4c66a5df3fdc78a976))
+* make home selections clearer and consistent ([#3415](https://github.com/intent-hq/cloudlands-fe/issues/3415)) ([48f3a02](https://github.com/intent-hq/cloudlands-fe/commit/48f3a02c950f1d0424aae0be6d0d52649f6ff0ab))
+* Suppress switch toasts for the current workspace ([#3337](https://github.com/intent-hq/cloudlands-fe/issues/3337)) ([f61f6b0](https://github.com/intent-hq/cloudlands-fe/commit/f61f6b09ffa4ba090252dcbb48db5d8c0f028a80))
+* unify shared UI icons with Phosphor ([#3407](https://github.com/intent-hq/cloudlands-fe/issues/3407)) ([1a20992](https://github.com/intent-hq/cloudlands-fe/commit/1a20992311a287ac255d6000f2ed3036f1653c1d))
+
 ## [2.218.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.217.0...v2.218.0) (2026-10-14)
 
 

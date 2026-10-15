@@ -72,7 +72,6 @@ import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-statu
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
-import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
 import { identitySaga } from './slices/identity/sagas/identity-saga';
@@ -235,7 +234,6 @@ export const sagas = [
   collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
-  legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
   scriptMonitorSaga,
