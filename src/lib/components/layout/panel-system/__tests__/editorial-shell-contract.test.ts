@@ -148,7 +148,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
-    expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
     expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');

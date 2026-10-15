@@ -1035,7 +1035,6 @@ describe('pool auxiliary admission at retirement', () => {
   it('retains late auxiliary admission while the original facade close is pending', async () => {
     const connectionModule = await import('../backend-connection');
     const held = deferred<Awaited<ReturnType<typeof connectionModule.captureFingerprint>>>();
-    const destroyStarted = deferred<void>();
     const probe = vi
       .spyOn(connectionModule, 'captureFingerprint')
       .mockImplementation(() => held.promise);
@@ -1045,6 +1044,7 @@ describe('pool auxiliary admission at retirement', () => {
     let close: Promise<void> | undefined;
     let socket: ControlledSocket | undefined;
     const releaseClose = () => {
+      if (socket) socket.holdClose = false;
       const release = socket?.originalClose;
       if (release) {
         socket!.originalClose = undefined;
@@ -1056,11 +1056,12 @@ describe('pool auxiliary admission at retirement', () => {
       await settledTurn();
       socket = edge.sockets[0]!;
       socket.holdClose = true;
-      socket.onDestroy = () => destroyStarted.resolve();
+      const closeStarted = deferred();
+      socket.onDestroy = () => closeStarted.resolve();
       const boundary = fence();
       retirement = lifecycle.retire(boundary);
       expect(lifecycle.retire(boundary)).toBe(retirement);
-      await destroyStarted.promise;
+      await closeStarted.promise;
       expect(socket.originalClose).toBeTypeOf('function');
       close = new Promise<void>((resolve) => socket!.once('close', resolve));
       let retired = false;
@@ -1126,7 +1127,6 @@ describe('pool auxiliary admission at retirement', () => {
       ).toBe(true);
     } finally {
       held.resolve({ ok: true, connected: true, fingerprint: 'ab'.repeat(32), tokenValid: true });
-      if (socket) socket.holdClose = false;
       releaseClose();
       await Promise.allSettled(
         [invocation, retirement, close].filter((value) => value !== undefined),

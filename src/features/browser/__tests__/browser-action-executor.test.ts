@@ -124,6 +124,11 @@ describe('browser-action-executor', () => {
         mockOpenTabFn,
       );
       expect(result.success).toBe(true);
+      expect(result.results[0]).toEqual({
+        action: 'openTab',
+        success: true,
+        result: { success: true, message: 'opened', url: 'https://example.com' },
+      });
       expect(mockOpenTabFn).toHaveBeenCalledWith(
         'https://example.com',
         undefined,
@@ -2186,7 +2191,11 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
       );
-      expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
+      expect(result.results[0]?.result).toEqual({
+        success: true,
+        message: 'opened',
+        url: 'http://localhost:3000/',
+      });
     });
 
     it('leaves non-loopback URLs untouched in remote mode', async () => {
@@ -2205,7 +2214,11 @@ describe('browser-action-executor', () => {
         undefined,
         undefined,
       );
-      expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
+      expect(result.results[0]?.result).toEqual({
+        success: true,
+        message: 'opened',
+        url: 'https://example.com/x',
+      });
     });
   });
 
@@ -3062,37 +3075,40 @@ describe('browser-action-executor', () => {
     });
 
     // A fresh visible open reports the layout's real display state for the
-    // new tab so the caller knows whether a screenshot will paint anything.
-    it('visible: true reports displayed from the layout after the open', async () => {
-      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
-      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
-      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
-        tabs: [
+    // new tab: background insertion is inactive, while an empty panel may display it.
+    it.each([false, true])(
+      'visible: true reports the layout active marker (%s) after the open',
+      async (active) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
+        vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+          tabs: [
+            {
+              tabId: 'tab-new',
+              webContentsId: 1,
+              url: 'http://localhost:3000/board',
+              title: 'Board',
+              mounted: true,
+              ownerAgentId: 'agent-1',
+              active,
+            },
+          ],
+          stale: false,
+        });
+
+        const result = await executeActions(
           {
-            tabId: 'tab-new',
-            webContentsId: 1,
-            url: 'http://localhost:3000/board',
-            title: 'Board',
-            mounted: true,
-            ownerAgentId: 'agent-1',
-            active: true,
+            actions: [{ action: 'openTab', url: 'http://localhost:3000/board', visible: true }],
           },
-        ],
-        stale: false,
-      });
+          mockOpenTabFn,
+          'agent-1',
+          'ws-1',
+        );
 
-      const result = await executeActions(
-        {
-          actions: [{ action: 'openTab', url: 'http://localhost:3000/board', visible: true }],
-        },
-        mockOpenTabFn,
-        'agent-1',
-        'ws-1',
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-new', displayed: true });
-    });
+        expect(result.success).toBe(true);
+        expect(result.results[0]?.result).toMatchObject({ tabId: 'tab-new', displayed: active });
+      },
+    );
 
     it('visible: true omits displayed when the tab list is stale', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');

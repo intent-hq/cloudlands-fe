@@ -15,6 +15,9 @@ import {
   loadOlderEventsRequested,
   olderEventsLoaded,
   olderEventsLoadFailed,
+  loadPeopleEventsRequested,
+  peopleEventsLoadStarted,
+  peopleEventsLoadFinished,
   setEventsLoading,
   workspaceEventsReducer,
 } from './workspace-events-slice';
@@ -35,6 +38,64 @@ function mockEvent(id: string, workspaceId = WS_1, timestampOverride?: string): 
 describe('workspaceEventsReducer', () => {
   it('returns the initial state', () => {
     expect(workspaceEventsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('keeps People request status separate from the shared Activity log', () => {
+    let state = workspaceEventsReducer(initialState, loadPeopleEventsRequested(WS_1, 'initial'));
+    expect(state).toBe(initialState);
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'request'));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: 'request',
+      peopleError: null,
+      loading: false,
+      loadingOlder: false,
+    });
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsLoadFinished(WS_1, 'request', true, 'offline'),
+    );
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: null,
+      peopleInitialized: true,
+      peopleError: 'offline',
+      error: null,
+    });
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'retry'));
+    expect(state.byWorkspaceId[WS_1].peopleError).toBeNull();
+    state = workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'retry', true, null));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleInitialized: true,
+      peopleRequestId: null,
+    });
+  });
+
+  it('does not let stale People completion settle a new request or recreate unmounted state', () => {
+    let state = workspaceEventsReducer(initialState, peopleEventsLoadStarted(WS_1, 'old'));
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'new'));
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'old', true, 'late'))).toBe(
+      state,
+    );
+    state = workspaceEventsReducer(state, workspaceUnmounted(WS_1));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: null,
+      peopleInitialized: false,
+      peopleError: null,
+    });
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'new', true, null))).toBe(
+      state,
+    );
+    state = workspaceEventsReducer(state, eventsCleared(WS_1));
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'new', true, null))).toBe(
+      state,
+    );
+  });
+
+  it('reopens automatic People filling after a shared history refresh replaces the cache', () => {
+    let state = workspaceEventsReducer(initialState, peopleEventsLoadStarted(WS_1, 'request'));
+    state = workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'request', true, null));
+    expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(true);
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, [mockEvent('fresh')], 'cursor'));
+    expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(false);
   });
 
   it('counts each firehose (re)subscription without touching the workspace buffers', () => {

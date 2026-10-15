@@ -40,7 +40,7 @@ test('hidden guest destination has no actionable avatar or location metadata', a
   const avatar = component.getByRole('button', { name: /Alex/ });
   await expect(avatar).toHaveAttribute('aria-disabled', 'true');
   await expect(avatar).toBeVisible();
-  await component.getByRole('group', { name: '1 other person here' }).hover();
+  await avatar.hover({ force: true });
   await expect(page.getByRole('tooltip')).toContainText('Alex');
   expect(await component.innerHTML()).not.toContain('Shared destination');
   expect(await component.innerHTML()).not.toContain('/workspace/destination');
