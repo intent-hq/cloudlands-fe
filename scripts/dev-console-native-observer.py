@@ -234,8 +234,14 @@ def library_identity():
 def self_test(out):
     journal = Journal(out / 'native-capability.jsonl')
     unwinder = Unwinder()
-    journal.emit('capability-start', observer=identity(os.getpid()), libraries=library_identity(),
-                 ptraceScope=Path('/proc/sys/kernel/yama/ptrace_scope').read_text().strip())
+    journal.emit('capability-start', observer=identity(os.getpid()), libraries=library_identity())
+    scope_path = Path('/proc/sys/kernel/yama/ptrace_scope')
+    try:
+        scope = scope_path.read_text().strip()
+    except OSError as error:
+        journal.emit('ptrace-scope-metadata', path=str(scope_path), available=False, errno=error.errno)
+    else:
+        journal.emit('ptrace-scope-metadata', path=str(scope_path), available=True, value=scope)
     child = subprocess.Popen(['/bin/sleep', '8'])
     try:
         time.sleep(.05)
