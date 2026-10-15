@@ -1,4 +1,5 @@
 {
+  "workspace_agentCreation_uncertain_description": "作成を確認できませんでした。別の会話を開始する前にエージェント一覧を確認してください。",
   "sandbox_catalogScene_unportedState_error": "「{state}」のプレビューはまだ React に移植されていません。",
   "workspace_setupScript_configUnavailable_description": "リポジトリのセットアップスクリプトを読み取れませんでした。ワークスペースを作成する前に、選択したスクリプトを確認してください。",
   "settings_devices_mobile_title": "Intent Mobile",

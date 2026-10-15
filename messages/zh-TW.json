@@ -1,4 +1,5 @@
 {
+  "workspace_agentCreation_uncertain_description": "無法確認是否建立成功。開始另一個對話前，請先查看代理程式清單。",
   "sandbox_catalogScene_unportedState_error": "「{state}」預覽尚未移植至 React。",
   "workspace_setupScript_configUnavailable_description": "無法讀取儲存庫的設定指令碼。請在建立工作區之前檢查所選指令碼。",
   "settings_devices_mobile_title": "Intent Mobile",

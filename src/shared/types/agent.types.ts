@@ -228,6 +228,8 @@ export interface CreateAgentResult {
    * callers can tell a `-32003` refusal apart from `error`'s flattened text.
    */
   cause?: unknown;
+  /** Creation may have executed, but its result cannot be admitted by this owner; do not repeat it. */
+  creationUncertain?: boolean;
   agentId?: AgentId;
   sessionId?: AgentId;
 }

@@ -126,7 +126,10 @@ describe('UnifiedAgentFactory', () => {
         placement,
       });
       expect(result.success).toBe(true);
-      expect(agentsApi.create).toHaveBeenCalledWith(expect.objectContaining({ placement }));
+      expect(agentsApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({ placement }),
+        expect.any(Function),
+      );
     });
 
     it('preserves isolated placement when concurrent UI consumers share a creation', async () => {
@@ -144,6 +147,7 @@ describe('UnifiedAgentFactory', () => {
       await vi.waitFor(() => expect(agentsApi.create).toHaveBeenCalledTimes(1));
       expect(agentsApi.create).toHaveBeenCalledWith(
         expect.objectContaining({ workspacePath: '/test/workspace', placement }),
+        expect.any(Function),
       );
       response.resolve({ id: 'agent-isolated-shared', workspaceId: mockWorkspace.id });
       const [a, b] = await Promise.all([first, second]);
@@ -168,6 +172,7 @@ describe('UnifiedAgentFactory', () => {
             rememberSpecialist: true,
             nameExplicitlySet: false,
           }),
+          expect.any(Function),
         );
       },
     );
@@ -190,6 +195,7 @@ describe('UnifiedAgentFactory', () => {
           rememberSpecialist: true,
           nameExplicitlySet: false,
         }),
+        expect.any(Function),
       );
     });
 

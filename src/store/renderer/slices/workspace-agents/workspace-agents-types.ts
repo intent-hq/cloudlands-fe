@@ -13,7 +13,7 @@ export interface AgentCreationOutcome {
   workspaceId: string;
   resourceId: string;
   seq: number;
-  status: 'pending' | 'success' | 'failure' | 'cancelled';
+  status: 'pending' | 'success' | 'failure' | 'cancelled' | 'uncertain';
   agentId?: string;
   error?: string;
   completedAt?: string;

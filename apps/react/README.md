@@ -12,15 +12,23 @@ Use the Node version in the root `package.json` `engines.node` range and the pin
 pnpm install --frozen-lockfile
 ```
 
-Start intentd separately, with a configured provider and an existing workspace and
-agent. From the repository root, the single frontend startup command is:
+Start intentd separately, with a configured provider and an existing workspace.
+From the repository root, the single frontend startup command is:
 
 ```sh
 INTENT_DEV_DAEMON_BRIDGE=1 pnpm --filter @intent/react dev
 ```
 
-Open the printed loopback URL at `/workspaces`, select a workspace, open **Agents**,
-and choose an existing agent. The composer sends text and selected image/file
+Open the printed loopback URL at `/workspaces`, select a workspace, and open **Agents**.
+Choose an existing agent or **Create new agent**, including when the list is empty.
+Creation uses the workspace's configured default provider and model, waits for its
+catalog, and opens only the agent ID returned by the daemon. The control stays
+pending during creation; a definite failure allows another attempt. If creation
+cannot be confirmed, check the agents list: the preview blocks another create from
+that control rather than automatically risking a duplicate. Leaving the workspace
+does not delete an agent that the daemon may already have created.
+
+The composer sends text and selected image/file
 attachments; **Stop** interrupts an active response. Acknowledged drafts and
 messages survive reload. A local edit, including clearing the text, is retained
 through a temporary disconnect and saved after reconnection.
@@ -63,8 +71,12 @@ message identity, navigation cleanup, and desktop/narrow captures. The companion
 `workspace-chat-attachments.extended.spec.mjs` uses authored safe PNG and text files,
 corroborates registered bytes and persisted blocks, and exercises draft reload,
 removal/reselection, cancellation of a pending upload and actual provider output.
-Both tests require the same owned-daemon guards. Unit policy tests are separate
-from provider acceptance.
+These tests require the same owned-daemon guards. The companion
+`workspace-agent-create.extended.spec.mjs` starts from an empty isolated workspace,
+corroborates exactly one created agent and its configured provider/model, sends the
+first message, checks genuine streaming and persisted IDs, then verifies reload,
+list navigation and subscription cleanup at desktop and narrow widths. Unit policy
+tests are separate from provider acceptance.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

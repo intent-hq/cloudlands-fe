@@ -1,3 +1,4 @@
+import { placementApi } from './attachment-placement-runtime';
 import { createChatDraftOwnership } from '../../../../../src/features/agent/chat-draft-ownership';
 import { getWorkspaceParticipationContext } from '../../../../../src/store/renderer/slices/workspace/workspace-authority-projections';
 import { getPrincipalSnapshot } from '../../../../../src/store/renderer/slices/principal/principal-projections';
@@ -9,8 +10,6 @@ import { notify } from '@/components/patterns/notify';
 import { createConversationReader } from '$lib/client/live/backend-conversation-reader';
 import { createBackendChatCommands } from '$lib/client/live/backend-chat-commands';
 import { createBackendDraftsClient } from '$lib/client/live/backend-drafts-client';
-import { createBackendAttachmentPlacement } from '$lib/client/live/backend-attachment-placement';
-import { supportsIdempotentPlacementProtocol } from '$lib/client/live/attachment-upload';
 import {
   toImageReferenceBlocks,
   imageRetryBlocks as retryImageBlocks,
@@ -28,21 +27,6 @@ export const captureDraftOwnership = createChatDraftOwnership(
   store,
   agentReadOwnership.captureAgentMutationOwnership,
 );
-const attachmentPlacement = createBackendAttachmentPlacement(backend.backendRequest);
-async function placementApi(current: () => boolean) {
-  if (!current()) throw new Error(m.workspace_client_accessChanged_error());
-  // React does not run the source health dashboard poller. Read the current
-  // daemon contract at this mutation boundary rather than assuming a version.
-  const status = await backend.backendRequest<{ protocolVersion?: string }>('system.status');
-  if (!current()) throw new Error(m.workspace_client_accessChanged_error());
-  return {
-    ...attachmentPlacement,
-    mintIdempotencyKey: (existing?: string) =>
-      supportsIdempotentPlacementProtocol(status.protocolVersion)
-        ? (existing ?? crypto.randomUUID())
-        : undefined,
-  };
-}
 export async function placeComposerAttachment(
   workspaceId: string,
   file: File,

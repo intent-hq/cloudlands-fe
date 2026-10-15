@@ -151,6 +151,8 @@ export interface BackendActiveStreamPayload {
 }
 
 export interface AgentCreationRequestOptions {
+  /** Keep an ambiguous create acknowledgement non-retryable in connected creation surfaces. */
+  protectUncertainCreation?: boolean;
   consumer?: AgentCreationConsumer;
   /** Background task graduation keeps selection and error presentation with its caller. */
   activateAgent?: boolean;
@@ -674,6 +676,14 @@ workspaceAgentsReducer.with(createAgentFromConfigRequested, (state, action) => {
   const [workspaceId, , options] = action.payload;
   if (!options?.consumer) return state;
   const { id, resourceId } = options.consumer;
+  const previous = state.creationOutcomes ? getItem(state.creationOutcomes, id) : undefined;
+  if (
+    options.protectUncertainCreation &&
+    previous?.resourceId === resourceId &&
+    previous.workspaceId === workspaceId &&
+    (previous.status === 'pending' || previous.status === 'uncertain')
+  )
+    return state;
   return {
     ...state,
     creationOutcomes: upsertItem(

@@ -21,6 +21,7 @@ import { setLocale } from '$shared/paraglide/runtime.js';
 afterEach(() => setLocale('en', { reload: false }));
 import { backendRequest } from './backend-transport';
 import { BackendError } from './backend-transport-types';
+import { createBackendAgentCreator } from './backend-agent-creator';
 
 beforeEach(() => {
   fixture.state.userPreferences.labsRemoteAgentsEnabled = false;
@@ -38,6 +39,53 @@ beforeEach(() => {
   });
 });
 describe('renderer final wire boundary', () => {
+  it('marks dispatch after placement preparation and keeps callbacks out of transport options', async () => {
+    const onDispatch = vi.fn(() => {
+      expect(fixture.request.mock.calls.some(([method]) => method === 'workspace.get')).toBe(true);
+      expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+    });
+    await backendRequest('agent.create', { workspaceId: 'ws' }, { onDispatch, timeoutMs: 1234 });
+    expect(onDispatch).toHaveBeenCalledOnce();
+    expect(fixture.request).toHaveBeenLastCalledWith(
+      'agent.create',
+      { workspaceId: 'ws' },
+      { timeoutMs: 1234 },
+    );
+  });
+
+  it('does not mark locally rejected placement as a dispatched creation', async () => {
+    const onDispatch = vi.fn();
+    await expect(
+      backendRequest(
+        'agent.create',
+        {
+          workspaceId: 'ws',
+          placement: { target: 'remote', checkout: 'isolated' },
+        },
+        { onDispatch },
+      ),
+    ).rejects.toThrow();
+    expect(onDispatch).not.toHaveBeenCalled();
+    expect(fixture.request.mock.calls.some(([method]) => method === 'agent.create')).toBe(false);
+  });
+
+  it.each(['workspace.get', 'agent.create'])(
+    'marks creator dispatch only if %s failure reached the mutation',
+    async (failedMethod) => {
+      const cause = new Error('Connection lost');
+      fixture.request.mockImplementation(async (method: string) => {
+        if (method === failedMethod) throw cause;
+        if (method === 'client.hello')
+          return { server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } } };
+        return { workspace: {} };
+      });
+      const onDispatch = vi.fn();
+      const create = createBackendAgentCreator({ backendRequest });
+      await expect(create({ workspaceId: 'ws' }, onDispatch)).rejects.toBe(cause);
+      expect(onDispatch).toHaveBeenCalledTimes(failedMethod === 'agent.create' ? 1 : 0);
+    },
+  );
+
   it('fails closed when capability observation is unavailable, without sending hello', async () => {
     fixture.transport = { request: fixture.request };
     await expect(

@@ -44,3 +44,9 @@ export const selectDelegatedCounts = store.createSelector(projections.getDelegat
 export const selectScopeCountsGeneration = store.createSelector(
   projections.getScopeCountsGeneration,
 );
+
+export const selectAgentCreationOutcome = store.createSelector(projections.getAgentCreationOutcome);
+
+export const selectAgentCreationResource = store.createSelector(
+  projections.getAgentCreationResource,
+);

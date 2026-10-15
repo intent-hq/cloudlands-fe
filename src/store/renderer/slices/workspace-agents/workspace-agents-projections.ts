@@ -1,3 +1,9 @@
+import { getPrincipalSnapshot } from '../principal/principal-projections';
+import {
+  getWorkspaceActionContext,
+  type WorkspaceAuthorityProjectionState,
+} from '../workspace/workspace-authority-projections';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentSession } from '$shared/types/agent-session';
 import type { AgentId } from '$shared/types';
 import { getAgentSession } from '../agent-session/agent-session-projections';
@@ -144,3 +150,32 @@ export const getDelegatedCounts = (state: WorkspaceAgentsProjectionState, wsId: 
 export const getScopeCountsGeneration = (state: WorkspaceAgentsProjectionState, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).scopeCountsGeneration;
 };
+
+export function getAgentCreationOutcome(
+  state: WorkspaceAgentsProjectionState,
+  consumerId: string,
+  workspaceId: string,
+  resourceId: string,
+) {
+  const outcomes = state.workspaceAgents.creationOutcomes;
+  const outcome = outcomes ? getItem(outcomes, consumerId) : undefined;
+  return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+    ? outcome
+    : undefined;
+}
+
+/** Stable duplicate-creation identity across a same-principal socket reconnection. Not authority. */
+export function getAgentCreationResource(
+  state: WorkspaceAuthorityProjectionState,
+  workspaceId: string,
+): string | null {
+  if (!getWorkspaceActionContext(state, workspaceId)) return null;
+  const principal = getPrincipalSnapshot(state)?.principal;
+  if (!principal) return null;
+  return JSON.stringify([
+    state.connections.windowBackendId,
+    principal.id,
+    principal.hostMembershipRevision ?? null,
+    workspaceId,
+  ]);
+}

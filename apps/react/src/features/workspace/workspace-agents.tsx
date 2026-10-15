@@ -1,7 +1,16 @@
-import { useLayoutEffect } from 'react';
+import { normalizeHomeConfiguration } from '../../../../../src/features/home/home-workspaces-persistence';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { CreateAgentSection } from '@/components/workspace/create-agent-section';
+import {
+  createAgentFromConfigRequested,
+  clearAgentCreationOutcome,
+} from '../../../../../src/store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { useLayoutEffect, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { store } from '@/store';
 import {
+  selectAgentCreationOutcome,
+  selectAgentCreationResource,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
 } from '@/store/workspace-agents/workspace-agents-selectors';
@@ -15,6 +24,95 @@ import { getAvatarStateForSession } from '../../../../../src/features/agent/comp
 import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
 import { ListRow, ListView } from '@/components/patterns/collection';
 import { m } from '$shared/paraglide/messages.js';
+
+function WorkspaceAgentCreation({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
+  const resource = selectAgentCreationResource(workspaceId).value;
+  const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
+  const consumerId = `workspace-general:${resource ?? workspaceId}`;
+  const outcome = selectAgentCreationOutcome(consumerId, workspaceId, resource ?? '').value;
+  // This ref owns only navigation from this mounted control, never the create operation.
+  const activated = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    activated.current = null;
+    return () => {
+      activated.current = null;
+      const current = selectAgentCreationOutcome.select(
+        store.state,
+        consumerId,
+        workspaceId,
+        resource ?? '',
+      );
+      if (current && current.status !== 'pending' && current.status !== 'uncertain') {
+        store.dispatch(clearAgentCreationOutcome(consumerId, current.seq));
+      }
+    };
+  }, [consumerId, workspaceId, resource]);
+  useLayoutEffect(() => {
+    if (
+      !authority ||
+      !resource ||
+      outcome?.seq !== activated.current ||
+      outcome.status !== 'success' ||
+      !outcome.agentId
+    )
+      return;
+    activated.current = null;
+    void navigate({
+      to: '/workspaces/$workspaceId',
+      params: { workspaceId },
+      search: (previous) => ({
+        q: typeof previous.q === 'string' ? previous.q : undefined,
+        homeQuery: typeof previous.homeQuery === 'string' ? previous.homeQuery : undefined,
+        homeFilter: normalizeHomeConfiguration({ filter: previous.homeFilter }).filter,
+        agent: outcome.agentId,
+      }),
+    });
+  }, [authority, resource, outcome, navigate, workspaceId]);
+  const blocked = outcome?.status === 'pending' || outcome?.status === 'uncertain';
+  return (
+    <div data-testid="workspace-agent-creation">
+      <CreateAgentSection
+        disabled={!authority || !resource || blocked}
+        pending={outcome?.status === 'pending'}
+        onCreateWithSpecialist={() => {
+          if (!resource || !selectAdmittedWorkspaceReadContext.select(store.state, workspaceId))
+            return;
+          const current = selectAgentCreationOutcome.select(
+            store.state,
+            consumerId,
+            workspaceId,
+            resource,
+          );
+          if (current?.status === 'pending' || current?.status === 'uncertain') return;
+          const request = createAgentFromConfigRequested(
+            workspaceId,
+            { workspaceId: WorkspaceId(workspaceId), source: 'workspace-general' },
+            {
+              consumer: { id: consumerId, resourceId: resource },
+              activateAgent: false,
+              notifyOnError: false,
+              protectUncertainCreation: true,
+            },
+          );
+          activated.current = request.seq;
+          void request.promise.catch(() => undefined);
+          store.dispatch(request);
+        }}
+      />
+      {outcome?.status === 'failure' && (
+        <p role="alert" className="px-3 text-sm text-destructive">
+          {m.agent_creation_createFailed_error()}
+        </p>
+      )}
+      {outcome?.status === 'uncertain' && (
+        <p role="alert" className="px-3 text-sm text-muted-foreground">
+          {m.workspace_agentCreation_uncertain_description()}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function WorkspaceAgentRows({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
@@ -72,6 +170,7 @@ export function WorkspaceAgents({ workspaceId }: { workspaceId: string }) {
         showChevronOnHover={false}
         className="h-auto"
       >
+        <WorkspaceAgentCreation workspaceId={workspaceId} />
         <WorkspaceAgentRows workspaceId={workspaceId} />
       </CollapsiblePanel>
     </section>

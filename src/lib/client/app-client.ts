@@ -383,8 +383,9 @@ export interface AgentsClient extends PermissionResponder, AgentsReadClient {
    * normalizes into the renderer `AgentSession` shape and returns directly so
    * callers can upsert into the store without a follow-up `agent.get`.
    * Transport / daemon errors propagate as rejections.
+   * onDispatch runs immediately before transport invocation, after local request preparation.
    */
-  create(request: AgentCreateRequest): Promise<AgentSession>;
+  create(request: AgentCreateRequest, onDispatch?: () => void): Promise<AgentSession>;
   send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Edit a past **user** message and regenerate from that point

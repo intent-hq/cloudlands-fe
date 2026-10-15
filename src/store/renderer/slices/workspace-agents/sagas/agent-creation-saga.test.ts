@@ -1438,6 +1438,7 @@ describe('agentCreationSaga', () => {
       expect(mocks.backendRequest).toHaveBeenCalledWith(
         'agent.create',
         expect.objectContaining({ workspaceId: WS }),
+        { onDispatch: expect.any(Function) },
       );
       expect(mocks.toastError).toHaveBeenCalledOnce();
       expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");

@@ -69,6 +69,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
     },
     // The reference app's PostCSS configuration must not run in this renderer.
     css: { postcss: { plugins: [] } },
+    // The canonical factory is reached through the lazily loaded application client.
+    // Prebundle its name generator before that first request can trigger a new dep hash.
+    optimizeDeps: { include: ['unique-names-generator'] },
     server: { host: '127.0.0.1', port: Number(process.env.DEV_PORT || 5174), strictPort: true },
     preview: { host: '127.0.0.1', port: 4174, strictPort: true },
   };

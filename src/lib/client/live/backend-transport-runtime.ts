@@ -85,7 +85,7 @@ export function createBackendRuntime(
   async function backendRequest<T = unknown>(
     method: string,
     params?: unknown,
-    options?: BackendRequestOptions,
+    options?: BackendRequestOptions & { onDispatch?: () => void },
   ): Promise<T> {
     try {
       const transport = resolveBackendTransport();
@@ -122,6 +122,17 @@ export function createBackendRuntime(
         );
         checkConnection();
         assertRemoteRequestEnabled(method, params, remoteEnabled());
+      }
+      // The caller's phase marker runs only after local placement validation.
+      // Keep it in this renderer; functions must never enter the IPC options.
+      if (options?.onDispatch) {
+        const { onDispatch, ...transportOptions } = options;
+        onDispatch();
+        return await transport.request<T>(
+          method,
+          params,
+          Object.keys(transportOptions).length ? transportOptions : undefined,
+        );
       }
       return await transport.request<T>(method, params, options);
     } catch (error) {

@@ -1,3 +1,4 @@
+import { createBackendAgentCreator } from './backend-agent-creator';
 import { createBackendChatCommands } from './backend-chat-commands';
 const chatCommands = createBackendChatCommands((...args) => backendRequest(...args));
 import { createConversationReader } from './backend-conversation-reader';
@@ -12,7 +13,7 @@ import { createConversationReader } from './backend-conversation-reader';
  */
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { createMessageBlockReader } from './backend-message-block-reader';
-import { normalizeAgent, getKnownAgentWorkspace } from './agent-normalization';
+import { getKnownAgentWorkspace } from './agent-normalization';
 import { createBackendAgentClient } from './backend-agent-client';
 import { createBackendPermissionClient } from './backend-permission-client';
 import { onBackendNotification, onBackendReconnected } from './backend-transport';
@@ -27,7 +28,6 @@ import type { AgentSession } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
-  AgentCreateRequest,
   AgentDeleteResult,
   AgentListOptions,
   AgentListResult,
@@ -184,66 +184,11 @@ export class LiveAgentsClient implements AgentsClient {
   // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
   // drive the reactive refresh. `create` returns the full session projection
   // (widened in P2-12a) so the caller can upsert without a follow-up `agent.get`.
-  async create(request: AgentCreateRequest): Promise<AgentSession> {
-    // create requires an idempotencyKey (§5.6). The widened P2-12a wire also
-    // accepts optional `name` / `provider` / `agentType` / `metadata` /
-    // `workspacePath` / `workspaceContext`; each is only sent when the caller
-    // supplied it so the daemon sees `undefined` params (equivalent to
-    // omitted) rather than explicit nulls it would reject.
-    //
-    // `agentId` is intentionally NEVER forwarded: the daemon assigns the
-    // session id and returns it on the created agent. Callers must adopt the
-    // response id (a follow-up intentd change rejects client-supplied ids).
-    const params: Record<string, unknown> = {
-      workspaceId: request.workspaceId,
-      idempotencyKey: newIdempotencyKey(),
-    };
-    if (request.placement !== undefined) params.placement = request.placement;
-    if (request.model !== undefined) params.model = request.model;
-    if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.rememberSpecialist !== undefined)
-      params.rememberSpecialist = request.rememberSpecialist;
-    if (
-      request.specialist !== undefined &&
-      (request.specialist !== null || request.rememberSpecialist)
-    ) {
-      params.specialistId = request.specialist;
-    }
-    if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
-    if (request.name !== undefined) params.name = request.name;
-    // Strict boolean on the wire (§5.5): only sent when the caller supplied it,
-    // so older daemons and name-less creates keep the daemon-side default
-    // (name-present ⇒ explicitly set).
-    if (request.nameExplicitlySet !== undefined) {
-      params.nameExplicitlySet = request.nameExplicitlySet;
-    }
-    if (request.provider !== undefined) params.provider = request.provider;
-    if (request.agentType !== undefined) params.agentType = request.agentType;
-    if (request.metadata !== undefined) params.metadata = request.metadata;
-    if (request.workspacePath !== undefined) params.workspacePath = request.workspacePath;
-    if (request.workspaceContext !== undefined) {
-      params.workspaceContext = request.workspaceContext;
-    }
-    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.create', params);
-    // Widened §5.5 wire returns `{ agent: AgentLite }`; the pre-widening
-    // `{ id, name }` shape is a strict subset, so we tolerate a bare object
-    // for older daemons without healing anything the current contract owns.
-    const raw =
-      result && typeof result === 'object' && 'agent' in result
-        ? (result as { agent?: unknown }).agent
-        : result;
-    if (!raw || typeof raw !== 'object') {
-      throw new Error('agent.create returned no agent object');
-    }
-    // The daemon-assigned `agent.id` is the only way to address follow-up
-    // sends/streams (no client id is forwarded). Fail loudly rather than let
-    // normalizeAgent coerce a missing id into an empty-string session key.
-    const rawId = (raw as Record<string, unknown>).id;
-    if (typeof rawId !== 'string' || rawId.length === 0) {
-      throw new Error('agent.create response missing daemon-assigned agent.id');
-    }
-    return normalizeAgent(raw as Record<string, unknown>);
-  }
+  // Compatibility binding until the source AppClient retires; creation policy is shared.
+  create = createBackendAgentCreator({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+  });
+
   async send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult> {
     workspaceId ??= (await this.resolveAgentWorkspaceId(agentId)) ?? undefined;
     if (!workspaceId) {

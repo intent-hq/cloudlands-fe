@@ -288,6 +288,7 @@ describe('agent lifecycle production composition', () => {
             source: 'workspace-initializer',
           },
         },
+        { onDispatch: expect.any(Function) },
       ],
     ]);
     created.resolve({

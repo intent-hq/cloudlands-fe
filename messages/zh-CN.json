@@ -1,4 +1,5 @@
 {
+  "workspace_agentCreation_uncertain_description": "无法确认是否创建成功。开始另一个对话前，请先查看智能体列表。",
   "sandbox_catalogScene_unportedState_error": "“{state}”预览尚未移植到 React。",
   "workspace_setupScript_configUnavailable_description": "无法读取仓库的设置脚本。请在创建工作区之前检查所选脚本。",
   "settings_devices_mobile_title": "Intent Mobile",

@@ -8,6 +8,7 @@ export interface SidebarHeaderActionProps {
   [attribute: `data-${string}`]: string | undefined;
   icon: SidebarActionIconProps['icon'];
   label: string;
+  disabled?: boolean;
   onClick?: MouseEventHandler<HTMLButtonElement>;
   ref?: Ref<HTMLButtonElement>;
   className?: string;
