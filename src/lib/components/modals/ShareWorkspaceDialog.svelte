@@ -589,13 +589,8 @@
   }
 </script>
 
-{#snippet userAvatar(user: GithubUserSearchItem)}
-  <PrincipalAvatar
-    avatarUrl={user.avatarUrl}
-    label={user.login}
-    size={24}
-    testid="share-pin-avatar"
-  />
+{#snippet userAvatar(user: GithubUserSearchItem, size: number = 24)}
+  <PrincipalAvatar avatarUrl={user.avatarUrl} label={user.login} {size} testid="share-pin-avatar" />
 {/snippet}
 
 {#if open}
@@ -792,7 +787,7 @@
               {#if restricted && forgeConnected}
                 {#if selectedUser}
                   <div
-                    class="flex min-h-(--control-height-medium) min-w-0 flex-1 basis-60 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2 py-1.5"
+                    class="flex h-(--control-height-medium) min-w-0 flex-1 basis-60 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
                     role="group"
                     aria-label={m.workspace_share_pinLogin_placeholder()}
                     data-testid="share-pin-selected"
@@ -801,13 +796,13 @@
                     <span
                       class="flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5"
                     >
-                      {@render userAvatar(selectedUser)}
+                      {@render userAvatar(selectedUser, 18)}
                       <span class="min-w-0 truncate text-xs">@{selectedUser.login}</span>
                       <Button
                         variant="ghost-light"
                         size="icon-compact"
                         iconOnly
-                        class="size-5 rounded-full"
+                        class="size-4 rounded-full [&_svg]:size-3"
                         disabled={creating || !!pendingCopy}
                         onclick={() => void clearSelectedUser()}
                         aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
@@ -935,7 +930,6 @@
                 type="submit"
                 variant="primary"
                 style={sharingActionStyle}
-                class="h-auto min-h-(--control-height-medium) self-stretch"
                 disabled={!sharingReady ||
                   creating ||
                   !!pendingCopy ||
