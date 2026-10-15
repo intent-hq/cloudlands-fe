@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { WorkspaceState } from '$store/renderer/slices/workspace/workspace-slice';
@@ -27,7 +28,28 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError },
 }));
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { select } = await import('typed-redux-saga');
+  const { getPendingWorkspaceTitleToken } =
+    await import('$store/renderer/slices/workspace/workspace-title-projections');
+  const getWorkspace = (state: typeof mocks.state, id: string) =>
+    state.workspace.workspaces.map[id];
+  return {
+    selectWorkspaceById: {
+      effect: function* (id: string) {
+        return yield* select(getWorkspace, id);
+      },
+    },
+    selectPendingWorkspaceTitleToken: {
+      effect: function* (id: string) {
+        return yield* select(getPendingWorkspaceTitleToken, id);
+      },
+    },
+  };
+});
+
 import { renameWorkspaceTitle } from './rename-workspace-title';
+import { workspaceTitleSaga } from '$store/renderer/slices/workspace/sagas/workspace-title-saga';
 import {
   initialState,
   replaceWorkspaceList,
@@ -47,15 +69,23 @@ const workspace = {
 } as Workspace;
 
 describe('renameWorkspaceTitle', () => {
+  let task: Task;
+  afterEach(() => task.cancel());
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
     mocks.toastError.mockReset();
     mocks.state.workspace = workspaceReducer(initialState, setWorkspaceEntity(workspace));
+    const channel = stdChannel();
     mocks.dispatch.mockImplementation((action) => {
       mocks.state.workspace = workspaceReducer(mocks.state.workspace, action);
+      channel.put(action);
       return action;
     });
+    task = runSaga(
+      { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
+      workspaceTitleSaga,
+    );
   });
 
   it('updates the list immediately, sends the exact request, and reconciles the response', async () => {
@@ -65,7 +95,9 @@ describe('renameWorkspaceTitle', () => {
     await expect(renameWorkspaceTitle(workspace, 'Renamed title')).resolves.toEqual({ ok: true });
 
     expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Renamed title' });
-    const actions = mocks.dispatch.mock.calls.map(([action]) => action);
+    const actions = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type.endsWith('WorkspaceTitleMutation'));
     expect(actions).toEqual([
       {
         type: 'workspace/beginWorkspaceTitleMutation',
@@ -103,7 +135,9 @@ describe('renameWorkspaceTitle', () => {
       error: 'Rename rejected',
     });
 
-    const actions = mocks.dispatch.mock.calls.map(([action]) => action);
+    const actions = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type.endsWith('WorkspaceTitleMutation'));
     expect(actions.at(-1)).toEqual({
       type: 'workspace/failWorkspaceTitleMutation',
       payload: ['ws-1', expect.any(Number)],
@@ -170,6 +204,19 @@ describe('renameWorkspaceTitle', () => {
     });
     expect(mocks.state.workspace.workspaces.map[workspace.id]?.title).toBe('Original title');
     expect(mocks.toastError).toHaveBeenCalledWith('Failed to update workspace');
+  });
+
+  it('preserves the resolved-result API when its source owner is stopped', async () => {
+    let settle!: (value: { ok: true; data: Workspace }) => void;
+    mocks.update.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+    const rename = renameWorkspaceTitle(workspace, 'Pending title');
+    const result = expect(rename).resolves.toEqual({ ok: false, error: expect.any(String) });
+    task.cancel();
+    await result;
+    settle({ ok: true, data: { ...workspace, title: 'Pending title' } });
+    await Promise.resolve();
+    expect(mocks.state.workspace.workspaces.map[workspace.id]?.title).toBe('Original title');
+    expect(mocks.update).toHaveBeenCalledTimes(1);
   });
 
   it('uses the localized fallback for blank daemon errors and non-Error rejections', async () => {

@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "ターミナルを隠す",
   "workspace_terminal_ready_label": "ターミナル準備完了",
   "workspace_fileFinder_invalid_error": "検索結果に無効なワークスペースのパスが含まれています。",
-  "workspace_fileFinder_limited_description": "最初の100件を表示しています。検索条件を絞り込んでください。"
+  "workspace_fileFinder_limited_description": "最初の100件を表示しています。検索条件を絞り込んでください。",
+  "workspace_title_edit_label": "ワークスペース名を変更",
+  "workspace_title_saving_label": "ワークスペース名を保存中…",
+  "workspace_title_failed_description": "名前は保存されませんでした。名前を選択して編集し、もう一度お試しください。",
+  "workspace_title_unknown_description": "名前変更の結果は不明です。変更を続ける前に現在の名前を確認してください。このセッションでは名前変更がブロックされます。再読み込みすると警告は消えますが、リクエストは再送されません。"
 }

@@ -103,6 +103,7 @@ import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
 import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalog-saga';
+import { workspaceTitleSaga } from './slices/workspace/sagas/workspace-title-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
@@ -221,6 +222,7 @@ export const sagas = [
   autoUpdateSaga,
   specialistsSaga,
   workspaceCatalogSaga,
+  workspaceTitleSaga,
   proposalLifecycleSaga,
   questionUiPersistenceSaga,
   settingsProposalHistorySaga,

@@ -1,4 +1,5 @@
 import * as authority from './workspace-authority-projections';
+import * as title from './workspace-title-projections';
 import { store } from '../../store';
 import {
   PullRequestStatus,
@@ -99,6 +100,9 @@ export const selectWorkspacesSortedByRecency = store.createSelector<
  * Returns undefined if not stored yet.
  */
 export const selectWorkspaceById = store.createSelector(authority.getWorkspaceById);
+export const selectPendingWorkspaceTitleToken = store.createSelector(
+  title.getPendingWorkspaceTitleToken,
+);
 
 /**
  * Whether the stored row has been hydrated from `workspace.get` (slim

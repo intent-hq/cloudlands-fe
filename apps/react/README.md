@@ -58,6 +58,15 @@ The following sections describe the supported boundaries and recovery behavior.
 
 ## Workspace creation and conversations
 
+Select the workspace heading to rename its displayed title. Enter or clicking away
+saves a nonblank changed name; Escape cancels. The accepted title is shared by the
+heading, sidebar and Home search, and persists after reload. This changes no Git
+branch, repository folder or file. A failed request allows another explicit edit.
+An unknown outcome blocks renaming for the current session: check the current title
+before making further changes. Reload clears the in-memory warning without replaying
+the request. Client freshness checks do not provide an atomic comparison with other
+clients' simultaneous title changes.
+
 Local creation waits for the saved creation request before submitting; repeated activation does
 not issue another request. If the outcome is uncertain, **Recover creation** reuses
 the same request key. Closing the form cannot undo a workspace already created by

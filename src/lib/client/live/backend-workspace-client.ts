@@ -46,6 +46,7 @@ import type {
   WorkspaceDiskUsageResult,
   WorkspacesClient,
   WorkspaceUpdateResult,
+  WorkspaceTitleUpdateOptions,
 } from '../workspaces-client-types';
 import type { MutationResult, SubscriptionHandler, Unsubscribe } from '../client-types';
 import { BackendError } from './backend-transport-types';
@@ -340,19 +341,65 @@ export function createWorkspaceClientRuntime(
      * returns `{ workspace }` — normalized and surfaced on the result so callers
      * can upsert the authoritative entity without a follow-up `workspace.get`.
      */
-    async update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult> {
+    async update(
+      request: UpdateWorkspaceRequest,
+      options?: WorkspaceTitleUpdateOptions,
+    ): Promise<WorkspaceUpdateResult> {
       const { id, ...fields } = request;
+      let dispatched = false;
       try {
-        const result = await backendRequest<{ workspace?: unknown }>('workspace.update', {
-          workspaceId: id,
-          ...fields,
-        });
+        if (
+          options &&
+          (typeof fields.title !== 'string' ||
+            Object.keys(fields).some((field) => field !== 'title'))
+        ) {
+          return { success: false, titleOutcome: 'failed' };
+        }
+        const params = { workspaceId: id, ...fields };
+        const result = options
+          ? await backendRequest<{ workspace?: unknown }>('workspace.update', params, {
+              onDispatch: () => {
+                options.onDispatch();
+                dispatched = true;
+              },
+            })
+          : await backendRequest<{ workspace?: unknown }>('workspace.update', params);
         const raw = result?.workspace;
+        if (options) {
+          if (
+            !dispatched ||
+            !raw ||
+            typeof raw !== 'object' ||
+            Array.isArray(raw) ||
+            !('id' in raw) ||
+            raw.id !== id ||
+            !('title' in raw) ||
+            raw.title !== fields.title
+          ) {
+            return { success: false, titleOutcome: 'unknown' };
+          }
+          return {
+            success: true,
+            titleOutcome: 'confirmed',
+            workspace: normalizeWorkspace(raw as Record<string, unknown>),
+          };
+        }
         return raw && typeof raw === 'object'
           ? { success: true, workspace: normalizeWorkspace(raw as Record<string, unknown>) }
           : { success: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (options) {
+          // Only pre-write refusals are definite. Internal/server failures may follow
+          // persistence; a numeric JSON-RPC code alone does not prove no write.
+          const rpcCode = (error as { rpcCode?: unknown } | null)?.rpcCode;
+          const refused = [-32600, -32601, -32602, -32003].includes(rpcCode as number);
+          return {
+            success: false,
+            error: message,
+            titleOutcome: !dispatched || refused ? 'failed' : 'unknown',
+          };
+        }
         const conflict = extractConflict(error);
         if (conflict) return { success: false, error: message, conflict };
         return { success: false, error: message };

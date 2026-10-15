@@ -1,7 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { workspaceTitleSaga } from '$store/renderer/slices/workspace/sagas/workspace-title-saga';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
@@ -35,6 +37,7 @@ const mocks = vi.hoisted(() => {
     browserClients: undefined as unknown,
     userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
+  const titleActions = { put: (_action: { type: string; payload?: unknown[] }) => {} };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
       action.type === 'workspace/beginWorkspaceTitleMutation' ||
@@ -50,6 +53,7 @@ const mocks = vi.hoisted(() => {
         delete storeState.workspace.pendingTitleMutations[workspaceId as string];
       }
     }
+    titleActions.put(action);
     return action;
   });
   const update = vi.fn();
@@ -95,13 +99,19 @@ const mocks = vi.hoisted(() => {
           return () => selectorSubscribers.delete(notify);
         },
       }),
-      { select: getter },
+      {
+        select: getter,
+        effect: function* () {
+          return getter();
+        },
+      },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
   const role = { hidesOwnerActions: false, context: 'backend-a:principal-a' };
   return {
     role,
     dispatch,
+    titleActions,
     update,
     archive,
     clipboardWrite,
@@ -138,6 +148,11 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectPendingWorkspaceTitleToken: {
+    effect: function* (id: string) {
+      return mocks.storeState.workspace.pendingTitleMutations[id]?.token;
+    },
+  },
   selectCanSetWorkspacePrimaryClient: mocks.selector(() => !mocks.role.hidesOwnerActions),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
@@ -348,6 +363,17 @@ warmImport(() => import('./mocks/MockFlameGraph.svelte'));
 warmImport(() => import('./mocks/MockTooltip.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceProgressCard.svelte'));
+
+let titleTask: Task;
+beforeEach(() => {
+  const channel = stdChannel();
+  mocks.titleActions.put = (action) => channel.put(action);
+  titleTask = runSaga(
+    { channel, dispatch: mocks.dispatch, getState: () => mocks.storeState },
+    workspaceTitleSaga,
+  );
+});
+afterEach(() => titleTask.cancel());
 
 describe('WorkspaceProgressCard status message', () => {
   beforeEach(() => {

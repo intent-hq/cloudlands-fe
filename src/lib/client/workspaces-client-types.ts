@@ -27,6 +27,14 @@ import type { MutationResult, SubscriptionHandler, Unsubscribe } from './client-
 /** `workspace.update` outcome — carries the daemon's updated workspace on success. */
 export interface WorkspaceUpdateResult extends MutationResult {
   workspace?: Workspace;
+  /** Opt-in title receipt only; unknown never proves a rollback or safe replay. */
+  titleOutcome?: 'confirmed' | 'failed' | 'unknown';
+}
+
+export interface WorkspaceTitleUpdateOptions {
+  requireTitleReceipt: true;
+  /** Runs after transport preflight, immediately before the one update dispatch. */
+  onDispatch: () => void;
 }
 
 /**
@@ -127,7 +135,10 @@ export interface WorkspacesClient {
    * updated `Workspace` is surfaced as `workspace` so callers can upsert it
    * without a follow-up `workspace.get`.
    */
-  update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
+  update(
+    request: UpdateWorkspaceRequest,
+    options?: WorkspaceTitleUpdateOptions,
+  ): Promise<WorkspaceUpdateResult>;
   /**
    * Delete a workspace (`workspace.delete`, §5.1). Optional
    * `options.undoDelayMs > 0` requests the daemon-owned delete grace window:

@@ -1,7 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { workspaceTitleSaga } from '$store/renderer/slices/workspace/sagas/workspace-title-saga';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -13,9 +15,10 @@ const mocks = vi.hoisted(() => {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
   };
+  const titleActions = { put: (_action: { type: string; payload?: unknown[] }) => {} };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
-    const [workspaceId, token] = action.payload ?? [];
     if (action.type === 'workspace/beginWorkspaceTitleMutation') {
+      const [workspaceId, token] = action.payload ?? [];
       storeState.workspace.pendingTitleMutations[workspaceId as string] = {
         token: token as number,
       };
@@ -23,8 +26,10 @@ const mocks = vi.hoisted(() => {
       action.type === 'workspace/completeWorkspaceTitleMutation' ||
       action.type === 'workspace/failWorkspaceTitleMutation'
     ) {
+      const [workspaceId] = action.payload ?? [];
       delete storeState.workspace.pendingTitleMutations[workspaceId as string];
     }
+    titleActions.put(action);
     return action;
   });
   const update = vi.fn();
@@ -54,6 +59,7 @@ const mocks = vi.hoisted(() => {
   const role = { hidesOwnerActions: false };
   return {
     dispatch,
+    titleActions,
     update,
     clipboardWrite,
     toastSuccess,
@@ -122,6 +128,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOrigina
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: {
+    effect: function* () {
+      return undefined;
+    },
+  },
+  selectPendingWorkspaceTitleToken: {
+    effect: function* (id: string) {
+      return mocks.storeState.workspace.pendingTitleMutations[id]?.token;
+    },
+  },
   selectHidesOwnerWorkspaceActions: mocks.liveSelector(() => mocks.role.hidesOwnerActions),
 }));
 
@@ -196,6 +212,17 @@ warmImport(() => import('../sidebar/__tests__/mocks/MockSimple.svelte'));
 warmImport(() => import('../sidebar/__tests__/mocks/MockWorkspaceActionsMenu.svelte'));
 warmImport(() => import('../sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceSidebarHeader.svelte'));
+
+let titleTask: Task;
+beforeEach(() => {
+  const channel = stdChannel();
+  mocks.titleActions.put = (action) => channel.put(action);
+  titleTask = runSaga(
+    { channel, dispatch: mocks.dispatch, getState: () => mocks.storeState },
+    workspaceTitleSaga,
+  );
+});
+afterEach(() => titleTask.cancel());
 
 describe('WorkspaceSidebarHeader status message', () => {
   beforeEach(() => {
@@ -336,6 +363,7 @@ describe('WorkspaceSidebarHeader status message', () => {
         expect.objectContaining({ type: 'workspace/completeWorkspaceTitleMutation' }),
       ),
     );
+    expect(titleTask.isRunning()).toBe(true);
   });
 
   it('surfaces a rejected workspace title rename without leaving the editor pending', async () => {
@@ -348,6 +376,7 @@ describe('WorkspaceSidebarHeader status message', () => {
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Rename rejected'));
     expect(screen.queryByRole('textbox')).toBeNull();
+    expect(titleTask.isRunning()).toBe(true);
   });
 
   it('focuses and selects the current title when editing starts', async () => {

@@ -1,13 +1,23 @@
 import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import type {
+  RenameWorkspaceTitleResult,
+  WorkspaceTitleRequest,
+  WorkspaceTitleOperation,
+  WorkspaceTitleView,
+} from './workspace-types';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   type Collection,
   removeItem,
   replaceItem,
@@ -57,6 +67,10 @@ export type WorkspaceState = {
   pendingArchives: Record<string, boolean>;
   pendingCreations: Record<string, Workspace>;
   pendingTitleMutations: Record<string, PendingWorkspaceTitleMutation>;
+  titleOperations: Collection<WorkspaceTitleOperation, 'requestId'>;
+  titleViews: Collection<WorkspaceTitleView, 'viewId'>;
+  /** Local observation order only; not a daemon revision or compare-and-swap claim. */
+  titleRevisions: Record<string, number>;
   /**
    * Workspaces whose stored row was hydrated from `workspace.get` at least
    * once (`setWorkspaceEntity(..., { detailRead: true })`). `workspace.list`
@@ -87,6 +101,9 @@ export const initialState: WorkspaceState = {
   pendingArchives: {},
   pendingCreations: {},
   pendingTitleMutations: {},
+  titleOperations: createCollection('requestId'),
+  titleViews: createCollection('viewId'),
+  titleRevisions: {},
   detailHydrated: {},
   recency: defaultWorkspaceRecencyState,
 };
@@ -176,6 +193,27 @@ export const completeWorkspaceTitleMutation = createAction<
 export const failWorkspaceTitleMutation = createAction<[wsId: string, token: number]>(
   'workspace/failWorkspaceTitleMutation',
 );
+
+export const renameWorkspaceTitleRequested = createAsyncAction<
+  [request: WorkspaceTitleRequest],
+  RenameWorkspaceTitleResult
+>('workspace/renameWorkspaceTitleRequested', 'workspace/renameWorkspaceTitle');
+
+export const workspaceTitleViewOpened = createAction<
+  [viewId: string, workspaceId: string, authority: string]
+>('workspace/workspaceTitleViewOpened');
+export const workspaceTitleViewReleased = createAction<[viewId: string]>(
+  'workspace/workspaceTitleViewReleased',
+);
+export const workspaceTitleOperationQueued = createAction<[operation: WorkspaceTitleOperation]>(
+  'workspace/workspaceTitleOperationQueued',
+);
+export const workspaceTitleOperationStarted = createAction<[requestId: string]>(
+  'workspace/workspaceTitleOperationStarted',
+);
+export const workspaceTitleOperationSettled = createAction<
+  [requestId: string, status: 'confirmed' | 'failed' | 'unknown', error?: string, publish?: boolean]
+>('workspace/workspaceTitleOperationSettled');
 
 /** Remove a workspace entity by ID. */
 export const removeWorkspaceEntity = createAction<[wsId: string]>(
@@ -389,6 +427,11 @@ function clearPendingTitleMutation(
   return rest;
 }
 
+function observeWorkspaceTitle(state: WorkspaceState, wsId: string, title?: string) {
+  if (getWorkspaceById(state.workspaces, wsId)?.title === title) return state.titleRevisions;
+  return { ...state.titleRevisions, [wsId]: (state.titleRevisions[wsId] ?? 0) + 1 };
+}
+
 function clearBooleanMapEntry(map: Record<string, boolean>, key: string): Record<string, boolean> {
   if (!(key in map)) {
     return map;
@@ -492,11 +535,82 @@ function getWorkspaceById(
   return wsId ? getItem(collection, wsId as Workspace['id']) : undefined;
 }
 
+function retireWorkspaceTitleViews(state: WorkspaceState, workspaceId: string) {
+  let views = state.titleViews;
+  for (const view of getItems(views)) {
+    if (view.workspaceId === workspaceId && !view.released)
+      views = updateItem(views, { ...view, released: true });
+  }
+  return views;
+}
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+workspaceReducer.with(
+  workspaceTitleViewOpened,
+  (state, { payload: [viewId, workspaceId, authority] }) => {
+    if (getItem(state.titleViews, viewId)) return state;
+    return {
+      ...state,
+      titleViews: addItem(state.titleViews, { viewId, workspaceId, authority, released: false }),
+    };
+  },
+);
+workspaceReducer.with(workspaceTitleViewReleased, (state, { payload: [viewId] }) => {
+  const view = getItem(state.titleViews, viewId);
+  if (!view || view.released) return state;
+  return { ...state, titleViews: updateItem(state.titleViews, { ...view, released: true }) };
+});
+workspaceReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  const titleViews = retireWorkspaceTitleViews(state, workspaceId);
+  return titleViews === state.titleViews ? state : { ...state, titleViews };
+});
+workspaceReducer.with(workspaceTitleOperationQueued, (state, { payload: [operation] }) => {
+  if (getItem(state.titleOperations, operation.requestId)) return state;
+  return { ...state, titleOperations: addItem(state.titleOperations, operation) };
+});
+workspaceReducer.with(workspaceTitleOperationStarted, (state, { payload: [requestId] }) => {
+  const operation = getItem(state.titleOperations, requestId);
+  if (operation?.status !== 'queued') return state;
+  return {
+    ...state,
+    titleOperations: updateItem(state.titleOperations, { ...operation, status: 'running' }),
+  };
+});
+workspaceReducer.with(
+  workspaceTitleOperationSettled,
+  (state, { payload: [requestId, status, error, publish] }) => {
+    const operation = getItem(state.titleOperations, requestId);
+    if (!operation || operation.status === 'confirmed' || operation.status === 'failed')
+      return state;
+    if (operation.status === status && operation.error === error) return state;
+    const existing = getWorkspaceById(state.workspaces, operation.workspaceId);
+    const mayApply =
+      publish &&
+      status === 'confirmed' &&
+      existing &&
+      !state.pendingDeletions[operation.workspaceId] &&
+      !state.pendingTitleMutations[operation.workspaceId] &&
+      existing.title === operation.baseTitle &&
+      (state.titleRevisions[operation.workspaceId] ?? 0) === operation.observedRevision;
+    return {
+      ...state,
+      titleOperations: updateItem(state.titleOperations, { ...operation, status, error }),
+      ...(mayApply
+        ? {
+            workspaces: updateItem(state.workspaces, { ...existing, title: operation.title }),
+            titleRevisions: {
+              ...state.titleRevisions,
+              [operation.workspaceId]: operation.observedRevision + 1,
+            },
+          }
+        : {}),
+    };
+  },
+);
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };
@@ -537,8 +651,17 @@ workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces, proj
     }
   }
   const nextVisibleState = buildVisibleWorkspaceState(state, workspaces);
+  let titleRevisions = state.titleRevisions;
+  for (const id of new Set([...state.workspaces.ids, ...nextVisibleState.workspaces.ids])) {
+    titleRevisions = observeWorkspaceTitle(
+      { ...state, titleRevisions },
+      id,
+      getItem(nextVisibleState.workspaces, id)?.title,
+    );
+  }
   return {
     ...state,
+    titleRevisions,
     invalidatedDeletions,
     workspaces: nextVisibleState.workspaces,
     pendingCreations: nextVisibleState.pendingCreations,
@@ -627,6 +750,7 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
   return {
     ...state,
     workspaces,
+    titleRevisions: observeWorkspaceTitle(state, workspace.id, merged.title),
     detailHydrated:
       detailRead && !state.detailHydrated[workspace.id]
         ? { ...state.detailHydrated, [workspace.id]: true }
@@ -636,6 +760,7 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
 workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
   let workspaces = state.workspaces;
   let invalidatedDeletions = state.invalidatedDeletions;
+  let titleRevisions = state.titleRevisions;
 
   for (const action of actions) {
     const [wsId, changes] = action.payload;
@@ -660,6 +785,11 @@ workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] 
 
     if (shallowEqual(existing, updated)) continue;
 
+    titleRevisions = observeWorkspaceTitle(
+      { ...state, workspaces, titleRevisions },
+      wsId,
+      updated.title,
+    );
     workspaces = updateItem(workspaces, updated);
   }
 
@@ -670,6 +800,7 @@ workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] 
     ...state,
     workspaces,
     invalidatedDeletions,
+    titleRevisions,
   };
 });
 workspaceReducer.with(
@@ -726,16 +857,21 @@ workspaceReducer.with(failWorkspaceTitleMutation, (state, { payload: [wsId, toke
 });
 workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
   const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
-  if (!existsInCollection) return state;
+  const titleViews = retireWorkspaceTitleViews(state, wsId);
+  if (!existsInCollection)
+    return titleViews === state.titleViews ? state : { ...state, titleViews };
   return {
     ...state,
+    titleViews,
     workspaces: removeItem(state.workspaces, wsId as Workspace['id']),
+    titleRevisions: observeWorkspaceTitle(state, wsId),
     pendingTitleMutations: clearPendingTitleMutation(state.pendingTitleMutations, wsId),
     detailHydrated: pruneDetailHydrated(state.detailHydrated, (id) => id !== wsId),
   };
 });
 workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId, , cause = 'deleted'] }) => {
   const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
+  const titleViews = retireWorkspaceTitleViews(state, wsId);
   const hasPendingState =
     state.pendingDeletions[wsId] ||
     state.pendingArchives[wsId] ||
@@ -747,7 +883,8 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId, , cause = 'del
   // is deliberately NOT cleared here: a stale workspace.get/workspace.list
   // response can land after this event, so only the saga grace timer (or an
   // explicit undo, which never reaches commit) lifts the tombstone.
-  if (!existsInCollection && !hasPendingState) return state;
+  if (!existsInCollection && !hasPendingState)
+    return titleViews === state.titleViews ? state : { ...state, titleViews };
 
   const { [wsId]: _removedArchive, ...nextPendingArchives } = state.pendingArchives;
   const { [wsId]: _removedCreation, ...nextPendingCreations } = state.pendingCreations;
@@ -756,9 +893,11 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId, , cause = 'del
   const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
   return {
     ...state,
+    titleViews,
     workspaces: existsInCollection
       ? removeItem(state.workspaces, wsId as Workspace['id'])
       : state.workspaces,
+    titleRevisions: observeWorkspaceTitle(state, wsId),
     // A removal receipt cannot erase an earlier denial. Other purge causes
     // remain invalidations, even if a terminal event arrives afterwards.
     terminalDeletions:
@@ -817,6 +956,11 @@ workspaceReducer.with(cleanupRecency, (state, { payload: [workspaceIds] }) => {
 });
 workspaceReducer.with(resetWorkspaceState, (state) => ({
   ...state,
+  // Transport receipts survive connection/view retirement; they are never replayed.
+  titleViews: createCollection(
+    'viewId',
+    getItems(state.titleViews).map((view) => ({ ...view, released: true })),
+  ),
   workspaces: createCollection('id'),
   loading: false,
   error: null,

@@ -28,6 +28,8 @@ export function EditableName({
   const [isEditing, setEditing] = useState(false);
   const [editedValue, setEditedValue] = useState(value);
   const input = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
   // Blur and outside mousedown may both fire before React commits the display view.
   const editing = useRef(false);
   const save = () => {
@@ -46,6 +48,9 @@ export function EditableName({
     if (isEditing) {
       input.current?.focus();
       input.current?.select();
+    } else if (restoreFocus.current) {
+      restoreFocus.current = false;
+      trigger.current?.focus({ preventScroll: true });
     }
   }, [isEditing]);
 
@@ -71,6 +76,7 @@ export function EditableName({
       {isEditing ? (
         <Input
           ref={input}
+          aria-label={title}
           type="text"
           value={editedValue}
           onChange={(event) => setEditedValue(event.currentTarget.value)}
@@ -78,9 +84,11 @@ export function EditableName({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
+              restoreFocus.current = true;
               save();
             } else if (event.key === 'Escape') {
               event.preventDefault();
+              restoreFocus.current = true;
               editing.current = false;
               setEditedValue(value);
               setEditing(false);
@@ -98,6 +106,7 @@ export function EditableName({
         />
       ) : (
         <Button
+          ref={trigger}
           variant="plain"
           className={cn(
             textClass,

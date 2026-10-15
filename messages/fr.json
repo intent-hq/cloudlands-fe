@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "Masquer le terminal",
   "workspace_terminal_ready_label": "Terminal prêt",
   "workspace_fileFinder_invalid_error": "Les résultats contiennent un chemin d’espace de travail non valide.",
-  "workspace_fileFinder_limited_description": "Les 100 premiers résultats sont affichés. Affinez votre recherche pour en trouver davantage."
+  "workspace_fileFinder_limited_description": "Les 100 premiers résultats sont affichés. Affinez votre recherche pour en trouver davantage.",
+  "workspace_title_edit_label": "Renommer l’espace de travail",
+  "workspace_title_saving_label": "Enregistrement du titre de l’espace de travail…",
+  "workspace_title_failed_description": "Le titre n’a pas été enregistré. Sélectionnez-le pour le modifier et réessayer.",
+  "workspace_title_unknown_description": "Le résultat du changement de nom est inconnu. Vérifiez le titre actuel avant toute autre modification. Le renommage reste bloqué pendant cette session ; recharger efface cet avertissement sans renvoyer la demande."
 }

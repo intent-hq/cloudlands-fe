@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "Hide terminal",
   "workspace_terminal_ready_label": "Terminal ready",
   "workspace_fileFinder_invalid_error": "Search results contain an invalid workspace path.",
-  "workspace_fileFinder_limited_description": "Showing the first 100 matches. Refine your search to find more."
+  "workspace_fileFinder_limited_description": "Showing the first 100 matches. Refine your search to find more.",
+  "workspace_title_edit_label": "Rename workspace title",
+  "workspace_title_saving_label": "Saving workspace title…",
+  "workspace_title_failed_description": "The title was not saved. Select the title to edit and try again.",
+  "workspace_title_unknown_description": "The rename outcome is unknown. Check the current title before making further changes. Renaming stays blocked in this session; reloading clears this warning but does not retry the request."
 }

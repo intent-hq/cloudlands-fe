@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "隱藏終端機",
   "workspace_terminal_ready_label": "終端機已就緒",
   "workspace_fileFinder_invalid_error": "搜尋結果包含無效的工作區路徑。",
-  "workspace_fileFinder_limited_description": "顯示前100個符合項目。請縮小搜尋範圍以尋找更多結果。"
+  "workspace_fileFinder_limited_description": "顯示前100個符合項目。請縮小搜尋範圍以尋找更多結果。",
+  "workspace_title_edit_label": "重新命名工作區標題",
+  "workspace_title_saving_label": "正在儲存工作區標題…",
+  "workspace_title_failed_description": "標題未儲存。請選取標題進行編輯並重試。",
+  "workspace_title_unknown_description": "重新命名的結果未知。請先檢查目前標題，再進行其他變更。本次工作階段中將禁止重新命名；重新載入會清除此警告，但不會重試請求。"
 }

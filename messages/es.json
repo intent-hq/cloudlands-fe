@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "Ocultar terminal",
   "workspace_terminal_ready_label": "Terminal listo",
   "workspace_fileFinder_invalid_error": "Los resultados contienen una ruta de espacio de trabajo no válida.",
-  "workspace_fileFinder_limited_description": "Se muestran las primeras 100 coincidencias. Refina la búsqueda para encontrar más."
+  "workspace_fileFinder_limited_description": "Se muestran las primeras 100 coincidencias. Refina la búsqueda para encontrar más.",
+  "workspace_title_edit_label": "Cambiar el título del espacio de trabajo",
+  "workspace_title_saving_label": "Guardando el título del espacio de trabajo…",
+  "workspace_title_failed_description": "El título no se guardó. Selecciónalo para editarlo e intentarlo de nuevo.",
+  "workspace_title_unknown_description": "Se desconoce el resultado del cambio de nombre. Comprueba el título actual antes de realizar más cambios. El cambio de nombre permanece bloqueado durante esta sesión; recargar elimina esta advertencia, pero no repite la solicitud."
 }

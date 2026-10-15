@@ -45,6 +45,105 @@ const mockedRequest = vi.mocked(backendRequest);
 describe('LiveWorkspacesClient mutations (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
+  it('strict title updates send one title-only request after the final guard and accept the matching envelope', async () => {
+    const guard = vi.fn();
+    mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return {
+        workspace: { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed', branch: 'main' },
+      } as never;
+    });
+    const result = await new LiveWorkspacesClient().update(
+      { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+      { requireTitleReceipt: true, onDispatch: guard },
+    );
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith(
+      'workspace.update',
+      { workspaceId: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+      { onDispatch: expect.any(Function) },
+    );
+    expect(guard).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      success: true,
+      titleOutcome: 'confirmed',
+      workspace: { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+    });
+  });
+
+  it.each([
+    {},
+    { workspace: null },
+    { workspace: [] },
+    { workspace: { id: 'other', title: 'Renamed' } },
+    { workspace: { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1' } },
+    { workspace: { workspaceId: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' } },
+    { workspace: { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Different' } },
+  ])('keeps malformed strict title receipt unknown: %j', async (receipt) => {
+    mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return receipt as never;
+    });
+    await expect(
+      new LiveWorkspacesClient().update(
+        { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+        { requireTitleReceipt: true, onDispatch() {} },
+      ),
+    ).resolves.toEqual({ success: false, titleOutcome: 'unknown' });
+  });
+
+  it.each([
+    [new Error('socket dropped'), 'unknown'],
+    [
+      new BackendError({ code: 'INTERNAL_ERROR', rpcCode: -32603, message: 'after persistence' }),
+      'unknown',
+    ],
+    [new BackendError({ code: 'FORBIDDEN', rpcCode: -32003, message: 'not permitted' }), 'failed'],
+    [new BackendError({ code: 'INVALID_PARAMS', rpcCode: -32602, message: 'invalid' }), 'failed'],
+  ])(
+    'classifies strict title errors without treating server failure as rollback',
+    async (error, titleOutcome) => {
+      mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+        options?.onDispatch?.();
+        throw error;
+      });
+      await expect(
+        new LiveWorkspacesClient().update(
+          { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+          { requireTitleReceipt: true, onDispatch() {} },
+        ),
+      ).resolves.toMatchObject({ success: false, titleOutcome });
+    },
+  );
+
+  it('refuses a revoked guard before wire dispatch and refuses unrelated fields in strict mode', async () => {
+    const wire = vi.fn();
+    mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      wire();
+      return {} as never;
+    });
+    const client = new LiveWorkspacesClient();
+    await expect(
+      client.update(
+        { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed' },
+        {
+          requireTitleReceipt: true,
+          onDispatch() {
+            throw new Error('retired');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ success: false, titleOutcome: 'failed' });
+    await expect(
+      client.update(
+        { id: '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1', title: 'Renamed', branch: 'other' },
+        { requireTitleReceipt: true, onDispatch() {} },
+      ),
+    ).resolves.toEqual({ success: false, titleOutcome: 'failed' });
+    expect(mockedRequest).toHaveBeenCalledOnce();
+    expect(wire).not.toHaveBeenCalled();
+  });
+
   it('create forwards workspace.create with the request + an idempotencyKey and 120s timeout override', async () => {
     mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();

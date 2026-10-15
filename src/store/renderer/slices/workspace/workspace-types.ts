@@ -1,5 +1,68 @@
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { TaskStats } from '$shared/utils/task-stats';
+import type { StoreAction } from '@themislib/themis/types';
+import type { SagaGenerator } from 'typed-redux-saga';
+import type { Workspace } from '$shared/types';
+import type { WorkspacesClient } from '$lib/client/workspaces-client-types';
+
+export interface WorkspaceTitleRequest {
+  workspaceId: Workspace['id'];
+  title: string;
+  previousTitle: string;
+  token: number;
+  /** Guarded hosts capture these before enqueue, never in the worker. */
+  requestId?: string;
+  authority?: string;
+  /** Connection/view generation, distinct from principal authority retained on the receipt. */
+  context?: string;
+  viewId?: string;
+  /** Guarded editors capture the title revision when editing starts, before any later events. */
+  expectedRevision?: number;
+}
+
+export type RenameWorkspaceTitleResult =
+  { ok: true } | { ok: false; error: string; outcome?: 'failed' | 'unknown' };
+
+/** An operation receipt, not a second workspace entity. Retained until app reload. */
+export interface WorkspaceTitleOperation {
+  requestId: string;
+  workspaceId: string;
+  authority: string;
+  viewId: string;
+  title: string;
+  baseTitle: string;
+  observedRevision: number;
+  status: 'queued' | 'running' | 'confirmed' | 'failed' | 'unknown';
+  error?: string;
+}
+
+export interface WorkspaceTitleView {
+  viewId: string;
+  workspaceId: string;
+  authority: string;
+  /** A released registration can never be reopened, even in the same context. */
+  released: boolean;
+}
+
+export interface WorkspaceTitleSagaDependencies {
+  update: WorkspacesClient['update'];
+  selectWorkspace(workspaceId: string): SagaGenerator<Workspace | undefined>;
+  selectPendingToken(workspaceId: string): SagaGenerator<number | undefined>;
+  /** Present only in an authority-aware host. Named selector effects belong to the host. */
+  admission?: {
+    selectOperations(workspaceId: string): SagaGenerator<WorkspaceTitleOperation[]>;
+    selectRevision(workspaceId: string): SagaGenerator<number>;
+    /** Named projection read at the synchronous transport boundary. */
+    readRevision(workspaceId: string): number;
+    /** Includes the original view registration, principal and request guard. */
+    isCurrent(request: WorkspaceTitleRequest): boolean;
+    /** Principal/backend publication guard, independent of whether the view remains open. */
+    canPublish(request: WorkspaceTitleRequest): boolean;
+    dispatch(action: StoreAction<unknown>): unknown;
+  };
+  onError?(error: unknown): void;
+  showError?(message: string): Promise<void>;
+}
 
 /**
  * The workflow stage a workspace is currently in, derived from git status,

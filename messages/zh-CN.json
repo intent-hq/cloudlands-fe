@@ -7563,5 +7563,9 @@
   "workspace_terminal_detach_label": "隐藏终端",
   "workspace_terminal_ready_label": "终端已就绪",
   "workspace_fileFinder_invalid_error": "搜索结果包含无效的工作区路径。",
-  "workspace_fileFinder_limited_description": "显示前100个匹配结果。请缩小搜索范围以查找更多结果。"
+  "workspace_fileFinder_limited_description": "显示前100个匹配结果。请缩小搜索范围以查找更多结果。",
+  "workspace_title_edit_label": "重命名工作区标题",
+  "workspace_title_saving_label": "正在保存工作区标题…",
+  "workspace_title_failed_description": "标题未保存。请选择标题进行编辑并重试。",
+  "workspace_title_unknown_description": "重命名结果未知。请先检查当前标题，再进行其他更改。本次会话中将禁止重命名；重新加载会清除此警告，但不会重试请求。"
 }

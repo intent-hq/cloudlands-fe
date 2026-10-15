@@ -1,3 +1,4 @@
+import { WorkspaceTitle, WorkspaceTitleStatus } from './workspace-title';
 import { WorkspaceTerminals } from './workspace-terminal';
 import { WorkspaceFileBrowser } from './workspace-file-browser';
 import { WorkspaceCommitHistory } from './workspace-commit-history';
@@ -374,9 +375,13 @@ export function WorkspaceOverview({
         leading={<SidebarTrigger />}
         title={
           <h1 ref={title} tabIndex={-1}>
-            {row
-              ? row.title || m.workspace_links_untitled_label()
-              : m.workspace_page_workspaceResource_label()}
+            {row && !agentId && !noteId && !filePath && !diffPath ? (
+              <WorkspaceTitle workspaceId={workspaceId} />
+            ) : row ? (
+              row.title || m.workspace_links_untitled_label()
+            ) : (
+              m.workspace_page_workspaceResource_label()
+            )}
           </h1>
         }
         description={m.settings_gitWorkspace_experimental_badge()}
@@ -391,6 +396,7 @@ export function WorkspaceOverview({
         }
       />
       <ScreenBody className="grid content-start gap-6">
+        <WorkspaceTitleStatus workspaceId={workspaceId} />
         {!loaded.value ? (
           <WorkspaceReadiness />
         ) : !row ? (
