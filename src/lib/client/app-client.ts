@@ -924,6 +924,8 @@ export interface GitCommitParams {
   message: string;
   files?: string[];
   amend?: boolean;
+  /** Local outcome/lifetime policy. Requires omitted files; never sent to the daemon. */
+  currentIndex?: true;
   /** Required `true`: the daemon rejects commits that are not explicitly user-requested. */
   userRequested: boolean;
 }

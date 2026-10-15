@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "Erstellung wiederherstellen",
   "workspace_localCreate_draftSave_error": "Die Erstellungsanfrage konnte nicht gespeichert werden. Versuchen Sie es vor der Erstellung erneut.",
   "workspace_localCreate_receiptUnavailable_description": "Die Workspace-Erstellung ist angehalten, bis die gespeicherte Anfrage geprüft werden kann. Laden Sie sie erneut, bevor Sie einen Workspace erstellen.",
-  "workspace_gitReview_unavailable_description": "Textvergleich nicht verfügbar. Die Datei ist möglicherweise binär, der Vergleich zu groß oder die Änderung enthält keine Textblöcke."
+  "workspace_gitReview_unavailable_description": "Textvergleich nicht verfügbar. Die Datei ist möglicherweise binär, der Vergleich zu groß oder die Änderung enthält keine Textblöcke.",
+  "workspace_localCommit_title_label": "Aktuell vorgemerkte Änderungen committen",
+  "workspace_localCommit_index_description": "Committet den Index des primären Repositorys zum Ausführungszeitpunkt und behält nicht vorgemerkte Änderungen. Andere Git-Prozesse können den Index ändern.",
+  "workspace_localCommit_inspect_label": "Letzten Commit prüfen",
+  "workspace_localCommit_confirmed_label": "Commit bestätigt",
+  "workspace_localCommit_unknown_description": "Das Commit-Ergebnis ist unbekannt. Prüfen Sie den letzten Commit und vorgemerkte Änderungen, bevor Sie fortfahren. Diese Sitzung sendet nicht erneut. Neuladen entfernt diese Warnung; prüfen Sie vor einem weiteren Commit den Verlauf.",
+  "workspace_localCommit_changed_error": "Vorgemerkte Pfade haben sich geändert. Prüfen Sie die Änderungen vor dem Commit."
 }

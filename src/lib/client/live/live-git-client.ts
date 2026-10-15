@@ -1,6 +1,8 @@
 import { cleanExplicitPaths, createBackendGitStageClient } from './backend-git-stage-client';
 import { createBackendGitReadRuntime } from './backend-git-read-runtime';
 import { createBackendGitDiffReader } from './backend-git-diff-reader';
+import { createBackendGitCommitClient } from './backend-git-commit-client';
+import { createBackendGitCommitReader } from './backend-git-commit-reader';
 /**
  * Live git domain backed by the intentd daemon.
  *
@@ -29,7 +31,6 @@ import type { DiffChunk, GitStatus } from '$shared/types';
 import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type {
   CommitDetailsResult,
-  CommitFileDetail,
   GitBranchStatusResult,
   GitBranchesResult,
   GitClient,
@@ -71,6 +72,9 @@ const sourceReads = createBackendGitReadRuntime({
 });
 const fetchStatus = sourceReads.status;
 const sourceStaging = createBackendGitStageClient(<T>(...args: Parameters<typeof backendRequest>) =>
+  backendRequest<T>(...args),
+);
+const sourceCommit = createBackendGitCommitClient(<T>(...args: Parameters<typeof backendRequest>) =>
   backendRequest<T>(...args),
 );
 
@@ -205,41 +209,6 @@ function detachStatusTriggers(): void {
   statusTriggersOff = undefined;
 }
 
-/** Best-effort epoch timestamp from a daemon commit `date` (ISO/RFC string). */
-/** Map a daemon `git.commitDetails` entry into a renderer `CommitDetailsResult`. */
-function normalizeCommitDetails(
-  raw: Record<string, unknown>,
-  fallbackHash: string,
-): CommitDetailsResult {
-  const rawFiles = Array.isArray(raw.files) ? raw.files : [];
-  const files: string[] = rawFiles
-    .map((p) => (typeof p === 'string' ? p : null))
-    .filter((p): p is string => p !== null);
-  const rawDetails = Array.isArray(raw.fileDetails) ? raw.fileDetails : [];
-  const fileDetails: CommitFileDetail[] = rawDetails
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const e = entry as Record<string, unknown>;
-      const path = typeof e.path === 'string' ? e.path : '';
-      if (!path) return null;
-      return {
-        path,
-        additions: typeof e.additions === 'number' ? e.additions : 0,
-        deletions: typeof e.deletions === 'number' ? e.deletions : 0,
-      };
-    })
-    .filter((f): f is CommitFileDetail => f !== null);
-  return {
-    commitHash: typeof raw.commitHash === 'string' ? raw.commitHash : fallbackHash,
-    author: typeof raw.author === 'string' ? raw.author : '',
-    authorEmail: typeof raw.authorEmail === 'string' ? raw.authorEmail : '',
-    date: typeof raw.date === 'string' ? raw.date : '',
-    message: typeof raw.message === 'string' ? raw.message : '',
-    files,
-    fileDetails,
-  };
-}
-
 export class LiveGitClient implements GitClient {
   async originUrl(repoPath: string): Promise<string | null> {
     try {
@@ -295,14 +264,9 @@ export class LiveGitClient implements GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null> {
+    // Compatibility for source callers until their error UI migrates to strict reads.
     try {
-      const result = await backendRequest<Record<string, unknown>>('git.commitDetails', {
-        workspaceId,
-        commitHash,
-        ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
-      });
-      if (!result || typeof result !== 'object') return null;
-      return normalizeCommitDetails(result, commitHash);
+      return await createBackendGitCommitReader(backendRequest)(workspaceId, commitHash, opts);
     } catch {
       return null;
     }
@@ -462,15 +426,7 @@ export class LiveGitClient implements GitClient {
   // `GitCommitParams.amend` field is intentionally not forwarded; reintroduce a
   // `git.commit` fallback here only if a renderer surface starts needing amend.
   async commit(workspaceId: string, params: GitCommitParams): Promise<MutationResult> {
-    if (!params.userRequested) {
-      return { success: false, error: 'git.agentCommit requires userRequested: true.' };
-    }
-    return runMutation('git.agentCommit', {
-      workspaceId,
-      message: params.message,
-      ...(params.files !== undefined ? { files: params.files } : {}),
-      userRequested: params.userRequested,
-    });
+    return sourceCommit.commit(workspaceId, params);
   }
 
   // `git.pull` (PROTOCOL §5.6) is path-based like `git.getBranches` — the

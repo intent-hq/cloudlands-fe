@@ -17,6 +17,9 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
     const canDispatch = () => canPublish() && (authority?.canDispatch() ?? true);
     let result: MutationResult = { success: false, error: deps.unknownError() };
     let started = false;
+    const currentIndex = operation.kind === 'commit' && operation.params.currentIndex;
+    let executionCancelled = false;
+    let settledCommit: MutationResult | undefined;
     let releasedWhileQueued = false;
     let snapshot: GitStatus | null | undefined;
     try {
@@ -25,7 +28,7 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
         captured = true;
         yield* call(() => lease.ready);
         const entry = yield* deps.selectOperation(workspaceId, requestId);
-        if (entry?.status !== 'queued') return;
+        if (entry?.status !== 'queued' || entry.operation !== operation) return;
         if (entry.consumerReleased) {
           releasedWhileQueued = true;
           return;
@@ -34,7 +37,11 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
         yield* put(gitWriteStarted(workspaceId, requestId));
         started = true;
         if (!canDispatch()) return;
-        const execute = yield* deps.prepare(workspaceId, operation);
+        const execute = yield* deps.prepare(
+          workspaceId,
+          operation,
+          () => canDispatch() && (!currentIndex || !executionCancelled),
+        );
         if (!execute) return;
         if (
           deps.optimisticStatus !== false &&
@@ -55,11 +62,23 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
           }
         }
         result = yield* call(() =>
-          lease.run(() => {
+          lease.run(async () => {
             // The lease queues a microtask too: recheck immediately before actual I/O.
-            if (!canDispatch())
-              return Promise.resolve({ success: false, error: deps.unknownError() });
-            return execute();
+            if (!canDispatch() || (currentIndex && executionCancelled))
+              return { success: false, error: deps.unknownError() };
+            if (!currentIndex) return execute();
+            try {
+              settledCommit = await execute();
+            } catch (error) {
+              // The commit client handles known local refusals. An unexpected rejection
+              // here cannot establish whether its transport already wrote the index.
+              settledCommit = {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                commitOutcome: { state: 'unknown' },
+              };
+            }
+            return settledCommit;
           }),
         );
       } catch (error) {
@@ -92,6 +111,7 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
       deps.logError('Failed to publish Git mutation side effects', error);
     } finally {
       const wasCancelled = yield* cancelled();
+      executionCancelled = wasCancelled;
       // A cancelled queued caller must not wait for unrelated work it may itself
       // be responsible for finishing. Its queue reservation still drains below.
       const queuedFailure =
@@ -101,7 +121,7 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
       // Retain operation ownership until the complete transaction has settled.
       yield* call(() => lease.release());
       const retired = releasedWhileQueued || !canPublish();
-      if (wasCancelled) {
+      if (wasCancelled && !(currentIndex && settledCommit)) {
         const failure = { success: false, error: deps.unknownError() };
         yield* put(
           retired
@@ -113,6 +133,7 @@ export function createGitWriteSaga(deps: GitWriteSagaDependencies) {
           if (!retired && canPublish()) yield* put(settled);
         }
       } else {
+        if (currentIndex && settledCommit) result = settledCommit;
         if (started || retired)
           yield* put(
             retired

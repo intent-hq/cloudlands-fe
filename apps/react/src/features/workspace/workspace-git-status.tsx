@@ -1,3 +1,4 @@
+import { WorkspaceGitCommit } from './workspace-git-commit';
 import { gitWriteConsumerReleased } from '../../../../../src/store/renderer/slices/git/git-write-slice';
 import { selectGitWriteConsumerError } from '@/store/git/git-write-selectors';
 import { WorkspaceGitFileAction } from './workspace-git-file-action';
@@ -74,6 +75,7 @@ export function WorkspaceGitStatus({
         />
       </header>
       <HostExecutionNotice />
+      <WorkspaceGitCommit workspaceId={workspaceId} />
       {writeError && (
         <p role="alert" className="type-caption break-words">
           {writeError}

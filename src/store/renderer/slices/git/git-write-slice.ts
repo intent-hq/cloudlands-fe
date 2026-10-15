@@ -52,6 +52,17 @@ gitWriteReducer.with(gitWriteRequested, (state, { payload: [workspaceId, id, ope
   // Keep only a bounded completed history; pending requests are never evicted.
   const entries = getItems(current.operations);
   if (
+    operation.kind === 'commit' &&
+    operation.params.currentIndex &&
+    entries.some(
+      (entry) =>
+        entry.operation.kind === 'commit' &&
+        entry.operation.params.currentIndex &&
+        (entry.status === 'queued' || entry.status === 'running' || entry.status === 'unknown'),
+    )
+  )
+    return state;
+  if (
     operation.kind === 'partialCommit' &&
     operation.groupKey &&
     entries.some(
@@ -74,10 +85,16 @@ gitWriteReducer.with(gitWriteRequested, (state, { payload: [workspaceId, id, ope
   )
     return state;
   const completed = entries
-    .filter((entry) => entry.status !== 'queued' && entry.status !== 'running')
+    .filter(
+      (entry) =>
+        entry.status !== 'queued' && entry.status !== 'running' && entry.status !== 'unknown',
+    )
     .slice(-31);
   const operations = createCollection<GitWriteEntry, 'id'>('id', [
-    ...entries.filter((entry) => entry.status === 'queued' || entry.status === 'running'),
+    ...entries.filter(
+      (entry) =>
+        entry.status === 'queued' || entry.status === 'running' || entry.status === 'unknown',
+    ),
     ...completed,
     { id, operation, status: 'queued' },
   ]);
@@ -93,11 +110,19 @@ gitWriteReducer.with(gitWriteStarted, (state, { payload: [workspaceId, id] }) =>
 });
 gitWriteReducer.with(
   gitWriteFinished,
-  (state, { payload: [workspaceId, id, result, , retired] }) => {
+  (state, { payload: [workspaceId, id, result, operation, retired] }) => {
     const current = getWorkspaceState(state, workspaceId);
     const entry = getItem(current.operations, id);
-    if (!entry || (entry.status !== 'queued' && entry.status !== 'running')) return state;
-    if (entry.consumerReleased || retired) {
+    if (
+      !entry ||
+      entry.operation !== operation ||
+      (entry.status !== 'queued' && entry.status !== 'running')
+    )
+      return state;
+    const retainReceipt =
+      operation.kind === 'commit' && operation.params.currentIndex && !!result.commitOutcome;
+    const unknown = retainReceipt && result.commitOutcome?.state === 'unknown';
+    if ((entry.consumerReleased || retired) && !retainReceipt) {
       const operations = removeItem(current.operations, id);
       return getItems(operations).length
         ? setWorkspaceState(state, workspaceId, { operations })
@@ -106,7 +131,7 @@ gitWriteReducer.with(
     return setWorkspaceState(state, workspaceId, {
       operations: upsertItem(current.operations, {
         ...entry,
-        status: result.success ? 'succeeded' : 'failed',
+        status: unknown ? 'unknown' : result.success ? 'succeeded' : 'failed',
         result,
       }),
     });
@@ -128,7 +153,14 @@ function retireEntries(state: GitWriteState, workspaceId: string, consumerId?: s
   let changed = false;
   const retained = entries.flatMap((entry) => {
     if (consumerId !== undefined && entry.operation.consumerId !== consumerId) return [entry];
-    if (entry.status === 'queued' || entry.status === 'running') {
+    if (
+      entry.status === 'queued' ||
+      entry.status === 'running' ||
+      entry.status === 'unknown' ||
+      (entry.operation.kind === 'commit' &&
+        entry.operation.params.currentIndex &&
+        entry.result?.commitOutcome?.state === 'confirmed')
+    ) {
       if (entry.consumerReleased) return [entry];
       changed = true;
       return [{ ...entry, consumerReleased: true }];

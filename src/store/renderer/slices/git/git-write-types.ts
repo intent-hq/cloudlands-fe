@@ -6,7 +6,14 @@ type GitWriteSource = 'sidebar' | 'changes' | 'localChanges' | 'diff' | 'chat' |
 export type GitWriteOperation = (
   | { kind: 'stage' | 'unstage' | 'discard'; paths: string[]; openDiff?: boolean }
   | { kind: 'stageHunk' | 'unstageHunk'; filePath: string; hunkPatch: string }
-  | { kind: 'commit'; params: GitCommitParams }
+  | {
+      kind: 'commit';
+      params: GitCommitParams;
+      /** Stable principal/root identity for receipt visibility; independent of connection epochs. */
+      authorityKey?: string;
+      /** Host-owned preflight comparison only; never forwarded as a commit files list. */
+      reviewedPaths?: string[];
+    }
   | { kind: 'amend'; message: string; cwd: string; wasPushed?: boolean }
   | {
       kind: 'partialCommit';
@@ -26,9 +33,9 @@ export type GitWriteOperation = (
 export interface GitWriteEntry {
   id: string;
   operation: GitWriteOperation;
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   result?: MutationResult;
-  /** Presentation retired; the transport still owns this record until settlement. */
+  /** Presentation retired; current-index receipts and pending transport ownership survive. */
   consumerReleased?: boolean;
 }
 

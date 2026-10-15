@@ -31,8 +31,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+const commitHash = 'b'.repeat(40);
 const details = {
-  commitHash: 'sha',
+  commitHash,
   author: 'Test',
   authorEmail: 'test@example.com',
   date: '2026-09-29T00:00:00Z',
@@ -77,15 +78,11 @@ describe('gitConsumerReadSaga', () => {
     const response = deferred<typeof details>();
     vi.mocked(backendRequest).mockReturnValue(response.promise);
     const owner = start();
-    owner.dispatch(
-      gitReadRequested('ws', 'sidebar', 'a', { kind: 'commitDetails', commitHash: 'sha' }),
-    );
-    owner.dispatch(
-      gitReadRequested('ws', 'tab', 'b', { kind: 'commitDetails', commitHash: 'sha' }),
-    );
+    owner.dispatch(gitReadRequested('ws', 'sidebar', 'a', { kind: 'commitDetails', commitHash }));
+    owner.dispatch(gitReadRequested('ws', 'tab', 'b', { kind: 'commitDetails', commitHash }));
     expect(backendRequest).toHaveBeenCalledExactlyOnceWith('git.commitDetails', {
       workspaceId: 'ws',
-      commitHash: 'sha',
+      commitHash,
     });
     owner.dispatch(releaseGitRead('ws', 'sidebar', 'a'));
     response.resolve(details);
@@ -137,7 +134,7 @@ describe('gitConsumerReadSaga', () => {
       .mockRejectedValueOnce(new Error('transport unavailable'))
       .mockReturnValueOnce(response.promise);
     const owner = start();
-    const request = { kind: 'commitDetails' as const, commitHash: 'sha' };
+    const request = { kind: 'commitDetails' as const, commitHash };
     const expand = gitReadRequested('ws', 'pr:sha', 'sha', request);
     owner.dispatch(expand);
     await vi.waitFor(() =>
@@ -154,8 +151,8 @@ describe('gitConsumerReadSaga', () => {
     owner.dispatch(expand);
     owner.dispatch(gitReadRequested('ws', 'timeline', 'timeline', request));
     expect(vi.mocked(backendRequest).mock.calls).toEqual([
-      ['git.commitDetails', { workspaceId: 'ws', commitHash: 'sha' }],
-      ['git.commitDetails', { workspaceId: 'ws', commitHash: 'sha' }],
+      ['git.commitDetails', { workspaceId: 'ws', commitHash }],
+      ['git.commitDetails', { workspaceId: 'ws', commitHash }],
     ]);
     response.resolve(details);
     await vi.waitFor(() =>
@@ -180,7 +177,7 @@ describe('gitConsumerReadSaga', () => {
     const owner = start();
     const request = gitReadRequested('ws', 'pr:sha', 'sha', {
       kind: 'commitDetails',
-      commitHash: 'sha',
+      commitHash,
     });
     owner.dispatch(request);
     await vi.waitFor(() => expect(owner.read('ws', 'pr:sha')?.loading).toBe(false));
@@ -234,7 +231,7 @@ describe('gitConsumerReadSaga', () => {
         .mockReturnValueOnce(response.promise)
         .mockResolvedValue(fresh);
       const owner = start();
-      const request = { kind: 'commitDetails' as const, commitHash: 'sha' };
+      const request = { kind: 'commitDetails' as const, commitHash };
       owner.dispatch(gitReadRequested('ws', 'pr:sha', 'first', request));
       await vi.waitFor(() => expect(owner.read('ws', 'pr:sha')?.loading).toBe(false));
       owner.dispatch(gitReadRequested('ws', 'pr:sha', 'retry', request));

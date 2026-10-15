@@ -19,6 +19,7 @@ export interface GitWriteSagaDependencies {
   prepare(
     workspaceId: string,
     operation: GitWriteOperation,
+    canExecute: () => boolean,
   ): SagaGenerator<(() => Promise<MutationResult>) | undefined>;
   reconcile(
     workspaceId: string,

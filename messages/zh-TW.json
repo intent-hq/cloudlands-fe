@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "復原建立",
   "workspace_localCreate_draftSave_error": "無法儲存建立要求。請在建立工作區前重試。",
   "workspace_localCreate_receiptUnavailable_description": "工作區建立已暫停，等待檢查已儲存的請求。建立工作區前，請重試載入。",
-  "workspace_gitReview_unavailable_description": "無法顯示文字差異。這可能是二進位檔案、被省略的大型差異，或沒有文字差異區塊的變更。"
+  "workspace_gitReview_unavailable_description": "無法顯示文字差異。這可能是二進位檔案、被省略的大型差異，或沒有文字差異區塊的變更。",
+  "workspace_localCommit_title_label": "提交目前暫存的變更",
+  "workspace_localCommit_index_description": "提交執行時主要儲存庫的索引，並保留未暫存的變更。其他 Git 程序可能會變更索引。",
+  "workspace_localCommit_inspect_label": "檢查最新提交",
+  "workspace_localCommit_confirmed_label": "提交已確認",
+  "workspace_localCommit_unknown_description": "提交結果未知。繼續操作前，請檢查最新提交和暫存的變更。本工作階段不會重新傳送要求。重新載入會清除此警告；再次提交前請檢查歷程記錄。",
+  "workspace_localCommit_changed_error": "暫存的路徑已變更。提交前請檢查變更。"
 }

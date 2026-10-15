@@ -11,6 +11,8 @@ export type SubscriptionHandler<T> = (snapshot: T) => void;
 export interface MutationResult extends SubmissionCorrelation {
   success: boolean;
   error?: string;
+  /** Current-index commits retain uncertainty until explicit inspection; never replay them. */
+  commitOutcome?: { state: 'confirmed'; hash: string; files: string[] } | { state: 'unknown' };
   /**
    * Canonical id of the entity the mutation created/affected, surfaced when the
    * daemon returns one (e.g. `task.createPrerequisite` returns a WorkspaceTask

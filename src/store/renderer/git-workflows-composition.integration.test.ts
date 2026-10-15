@@ -215,14 +215,15 @@ describe('Git workflow production composition and reload smoke', () => {
   });
 
   it('isolates read consumers by root and ignores a late result after rebinding the same consumer', async () => {
+    const commitHash = 'a'.repeat(40);
     const old = Promise.withResolvers<ReturnType<typeof details>>();
     handlers.set('git.commitDetails', (params) =>
-      params.gitRootId === 'root-old' ? old.promise : details('hash', 'current.ts'),
+      params.gitRootId === 'root-old' ? old.promise : details(commitHash, 'current.ts'),
     );
     appStore.dispatch(
       gitReadRequested('composition-reads', 'view', 'old', {
         kind: 'commitDetails',
-        commitHash: 'hash',
+        commitHash,
         gitRootId: 'root-old',
       }),
     );
@@ -230,14 +231,14 @@ describe('Git workflow production composition and reload smoke', () => {
     appStore.dispatch(
       gitReadRequested('composition-reads', 'view', 'new', {
         kind: 'commitDetails',
-        commitHash: 'hash',
+        commitHash,
         gitRootId: 'root-new',
       }),
     );
     appStore.dispatch(
       gitReadRequested('composition-reads', 'other-view', 'joined', {
         kind: 'commitDetails',
-        commitHash: 'hash',
+        commitHash,
         gitRootId: 'root-new',
       }),
     );
@@ -248,7 +249,7 @@ describe('Git workflow production composition and reload smoke', () => {
         result: { kind: 'commitDetails', details: { files: ['current.ts'] } },
       }),
     );
-    old.resolve(details('hash', 'stale.ts'));
+    old.resolve(details(commitHash, 'stale.ts'));
     await old.promise;
     expect(selectGitRead.select(appStore.state, 'composition-reads', 'view')?.requestId).toBe(
       'new',
@@ -259,11 +260,11 @@ describe('Git workflow production composition and reload smoke', () => {
     expect(calls('git.commitDetails')).toEqual([
       [
         'git.commitDetails',
-        { workspaceId: 'composition-reads', commitHash: 'hash', gitRootId: 'root-old' },
+        { workspaceId: 'composition-reads', commitHash, gitRootId: 'root-old' },
       ],
       [
         'git.commitDetails',
-        { workspaceId: 'composition-reads', commitHash: 'hash', gitRootId: 'root-new' },
+        { workspaceId: 'composition-reads', commitHash, gitRootId: 'root-new' },
       ],
     ]);
     appStore.dispatch(releaseGitRead('composition-reads', 'view', 'new'));

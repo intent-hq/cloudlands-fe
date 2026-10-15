@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "作成を復旧",
   "workspace_localCreate_draftSave_error": "作成リクエストを保存できませんでした。ワークスペースを作成する前に再試行してください。",
   "workspace_localCreate_receiptUnavailable_description": "保存済みのリクエストを確認できるまでワークスペースの作成を一時停止しています。作成する前に、読み込みを再試行してください。",
-  "workspace_gitReview_unavailable_description": "テキスト差分を表示できません。バイナリファイル、大きすぎる差分、またはテキストの変更箇所がない可能性があります。"
+  "workspace_gitReview_unavailable_description": "テキスト差分を表示できません。バイナリファイル、大きすぎる差分、またはテキストの変更箇所がない可能性があります。",
+  "workspace_localCommit_title_label": "現在のステージ済み変更をコミット",
+  "workspace_localCommit_index_description": "実行時点のプライマリリポジトリのインデックスをコミットし、未ステージの変更は保持します。他の Git プロセスがインデックスを変更する場合があります。",
+  "workspace_localCommit_inspect_label": "最新のコミットを確認",
+  "workspace_localCommit_confirmed_label": "コミットを確認しました",
+  "workspace_localCommit_unknown_description": "コミットの結果は不明です。続行する前に最新のコミットとステージ済み変更を確認してください。このセッションでは再送信しません。再読み込みするとこの警告は消えます。次のコミット前に履歴を確認してください。",
+  "workspace_localCommit_changed_error": "ステージ済みのパスが変更されました。コミット前に変更を確認してください。"
 }

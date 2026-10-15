@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "Récupérer la création",
   "workspace_localCreate_draftSave_error": "Impossible d’enregistrer la demande de création. Réessayez avant de créer l’espace de travail.",
   "workspace_localCreate_receiptUnavailable_description": "La création de l’espace de travail est suspendue jusqu’à la vérification de la demande enregistrée. Rechargez-la avant de créer un espace de travail.",
-  "workspace_gitReview_unavailable_description": "Différence de texte indisponible. Il peut s’agir d’un fichier binaire, d’une différence trop volumineuse ou d’un changement sans blocs de texte."
+  "workspace_gitReview_unavailable_description": "Différence de texte indisponible. Il peut s’agir d’un fichier binaire, d’une différence trop volumineuse ou d’un changement sans blocs de texte.",
+  "workspace_localCommit_title_label": "Valider les modifications actuellement indexées",
+  "workspace_localCommit_index_description": "Valide l’index du dépôt principal au moment de l’exécution et conserve les modifications non indexées. D’autres processus Git peuvent modifier l’index.",
+  "workspace_localCommit_inspect_label": "Examiner le dernier commit",
+  "workspace_localCommit_confirmed_label": "Commit confirmé",
+  "workspace_localCommit_unknown_description": "Le résultat du commit est inconnu. Examinez le dernier commit et les modifications indexées avant de poursuivre. Cette session ne renverra pas la demande. Recharger efface cet avertissement ; consultez l’historique avant un autre commit.",
+  "workspace_localCommit_changed_error": "Les chemins indexés ont changé. Vérifiez les modifications avant de valider."
 }

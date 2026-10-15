@@ -12,7 +12,10 @@ import {
   gitWriteRequested,
   gitWriteConsumerReleased,
   gitWriteFinished,
+  cancelQueuedGitWrite,
 } from '../git-write-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { getGitCurrentIndexCommit } from '../git-write-projections';
 import { createGitWriteSaga } from './git-write-saga-factory';
 import type { GitWriteSagaDependencies } from './git-write-saga-types';
 
@@ -74,6 +77,178 @@ afterEach(() => {
 });
 
 describe('canonical Git write factory authority', () => {
+  it('keeps a host predispatch refusal distinct from dispatched uncertainty', async () => {
+    const owner = start();
+    owner.execute.mockResolvedValueOnce({
+      success: false,
+      error: 'Staged selection changed before dispatch',
+    });
+    const operation = {
+      kind: 'commit' as const,
+      params: { message: 'Checkpoint', userRequested: true, currentIndex: true as const },
+    };
+    const refused = gitWriteRequested('commit-preflight', 'first', operation);
+    owner.dispatch(refused);
+    await expect(refused.promise).resolves.toEqual({
+      success: false,
+      error: 'Staged selection changed before dispatch',
+    });
+    expect(getGitCurrentIndexCommit(owner.state(), 'commit-preflight')?.status).toBe('failed');
+    const result: MutationResult = {
+      success: true,
+      commitOutcome: { state: 'confirmed', hash: 'actual-sha', files: ['a.ts'] },
+    };
+    owner.execute.mockResolvedValueOnce(result);
+    const next = gitWriteRequested('commit-preflight', 'second', { ...operation });
+    owner.dispatch(next);
+    await expect(next.promise).resolves.toEqual(result);
+    expect(owner.execute).toHaveBeenCalledTimes(2);
+  });
+  it('cancels current-index work before its queued execution microtask can dispatch', async () => {
+    const execute = vi.fn<() => Promise<MutationResult>>();
+    const owner = start({
+      prepare: function* () {
+        queueMicrotask(() => owner.task.cancel());
+        return execute;
+      },
+    });
+    const request = gitWriteRequested('commit-microtask', 'first', {
+      kind: 'commit',
+      params: { message: 'Checkpoint', userRequested: true, currentIndex: true },
+    });
+    owner.dispatch(request);
+    await expect(request.promise).rejects.toThrow('unavailable');
+    expect(execute).not.toHaveBeenCalled();
+    expect(isGitMutationPending('commit-microtask')).toBe(false);
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'commit-microtask', 'first'),
+    ).toMatchObject({ status: 'failed', result: { success: false } });
+  });
+  it('blocks duplicate current-index commits during execution and after an unknown outcome survives unmount', async () => {
+    const held = deferred<MutationResult>();
+    const owner = start();
+    owner.execute.mockReturnValueOnce(held.promise);
+    const operation = {
+      kind: 'commit' as const,
+      params: { message: 'Checkpoint', userRequested: true, currentIndex: true as const },
+      consumerId: 'panel',
+    };
+    const request = gitWriteRequested('commit-unmount', 'first', operation);
+    owner.dispatch(request);
+    await vi.waitFor(() => expect(owner.execute).toHaveBeenCalledTimes(1));
+    owner.dispatch(gitWriteConsumerReleased('commit-unmount', 'panel'));
+    owner.dispatch(workspaceUnmounted('commit-unmount'));
+    const duplicate = gitWriteRequested('commit-unmount', 'second', { ...operation });
+    owner.dispatch(duplicate);
+    const result: MutationResult = { success: false, commitOutcome: { state: 'unknown' } };
+    held.resolve(result);
+    await expect(request.promise).resolves.toEqual(result);
+    await expect(duplicate.promise).resolves.toMatchObject({ success: false });
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'commit-unmount', 'first'),
+    ).toMatchObject({ status: 'unknown', result });
+    const retry = gitWriteRequested('commit-unmount', 'retry', { ...operation });
+    owner.dispatch(retry);
+    await expect(retry.promise).resolves.toMatchObject({ success: false });
+    expect(owner.execute).toHaveBeenCalledTimes(1);
+    expect(owner.publish).not.toHaveBeenCalled();
+    expect(isGitMutationPending('commit-unmount')).toBe(false);
+  });
+
+  it.each([
+    {
+      success: true,
+      commitOutcome: { state: 'confirmed' as const, hash: 'actual-sha', files: ['a.ts'] },
+    },
+    { success: false, commitOutcome: { state: 'unknown' as const } },
+  ])('preserves an actual current-index outcome after cancellation: %j', async (result) => {
+    const held = deferred<MutationResult>();
+    const owner = start();
+    owner.execute.mockReturnValueOnce(held.promise);
+    const request = gitWriteRequested('commit-cancel', 'first', {
+      kind: 'commit',
+      params: { message: 'Checkpoint', userRequested: true, currentIndex: true },
+    });
+    owner.dispatch(request);
+    await vi.waitFor(() => expect(owner.execute).toHaveBeenCalledTimes(1));
+    owner.task.cancel();
+    expect(isGitMutationPending('commit-cancel')).toBe(true);
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'commit-cancel', 'first')?.status,
+    ).toBe('running');
+    held.resolve(result);
+    await expect(request.promise).resolves.toEqual(result);
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'commit-cancel', 'first'),
+    ).toMatchObject({ status: result.success ? 'succeeded' : 'unknown', result });
+    expect(owner.publish).not.toHaveBeenCalled();
+    expect(isGitMutationPending('commit-cancel')).toBe(false);
+  });
+
+  it('cancels a queued current-index commit before execution without fabricating uncertainty', async () => {
+    const lease = reserveGitMutation('commit-queued');
+    const owner = start();
+    const request = gitWriteRequested('commit-queued', 'first', {
+      kind: 'commit',
+      params: { message: 'Checkpoint', userRequested: true, currentIndex: true },
+    });
+    owner.dispatch(request);
+    owner.dispatch(cancelQueuedGitWrite('commit-queued', 'first'));
+    await lease.release();
+    await expect(request.promise).resolves.toMatchObject({ success: false });
+    expect(owner.execute).not.toHaveBeenCalled();
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'commit-queued', 'first')?.status,
+    ).toBe('cancelled');
+    expect(isGitMutationPending('commit-queued')).toBe(false);
+  });
+
+  it.each([
+    {
+      success: true,
+      commitOutcome: { state: 'confirmed' as const, hash: 'actual-sha', files: ['a.ts'] },
+    },
+    { success: false, commitOutcome: { state: 'unknown' as const } },
+  ])(
+    'retains a cancelled commit receipt under its initiating identity after authority loss: %j',
+    async (result) => {
+      let current = true;
+      const held = deferred<MutationResult>();
+      const owner = start({
+        captureAuthority: () => ({ canDispatch: () => current, canPublish: () => current }),
+      });
+      owner.execute.mockReturnValueOnce(held.promise);
+      const request = gitWriteRequested('commit-principal', 'first', {
+        kind: 'commit',
+        params: { message: 'Checkpoint', userRequested: true, currentIndex: true },
+        authorityKey: 'original/root',
+        consumerId: 'panel',
+      });
+      owner.dispatch(request);
+      await vi.waitFor(() => expect(owner.execute).toHaveBeenCalledTimes(1));
+      current = false;
+      const boundary = owner.actions.length;
+      owner.task.cancel();
+      held.resolve(result);
+      await expect(request.promise).resolves.toEqual(result);
+      expect(owner.actions.slice(boundary)).toEqual([
+        gitWriteFinished('commit-principal', 'first', result, request.payload[2], true),
+      ]);
+      owner.dispatch(gitWriteConsumerReleased('commit-principal', 'panel'));
+      owner.dispatch(workspaceUnmounted('commit-principal'));
+      expect(
+        getGitCurrentIndexCommit(owner.state(), 'commit-principal', 'original/root'),
+      ).toMatchObject({ result });
+      expect(
+        getGitCurrentIndexCommit(owner.state(), 'commit-principal', 'replacement/root'),
+      ).toBeUndefined();
+      expect(getGitCurrentIndexCommit(owner.state(), 'commit-principal')).toBeUndefined();
+      expect(owner.publish).not.toHaveBeenCalled();
+      expect(owner.reconcile).not.toHaveBeenCalled();
+      expect(owner.invalidate).not.toHaveBeenCalled();
+      expect(isGitMutationPending('commit-principal')).toBe(false);
+    },
+  );
   it('captures authority at dispatch and refuses a queued request after its epoch changes', async () => {
     let epoch = 1;
     const captured: number[] = [];

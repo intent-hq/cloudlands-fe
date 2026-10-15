@@ -399,7 +399,7 @@ describe('LiveGitClient reads (fake transport)', () => {
 
   it('commitDetails forwards git.commitDetails and normalizes the wire shape', async () => {
     mockedRequest.mockResolvedValueOnce({
-      commitHash: 'abc123',
+      commitHash: 'abc1230000000000000000000000000000000000',
       author: 'Ada',
       authorEmail: 'ada@example.test',
       date: '2025-01-02T03:04:05Z',
@@ -419,7 +419,7 @@ describe('LiveGitClient reads (fake transport)', () => {
       commitHash: 'abc123',
     });
     expect(details).toEqual({
-      commitHash: 'abc123',
+      commitHash: 'abc1230000000000000000000000000000000000',
       author: 'Ada',
       authorEmail: 'ada@example.test',
       date: '2025-01-02T03:04:05Z',
@@ -1017,6 +1017,52 @@ describe('LiveGitClient.discard (fake transport)', () => {
 
 describe('LiveGitClient.commit (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
+
+  it('uses the canonical current-index client and preserves a confirmed receipt', async () => {
+    const hash = '0123456789abcdef0123456789abcdef01234567';
+    mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return { ok: true, hash, files: ['staged.ts'], fileCount: 1 };
+    });
+    await expect(
+      new LiveGitClient().commit('ws-1', {
+        message: 'Checkpoint',
+        userRequested: true,
+        currentIndex: true,
+      }),
+    ).resolves.toEqual({
+      success: true,
+      commitOutcome: { state: 'confirmed', hash, files: ['staged.ts'] },
+    });
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith(
+      'git.agentCommit',
+      {
+        workspaceId: 'ws-1',
+        message: 'Checkpoint',
+        userRequested: true,
+      },
+      { onDispatch: expect.any(Function) },
+    );
+  });
+
+  it('preserves dispatched uncertainty through the source client', async () => {
+    mockedRequest.mockImplementationOnce(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      throw new Error('Connection lost');
+    });
+    await expect(
+      new LiveGitClient().commit('ws-1', {
+        message: 'Checkpoint',
+        userRequested: true,
+        currentIndex: true,
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error: 'Connection lost',
+      commitOutcome: { state: 'unknown' },
+    });
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
 
   it('forwards git.agentCommit with message + userRequested and optional files', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true, hash: 'abc', files: ['a.ts'], fileCount: 1 });

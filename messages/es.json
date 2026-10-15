@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "Recuperar creación",
   "workspace_localCreate_draftSave_error": "No se pudo guardar la solicitud de creación. Inténtalo de nuevo antes de crear el espacio de trabajo.",
   "workspace_localCreate_receiptUnavailable_description": "La creación del espacio de trabajo está pausada hasta comprobar la solicitud guardada. Vuelve a cargarla antes de crear un espacio de trabajo.",
-  "workspace_gitReview_unavailable_description": "Diferencia de texto no disponible. Puede ser un archivo binario, una diferencia grande omitida o un cambio sin bloques de texto."
+  "workspace_gitReview_unavailable_description": "Diferencia de texto no disponible. Puede ser un archivo binario, una diferencia grande omitida o un cambio sin bloques de texto.",
+  "workspace_localCommit_title_label": "Confirmar los cambios preparados actuales",
+  "workspace_localCommit_index_description": "Confirma el índice del repositorio principal al ejecutar y conserva los cambios sin preparar. Otros procesos de Git pueden cambiar el índice.",
+  "workspace_localCommit_inspect_label": "Inspeccionar el último commit",
+  "workspace_localCommit_confirmed_label": "Commit confirmado",
+  "workspace_localCommit_unknown_description": "Se desconoce el resultado del commit. Inspecciona el último commit y los cambios preparados antes de continuar. Esta sesión no reenviará la solicitud. Recargar borra este aviso; consulta el historial antes de otro commit.",
+  "workspace_localCommit_changed_error": "Las rutas preparadas han cambiado. Revisa los cambios antes de confirmar."
 }

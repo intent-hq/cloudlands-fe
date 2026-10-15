@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "Recover creation",
   "workspace_localCreate_draftSave_error": "Could not save the creation request. Try again before creating the workspace.",
   "workspace_localCreate_receiptUnavailable_description": "Workspace creation is paused until its saved request can be checked. Retry loading it before creating a workspace.",
-  "workspace_gitReview_unavailable_description": "Text diff unavailable. This may be a binary file, an omitted large diff, or a change without text hunks."
+  "workspace_gitReview_unavailable_description": "Text diff unavailable. This may be a binary file, an omitted large diff, or a change without text hunks.",
+  "workspace_localCommit_title_label": "Commit current staged changes",
+  "workspace_localCommit_index_description": "Commits the primary repository’s index at execution time and keeps unstaged changes. Other Git processes may change the index.",
+  "workspace_localCommit_inspect_label": "Inspect latest commit",
+  "workspace_localCommit_confirmed_label": "Commit confirmed",
+  "workspace_localCommit_unknown_description": "The commit outcome is unknown. Inspect the latest commit and staged changes before taking further action. This session will not resend. Reload clears this warning; check history before another commit.",
+  "workspace_localCommit_changed_error": "Staged paths changed. Review the changes before committing."
 }

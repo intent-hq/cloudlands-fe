@@ -97,11 +97,27 @@ workspace owners can **Stage** or **Unstage** one file from its row or diff view
 These actions update the index and preserve the working file. Pending writes stay
 owned while navigating; locked files and unavailable write admission disable the
 actions. After a category disappears, **Back** focuses the same file in its
-remaining category. There are no hunk, commit, discard or push controls. The pinned daemon does not
+remaining category. There are no hunk, discard or push controls. The pinned daemon does not
 distinguish binary files from omitted oversized diffs, so path-only responses are
 shown as text diff unavailable, rather than as no changes. Rename hunks follow the
 daemon's destination-path representation; full editor and rename-history parity
 are not claimed.
+
+To make a local commit, review the staged rows, enter a **Commit Message**, and choose
+**Commit**. The repository must have a Git author configured. This commits the primary
+repository's current index at execution time and leaves unstaged worktree changes
+untouched. It does not freeze the reviewed bytes: another Git process can change the
+index between review and execution. Fresh staged-path, authority and lock checks
+protect the app's request, not that external race.
+
+A successful response shows its exact commit SHA, message and files. **Inspect latest
+commit** is read-only history inspection, not proof that an uncertain request succeeded.
+Pending commits stay owned through navigation. An unknown outcome blocks another
+commit in the current app session and is never automatically retried. Reload does not
+replay a commit, but it clears the in-memory uncertainty warning: inspect Git history
+and staged changes before attempting another commit. The commit-message draft follows
+the existing workspace lifetime and is cleared when leaving that workspace; it is not
+a durable chat draft. No push, amend or remote review operation is included.
 
 ## Focused verification
 

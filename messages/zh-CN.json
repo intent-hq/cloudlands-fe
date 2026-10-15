@@ -7533,5 +7533,11 @@
   "workspace_localCreate_recover_label": "恢复创建",
   "workspace_localCreate_draftSave_error": "无法保存创建请求。请在创建工作区前重试。",
   "workspace_localCreate_receiptUnavailable_description": "工作区创建已暂停，等待检查已保存的请求。创建工作区前，请重试加载。",
-  "workspace_gitReview_unavailable_description": "无法显示文本差异。这可能是二进制文件、被省略的大型差异，或没有文本差异块的更改。"
+  "workspace_gitReview_unavailable_description": "无法显示文本差异。这可能是二进制文件、被省略的大型差异，或没有文本差异块的更改。",
+  "workspace_localCommit_title_label": "提交当前暂存的更改",
+  "workspace_localCommit_index_description": "提交执行时主仓库的索引，并保留未暂存的更改。其他 Git 进程可能会更改索引。",
+  "workspace_localCommit_inspect_label": "检查最新提交",
+  "workspace_localCommit_confirmed_label": "提交已确认",
+  "workspace_localCommit_unknown_description": "提交结果未知。继续操作前，请检查最新提交和暂存的更改。本会话不会重新发送请求。重新加载会清除此警告；再次提交前请检查历史记录。",
+  "workspace_localCommit_changed_error": "暂存的路径已更改。提交前请检查更改。"
 }
