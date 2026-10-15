@@ -65,7 +65,11 @@ import {
   takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import {
+  selectHasVisibleNoteContent,
+  selectNoteById,
+  selectWorkspaceNotesState,
+} from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -77,6 +81,9 @@ import {
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  noteMetadataPushed,
+  noteContentInvalidated,
+  noteContentReadApplied,
   noteAttributionInvalidated,
   noteAttributionViewFinished,
   noteAttributionViewReleased,
@@ -103,6 +110,7 @@ import {
   type NotePresenceSession,
   type RemoteNoteViewer,
 } from '$features/notes/note-presence/note-presence-service';
+import type { Note } from '$shared/types';
 import type { NotePresenceViewer } from '../workspace-notes-types';
 import { takeEveryFromListenSync } from '../../../utils/ipc-channel';
 import { toRuntimeNote } from './note-payload-mappers';
@@ -113,7 +121,8 @@ const logger = createLogger('NotesReadSaga');
 type ObservedAction = { type: string; payload?: unknown };
 type AttributionInvalidationAction = { type: string; payload?: [string, string] };
 type ReadAction = ReturnType<typeof readNoteRequested>;
-type ReadResult = { note: ReturnType<typeof toRuntimeNote> | null } | { error: Error };
+type ReadResult =
+  { note: ReturnType<typeof toRuntimeNote> | null; contentGeneration?: number } | { error: Error };
 type ReadSlot = {
   generation: number;
   task: Task;
@@ -176,7 +185,9 @@ function* fetchNoteSlot(
   generation: number,
   lifetime: RecoveryLifetime,
   after?: Task,
+  visibleOnly = false,
 ): SagaGenerator<ReadResult> {
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
   try {
     if (!lifetime.commit(() => undefined)) return { note: null };
     if (after) {
@@ -187,6 +198,10 @@ function* fetchNoteSlot(
       if (cleanup) return { note: null };
     }
     if (!lifetime.commit(() => undefined)) return { note: null };
+    if (visibleOnly && !(yield* selectHasVisibleNoteContent.effect(workspaceId, noteId)))
+      return { note: null };
+    const contentGeneration =
+      (yield* selectWorkspaceNotesState.effect(workspaceId)).staleContentByNoteId[noteId] ?? 0;
     const { found, cleanup } = yield* race({
       found: call(() =>
         runRecoveryRead(
@@ -194,7 +209,10 @@ function* fetchNoteSlot(
           lifetime,
           'ordinary',
           `get:${noteId}`,
-          () => appClient.notes.get(noteId, workspaceId),
+          () =>
+            visibleOnly && !selectHasVisibleNoteContent.select(store.state, workspaceId, noteId)
+              ? Promise.resolve(null)
+              : appClient.notes.get(noteId, workspaceId),
           { retireOnNotFound: false },
         ),
       ),
@@ -204,7 +222,7 @@ function* fetchNoteSlot(
     if (String(found.workspaceId) !== workspaceId || String(found.id) !== noteId) {
       return { note: null };
     }
-    return { note: toRuntimeNote(found) };
+    return { note: toRuntimeNote(found), contentGeneration };
   } catch (error) {
     return { error: error instanceof Error ? error : new Error(String(error)) };
   } finally {
@@ -233,6 +251,7 @@ function* createReadSlot(
     generation,
     lifetime,
     after,
+    !!action.payload[2],
   );
   return {
     generation,
@@ -282,6 +301,10 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
   const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   const authority = rendererEventRecovery.captureAuthority(notesRecoveryKey(workspaceId));
   if (!lifetime.commit(() => undefined)) return;
+  const mutations = yield* actionChannel(
+    [applyNoteDeleted, noteMetadataPushed],
+    buffers.expanding<ReturnType<typeof applyNoteDeleted | typeof noteMetadataPushed>>(),
+  );
   try {
     // Slim projection (§5.2): the initial hydrate does not need full bodies —
     // sidebar surfaces read titles/tags/metadata, and slim rows carry
@@ -307,9 +330,28 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
       fetchSlimListAndSpec,
       workspaceId,
     );
-    const notes = response.map((note) =>
+    let notes = response.map((note) =>
       specNote && String(note.id) === SPEC_NOTE_ID ? toRuntimeNote(specNote) : toRuntimeNote(note),
     );
+    // Pushes and local edits received during hydration win over its older snapshot.
+    const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+    const before = new Map(getItems(current.notes).map((note) => [String(note.id), note]));
+    const after = new Map(getItems(latest.notes).map((note) => [String(note.id), note]));
+    const rows = new Map(notes.map((note) => [String(note.id), note]));
+    for (const [id, note] of after) {
+      if (note !== before.get(id) || latest.pendingContentByNoteId[id]) rows.set(id, note);
+    }
+    for (const id of before.keys()) if (!after.has(id)) rows.delete(id);
+    for (const mutation of yield* flush(mutations)) {
+      if (mutation.payload[0] !== workspaceId) continue;
+      if (mutation.type === applyNoteDeleted.type) rows.delete(mutation.payload[1] as string);
+      else {
+        const id = String((mutation.payload[1] as Omit<Note, 'content'>).id);
+        const latestNote = after.get(id);
+        if (latestNote) rows.set(id, latestNote);
+      }
+    }
+    notes = [...rows.values()];
     if (
       !(yield* commitNoteAction(
         lifetime,
@@ -323,8 +365,18 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
       });
       return;
     }
+    const hydrated = yield* selectWorkspaceNotesState.effect(workspaceId);
+    for (const view of getItems(latest.contentViews)) {
+      const note = yield* selectNoteById.effect(workspaceId, view.noteId);
+      if (note && (isNoteContentStale(note) || hydrated.staleContentByNoteId[view.noteId])) {
+        yield* commitNoteAction(
+          authority,
+          noteContentViewRequested(view.consumerId, view.requestId, workspaceId, view.noteId),
+        );
+      }
+    }
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
-    if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
+    if (spec) yield* commitNoteAction(authority, selectNote(workspaceId, String(spec.id)));
   } catch (error) {
     logger.error('Failed to hydrate workspace notes', error);
     yield* commitNoteAction(
@@ -334,6 +386,8 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false, generation =
         error instanceof Error ? error.message : String(error),
       ),
     );
+  } finally {
+    mutations.close();
   }
 }
 
@@ -385,6 +439,15 @@ function* readNoteWorker(
       } else {
         if (!(yield* commitNoteAction(slot.lifetime, applyNoteUpdated(workspaceId, noteId, note))))
           note = null;
+      }
+      if (
+        note &&
+        (note.rev === undefined || existing?.rev === undefined || note.rev >= existing.rev)
+      ) {
+        yield* commitNoteAction(
+          slot.lifetime,
+          noteContentReadApplied(workspaceId, noteId, result.contentGeneration ?? 0),
+        );
       }
     }
     yield* put(action.success(authorityStillMatches ? note : null));
@@ -623,20 +686,47 @@ function* routeLineAttributionUpdated(payload: LineAttributionUpdatedPayload) {
 
 function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
   const [workspaceId, noteId] = action.payload;
+  const original = rendererEventRecovery.captureAuthority(notesRecoveryKey(workspaceId));
   try {
-    const cached = yield* selectNoteById.effect(workspaceId, noteId);
-    if (!cached) {
-      yield* put(action.success(false));
-      return;
+    const authority = yield* selectPrincipalConnectionContext.effect();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!original.commit(() => undefined)) {
+        yield* put(action.success(false));
+        return;
+      }
+      const cached = yield* selectNoteById.effect(workspaceId, noteId);
+      const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
+      if (!cached) {
+        yield* put(action.success(false));
+        return;
+      }
+      if (!isNoteContentStale(cached) && !ws.staleContentByNoteId[noteId]) {
+        yield* put(action.success(true));
+        return;
+      }
+      // Reopening can join a read started before a hidden invalidation. Recheck
+      // the applied cache, and share one fresh read only while still displayed.
+      if (attempt > 0 && !(yield* selectHasVisibleNoteContent.effect(workspaceId, noteId))) {
+        yield* put(action.success(false));
+        return;
+      }
+      const request = readNoteRequested(workspaceId, noteId);
+      yield* put(request);
+      const note = yield* call(() => request.promise);
+      if (
+        !original.commit(() => undefined) ||
+        !note ||
+        authority !== (yield* selectPrincipalConnectionContext.effect())
+      ) {
+        yield* put(action.success(false));
+        return;
+      }
     }
-    if (!isNoteContentStale(cached)) {
-      yield* put(action.success(true));
-      return;
-    }
-    const request = readNoteRequested(workspaceId, noteId);
-    yield* put(request);
-    const note = yield* call(() => request.promise);
-    yield* put(action.success(note !== null && !isNoteContentStale(note)));
+    const current = yield* selectNoteById.effect(workspaceId, noteId);
+    const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
+    yield* put(
+      action.success(!!current && !isNoteContentStale(current) && !ws.staleContentByNoteId[noteId]),
+    );
   } catch (error) {
     logger.error('Failed to load full note content', error);
     yield* put(action.success(false));
@@ -851,6 +941,7 @@ function* applyNoteEventWorker(action: ReturnType<typeof refreshNoteFromEventReq
   if (!workspaceId || !noteId || eventType === 'note:deleted') return;
   const admission = getRecoveryAdmission(action, notesRecoveryKey(workspaceId));
   if (admission === null) return;
+  if (!(yield* selectHasVisibleNoteContent.effect(workspaceId, noteId))) return;
   yield* race({
     apply: call(
       applyNoteEvent,
@@ -870,7 +961,9 @@ function* routeNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
   if (!lifetime) return;
   if (eventType === 'note:deleted') {
     yield* commitNoteAction(lifetime, applyNoteDeleted(workspaceId, noteId));
+    return;
   }
+  yield* commitNoteAction(lifetime, noteContentInvalidated(workspaceId, noteId));
   yield* commitNoteAction(
     lifetime,
     withRecoveryLifetime(refreshNoteFromEventRequested(workspaceId, noteId, eventType), lifetime),
@@ -892,25 +985,42 @@ function* processAdmittedNote(
     yield* commitNoteAction(lifetime, applyNoteDeleted(workspaceId, noteId));
     return;
   }
+  if (!(yield* commitNoteAction(lifetime, noteContentInvalidated(workspaceId, noteId)))) return;
+  if (!(yield* selectHasVisibleNoteContent.effect(workspaceId, noteId))) return;
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
+  const contentGeneration =
+    (yield* selectWorkspaceNotesState.effect(workspaceId)).staleContentByNoteId[noteId] ?? 0;
   const found = yield* call(() =>
     runRecoveryRead(
       notesRecoveryKey(workspaceId),
       lifetime,
       'ordinary',
       `get:${noteId}`,
-      () => appClient.notes.get(noteId, workspaceId),
+      () =>
+        selectHasVisibleNoteContent.select(store.state, workspaceId, noteId)
+          ? appClient.notes.get(noteId, workspaceId)
+          : Promise.resolve(null),
       { retireOnNotFound: false },
     ),
   );
   if (!found || String(found.workspaceId) !== workspaceId || String(found.id) !== noteId) return;
   const note = toRuntimeNote(found);
   const existing = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* commitNoteAction(
+  const applied = yield* commitNoteAction(
     lifetime,
     eventType === 'note:created' && !existing
       ? applyNoteCreated(workspaceId, note)
       : applyNoteUpdated(workspaceId, noteId, note),
   );
+  if (
+    applied &&
+    (note.rev === undefined || existing?.rev === undefined || note.rev >= existing.rev)
+  ) {
+    yield* commitNoteAction(
+      lifetime,
+      noteContentReadApplied(workspaceId, noteId, contentGeneration),
+    );
+  }
 }
 
 function* processAdmittedAttribution(payload: LineAttributionUpdatedPayload) {

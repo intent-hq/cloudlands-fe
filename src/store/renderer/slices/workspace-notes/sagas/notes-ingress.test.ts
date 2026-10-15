@@ -16,6 +16,7 @@ import { commentLoadRequested } from '../../comments/comments-slice';
 import {
   loadWorkspaceNotesSucceeded,
   noteAttributionViewRequested,
+  noteContentViewRequested,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
 import { selectNoteById } from '../workspace-notes-selectors';
@@ -98,6 +99,9 @@ async function harness(kind: Kind) {
     } as never),
   );
   store.dispatch(workspaceNotesHydrationRequested(workspaceId, 1, false));
+  if (kind === 'note') {
+    store.dispatch(noteContentViewRequested('body', 'visible', workspaceId, 'spec'));
+  }
   if (kind === 'comment') {
     vi.spyOn(appClient.comments, 'list').mockResolvedValue([]);
     store.dispatch(commentLoadRequested('ingress-comment', 'one', workspaceId, 'spec'));

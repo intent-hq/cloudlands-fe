@@ -20,6 +20,8 @@ import {
   updateNote,
   deleteNote,
   noteEventReceived,
+  noteContentViewRequested,
+  noteContentViewReleased,
   commentEventReceived,
   refreshNoteFromEventRequested,
   noteAttributionViewRequested,
@@ -166,6 +168,8 @@ async function harness(holdRefresh = false) {
   await settle();
   return {
     dispatch,
+    show: () => dispatch(noteContentViewRequested('body', 'visible', 'ws', 'spec')),
+    hide: () => dispatch(noteContentViewReleased('ws', 'body')),
     releaseRefresh: () => {
       for (const action of heldRefresh.splice(0)) channel.put(action);
     },
@@ -413,6 +417,7 @@ describe('independent typed-note review probes', () => {
   });
   it('does not start a queued note event read after its captured authority retires', async () => {
     const h = await harness();
+    h.show();
     const finishes: Array<(value: any) => void> = [];
     const read = vi
       .spyOn(appClient.notes, 'get')
@@ -537,6 +542,7 @@ describe('newer push while ordinary read is pending', () => {
 describe('settlement after an admitted push supersedes an ordinary read', () => {
   it('preserves full workspace hydration when a note event arrives before the list', async () => {
     const h = await harness();
+    h.show();
     let finish!: (rows: ReturnType<typeof row>[]) => void;
     const freshRows = [row('fresh event'), { ...row('untouched note'), id: 'sibling' }];
     h.read.mockResolvedValue({ notes: freshRows } as never);
@@ -604,8 +610,79 @@ describe('admitted note ingress completion', () => {
     rendererEventRecovery.push(key);
     return new Map([[key, rendererEventRecovery.capture(key)]]);
   }
+  it('recovers the slim catalog while hidden and refreshes body only on show', async () => {
+    const h = await harness();
+    const { content: _content, ...metadata } = row('new body');
+    h.read.mockResolvedValue({
+      notes: [{ ...metadata, contentLength: 8, contentPreview: 'new body' }],
+    } as never);
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('new body') as never);
+    h.loss();
+    await settle();
+    expect(h.request).toHaveBeenCalledWith('note.list', { workspaceId: 'ws', projection: 'slim' });
+    expect(get).not.toHaveBeenCalled();
+    h.show();
+    await settle();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(h.row()?.content).toBe('new body');
+    h.loss('2');
+    await vi.advanceTimersByTimeAsync(250);
+    await settle();
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(h.row()?.content).toBe('new body');
+  });
+  it('invalidates admitted hidden content without reading and refreshes on show', async () => {
+    const h = await harness();
+    const read = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('visible fresh') as never);
+    await dispatchNoteRecoveryEvent(
+      noteEventReceived('ws', 'spec', 'note:updated'),
+      admit(notesRecoveryKey('ws')),
+    );
+    expect(read).not.toHaveBeenCalled();
+    expect(h.store.state.workspaceNotes.byWorkspaceId.ws.staleContentByNoteId.spec).toBeGreaterThan(
+      0,
+    );
+    h.show();
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(h.row()?.content).toBe('visible fresh');
+  });
+  it('does not start admitted content queued behind a held read after hiding', async () => {
+    const h = await harness();
+    h.show();
+    let finish!: (value: any) => void;
+    const read = vi
+      .spyOn(appClient.notes, 'get')
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            finish = done;
+          }),
+      )
+      .mockResolvedValue(row('visible fresh') as never);
+    const first = readNoteRequested('ws', 'spec');
+    h.dispatch(first);
+    await settle();
+    const pending = dispatchNoteRecoveryEvent(
+      noteEventReceived('ws', 'spec', 'note:updated'),
+      admit(notesRecoveryKey('ws')),
+    );
+    await settle();
+    h.hide();
+    expect(h.store.state.workspaceNotes.byWorkspaceId.ws.contentViews.map.body).toBeUndefined();
+    finish(row('stale held'));
+    await pending;
+    await first.promise;
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(h.row()?.content).toBe('old');
+    h.show();
+    await settle();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(h.row()?.content).toBe('visible fresh');
+  });
   it('waits for the real note read and reducer commit', async () => {
     const h = await harness();
+    h.show();
     let resolve!: (value: any) => void;
     const read = vi.spyOn(appClient.notes, 'get').mockImplementation(
       () =>
@@ -628,7 +705,8 @@ describe('admitted note ingress completion', () => {
     expect(h.row()?.content).toBe('admitted');
   });
   it('rejects null, missing, and superseded original admissions without a fresh read', async () => {
-    await harness();
+    const h = await harness();
+    h.show();
     const read = vi.spyOn(appClient.notes, 'get');
     const key = notesRecoveryKey('ws');
     const old = admit(key);
@@ -640,6 +718,7 @@ describe('admitted note ingress completion', () => {
   });
   it('settles held processing on session retirement without resurrecting note data', async () => {
     const h = await harness();
+    h.show();
     let resolve!: (value: any) => void;
     vi.spyOn(appClient.notes, 'get').mockImplementation(
       () =>
@@ -734,6 +813,7 @@ describe('admitted note ingress completion', () => {
   });
   it('retains the original receipt across a delayed refresh descendant and same-ID replacement', async () => {
     const h = await harness(true);
+    h.show();
     const read = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('stale') as never);
     h.dispatch(
       withRecoveryAdmissions(
@@ -752,6 +832,7 @@ describe('admitted note ingress completion', () => {
   });
   it('coalesces note bursts to one trailing physical read and acknowledges every event', async () => {
     const h = await harness();
+    h.show();
     let resolve!: (value: any) => void;
     let active = 0;
     let peak = 0;
@@ -789,6 +870,7 @@ describe('admitted note ingress completion', () => {
   });
   it('acknowledges read failure, workspace cleanup, deletion, and an absent consumer', async () => {
     const h = await harness();
+    h.show();
     const key = notesRecoveryKey('ws');
     const read = vi.spyOn(appClient.notes, 'get').mockRejectedValueOnce(new Error('failed'));
     await dispatchNoteRecoveryEvent(noteEventReceived('ws', 'spec', 'note:updated'), admit(key));
@@ -844,6 +926,7 @@ describe('admitted note ingress completion', () => {
   });
   it('rejects missing integrated admissions on refresh, read, and attribution descendants', async () => {
     const h = await harness();
+    h.show();
     const read = vi.spyOn(appClient.notes, 'get').mockResolvedValue(row('unadmitted') as never);
     const attribution = vi.spyOn(appClient.notes.lineAttribution, 'load').mockResolvedValue(null);
     h.dispatch(noteAttributionViewRequested('view', 'one', 'ws', 'spec'));

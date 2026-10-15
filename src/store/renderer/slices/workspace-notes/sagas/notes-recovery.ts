@@ -1,5 +1,6 @@
+import { isNoteContentStale } from '$shared/utils/note-content';
 import { runRecoveryRead, retireRecoveryReads } from '$lib/client/live/recovery-read-queue';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { call, getContext, take } from 'typed-redux-saga';
 import {
   rendererEventRecovery,
@@ -24,6 +25,8 @@ import {
 import {
   clearWorkspaceNotesForWorkspaces,
   loadWorkspaceNotesSucceeded,
+  noteContentInvalidated,
+  noteContentViewRequested,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
 import type { LineAttributionData } from '$lib/client';
@@ -118,18 +121,43 @@ export function* notesRecoverySaga(store: RendererStoreBridge) {
           runRecoveryRead(key, lifetime, 'recovery', key, async () => {
             const result = await request<{ notes: Record<string, unknown>[] }>('note.list', {
               workspaceId,
+              projection: 'slim',
             });
             return result.notes.map((raw) => toRuntimeNote(normalizeNote(raw, workspaceId)));
           }),
         apply: (notes) => {
+          const original = rendererEventRecovery.captureAuthority(key);
           const current = store.state.workspaceNotes.byWorkspaceId[workspaceId];
+          const staleIds: string[] = [];
           const rows = notes.map((note) => {
             const existing = current ? getItem(current.notes, note.id) : undefined;
-            return existing && current.pendingContentByNoteId[String(note.id)]
+            const slim = isNoteContentStale(note);
+            if (slim) staleIds.push(String(note.id));
+            return existing && (slim || current.pendingContentByNoteId[String(note.id)])
               ? { ...note, content: existing.content }
               : note;
           });
           store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: rows }));
+          for (const id of staleIds) store.dispatch(noteContentInvalidated(workspaceId, id));
+          // The recovery resource clears its stale marker after synchronous apply.
+          // Admit visible body reads only after that commit, under the same owner.
+          queueMicrotask(() =>
+            original.commit(() => {
+              const latest = store.state.workspaceNotes.byWorkspaceId[workspaceId];
+              if (!latest) return;
+              for (const view of getItems(latest.contentViews)) {
+                if (!staleIds.includes(view.noteId)) continue;
+                store.dispatch(
+                  noteContentViewRequested(
+                    view.consumerId,
+                    view.requestId,
+                    workspaceId,
+                    view.noteId,
+                  ),
+                );
+              }
+            }),
+          );
         },
         invalidate: () => {},
         retire: () => {

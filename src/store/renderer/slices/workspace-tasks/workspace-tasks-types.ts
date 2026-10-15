@@ -21,6 +21,11 @@ export interface WorkspaceTasksWorkspaceState {
   revision: number;
   /** Revision captured when the current read was admitted. */
   readRevision: number;
+  statsPushed: boolean;
+  statsRevision: number;
+  readStatsRevision: number;
+  /** Pushes overlapping hydration are replayed onto its snapshot. */
+  pendingPushes: Record<string, WorkspaceTask | null>;
 }
 
 /** Root workspace-tasks state, keyed by workspace ID. */
