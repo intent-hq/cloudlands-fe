@@ -7611,5 +7611,9 @@
   "workspace_quickSwitcher_search_ariaLabel": "Rechercher des espaces et des conversations",
   "workspace_quickSwitcher_search_placeholder": "Rechercher par nom ou identifiant…",
   "workspace_quickSwitcher_conversationsError_error": "Impossible de charger les conversations.",
-  "workspace_conversation_messageUnavailable_description": "Impossible d’ouvrir le message lié dans cette conversation."
+  "workspace_conversation_messageUnavailable_description": "Impossible d’ouvrir le message lié dans cette conversation.",
+  "react_workspace_messageLink_copy_label": "Copier le lien du message",
+  "react_workspace_messageLink_copied_label": "Lien du message copié",
+  "react_workspace_messageLink_failed_description": "Copie impossible. Réessayez avec Copier le lien du message.",
+  "react_workspace_messageLink_pending_label": "Copie du lien du message…"
 }

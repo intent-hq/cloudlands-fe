@@ -7611,5 +7611,9 @@
   "workspace_quickSwitcher_search_ariaLabel": "ワークスペースと会話を検索",
   "workspace_quickSwitcher_search_placeholder": "名前または ID で検索…",
   "workspace_quickSwitcher_conversationsError_error": "会話を読み込めませんでした。",
-  "workspace_conversation_messageUnavailable_description": "この会話ではリンク先のメッセージを開けませんでした。"
+  "workspace_conversation_messageUnavailable_description": "この会話ではリンク先のメッセージを開けませんでした。",
+  "react_workspace_messageLink_copy_label": "メッセージのリンクをコピー",
+  "react_workspace_messageLink_copied_label": "メッセージのリンクをコピーしました",
+  "react_workspace_messageLink_failed_description": "コピーできませんでした。もう一度リンクをコピーしてください。",
+  "react_workspace_messageLink_pending_label": "メッセージのリンクをコピー中…"
 }

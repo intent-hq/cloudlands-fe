@@ -7611,5 +7611,9 @@
   "workspace_quickSwitcher_search_ariaLabel": "搜索工作区和对话",
   "workspace_quickSwitcher_search_placeholder": "按名称或 ID 搜索…",
   "workspace_quickSwitcher_conversationsError_error": "无法加载对话。",
-  "workspace_conversation_messageUnavailable_description": "无法在此对话中打开链接的消息。"
+  "workspace_conversation_messageUnavailable_description": "无法在此对话中打开链接的消息。",
+  "react_workspace_messageLink_copy_label": "复制消息链接",
+  "react_workspace_messageLink_copied_label": "消息链接已复制",
+  "react_workspace_messageLink_failed_description": "无法复制。请再次点击复制消息链接。",
+  "react_workspace_messageLink_pending_label": "正在复制消息链接…"
 }

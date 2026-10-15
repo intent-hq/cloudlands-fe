@@ -7611,5 +7611,9 @@
   "workspace_quickSwitcher_search_ariaLabel": "Arbeitsbereiche und Gespräche suchen",
   "workspace_quickSwitcher_search_placeholder": "Nach Name oder ID suchen…",
   "workspace_quickSwitcher_conversationsError_error": "Gespräche konnten nicht geladen werden.",
-  "workspace_conversation_messageUnavailable_description": "Die verlinkte Nachricht konnte in dieser Unterhaltung nicht geöffnet werden."
+  "workspace_conversation_messageUnavailable_description": "Die verlinkte Nachricht konnte in dieser Unterhaltung nicht geöffnet werden.",
+  "react_workspace_messageLink_copy_label": "Nachrichtenlink kopieren",
+  "react_workspace_messageLink_copied_label": "Nachrichtenlink kopiert",
+  "react_workspace_messageLink_failed_description": "Kopieren fehlgeschlagen. Versuche es erneut mit „Nachrichtenlink kopieren“.",
+  "react_workspace_messageLink_pending_label": "Nachrichtenlink wird kopiert…"
 }

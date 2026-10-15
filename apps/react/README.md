@@ -433,6 +433,11 @@ guide is not promoted or published by this checkpoint.
 
 ## Links inside conversations (internal preview)
 
+Use **Copy message link** on a saved ordinary user or assistant message. The control
+confirms when the clipboard accepts the link; if copying fails, use it again to retry.
+Unsaved and provisional rows do not offer links. A link identifies the owning
+conversation and message, not the displayed sender.
+
 Open a message link inside a persisted conversation to focus its exact target.
 Browser Back returns to the message containing the link and restores its reading
 position. Bare URLs in user messages are clickable; explicit Markdown links and

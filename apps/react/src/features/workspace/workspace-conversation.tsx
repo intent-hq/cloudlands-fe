@@ -636,9 +636,45 @@ export function WorkspaceConversation({
                     const navigation = navigationFor(message.id);
                     return (
                       <WorkspaceConversationMessage
-                        key={message.id}
+                        key={`${authority}:${rootPath}:${agentId}:${message.id}`}
                         message={message}
                         workspaceId={workspaceId}
+                        ownerAgentId={agentId}
+                        canCopyLink={() => {
+                          if (
+                            liveLinkView.current !== linkView ||
+                            router.state.location.search.agent !== agentId ||
+                            !authority ||
+                            selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) !==
+                              authority ||
+                            selectWorkspaceById.select(store.state, workspaceId)?.worktreePath !==
+                              rootPath
+                          )
+                            return false;
+                          const owner = selectAgentSession.select(store.state, agentId);
+                          const currentChat = selectChatAgentState.select(store.state, agentId);
+                          if (
+                            owner?.workspaceId !== workspaceId ||
+                            owner.retiredAt ||
+                            currentChat.trackedWorkspaceId !== workspaceId ||
+                            currentChat.transcriptHydration !== 'settled'
+                          )
+                            return false;
+                          const row =
+                            owner.messages.find((row) => row.id === message.id) ??
+                            selectAgentHistoryMessages
+                              .select(store.state, agentId)
+                              .find((row) => row.id === message.id);
+                          return (
+                            !!row &&
+                            row.role === message.role &&
+                            row.metadata === message.metadata &&
+                            row.seq === message.seq &&
+                            Number.isSafeInteger(row.seq) &&
+                            row.seq! >= 0 &&
+                            !row.provisional
+                          );
+                        }}
                         navigation={navigation}
                         onOpenAgent={(id, agent) => open(id, { agent })}
                         renderContent={(blocks) => (

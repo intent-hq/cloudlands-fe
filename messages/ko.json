@@ -7611,5 +7611,9 @@
   "workspace_quickSwitcher_search_ariaLabel": "워크스페이스 및 대화 검색",
   "workspace_quickSwitcher_search_placeholder": "이름 또는 ID로 검색…",
   "workspace_quickSwitcher_conversationsError_error": "대화를 불러오지 못했습니다.",
-  "workspace_conversation_messageUnavailable_description": "이 대화에서 링크된 메시지를 열 수 없습니다."
+  "workspace_conversation_messageUnavailable_description": "이 대화에서 링크된 메시지를 열 수 없습니다.",
+  "react_workspace_messageLink_copy_label": "메시지 링크 복사",
+  "react_workspace_messageLink_copied_label": "메시지 링크 복사됨",
+  "react_workspace_messageLink_failed_description": "복사하지 못했습니다. 메시지 링크 복사를 다시 눌러 주세요.",
+  "react_workspace_messageLink_pending_label": "메시지 링크 복사 중…"
 }

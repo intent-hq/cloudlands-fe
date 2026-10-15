@@ -15,6 +15,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceMessageLink } from './workspace-message-link';
 
 type Navigation = Pick<
   MarkdownViewerProps,
@@ -25,12 +26,16 @@ type Navigation = Pick<
 export function WorkspaceConversationMessage({
   message,
   workspaceId,
+  ownerAgentId,
+  canCopyLink,
   navigation,
   onOpenAgent,
   renderContent,
 }: {
   message: AgentMessage;
   workspaceId: string;
+  ownerAgentId?: string;
+  canCopyLink?: () => boolean;
   navigation: Navigation;
   onOpenAgent: (workspaceId: string, agentId: string) => void;
   renderContent: (blocks: ContentBlock[]) => ReactNode;
@@ -138,6 +143,23 @@ export function WorkspaceConversationMessage({
           {renderContent(message.contentBlocks ?? [])}
         </>
       )}
+      {!eventWake &&
+        !candidate &&
+        !wake &&
+        ownerAgentId &&
+        canCopyLink &&
+        (message.role === 'user' || message.role === 'assistant') &&
+        Number.isSafeInteger(message.seq) &&
+        message.seq! >= 0 &&
+        !message.provisional && (
+          <WorkspaceMessageLink
+            key={`${workspaceId}:${ownerAgentId}:${message.id}`}
+            workspaceId={workspaceId}
+            agentId={ownerAgentId}
+            messageId={message.id}
+            isCurrent={canCopyLink}
+          />
+        )}
       <ConversationTurnGap
         currentIsEventNotification={eventWake || message.role === 'system'}
         currentHasAssistantMessages={message.role === 'assistant'}
