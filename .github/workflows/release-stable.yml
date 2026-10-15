@@ -106,8 +106,12 @@ jobs:
             exit 0
           fi
 
-          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
+          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-arm64-mac.yml"
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
+          if [ "$HTTP_CODE" = "404" ]; then
+            BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
+            HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
+          fi
           if [ "$HTTP_CODE" = "200" ]; then
             BETA_VERSION=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/beta-latest-mac.yml" | tr -d '\r')
             if [ -z "$BETA_VERSION" ]; then
@@ -141,11 +145,15 @@ jobs:
       - name: Read current stable version
         id: stable_version
         run: |
-          # Attempt to fetch latest-mac.yml from stable; tolerate 404 (first promotion)
-          STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
+          # Read the advancing ARM feed (legacy fallback below) from stable; tolerate 404 (first promotion)
+          STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-arm64-mac.yml"
           PREV_STABLE=""
 
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/stable-latest-mac.yml" "$STABLE_YML_URL")
+          if [ "$HTTP_CODE" = "404" ]; then
+            STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
+            HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/stable-latest-mac.yml" "$STABLE_YML_URL")
+          fi
           if [ "$HTTP_CODE" = "200" ]; then
             PREV_STABLE=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/stable-latest-mac.yml" | tr -d '\r')
             if [ -z "$PREV_STABLE" ]; then
@@ -264,6 +272,31 @@ jobs:
           echo "Downloaded assets:"
           ls -lh
 
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+
+      - name: Setup publication pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+
+      - name: Setup publication Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install feed dependencies
+        working-directory: .release-tools
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
+
+      - name: Prepare architecture-safe Mac channel feeds
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "$RUNNER_TEMP/release-assets" stable
+
       - name: Ensure stable release exists
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -292,7 +325,7 @@ jobs:
           # Auto-updater feed files, one per platform. latest-mac.yml is
           # required; the others are promoted when present so older mac-only
           # releases can still be promoted.
-          FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
+          FEED_FILES=(latest-mac.yml latest-arm64-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
 
           if [ ! -f "latest-mac.yml" ]; then
             echo "::error::Missing required latest-mac.yml"
@@ -398,10 +431,17 @@ jobs:
           for feed in "${FEEDS[@]}"; do
             echo "Verifying $feed"
 
-            # Fetch versioned release feed digest
-            VERSIONED_SHA=$(feed_hash "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}") || VERSIONED_SHA=""
+            # Verify the prepared publication feed digest
+            # The legacy Mac feed can retain this destination channel's older
+            # compatible release. Compare against the exact prepared feed.
+            if [ -f "$RUNNER_TEMP/release-assets/$feed" ]; then
+              VERSIONED_SHA=$(cat "$RUNNER_TEMP/release-assets/$feed")
+              VERSIONED_SHA=$(printf '%s' "$VERSIONED_SHA" | sha512sum | awk '{print $1}')
+            else
+              VERSIONED_SHA=""
+            fi
             if [ -z "$VERSIONED_SHA" ]; then
-              echo "::error::Failed to fetch feed digest for $feed from versioned release v${VERSION}"
+              echo "::error::Missing prepared feed digest for $feed"
               exit 1
             fi
 
@@ -424,7 +464,7 @@ jobs:
               fi
 
               if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
-                echo "✓ Stable $feed feed digest matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                echo "✓ Stable $feed feed digest matches prepared publication ($VERSIONED_SHA) [attempt $i]"
                 break
               else
                 echo "::warning::Retry $i/$MAX_RETRIES: $feed feed digest mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
@@ -763,7 +803,8 @@ jobs:
         run: |
           feed_platform() {
             case "$1" in
-              latest-mac.yml) echo "macOS" ;;
+              latest-mac.yml) echo "macOS (compatible release)" ;;
+              latest-arm64-mac.yml) echo "Apple Silicon macOS" ;;
               latest.yml) echo "Windows" ;;
               latest-linux.yml) echo "Linux x64" ;;
               latest-linux-arm64.yml) echo "Linux arm64" ;;

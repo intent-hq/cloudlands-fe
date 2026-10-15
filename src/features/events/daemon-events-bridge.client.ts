@@ -1,3 +1,6 @@
+import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
+import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
 import type {
   AgentSessionUpdate,
@@ -22,7 +25,6 @@ import {
   isAgentReadWorkspaceCurrent,
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
-import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -227,11 +229,7 @@ import {
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
-import {
-  applyTaskStatusChanged,
-  invalidateWorkspaceTasks,
-  ensureWorkspaceTasksLoaded,
-} from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { applyTaskStatusChanged } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { changesEventReceived } from '$store/renderer/slices/changes/changes-slice';
 import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
@@ -254,6 +252,7 @@ import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-
 import {
   commentEventReceived,
   noteEventReceived,
+  noteMetadataPushed,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   ensureAgentSession,
@@ -420,15 +419,6 @@ const scopeCountedCreatedAgentIds = new Set<string>();
 const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored'>();
 
 let agentRefreshGeneration = 0;
-
-/**
- * Debounce timers for workspace-tasks refetch per workspace. Agents write
- * notes in bursts (spec edits, task-block conversion), so `note:*` events are
- * debounced ~1s per workspace before refetching `task.list` — mirroring the
- * changes-refresh pattern above.
- */
-const tasksRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
-const TASKS_REFRESH_DEBOUNCE_MS = 1000;
 
 function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   if (!event || typeof event !== 'object') return null;
@@ -2117,20 +2107,7 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
   });
 }
 
-/**
- * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
- * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
- * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
- * which fetches the fresh note via a targeted `notes.get(noteId, workspaceId)`
- * on `note:created`/`note:updated` and dispatches the matching `applyNote*`
- * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
- *
- * Task notes are plain notes (task state lives in note metadata), so these
- * events can also change the BE-owned `task.list` stats rollup without any
- * `task:status-changed` edge — e.g. a NEW task note appended to a workspace
- * whose stats showed `completed === total` left the sidebar stuck on
- * "Complete". Trigger a debounced workspace-tasks refetch as well.
- */
+/** Note metadata is pushed; only visible mounted body consumers read content. */
 function handleNoteEvent(
   event: WorkspaceEvent,
   workspaceId: string,
@@ -2139,32 +2116,17 @@ function handleNoteEvent(
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
+  const note = data?.note as Omit<Note, 'content'> | undefined;
+  if (note && String(note.id) === noteId && String(note.workspaceId) === workspaceId) {
+    appStore.dispatch(noteMetadataPushed(workspaceId, note));
+  }
   appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
-  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
- * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
- * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
- * aggregates and invalidate detailed task lists through the same path `note:*` uses.
- * The new task itself arrives with that refetch; the HUD feed row is rendered
- * off the HUD's own feed subscription.
- */
-function handleTaskCreatedEvent(workspaceId: string): void {
-  debouncedWorkspaceTasksRefresh(workspaceId);
-}
-
-/**
- * `task:status-changed` (§6.5) carries the self-sufficient payload
- * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
- * mints the FE-canonical status word (`not_started` | `in_progress` |
- * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
- * needed. Each reducer's own guard makes this a no-op if its workspace is not
- * initialized or the task/status is unknown/unchanged. The workspace-notes
- * dispatch mirrors the local write path in `tasks-write-service` — the
- * context sidebar renders its row icon from `note.metadata.task.status`, so
- * without it a status change from another client/agent stayed stale until
- * the note was opened (intent#4362).
+ * Current task metadata is authoritative over the legacy transition fields,
+ * which may describe an earlier commit than the attached note projection.
+ * Task rows converge through task:updated; older daemons use the status fallback.
  */
 function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2172,11 +2134,13 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const noteId = data.noteId;
   const newStatus = data.newStatus;
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
+  const note = data.note as Omit<Note, 'content'> | undefined;
+  if (note && String(note.id) === noteId && String(note.workspaceId) === workspaceId) {
+    appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    return;
+  }
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // Share the note-event debounce: one mutation can emit both events.
-  // The task row updates above remain immediate; the BE owns the rollup.
-  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -2599,8 +2563,7 @@ async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promis
 
 /**
  * Refresh daemon-owned workspace aggregates via the existing `workspace.get`
- * projection (§5.1). Agent deletion and task/note changes carry no replacement
- * rollups. `setWorkspaceEntity` updates HUD/card entities and seeds task stats
+ * projection (§5.1). Agent deletion carries no replacement agent summary. `setWorkspaceEntity` updates HUD/card entities and seeds task stats
  * for unloaded or stale lists without hydrating their detailed rows.
  * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
@@ -3488,31 +3451,6 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   }
 }
 
-/** Refresh aggregates independently; detailed task-list reads still require demand. */
-function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
-  appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
-  // Listed workspaces can show progress even when no chat task list is open.
-  // Reuse the aggregate read, targeting only the event's workspace, never a fan-out.
-  if (selectWorkspaceById.select(appStore.state, workspaceId)) {
-    void reconcileWorkspaceAggregates(workspaceId);
-  }
-  const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-  if (!entry?.demandIds.length) return;
-  const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
-  if (existing) {
-    clearTimeout(existing);
-  }
-  const timer = setTimeout(() => {
-    tasksRefreshTimersByWorkspace.delete(workspaceId);
-    // Re-check at fire time: the slice may have been cleared (workspace
-    // unmounted/deleted) during the debounce window.
-    const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-    if (!current?.demandIds.length) return;
-    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
-  }, TASKS_REFRESH_DEBOUNCE_MS);
-  tasksRefreshTimersByWorkspace.set(workspaceId, timer);
-}
-
 /**
  * Daemon-sent highlight ids may be legacy hash aliases (e.g.
  * `quickActions.defaultModel`); resolve them to the registry target id the
@@ -3827,6 +3765,24 @@ export function routeDaemonEventsNotification(
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
+  if (
+    (type.startsWith('note:') ||
+      type === 'task:updated' ||
+      type === 'workspace:task-stats-changed') &&
+    typeof event.id === 'string'
+  ) {
+    const key = JSON.stringify([
+      selectPrincipalConnectionContext.select(appStore.state),
+      workspaceId,
+      event.id,
+    ]);
+    if (seenNoteTaskEventIds.has(key)) return;
+    seenNoteTaskEventIds.add(key);
+    if (seenNoteTaskEventIds.size > 1024) {
+      const oldest = seenNoteTaskEventIds.values().next().value;
+      if (oldest) seenNoteTaskEventIds.delete(oldest);
+    }
+  }
   if ((type.startsWith('git:') || type.startsWith('changes:')) && typeof event.id === 'string') {
     const key = JSON.stringify([
       selectPrincipalConnectionContext.select(appStore.state),
@@ -4157,9 +4113,23 @@ export function routeDaemonEventsNotification(
   // task pane, inline comment thread, and workspace PR pill refresh without a
   // reload.
   if (type === 'task:created') {
-    handleTaskCreatedEvent(workspaceId);
-    // Side effect, never an early return: the activity timeline still records
-    // the creation via the `eventReceived` dispatch below.
+    const note = event.data?.note as Omit<Note, 'content'> | undefined;
+    if (note && String(note.workspaceId) === workspaceId) {
+      appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    }
+    // Retain the activity timeline entry below.
+  }
+  if (type === 'task:updated') {
+    const data = event.data as { tasks?: WorkspaceTask[]; removedIds?: string[] };
+    if (Array.isArray(data?.tasks) && Array.isArray(data?.removedIds)) {
+      appStore.dispatch(workspaceTasksPushed(workspaceId, data.tasks, data.removedIds));
+    }
+    return;
+  }
+  if (type === 'workspace:task-stats-changed') {
+    const data = event.data as { taskStats?: WorkspaceTaskStats };
+    if (data?.taskStats) appStore.dispatch(workspaceTaskStatsPushed(workspaceId, data.taskStats));
+    return;
   }
   if (type === 'task:status-changed') {
     handleTaskStatusChangedEvent(event, workspaceId);
@@ -4448,6 +4418,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // waiting flag transitions so waiting indicators update without a refetch.
   'workspace:waiting-changed',
   'workspace:updated',
+  'workspace:task-stats-changed',
   'workspace:created',
   'workspace:deleted',
   // Delete grace window (§5.1 `pendingDeleteAt`): schedule/cancel events keep the hidden
@@ -4627,10 +4598,12 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
   );
 }
 
+const seenNoteTaskEventIds = new Set<string>();
 const seenScriptEventIds = new Set<string>();
 const seenChangesEventIds = new Set<string>();
 
 export function disposeDaemonEventsRoutingState(): void {
+  seenNoteTaskEventIds.clear();
   seenScriptEventIds.clear();
   seenChangesEventIds.clear();
   agentRefreshGeneration += 1;
@@ -4639,10 +4612,7 @@ export function disposeDaemonEventsRoutingState(): void {
   previewTurnEndedMessageIdByAgent.clear();
   scopeCountedCreatedAgentIds.clear();
   lastAppliedRetireTransitionByAgent.clear();
-  for (const timer of tasksRefreshTimersByWorkspace.values()) {
-    clearTimeout(timer);
-  }
-  tasksRefreshTimersByWorkspace.clear();
+
   for (const timer of workspaceDeleteTombstoneTimers.values()) {
     clearTimeout(timer);
   }

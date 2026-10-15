@@ -110,9 +110,11 @@ jobs:
 
       # workflow_dispatch uses the workflow from the selected ref, but builds
       # the requested tag. Tags predating native Intel support retain their
-      # original ARM-only tools and single-feed publication path.
+      # original ARM-only packaging; publication tools prepare safe channel feeds.
       - name: Select Mac release targets
         id: macos
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
           INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
@@ -124,10 +126,26 @@ jobs:
           if [ "$FOUND" -eq 0 ]; then
             echo "dual_macos=false" >> "$GITHUB_OUTPUT"
             echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
-            echo "Historical ARM-only tag: retaining its packaging and update feed."
+            echo "Historical ARM-only tag: retaining its packaging."
           elif [ "$FOUND" -eq "${#TOOLS[@]}" ]; then
             echo "dual_macos=true" >> "$GITHUB_OUTPUT"
-            echo "matrix={\"include\":[$ARM,$INTEL]}" >> "$GITHUB_OUTPUT"
+            TARGETS="[$ARM]"
+            PIN=$(node --input-type=module -e "import {readFileSync} from 'node:fs'; import {parseVersionPin} from './scripts/fetch-sidecar-lib.mjs'; console.log(parseVersionPin(readFileSync('intentd.version','utf8')))")
+            # Probe the same immutable release used by fetch-sidecar.cjs.
+            # Lookup failure only disables optional Intel; required builds still
+            # fetch and checksum-verify their own pinned sidecars.
+            if gh release view "v$PIN" --repo intent-hq/intentd --json assets > "$RUNNER_TEMP/intel-sidecar-assets.json"; then
+              if node --input-type=module -e '
+                import {readFileSync} from "node:fs";
+                import {assetCandidates, checksumAssetName} from "./scripts/fetch-sidecar-lib.mjs";
+                const {assets} = JSON.parse(readFileSync(process.argv[1], "utf8"));
+                const available = new Set(assets.filter(a => a.size > 0).map(a => a.name));
+                process.exit(assetCandidates("x86_64-apple-darwin").some(name => available.has(name) && available.has(checksumAssetName(name))) ? 0 : 1);
+              ' "$RUNNER_TEMP/intel-sidecar-assets.json"; then
+                TARGETS="[$ARM,$INTEL]"
+              fi
+            fi
+            echo "matrix={\"include\":$TARGETS}" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Incomplete native Mac release tooling in the requested tag"
             exit 1
@@ -159,6 +177,7 @@ jobs:
   # sidecar, builds via the platform dist:* script, and uploads its
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
+    continue-on-error: ${{ matrix.arch == 'x64' }}
     needs: resolve
     name: macOS (${{ matrix.label }})
     strategy:
@@ -706,8 +725,8 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Single publish gate: it needs every build job, so a failed build on any
-  # platform fails the whole release and nothing is partially published.
+  # Required platforms block publication. The Intel matrix leg is optional;
+  # its artifacts are uploaded only after all build/sign/verification steps pass.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
     runs-on: depot-ubuntu-24.04
@@ -735,6 +754,12 @@ jobs:
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+
       # The tag commit exists on origin, so release notes can use its SHA with the
       # compare API
       - name: Capture fe SHA for release notes
@@ -747,7 +772,6 @@ jobs:
       # Feed assembly uses the updater's locked YAML and semver dependencies.
       # Ignore install hooks: publishing never rebuilds native app dependencies.
       - name: Setup pnpm
-        if: needs.resolve.outputs.dual_macos == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
@@ -758,7 +782,7 @@ jobs:
           node-version: '22'
 
       - name: Install feed assembly dependencies
-        if: needs.resolve.outputs.dual_macos == 'true'
+        working-directory: .release-tools
         run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
       - name: Read pinned intentd version
@@ -792,7 +816,12 @@ jobs:
         if: needs.resolve.outputs.dual_macos == 'true'
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
-        run: node scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
+        run: node .release-tools/scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
+
+      - name: Prepare architecture-safe Mac channel feeds
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs dist-electron alpha
 
       - name: Verify collected release assets
         run: |
@@ -800,7 +829,7 @@ jobs:
           ls -lh dist-electron/
           node scripts/validate-release-asset-names.mjs dist-electron
           MISSING=""
-          for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
+          for FEED in latest-mac.yml latest-arm64-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
             if [ ! -f "dist-electron/$FEED" ]; then
               MISSING="${MISSING:+$MISSING, }$FEED"
             fi
@@ -967,6 +996,7 @@ jobs:
             dist-electron/*.deb \
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml \
+            dist-electron/latest-arm64-mac.yml \
             dist-electron/latest.yml \
             dist-electron/latest-linux.yml \
             dist-electron/latest-linux-arm64.yml \
@@ -988,25 +1018,27 @@ jobs:
               --prerelease
           fi
 
-          # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
-          echo "Cleaning up old assets from rolling alpha release"
-          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
-            echo "Deleting old asset: $asset"
-            gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes || true
+          # Upload versioned payloads before switching either Mac feed. If any
+          # upload fails, the previous feeds still refer to available archives.
+          cd dist-electron
+          PAYLOADS=()
+          FEEDS=()
+          for file in *; do
+            case "$file" in
+              latest*.yml) FEEDS+=("$file") ;;
+              *) PAYLOADS+=("$file") ;;
+            esac
           done
-
-          # Upload new artifacts
-          gh release upload alpha --repo intent-hq/cloudlands-releases \
-            dist-electron/*.dmg \
-            dist-electron/*.zip \
-            dist-electron/*.exe \
-            dist-electron/*.AppImage \
-            dist-electron/*.deb \
-            dist-electron/*.blockmap \
-            dist-electron/latest-mac.yml \
-            dist-electron/latest.yml \
-            dist-electron/latest-linux.yml \
-            dist-electron/latest-linux-arm64.yml
+          gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${PAYLOADS[@]}"
+          gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${FEEDS[@]}"
+          # Retained legacy feeds use immutable URLs, so old rolling payloads
+          # can be removed only after every new feed was uploaded successfully.
+          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            if [ ! -f "$asset" ]; then
+              gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes
+            fi
+          done
+          cd ..
 
           # Update alpha release body to match versioned release notes
           gh release edit alpha --repo intent-hq/cloudlands-releases \

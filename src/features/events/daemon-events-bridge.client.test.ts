@@ -7116,281 +7116,28 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     );
   }
 
-  it('invalidates a previously loaded hidden list without reading it', async () => {
-    const workspaceId = 'ws-hidden-loaded-regression';
-    const { loadWorkspaceTasksSucceeded } =
-      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(workspaceId, [], {
-        total: 0,
-        completed: 0,
-        inProgress: 0,
-      }),
-    );
-    await primeBridge();
-    vi.useFakeTimers();
-    capturedHandlers[0]!(noteEnvelope(workspaceId, 'note:created', 'new-task'));
-    vi.advanceTimersByTime(2000);
-    expect(taskListCalls(workspaceId)).toHaveLength(0);
-    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId].stale).toBe(true);
-  });
-
-  it('note:created on an initialized workspace triggers a debounced task.list refetch and stores the fresh BE stats', async () => {
-    const TASKS_WS = 'ws-bridge-tasks-init';
-    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
-      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    // Seed an initialized workspace whose stats show completed === total —
-    // the stale-"Complete" precondition (a new task note arrives without any
-    // task:status-changed edge).
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(
-        TASKS_WS,
-        [{ id: 'task-1', title: 'Task 1', status: 'complete' }],
-        { total: 1, completed: 1, inProgress: 0 },
-      ),
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(TASKS_WS, 'visible-chat'));
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    // PROTOCOL §5.4-shaped task.list response: the new not_started task note
-    // exists on the BE, so the rollup no longer shows completed === total.
-    backendRequestSpy.mockImplementation((method: string) =>
-      method === 'task.list'
-        ? Promise.resolve({
-            tasks: [
-              { id: 'task-1', title: 'Task 1', status: 'complete' },
-              { id: 'task-2', title: 'Task 2', status: 'not_started' },
-            ],
-            stats: { total: 2, completed: 1, inProgress: 0 },
-          })
-        : undefined,
-    );
-
-    vi.useFakeTimers();
-    handler(noteEnvelope(TASKS_WS, 'note:created', 'task-2'));
-
-    // Debounced: no wire call before the ~1s window elapses.
-    expect(taskListCalls(TASKS_WS)).toHaveLength(0);
-
-    vi.advanceTimersByTime(1000);
-
-    // Exact wire request shape per PROTOCOL §5.4.
-    expect(taskListCalls(TASKS_WS)).toHaveLength(1);
-    expect(backendRequestSpy).toHaveBeenCalledWith('task.list', { workspaceId: TASKS_WS });
-
-    // Let the read-middleware's async fetch settle, then assert the slice
-    // stores the fresh BE-owned rollup — completed !== total, so the derived
-    // display status flips away from 'complete'.
-    vi.useRealTimers();
-    await flush();
-    const wsState = (
-      appStore.state as {
-        workspaceTasks: {
-          byWorkspaceId: Record<string, { stats: unknown; tasks: { length: number } }>;
-        };
-      }
-    ).workspaceTasks.byWorkspaceId[TASKS_WS];
-    expect(wsState.stats).toEqual({ total: 2, completed: 1, inProgress: 0 });
-  });
-
-  it('note events on a workspace whose tasks slice is not initialized do NOT trigger a task.list fetch', async () => {
-    const UNINIT_WS = 'ws-bridge-tasks-uninit';
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    vi.useFakeTimers();
-    handler(noteEnvelope(UNINIT_WS, 'note:updated', 'note-x'));
-    vi.advanceTimersByTime(2000);
-
-    expect(taskListCalls(UNINIT_WS)).toHaveLength(0);
-    // Events record stale state without eagerly loading a hidden workspace.
-    const wsState = (
-      appStore.state as { workspaceTasks: { byWorkspaceId: Record<string, unknown> } }
-    ).workspaceTasks.byWorkspaceId[UNINIT_WS];
-    expect(wsState).toMatchObject({ initialized: false, stale: true, loading: false });
-  });
-
-  it('drops a pending event refresh after the last visible consumer releases demand', async () => {
-    const workspaceId = 'ws-bridge-demand-release';
-    const {
-      loadWorkspaceTasksSucceeded,
-      acquireWorkspaceTasksDemand,
-      releaseWorkspaceTasksDemand,
-    } = await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(workspaceId, [], { total: 0, completed: 0, inProgress: 0 }),
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, 'chat'));
-    await primeBridge();
-    vi.useFakeTimers();
-    capturedHandlers[0]!(noteEnvelope(workspaceId, 'note:updated', 'task'));
-    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId].stale).toBe(true);
-    appStore.dispatch(releaseWorkspaceTasksDemand(workspaceId, 'chat'));
-    vi.advanceTimersByTime(2000);
-    expect(taskListCalls(workspaceId)).toHaveLength(0);
-    backendRequestSpy.mockImplementation((method: string) =>
-      method === 'task.list'
-        ? Promise.resolve({
-            tasks: [{ id: 'task', title: 'Changed task', status: 'not_started' }],
-            stats: { total: 1, completed: 0, inProgress: 0 },
-          })
-        : undefined,
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, 'return'));
-    expect(taskListCalls(workspaceId)).toEqual([['task.list', { workspaceId }]]);
-    vi.useRealTimers();
-    await flush();
-    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId]).toMatchObject({
-      stale: false,
-      stats: { total: 1, completed: 0, inProgress: 0 },
-    });
-  });
-
-  it('a burst of note events for the same workspace coalesces into a single task.list refetch', async () => {
-    const BURST_WS = 'ws-bridge-tasks-burst';
-    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
-      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(BURST_WS, [], { total: 0, completed: 0, inProgress: 0 }),
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(BURST_WS, 'visible-chat'));
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    backendRequestSpy.mockImplementation((method: string) =>
-      method === 'task.list'
-        ? Promise.resolve({ tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } })
-        : undefined,
-    );
-
-    vi.useFakeTimers();
-    const types = [
-      'note:created',
-      'note:updated',
-      'note:updated',
-      'note:deleted',
-      'note:updated',
-    ] as const;
-    for (let i = 0; i < types.length; i++) {
-      handler(noteEnvelope(BURST_WS, types[i], `note-${i}`));
-      vi.advanceTimersByTime(200); // less than the 1s debounce
-    }
-    vi.advanceTimersByTime(1000);
-
-    expect(taskListCalls(BURST_WS)).toHaveLength(1);
-  });
-
-  // monorepo#1732: #584 dropped the `task:created` arm, so the §6.5 edge that
-  // exists precisely so subscribers need not infer task-ness from a note
-  // payload no longer refreshed the BE-owned task.list rollup.
-  it('task:created on an initialized workspace triggers the debounced task.list refetch', async () => {
-    const CREATED_WS = 'ws-bridge-task-created';
-    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
-      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(CREATED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(CREATED_WS, 'visible-chat'));
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    backendRequestSpy.mockImplementation((method: string) =>
-      method === 'task.list'
-        ? Promise.resolve({
-            tasks: [{ id: 'task-new', title: 'New Task', status: 'not_started' }],
-            stats: { total: 1, completed: 0, inProgress: 0 },
-          })
-        : undefined,
-    );
-
-    vi.useFakeTimers();
-    // PROTOCOL §6.5 task:created payload.
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-task-created-1',
-          workspaceId: CREATED_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'task:created',
-          actor: { type: 'agent', id: AGENT },
-          data: {
-            noteId: 'task-new',
-            noteTitle: 'New Task',
-            status: 'not_started',
-            createdAt: '2026-01-02T00:00:00.000Z',
-          },
-        },
-      },
-    });
-
-    // Debounced: no wire call before the ~1s window elapses.
-    expect(taskListCalls(CREATED_WS)).toHaveLength(0);
-    vi.advanceTimersByTime(1000);
-
-    expect(taskListCalls(CREATED_WS)).toHaveLength(1);
-    expect(backendRequestSpy).toHaveBeenCalledWith('task.list', { workspaceId: CREATED_WS });
-
-    vi.useRealTimers();
-    await flush();
-    const wsState = (
-      appStore.state as {
-        workspaceTasks: { byWorkspaceId: Record<string, { stats: unknown }> };
-      }
-    ).workspaceTasks.byWorkspaceId[CREATED_WS];
-    expect(wsState.stats).toEqual({ total: 1, completed: 0, inProgress: 0 });
-  });
-
-  it('task:created on a workspace whose tasks slice is not initialized does NOT trigger a task.list fetch', async () => {
-    const UNINIT_WS = 'ws-bridge-task-created-uninit';
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    vi.useFakeTimers();
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-task-created-uninit',
-          workspaceId: UNINIT_WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'task:created',
-          actor: { type: 'agent', id: AGENT },
-          data: {
-            noteId: 'task-x',
-            noteTitle: 'X',
-            status: 'not_started',
-            createdAt: '2026-01-02T00:00:00.000Z',
-          },
-        },
-      },
-    });
-    vi.advanceTimersByTime(2000);
-
-    expect(taskListCalls(UNINIT_WS)).toHaveLength(0);
-  });
-
-  it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
-    const CLEARED_WS = 'ws-bridge-tasks-cleared';
-    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks, acquireWorkspaceTasksDemand } =
-      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
-    appStore.dispatch(
-      loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
-    );
-    appStore.dispatch(acquireWorkspaceTasksDemand(CLEARED_WS, 'visible-chat'));
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    vi.useFakeTimers();
-    handler(noteEnvelope(CLEARED_WS, 'note:deleted', 'note-y'));
-    // Workspace unmounted/deleted while the debounce is pending — the timer
-    // re-checks `initialized` at fire time and must not issue a task.list.
-    appStore.dispatch(clearWorkspaceTasks(CLEARED_WS));
-    vi.advanceTimersByTime(2000);
-
-    expect(taskListCalls(CLEARED_WS)).toHaveLength(0);
-  });
+  it.each(['note:created', 'note:updated', 'note:deleted', 'task:created', 'task:status-changed'])(
+    '%s never reads task lists or workspace statistics',
+    async (type) => {
+      const workspaceId = `ws-no-task-read-${type}`;
+      const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
+        await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+      appStore.dispatch(
+        loadWorkspaceTasksSucceeded(workspaceId, [], { total: 0, completed: 0, inProgress: 0 }),
+      );
+      appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, 'chat'));
+      await primeBridge();
+      backendRequestSpy.mockClear();
+      const envelope = noteEnvelope(workspaceId, 'note:updated', 'note');
+      envelope.params.event.type = type as never;
+      capturedHandlers[0]!(envelope);
+      await flush();
+      expect(taskListCalls(workspaceId)).toEqual([]);
+      expect(
+        backendRequestSpy.mock.calls.filter(([method]: [string]) => method === 'workspace.get'),
+      ).toEqual([]);
+    },
+  );
 });
 
 describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', () => {
@@ -11638,7 +11385,7 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
   });
 });
 
-describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refetch)', () => {
+describe('daemonEventsBridge (task:status-changed does not trigger task refetch)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -11654,7 +11401,7 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
 
   afterEach(() => vi.clearAllMocks());
 
-  it('task:status-changed debounces the initialized workspace task-list refetch', async () => {
+  it('task:status-changed leaves initialized task lists current without a refetch', async () => {
     const { loadWorkspaceTasksSucceeded, emptyWorkspaceTaskStats, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [], emptyWorkspaceTaskStats));
@@ -11683,7 +11430,7 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
 
     expect(dispatchSpy).not.toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
     await vi.advanceTimersByTimeAsync(2000);
-    expect(dispatchSpy).toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
+    expect(dispatchSpy).not.toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
     vi.useRealTimers();
 
     // Restore the getter to prevent leakage

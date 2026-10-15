@@ -8,7 +8,7 @@ import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-pro
 /** CI-only caller: observes original exported APIs; never starts or substitutes a daemon. */
 export async function inspectIsolatedTestPackage(
   app: Pick<App, 'getName' | 'getPath'>,
-  expected: { frontendSha: string; backendSha: string },
+  expected: { frontendSha: string; backendSha: string; protocolVersion?: string },
 ) {
   assert.ok(isIsolatedTestBuild(), 'Packaged inspection requires the isolated test build');
   const profile = getIsolatedTestProfile();
@@ -24,6 +24,8 @@ export async function inspectIsolatedTestPackage(
   matchesBuild(BUILD_CONFIG.GIT_COMMIT_HASH, expected.frontendSha);
   assert.equal(profile.backendSha, expected.backendSha);
   assert.equal(BUILD_CONFIG.ISOLATED_TEST_BACKEND_SHA, expected.backendSha);
+  const protocolVersion = expected.protocolVersion ?? '14.0'; // protocol-version-ok: historical isolated packages
+  assert.ok(['14.0', '14.1'].includes(protocolVersion), 'Unsupported inspection protocol'); // protocol-version-ok: reviewed isolated contracts
   const client = getBackendClient();
   assert.equal(client.getStatus(), 'connected');
   const config = client.getConfig();
@@ -40,7 +42,7 @@ export async function inspectIsolatedTestPackage(
     };
   }>('client.hello');
   assert.ok(typeof hello?.clientId === 'string' && hello.clientId.length > 0);
-  assert.equal(hello.server?.protocolVersion, '14.0'); // protocol-version-ok: selected daemon package contract
+  assert.equal(hello.server?.protocolVersion, protocolVersion); // protocol-version-ok: selected daemon package contract
   assert.equal(hello.server?.locality, 'local');
   for (const capability of [
     'collaborationIdentity',

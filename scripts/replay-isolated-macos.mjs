@@ -20,6 +20,17 @@ export const MANUAL149 = Object.freeze({
   buildId: 'manual-38344567519-1',
 });
 
+export function replayVerificationArgs(dmg) {
+  return [
+    'scripts/verify-isolated-macos-package.mjs',
+    dmg,
+    'isolated-package-proof',
+    MANUAL149.backendSha,
+    MANUAL149.frontendSha,
+    '14.0',
+  ];
+}
+
 export function validateReplayMetadata(run, artifact, jobs, now = Date.now()) {
   const pin = MANUAL149;
   assert.equal(run.id, pin.run);
@@ -150,22 +161,12 @@ async function main() {
   const dmg = path.join(directory, 'package.dmg');
   extractSingleDmg(archive, dmg);
   assert.equal(fileDigest(dmg), MANUAL149.dmgSha256);
-  const result = spawnSync(
-    process.execPath,
-    [
-      'scripts/verify-isolated-macos-package.mjs',
-      dmg,
-      'isolated-package-proof',
-      MANUAL149.backendSha,
-      MANUAL149.frontendSha,
-    ],
-    {
-      stdio: 'inherit',
-      timeout: 15 * 60_000,
-      killSignal: 'SIGKILL',
-      env: { ...process.env, ISOLATED_REPLAY_BUILD_ID: MANUAL149.buildId },
-    },
-  );
+  const result = spawnSync(process.execPath, replayVerificationArgs(dmg), {
+    stdio: 'inherit',
+    timeout: 15 * 60_000,
+    killSignal: 'SIGKILL',
+    env: { ...process.env, ISOLATED_REPLAY_BUILD_ID: MANUAL149.buildId },
+  });
   assert.equal(result.error, undefined);
   assert.equal(result.signal, null);
   assert.equal(result.status, 0);

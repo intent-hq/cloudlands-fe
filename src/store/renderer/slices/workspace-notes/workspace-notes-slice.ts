@@ -1,3 +1,4 @@
+import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
@@ -43,6 +44,7 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   noteVersions: null,
   readyTasks: null,
   pendingContentByNoteId: {},
+  staleContentByNoteId: {},
   contentViews: createCollection('consumerId'),
   workspaceRoots: createCollection('consumerId'),
   presenceViews: createCollection('consumerId'),
@@ -86,6 +88,17 @@ export const applyNoteUpdated = createAction<[workspaceId: string, noteId: strin
 export const noteEventReceived = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/noteEventReceived');
+/** Body-free note.list projection carried by note events. */
+export const noteMetadataPushed = createAction<[workspaceId: string, note: Omit<Note, 'content'>]>(
+  'workspaceNotes/metadataPushed',
+);
+export const noteContentInvalidated = createAction<[workspaceId: string, noteId: string]>(
+  'workspaceNotes/noteContentInvalidated',
+);
+export const noteContentReadApplied = createAction<
+  [workspaceId: string, noteId: string, generation: number]
+>('workspaceNotes/noteContentReadApplied');
+
 export const refreshNoteFromEventRequested = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/refreshNoteFromEventRequested');
@@ -442,6 +455,88 @@ workspaceNotesReducer.with(
     });
   },
 );
+workspaceNotesReducer.with(
+  workspaceTasksPushed,
+  (state, { payload: [workspaceId, tasks, removedIds] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws) return state;
+    let notes = ws.notes;
+    for (const task of tasks) {
+      const note = getItem(notes, task.id as Note['id']);
+      if (!note) continue;
+      if (note.rev !== undefined && task.rev !== undefined && task.rev < note.rev) continue;
+      const metadata = {
+        ...note.metadata,
+        task: {
+          ...note.metadata?.task,
+          status: task.status,
+          dependsOn: task.dependsOn,
+          conflictsWith: task.conflictsWith,
+          unmetDependsOn: task.unmetDependsOn,
+        },
+      };
+      notes = updateItem(notes, {
+        id: note.id,
+        title: task.title,
+        metadata,
+        ...(task.rev !== undefined ? { rev: task.rev } : {}),
+      });
+    }
+    for (const id of removedIds) {
+      const note = getItem(notes, id as Note['id']);
+      if (!note?.metadata?.task) continue;
+      const { task: _task, ...metadata } = note.metadata;
+      notes = updateItem(notes, { id: note.id, metadata });
+    }
+    return notes === ws.notes
+      ? state
+      : setWorkspaceState(state, workspaceId, { ...ws, notes, notesVersion: ws.notesVersion + 1 });
+  },
+);
+workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, note] }) => {
+  if (note.workspaceId !== workspaceId) return state;
+  const ws = getWorkspaceState(state, workspaceId);
+  const existing = getItem(ws.notes, note.id);
+  if (existing?.rev !== undefined && note.rev !== undefined && note.rev < existing.rev)
+    return state;
+  const next = {
+    ...note,
+    content: existing?.content ?? '',
+    ...(existing && {
+      contentLength: existing.contentLength,
+      contentPreview: existing.contentPreview,
+    }),
+  };
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    notes: existing ? replaceItem(ws.notes, note.id, next) : addItem(ws.notes, next),
+    notesVersion: ws.notesVersion + 1,
+    // Metadata cannot establish that a newly discovered note has an empty body.
+    staleContentByNoteId: existing
+      ? ws.staleContentByNoteId
+      : { ...ws.staleContentByNoteId, [note.id]: 1 },
+  });
+});
+workspaceNotesReducer.with(noteContentInvalidated, (state, { payload: [workspaceId, noteId] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    staleContentByNoteId: {
+      ...ws.staleContentByNoteId,
+      [noteId]: (ws.staleContentByNoteId[noteId] ?? 0) + 1,
+    },
+  });
+});
+workspaceNotesReducer.with(
+  noteContentReadApplied,
+  (state, { payload: [workspaceId, noteId, generation] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    if ((ws.staleContentByNoteId[noteId] ?? 0) !== generation) return state;
+    const staleContentByNoteId = { ...ws.staleContentByNoteId };
+    delete staleContentByNoteId[noteId];
+    return setWorkspaceState(state, workspaceId, { ...ws, staleContentByNoteId });
+  },
+);
 workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, note] }) => {
   const workspaceState = state.byWorkspaceId[workspaceId];
   if (!workspaceState?.initialized) return state;
@@ -454,7 +549,7 @@ workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, no
 });
 workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
   const workspaceState = state.byWorkspaceId[workspaceId];
-  if (!workspaceState?.initialized) return state;
+  if (!workspaceState) return state;
 
   const notes = removeItem(workspaceState.notes, noteId as Note['id']);
   if (notes === workspaceState.notes) return state;
@@ -483,6 +578,9 @@ workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, no
     ...workspaceState,
     notes: upsertItem(workspaceState.notes, {
       ...note,
+      ...(workspaceState.pendingContentByNoteId[noteId] && existingNote
+        ? { content: existingNote.content }
+        : {}),
       id: existingNote?.id ?? (noteId as Note['id']),
     }),
     notesVersion: workspaceState.notesVersion + 1,

@@ -12,7 +12,8 @@ import { createPackageProbe } from './isolated-package-probe.mjs';
 import { createPackageDiagnostics } from './isolated-package-diagnostics.mjs';
 import { createIsolatedCliFixture } from './isolated-cli-fixture.mjs';
 
-const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
+const [dmg, output, backendSha, frontendSha, protocolVersion = '14.0'] = process.argv.slice(2);
+assert.ok(['14.0', '14.1'].includes(protocolVersion), 'Unsupported inspection protocol');
 assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
@@ -31,7 +32,14 @@ const command = (file, args) => {
   return result;
 };
 const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-const evidence = { dmgSha256: hash(dmg), backendSha, frontendSha, phases: [], passed: false };
+const evidence = {
+  dmgSha256: hash(dmg),
+  backendSha,
+  frontendSha,
+  protocolVersion,
+  phases: [],
+  passed: false,
+};
 const probe = createPackageProbe(output, evidence);
 const evaluatePackageMain = (app, callback, argument) =>
   probe.run('main-process inspection', () => evaluateMain(app, callback, argument));
@@ -129,7 +137,7 @@ async function inspect(app) {
       );
       return inspection.inspectIsolatedTestPackage(instance, expected);
     },
-    { frontendSha, backendSha },
+    { frontendSha, backendSha, protocolVersion },
   );
 }
 

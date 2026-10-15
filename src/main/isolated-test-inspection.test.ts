@@ -78,7 +78,8 @@ async function fixture() {
     request,
     isolated,
     getStatus,
-    inspect: () => inspectIsolatedTestPackage(app, { frontendSha, backendSha }),
+    inspect: (protocolVersion?: string) =>
+      inspectIsolatedTestPackage(app, { frontendSha, backendSha, protocolVersion }),
   };
 }
 
@@ -99,12 +100,39 @@ it('inspects the selected daemon contract through the original connected client'
   expect(f.request.mock.calls).toEqual([['client.hello'], ['system.status']]);
 });
 
-it.each(['13.3', '15.0', ''])('rejects an unexpected protocol %s', async (version) => {
+it.each(['14.0', '14.1'])('accepts exactly selected protocol %s', async (protocolVersion) => {
   const f = await fixture();
-  f.hello.server.protocolVersion = version;
-  await expect(f.inspect()).rejects.toThrow();
+  f.hello.server.protocolVersion = protocolVersion;
+  expect((await f.inspect(protocolVersion)).hello.server.protocolVersion).toBe(protocolVersion);
+  expect(f.request.mock.calls).toEqual([['client.hello'], ['system.status']]);
+});
+
+it.each([
+  ['14.0', '14.1'],
+  ['14.1', '14.0'],
+])('rejects protocol %s when selected source requires %s', async (actual, expected) => {
+  const f = await fixture();
+  f.hello.server.protocolVersion = actual;
+  await expect(f.inspect(expected)).rejects.toThrow();
   expect(f.request.mock.calls).toEqual([['client.hello']]);
 });
+
+it.each(['13.3', '14.2', '15.0', ''])('rejects unsupported expectation %s', async (version) => {
+  const f = await fixture();
+  f.hello.server.protocolVersion = version;
+  await expect(f.inspect(version)).rejects.toThrow('Unsupported inspection protocol');
+  expect(f.request).not.toHaveBeenCalled();
+});
+
+it.each(['13.3', '14.1', '14.2', '15.0', ''])(
+  'rejects an unexpected protocol %s',
+  async (version) => {
+    const f = await fixture();
+    f.hello.server.protocolVersion = version;
+    await expect(f.inspect()).rejects.toThrow();
+    expect(f.request.mock.calls).toEqual([['client.hello']]);
+  },
+);
 
 it.each([
   [

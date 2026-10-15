@@ -9,6 +9,7 @@ import {
   extractSingleDmg,
   fileDigest,
   MANUAL149,
+  replayVerificationArgs,
   validateReplayMetadata,
 } from './replay-isolated-macos.mjs';
 
@@ -177,3 +178,14 @@ for (const entries of [
     expect(() => extractSingleDmg(zip, destination)).toThrow();
     expect(fs.existsSync(destination)).toBe(false);
   });
+
+it('binds historical replay to its original identities and exact protocol', () => {
+  expect(replayVerificationArgs('/owned/package.dmg')).toEqual([
+    'scripts/verify-isolated-macos-package.mjs',
+    '/owned/package.dmg',
+    'isolated-package-proof',
+    MANUAL149.backendSha,
+    MANUAL149.frontendSha,
+    '14.0',
+  ]);
+});

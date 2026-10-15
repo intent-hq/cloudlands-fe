@@ -35,14 +35,12 @@ on:
         type: boolean
         default: false
       macos_arch:
-        description: 'Mac architectures: both, Apple Silicon (arm64), or Intel (x64)'
+        description: 'Manual Mac builds use Apple Silicon; Intel is release-only'
         required: false
         type: choice
-        default: both
+        default: arm64
         options:
-          - both
           - arm64
-          - x64
       smoke_macos:
         description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
         required: false
@@ -114,15 +112,11 @@ jobs:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","proof_runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","proof_runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
-          case "${MACOS_ARCH:-both}" in
-            both) TARGETS="[$ARM,$INTEL]" ;;
+          case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
-            x64) TARGETS="[$INTEL]" ;;
-            *) echo "::error::macos_arch must be both, arm64, or x64"; exit 1 ;;
+            *) echo "::error::Manual Mac builds support arm64 only; Intel is release-only"; exit 1 ;;
           esac
-          # Package inspection requires GitHub-hosted disposable Macs; build runners
-          # retain the canonical Depot migration. Prefer ARM when both are built.
+          # Package inspection requires a GitHub-hosted disposable Mac; builds use Depot.
           {
             echo "matrix={\"include\":$TARGETS}"
             echo "smoke_runner=$(jq -r '.[0].proof_runner' <<< "$TARGETS")"
@@ -190,6 +184,8 @@ jobs:
     if: ${{ !inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test) }}
     needs: [select-macos]
     name: macOS (${{ matrix.label }})
+    outputs:
+      isolated_protocol: ${{ steps.isolated_protocol.outputs.version }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
@@ -302,6 +298,16 @@ jobs:
           sha=$(git -C intentd-src rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      - name: Resolve isolated protocol from selected daemon source
+        if: ${{ inputs.isolated_test }}
+        id: isolated_protocol
+        env:
+          BACKEND_SHA: ${{ steps.intentd_sha.outputs.sha }}
+          BACKEND_REF: ${{ inputs.intentd_ref }}
+        run: |
+          test "$BACKEND_SHA" = "$BACKEND_REF"
+          node scripts/isolated-package-protocol.mjs intentd-src "$BACKEND_SHA" >> "$GITHUB_OUTPUT"
 
       # Bare `rustup toolchain install` inside intentd-src reads the channel
       # pinned by its rust-toolchain.toml, so the toolchain always matches the
@@ -1224,10 +1230,11 @@ jobs:
         env:
           BACKEND_SHA: ${{ inputs.intentd_ref }}
           FRONTEND_SHA: ${{ github.sha }}
+          EXPECTED_PROTOCOL: ${{ needs.build-macos.outputs.isolated_protocol }}
         run: |
           mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
           test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
-          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA" "$EXPECTED_PROTOCOL"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

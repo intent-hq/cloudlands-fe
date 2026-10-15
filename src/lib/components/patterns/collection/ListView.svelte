@@ -123,6 +123,22 @@
     if (activeIndex >= items.length) activeIndex = Math.max(0, items.length - 1);
   });
 
+  $effect(() => {
+    if (
+      !isVirtualized ||
+      !viewport ||
+      !content ||
+      !hover ||
+      visibleRows.length === 0 ||
+      typeof IntersectionObserver === 'undefined'
+    )
+      return;
+    const instance = hover;
+    const observer = new IntersectionObserver(() => instance.measure(), { root: viewport });
+    for (const row of content.querySelectorAll('[data-list-index]')) observer.observe(row);
+    return () => observer.disconnect();
+  });
+
   const registerRow: Action<HTMLElement, { store: ProximityHover | null; index: number }> = (
     node,
     options,

@@ -120,6 +120,17 @@ describe('Mac update feed assembly', () => {
     },
   );
 
+  it('validates an ARM-only feed and exposes no downloadable file to Intel', async () => {
+    const input = fixture();
+    const merged = await mergeMacUpdateFeeds({ arm64: input.arm64 });
+    expect(merged.files).toHaveLength(2);
+    await expect(validateMacUpdateFeed(input.arm64)).resolves.toMatchObject({ version: '2.191.0' });
+    const files = resolveFiles(merged, new URL('https://updates.example/'));
+    expect(MacUpdater.filterFilesForArch(files, false)).toEqual([]);
+    expect(
+      findFile(MacUpdater.filterFilesForArch(files, true), 'zip', ['pkg', 'dmg']).url.pathname,
+    ).toBe('/Intent-2.191.0-arm64-mac.zip');
+  });
   it('writes one feed before flattening and validates the final publish directory', async () => {
     const input = fixture();
     const output = join(input.root, 'publish', 'latest-mac.yml');
@@ -382,9 +393,9 @@ describe('Mac update feed assembly', () => {
     }
   });
 
-  it('rejects missing or repeated architecture inputs and single-architecture combined feeds', async () => {
+  it('rejects missing ARM or repeated architecture inputs and Intel-only feeds', async () => {
     const input = fixture();
-    await expect(mergeMacUpdateFeeds({ arm64: input.arm64 })).rejects.toThrow(/x64/);
+    await expect(mergeMacUpdateFeeds({ x64: input.x64 })).rejects.toThrow(/arm64/);
     await expect(mergeMacUpdateFeeds({ arm64: input.arm64, x64: input.arm64 })).rejects.toThrow(
       /distinct/,
     );

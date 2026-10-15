@@ -352,6 +352,7 @@ describe('daemonEventsSaga', () => {
       'workspace:attention-changed',
       'workspace:waiting-changed',
       'workspace:updated',
+      'workspace:task-stats-changed',
       'workspace:created',
       'workspace:deleted',
       'workspace:delete-scheduled',
