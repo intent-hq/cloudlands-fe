@@ -7524,5 +7524,13 @@
   "files_read_previewReadOnly_error": "此预览为只读。",
   "chat_inlinePermission_submitting_label": "正在发送决定…",
   "chat_inlinePermission_responseFailed_error": "无法确认决定。请选择一个选项重试。",
-  "react_providerSettings_scope_description": "此内部预览显示已配置的提供商，但不会更改其设置。请在桌面应用中配置提供商。模型和推理强度选择仅适用于此对话。"
+  "react_providerSettings_scope_description": "此内部预览显示已配置的提供商，但不会更改其设置。请在桌面应用中配置提供商。模型和推理强度选择仅适用于此对话。",
+  "workspace_localCreate_repository_label": "仓库文件夹",
+  "workspace_localCreate_baseRef_label": "基础分支或引用",
+  "workspace_localCreate_scope_description": "从现有本地 Git 仓库创建独立检出，不运行设置脚本。创建后可添加智能体。",
+  "workspace_localCreate_gitPending_description": "正在检查已连接主机上的 Git 可用性。",
+  "workspace_localCreate_uncertain_description": "创建可能已经完成。请恢复同一请求，避免创建另一个工作区。",
+  "workspace_localCreate_recover_label": "恢复创建",
+  "workspace_localCreate_draftSave_error": "无法保存创建请求。请在创建工作区前重试。",
+  "workspace_localCreate_receiptUnavailable_description": "工作区创建已暂停，等待检查已保存的请求。创建工作区前，请重试加载。"
 }

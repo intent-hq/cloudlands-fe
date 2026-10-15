@@ -89,6 +89,8 @@ vi.mock('../../../components/patterns/notify', () => ({
 }));
 
 const eventTypes = [
+  'git:clone:progress',
+  'git:clone:done',
   'settings:changed',
   'host:members-changed',
   'host:invites-changed',

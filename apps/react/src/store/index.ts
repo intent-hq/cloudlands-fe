@@ -1,3 +1,5 @@
+import { workspaceInitializerReducer } from '../../../../src/store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { workspaceCreateProgressReducer } from '../../../../src/store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import { transientUiReducer } from '../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
 import { agentQueueReducer } from '../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
 import { chatDraftsReducer } from '../../../../src/store/renderer/slices/chat-drafts/chat-drafts-slice';
@@ -48,6 +50,8 @@ import { gitReducer } from '../../../../src/store/renderer/slices/git/git-slice'
 import { filesReducer } from '../../../../src/store/renderer/slices/files/files-slice';
 
 export const store = new ReactStore({
+  workspaceInitializer: workspaceInitializerReducer,
+  workspaceCreateProgress: workspaceCreateProgressReducer,
   githubRepos: githubReposReducer,
   knownRepos: knownReposReducer,
   pendingSubmissions: pendingSubmissionsReducer,

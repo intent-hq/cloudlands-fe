@@ -7524,5 +7524,13 @@
   "files_read_previewReadOnly_error": "Esta es una vista previa de solo lectura.",
   "chat_inlinePermission_submitting_label": "Enviando decisión…",
   "chat_inlinePermission_responseFailed_error": "No se pudo confirmar la decisión. Elige una opción para reintentarlo.",
-  "react_providerSettings_scope_description": "Esta vista previa interna muestra los proveedores configurados sin cambiar sus ajustes. Configura los proveedores en la aplicación de escritorio. El modelo y el esfuerzo de razonamiento solo se aplican a esta conversación."
+  "react_providerSettings_scope_description": "Esta vista previa interna muestra los proveedores configurados sin cambiar sus ajustes. Configura los proveedores en la aplicación de escritorio. El modelo y el esfuerzo de razonamiento solo se aplican a esta conversación.",
+  "workspace_localCreate_repository_label": "Carpeta del repositorio",
+  "workspace_localCreate_baseRef_label": "Rama o referencia base",
+  "workspace_localCreate_scope_description": "Crea una copia aislada de un repositorio Git local existente sin ejecutar scripts de configuración. Añade un agente después de crearla.",
+  "workspace_localCreate_gitPending_description": "Comprobando la disponibilidad de Git en el host conectado.",
+  "workspace_localCreate_uncertain_description": "Es posible que la creación ya haya terminado. Recupera la misma solicitud para evitar crear otro espacio de trabajo.",
+  "workspace_localCreate_recover_label": "Recuperar creación",
+  "workspace_localCreate_draftSave_error": "No se pudo guardar la solicitud de creación. Inténtalo de nuevo antes de crear el espacio de trabajo.",
+  "workspace_localCreate_receiptUnavailable_description": "La creación del espacio de trabajo está pausada hasta comprobar la solicitud guardada. Vuelve a cargarla antes de crear un espacio de trabajo."
 }

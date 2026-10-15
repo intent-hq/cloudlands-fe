@@ -1,3 +1,4 @@
+import { workspaceInitializerSaga } from './store/workspace-initializer/sagas/workspace-initializer-saga';
 import { agentCreationSaga } from './store/workspace-agents/sagas/agent-creation-saga';
 import { chatCommandsSaga } from './store/chat-state/sagas/chat-commands-saga';
 import { StartClient } from '@tanstack/react-start/client';
@@ -30,6 +31,7 @@ const cancelAutoUpdateSaga = store.runSaga(autoUpdateSaga);
 const cancelUiLayoutPersistenceSaga = store.runSaga(uiLayoutPersistenceSaga);
 const cancelBackendConnectionSaga = store.runSaga(backendConnectionSaga);
 const disposeProviderRuntime = startProviderRuntime();
+const cancelWorkspaceInitializerSaga = store.runSaga(workspaceInitializerSaga);
 const cancelAgentCreationSaga = store.runSaga(agentCreationSaga);
 const cancelAgentMetadataSaga = store.runSaga(agentMetadataSaga);
 const cancelAgentModelSaga = store.runSaga(agentModelSaga);
@@ -69,6 +71,7 @@ function dispose() {
   cancelFilesReadSaga();
   cancelChatCommandsSaga();
   cancelReadOnlyChatSaga();
+  cancelWorkspaceInitializerSaga();
   disposeProviderRuntime();
   cancelBackendConnectionSaga();
   disposeStore();

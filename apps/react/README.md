@@ -12,14 +12,25 @@ Use the Node version in the root `package.json` `engines.node` range and the pin
 pnpm install --frozen-lockfile
 ```
 
-Start intentd separately, with a configured provider and an existing workspace.
+Start intentd separately with a configured provider. Have an existing local Git
+repository available on that daemon host, or use a workspace already listed there.
 From the repository root, the single frontend startup command is:
 
 ```sh
 INTENT_DEV_DAEMON_BRIDGE=1 pnpm --filter @intent/react dev
 ```
 
-Open the printed loopback URL at `/workspaces`, select a workspace, and open **Agents**.
+Open the printed loopback URL at `/workspaces`. Choose **New workspace**, select or
+enter an existing local repository folder, and enter its base branch or ref. The
+preview creates an isolated checkout without running the repository’s setup script.
+It waits for the saved creation request before submitting; repeated activation does
+not issue another request. If the outcome is uncertain, **Recover creation** reuses
+the same request key. Closing the form cannot undo a workspace already created by
+the daemon. Local repository creation currently requires host-owner access; GitHub
+cloning, new-repository initialization and the full desktop initializer are outside
+this preview.
+
+After creation, or after selecting a listed workspace, open **Agents**.
 Choose an existing agent or **Create new agent**, including when the list is empty.
 Creation uses the workspace's configured default provider and model, waits for its
 catalog, and opens only the agent ID returned by the daemon. The control stays
@@ -99,7 +110,11 @@ These tests require the same owned-daemon guards. The companion
 corroborates exactly one created agent and its configured provider/model, sends the
 first message, checks genuine streaming and persisted IDs, then verifies reload,
 list navigation and subscription cleanup at desktop and narrow widths. Unit policy
-tests are separate from provider acceptance.
+tests are separate from provider acceptance. `workspace-local-create.extended.spec.mjs`
+starts at Home with an authored disposable local repository, checks the actual
+isolated checkout and base commit, then exercises new-agent/first-message creation,
+reload, listing and cleanup. Its second case covers retained input and an invalid
+base followed by a definite retry. It has the same owned-daemon mutation guard.
 
 `workspace-permission-decision.extended.spec.mjs` additionally requires an exact
 hash of a genuine, inspected, already-pending non-writing plan request and explicit

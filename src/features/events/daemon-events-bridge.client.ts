@@ -1,3 +1,4 @@
+import { handleCloneProgressEvent } from './daemon-workspace-create-progress';
 import { routeAuthorityEvent } from './daemon-authority-events';
 import {
   admittedDaemonEvent,
@@ -277,10 +278,6 @@ import {
 import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
 import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
 import { isPresenceRoster } from '$shared/types/presence';
-import {
-  workspaceCreateProgressDone,
-  workspaceCreateProgressReceived,
-} from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import { safeParseTokenUsage } from '$features/token-usage/token-usage-schema';
 import { hydrateContextItems } from '$store/renderer/slices/context/context-slice';
 import type { ContextItem } from '$features/context/types';
@@ -1810,43 +1807,6 @@ function handleContextChangedEvent(event: WorkspaceEvent): void {
     );
   });
   appStore.dispatch(hydrateContextItems(workspaceId, filtered));
-}
-
-/**
- * `git:clone:progress` / `git:clone:done` (§5.1 / §6.5) — provisioning
- * progress for an in-flight `workspace.create` that carried an FE-minted
- * `progressId`, echoed back on `data.progressId`. Correlation is by
- * progressId only (the envelope `workspaceId` is server-minted mid-create and
- * unknown to the FE until the RPC returns, and standalone `git.clone` frames
- * carry an empty one), so these route BEFORE the workspace-id gate. Frames
- * without a `progressId` (plain `git.clone`, older daemons) are left for the
- * requestId-correlated legacy consumers.
- */
-function handleCloneProgressEvent(event: WorkspaceEvent, type: string): boolean {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  const progressId = data?.progressId;
-  if (typeof progressId !== 'string' || progressId.length === 0) return false;
-  if (type === 'git:clone:progress') {
-    const phase = data?.phase;
-    const percent = data?.percent;
-    if (typeof phase !== 'string' || typeof percent !== 'number') return true;
-    appStore.dispatch(
-      workspaceCreateProgressReceived(progressId, {
-        phase,
-        percent,
-        message: typeof data?.message === 'string' ? data.message : undefined,
-      }),
-    );
-    return true;
-  }
-  appStore.dispatch(
-    workspaceCreateProgressDone(progressId, {
-      ok: data?.ok === true,
-      error: typeof data?.error === 'string' ? data.error : undefined,
-      errorCode: typeof data?.errorCode === 'string' ? data.errorCode : undefined,
-    }),
-  );
-  return true;
 }
 
 /**
@@ -3607,7 +3567,7 @@ export function routeDaemonEventsNotification(
   // the legacy requestId-correlated consumers below.
   if (
     (type === 'git:clone:progress' || type === 'git:clone:done') &&
-    handleCloneProgressEvent(event, type)
+    handleCloneProgressEvent(event, type, appStore.dispatch)
   ) {
     return;
   }

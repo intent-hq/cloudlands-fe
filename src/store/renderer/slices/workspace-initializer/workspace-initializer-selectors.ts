@@ -1,4 +1,11 @@
 import {
+  getWorkspaceInitializerPersistedState,
+  getWorkspaceInitializerLocalCreation,
+  getWorkspaceInitializerReceiptContext,
+  getWorkspaceInitializerGitCheckContext,
+  getWorkspaceInitializerGitAvailability,
+} from './workspace-initializer-projections';
+import {
   selectCanCreateWorkspace,
   selectPrincipalActionContext,
 } from '../principal/principal-selectors';
@@ -69,17 +76,30 @@ export const selectNewWorkspaceDefaultSpecialist = store.createSelector((state):
   }),
 );
 
-/** A probe is requested on mount and renewed after connection/identity admission changes. */
-export const selectWorkspaceInitializerGitCheckContext = store.createSelector((state) => {
-  const request = state.workspaceInitializer.gitCheckRequest;
-  const context = selectPrincipalActionContext.select(state);
-  return request && context && selectCanCreateWorkspace.select(state)
-    ? JSON.stringify([context, request])
-    : null;
-});
+export const selectWorkspaceInitializerPersistedState = store.createSelector(
+  getWorkspaceInitializerPersistedState,
+);
 
-export const selectWorkspaceInitializerGitAvailability = store.createSelector((state) => {
-  const context = selectWorkspaceInitializerGitCheckContext.select(state);
-  const result = state.workspaceInitializer.gitCheck;
-  return context && result?.context === context ? result.available : null;
-});
+/** A probe is requested on mount and renewed after connection/identity admission changes. */
+export const selectWorkspaceInitializerGitCheckContext = store.createSelector((state) =>
+  getWorkspaceInitializerGitCheckContext(
+    state,
+    selectPrincipalActionContext.select(state),
+    selectCanCreateWorkspace.select(state),
+  ),
+);
+
+export const selectWorkspaceInitializerGitAvailability = store.createSelector((state) =>
+  getWorkspaceInitializerGitAvailability(
+    state,
+    selectWorkspaceInitializerGitCheckContext.select(state),
+  ),
+);
+
+export const selectWorkspaceInitializerLocalCreation = store.createSelector(
+  getWorkspaceInitializerLocalCreation,
+);
+
+export const selectWorkspaceInitializerReceiptContext = store.createSelector(
+  getWorkspaceInitializerReceiptContext,
+);

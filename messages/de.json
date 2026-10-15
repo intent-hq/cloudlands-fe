@@ -7524,5 +7524,13 @@
   "files_read_previewReadOnly_error": "Dies ist eine schreibgeschützte Vorschau.",
   "chat_inlinePermission_submitting_label": "Entscheidung wird gesendet…",
   "chat_inlinePermission_responseFailed_error": "Die Entscheidung konnte nicht bestätigt werden. Wählen Sie eine Option, um es erneut zu versuchen.",
-  "react_providerSettings_scope_description": "Diese interne Vorschau zeigt konfigurierte Anbieter, ohne deren Einstellungen zu ändern. Konfiguriere Anbieter in der Desktop-App. Modell und Denkaufwand gelten nur für diese Unterhaltung."
+  "react_providerSettings_scope_description": "Diese interne Vorschau zeigt konfigurierte Anbieter, ohne deren Einstellungen zu ändern. Konfiguriere Anbieter in der Desktop-App. Modell und Denkaufwand gelten nur für diese Unterhaltung.",
+  "workspace_localCreate_repository_label": "Repository-Ordner",
+  "workspace_localCreate_baseRef_label": "Basisbranch oder Referenz",
+  "workspace_localCreate_scope_description": "Erstellen Sie einen isolierten Checkout eines vorhandenen lokalen Git-Repositorys, ohne Einrichtungsskripte auszuführen. Fügen Sie danach einen Agenten hinzu.",
+  "workspace_localCreate_gitPending_description": "Git-Verfügbarkeit auf dem verbundenen Host wird geprüft.",
+  "workspace_localCreate_uncertain_description": "Die Erstellung wurde möglicherweise bereits abgeschlossen. Stellen Sie dieselbe Anfrage wieder her, um keinen weiteren Arbeitsbereich zu erstellen.",
+  "workspace_localCreate_recover_label": "Erstellung wiederherstellen",
+  "workspace_localCreate_draftSave_error": "Die Erstellungsanfrage konnte nicht gespeichert werden. Versuchen Sie es vor der Erstellung erneut.",
+  "workspace_localCreate_receiptUnavailable_description": "Die Workspace-Erstellung ist angehalten, bis die gespeicherte Anfrage geprüft werden kann. Laden Sie sie erneut, bevor Sie einen Workspace erstellen."
 }

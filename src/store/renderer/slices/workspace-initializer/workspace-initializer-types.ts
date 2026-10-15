@@ -106,6 +106,9 @@ export interface WorkspaceInitializerPendingGitHubPrefill {
 }
 
 export interface WorkspaceInitializerHydrationState {
+  /** Transient acknowledgement of the admitted settings read, never persisted. */
+  localReceiptContext?: string | null;
+  localCreation?: WorkspaceLocalCreation | null;
   compactFormState?: CompactWorkspaceInitializerFormState | null;
   onboardingFormState?: WorkspaceInitializerOnboardingFormState | null;
   lastSelectedRepo?: WorkspaceInitializerRepoSelection | null;
@@ -118,6 +121,9 @@ export interface WorkspaceInitializerHydrationState {
 }
 
 export interface WorkspaceInitializerState {
+  localReceiptContext: string | null;
+  localConsumer: { id: string; context: string } | null;
+  localCreation: WorkspaceLocalCreation | null;
   /** Transient probe lifetime; never part of the persisted form bag. */
   gitCheckRequest: number;
   gitCheck: { context: string; available: boolean | 'unknown' } | null;
@@ -135,4 +141,15 @@ export interface WorkspaceInitializerState {
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
   pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
+}
+
+/** A retained local-create receipt, not a workspace entity or an authority grant. */
+export interface WorkspaceLocalCreation {
+  id: string;
+  authority: string;
+  repositoryPath: string;
+  baseRef: string;
+  status: 'pending' | 'uncertain' | 'failure' | 'success';
+  error?: string;
+  workspaceId?: string;
 }

@@ -1,3 +1,4 @@
+import { createWorkspaceWithAdmission } from './workspace-create-client';
 import type {
   Workspace,
   WorkspaceId,
@@ -368,33 +369,9 @@ export function createWorkspaceDomainClientRuntime({
       logger.info(
         `[WorkspaceClient] create called: title=${request.title}, hasInitialAgent=${!!ia}, specialist=${ia?.specialist}, model=${ia?.model}, keys=${ia ? Object.keys(ia).join(',') : 'none'}`,
       );
-      const isCurrent = captureMutation();
-      if (!isCurrent()) return authorityFailure();
-      const result = await workspaces.create(request);
-      if (!isCurrent()) return authorityFailure();
-      logger.info('[WorkspaceClient] create result', {
-        success: result.success,
-        scope: request.scope,
-        initialAgentId: result.success ? result.initialAgent?.id : undefined,
-        error: result.success ? undefined : result.error,
-      });
-      if (result.success && result.workspace) {
-        // Clear list cache so the newly created workspace is visible on the next
-        // read (the daemon also emits `workspace:created`, but callers awaiting
-        // this promise should not observe stale list snapshots).
-        this.clearCache();
-        return {
-          ok: true,
-          data: {
-            workspace: normalizeWorkspacePaths(result.workspace),
-            initialAgent: result.initialAgent,
-          },
-        };
-      }
-      const createError = result.error || m.workspace_client_createFailed_error();
-      return result.errorCode
-        ? { ok: false, error: createError, errorCode: result.errorCode }
-        : { ok: false, error: createError };
+      const result = await createWorkspaceWithAdmission({ store, workspaces }, request);
+      if (result.ok) this.clearCache();
+      return result;
     }
 
     async open(id: WorkspaceId): Promise<Result<Workspace, string>> {

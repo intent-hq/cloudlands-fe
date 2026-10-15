@@ -1,3 +1,4 @@
+import { getHostAdministrationContext } from '../../principal/principal-projections';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -67,6 +68,7 @@ function populatedState() {
     workspaceInitializer: {
       ...initialState,
       hydrated: true,
+      localReceiptContext: getHostAdministrationContext(withLegacyPrincipal({})),
       compactFormState: { repoPath: '/compact' },
       onboardingFormState: {
         projectSelection: { type: 'local' as const, repoPath: '/draft' },
@@ -141,6 +143,8 @@ describe('workspaceInitializerSaga', () => {
     expect(dispatch.mock.calls).toEqual([
       [
         hydrateWorkspaceInitializer({
+          localCreation: null,
+          localReceiptContext: getHostAdministrationContext(withLegacyPrincipal({})),
           compactFormState: { repoPath: '/compact' },
           onboardingFormState: { projectSelection: null, step: 'project' },
           lastSelectedRepo: { path: '/repo', type: 'local' },
@@ -174,6 +178,7 @@ describe('workspaceInitializerSaga', () => {
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
     const migrated: WorkspaceInitializerHydrationState = {
+      localCreation: null,
       compactFormState: { repoPath: '/compact' },
       onboardingFormState: { projectSelection: null, step: 'project' },
       lastSelectedRepo: { path: '/repo', type: 'local' },
@@ -184,7 +189,14 @@ describe('workspaceInitializerSaga', () => {
       lastSubmittedAgent: { selectedModel: 'sonnet' },
     };
 
-    expect(dispatch.mock.calls).toEqual([[hydrateWorkspaceInitializer(migrated)]]);
+    expect(dispatch.mock.calls).toEqual([
+      [
+        hydrateWorkspaceInitializer({
+          ...migrated,
+          localReceiptContext: getHostAdministrationContext(withLegacyPrincipal({})),
+        }),
+      ],
+    ]);
     expect(mocks.update.mock.calls).toEqual([
       [[{ path: 'workspaceInitializer.state', value: migrated }]],
     ]);
@@ -201,6 +213,7 @@ describe('workspaceInitializerSaga', () => {
     expect(dispatch.mock.calls).toEqual([
       [
         hydrateWorkspaceInitializer({
+          localReceiptContext: null,
           compactFormState: null,
           onboardingFormState: null,
           lastSelectedRepo: null,
@@ -225,6 +238,7 @@ describe('workspaceInitializerSaga', () => {
           {
             path: 'workspaceInitializer.state',
             value: {
+              localCreation: null,
               compactFormState: { repoPath: '/compact' },
               onboardingFormState: {
                 projectSelection: { type: 'local', repoPath: '/draft' },
@@ -279,6 +293,7 @@ describe('workspaceInitializerSaga', () => {
           {
             path: 'workspaceInitializer.state',
             value: {
+              localCreation: null,
               compactFormState: { repoPath: '/compact' },
               onboardingFormState: {
                 projectSelection: { type: 'local', repoPath: '/draft' },
@@ -343,6 +358,7 @@ describe('workspaceInitializerSaga', () => {
         workspaceInitializer: {
           ...initialState,
           hydrated: true,
+          localReceiptContext: getHostAdministrationContext(withLegacyPrincipal({})),
           compactFormState: agent,
           lastSubmittedAgent: agent,
         },
@@ -409,6 +425,7 @@ describe('workspaceInitializerSaga', () => {
           {
             path: 'workspaceInitializer.state',
             value: {
+              localCreation: null,
               compactFormState: null,
               onboardingFormState: null,
               lastSelectedRepo: { path: '/daemon', type: 'local' },
@@ -700,6 +717,7 @@ describe('workspaceInitializerSaga', () => {
           {
             path: 'workspaceInitializer.state',
             value: {
+              localCreation: null,
               compactFormState: null,
               onboardingFormState: {
                 projectSelection: { type: 'local', repoPath: '/latest' },
@@ -773,6 +791,7 @@ describe('workspaceInitializerSaga', () => {
           {
             path: 'workspaceInitializer.state',
             value: {
+              localCreation: null,
               compactFormState: null,
               onboardingFormState: null,
               lastSelectedRepo: { path: '/repo', type: 'local' },

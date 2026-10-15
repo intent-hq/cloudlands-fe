@@ -7524,5 +7524,13 @@
   "files_read_previewReadOnly_error": "これは読み取り専用のプレビューです。",
   "chat_inlinePermission_submitting_label": "選択を送信中…",
   "chat_inlinePermission_responseFailed_error": "選択を確認できませんでした。もう一度オプションを選んでください。",
-  "react_providerSettings_scope_description": "この内部プレビューでは、設定を変更せずに構成済みのプロバイダーを表示します。プロバイダーの設定はデスクトップアプリで行ってください。モデルと思考の深さの選択は、この会話にのみ適用されます。"
+  "react_providerSettings_scope_description": "この内部プレビューでは、設定を変更せずに構成済みのプロバイダーを表示します。プロバイダーの設定はデスクトップアプリで行ってください。モデルと思考の深さの選択は、この会話にのみ適用されます。",
+  "workspace_localCreate_repository_label": "リポジトリのフォルダー",
+  "workspace_localCreate_baseRef_label": "ベースブランチまたは参照",
+  "workspace_localCreate_scope_description": "セットアップスクリプトを実行せず、既存のローカル Git リポジトリから独立したチェックアウトを作成します。作成後にエージェントを追加してください。",
+  "workspace_localCreate_gitPending_description": "接続先ホストで Git が利用可能か確認しています。",
+  "workspace_localCreate_uncertain_description": "作成はすでに完了している可能性があります。別のワークスペースを作成しないよう、同じリクエストを復旧してください。",
+  "workspace_localCreate_recover_label": "作成を復旧",
+  "workspace_localCreate_draftSave_error": "作成リクエストを保存できませんでした。ワークスペースを作成する前に再試行してください。",
+  "workspace_localCreate_receiptUnavailable_description": "保存済みのリクエストを確認できるまでワークスペースの作成を一時停止しています。作成する前に、読み込みを再試行してください。"
 }

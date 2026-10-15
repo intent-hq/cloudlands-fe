@@ -1,3 +1,4 @@
+import { WorkspaceCreate } from './workspace-create';
 import { useWorkspaceViewLifetime } from './workspace-view-lifetime';
 import type { ConversationFileOrigin } from './workspace-file-origin';
 import { selectFileReadContext } from '@/store/files/files-selectors';
@@ -145,9 +146,12 @@ export function WorkspaceList({
         title={<h1>{m.lib_commandPalette_workspaces_label()}</h1>}
         description={m.settings_gitWorkspace_experimental_badge()}
         actions={
-          <Link to="/sandbox" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-            Component sandbox
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <WorkspaceCreate />
+            <Link to="/sandbox" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+              Component sandbox
+            </Link>
+          </div>
         }
       />
       <ScreenBody className="grid content-start gap-4">

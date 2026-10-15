@@ -10,7 +10,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
-import type { WorkspaceCreateProgressEntry } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-types';
+import type { WorkspaceCreateProgressEntry } from '../../../../store/renderer/slices/workspace-create-progress/workspace-create-progress-types';
 
 /**
  * Extract an "(N/M)" submodule counter from the daemon's human-readable

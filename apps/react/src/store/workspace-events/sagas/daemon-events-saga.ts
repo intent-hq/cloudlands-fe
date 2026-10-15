@@ -15,6 +15,8 @@ export const daemonEventsSaga = createDaemonEventsSaga({
     store.dispatch(backendReconnected());
   },
   eventTypes: [
+    'git:clone:progress',
+    'git:clone:done',
     'settings:changed',
     'host:members-changed',
     'host:invites-changed',

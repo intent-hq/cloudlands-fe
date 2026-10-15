@@ -9,6 +9,7 @@ import {
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 import type {
+  WorkspaceLocalCreation,
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
   WorkspaceInitializerHydrationState,
@@ -26,6 +27,9 @@ export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
 
 export const initialState: WorkspaceInitializerState = {
+  localCreation: null,
+  localReceiptContext: null,
+  localConsumer: null,
   gitCheckRequest: 0,
   gitCheck: null,
   hydrated: false,
@@ -41,6 +45,22 @@ export const initialState: WorkspaceInitializerState = {
   lastSubmittedAgent: null,
   pendingGitHubPrefill: null,
 };
+
+export const workspaceLocalCreationReloadRequested = createAction(
+  'workspaceInitializer/localReloadRequested',
+);
+export const workspaceLocalCreationOpened = createAction<[id: string, context: string]>(
+  'workspaceInitializer/localOpened',
+);
+export const workspaceLocalCreationClosed = createAction<[id: string]>(
+  'workspaceInitializer/localClosed',
+);
+export const setWorkspaceLocalCreation = createAction<[intent: WorkspaceLocalCreation | null]>(
+  'workspaceInitializer/setLocalCreation',
+);
+export const localWorkspaceCreateRequested = createAction<[authority: string, retry?: boolean]>(
+  'workspaceInitializer/localCreateRequested',
+);
 
 export const workspaceInitializerGitCheckRequested = createAction(
   'workspaceInitializer/gitCheckRequested',
@@ -124,6 +144,18 @@ function recentReposCollection(
 }
 
 export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState);
+workspaceInitializerReducer.with(
+  workspaceLocalCreationOpened,
+  (state, { payload: [id, context] }) => ({ ...state, localConsumer: { id, context } }),
+);
+workspaceInitializerReducer.with(workspaceLocalCreationClosed, (state, { payload: [id] }) =>
+  state.localConsumer?.id === id ? { ...state, localConsumer: null } : state,
+);
+workspaceInitializerReducer.with(
+  setWorkspaceLocalCreation,
+  (state, { payload: [localCreation] }) =>
+    state.localCreation === localCreation ? state : { ...state, localCreation },
+);
 workspaceInitializerReducer.with(workspaceInitializerGitCheckRequested, (state) => ({
   ...state,
   gitCheckRequest: state.gitCheckRequest + 1,
@@ -161,6 +193,24 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
   return {
     ...state,
     hydrated: true,
+    localReceiptContext:
+      hydration.localReceiptContext === undefined
+        ? state.localReceiptContext
+        : hydration.localReceiptContext,
+    // A restarted renderer cannot prove an earlier request failed. Reuse its key.
+    localCreation:
+      !('localCreation' in hydration) ||
+      (state.localCreation && state.localCreation.authority === hydration.localCreation?.authority)
+        ? state.localCreation
+        : hydration.localCreation
+          ? {
+              ...hydration.localCreation,
+              status:
+                hydration.localCreation.status === 'pending'
+                  ? 'uncertain'
+                  : hydration.localCreation.status,
+            }
+          : null,
     // A form edit made during the read belongs to this session, even if it
     // only changes effort (or explicitly clears it). Keep the paired model.
     compactFormState: compactIntent(state.compactFormState ?? hydration.compactFormState),

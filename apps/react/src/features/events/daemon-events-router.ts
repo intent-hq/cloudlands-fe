@@ -1,3 +1,4 @@
+import { handleCloneProgressEvent } from '../../../../../src/features/events/daemon-workspace-create-progress';
 import { workspaceDeleted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { store } from '@/store';
 import {
@@ -34,6 +35,11 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (routeAuthorityEvent(event, store.state, store.dispatch)) return;
+  if (
+    (type === 'git:clone:progress' || type === 'git:clone:done') &&
+    handleCloneProgressEvent(event, type, store.dispatch)
+  )
+    return;
   const workspaceId = event.workspaceId;
   if (!workspaceId) return;
   const membership = workspaceMembershipInvalidated(event);

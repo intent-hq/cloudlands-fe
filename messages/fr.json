@@ -7524,5 +7524,13 @@
   "files_read_previewReadOnly_error": "Cet aperçu est en lecture seule.",
   "chat_inlinePermission_submitting_label": "Envoi de la décision…",
   "chat_inlinePermission_responseFailed_error": "La décision n’a pas pu être confirmée. Choisissez une option pour réessayer.",
-  "react_providerSettings_scope_description": "Cet aperçu interne affiche les fournisseurs configurés sans modifier leurs paramètres. Configurez les fournisseurs dans l’application de bureau. Le modèle et l’effort de raisonnement s’appliquent uniquement à cette conversation."
+  "react_providerSettings_scope_description": "Cet aperçu interne affiche les fournisseurs configurés sans modifier leurs paramètres. Configurez les fournisseurs dans l’application de bureau. Le modèle et l’effort de raisonnement s’appliquent uniquement à cette conversation.",
+  "workspace_localCreate_repository_label": "Dossier du dépôt",
+  "workspace_localCreate_baseRef_label": "Branche ou référence de base",
+  "workspace_localCreate_scope_description": "Créez une copie isolée d’un dépôt Git local existant sans exécuter de scripts de configuration. Ajoutez un agent après la création.",
+  "workspace_localCreate_gitPending_description": "Vérification de la disponibilité de Git sur l’hôte connecté.",
+  "workspace_localCreate_uncertain_description": "La création est peut-être déjà terminée. Récupérez la même demande pour éviter de créer un autre espace de travail.",
+  "workspace_localCreate_recover_label": "Récupérer la création",
+  "workspace_localCreate_draftSave_error": "Impossible d’enregistrer la demande de création. Réessayez avant de créer l’espace de travail.",
+  "workspace_localCreate_receiptUnavailable_description": "La création de l’espace de travail est suspendue jusqu’à la vérification de la demande enregistrée. Rechargez-la avant de créer un espace de travail."
 }
