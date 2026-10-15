@@ -41,7 +41,8 @@ vi.mock('$store/renderer/store', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
-import { hydrateAgentLocks, toLockRecord } from './file-tracking.client';
+import { hydrateAgentLocks } from './file-tracking.client';
+import { toLockRecord } from '$lib/client/live/backend-agent-lock-reader';
 
 const mockedRequest = vi.mocked(backendRequest);
 

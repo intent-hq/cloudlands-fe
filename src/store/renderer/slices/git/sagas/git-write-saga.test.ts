@@ -396,7 +396,9 @@ describe('gitWriteSaga with protocol transports', () => {
       expect(backendRequest).toHaveBeenCalledWith('accept-changes.execute', expect.anything()),
     );
     owner.task.cancel();
-    await expect(request.promise).rejects.toBeInstanceOf(Error);
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'cancel-partial', 'commit')?.status,
+    ).toBe('running');
     const next = reserveGitMutation('cancel-partial');
     const transport = vi.fn(async () => undefined);
     const result = next.run(transport);
@@ -411,6 +413,7 @@ describe('gitWriteSaga with protocol transports', () => {
     restore.resolve({ ok: true });
     await result;
     await next.release();
+    await expect(request.promise).rejects.toBeInstanceOf(Error);
   });
 
   it('cancels a queued group without writing', async () => {
@@ -733,7 +736,9 @@ describe('gitWriteSaga with protocol transports', () => {
       expect(backendRequest).toHaveBeenCalledWith('accept-changes.execute', expect.anything()),
     );
     owner.task.cancel();
-    await expect(request.promise).rejects.toBeInstanceOf(Error);
+    expect(
+      selectGitWriteOperation.select(owner.state() as never, 'cancel-raw', 'commit')?.status,
+    ).toBe('running');
     const next = reserveGitMutation('cancel-raw');
     const transport = vi.fn(async () => undefined);
     const result = next.run(transport);
@@ -749,6 +754,7 @@ describe('gitWriteSaga with protocol transports', () => {
     restore.resolve({ ok: true });
     await result;
     await next.release();
+    await expect(request.promise).rejects.toBeInstanceOf(Error);
     expect(backendRequest).toHaveBeenCalledWith('git.stageHunk', {
       workspaceId: 'cancel-raw',
       filePath: 'last.ts',
@@ -817,6 +823,52 @@ describe('gitWriteSaga with protocol transports', () => {
       );
       expect(notify.success).not.toHaveBeenCalled();
       expect(notify.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['workspace', 'consumer'])(
+    'retires a queued write released by %s before its prior lease settles without I/O',
+    async (release) => {
+      const workspaceId = `release-queued-${release}`;
+      const held = reserveGitMutation(workspaceId);
+      const owner = startWrites();
+      const request = gitWriteRequested(workspaceId, 'queued', {
+        kind: 'stage',
+        paths: ['a.ts'],
+        source: 'sidebar',
+        consumerId: 'panel',
+        openDiff: true,
+      });
+      owner.dispatch(request);
+      owner.dispatch(
+        release === 'workspace'
+          ? workspaceUnmounted(workspaceId)
+          : gitWriteConsumerReleased(workspaceId, 'panel'),
+      );
+      expect(
+        selectGitWriteOperation.select(owner.state() as never, workspaceId, 'queued'),
+      ).toMatchObject({ status: 'queued', consumerReleased: true });
+      expect(backendRequest).not.toHaveBeenCalled();
+      const boundary = owner.actions.length;
+      await held.release();
+      await expect(request.promise).resolves.toMatchObject({ success: false });
+      expect(backendRequest).not.toHaveBeenCalled();
+      expect(owner.state().gitWrite.byWorkspaceId[workspaceId]).toBeUndefined();
+      expect(owner.actions.slice(boundary)).toEqual([
+        expect.objectContaining({
+          type: gitWriteFinished.type,
+          payload: [
+            workspaceId,
+            'queued',
+            expect.objectContaining({ success: false }),
+            request.payload[2],
+            true,
+          ],
+        }),
+      ]);
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
     },
   );
 

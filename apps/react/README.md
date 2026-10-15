@@ -90,10 +90,14 @@ escalation. Do not loosen that policy to reproduce this preview.
 
 Open **Changed files** in a workspace to review a file's staged (HEAD to index)
 or unstaged (index to worktree) changes. The same path can have a separate row in
-each group. The read-only view shows line numbers and additions/deletions, with
+each group. The diff view shows line numbers and additions/deletions, with
 **Refresh** and **Back** to the originating row and filter. Deleted files do not
 require current file contents. This checkpoint covers the primary Git root only;
-there are no stage, commit, discard or push controls. The pinned daemon does not
+workspace owners can **Stage** or **Unstage** one file from its row or diff view.
+These actions update the index and preserve the working file. Pending writes stay
+owned while navigating; locked files and unavailable write admission disable the
+actions. After a category disappears, **Back** focuses the same file in its
+remaining category. There are no hunk, commit, discard or push controls. The pinned daemon does not
 distinguish binary files from omitted oversized diffs, so path-only responses are
 shown as text diff unavailable, rather than as no changes. Rename hunks follow the
 daemon's destination-path representation; full editor and rename-history parity
@@ -142,3 +146,9 @@ Git writes; fixture preparation is a separate owned-repository step.
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine
 MESSAGE-link data, and publication limitations remain open.
+
+`workspace-git-staging.extended.spec.mjs` requires an explicitly owned disposable
+Git fixture and `ISOLATED_GIT_WRITES=owned-test-daemon`. It uses native keyboard and
+pointer activation, actual daemon stage/unstage, mixed index/worktree diffs,
+reload, bounded return anchoring, and canonical read/write cleanup. Never run
+this mutation acceptance against a user workspace.

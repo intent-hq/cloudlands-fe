@@ -38,10 +38,14 @@ export const setAgentLockState = createAction(
     workspaceId: string,
     lockedAgentIds: Record<string, true>,
     lockedFilePaths: Record<string, true>,
+    authorityContext?: string,
+    fromEvent?: boolean,
   ) => ({
     workspaceId,
+    ...(fromEvent ? { fromEvent } : {}),
     lockedAgentIds,
     lockedFilePaths,
+    ...(authorityContext ? { authorityContext } : {}),
   }),
 );
 
@@ -51,15 +55,24 @@ export const setAgentLockState = createAction(
 
 export const agentLockReducer = createReducer<AgentLockState>(initialState);
 agentLockReducer.with(setAgentLockState, (state, action) => {
-  const { workspaceId, lockedAgentIds, lockedFilePaths } = action.payload;
+  const { workspaceId, lockedAgentIds, lockedFilePaths, authorityContext, fromEvent } =
+    action.payload;
   const ws = getWorkspaceState(state, workspaceId);
   // Return same reference if nothing changed
-  if (ws.lockedAgentIds === lockedAgentIds && ws.lockedFilePaths === lockedFilePaths) {
+  if (
+    !fromEvent &&
+    ws.lockedAgentIds === lockedAgentIds &&
+    ws.lockedFilePaths === lockedFilePaths &&
+    ws.authorityContext === authorityContext
+  ) {
     return state;
   }
+  const eventRevision =
+    (ws.authorityContext === authorityContext ? (ws.eventRevision ?? 0) : 0) + (fromEvent ? 1 : 0);
   return setWorkspaceState(state, workspaceId, {
     lockedAgentIds,
     lockedFilePaths,
+    ...(authorityContext ? { authorityContext, eventRevision } : {}),
   });
 });
 agentLockReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>

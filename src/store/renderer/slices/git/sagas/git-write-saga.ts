@@ -1,4 +1,4 @@
-import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, type SagaGenerator } from 'typed-redux-saga';
 import { appClient, type MutationResult } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
@@ -9,11 +9,11 @@ import { ChangeStage } from '$features/file-tracking/types';
 import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { GitStatus, WorkspaceId } from '$shared/types';
+import type { WorkspaceId } from '$shared/types';
 import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
 import { posixSingleQuote } from '$shared/utils/posix-single-quote';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
-import { reserveGitMutation, type GitMutationLease } from '../../../utils/worktree-mutation-queue';
+import type { GitMutationLease } from '../../../utils/worktree-mutation-queue';
 import { selectLockedAgentIds } from '../../agent-lock/agent-lock-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { selectFileTrackingChanges } from '../../changes/changes-selectors';
@@ -23,7 +23,7 @@ import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectGitStatus } from '../git-selectors';
 import { gitReadsInvalidated, setGitStatus } from '../git-slice';
 import { selectGitWriteOperation } from '../git-write-selectors';
-import { gitWriteFinished, gitWriteRequested, gitWriteStarted } from '../git-write-slice';
+import { createGitWriteSaga } from './git-write-saga-factory';
 import type { GitWriteOperation } from '../git-write-types';
 
 const logger = createLogger('GitWriteSaga');
@@ -179,16 +179,18 @@ function* reconcile(
   workspaceId: string,
   requestId: string,
   lease: GitMutationLease,
+  canPublish: () => boolean,
 ): SagaGenerator<void> {
   try {
     const status = yield* call(() =>
       lease.run(() => appClient.git.status(workspaceId, { forceRefresh: true })),
     );
-    if (!status || !(yield* selectGitWriteOperation.effect(workspaceId, requestId))) return;
+    const current = yield* selectGitWriteOperation.effect(workspaceId, requestId);
+    if (!status || !current || current.consumerReleased || !canPublish()) return;
     yield* put(setGitStatus(workspaceId, status));
     const tracked = yield* selectFileTrackingChanges.effect(workspaceId);
     const changes = reconcileGitStatusChanges(status.files, tracked);
-    yield* put(setChangesData(workspaceId, changes, false, changes.length));
+    if (canPublish()) yield* put(setChangesData(workspaceId, changes, false, changes.length));
   } catch (error) {
     logger.error('Failed to reconcile Git mutation', error);
   }
@@ -264,160 +266,95 @@ function* notifyOutcome(operation: GitWriteOperation, result: MutationResult): S
   }
 }
 
-function* gitWriteWorker(action: ReturnType<typeof gitWriteRequested>): SagaGenerator<void> {
-  const [workspaceId, requestId, operation] = action.payload;
-  const lease = reserveGitMutation(workspaceId);
-  let result: MutationResult = {
-    success: false,
-    error: m.workspace_prSection_unknownError_label(),
-  };
-  let started = false;
-  let snapshot: GitStatus | null | undefined;
-  try {
-    try {
-      yield* call(() => lease.ready);
-      const entry = yield* selectGitWriteOperation.effect(workspaceId, requestId);
-      if (entry?.status !== 'queued') {
-        return;
-      }
-      yield* put(gitWriteStarted(workspaceId, requestId));
-      started = true;
-      if (operation.sourceAgentId) {
-        const agent = yield* selectAgentSession.effect(operation.sourceAgentId);
-        if (!agent || hasNodeOwnedAgentPath(agent)) return;
-      }
-      if (operation.kind === 'partialCommit') {
-        const locks = yield* selectLockedAgentIds.effect(workspaceId);
-        if (operation.agentId && operation.agentId in locks)
-          throw new Error(m.workspace_fileChanges_commitFailed_error());
-        const workspace = yield* selectWorkspaceById.effect(workspaceId);
-        result = yield* call(() =>
-          lease.run(() =>
-            commitPartialGroup(
-              workspaceId,
-              operation,
-              workspace?.worktreePath || workspace?.repositoryPath,
-            ),
-          ),
-        );
-      } else if (operation.kind === 'stageHunk' || operation.kind === 'unstageHunk') {
-        if (
-          !operation.hunkPatch.includes('@@') ||
-          (!operation.hunkPatch.includes('---') && !operation.hunkPatch.includes('diff --git'))
-        ) {
-          throw new Error(
-            operation.kind === 'stageHunk'
-              ? m.chat_changesPanel_stageInvalidPatch_error()
-              : m.chat_changesPanel_unstageInvalidPatch_error(),
-          );
-        }
-        yield* call(() =>
-          lease.run(() =>
-            backendRequest(operation.kind === 'stageHunk' ? 'git.stageHunk' : 'git.unstageHunk', {
-              workspaceId,
-              filePath: operation.filePath,
-              hunkPatch: operation.hunkPatch,
-            }),
-          ),
-        );
-        result = { success: true };
-      } else if (operation.kind === 'commit') {
-        result = yield* call(() =>
-          lease.run(() => appClient.git.commit(workspaceId, operation.params)),
-        );
-      } else if (operation.kind === 'amend') {
-        result = yield* call(() => lease.run(() => amendCommit(workspaceId, operation)));
-      } else if (
-        operation.kind === 'stage' ||
-        operation.kind === 'unstage' ||
-        operation.kind === 'discard'
-      ) {
-        if (operation.kind !== 'discard') {
-          snapshot = yield* selectGitStatus.effect(workspaceId);
-          if (snapshot) {
-            const paths = new Set(operation.paths);
-            yield* put(
-              setGitStatus(workspaceId, {
-                ...snapshot,
-                files: snapshot.files.map((file) =>
-                  paths.has(file.path) ? { ...file, staged: operation.kind === 'stage' } : file,
-                ),
-              }),
-            );
-          }
-        }
-        result = yield* call(() =>
-          lease.run(() => appClient.git[operation.kind](workspaceId, operation.paths)),
-        );
-      }
-    } catch (error) {
-      result = { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-    try {
-      const current = yield* selectGitWriteOperation.effect(workspaceId, requestId);
-      if (current && snapshot && !result.success) yield* put(setGitStatus(workspaceId, snapshot));
-      if (started) {
-        yield* call(() => gitCache.invalidateWorkspace(workspaceId));
-        // Preserve the compatibility contract: failed unstage restores the
-        // snapshot without a status read; every other outcome reconciles.
-        if (operation.kind !== 'unstage' || result.success)
-          yield* reconcile(workspaceId, requestId, lease);
-      }
-    } finally {
-      yield* call(() => lease.release());
-    }
-    if (started) {
-      const current = yield* selectGitWriteOperation.effect(workspaceId, requestId);
-      // A released consumer/workspace receives no late UI side effects.
-      if (current) {
-        yield* put(gitReadsInvalidated(workspaceId));
-        yield* put(refreshRequested(workspaceId, true));
-        if (
-          result.success &&
-          (operation.kind === 'stage' || operation.kind === 'unstage') &&
-          operation.openDiff &&
-          operation.paths.length === 1
-        ) {
-          const changes = yield* selectFileTrackingChanges.effect(workspaceId);
-          const stage = operation.kind === 'stage' ? ChangeStage.Staged : ChangeStage.Unstaged;
-          const change = changes.find(
-            (row) => row.stage === stage && (row.relativePath || row.file) === operation.paths[0],
-          );
-          if (change)
-            yield* put(
-              openWorkspaceDiff(workspaceId, change, {
-                changeId: change.id,
-                filePath: change.relativePath || change.file,
-                forceUpdate: true,
-              }),
-            );
-        }
-        yield* notifyOutcome(operation, result);
-      }
-    }
-  } catch (error) {
-    // A notification/navigation failure must not kill the watcher, strand a
-    // request, or report that an already-applied Git mutation failed.
-    logger.error('Failed to publish Git mutation side effects', error);
-  } finally {
-    void lease.release();
-    if (yield* cancelled()) {
-      yield* put(
-        gitWriteFinished(
-          workspaceId,
-          requestId,
-          { success: false, error: m.workspace_prSection_unknownError_label() },
-          operation,
-        ),
+/** Source-only policy and transports stay bound here; the factory owns write lifetime. */
+function* prepare(
+  workspaceId: string,
+  operation: GitWriteOperation,
+): SagaGenerator<(() => Promise<MutationResult>) | undefined> {
+  if (operation.sourceAgentId) {
+    const agent = yield* selectAgentSession.effect(operation.sourceAgentId);
+    if (!agent || hasNodeOwnedAgentPath(agent)) return;
+  }
+  if (operation.kind === 'partialCommit') {
+    const locks = yield* selectLockedAgentIds.effect(workspaceId);
+    if (operation.agentId && operation.agentId in locks)
+      throw new Error(m.workspace_fileChanges_commitFailed_error());
+    const workspace = yield* selectWorkspaceById.effect(workspaceId);
+    return () =>
+      commitPartialGroup(
+        workspaceId,
+        operation,
+        workspace?.worktreePath || workspace?.repositoryPath,
       );
-      yield* put(action.failure(new Error(m.workspace_prSection_unknownError_label())));
-    } else {
-      if (started) yield* put(gitWriteFinished(workspaceId, requestId, result, operation));
-      yield* put(action.success(result));
+  }
+  if (operation.kind === 'stageHunk' || operation.kind === 'unstageHunk') {
+    if (
+      !operation.hunkPatch.includes('@@') ||
+      (!operation.hunkPatch.includes('---') && !operation.hunkPatch.includes('diff --git'))
+    ) {
+      throw new Error(
+        operation.kind === 'stageHunk'
+          ? m.chat_changesPanel_stageInvalidPatch_error()
+          : m.chat_changesPanel_unstageInvalidPatch_error(),
+      );
     }
+    return async () => {
+      await backendRequest(operation.kind === 'stageHunk' ? 'git.stageHunk' : 'git.unstageHunk', {
+        workspaceId,
+        filePath: operation.filePath,
+        hunkPatch: operation.hunkPatch,
+      });
+      return { success: true };
+    };
+  }
+  if (operation.kind === 'commit') return () => appClient.git.commit(workspaceId, operation.params);
+  if (operation.kind === 'amend') return () => amendCommit(workspaceId, operation);
+  if (operation.kind === 'stage' || operation.kind === 'unstage' || operation.kind === 'discard') {
+    const kind = operation.kind;
+    return () => appClient.git[kind](workspaceId, operation.paths);
   }
 }
 
-export function* gitWriteSaga() {
-  yield* takeEvery(gitWriteRequested, gitWriteWorker);
+function* publish(
+  workspaceId: string,
+  operation: GitWriteOperation,
+  result: MutationResult,
+  canPublish: () => boolean,
+): SagaGenerator<void> {
+  if (!canPublish()) return;
+  yield* put(gitReadsInvalidated(workspaceId));
+  if (!canPublish()) return;
+  yield* put(refreshRequested(workspaceId, true));
+  if (
+    result.success &&
+    (operation.kind === 'stage' || operation.kind === 'unstage') &&
+    operation.openDiff &&
+    operation.paths.length === 1
+  ) {
+    const changes = yield* selectFileTrackingChanges.effect(workspaceId);
+    const stage = operation.kind === 'stage' ? ChangeStage.Staged : ChangeStage.Unstaged;
+    const change = changes.find(
+      (row) => row.stage === stage && (row.relativePath || row.file) === operation.paths[0],
+    );
+    if (change && canPublish())
+      yield* put(
+        openWorkspaceDiff(workspaceId, change, {
+          changeId: change.id,
+          filePath: change.relativePath || change.file,
+          forceUpdate: true,
+        }),
+      );
+  }
+  if (canPublish()) yield* notifyOutcome(operation, result);
 }
+
+export const gitWriteSaga = createGitWriteSaga({
+  selectOperation: selectGitWriteOperation.effect,
+  selectStatus: selectGitStatus.effect,
+  prepare,
+  reconcile,
+  invalidate: (workspaceId) => gitCache.invalidateWorkspace(workspaceId),
+  publish,
+  unknownError: () => m.workspace_prSection_unknownError_label(),
+  logError: (message, error) => logger.error(message, error),
+});

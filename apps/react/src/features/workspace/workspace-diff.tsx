@@ -1,3 +1,4 @@
+import { WorkspaceGitFileAction } from './workspace-git-file-action';
 import { Link } from '@tanstack/react-router';
 import { useId, useLayoutEffect, useRef } from 'react';
 import { store } from '@/store';
@@ -89,6 +90,9 @@ export function WorkspaceDiff({
               : m.workspace_fileChanges_unstaged_label()}
           </p>
         </div>
+        {valid && authority && (
+          <WorkspaceGitFileAction workspaceId={workspaceId} path={path} staged={staged} />
+        )}
         <Button
           variant="outline"
           disabled={!authority || !valid || current?.loading}

@@ -10,6 +10,10 @@
  */
 export type AgentLockWorkspaceState = {
   /** Agent IDs that are currently locked (auto-commit enabled + actively working) */
+  /** Hosts that gate writes require a snapshot from this exact admission epoch. */
+  authorityContext?: string;
+  /** Monotonic daemon-event order within a host admission epoch; reads preserve it. */
+  eventRevision?: number;
   lockedAgentIds: Record<string, true>;
   /** File paths that are locked because they belong to a locked agent */
   lockedFilePaths: Record<string, true>;

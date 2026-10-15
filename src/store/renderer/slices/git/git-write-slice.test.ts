@@ -84,4 +84,20 @@ describe('Git write state', () => {
       state,
     );
   });
+  it('retains an admitted write across consumer and workspace retirement until settlement', () => {
+    let state = gitWriteReducer(undefined, gitWriteRequested('a', 'one', operation));
+    state = gitWriteReducer(state, gitWriteStarted('a', 'one'));
+    state = gitWriteReducer(state, gitWriteConsumerReleased('a', 'panel'));
+    state = gitWriteReducer(state, workspaceUnmounted('a'));
+    expect(selectGitWritePending.select({ gitWrite: state } as never, 'a')).toBe(true);
+    expect(selectGitWriteOperation.select({ gitWrite: state } as never, 'a', 'one')).toMatchObject({
+      status: 'running',
+      consumerReleased: true,
+    });
+    state = gitWriteReducer(state, gitWriteFinished('a', 'one', { success: true }, operation));
+    expect(selectGitWritePending.select({ gitWrite: state } as never, 'a')).toBe(false);
+    expect(
+      selectGitWriteOperation.select({ gitWrite: state } as never, 'a', 'one'),
+    ).toBeUndefined();
+  });
 });

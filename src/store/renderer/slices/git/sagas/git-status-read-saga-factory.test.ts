@@ -50,6 +50,7 @@ function start(
   readStatus: Parameters<typeof createGitStatusReadSaga>[0]['readStatus'],
   options: {
     context?: string | null;
+    beforeRead?: Parameters<typeof createGitStatusReadSaga>[0]['beforeRead'];
     onDispatch?: (action: StoreAction<unknown>) => void;
     onError?: (error: unknown) => void;
   } = {},
@@ -69,6 +70,7 @@ function start(
     { channel, dispatch },
     createGitStatusReadSaga({
       readStatus,
+      beforeRead: options.beforeRead,
       admission: { readCurrentContext: () => context, dispatch },
       reportReadState: true,
       onError: options.onError,
@@ -266,5 +268,24 @@ describe('createGitStatusReadSaga', () => {
     await settle();
     expect(owner.workspace()).toMatchObject({ loading: false, error: null, status });
     expect(owner.actions.filter((action) => action.type === setGitStatus.type)).toHaveLength(1);
+  });
+  it('retires related hydration callbacks on unmount before a late reply or another read can publish', async () => {
+    const pending = deferred<void>();
+    let current = () => false;
+    const readStatus = vi.fn().mockResolvedValue(status);
+    const owner = start(readStatus, {
+      beforeRead: async (_workspaceId, admitted) => {
+        current = admitted;
+        await pending.promise;
+      },
+    });
+    owner.dispatch(loadGitStatus('ws'));
+    expect(current()).toBe(true);
+    owner.dispatch(workspaceUnmounted('ws'));
+    expect(current()).toBe(false);
+    pending.resolve();
+    await settle();
+    expect(readStatus).not.toHaveBeenCalled();
+    expect(owner.state().byWorkspaceId.ws).toBeUndefined();
   });
 });

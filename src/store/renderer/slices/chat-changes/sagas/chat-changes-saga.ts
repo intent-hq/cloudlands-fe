@@ -456,7 +456,8 @@ function* hunkFinished(
   refreshes: Channel<RefreshRequest>,
   action: ReturnType<typeof gitWriteFinished>,
 ): SagaGenerator<void> {
-  const [wsId, requestId, result, operation] = action.payload;
+  const [wsId, requestId, result, operation, retired] = action.payload;
+  if (retired) return;
   if (
     !result.success ||
     (operation.kind !== 'stageHunk' && operation.kind !== 'unstageHunk') ||

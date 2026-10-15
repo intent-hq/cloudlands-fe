@@ -1,3 +1,4 @@
+import { createBackendAgentLockReader } from '$lib/client/live/backend-agent-lock-reader';
 /** Agent-lock hydration from the daemon (PROTOCOL §5.19). */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -12,16 +13,6 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '$store/renderer/slices/workspace/workspace-selectors';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
-
-/** Fold a wire string[] into the slice's `Record<string, true>` lookup shape. */
-export function toLockRecord(value: unknown): Record<string, true> {
-  const record: Record<string, true> = {};
-  if (!Array.isArray(value)) return record;
-  for (const entry of value) {
-    if (typeof entry === 'string') record[entry] = true;
-  }
-  return record;
-}
 
 /**
  * Hydrate a workspace's agent-lock snapshot from the daemon
@@ -56,11 +47,9 @@ export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
   let lockedAgentIds: Record<string, true> = {};
   let lockedFilePaths: Record<string, true> = {};
   try {
-    const result = await backendRequest<Record<string, unknown>>('file-tracking.getAgentLocks', {
-      workspaceId,
-    });
-    lockedAgentIds = toLockRecord(result?.lockedAgentIds);
-    lockedFilePaths = toLockRecord(result?.lockedFilePaths);
+    const result = await createBackendAgentLockReader(backendRequest, false)(workspaceId);
+    lockedAgentIds = result.lockedAgentIds;
+    lockedFilePaths = result.lockedFilePaths;
   } catch {
     // Degrade to unlocked; the `changes:agent-locks` event converges it later.
   }

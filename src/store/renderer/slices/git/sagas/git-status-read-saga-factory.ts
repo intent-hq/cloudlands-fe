@@ -24,6 +24,7 @@ function workspaceReadContext(action: GitStatusReadAction) {
 /** Status-only owner. Hosts keep workspaceUnmounted responsible for cache/authority cleanup. */
 export function createGitStatusReadSaga({
   readStatus,
+  beforeRead,
   admission,
   reportReadState = false,
   onError,
@@ -32,6 +33,8 @@ export function createGitStatusReadSaga({
     workspaceId: string,
     options?: { forceRefresh?: boolean },
   ) => Promise<GitStatus | null>;
+  /** Related canonical reads share this status worker's cancellation lifetime. */
+  beforeRead?: (workspaceId: string, current: () => boolean) => Promise<void>;
   admission?: {
     /** Read the current owning selector directly; never retain a selector notification. */
     readCurrentContext: (workspaceId: string) => string | null;
@@ -47,7 +50,9 @@ export function createGitStatusReadSaga({
     if (!workspaceId || action.type === workspaceUnmounted.type) return;
     const context = admission?.readCurrentContext(workspaceId);
     if (context === null) return;
-    const isCurrent = () => !admission || admission.readCurrentContext(workspaceId) === context;
+    let active = true;
+    const isCurrent = () =>
+      active && (!admission || admission.readCurrentContext(workspaceId) === context);
 
     function* publish(result: StoreAction<unknown>): SagaGenerator<boolean> {
       if (!admission) {
@@ -62,36 +67,42 @@ export function createGitStatusReadSaga({
     }
 
     if (reportReadState && !(yield* publish(setGitStatusLoading(workspaceId)))) return;
-    for (;;) {
-      if (!isCurrent()) return;
-      if (isGitMutationPending(workspaceId)) yield* call(waitForGitMutations, workspaceId);
-      if (!isCurrent()) return;
-      const epoch = getGitMutationVersion(workspaceId);
-      try {
-        const status = yield* call((): Promise<GitStatus | null> => {
-          if (!isCurrent()) return Promise.resolve(null);
-          return forceRefresh
-            ? readStatus(workspaceId, { forceRefresh: true })
-            : readStatus(workspaceId);
-        });
+    try {
+      for (;;) {
         if (!isCurrent()) return;
-        if (epoch !== getGitMutationVersion(workspaceId)) continue;
-        if (status) yield* publish(setGitStatus(workspaceId, toGitStatus(status)));
-        else if (reportReadState)
-          yield* publish(setGitStatusError(workspaceId, m.git_client_statusFailed_error()));
-      } catch (error) {
+        if (isGitMutationPending(workspaceId)) yield* call(waitForGitMutations, workspaceId);
         if (!isCurrent()) return;
-        if (epoch !== getGitMutationVersion(workspaceId)) continue;
-        onError?.(error);
-        if (reportReadState)
-          yield* publish(
-            setGitStatusError(
-              workspaceId,
-              error instanceof Error ? error.message : m.git_client_statusFailed_error(),
-            ),
-          );
+        const epoch = getGitMutationVersion(workspaceId);
+        try {
+          if (beforeRead) yield* call(beforeRead, workspaceId, isCurrent);
+          if (!isCurrent()) return;
+          const status = yield* call((): Promise<GitStatus | null> => {
+            if (!isCurrent()) return Promise.resolve(null);
+            return forceRefresh
+              ? readStatus(workspaceId, { forceRefresh: true })
+              : readStatus(workspaceId);
+          });
+          if (!isCurrent()) return;
+          if (epoch !== getGitMutationVersion(workspaceId)) continue;
+          if (status) yield* publish(setGitStatus(workspaceId, toGitStatus(status)));
+          else if (reportReadState)
+            yield* publish(setGitStatusError(workspaceId, m.git_client_statusFailed_error()));
+        } catch (error) {
+          if (!isCurrent()) return;
+          if (epoch !== getGitMutationVersion(workspaceId)) continue;
+          onError?.(error);
+          if (reportReadState)
+            yield* publish(
+              setGitStatusError(
+                workspaceId,
+                error instanceof Error ? error.message : m.git_client_statusFailed_error(),
+              ),
+            );
+        }
+        return;
       }
-      return;
+    } finally {
+      active = false;
     }
   }
 

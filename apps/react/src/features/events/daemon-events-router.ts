@@ -1,3 +1,6 @@
+import { parseAgentLocks } from '$lib/client/live/backend-agent-lock-reader';
+import { setAgentLockState } from '../../../../../src/store/renderer/slices/agent-lock/agent-lock-slice';
+import { selectGitWriteContext } from '@/store/git/git-write-selectors';
 import { handleCloneProgressEvent } from '../../../../../src/features/events/daemon-workspace-create-progress';
 import { workspaceDeleted } from '../../../../../src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { store } from '@/store';
@@ -42,6 +45,21 @@ export function routeDaemonEventsNotification(
     return;
   const workspaceId = event.workspaceId;
   if (!workspaceId) return;
+  if (type === 'changes:agent-locks') {
+    const data = event.data as { workspaceId?: string };
+    const target = data?.workspaceId ?? workspaceId;
+    const context = selectGitWriteContext.select(store.state, target);
+    if (target !== workspaceId || !context || !store.state.git.byWorkspaceId[target]) return;
+    try {
+      const locks = parseAgentLocks(data);
+      store.dispatch(
+        setAgentLockState(target, locks.lockedAgentIds, locks.lockedFilePaths, context, true),
+      );
+    } catch {
+      /* Malformed event cannot grant write admission. */
+    }
+    return;
+  }
   const membership = workspaceMembershipInvalidated(event);
   if (membership) {
     const changes = (event.data as { changes: Record<string, unknown> }).changes;

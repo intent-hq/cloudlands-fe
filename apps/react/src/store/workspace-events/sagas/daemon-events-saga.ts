@@ -15,6 +15,7 @@ export const daemonEventsSaga = createDaemonEventsSaga({
     store.dispatch(backendReconnected());
   },
   eventTypes: [
+    'changes:agent-locks',
     'git:clone:progress',
     'git:clone:done',
     'settings:changed',

@@ -1,5 +1,5 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
-import type { GitCommitParams, MutationResult } from '$lib/client';
+import type { GitCommitParams, MutationResult } from '$lib/client/app-client';
 
 type GitWriteSource = 'sidebar' | 'changes' | 'localChanges' | 'diff' | 'chat' | 'timeline';
 
@@ -16,13 +16,20 @@ export type GitWriteOperation = (
       groupKey?: string;
       agentId?: string | null;
     }
-) & { source?: GitWriteSource; consumerId?: string; sourceAgentId?: string };
+) & {
+  source?: GitWriteSource;
+  consumerId?: string;
+  sourceAgentId?: string;
+  admissionContext?: string;
+};
 
 export interface GitWriteEntry {
   id: string;
   operation: GitWriteOperation;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   result?: MutationResult;
+  /** Presentation retired; the transport still owns this record until settlement. */
+  consumerReleased?: boolean;
 }
 
 export interface GitWriteWorkspaceState {

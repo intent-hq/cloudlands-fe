@@ -2,7 +2,7 @@ import { takeEveryFromSelector } from '@themislib/themis/saga';
 import { channel, buffers } from 'redux-saga';
 import { call, fork, join, put, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { toLockRecord } from '$features/file-tracking/file-tracking.client';
+import { toLockRecord } from '$lib/client/live/backend-agent-lock-reader';
 import { selectLockedAgentIds, selectLockedFilePaths } from '../../agent-lock/agent-lock-selectors';
 import { setAgentLockState } from '../../agent-lock/agent-lock-slice';
 import { selectPostMergeState } from '../../git/git-selectors';

@@ -1,3 +1,5 @@
+import { gitWriteReducer } from '../../../../src/store/renderer/slices/git/git-write-slice';
+import { agentLockReducer } from '../../../../src/store/renderer/slices/agent-lock/agent-lock-slice';
 import { workspaceInitializerReducer } from '../../../../src/store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { workspaceCreateProgressReducer } from '../../../../src/store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import { transientUiReducer } from '../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
@@ -96,6 +98,8 @@ export const store = new ReactStore({
   permission: permissionReducer,
   workspaceNotes: workspaceNotesReducer,
   git: gitReducer,
+  gitWrite: gitWriteReducer,
+  agentLock: agentLockReducer,
   files: filesReducer,
 });
 export type AppState = StoreState<typeof store>;

@@ -3,12 +3,16 @@ import { createBackendGitDiffReader } from '$lib/client/live/backend-git-diff-re
 import { backendRequest } from '@/features/backend/backend-transport';
 import { store } from '../../index';
 
-// This host exposes no Git mutations. The canonical source host retains its queue/version ports.
+import {
+  getGitMutationVersion,
+  isGitMutationPending,
+  waitForGitMutations,
+} from '../../../../../../src/store/renderer/utils/worktree-mutation-queue';
 export const gitConsumerReadSaga = createGitConsumerReadSaga({
   dispatch: (action) => store.dispatch(action),
-  getMutationVersion: () => 0,
-  isMutationPending: () => false,
-  waitForMutations: async () => {},
+  getMutationVersion: getGitMutationVersion,
+  isMutationPending: isGitMutationPending,
+  waitForMutations: waitForGitMutations,
   read: async (workspaceId, request, signal, canRead) => {
     if (request.kind !== 'diffs') throw new Error('Unsupported Git review request');
     const current = () => !signal.aborted && canRead();

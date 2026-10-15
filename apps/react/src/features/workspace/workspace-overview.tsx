@@ -285,9 +285,13 @@ export function WorkspaceOverview({
       noteId
     )
       return;
-    const opener = content.current?.querySelector<HTMLAnchorElement>(
-      `a[data-git-row="${CSS.escape(`${previous.staged}:${previous.path}`)}"]`,
-    );
+    const opener =
+      content.current?.querySelector<HTMLAnchorElement>(
+        `a[data-git-row="${CSS.escape(`${previous.staged}:${previous.path}`)}"]`,
+      ) ??
+      content.current?.querySelector<HTMLAnchorElement>(
+        `a[data-git-row="${CSS.escape(`${!previous.staged}:${previous.path}`)}"]`,
+      );
     if (!opener) return;
     const origin = matchingGitDiffOrigin(
       previous.origin,

@@ -1,6 +1,9 @@
+import { gitWriteConsumerReleased } from '../../../../../src/store/renderer/slices/git/git-write-slice';
+import { selectGitWriteConsumerError } from '@/store/git/git-write-selectors';
+import { WorkspaceGitFileAction } from './workspace-git-file-action';
 import { m } from '$shared/paraglide/messages.js';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import { ListRow, ListView } from '@/components/patterns/collection';
 import { LoadingState } from '@/components/patterns/screen';
 import { ChangesRefreshAction } from '@/components/workspace/sidebar/changes-refresh-action';
@@ -21,6 +24,14 @@ export function WorkspaceGitStatus({
   fileQuery?: string;
 }) {
   const navigate = useNavigate();
+  const writeConsumer = useId();
+  const writeError = selectGitWriteConsumerError(workspaceId, writeConsumer).value;
+  useLayoutEffect(
+    () => () => {
+      store.dispatch(gitWriteConsumerReleased(workspaceId, writeConsumer));
+    },
+    [workspaceId, writeConsumer],
+  );
   const header = useRef<HTMLElement>(null);
   const restoreRefreshFocus = useRef(false);
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
@@ -63,6 +74,11 @@ export function WorkspaceGitStatus({
         />
       </header>
       <HostExecutionNotice />
+      {writeError && (
+        <p role="alert" className="type-caption break-words">
+          {writeError}
+        </p>
+      )}
       <ListView
         items={files.value}
         getKey={(file) => `${file.staged}:${file.path}`}
@@ -78,62 +94,70 @@ export function WorkspaceGitStatus({
         }
         ariaLabel={m.workspace_sidebarChanges_rootChangedFiles_label()}
         row={({ item }) => (
-          <Link
-            to="/workspaces/$workspaceId"
-            params={{ workspaceId }}
-            search={{
-              diff: item.path,
-              diffStage: item.staged ? 'staged' : 'unstaged',
-              q: query || undefined,
-              fileQuery: fileQuery || undefined,
-            }}
-            onClick={(event) => {
-              if (
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.altKey ||
-                event.shiftKey
-              )
-                return;
-              event.preventDefault();
-              void navigate({
-                to: '/workspaces/$workspaceId',
-                params: { workspaceId },
-                search: {
-                  diff: item.path,
-                  diffStage: item.staged ? 'staged' : 'unstaged',
-                  q: query || undefined,
-                  fileQuery: fileQuery || undefined,
-                  diffOrigin: JSON.stringify({
-                    workspaceId,
-                    path: item.path,
-                    staged: item.staged,
-                    y: event.currentTarget.getBoundingClientRect().y,
-                  }),
-                },
-              });
-            }}
-            className="block min-w-0 rounded-md hover:bg-muted focus-visible:outline"
-            data-file-path={item.path}
-            data-git-row={`${item.staged}:${item.path}`}
-          >
-            <ListRow
-              title={
-                <span className="block whitespace-normal break-all" data-git-path>
-                  {item.path}
-                </span>
-              }
-              description={
-                item.staged
-                  ? m.workspace_fileChanges_staged_label()
-                  : m.workspace_fileChanges_unstaged_label()
-              }
-              trailing={<span data-git-status>{item.status}</span>}
-              data-git-path={item.path}
-              data-git-staged={item.staged}
+          <div className="flex min-w-0 items-center gap-2">
+            <Link
+              to="/workspaces/$workspaceId"
+              params={{ workspaceId }}
+              search={{
+                diff: item.path,
+                diffStage: item.staged ? 'staged' : 'unstaged',
+                q: query || undefined,
+                fileQuery: fileQuery || undefined,
+              }}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.altKey ||
+                  event.shiftKey
+                )
+                  return;
+                event.preventDefault();
+                void navigate({
+                  to: '/workspaces/$workspaceId',
+                  params: { workspaceId },
+                  search: {
+                    diff: item.path,
+                    diffStage: item.staged ? 'staged' : 'unstaged',
+                    q: query || undefined,
+                    fileQuery: fileQuery || undefined,
+                    diffOrigin: JSON.stringify({
+                      workspaceId,
+                      path: item.path,
+                      staged: item.staged,
+                      y: event.currentTarget.getBoundingClientRect().y,
+                    }),
+                  },
+                });
+              }}
+              className="block min-w-0 flex-1 rounded-md hover:bg-muted focus-visible:outline"
+              data-file-path={item.path}
+              data-git-row={`${item.staged}:${item.path}`}
+            >
+              <ListRow
+                title={
+                  <span className="block whitespace-normal break-all" data-git-path>
+                    {item.path}
+                  </span>
+                }
+                description={
+                  item.staged
+                    ? m.workspace_fileChanges_staged_label()
+                    : m.workspace_fileChanges_unstaged_label()
+                }
+                trailing={<span data-git-status>{item.status}</span>}
+                data-git-path={item.path}
+                data-git-staged={item.staged}
+              />
+            </Link>
+            <WorkspaceGitFileAction
+              workspaceId={workspaceId}
+              path={item.path}
+              staged={item.staged}
+              consumerId={writeConsumer}
             />
-          </Link>
+          </div>
         )}
       />
     </section>

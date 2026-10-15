@@ -225,7 +225,7 @@ import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/ren
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import { acceptChangesStatusInvalidated } from '$store/renderer/slices/git/git-slice';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
-import { toLockRecord } from '$features/file-tracking/file-tracking.client';
+import { toLockRecord } from '$lib/client/live/backend-agent-lock-reader';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,

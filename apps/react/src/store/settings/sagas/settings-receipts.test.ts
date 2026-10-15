@@ -89,6 +89,7 @@ vi.mock('../../../components/patterns/notify', () => ({
 }));
 
 const eventTypes = [
+  'changes:agent-locks',
   'git:clone:progress',
   'git:clone:done',
   'settings:changed',

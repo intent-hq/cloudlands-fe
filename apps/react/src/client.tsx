@@ -1,3 +1,4 @@
+import { gitWriteSaga } from './store/git/sagas/git-write-saga';
 import { gitConsumerReadSaga } from './store/git/sagas/git-consumer-read-saga';
 import { workspaceInitializerSaga } from './store/workspace-initializer/sagas/workspace-initializer-saga';
 import { agentCreationSaga } from './store/workspace-agents/sagas/agent-creation-saga';
@@ -41,6 +42,7 @@ const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
 const cancelNotesContentReadSaga = store.runSaga(notesContentReadSaga);
 const cancelGitConsumerReadSaga = store.runSaga(gitConsumerReadSaga);
+const cancelGitWriteSaga = store.runSaga(gitWriteSaga);
 const cancelGitStatusReadSaga = store.runSaga(gitStatusReadSaga);
 const cancelFilesReadSaga = store.runSaga(filesReadSaga);
 const cancelChatCommandsSaga = store.runSaga(chatCommandsSaga);
@@ -69,6 +71,7 @@ function dispose() {
   cancelAgentMetadataSaga();
   cancelAgentCreationSaga();
   cancelNotesContentReadSaga();
+  cancelGitWriteSaga();
   cancelGitStatusReadSaga();
   cancelGitConsumerReadSaga();
   cancelFilesReadSaga();

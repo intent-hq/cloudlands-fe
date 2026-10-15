@@ -4,9 +4,10 @@ import {
   createCollection,
   getItem,
   getItems,
+  removeItem,
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type { MutationResult } from '$lib/client';
+import type { MutationResult } from '$lib/client/client-types';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -24,7 +25,13 @@ export const gitWriteStarted =
   createAction<[workspaceId: string, requestId: string]>('gitWrite/started');
 export const gitWriteFinished =
   createAction<
-    [workspaceId: string, requestId: string, result: MutationResult, operation: GitWriteOperation]
+    [
+      workspaceId: string,
+      requestId: string,
+      result: MutationResult,
+      operation: GitWriteOperation,
+      retired?: boolean,
+    ]
   >('gitWrite/finished');
 export const cancelQueuedGitWrite =
   createAction<[workspaceId: string, requestId: string]>('gitWrite/cancelQueued');
@@ -55,6 +62,17 @@ gitWriteReducer.with(gitWriteRequested, (state, { payload: [workspaceId, id, ope
     )
   )
     return state;
+  if (
+    operation.admissionContext &&
+    (operation.kind === 'stage' || operation.kind === 'unstage') &&
+    entries.some(
+      (entry) =>
+        (entry.status === 'queued' || entry.status === 'running') &&
+        'paths' in entry.operation &&
+        entry.operation.paths.some((path) => operation.paths.includes(path)),
+    )
+  )
+    return state;
   const completed = entries
     .filter((entry) => entry.status !== 'queued' && entry.status !== 'running')
     .slice(-31);
@@ -73,18 +91,27 @@ gitWriteReducer.with(gitWriteStarted, (state, { payload: [workspaceId, id] }) =>
     operations: upsertItem(current.operations, { ...entry, status: 'running' }),
   });
 });
-gitWriteReducer.with(gitWriteFinished, (state, { payload: [workspaceId, id, result] }) => {
-  const current = getWorkspaceState(state, workspaceId);
-  const entry = getItem(current.operations, id);
-  if (!entry || (entry.status !== 'queued' && entry.status !== 'running')) return state;
-  return setWorkspaceState(state, workspaceId, {
-    operations: upsertItem(current.operations, {
-      ...entry,
-      status: result.success ? 'succeeded' : 'failed',
-      result,
-    }),
-  });
-});
+gitWriteReducer.with(
+  gitWriteFinished,
+  (state, { payload: [workspaceId, id, result, , retired] }) => {
+    const current = getWorkspaceState(state, workspaceId);
+    const entry = getItem(current.operations, id);
+    if (!entry || (entry.status !== 'queued' && entry.status !== 'running')) return state;
+    if (entry.consumerReleased || retired) {
+      const operations = removeItem(current.operations, id);
+      return getItems(operations).length
+        ? setWorkspaceState(state, workspaceId, { operations })
+        : clearWorkspaceState(state, workspaceId);
+    }
+    return setWorkspaceState(state, workspaceId, {
+      operations: upsertItem(current.operations, {
+        ...entry,
+        status: result.success ? 'succeeded' : 'failed',
+        result,
+      }),
+    });
+  },
+);
 gitWriteReducer.with(cancelQueuedGitWrite, (state, { payload: [workspaceId, id] }) => {
   const current = getWorkspaceState(state, workspaceId);
   const entry = getItem(current.operations, id);
@@ -93,15 +120,32 @@ gitWriteReducer.with(cancelQueuedGitWrite, (state, { payload: [workspaceId, id] 
     operations: upsertItem(current.operations, { ...entry, status: 'cancelled' }),
   });
 });
-gitWriteReducer.with(gitWriteConsumerReleased, (state, { payload: [workspaceId, consumerId] }) => {
+
+/** Consumer departure retires presentation, never an already-owned transaction. */
+function retireEntries(state: GitWriteState, workspaceId: string, consumerId?: string) {
   const current = getWorkspaceState(state, workspaceId);
   const entries = getItems(current.operations);
-  const retained = entries.filter((entry) => entry.operation.consumerId !== consumerId);
-  if (retained.length === entries.length) return state;
-  return setWorkspaceState(state, workspaceId, {
-    operations: createCollection<GitWriteEntry, 'id'>('id', retained),
+  let changed = false;
+  const retained = entries.flatMap((entry) => {
+    if (consumerId !== undefined && entry.operation.consumerId !== consumerId) return [entry];
+    if (entry.status === 'queued' || entry.status === 'running') {
+      if (entry.consumerReleased) return [entry];
+      changed = true;
+      return [{ ...entry, consumerReleased: true }];
+    }
+    changed = true;
+    return [];
   });
-});
+  if (changed && !retained.length) return clearWorkspaceState(state, workspaceId);
+  return changed
+    ? setWorkspaceState(state, workspaceId, {
+        operations: createCollection<GitWriteEntry, 'id'>('id', retained),
+      })
+    : state;
+}
+gitWriteReducer.with(gitWriteConsumerReleased, (state, { payload: [workspaceId, consumerId] }) =>
+  retireEntries(state, workspaceId, consumerId),
+);
 gitWriteReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) =>
-  clearWorkspaceState(state, workspaceId),
+  retireEntries(state, workspaceId),
 );
