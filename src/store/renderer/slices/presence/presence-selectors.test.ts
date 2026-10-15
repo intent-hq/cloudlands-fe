@@ -25,6 +25,8 @@ import {
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
   selectWorkspacePresencePeople,
+  selectWorkspacePeopleIdentities,
+  selectWorkspacePeopleTilePeople,
 } from './presence-selectors';
 import type { PresencePerson, PresenceState } from './presence-types';
 
@@ -114,6 +116,37 @@ describe('presence selectors', () => {
   ]);
 
   describe('workspace people (sidebar presence row)', () => {
+    it('starts the tile with the viewer and retains offline identities for activity photos', () => {
+      const state = stateWith(
+        reduce(
+          presenceMembersReceived('ws-1', [
+            { ...accepted('me', 'owner'), avatarUrl: 'https://example.com/me.png' },
+            { ...accepted('away'), hostRole: 'member', avatarUrl: 'https://example.com/away.png' },
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+      );
+      expect(selectWorkspacePeopleTilePeople.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'me', self: true, avatarUrl: 'https://example.com/me.png' },
+      ]);
+      expect(selectWorkspacePeopleIdentities.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'me', avatarUrl: 'https://example.com/me.png' },
+        { principalId: 'away', avatarUrl: 'https://example.com/away.png' },
+      ]);
+      const stale = { ...state, presence: { ...state.presence, context: 'expired' } };
+      expect(selectWorkspacePeopleTilePeople.select(stale, 'ws-1')).toEqual([]);
+      expect(selectWorkspacePeopleIdentities.select(stale, 'ws-1')).toEqual([]);
+    });
+
+    it('shows the admitted viewer while membership is loading, without using another session', () => {
+      const state = stateWith(reduce(presenceOwnPrincipalReceived('principal')));
+      expect(selectWorkspacePeopleTilePeople.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'principal', self: true },
+      ]);
+      const unknown = { ...state, presence: { ...state.presence, ownPrincipalId: null } };
+      expect(selectWorkspacePeopleTilePeople.select(unknown, 'ws-1')).toEqual([]);
+    });
+
     it('lists every other accepted member of a shared workspace, offline included but never self, in membership order', () => {
       const state = stateWith(reduce(roster, membership, presenceOwnPrincipalReceived('me')), {
         workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 5 })),

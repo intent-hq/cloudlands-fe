@@ -108,6 +108,7 @@ import {
   moveTabToSplitLevel,
   moveActivePaneVertically,
   openHiddenTab,
+  openTabBehindActive,
   openTab,
   openBlankWorkingPanel,
   openTabInAdjacentOrSplit,
@@ -167,6 +168,7 @@ import { dropRevealIfWorkspaceNotDisplayed } from './reveal-suppression';
 
 const PERSIST_ACTIONS = [
   initializeLayout,
+  openTabBehindActive,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,

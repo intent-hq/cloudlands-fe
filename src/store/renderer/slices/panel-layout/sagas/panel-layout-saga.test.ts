@@ -127,6 +127,7 @@ import {
   openTab,
   openBlankWorkingPanel,
   openHiddenTab,
+  openTabBehindActive,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
   openTabInRightmostColumn,
@@ -2932,20 +2933,23 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
-  it('persists hidden tabs without adding panel history', async () => {
-    mocks.getJSON.mockReturnValue(undefined);
-    const { channel, task } = startSaga();
-    await settle();
+  it.each([openHiddenTab, openTabBehindActive])(
+    'persists $type without adding panel history',
+    async (open) => {
+      mocks.getJSON.mockReturnValue(undefined);
+      const { channel, task } = startSaga();
+      await settle();
 
-    channel.put(openHiddenTab(WS_1, { type: 'browser', title: 'Hidden', closable: true }));
-    await settle();
+      channel.put(open(WS_1, { type: 'browser', title: 'Background', closable: true }));
+      await settle();
 
-    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
-    await settle();
-    expect(mocks.saveHistory).not.toHaveBeenCalled();
-    await cancelSaga(task);
-  });
+      expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+      await settle();
+      expect(mocks.saveHistory).not.toHaveBeenCalled();
+      await cancelSaga(task);
+    },
+  );
 
   // Sidebar/footer reveals persist without adding panel history
   // (monorepo#3112).

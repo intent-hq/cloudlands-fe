@@ -856,6 +856,31 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  it.each([false, true])(
+    'admits People previews independently of metadata, activity=%s',
+    async (activity) => {
+      seedSession({ isStreaming: true, status: AgentStatus.Active });
+      await primeBridge();
+      const envelope = notification('agent:last-message', {
+        agentId: AGENT,
+        role: 'user',
+        text: 'People preview',
+      });
+      const { rendererEventRecovery } = await import('./renderer-event-recovery');
+      const { workspaceActivityRecoveryKey } = await import('./workspace-activity-recovery');
+      const key = workspaceActivityRecoveryKey(WS);
+      routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+        lifetimes: new Map(activity ? [[key, rendererEventRecovery.capture(key)]] : []),
+      });
+      expect(readSession()?.status).toBe(AgentStatus.Active);
+      expect(
+        appStore.state.workspaceEvents.byWorkspaceId[WS]?.events.some(
+          (row) => row.id === envelope.params.event.id,
+        ) ?? false,
+      ).toBe(activity);
+    },
+  );
+
   it('never restores the legacy settings writer for an empty integrated admission map', async () => {
     await primeBridge();
     const envelope = {
@@ -11233,6 +11258,43 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     capturedHandlers.length = 0;
     loadChatTranscriptSpy.mockClear();
     ensureAgentSessionSpy.mockClear();
+  });
+
+  it('retains human message previews for People without creating a second activity action', async () => {
+    const { getPeopleActivity } = await import('$features/presence/components/people-activity');
+    const { shouldShowWorkspaceActivityEvent } =
+      await import('$features/log/utils/activity-event-visibility');
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const data = {
+      agentId: AGENT,
+      messageId: 'people-preview-message',
+      role: 'user',
+      author: { principalId: 'person-1', displayName: 'Luke', login: 'luke', avatarUrl: null },
+    };
+    handler(notification('agent:message', data));
+    handler(
+      notification('agent:last-message', {
+        ...data,
+        lastMessageRole: 'user',
+        lastMessageId: data.messageId,
+        lastUserMessage: 'Keep the conversation **open**',
+      }),
+    );
+    const events = appStore.state.workspaceEvents.byWorkspaceId[WS].events.filter(
+      (event) => event.data?.messageId === data.messageId,
+    );
+    expect(events).toHaveLength(2);
+    expect(events.filter(shouldShowWorkspaceActivityEvent)).toHaveLength(1);
+    expect(getPeopleActivity(WS, events, [])).toEqual([
+      expect.objectContaining({
+        messageId: data.messageId,
+        messagePreview: 'Keep the conversation open',
+      }),
+    ]);
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
   });
 
   it('applies ALL preview projections from an assistant echo with zero follow-up RPCs', async () => {
