@@ -90,6 +90,10 @@
   import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
+  import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
@@ -101,6 +105,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
+    selectCanShareWorkspace,
     selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
@@ -351,14 +356,19 @@
   // row carries, and so does every window until its identity has settled.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
+  const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
+  const showPeople = $derived($presencePeople$.length > 0);
+  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
+  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter(
       (definition) =>
-        definition.id !== 'overview' && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+        definition.id !== 'overview' &&
+        (definition.id !== 'people' || showPeople) &&
+        !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
     ).map(({ id, label, icon }) => ({
       id,
       label,
@@ -522,6 +532,11 @@
 
   function createTerminal() {
     appStore.dispatch(openTerminalOverlay(workspaceId));
+  }
+
+  function shareWorkspace() {
+    if (!$workspace || !selectCanShareWorkspace.select(appStore.state, workspaceId)) return;
+    appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: $workspace.title }));
   }
 
   let pendingLauncherFocusTabId = $state<LauncherTabId | null>(null);
@@ -962,11 +977,11 @@
     <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
   </div>
 
-  {#if !isNewWorkspaceSession}
+  {#if !isNewWorkspaceSession || isTabSelected('people')}
     <div
       class={cn(
         'sidebar-stage grid min-h-0 flex-1',
-        isLauncherOverview ? 'grid-rows-[minmax(0,1fr)_232px]' : 'grid-rows-[minmax(0,1fr)_0px]',
+        isLauncherOverview ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-[minmax(0,1fr)_0px]',
       )}
       data-sidebar-stage
     >
@@ -1009,13 +1024,23 @@
                 >
                   <!-- Panel header/description -->
                   {#if tab && !tab.hideHeader}
-                    <div class="px-4 pb-1 pt-4">
+                    <div class={tabId === 'people' ? 'px-3.5 pb-1 pt-3.5' : 'px-4 pb-1 pt-4'}>
                       <h6
-                        class="text-ui font-semibold text-foreground flex items-center gap-2 mb-0.5"
+                        class="{tabId === 'people'
+                          ? 'text-base leading-6'
+                          : 'text-ui'} font-semibold text-foreground flex items-center gap-2 mb-0.5"
                       >
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
-                          {#if tabId === 'agents'}
+                          {#if tabId === 'people'}
+                            {#if $canShare$}
+                              <SidebarHeaderAction
+                                icon="plus"
+                                label={m.workspace_share_menu_label()}
+                                onclick={shareWorkspace}
+                              />
+                            {/if}
+                          {:else if tabId === 'agents'}
                             <SidebarExpandableSearch
                               bind:query={agentSearchQuery}
                               scope="agents"
@@ -1064,7 +1089,7 @@
                           />
                         </span>
                       </h6>
-                      {#if tabId !== 'agents'}
+                      {#if tabId !== 'agents' && tabId !== 'people'}
                         <p
                           class="{tabId === 'files'
                             ? 'type-body'
@@ -1124,13 +1149,17 @@
                  ensuring onMount stream listeners and subscriptions rebind correctly -->
                   {#key workspaceId}
                     <div
-                      class="min-h-0 flex-1 pt-2 {tabId === 'files'
-                        ? 'overflow-hidden pb-0'
-                        : 'overflow-y-auto pb-6'}"
+                      class="min-h-0 flex-1 {tabId === 'people'
+                        ? 'overflow-y-auto px-1.25 pb-2'
+                        : tabId === 'files'
+                          ? 'overflow-hidden pt-2 pb-0'
+                          : 'overflow-y-auto pt-2 pb-6'}"
                       data-sidebar-expanded-scroll
                       use:scrollFade
                     >
-                      {#if tabId === 'agents'}
+                      {#if tabId === 'people'}
+                        <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
+                      {:else if tabId === 'agents'}
                         <div
                           class="px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                           data-testid="agent-panel"
@@ -1310,10 +1339,11 @@
       {#if isLauncherOverview}
         <!-- Lightweight launchers disappear while a section is expanded. -->
         <div
-          class="flex h-full min-h-0 items-end px-6 pt-4"
+          class="grid content-end gap-3 px-6 pt-2"
           data-testid="sidebar-launchers"
           data-launcher-layout="tiles"
         >
+          <WorkspacePeopleTile {workspaceId} onExpand={() => handleTabClick('people')} />
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
             {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
               <div
@@ -1498,6 +1528,9 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
+      {#if isNewWorkspaceSession}
+        <WorkspacePeopleTile {workspaceId} onExpand={() => handleTabClick('people')} />
+      {/if}
       {#if !isCollaborator}
         {#if !isNewWorkspaceSession}
           <div class="min-w-0" in:launcherGridReveal|global={4}>

@@ -183,7 +183,10 @@ import {
   isPushedAcceptChangesStatus,
 } from './accept-changes-status-events';
 import { store as appStore } from '$store/renderer/store';
-import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  bulkEventsReceived,
+  eventReceived,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
@@ -4354,11 +4357,11 @@ export function routeDaemonEventsNotification(
   }
   // `agent:last-message` (§6.5, additive) — content-bearing companion of
   // every `agent:message`: applies the persisted preview projections straight
-  // off the payload (ZERO follow-up RPCs). Returns early: the
-  // paired `agent:message` already records the row in the activity timeline,
-  // so the companion falling through would double-count every message.
+  // off the payload (ZERO follow-up RPCs). Retain the companion for People
+  // previews; activity lists hide it as a separate action.
   if (type === 'agent:last-message') {
     handleAgentLastMessageEvent(event);
+    if (event.data?.role === 'user') appStore.dispatch(bulkEventsReceived(workspaceId, [event]));
     return;
   }
   // The supported daemon emits agent:last-message for persisted previews,

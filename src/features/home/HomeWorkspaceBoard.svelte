@@ -20,6 +20,7 @@
     oncontextmenu,
     archived = false,
     showRepository = true,
+    showRepositoryOwner = true,
     groups,
   }: {
     workspaces: Workspace[];
@@ -29,6 +30,7 @@
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
+    showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
@@ -79,6 +81,13 @@
             {@const displayTitle = workspace.title.trim()
               ? workspace.title
               : m.workspace_links_untitled_label()}
+            {@const repositoryLabel =
+              [
+                showRepositoryOwner ? workspace.repositoryOwner : undefined,
+                workspace.repositoryName,
+              ]
+                .filter(Boolean)
+                .join('/') || workspace.repositoryPath}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
@@ -124,13 +133,13 @@
               <span
                 class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
-                {#if showRepository && workspace.repositoryName}
+                {#if showRepository && repositoryLabel}
                   <Tooltip.Provider
                     ><Tooltip.Root
                       ><Tooltip.Trigger
                         >{#snippet child({ props: homeTooltipProps })}<span
                             {...homeTooltipProps}
-                            class="flex min-w-0 max-w-full items-center gap-1.5"
+                            class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
                           >
                             {#if workspace.repositoryOwner}
                               <GitHubAvatar
@@ -138,13 +147,11 @@
                                 class="shrink-0 rounded-sm"
                               />
                             {/if}
-                            <span class="truncate">{workspace.repositoryName}</span>
+                            <span class="truncate" data-home-workspace-repository
+                              >{repositoryLabel}</span
+                            >
                           </span>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content
-                        >{[workspace.repositoryOwner, workspace.repositoryName]
-                          .filter(Boolean)
-                          .join('/')}</Tooltip.Content
-                      ></Tooltip.Root
+                      ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
                     ></Tooltip.Provider
                   >
                 {/if}

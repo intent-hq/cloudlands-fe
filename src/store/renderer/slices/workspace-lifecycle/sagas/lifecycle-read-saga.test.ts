@@ -4,6 +4,15 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { setWorkspaceEntity } from '../../workspace/workspace-slice';
+import type { WorkspaceEvent } from '$features/events/types';
+import { LiveEventsClient } from '$lib/client/live/live-events-client';
+import { getPeopleActivity } from '$features/presence/components/people-activity';
+import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
+import {
+  selectPeopleEventsLoading,
+  selectPeopleEventsError,
+} from '../../workspace-events/workspace-events-selectors';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -66,7 +75,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => mocks.logger,
 }));
 
-import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
+import { AgentStatus, GitFileStatus, type AgentSession, type Workspace } from '$shared/types';
 import { LiveGitClient } from '$lib/client/live/live-git-client';
 import {
   changesEventReceived,
@@ -111,6 +120,10 @@ import {
 import {
   loadEventsRequested,
   loadOlderEventsRequested,
+  loadPeopleEventsRequested,
+  eventsLoaded,
+  eventReceived,
+  workspaceEventsReducer,
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
@@ -1029,6 +1042,312 @@ describe('lifecycleReadSaga', () => {
         expect.any(Error),
       );
       await stop(run.task);
+    });
+  });
+
+  describe('People activity history', () => {
+    const humanEvent = (id: string): WorkspaceEvent => ({
+      id,
+      workspaceId: WS,
+      timestamp: NOW.toISOString(),
+      type: 'note:created',
+      actor: { type: 'user', id: 'person', name: 'Sam' },
+      data: { title: 'Plan' },
+    });
+    const noise = (id: string): WorkspaceEvent => ({
+      ...humanEvent(id),
+      actor: { type: 'system' },
+    });
+    const rows = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => humanEvent(`${prefix}-${index}`));
+
+    function startPeople() {
+      const channel = stdChannel();
+      const current = withLegacyPrincipal(appStore.state);
+      const dispatch = (action: { type: string }) => {
+        current.workspaceEvents = workspaceEventsReducer(current.workspaceEvents, action);
+        channel.put(action);
+        return action;
+      };
+      const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
+      runningTasks.push(task);
+      return {
+        current,
+        dispatch,
+        task,
+        history: () => current.workspaceEvents.byWorkspaceId[WS],
+        visible: () =>
+          getPeopleActivity(
+            WS,
+            current.workspaceEvents.byWorkspaceId[WS]?.events ?? [],
+            selectWorkspacePeopleIdentities.select(current, WS),
+          ),
+      };
+    }
+
+    it('traverses sparse unfiltered wire pages and counts author-resolved system messages', async () => {
+      const client = new LiveEventsClient();
+      mocks.events.queryPage.mockImplementation(client.queryPage.bind(client));
+      const message: WorkspaceEvent = {
+        ...noise('human-message'),
+        type: 'agent:message',
+        data: {
+          role: 'user',
+          agentId: 'agent',
+          messageId: 'message',
+          author: { principalId: 'person', displayName: 'Sam', login: 'sam', avatarUrl: null },
+        },
+      };
+      mocks.backendRequest
+        .mockResolvedValueOnce({ items: [noise('noise')], nextToken: 'page-2' })
+        .mockResolvedValueOnce({ items: [], nextToken: 'page-3' })
+        .mockResolvedValueOnce({ items: [message, ...rows('human', 19)], nextToken: 'page-4' });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+
+      expect(mocks.backendRequest.mock.calls).toEqual([
+        ['event.query', { workspaceId: WS, limit: 100, paginate: true }],
+        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-2', paginate: true }],
+        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-3', paginate: true }],
+      ]);
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history()).toMatchObject({ peopleInitialized: true, nextToken: 'page-4' });
+      expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
+    });
+
+    it('uses existing history for initial load and fetches 20 additional rows for more', async () => {
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, rows('cached', 19), 'page-2'));
+      mocks.events.queryPage
+        .mockResolvedValueOnce({ items: [humanEvent('twentieth')], nextToken: 'page-3' })
+        .mockResolvedValueOnce({
+          items: [noise('noise'), humanEvent('older')],
+          nextToken: 'page-4',
+        })
+        .mockResolvedValueOnce({ items: rows('more', 19), nextToken: 'page-5' });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(run.visible()).toHaveLength(40);
+      expect(mocks.events.queryPage.mock.calls).toEqual([
+        [WS, { limit: 100, nextToken: 'page-2' }],
+        [WS, { limit: 100, nextToken: 'page-3' }],
+        [WS, { limit: 100, nextToken: 'page-4' }],
+      ]);
+    });
+
+    it('counts unnamed human actions through the current full identity roster', async () => {
+      const run = startPeople();
+      run.current.userPreferences.labsMultiplayerEnabled = true;
+      run.current.presence.context = selectPrincipalActionContext.select(run.current);
+      run.current.workspace = workspaceReducer(
+        run.current.workspace,
+        setWorkspaceEntity({ id: WS, memberCount: 2 } as Workspace),
+      );
+      run.current.presence.members[WS] = createCollection('principalId', [
+        {
+          principalId: 'person',
+          login: 'sam',
+          displayName: 'Sam',
+          avatarUrl: null,
+          role: 'owner' as const,
+          addedAt: NOW.toISOString(),
+        },
+      ]);
+      mocks.events.queryPage.mockResolvedValueOnce({
+        items: rows('human', 20).map((event) => ({
+          ...event,
+          actor: { type: 'user', id: 'person' },
+        })),
+        nextToken: 'older',
+      });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history().nextToken).toBe('older');
+    });
+
+    it('merges the first People page with a live-only cache and continues past duplicate rows', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage
+        .mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        )
+        .mockResolvedValueOnce({ items: rows('older', 18), nextToken: 'page-3' });
+      const run = startPeople();
+      run.dispatch(eventReceived(WS, humanEvent('cached')));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      run.dispatch(eventReceived(WS, humanEvent('live')));
+      resolve({
+        items: Array.from({ length: 100 }, () => humanEvent('cached')),
+        nextToken: 'page-2',
+      });
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history().events.map((event) => event.id)).toEqual(
+        expect.arrayContaining(['cached', 'live']),
+      );
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+    });
+
+    it('caps one request at ten pages and keeps continuation without automatic repeat loading', async () => {
+      let page = 0;
+      mocks.events.queryPage.mockImplementation(async () => ({
+        items: [noise(`noise-${page}`)],
+        nextToken: `page-${++page}`,
+      }));
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      for (let i = 0; i < 4; i++) await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
+      expect(run.history()).toMatchObject({ nextToken: 'page-10', endReached: false });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
+      mocks.events.queryPage.mockResolvedValueOnce({
+        items: [humanEvent('last')],
+        nextToken: null,
+      });
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
+        limit: 100,
+        nextToken: 'page-10',
+      });
+      expect(run.history()).toMatchObject({ endReached: true, peopleRequestId: null });
+    });
+
+    it('stops at empty end-of-history, including repeated initial and more requests', async () => {
+      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history()).toMatchObject({ events: [], endReached: true, peopleError: null });
+    });
+
+    it('coalesces repeated more requests and preserves live events arriving during the read', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage.mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, rows('cached', 20), 'page-2'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      run.dispatch(eventReceived(WS, humanEvent('live')));
+      expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(true);
+      resolve({ items: rows('older', 20), nextToken: 'page-3' });
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.visible()).toHaveLength(41);
+      expect(run.history().events.map((event) => event.id)).toContain('live');
+    });
+
+    it('keeps a failed page cursor and requires an explicit retry after initial failure', async () => {
+      mocks.events.queryPage
+        .mockResolvedValueOnce({ items: [humanEvent('first')], nextToken: 'page-2' })
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ items: rows('rest', 19), nextToken: null });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(selectPeopleEventsError.select(run.current, WS)).toBe('offline');
+      expect(run.history()).toMatchObject({ nextToken: 'page-2', peopleRequestId: null });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial', true));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
+        limit: 100,
+        nextToken: 'page-2',
+      });
+      expect(run.visible()).toHaveLength(20);
+      expect(selectPeopleEventsError.select(run.current, WS)).toBeNull();
+    });
+
+    it('serializes People requests behind a shared refresh and uses its new cursor', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage
+        .mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        )
+        .mockResolvedValueOnce({ items: rows('older', 19), nextToken: null });
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, [humanEvent('stale')], 'stale-cursor'));
+      run.dispatch(loadEventsRequested(WS));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      resolve({ items: [humanEvent('fresh')], nextToken: 'fresh-cursor' });
+      await settle();
+      expect(mocks.events.queryPage.mock.calls).toEqual([
+        [WS, { limit: 100 }],
+        [WS, { limit: 100, nextToken: 'fresh-cursor' }],
+      ]);
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history().events.map((event) => event.id)).not.toContain('stale');
+    });
+
+    it.each(['unmount', 'backend', 'connection', 'principal', 'cancel'] as const)(
+      'discards a late People response after %s and clears its loading state',
+      async (change) => {
+        let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+        mocks.events.queryPage.mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        const run = startPeople();
+        run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+        await settle();
+        if (change === 'unmount') run.dispatch(workspaceUnmounted(WS));
+        if (change === 'backend') run.current.connections.windowBackendId = 'replacement';
+        if (change === 'connection') run.current.workspaceEvents.subscriptionGeneration += 1;
+        if (change === 'principal') run.current.principal.presentationVersion += 1;
+        if (change === 'cancel') await stop(run.task);
+        resolve({ items: [humanEvent('late')], nextToken: 'page-2' });
+        await settle();
+        expect(run.visible()).toHaveLength(0);
+        expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
+        expect(run.history().peopleInitialized).toBe(false);
+        expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('stops a non-advancing cursor without marking the remaining history exhausted', async () => {
+      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: 'same' });
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, [], 'same'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history()).toMatchObject({
+        nextToken: 'same',
+        endReached: false,
+        peopleRequestId: null,
+      });
     });
   });
 

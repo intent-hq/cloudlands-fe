@@ -3631,6 +3631,114 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(expand).toHaveBeenCalledTimes(1);
   });
 
+  it('reveals only the requested active tab when the same agent has two visible viewers', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    for (const tabId of ['left-agent-tab', 'right-agent-tab']) {
+      render(ChatPanel, {
+        props: { workspace: workspace('workspace-a'), agentId: 'agent-a', tabId, isActive: true },
+      });
+    }
+    await tick();
+    const targets = screen.getAllByTestId('chat-transcript-scroll-viewport').map((viewport) => {
+      const target = document.createElement('div');
+      target.dataset.messageId = 'message-a';
+      viewport.append(target);
+      return target;
+    });
+    mocks.animateScrollTo.mockClear();
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'message-a',
+          targetTabId: 'right-agent-tab',
+          requestId: 'scoped-request',
+        },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
+    expect(targets[1].classList.contains('message-highlight-flash')).toBe(true);
+    expect(mocks.animateScrollTo).toHaveBeenCalledTimes(1);
+    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(targets[1].parentElement);
+  });
+
+  it('ignores a targeted request while its viewer is inactive, then accepts the retry when active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const props = {
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      tabId: 'target-tab',
+      isActive: false,
+    };
+    const view = render(ChatPanel, { props });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const detail = {
+      agentId: 'agent-a',
+      messageId: 'message-a',
+      targetTabId: 'target-tab',
+      requestId: 'inactive-request',
+    };
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    await view.rerender({ ...props, isActive: true });
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('message-highlight-flash')).toBe(true);
+  });
+
+  it('does not finish a cancelled reveal or restart it on a delayed retry', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        tabId: 'target-tab',
+        isActive: true,
+      },
+    });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const controller = new AbortController();
+    const detail = {
+      agentId: 'agent-a',
+      messageId: 'message-a',
+      targetTabId: 'target-tab',
+      requestId: 'cancelled-request',
+      signal: controller.signal,
+    };
+    mocks.animateScrollTo.mockClear();
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    controller.abort();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    expect(mocks.animateScrollTo).not.toHaveBeenCalled();
+  });
+
   it('supersedes a pending same-agent deep link with the newer target', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([

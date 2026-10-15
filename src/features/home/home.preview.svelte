@@ -36,6 +36,8 @@
       | 'board'
       | 'board-long-content'
       | 'board-repositories'
+      | 'repository-labels'
+      | 'board-repository-labels'
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
@@ -66,6 +68,8 @@
       board: { props: { scenario: 'board' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
+      'repository-labels': { props: { scenario: 'repository-labels' } },
+      'board-repository-labels': { props: { scenario: 'board-repository-labels' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
@@ -303,6 +307,25 @@
       statusMessage: 'Existing attention and completion signals keep their meaning.',
     })),
   ].map((workspace) => ({ ...workspace, waiting: true }));
+  const repositoryFixtures: Pick<
+    Workspace,
+    'repositoryOwner' | 'repositoryName' | 'repositoryPath'
+  >[] = [
+    { repositoryOwner: 'acme', repositoryName: 'studio', repositoryPath: '/repos/studio' },
+    { repositoryOwner: 'orbit', repositoryName: 'studio', repositoryPath: '/repos/orbit/studio' },
+    {
+      repositoryOwner: 'an-organization-with-a-long-name',
+      repositoryName: 'a-repository-with-a-long-name',
+      repositoryPath: '/repos/long-name',
+    },
+    {
+      repositoryOwner: undefined,
+      repositoryName: 'local-tools',
+      repositoryPath: '/repos/local-tools',
+    },
+    { repositoryOwner: undefined, repositoryName: undefined, repositoryPath: '/repos/path-only' },
+    { repositoryOwner: undefined, repositoryName: undefined, repositoryPath: undefined },
+  ];
   const assistantFixtures: AgentSession[] = Array.from({ length: 240 }, (_, index) => {
     const name =
       [
@@ -525,7 +548,9 @@
                       repositoryName: `${workspace.id}-${'repository'.repeat(10)}`,
                       repositoryPath: `/repos/${workspace.id}`,
                     }
-                  : {}),
+                  : scenario.endsWith('repository-labels')
+                    ? repositoryFixtures[fixtures.indexOf(workspace) % repositoryFixtures.length]
+                    : {}),
             })),
       ),
     );

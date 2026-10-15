@@ -54,7 +54,8 @@
     agents.find((agent) => agent.id === $activeId$) ?? resolveCanonicalInitialAgent(agents),
   );
   const repositoryLabel = $derived(
-    [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/'),
+    [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/') ||
+      workspace.repositoryPath,
   );
   let detailFailed = $state(false);
   async function loadDetail() {
@@ -104,31 +105,6 @@
           </Tooltip.Root>
         </Tooltip.Provider>
       </h2>
-      {#if repositoryLabel}
-        <Tooltip.Provider
-          ><Tooltip.Root
-            ><Tooltip.Trigger
-              >{#snippet child({ props: homeTooltipProps })}<div
-                  {...homeTooltipProps}
-                  class="flex min-w-0 max-w-[32%] items-center gap-1.5 type-caption text-muted-foreground"
-                  data-home-detail-repository
-                  aria-label={repositoryLabel}
-                >
-                  {#if workspace.repositoryOwner}
-                    <GitHubAvatar
-                      identity={workspace.repositoryOwner}
-                      size={16}
-                      class="shrink-0 rounded-sm"
-                    />
-                  {:else}
-                    <Fa icon={faFolder} />
-                  {/if}
-                  <span class="home-detail-repository-name truncate">{repositoryLabel}</span>
-                </div>{/snippet}</Tooltip.Trigger
-            ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
-          ></Tooltip.Provider
-        >
-      {/if}
       {#if showBackToList}
         <div class="shrink-0">
           <Button
@@ -141,6 +117,31 @@
         </div>
       {/if}
     </div>
+    {#if repositoryLabel}
+      <Tooltip.Provider
+        ><Tooltip.Root
+          ><Tooltip.Trigger
+            >{#snippet child({ props: homeTooltipProps })}<div
+                {...homeTooltipProps}
+                class="mb-1 flex min-w-0 max-w-[min(100%,16rem)] items-center gap-1.5 type-caption text-muted-foreground"
+                data-home-detail-repository
+                aria-label={repositoryLabel}
+              >
+                {#if workspace.repositoryOwner}
+                  <GitHubAvatar
+                    identity={workspace.repositoryOwner}
+                    size={16}
+                    class="shrink-0 rounded-sm"
+                  />
+                {:else}
+                  <Fa icon={faFolder} />
+                {/if}
+                <span class="home-detail-repository-name truncate">{repositoryLabel}</span>
+              </div>{/snippet}</Tooltip.Trigger
+          ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
+        ></Tooltip.Provider
+      >
+    {/if}
     {#if workspace.statusMessage}
       <Tooltip.Provider
         ><Tooltip.Root
@@ -207,14 +208,3 @@
     {#key workspace.id}<HomeWorkspaceChat {workspace} {preview} />{/key}
   </div>
 </section>
-
-<style>
-  @container home-panel (max-width: 600px) {
-    .home-detail-repository-name {
-      display: none;
-    }
-    [data-home-detail-repository] {
-      flex-shrink: 0;
-    }
-  }
-</style>

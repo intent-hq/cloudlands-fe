@@ -14,6 +14,7 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faArrowRight,
     faCodeBranch,
@@ -94,28 +95,12 @@
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasAgentBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { selectWorkspaceActiveComputerName } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import {
-    presencePersonNameWithForge,
-    presencePersonLabel,
-    type PresenceCircle,
-    type PresenceCircleAction,
-  } from '$features/presence/components/presence-person';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import {
-    PRESENCE_FOLLOW_VISIBLE_LIMIT,
-    selectPresenceFollowTargets,
-  } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
-  import { followPresencePersonRequested } from '$store/renderer/slices/presence-follow/presence-follow-slice';
-  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -464,86 +449,6 @@
       : null,
   );
 
-  // Multiplayer presence row: everybody else on this shared workspace, the
-  // offline members greyscale, so the row shows even while only this window
-  // is online. An avatar takes the viewer to where that person looks right
-  // now (their agent chat, else their note); unknown destinations are inert.
-  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const presenceFocusTargets$ = selectPresenceFollowTargets(workspaceIdStore);
-  const presencePersonAction = $derived.by(() => {
-    const targets = $presenceFocusTargets$;
-    const agents = $workspaceAgentSessions$;
-    const allNotes = $notes;
-    const wsId = $workspace?.id ? String($workspace.id) : undefined;
-    return (person: PresenceCircle): PresenceCircleAction => {
-      const name = person.hostRole
-        ? presencePersonLabel(person)
-        : presencePersonNameWithForge(person);
-      const entry = targets[person.principalId];
-      const target = entry?.target;
-      if (!entry || !target)
-        return {
-          label:
-            !person.hostRole && !person.online
-              ? m.workspace_progressCard_presenceOffline_tooltip({ name })
-              : name,
-          onSelect: null,
-        };
-      const sameWorkspace = target.workspaceId === wsId;
-      const agent = sameWorkspace
-        ? agents.find((s) => String(s.id) === target.agentId)?.name
-        : undefined;
-      const note = sameWorkspace
-        ? allNotes.find((n) => String(n.id) === target.noteId)?.title
-        : undefined;
-      const viewLabel = target.agentId
-        ? m.workspace_progressCard_presenceOnAgent_tooltip({
-            name,
-            agent: agent || m.layout_tabTypes_agent_title(),
-          })
-        : target.noteId
-          ? m.workspace_progressCard_presenceOnNote_tooltip({
-              name,
-              note: note || m.layout_tabTypes_note_title(),
-            })
-          : name;
-      return {
-        label:
-          !sameWorkspace || (!target.agentId && !target.noteId)
-            ? m.workspace_progressCard_presenceAtWorkspace_tooltip({
-                name: viewLabel,
-                workspace: entry.workspaceTitle,
-              })
-            : viewLabel,
-        onSelect: wsId
-          ? (event) => {
-              const current = selectPresenceFollowTargets.select(appStore.state, wsId)[
-                person.principalId
-              ];
-              if (
-                !current ||
-                current.scope !== entry.scope ||
-                current.generation !== entry.generation ||
-                current.seq !== entry.seq
-              )
-                return;
-              appStore.dispatch(
-                followPresencePersonRequested(
-                  entry.scope,
-                  person.principalId,
-                  entry.generation,
-                  entry.seq,
-                  crypto.randomUUID(),
-                  findSourcePanelId(event.target),
-                  isCmdClickModifier({ event }),
-                ),
-              );
-            }
-          : null,
-      };
-    };
-  });
-
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
       ? {
@@ -597,6 +502,7 @@
     clientId: string;
     context: string | null;
   } | null>(null);
+
   const activeComputerName$ = selectWorkspaceActiveComputerName(workspaceIdStore);
 
   const setPrimaryClientAction: MenuAction = $derived({
@@ -972,11 +878,15 @@
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
 {/snippet}
 
 {#snippet sidebarSideIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$ === 'left' ? 'right' : 'left'} class="opacity-50" />
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
 {/snippet}
 
 <div class="flex w-full flex-col" data-workspace-title-section>
@@ -1044,7 +954,7 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <KebabIcon class="size-4" />
+                <KebabIcon />
               {/if}
             </Button>
           {/snippet}
@@ -1202,17 +1112,6 @@
           </TooltipRich>
         {/if}
       </div>
-      {#if $presencePeople$.length > 0}
-        <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
-          <PresenceAvatarStack
-            people={$presencePeople$}
-            maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
-            size={18}
-            action={presencePersonAction}
-            class="pl-0.5"
-          />
-        </div>
-      {/if}
       <!-- Active agent activity names its computer; an idle pin stays silent. -->
       <DrivingClientIndicator
         {...$drivingClient$}

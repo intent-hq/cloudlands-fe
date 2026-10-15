@@ -111,7 +111,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
     expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
     expect(sidebar).toContain('data-workspace-title-region');
-    expect(sidebar).toContain('<div class="px-4 pb-1 pt-4">');
     const addContext = selfClosingTag(sidebar, 'AddContextSection');
     expect(addContext).toContain('onAddNote={onCreateNote}');
     expect(addContext).toMatch(/\bcompact\b/);

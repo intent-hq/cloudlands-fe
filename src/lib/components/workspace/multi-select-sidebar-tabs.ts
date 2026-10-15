@@ -5,6 +5,7 @@ import {
   faGlobe,
   faRobot,
   faTerminal,
+  faUsers,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
@@ -30,6 +31,14 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     },
     hideLabel: true,
     hideHeader: true,
+  },
+  {
+    id: 'people',
+    get label() {
+      return m.workspace_peopleTile_title();
+    },
+    icon: faUsers,
+    description: '',
   },
   {
     id: 'agents',
@@ -114,9 +123,16 @@ function isValidTabId(value: string): value is TabId {
  */
 export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
 
-export function normalizeSelectedTabs(tabIds: string[], isCollaborator = false): Set<TabId> {
+export function normalizeSelectedTabs(
+  tabIds: string[],
+  isCollaborator = false,
+  showPeople = true,
+): Set<TabId> {
   const normalized = tabIds.filter(
-    (tabId) => isValidTabId(tabId) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
+    (tabId) =>
+      isValidTabId(tabId) &&
+      (tabId !== 'people' || showPeople) &&
+      !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
   );
   return new Set([(normalized[0] as TabId | undefined) ?? 'overview']);
 }

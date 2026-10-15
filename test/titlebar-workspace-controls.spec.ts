@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl = '';
@@ -59,6 +60,12 @@ async function mountControls(
   zoom: number,
   withAssistant = false,
 ) {
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/TitlebarWorkspaceControlsHarness.svelte',
+    '/src/store/renderer/store.ts',
+    '/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts',
+  ]);
   await page.goto(baseUrl + 'test/fixtures/titlebar-controls.html');
   await page.addStyleTag({ url: baseUrl + 'src/app.css' });
   await page.evaluate(

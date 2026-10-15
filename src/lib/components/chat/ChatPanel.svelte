@@ -291,7 +291,7 @@
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
-  import { seekConversationToMessage } from '$lib/utils/open-message';
+  import { seekConversationToMessage, type OpenMessageEventDetail } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
@@ -463,6 +463,8 @@
   interface Props {
     workspace: Workspace;
     agentId: string;
+    /** Layout identity used to target this viewer when an agent is open in multiple panes. */
+    tabId?: string;
     agentName?: string;
     agentModel?: string;
     /** Whether this panel is the active/visible tab. Used to prevent input when hidden. */
@@ -493,6 +495,7 @@
   let {
     workspace,
     agentId,
+    tabId,
     agentName = 'Chat',
     agentModel = undefined,
     isActive = true,
@@ -4834,9 +4837,15 @@
   });
 
   async function handleOpenMessage(event: Event) {
-    const detail = (event as CustomEvent).detail as
-      { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
-    if (!isActive || !detail || detail.agentId !== agentId) return;
+    const detail = (event as CustomEvent<OpenMessageEventDetail | undefined>).detail;
+    if (
+      !isActive ||
+      !detail ||
+      detail.agentId !== agentId ||
+      (detail.targetTabId !== undefined && detail.targetTabId !== tabId) ||
+      detail.signal?.aborted
+    )
+      return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
     if (
@@ -4851,7 +4860,11 @@
     const request = ++searchHighlightRequest;
     const binding = searchBindingKey();
     const current = () =>
-      !!getContainer() && binding === searchBindingKey() && request === searchHighlightRequest;
+      !detail.signal?.aborted &&
+      (detail.targetTabId === undefined || detail.targetTabId === tabId) &&
+      !!getContainer() &&
+      binding === searchBindingKey() &&
+      request === searchHighlightRequest;
     pendingOpenMessageRequestIds.add(detail.requestId);
     try {
       // Force-render only the target's turn through LazyTurn; individual rows

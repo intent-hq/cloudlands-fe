@@ -11141,6 +11141,43 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     ensureAgentSessionSpy.mockClear();
   });
 
+  it('retains human message previews for People without creating a second activity action', async () => {
+    const { getPeopleActivity } = await import('$features/presence/components/people-activity');
+    const { shouldShowWorkspaceActivityEvent } =
+      await import('$features/log/utils/activity-event-visibility');
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const data = {
+      agentId: AGENT,
+      messageId: 'people-preview-message',
+      role: 'user',
+      author: { principalId: 'person-1', displayName: 'Luke', login: 'luke', avatarUrl: null },
+    };
+    handler(notification('agent:message', data));
+    handler(
+      notification('agent:last-message', {
+        ...data,
+        lastMessageRole: 'user',
+        lastMessageId: data.messageId,
+        lastUserMessage: 'Keep the conversation **open**',
+      }),
+    );
+    const events = appStore.state.workspaceEvents.byWorkspaceId[WS].events.filter(
+      (event) => event.data?.messageId === data.messageId,
+    );
+    expect(events).toHaveLength(2);
+    expect(events.filter(shouldShowWorkspaceActivityEvent)).toHaveLength(1);
+    expect(getPeopleActivity(WS, events, [])).toEqual([
+      expect.objectContaining({
+        messageId: data.messageId,
+        messagePreview: 'Keep the conversation open',
+      }),
+    ]);
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+
   it('applies ALL preview projections from an assistant echo with zero follow-up RPCs', async () => {
     seedSession({
       lastAgentResponse: 'old response',

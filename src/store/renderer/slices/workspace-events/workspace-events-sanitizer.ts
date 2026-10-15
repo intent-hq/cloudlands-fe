@@ -107,6 +107,7 @@ function sanitizeStringArray(value: unknown): string[] | undefined {
 
 function sanitizeSerializable(value: unknown, key = '', seen = new WeakSet<object>()): unknown {
   if (STRING_ARRAY_KEYS.has(key)) return sanitizeStringArray(value);
+  if (key === 'principalId' && value === null) return null;
   if (isExpectedStringField(key)) return coerceString(value);
   if (
     value === null ||

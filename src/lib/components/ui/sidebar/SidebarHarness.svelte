@@ -1,5 +1,6 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import * as Sidebar from './index';
 
   let {
@@ -73,7 +74,8 @@
             <Sidebar.GroupAction aria-label="Add navigation item"
               ><span>+</span></Sidebar.GroupAction
             >
-            <Sidebar.GroupAction aria-label="Navigation options"><span>⋯</span></Sidebar.GroupAction
+            <Sidebar.GroupAction aria-label="Navigation options"
+              ><KebabIcon orientation="horizontal" /></Sidebar.GroupAction
             >
           </Sidebar.GroupActions>
         {/if}
@@ -95,7 +97,7 @@
                 />
                 {#if fixtureState === 'actions-and-badges'}
                   <Sidebar.MenuAction showOnHover aria-label="Overview actions">
-                    <span aria-hidden="true">⋯</span>
+                    <KebabIcon orientation="horizontal" />
                   </Sidebar.MenuAction>
                 {/if}
               </Sidebar.MenuItem>
@@ -149,7 +151,7 @@
                     <Sidebar.MenuAction aria-label="Pin settings"><span>+</span></Sidebar.MenuAction
                     >
                     <Sidebar.MenuAction aria-label="Settings options"
-                      ><span>⋯</span></Sidebar.MenuAction
+                      ><KebabIcon orientation="horizontal" /></Sidebar.MenuAction
                     >
                   </Sidebar.MenuActions>
                 {/if}

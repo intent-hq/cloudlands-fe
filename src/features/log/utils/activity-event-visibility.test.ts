@@ -55,6 +55,12 @@ describe('activity event visibility', () => {
   it('shows only agent, note, task, and source-file activity', () => {
     const event = workspaceUpdated({});
     expect(shouldShowWorkspaceActivityEvent({ ...event, type: 'agent:completed' })).toBe(true);
+    expect(
+      shouldShowWorkspaceActivityEvent({
+        ...event,
+        type: 'agent:last-message' as WorkspaceEvent['type'],
+      }),
+    ).toBe(false);
     expect(shouldShowWorkspaceActivityEvent({ ...event, type: 'note:updated' })).toBe(true);
     expect(shouldShowWorkspaceActivityEvent({ ...event, type: 'task:status-changed' })).toBe(true);
     expect(

@@ -132,6 +132,51 @@ export const selectWorkspacePresencePeople = store.createSelector<
   return people.length > 0 ? people : NO_PEOPLE;
 });
 
+/** Activity needs identities even when their avatars are hidden from live presence. */
+export const selectWorkspacePeopleIdentities = store.createSelector<
+  [workspaceId: string],
+  PresenceIdentity[]
+>((state, workspaceId) => {
+  if (!sharedWorkspace(state, workspaceId)) return NO_PEOPLE;
+  const members = state.presence.members[workspaceId];
+  const roster = state.presence.rosters[workspaceId];
+  const identities = new Map<string, PresenceIdentity>();
+  for (const member of members ? getItems(members) : []) {
+    identities.set(member.principalId, member);
+  }
+  for (const member of roster ? getItems(roster) : []) {
+    identities.set(member.principalId, { ...identities.get(member.principalId), ...member });
+  }
+  const own = selectPrincipalSnapshot.select(state)?.principal;
+  if (own && own.id === state.presence.ownPrincipalId && !identities.has(own.id)) {
+    identities.set(own.id, { ...own, principalId: own.id });
+  }
+  return [...identities.values()];
+});
+
+/** The People tile starts with the viewer, followed by the existing presence order. */
+export const selectWorkspacePeopleTilePeople = store.createSelector<
+  [workspaceId: string],
+  PresencePerson[]
+>((state, workspaceId) => {
+  const others = selectWorkspacePresencePeople.select(state, workspaceId);
+  const ownId = state.presence.ownPrincipalId;
+  const own = selectWorkspacePeopleIdentities
+    .select(state, workspaceId)
+    .find((person) => person.principalId === ownId);
+  if (!own) return others;
+  const workspace = sharedWorkspace(state, workspaceId);
+  return [
+    toPerson(own, {
+      owner: own.hostRole ? own.hostRole === 'owner' : workspace?.ownerPrincipalId === ownId,
+      online: true,
+      viewing: true,
+      self: true,
+    }),
+    ...others,
+  ];
+});
+
 /**
  * The circles of a chat's title bar: everyone else whose focus includes this
  * agent's chat right now, with the owner (`ownerPrincipalId`) blue and leading

@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.218.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.217.0...v2.218.0) (2026-10-14)
+
+
+### 🚀 Features
+
+* **browser:** Keep agent tabs behind current content ([#3338](https://github.com/intent-hq/cloudlands-fe/issues/3338)) ([73321bb](https://github.com/intent-hq/cloudlands-fe/commit/73321bb6e3fdb0d58e74acadc5c1ac12eba52771))
+
 ## [2.217.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.216.8...v2.217.0) (2026-10-14)
 
 

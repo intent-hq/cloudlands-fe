@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { spring } from '$lib/motion';
+import { initialState as presenceInitialState } from '$store/renderer/slices/presence/presence-slice';
+import { initialState as userPreferencesInitialState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -209,6 +212,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceHostLocal: mocks.selector(true),
   isWorkspacePullRequestPoolTruncated: () => false,
   selectIsWorkspaceCollaborator: mocks.selector(false),
+  selectCanShareWorkspace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectPrMonitors: mocks.selector([]),
@@ -362,6 +366,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }),
     );
     mockStoreState = {
+      workspace: workspaceInitialState,
+      presence: presenceInitialState,
+      userPreferences: userPreferencesInitialState,
       daemonHealth: localHealth,
       externalEditors: {
         selectedAction: 'vscode',

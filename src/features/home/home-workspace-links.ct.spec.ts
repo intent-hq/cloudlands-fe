@@ -378,10 +378,18 @@ for (const entry of headerCases) {
     expect(titleLayout.lineHeight).toBeGreaterThan(0);
     expect(titleLayout.height).toBeLessThanOrEqual(titleLayout.lineHeight * 2 + 1);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(closeBox.x + 1);
+    let repositoryBox: typeof titleBox | null = null;
     if (entry.repository) {
-      const repoBox = (await header.locator('[data-home-detail-repository]').boundingBox())!;
-      expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(repoBox.x + 1);
-      expect(repoBox.x + repoBox.width).toBeLessThanOrEqual(closeBox.x + 1);
+      const repository = header.locator('[data-home-detail-repository]');
+      await expect(repository.locator('.home-detail-repository-name')).toBeVisible();
+      repositoryBox = (await repository.boundingBox())!;
+      const separated = (a: typeof titleBox, b: typeof titleBox) =>
+        a.x + a.width <= b.x + 1 ||
+        b.x + b.width <= a.x + 1 ||
+        a.y + a.height <= b.y + 1 ||
+        b.y + b.height <= a.y + 1;
+      expect(separated(titleBox, repositoryBox)).toBe(true);
+      expect(separated(repositoryBox, closeBox)).toBe(true);
     }
     expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
@@ -391,7 +399,7 @@ for (const entry of headerCases) {
     await writeFile(
       resolve(folder, 'header-layout.json'),
       JSON.stringify(
-        { title: entry.title, lineLimit: 2, ...titleLayout, titleBox, closeBox },
+        { title: entry.title, lineLimit: 2, ...titleLayout, titleBox, closeBox, repositoryBox },
         null,
         2,
       ),
