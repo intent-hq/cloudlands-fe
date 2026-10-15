@@ -862,6 +862,7 @@ test('Home workspace menus pin without duplication and support right click and k
   await pinned.getByRole('button', { name: 'Workspace actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toHaveCount(0);
   await pinned.getByRole('option').focus();
   await page.keyboard.press('Shift+F10');
   await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
