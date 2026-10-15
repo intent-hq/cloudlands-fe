@@ -1,3 +1,4 @@
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { editor } from 'monaco-editor';
 import { LoadingState } from '@/components/patterns/screen';
@@ -18,6 +19,11 @@ export function CodeEditor({
   onSave,
   ariaLabel,
   errorLabel,
+  fill = false,
+  lineWrapping = true,
+  jumpTimestamp,
+  active = true,
+  fileName,
 }: {
   value: string;
   path: string;
@@ -30,14 +36,43 @@ export function CodeEditor({
   onSave: () => void;
   ariaLabel?: string;
   errorLabel?: string;
+  /** Source desktop host; browser preview defaults remain unchanged. */
+  fill?: boolean;
+  lineWrapping?: boolean;
+  jumpTimestamp?: number;
+  active?: boolean;
+  fileName?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const instance = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const latest = useRef({ value, dark, fontFamily, readOnly, onChange, onSave, ariaLabel });
+  const latest = useRef({
+    value,
+    dark,
+    fontFamily,
+    readOnly,
+    onChange,
+    onSave,
+    ariaLabel,
+    lineWrapping,
+    active,
+    fileName,
+  });
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   useLayoutEffect(() => {
-    latest.current = { value, dark, fontFamily, readOnly, onChange, onSave, ariaLabel };
+    latest.current = {
+      value,
+      dark,
+      fontFamily,
+      readOnly,
+      onChange,
+      onSave,
+      ariaLabel,
+      lineWrapping,
+      active,
+      fileName,
+    };
   });
+  const modelLine = fill ? undefined : line;
   useLayoutEffect(() => {
     const host = container.current;
     if (!host) return;
@@ -71,7 +106,20 @@ export function CodeEditor({
         fontWeight: '500',
         automaticLayout: true,
         minimap: { enabled: false },
-        wordWrap: 'on',
+        wordWrap: latest.current.lineWrapping ? 'on' : 'off',
+        ...(fill
+          ? {
+              lineNumbersMinChars: 5,
+              overviewRulerLanes: 0,
+              fontLigatures: true,
+              scrollbar: {
+                vertical: 'auto' as const,
+                horizontal: 'auto' as const,
+                verticalScrollbarSize: 10,
+                horizontalScrollbarSize: 10,
+              },
+            }
+          : {}),
         scrollBeyondLastLine: false,
         readOnly: latest.current.readOnly,
         ariaLabel: latest.current.ariaLabel ?? m.workspace_fileEdit_editor_ariaLabel(),
@@ -84,8 +132,21 @@ export function CodeEditor({
         if (text !== latest.current.value) latest.current.onChange(text);
       });
       disposables.push(listener);
-      view.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => latest.current.onSave());
-      if (line) view.revealLineInCenter(line);
+      if (!fill)
+        view.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => latest.current.onSave());
+      if (modelLine) view.revealLineInCenter(modelLine);
+      if (fill)
+        disposables.push(
+          view.onDidChangeCursorSelection(({ selection }) => {
+            if (!view.hasTextFocus() || !latest.current.active) return;
+            dispatchWindowEvent('editor:selection-change', {
+              text: selection.isEmpty() ? '' : model.getValueInRange(selection),
+              file: latest.current.fileName,
+              language,
+              source: 'monaco',
+            });
+          }),
+        );
       setPhase('ready');
     })().catch(() => {
       cleanup();
@@ -95,7 +156,7 @@ export function CodeEditor({
       retired = true;
       cleanup();
     };
-  }, [path, language, line]);
+  }, [path, language, fill, modelLine]);
   useLayoutEffect(() => {
     const model = instance.current?.getModel();
     if (model && model.getValue(undefined, true) !== value) {
@@ -105,21 +166,43 @@ export function CodeEditor({
     }
     instance.current?.updateOptions({
       readOnly,
+      wordWrap: lineWrapping ? 'on' : 'off',
       fontFamily,
       ariaLabel: ariaLabel ?? m.workspace_fileEdit_editor_ariaLabel(),
     });
-  }, [value, readOnly, fontFamily, phase, ariaLabel]);
+  }, [value, readOnly, fontFamily, phase, ariaLabel, lineWrapping]);
   useLayoutEffect(() => {
     let retired = false;
-    void import('$lib/utils/monaco-theme').then((theme) => {
-      if (!retired && instance.current) theme.revertMonacoTheme(dark);
-    });
+    void Promise.all([import('$lib/utils/monaco-theme'), import('$lib/utils/monaco-workers')]).then(
+      ([theme, engine]) => {
+        if (!retired && instance.current) {
+          if (fill) engine.monaco.editor.setTheme(theme.getActiveMonacoThemeName(dark));
+          else theme.revertMonacoTheme(dark);
+        }
+      },
+    );
     return () => {
       retired = true;
     };
-  }, [dark, phase]);
+  }, [dark, phase, fill]);
+  const lastJump = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const view = instance.current,
+      model = view?.getModel();
+    if (!fill || !active || !line || !view || !model) return;
+    const key = JSON.stringify([path, line, jumpTimestamp]);
+    if (lastJump.current === key) return;
+    lastJump.current = key;
+    const position = {
+      lineNumber: Math.max(1, Math.min(Math.floor(line), model.getLineCount())),
+      column: 1,
+    };
+    view.setPosition(position);
+    view.revealPositionInCenterIfOutsideViewport(position, 0);
+    view.focus();
+  }, [fill, active, line, jumpTimestamp, path, phase]);
   return (
-    <div className="min-w-0" data-editor-phase={phase}>
+    <div className={fill ? 'relative h-full w-full min-w-0' : 'min-w-0'} data-editor-phase={phase}>
       {phase === 'loading' && (
         <LoadingState label={m.workspace_noteVersionHistory_loading_label()} />
       )}
@@ -128,7 +211,11 @@ export function CodeEditor({
       )}
       <div
         ref={container}
-        className="h-96 min-w-0 overflow-hidden rounded border border-border"
+        className={
+          fill
+            ? 'native-scrollbars h-full w-full min-w-0 overflow-hidden'
+            : 'h-96 min-w-0 overflow-hidden rounded border border-border'
+        }
         data-testid="workspace-text-editor"
       />
     </div>

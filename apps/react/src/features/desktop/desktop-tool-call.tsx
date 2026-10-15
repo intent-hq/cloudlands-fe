@@ -1,3 +1,4 @@
+import { openDesktopFile } from './desktop-file-open';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { EyeIcon, HandIcon, WarningIcon } from '@phosphor-icons/react';
 import type { ContentBlock } from '$shared/types';
@@ -33,6 +34,8 @@ import { messageBlockHydrationRequested } from '../../../../../src/store/rendere
 /** Source ToolCall's ordinary raw-detail branch; full tool families remain explicitly scoped. */
 export function DesktopToolCall({
   call,
+  workspaceId,
+  panelId,
   resultBlock,
   agentId,
   messageId,
@@ -43,6 +46,8 @@ export function DesktopToolCall({
   onUnavailable,
 }: {
   call: ContentBlock;
+  workspaceId?: string;
+  panelId?: string;
   resultBlock?: ContentBlock;
   agentId: string;
   messageId: string;
@@ -130,6 +135,18 @@ export function DesktopToolCall({
       for (const id of truncated)
         store.dispatch(messageBlockHydrationRequested(agentId, messageId, id));
   };
+  const openFile = (adjacent: boolean) => {
+    if (!rowCurrent()) return;
+    if (
+      !workspaceId ||
+      !display.filePath ||
+      !openDesktopFile(workspaceId, display.filePath, rowCurrent, {
+        sourcePanelId: panelId,
+        openInAdjacentPanel: adjacent,
+      })
+    )
+      onUnavailable(m.desktop_shell_unported_description());
+  };
   const fromFileControl = (event: Event) =>
     event.target instanceof Element &&
     Boolean(event.target.closest('[data-testid=tool-call-file-link]'));
@@ -192,13 +209,13 @@ export function DesktopToolCall({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              if (rowCurrent()) onUnavailable(m.desktop_shell_unported_description());
+              openFile(event.metaKey || event.ctrlKey);
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 event.stopPropagation();
-                if (rowCurrent()) onUnavailable(m.desktop_shell_unported_description());
+                openFile(event.metaKey || event.ctrlKey);
               }
             }}
           >

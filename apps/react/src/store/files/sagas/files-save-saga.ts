@@ -1,3 +1,4 @@
+import { waitForDesktopFileAuthorityRetirement } from './desktop-file-lifetime';
 import { createFilesSaveSaga } from '../../../../../../src/store/renderer/slices/files/sagas/files-save-saga-factory';
 import {
   getFileSaveOperation,
@@ -29,6 +30,7 @@ export const filesSaveSaga = createFilesSaveSaga({
   },
   admission: {
     captureAuthority: captureFileSaveAuthority,
+    waitForRetirement: waitForDesktopFileAuthorityRetirement,
     capturePublicationAuthority: captureFilePublicationAuthority,
     readOperation: (id) => getFileSaveOperation(store.state, id),
     readOperations: (workspaceId, path) => getFileSaveOperations(store.state, workspaceId, path),

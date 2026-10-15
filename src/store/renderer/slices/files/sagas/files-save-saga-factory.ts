@@ -1,5 +1,15 @@
 import type { StoreAction } from '@themislib/themis/types';
-import { call, cancelled, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancel,
+  cancelled,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import type { FilesClient } from '$lib/client/app-client';
 import type { FileWriteResult } from '$lib/client/file-write-types';
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
@@ -41,6 +51,12 @@ export function createFilesSaveSaga({
       path: string,
       absolutePath: string,
     ) => string | null;
+    /** Optional strict-host lifetime: first retirement permanently fences this serialized request. */
+    waitForRetirement?: (
+      workspaceId: string,
+      path: string,
+      absolutePath: string,
+    ) => SagaGenerator<void>;
     readOperation: (requestId: string) => FileSaveOperation | undefined;
     readOperations: (workspaceId: string, path: string) => FileSaveOperation[];
     /** Synchronous dispatch is required at transport admission and publication boundaries. */
@@ -58,6 +74,8 @@ export function createFilesSaveSaga({
     );
     let active = true;
     let dispatched = false;
+    let retired = false;
+    let blockedByUncertain = false;
     const matchingEntries = () =>
       readEntries(workspaceId).filter(
         (entry) =>
@@ -71,6 +89,7 @@ export function createFilesSaveSaga({
     let becamePreview = initial.some((entry) => entry.kind === 'read-only-text' || entry.truncated);
     const isCurrent = () =>
       active &&
+      !retired &&
       (!admission ||
         (!!options &&
           admission.captureAuthority(workspaceId, path, absolutePath) === options.authority));
@@ -85,7 +104,7 @@ export function createFilesSaveSaga({
           admission.capturePublicationAuthority(workspaceId, path, absolutePath) ===
             publicationAuthority
         : isCurrent();
-    const canPublish = () => active && hasPublicationAuthority();
+    const canPublish = () => active && !retired && hasPublicationAuthority();
     const withinBudget = (entries: FileContentEntry[]) =>
       maxBytes === undefined ||
       (new TextEncoder().encode(content.content).byteLength <= maxBytes &&
@@ -106,6 +125,15 @@ export function createFilesSaveSaga({
       )
         throw new Error(m.files_read_previewReadOnly_error());
       if (admission) {
+        if (
+          options?.serialize &&
+          admission
+            .readOperations(workspaceId, absolutePath)
+            .some((operation) => operation.status === 'uncertain')
+        ) {
+          blockedByUncertain = true;
+          throw new Error(m.ui_reversibleActions_cancelled_message());
+        }
         const entry = currentEntry();
         if (
           !isCurrent() ||
@@ -140,12 +168,14 @@ export function createFilesSaveSaga({
       // An unguarded action cannot opt a guarded host back into source autosave policy.
       if (!options || !options.requestId || !options.authority) return;
       if (admission.readOperation(options.requestId)) return;
-      const existing = admission.readOperations(workspaceId, path);
+      const existing = admission.readOperations(
+        workspaceId,
+        options.serialize ? absolutePath : path,
+      );
       const blocked = existing.some(
         (operation) =>
-          operation.status === 'queued' ||
-          operation.status === 'running' ||
-          operation.status === 'uncertain',
+          operation.status === 'uncertain' ||
+          (!options.serialize && (operation.status === 'queued' || operation.status === 'running')),
       );
       const entry = currentEntry();
       if (
@@ -176,9 +206,18 @@ export function createFilesSaveSaga({
         fileSaveOperationQueued({ ...options, workspaceId, path, absolutePath, status: 'queued' }),
       );
     } else if (options) {
-      // Explicit-save options require an authority-aware host.
+      // Correlated save options require an authority-aware host.
       return;
     }
+
+    const waitForRetirement = admission?.waitForRetirement;
+    const retirement =
+      options?.serialize && waitForRetirement
+        ? yield* fork(function* () {
+            yield* call(waitForRetirement, workspaceId, path, absolutePath);
+            retired = true;
+          })
+        : undefined;
 
     const executeExplicit = async (mutationPath: string): Promise<FileWriteResult> => {
       if (!admission || !options) throw new Error(m.ui_reversibleActions_cancelled_message());
@@ -206,7 +245,7 @@ export function createFilesSaveSaga({
       }
       const status = result.success
         ? 'succeeded'
-        : !dispatched && !isCurrent()
+        : !dispatched && (!isCurrent() || blockedByUncertain)
           ? 'cancelled'
           : result.outcome === 'failed'
             ? 'failed'
@@ -273,6 +312,7 @@ export function createFilesSaveSaga({
           ),
         );
     } finally {
+      if (retirement) yield* cancel(retirement);
       if (yield* cancelled()) {
         active = false;
         if (admission && options && !dispatched)

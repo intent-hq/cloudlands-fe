@@ -42,7 +42,7 @@ export type FileContentEntry = FileContentData & {
   lastUpdated: number;
   loading: boolean;
   saving: boolean;
-  /** Correlates only opt-in explicit saves; never a persisted document identity. */
+  /** Correlates opt-in guarded saves; never a persisted document identity. */
   saveRequestId?: string;
   error: string | null;
   truncated: boolean;
@@ -77,15 +77,18 @@ export type FilesWorkspaceState = {
   files: Collection<FileContentEntry, 'path'>;
 };
 
-export type FileSaveOptions = { requestId: string; authority: string };
+export type FileSaveOptions = {
+  requestId: string;
+  authority: string;
+  /** Desktop autosave/flush may queue behind an admitted write; never sent on the wire. */
+  serialize?: boolean;
+};
 export type FileSaveStatus =
   'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain';
-export type FileSaveOperation = {
-  requestId: string;
+export type FileSaveOperation = FileSaveOptions & {
   workspaceId: string;
   path: string;
   absolutePath: string;
-  authority: string;
   status: FileSaveStatus;
   error?: string;
 };

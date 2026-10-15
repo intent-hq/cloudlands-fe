@@ -90,11 +90,13 @@ function harness({
     requestId = 'request-1',
     content = 'new',
     requestAuthority = authority ?? 'epoch-1',
+    serialize = false,
   ) =>
     dispatch(
       saveFileContentRequested('ws', 'a.ts', '/repo/a.ts', text(content), {
         requestId,
         authority: requestAuthority,
+        ...(serialize ? { serialize: true } : {}),
       }),
     );
   return {
@@ -432,5 +434,140 @@ describe('explicit host publication authority and UTF-8 budget', () => {
     expect(wire).not.toHaveBeenCalled();
     expect(h.operation()?.status).toBe('failed');
     expect(h.entry()?.originalContent).toBe('😀😀');
+  });
+});
+
+describe('desktop serialized file saves', () => {
+  it('queues a newer flush behind a held write and preserves its acknowledged baseline on later failure', async () => {
+    const h = harness();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    h.transport.mockImplementation(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return h.transport.mock.calls.length === 1 ? first.promise : second.promise;
+    });
+    h.load();
+    h.edit('first');
+    h.save('first', 'first', 'epoch-1', true);
+    h.edit('newer flush');
+    h.save('second', 'newer flush', 'epoch-1', true);
+    expect(h.transport).toHaveBeenCalledTimes(1);
+    expect(h.operation('second')?.status).toBe('queued');
+    first.resolve({ ok: true });
+    await flush();
+    expect(h.transport).toHaveBeenCalledTimes(2);
+    expect(h.transport.mock.calls.map((call) => call[1])).toEqual([
+      { workspaceId: 'ws', path: 'a.ts', content: 'first', idempotencyKey: expect.any(String) },
+      {
+        workspaceId: 'ws',
+        path: 'a.ts',
+        content: 'newer flush',
+        idempotencyKey: expect.any(String),
+      },
+    ]);
+    const duringSecondWrite = h.entry();
+    second.reject(new BackendError({ code: 'forbidden', message: 'refused', rpcCode: -32003 }));
+    await flush();
+    expect(duringSecondWrite).toMatchObject({
+      originalContent: 'first',
+      localContent: 'newer flush',
+      saving: true,
+    });
+    expect(h.operation('second')?.status).toBe('failed');
+    expect(h.entry()).toMatchObject({
+      originalContent: 'first',
+      localContent: 'newer flush',
+      saving: false,
+    });
+  });
+
+  it('allows the already queued newer save after a confirmed failure without replaying the failed request', async () => {
+    const h = harness();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    h.transport.mockImplementation(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return h.transport.mock.calls.length === 1 ? first.promise : second.promise;
+    });
+    h.load();
+    h.edit('first');
+    h.save('first', 'first', 'epoch-1', true);
+    h.edit('newer flush');
+    h.save('second', 'newer flush', 'epoch-1', true);
+    first.reject(new BackendError({ code: 'forbidden', message: 'refused', rpcCode: -32003 }));
+    await flush();
+    const firstStatus = h.operation('first')?.status;
+    const secondStatus = h.operation('second')?.status;
+    h.save('first', 'first', 'epoch-1', true);
+    second.resolve({ ok: true });
+    await flush();
+    expect(firstStatus).toBe('failed');
+    expect(secondStatus).toBe('running');
+    expect(h.transport).toHaveBeenCalledTimes(2);
+    expect(h.transport.mock.calls.map(([method, params]) => [method, params])).toEqual([
+      [
+        'file.write',
+        { workspaceId: 'ws', path: 'a.ts', content: 'first', idempotencyKey: expect.any(String) },
+      ],
+      [
+        'file.write',
+        {
+          workspaceId: 'ws',
+          path: 'a.ts',
+          content: 'newer flush',
+          idempotencyKey: expect.any(String),
+        },
+      ],
+    ]);
+    expect(h.operation('second')?.status).toBe('succeeded');
+    expect(h.entry()).toMatchObject({
+      originalContent: 'newer flush',
+      localContent: 'newer flush',
+      saving: false,
+      error: null,
+    });
+  });
+
+  it('blocks a queued later write when the preceding transport settles uncertain', async () => {
+    const h = harness();
+    const first = deferred<unknown>();
+    h.transport.mockImplementation(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return first.promise;
+    });
+    h.load();
+    h.edit('first');
+    h.save('first', 'first', 'epoch-1', true);
+    h.edit('newer');
+    h.save('second', 'newer', 'epoch-1', true);
+    expect(h.operation('second')?.status).toBe('queued');
+    first.reject(new Error('socket closed'));
+    await flush();
+    expect(h.operation('first')?.status).toBe('uncertain');
+    expect(h.operation('second')?.status).toBe('cancelled');
+    expect(h.transport).toHaveBeenCalledTimes(1);
+    h.save('retry', 'newer', 'epoch-1', true);
+    await flush();
+    expect(h.operation('retry')?.status).toBe('cancelled');
+    expect(h.transport).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dispatch a serialized queued save after authority changes', async () => {
+    const h = harness();
+    const first = deferred<unknown>();
+    h.transport.mockImplementation(async (_method, _params, options) => {
+      options?.onDispatch?.();
+      return first.promise;
+    });
+    h.load();
+    h.edit('first');
+    h.save('first', 'first', 'epoch-1', true);
+    h.edit('newer');
+    h.save('second', 'newer', 'epoch-1', true);
+    h.setAuthority('epoch-2');
+    first.resolve({ ok: true });
+    await flush();
+    expect(h.operation('second')?.status).toBe('cancelled');
+    expect(h.transport).toHaveBeenCalledTimes(1);
   });
 });

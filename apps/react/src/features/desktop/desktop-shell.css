@@ -423,7 +423,8 @@
   border-bottom: 1px solid var(--color-border);
 }
 /* Mounted source app-layout.css platform chrome stack; MarkdownViewer retains Inter. */
-.desktop-app {
+.desktop-app,
+.desktop-file-menu {
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -590,4 +591,125 @@
   --agent-avatar-emphasized-surface-size: 26px;
   --agent-avatar-emphasized-art-size: 18px;
   --agent-avatar-emphasized-corner-radius: 5px;
+}
+
+/* Source FileTabType / CodeEditor presentation, scoped to the desktop file pane. */
+.desktop-file-header-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+}
+[data-desktop-file] .monaco-editor .line-numbers {
+  color: hsl(var(--muted-foreground) / 0.5) !important;
+}
+.light [data-desktop-file] .monaco-editor .mtk10 {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+/* Source PanelTabBar panel-header-menu and directional pad; file-only integration. */
+.desktop-file-menu {
+  width: 192px;
+  min-width: min(192px, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  padding: 5px 4px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--background));
+  box-shadow: var(--surface-shadow-3);
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+.desktop-file-menu [data-menu-item] {
+  min-height: 30px;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+  padding: 6px 10px;
+  gap: 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.desktop-file-menu [data-slot='menu-label'] {
+  font-size: 13px;
+  line-height: 1.3;
+  font-weight: 500;
+  padding: 6px 8px;
+  color: hsl(var(--muted-foreground));
+}
+.desktop-file-menu [data-slot='menu-separator'] {
+  margin-inline: -4px;
+  margin-block: 6px;
+}
+.desktop-file-menu [data-slot='menu-item-leading'],
+.desktop-file-menu [data-slot='menu-item-leading'] svg,
+.desktop-file-menu [data-slot='menu-sub-chevron'] svg {
+  width: 12px;
+}
+.desktop-file-menu [data-slot='menu-item-leading'] svg,
+.desktop-file-menu [data-slot='menu-sub-chevron'] svg {
+  height: 12px;
+}
+.desktop-file-menu [data-proximity-highlight='selected'] {
+  background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 5%);
+}
+.desktop-file-menu [data-proximity-highlight='hover'] {
+  background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 7%);
+}
+.desktop-file-move-pad {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 6px auto 12px;
+}
+.desktop-file-menu .desktop-file-move-direction {
+  position: absolute;
+  inset: 0;
+  width: 120px;
+  height: 120px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  background: hsl(var(--selected));
+  clip-path: polygon(
+    15% 0,
+    85% 0,
+    88.333% 3.333%,
+    88.333% 10%,
+    53.333% 45%,
+    46.667% 45%,
+    11.667% 10%,
+    11.667% 3.333%
+  );
+}
+.desktop-file-move-direction > [data-slot='menu-item-leading'] {
+  display: none;
+}
+.desktop-file-move-direction > svg {
+  position: absolute;
+  left: 52px;
+  top: 15px;
+}
+.desktop-file-menu .desktop-file-move-direction[data-highlighted] {
+  background: hsl(var(--accent));
+}
+.desktop-file-menu:has(
+    [data-panel-actions-section='move']:hover,
+    .desktop-file-move-direction[data-highlighted]
+  )
+  > [data-slot='menu-list-highlight']
+  [data-proximity-highlight='hover'] {
+  visibility: hidden;
+}
+.desktop-file-move-right {
+  transform: rotate(90deg);
+}
+.desktop-file-move-down {
+  transform: rotate(180deg);
+}
+.desktop-file-move-left {
+  transform: rotate(270deg);
 }

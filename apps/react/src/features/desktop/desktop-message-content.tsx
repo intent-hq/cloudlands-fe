@@ -65,6 +65,8 @@ const noPanel = () => null;
 /** Desktop presentation binds the source's projector to the existing React panel lifetime. */
 export function DesktopMessageContent({
   blocks,
+  workspaceId,
+  panelId,
   agentId,
   messageId,
   isStreaming,
@@ -74,6 +76,8 @@ export function DesktopMessageContent({
   onUnavailable,
 }: {
   blocks: ContentBlock[];
+  workspaceId?: string;
+  panelId?: string;
   agentId: string;
   messageId: string;
   isStreaming: boolean;
@@ -132,6 +136,8 @@ export function DesktopMessageContent({
         <div className="relative w-full min-w-0" data-tool-entry="">
           <DesktopToolCall
             call={block}
+            workspaceId={workspaceId}
+            panelId={panelId}
             resultBlock={findToolResult(classification.resultsMap, block)}
             agentId={agentId}
             messageId={messageId}

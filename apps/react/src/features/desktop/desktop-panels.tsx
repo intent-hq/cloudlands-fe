@@ -1,3 +1,5 @@
+import { DesktopFile, DesktopFileMenu } from './desktop-file';
+import { FileIcon } from '@phosphor-icons/react';
 import { DesktopConversation } from './desktop-conversation';
 import { DesktopAgentAvatar } from './desktop-agent-avatar';
 import { KebabIcon } from '@/components/icons/kebab-icon';
@@ -277,7 +279,14 @@ function DesktopPanel({
         ? reopenClosedPanelColumn(workspaceId)
         : reopenClosedTab(workspaceId),
     );
+  const [previews, setPreviews] = useState<Record<string, { enabled: boolean; jump?: unknown }>>(
+    {},
+  );
   const tab = panel.tabs.find((item) => item.id === panel.activeTabId);
+  const filePreview = (item: PanelState['tabs'][number]) =>
+    previews[item.id]?.jump === item.data?.jumpTimestamp
+      ? (previews[item.id]?.enabled ?? !item.data?.line)
+      : !item.data?.line;
   const element = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (active && focused) element.current?.focus({ preventScroll: true });
@@ -305,6 +314,10 @@ function DesktopPanel({
               <Button variant="plain" wrapContent={false} className="desktop-panel-picker">
                 {tab.type === 'agent' && tab.agentId ? (
                   <DesktopAgentAvatar agentId={tab.agentId} active />
+                ) : tab.type === 'file' ? (
+                  <span className="desktop-file-header-icon">
+                    <FileIcon size={16} className="text-subtle shrink-0" />
+                  </span>
                 ) : (
                   <ResourceIconTile kind="note" />
                 )}
@@ -347,7 +360,27 @@ function DesktopPanel({
               <KebabIcon />
             </Button>
           </Menu.Trigger>
-          <Menu.Content>
+          <Menu.Content
+            align="end"
+            className={tab?.type === 'file' ? 'desktop-file-menu' : undefined}
+          >
+            {tab?.type === 'file' && tab.filePath && (
+              <DesktopFileMenu
+                workspaceId={workspaceId}
+                path={tab.filePath}
+                panelId={panel.id}
+                tabId={tab.id}
+                active={active}
+                preview={filePreview(tab)}
+                onPreview={() =>
+                  setPreviews((prev) => ({
+                    ...prev,
+                    [tab.id]: { enabled: !filePreview(tab), jump: tab.data?.jumpTimestamp },
+                  }))
+                }
+                onUnavailable={onUnavailable}
+              />
+            )}
             {tab?.type === 'note' && (
               <>
                 <Menu.Sub>
@@ -409,7 +442,27 @@ function DesktopPanel({
             inert={item.id !== panel.activeTabId}
           >
             {item.type === 'note' && item.noteId ? (
-              <DesktopNotePreview workspaceId={workspaceId} noteId={item.noteId} tabId={item.id} />
+              <DesktopNotePreview
+                workspaceId={workspaceId}
+                noteId={item.noteId}
+                tabId={item.id}
+                panelId={panel.id}
+                active={active && item.id === panel.activeTabId}
+              />
+            ) : item.type === 'file' && item.filePath ? (
+              <DesktopFile
+                onUnavailable={onUnavailable}
+                workspaceId={workspaceId}
+                path={item.filePath}
+                panelId={panel.id}
+                tabId={item.id}
+                active={active && item.id === panel.activeTabId}
+                line={typeof item.data?.line === 'number' ? item.data.line : undefined}
+                jumpTimestamp={
+                  typeof item.data?.jumpTimestamp === 'number' ? item.data.jumpTimestamp : undefined
+                }
+                preview={/\.md$/i.test(item.filePath) && filePreview(item)}
+              />
             ) : item.type === 'agent' && item.agentId ? (
               <DesktopConversation
                 workspaceId={workspaceId}

@@ -220,7 +220,7 @@ filesReducer.with(updateFileContent, (state, { payload: [wsId, path, content] })
 filesReducer.with(
   saveFileContentRequested,
   (state, { payload: [wsId, path, absolutePath, , options] }) => {
-    // Explicit saves become visible only after the canonical worker admits them.
+    // Guarded saves become visible only after the canonical worker admits them.
     if (options) return state;
     return upsertFileEntry(state, wsId, path, (entry) => ({
       ...entry,
@@ -307,22 +307,28 @@ filesReducer.with(fileSaveOperationQueued, (state, { payload: [operation] }) => 
   if (getItem(operations, operation.requestId)) return state;
   const next = { ...state, saveOperations: retainSaveOperation(operations, operation) };
   if (operation.status !== 'queued') return next;
-  return upsertFileEntry(next, operation.workspaceId, operation.path, (entry) => ({
-    ...entry,
-    saveRequestId: operation.requestId,
-    saving: true,
-    error: null,
-  }));
+  return upsertFileEntry(next, operation.workspaceId, operation.path, (entry) =>
+    // A waiting desktop save must not hide the current transport's acknowledgement.
+    operation.serialize && entry.saving
+      ? entry
+      : { ...entry, saveRequestId: operation.requestId, saving: true, error: null },
+  );
 });
 filesReducer.with(fileSaveOperationStarted, (state, { payload: [requestId] }) => {
   const operations = state.saveOperations;
   if (!operations) return state;
   const operation = getItem(operations, requestId);
   if (!operation || operation.status !== 'queued') return state;
-  return {
+  const next = {
     ...state,
-    saveOperations: upsertItem(operations, { ...operation, status: 'running' }),
+    saveOperations: upsertItem(operations, { ...operation, status: 'running' as const }),
   };
+  if (!operation.serialize) return next;
+  return upsertFileEntry(next, operation.workspaceId, operation.path, (entry) =>
+    entry.kind === 'editable-text' && entry.absolutePath === operation.absolutePath
+      ? { ...entry, saveRequestId: requestId, saving: true, error: null }
+      : entry,
+  );
 });
 filesReducer.with(fileSaveOperationSettled, (state, { payload: [requestId, status, error] }) => {
   const operations = state.saveOperations;

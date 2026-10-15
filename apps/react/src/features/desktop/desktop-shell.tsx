@@ -1,10 +1,11 @@
+import { startDesktopTheme } from '@/store/desktop/desktop-runtime';
 import { KebabIcon } from '@/components/icons/kebab-icon';
 import { resolveWorkspaceReopenTarget } from '../../../../../src/features/workspace/utils/workspace-reopen-target';
 import { WORKSPACE_TAB_MOTION_DURATION_MS } from '$lib/components/layout/titlebar-geometry';
 import { getEffectiveShortcut } from '@/lib/effective-shortcuts';
 import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 import { isMacPlatform } from '$lib/utils/shortcuts';
-import { useLayoutEffect, useRef, useState, useCallback } from 'react';
+import { useLayoutEffect, useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import {
   HouseIcon,
@@ -82,6 +83,7 @@ import './desktop-shell.css';
 
 /** Desktop chrome follows the mounted Svelte workspace tree, not the browser directory. */
 export function DesktopShell() {
+  useEffect(startDesktopTheme, []);
   const { workspaceId } = useParams({ strict: false }) as { workspaceId?: string };
   const navigate = useNavigate();
   const daemon = selectDesktopDaemonStatus().value;

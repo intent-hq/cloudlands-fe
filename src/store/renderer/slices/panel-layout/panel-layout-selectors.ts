@@ -1,4 +1,4 @@
-import { fileContentKey } from '$features/file/utils/file-content-key';
+import { getFileContentPrunePayload } from './panel-layout-projections';
 /**
  * Panel Layout Selectors
  *
@@ -33,12 +33,6 @@ import type {
   PanelTabType,
   PanelColumnCount,
 } from './panel-layout-types';
-
-const emptyFileContentPrunePaths: string[] = [];
-
-function isValidActiveWorkspaceId(wsId: string | null | undefined): wsId is string {
-  return !!wsId && wsId !== 'new' && !wsId.startsWith('optimistic-') && wsId !== 'undefined';
-}
 
 // ============================================================================
 // Workspace State
@@ -327,53 +321,8 @@ export const selectPanelRestoreStatusesByWorkspaceId = store.createSelector((sta
   );
 });
 
-/** Select active-workspace file-content paths no longer represented by any open file tab. */
-export const selectFileContentPrunePayload = store.createSelector<
-  [activeWsId: string | null, clearLayout?: boolean],
-  string[]
->((state, activeWsId, clearLayout = false) => {
-  if (!isValidActiveWorkspaceId(activeWsId)) {
-    return emptyFileContentPrunePaths;
-  }
-
-  const ws = state.panelLayout.byWorkspaceId[activeWsId];
-  const filesWorkspace = state.files.byWorkspaceId[activeWsId];
-  if (!filesWorkspace) {
-    return emptyFileContentPrunePaths;
-  }
-  if (!ws) {
-    if (!clearLayout) return emptyFileContentPrunePaths;
-    return [...filesWorkspace.files.ids].sort((left, right) => left.localeCompare(right));
-  }
-
-  const openPaths = new Set<string>();
-  for (const panel of Object.values(ws.panels)) {
-    for (const tab of panel.tabs) {
-      if (tab.type === 'file' && typeof tab.filePath === 'string' && tab.filePath.length > 0) {
-        openPaths.add(
-          fileContentKey(
-            tab.filePath,
-            typeof tab.data?.gitRootId === 'string' ? tab.data.gitRootId : undefined,
-          ),
-        );
-      }
-    }
-  }
-
-  const stalePaths: string[] = [];
-  for (const path of filesWorkspace.files.ids) {
-    if (!openPaths.has(path)) {
-      stalePaths.push(path);
-    }
-  }
-
-  if (stalePaths.length === 0) {
-    return emptyFileContentPrunePaths;
-  }
-
-  stalePaths.sort((left, right) => left.localeCompare(right));
-  return stalePaths;
-});
+/** Select cached paths no longer represented by any open file tab. */
+export const selectFileContentPrunePayload = store.createSelector(getFileContentPrunePayload);
 
 /** Get all panel IDs in canonical rendered order. */
 export const selectPanelIds = store.createSelector<[wsId: string], string[]>((state, wsId) => {

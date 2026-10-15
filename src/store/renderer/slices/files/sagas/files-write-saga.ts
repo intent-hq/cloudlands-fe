@@ -4,7 +4,6 @@ import {
   call,
   cancelled,
   fork,
-  delay,
   put,
   race,
   take,
@@ -23,6 +22,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '../../../store';
 import { serializeFileMutation } from '../utils/serialize-file-mutation';
 import { createFilesSaveSaga } from './files-save-saga-factory';
+import { createFilesAutosaveSaga } from './files-autosave-saga-factory';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
 import {
   selectEffectiveFileExplorerWorkspacePath,
@@ -39,13 +39,12 @@ import {
   deleteFileWithUndoRequested,
   restoreFileContentRequested,
   removeFileContentEntry,
-  saveFileContentRequested,
   saveFileContentSucceeded,
-  updateFileContent,
 } from '../files-slice';
 
 const logger = createLogger('FilesWriteSaga');
-export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
+// Keep the source test/API import stable while both hosts share the autosave owner.
+export { FILE_CONTENT_SAVE_DEBOUNCE_MS } from './files-autosave-saga-factory';
 function* serializeWorkspaceFileMutation<T>(
   workspaceId: string,
   path: string,
@@ -71,29 +70,6 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId
   );
-}
-
-function isSaveFor(
-  action: ObservedAction,
-  workspaceId: string,
-  path: string,
-  absolutePath: string,
-): boolean {
-  if (
-    ![
-      saveFileContentRequested.type,
-      deleteFileRequested.type,
-      deleteFileWithUndoRequested.type,
-    ].includes(action.type) ||
-    !Array.isArray(action.payload) ||
-    action.payload[0] !== workspaceId
-  )
-    return false;
-  const requestAbsolutePath =
-    action.type === saveFileContentRequested.type
-      ? action.payload[2]
-      : action.payload[2]?.absolutePath;
-  return action.payload[1] === path || requestAbsolutePath === absolutePath;
 }
 
 function* createFileWorker(workspaceId: string, folderPath: string, fileName: string) {
@@ -125,48 +101,6 @@ function* createFileActionWorker(action: ReturnType<typeof createFileRequested>)
     create: call(createFileWorker, workspaceId, folderPath, fileName),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-}
-
-function* waitForManualFileEdit(workspaceId: string, path: string) {
-  while (true) {
-    const edit = yield* take(updateFileContent);
-    if (
-      edit.payload[0] === workspaceId &&
-      edit.payload[1] === path &&
-      edit.payload[3]?.autoSave === false
-    )
-      return;
-  }
-}
-
-function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
-  if (action.payload[3]?.autoSave === false) return;
-  const [workspaceId, path] = action.payload;
-  const entry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (!entry?.absolutePath || entry.kind !== 'editable-text') return;
-  const absolutePath = entry.absolutePath;
-  const { elapsed } = yield* race({
-    elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
-    directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path, absolutePath)),
-    manualEdit: call(waitForManualFileEdit, workspaceId, path),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
-  });
-  if (!elapsed) return;
-  const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (
-    !latestEntry?.absolutePath ||
-    latestEntry.kind !== 'editable-text' ||
-    latestEntry.localContent === latestEntry.originalContent
-  )
-    return;
-  yield* put(
-    saveFileContentRequested(
-      workspaceId,
-      path,
-      latestEntry.absolutePath,
-      editableText(latestEntry.localContent),
-    ),
-  );
 }
 
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
@@ -333,11 +267,13 @@ const filesSaveSaga = createFilesSaveSaga({
   onError: (error) => logger.error('Failed to save file content', error),
 });
 
+const filesAutosaveSaga = createFilesAutosaveSaga({ selectFileContentEntry });
+
 export function* filesWriteSaga() {
   yield* takeEvery(deleteFileWithUndoRequested, deleteFileWithUndoWorker);
   yield* takeEvery(deleteFileRequested, deleteFileActionWorker);
   yield* takeEvery(restoreFileContentRequested, restoreFileActionWorker);
   yield* takeEvery(createFileRequested, createFileActionWorker);
-  yield* takeEvery(updateFileContent, updateFileContentWorker);
+  yield* fork(filesAutosaveSaga);
   yield* fork(filesSaveSaga);
 }

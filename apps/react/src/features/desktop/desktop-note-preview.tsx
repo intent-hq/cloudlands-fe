@@ -1,3 +1,6 @@
+import { openDesktopFile, openDesktopFileLink } from './desktop-file-open';
+import { selectCurrentWorkspaceTabId } from '@/store/tab-state/tab-state-selectors';
+import { selectDesktopLayout } from '@/store/desktop/desktop-selectors';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { MarkdownViewer } from '@/components/markdown/markdown-viewer';
 import { NoteContentSurface } from '@/features/layout/tab-types/note-content-surface';
@@ -25,10 +28,14 @@ export function DesktopNotePreview({
   workspaceId,
   noteId,
   tabId,
+  panelId,
+  active,
 }: {
   workspaceId: string;
   noteId: string;
   tabId: string;
+  panelId: string;
+  active: boolean;
 }) {
   const [consumerId] = useState(() => crypto.randomUUID());
   const note = selectNoteById(workspaceId, noteId).value;
@@ -37,6 +44,20 @@ export function DesktopNotePreview({
   const context = selectPrincipalConnectionContext().value;
   const admitted = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const host = useRef<HTMLElement>(null);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const current = () =>
+    mounted.current &&
+    active &&
+    !!admitted &&
+    selectCurrentWorkspaceTabId.select(store.state) === workspaceId &&
+    selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) === admitted &&
+    selectDesktopLayout.select(store.state, workspaceId).panels[panelId]?.activeTabId === tabId;
   const [message, setMessage] = useState<string | null>(null);
   useLayoutEffect(() => {
     if (!context || !admitted || !initialized) return;
@@ -134,8 +155,23 @@ export function DesktopNotePreview({
               renderDiagrams
               allowFileMedia={false}
               onOpenNote={openNote}
-              onOpenFile={() => setMessage(m.desktop_shell_unported_description())}
+              onOpenFile={(ws, path, options) => {
+                if (
+                  ws !== workspaceId ||
+                  !openDesktopFile(ws, path, current, { ...options, sourcePanelId: panelId })
+                )
+                  setMessage(m.desktop_shell_unported_description());
+              }}
               onOpenLink={(url, options) => {
+                if (
+                  openDesktopFileLink(
+                    workspaceId,
+                    url,
+                    { ...options, sourcePanelId: panelId },
+                    current,
+                  )
+                )
+                  return true;
                 const target = options.rawHref ?? url;
                 if (target.startsWith('intent://')) {
                   const link = parseIntentLink(target);

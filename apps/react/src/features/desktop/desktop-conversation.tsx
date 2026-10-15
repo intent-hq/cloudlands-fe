@@ -1,3 +1,4 @@
+import { openDesktopFile } from './desktop-file-open';
 import { CaretDownIcon } from '@phosphor-icons/react';
 import { AgentAvatar } from '@/features/agent/components/agent-avatar/agent-avatar';
 import { Fragment, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -396,6 +397,8 @@ export function DesktopConversation({
                                       <DesktopMessageContent
                                         blocks={message.contentBlocks ?? []}
                                         agentId={agentId}
+                                        workspaceId={workspaceId}
+                                        panelId={panelId}
                                         messageId={message.id}
                                         isStreaming={Boolean(message.isStreaming)}
                                         isLastConversationMessage={
@@ -410,9 +413,18 @@ export function DesktopConversation({
                                             }}
                                             renderRichFencesAsCode
                                             allowFileMedia={false}
-                                            onOpenFile={() =>
-                                              onUnavailable(m.desktop_shell_unported_description())
-                                            }
+                                            onOpenFile={(ws, path, options) => {
+                                              if (
+                                                ws !== workspaceId ||
+                                                !openDesktopFile(ws, path, current, {
+                                                  ...options,
+                                                  sourcePanelId: panelId,
+                                                })
+                                              )
+                                                onUnavailable(
+                                                  m.desktop_shell_unported_description(),
+                                                );
+                                            }}
                                             onOpenNote={() =>
                                               onUnavailable(m.desktop_shell_unported_description())
                                             }

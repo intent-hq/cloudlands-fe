@@ -1,3 +1,6 @@
+import { themeSaga } from '../../../../../src/store/renderer/slices/theme/sagas/theme-saga';
+import { desktopFilePruneSaga } from '../files/sagas/desktop-file-prune-saga';
+import { desktopFilesAutosaveSaga } from '../files/sagas/desktop-files-autosave-saga';
 import { store } from '@/store';
 import { desktopUnreadTrackingSaga } from '@/features/desktop/desktop-unread-runtime';
 import { tabStateSaga } from '../tab-state/sagas/tab-state-saga';
@@ -19,6 +22,13 @@ export function startDesktopRuntime() {
     store.runSaga(tabStateSaga),
     store.runSaga(workspaceLoadCompositionSaga),
     store.runSaga(desktopUnreadTrackingSaga),
+    store.runSaga(desktopFilesAutosaveSaga),
+    store.runSaga(desktopFilePruneSaga),
   ];
   return () => disposers.reverse().forEach((dispose) => dispose());
+}
+
+/** DOM theme ownership starts after the desktop root commits, never before HTML hydration. */
+export function startDesktopTheme() {
+  return store.runSaga(themeSaga);
 }

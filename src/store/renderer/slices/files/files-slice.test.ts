@@ -614,6 +614,74 @@ describe('explicit file save operation facts', () => {
     authority: 'view-1',
     status: 'queued' as const,
   };
+  it('keeps the current acknowledgement while a serialized save waits, then claims the next transport', () => {
+    let state = filesReducer(
+      initialState,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'old' }),
+    );
+    state = filesReducer(
+      state,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'first' }),
+    );
+    const first = { ...operation, serialize: true };
+    const second = { ...first, requestId: 'save-2' };
+    state = filesReducer(state, fileSaveOperationQueued(first));
+    state = filesReducer(state, fileSaveOperationStarted(first.requestId));
+    state = filesReducer(
+      state,
+      updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'second' }),
+    );
+    const firstEntry = getItem(state.byWorkspaceId[WS_ID].files, PATH);
+    state = filesReducer(state, fileSaveOperationQueued(second));
+    expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toBe(firstEntry);
+    state = filesReducer(
+      state,
+      saveFileContentSucceeded(
+        WS_ID,
+        PATH,
+        { kind: 'editable-text', content: 'first' },
+        first.requestId,
+      ),
+    );
+    state = filesReducer(state, fileSaveOperationSettled(first.requestId, 'succeeded'));
+    expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toMatchObject({
+      originalContent: 'first',
+      localContent: 'second',
+    });
+    state = filesReducer(state, fileSaveOperationStarted(second.requestId));
+    expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toMatchObject({
+      saveRequestId: second.requestId,
+      saving: true,
+    });
+    expect(filesReducer(state, fileSaveOperationStarted(second.requestId))).toBe(state);
+    state = filesReducer(
+      state,
+      saveFileContentSucceeded(
+        WS_ID,
+        PATH,
+        { kind: 'editable-text', content: 'second' },
+        second.requestId,
+      ),
+    );
+    state = filesReducer(state, fileSaveOperationSettled(second.requestId, 'succeeded'));
+    expect(getItem(state.byWorkspaceId[WS_ID].files, PATH)).toMatchObject({
+      originalContent: 'second',
+      localContent: 'second',
+      saving: false,
+    });
+  });
+
+  it('does not recreate a departed cache entry when a serialized receipt starts', () => {
+    let state = filesReducer(
+      initialState,
+      fileSaveOperationQueued({ ...operation, serialize: true }),
+    );
+    state = filesReducer(state, workspaceUnmounted(WS_ID));
+    state = filesReducer(state, fileSaveOperationStarted(operation.requestId));
+    expect(state.byWorkspaceId[WS_ID]).toBeUndefined();
+    expect(getItem(state.saveOperations!, operation.requestId)?.status).toBe('running');
+  });
+
   it.each(['workspace', 'file'] as const)(
     'retains settlement across %s cleanup without recreating the departed file',
     (cleanup) => {

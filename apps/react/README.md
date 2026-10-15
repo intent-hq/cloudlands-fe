@@ -47,16 +47,33 @@ Read, edit and benign command receipts are verified in the desktop pane; an abse
 result stays absent, and an exit code is not presented as file content. The current
 provider's workspace API envelope is shown as raw structured output. Expanded rows
 survive pane navigation. A truncated payload uses the existing explicit hydration
-owner. File-name actions retain an internal scope notice until the desktop editor
-is ported. Running/error recovery is covered by controlled owner tests; the native
+owner. Supported primary-root file-name actions open the desktop editor. Running/error recovery is covered by controlled owner tests; the native
 comparison establishes the persisted completed states, not every tool family.
+
+Existing ordinary primary-root text files open from a note file link (including a
+line suffix) or an actual tool file reference. The desktop editor follows the source
+1500 ms autosave and configured Ctrl/Cmd-S shortcut. Closing flushes the latest edit;
+pending writes serialize through the existing file owner. Reopening retains failed
+or uncertain drafts: a known failure offers deliberate Retry, while an unknown
+outcome blocks another write. This in-memory uncertainty warning does not survive a
+full app reload. Pane switching retains the model, cursor and scroll; closing disposes
+the model and removes only settled, clean, unreferenced cache entries. Wrap lines and
+Markdown rendered preview use the source display controls. New file, file rename or
+delete, download, diff gutters, media and secondary roots are outside this slice.
+Source header actions for rename, changes, download, delete, panel moves and external
+editors remain visible and disclose their internal-port limitation when selected.
+The frozen Svelte reference autosave and Ctrl-S succeed, but immediate close prunes
+before its cleanup flush. Retaining that pending edit is an intentional target
+correction, not a passing source close-flush claim. Its line-link autofocus also
+scrolls a hidden ancestor; that source observation is recorded separately from the
+normal matched pane capture.
 
 This is not full ChatPanel or desktop parity. Rich mentions,
 attachments/context intake, rich diff/terminal/ContextEngine tool bodies,
 permission/question bodies, message actions and
 history navigation remain unported in this desktop surface. Model controls are reused
 but model changes are not native acceptance in this checkpoint. Rich note editing,
-terminal/browser/file bodies, workspace creation, Settings, PR/issue previews, full
+terminal/browser bodies, the Files tree, workspace creation, Settings, PR/issue previews, full
 Home detail, pane dragging and the complete leader-key system remain separate work.
 No provider is needed for the workspace/notes shell. Acceptance is limited to actual
 Linux Electron windows and owned data; historical browser or narrow-width checks are
