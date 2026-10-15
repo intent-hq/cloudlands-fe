@@ -4,6 +4,7 @@ import {
 } from '$shared/utils/workspace-attention-reminder';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-grouping';
 
 export type HomeFilter =
   'all' | 'attention' | 'pr-ready' | 'running' | 'blocked' | 'unread' | 'archived';
@@ -12,6 +13,44 @@ export interface HomeRepository {
   name: string;
   owner?: string;
   path?: string;
+}
+
+/** Local repositories participate in the same sidebar ordering as organizations. */
+export function groupHomeRepositoriesForSidebar(
+  repositoryGroups: RepositoryGroup[],
+  labels: { unknownRepository: string; localFolder: string },
+) {
+  const groups: { key: string; owner?: string; label: string; items: RepositoryGroup[] }[] = [];
+  const unassigned: RepositoryGroup[] = [];
+  for (const repo of repositoryGroups) {
+    if (repo.key === labels.unknownRepository) {
+      unassigned.push(repo);
+      continue;
+    }
+    const key = repo.owner ? `org:${repo.owner.toLowerCase()}` : 'local';
+    let group = groups.find((candidate) => candidate.key === key);
+    if (!group) {
+      group = {
+        key,
+        owner: repo.owner,
+        label: repo.owner || labels.localFolder,
+        items: [],
+      };
+      groups.push(group);
+    }
+    group.items.push(repo);
+  }
+  const count = (items: RepositoryGroup[]) =>
+    items.reduce(
+      (total, repo) =>
+        total + repo.workspaces.filter((workspace) => matchesHomeFilter(workspace, 'all')).length,
+      0,
+    );
+  groups.sort((a, b) => count(b.items) - count(a.items) || a.label.localeCompare(b.label));
+  for (const group of groups) {
+    group.items.sort((a, b) => count([b]) - count([a]) || a.label.localeCompare(b.label));
+  }
+  return { groups, unassigned };
 }
 
 export type HomeTriageGroup = 'needs-you' | 'pr-ready' | 'running' | 'blocked' | 'done' | 'idle';

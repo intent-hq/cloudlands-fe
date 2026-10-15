@@ -68,6 +68,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import {
     getHomeTriageGroup,
+    groupHomeRepositoriesForSidebar,
     matchesHomeFilter,
     needsAttention,
     type HomeFilter,
@@ -183,37 +184,12 @@
   function countNeedsYou(items: readonly Workspace[]): number {
     return items.filter((workspace) => isActive(workspace) && needsAttention(workspace)).length;
   }
-  // Local repositories participate in the same grouping and ordering as orgs.
-  const sidebar = $derived.by(() => {
-    const groups: { key: string; owner?: string; label: string; items: typeof repositoryGroups }[] =
-      [];
-    const unassigned: typeof repositoryGroups = [];
-    for (const repo of repositoryGroups) {
-      if (repo.key === m.workspace_grouping_unknownRepository_label()) {
-        unassigned.push(repo);
-        continue;
-      }
-      const key = repo.owner ? `org:${repo.owner.toLowerCase()}` : 'local';
-      let group = groups.find((candidate) => candidate.key === key);
-      if (!group) {
-        group = {
-          key,
-          owner: repo.owner,
-          label: repo.owner || m.onboarding_projectPicker_localFolder_label(),
-          items: [],
-        };
-        groups.push(group);
-      }
-      group.items.push(repo);
-    }
-    const count = (items: typeof repositoryGroups) =>
-      items.reduce((total, repo) => total + repo.workspaces.filter(isActive).length, 0);
-    groups.sort((a, b) => count(b.items) - count(a.items) || a.label.localeCompare(b.label));
-    for (const group of groups) {
-      group.items.sort((a, b) => count([b]) - count([a]) || a.label.localeCompare(b.label));
-    }
-    return { groups, unassigned };
-  });
+  const sidebar = $derived(
+    groupHomeRepositoriesForSidebar(repositoryGroups, {
+      unknownRepository: m.workspace_grouping_unknownRepository_label(),
+      localFolder: m.onboarding_projectPicker_localFolder_label(),
+    }),
+  );
   const selectedOrg = $derived(sidebar.groups.find((group) => `sidebar:${group.key}` === repoKey));
   const scopedWorkspaces = $derived(
     selectedRepository?.workspaces ??
