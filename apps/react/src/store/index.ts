@@ -1,3 +1,4 @@
+import { fileExplorerReducer } from '../../../../src/store/renderer/slices/file-explorer/file-explorer-slice';
 import { gitWriteReducer } from '../../../../src/store/renderer/slices/git/git-write-slice';
 import { agentLockReducer } from '../../../../src/store/renderer/slices/agent-lock/agent-lock-slice';
 import { workspaceInitializerReducer } from '../../../../src/store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -101,5 +102,6 @@ export const store = new ReactStore({
   gitWrite: gitWriteReducer,
   agentLock: agentLockReducer,
   files: filesReducer,
+  fileExplorer: fileExplorerReducer,
 });
 export type AppState = StoreState<typeof store>;

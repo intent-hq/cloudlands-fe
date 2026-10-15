@@ -15,6 +15,54 @@ const actionOwner = (path: string, names: string[]) => ({
 });
 
 describe('saga watcher ownership guard', () => {
+  it.each([
+    [
+      'direct if/else',
+      'if (bounded) { yield* takeLatest(start, worker); } else { yield* takeLeading(start, worker); }',
+      false,
+    ],
+    [
+      'separate conditions',
+      'if (bounded) yield* takeLatest(start, worker); if (!bounded) yield* takeLeading(start, worker);',
+      true,
+    ],
+    [
+      'same arm',
+      'if (bounded) { yield* takeLatest(start, worker); yield* takeLeading(start, worker); }',
+      true,
+    ],
+    [
+      'loop can register both arms',
+      'for (const bounded of modes) { if (bounded) yield* takeLatest(start, worker); else yield* takeLeading(start, worker); }',
+      true,
+    ],
+    [
+      'nested functions can execute later',
+      'if (bounded) { function* one() { yield* takeLatest(start, worker); } } else { function* two() { yield* takeLeading(start, worker); } }',
+      true,
+    ],
+    [
+      'third overlapping owner',
+      'if (bounded) yield* takeLatest(start, worker); else yield* takeLeading(start, worker); yield* takeEvery(start, worker);',
+      true,
+    ],
+  ])('checks conditional watcher ownership: %s', (_name, body, duplicate) => {
+    const result = inspectSagaWatcherOwnership([
+      root(
+        ['conditionalSaga'],
+        ["import { conditionalSaga } from './slices/conditional/sagas/conditional-saga';"],
+      ),
+      actionOwner('src/store/renderer/slices/conditional/slice.ts', ['start']),
+      {
+        path: 'src/store/renderer/slices/conditional/sagas/conditional-saga.ts',
+        content: `import { takeLatest, takeLeading, takeEvery } from 'typed-redux-saga'; import { start } from '../slice'; export function* conditionalSaga() { ${body} }`,
+      },
+    ]);
+    expect(result.violations).toEqual(
+      duplicate ? [expect.stringContaining('duplicate watcher ownership')] : [],
+    );
+  });
+
   it('allows native watchers, state waits, payload buffers, subscriptions, and snapshots', () => {
     const source = [
       "import type { Task, EventChannel, Channel } from 'redux-saga';",

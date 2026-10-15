@@ -7553,5 +7553,7 @@
   "workspace_fileNavigation_discard_description": "¿Descartar los cambios locales sin guardar y salir de este archivo?",
   "workspace_fileNavigation_save_description": "Hay un guardado pendiente o se desconoce su resultado. Salir no cancela una escritura ya enviada. Su resultado se seguirá durante esta sesión.",
   "workspace_fileNavigation_stay_label": "Quedarse",
-  "workspace_fileNavigation_discard_label": "Descartar cambios sin guardar"
+  "workspace_fileNavigation_discard_label": "Descartar cambios sin guardar",
+  "workspace_fileBrowser_scope_description": "Explora el repositorio principal de este espacio de trabajo.",
+  "workspace_fileBrowser_empty_label": "Directorio vacío"
 }

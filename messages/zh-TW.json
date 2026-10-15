@@ -7553,5 +7553,7 @@
   "workspace_fileNavigation_discard_description": "捨棄未儲存的本機編輯並離開此檔案？",
   "workspace_fileNavigation_save_description": "儲存正在進行或結果未知。離開不會取消已傳送的寫入。本次工作階段仍會追蹤其結果。",
   "workspace_fileNavigation_stay_label": "留下",
-  "workspace_fileNavigation_discard_label": "捨棄未儲存的編輯"
+  "workspace_fileNavigation_discard_label": "捨棄未儲存的編輯",
+  "workspace_fileBrowser_scope_description": "瀏覽此工作區的主要儲存庫。",
+  "workspace_fileBrowser_empty_label": "空目錄"
 }

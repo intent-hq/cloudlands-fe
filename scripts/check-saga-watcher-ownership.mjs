@@ -680,7 +680,7 @@ export function inspectSagaWatcherOwnership(files) {
               : provenance.actions.resolveExpression(filePath, action)?.origin;
           if (!origin) continue;
           const owners = watcherOwners.get(origin) ?? [];
-          owners.push(`${filePath}:${lineFor(source, node)}`);
+          owners.push({ location: `${filePath}:${lineFor(source, node)}`, node });
           watcherOwners.set(origin, owners);
         }
 
@@ -785,9 +785,16 @@ export function inspectSagaWatcherOwnership(files) {
   for (const [origin, owners] of watcherOwners) {
     const exception = DUPLICATE_WATCHER_EXCEPTIONS.find(({ pattern }) => pattern.test(origin));
     if (owners.length < 2 || exception) continue;
-    violations.push(
-      `${owners[1]}: duplicate watcher ownership for ${origin}; first owned by ${owners[0]}`,
-    );
+    const overlap = owners.flatMap((owner, index) =>
+      owners
+        .slice(index + 1)
+        .filter((other) => !exclusiveWatcherBranches(owner.node, other.node))
+        .map((other) => [owner, other]),
+    )[0];
+    if (overlap)
+      violations.push(
+        `${overlap[1].location}: duplicate watcher ownership for ${origin}; first owned by ${overlap[0].location}`,
+      );
   }
   return {
     violations,
@@ -795,6 +802,32 @@ export function inspectSagaWatcherOwnership(files) {
     rootSagas,
     watcherCount: watcherOwners.size,
   };
+}
+
+// A single startup invocation can select either arm of the same if/else.
+// Do not infer exclusivity across functions, separate conditions, or repeated loops.
+function exclusiveWatcherBranches(left, right) {
+  if (enclosingFunction(left) !== enclosingFunction(right)) return false;
+  const branches = (node) => {
+    const result = new Map();
+    for (
+      let child = node, parent = node.parent;
+      parent && !isFunction(parent);
+      child = parent, parent = parent.parent
+    ) {
+      if (ts.isIterationStatement(parent, false)) return new Map();
+      if (ts.isIfStatement(parent)) {
+        if (child === parent.thenStatement) result.set(parent, 'then');
+        if (child === parent.elseStatement) result.set(parent, 'else');
+      }
+    }
+    return result;
+  };
+  const leftBranches = branches(left);
+  for (const [condition, arm] of branches(right)) {
+    if (leftBranches.has(condition) && leftBranches.get(condition) !== arm) return true;
+  }
+  return false;
 }
 
 function collectFiles(directory) {

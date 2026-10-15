@@ -130,6 +130,16 @@ oversized bodies remain unavailable text diffs. This is a bounded history view,
 not the full desktop timeline or multi-root history. Browsing it does not resolve
 an unknown commit outcome or enable resending that request.
 
+The workspace **Files** section browses the primary repository root. Expand a
+directory to load its immediate children, then open a file in the editor or
+read-only preview. Arrow keys, Home and End move through visible rows. **Back**
+returns to the opened row with its expansion, focus and viewport position retained.
+**Refresh** reloads the root and currently visible expanded directories; failed
+directory reads show an error and **Retry**, separately from empty directories.
+Reload starts a fresh tree. This browser has no file-management actions, recursive
+expand-all, drag and drop or secondary-root browsing. Out-of-workspace symlink
+targets remain subject to the daemon's containment checks.
+
 Open an existing primary-root text file to edit it, then choose **Save** or press
 **Ctrl/Cmd+S** while its editor has focus. Editing supports complete UTF-8 text up
 to 500 KiB with consistent LF or CRLF endings; BOM and existing line endings are
@@ -204,6 +214,15 @@ diff, read-only neighbors, model disposal, and desktop/narrow captures. A separa
 case makes only the owned fixture read-only to prove a genuine daemon refusal and
 explicit retry. Authority retirement, queued content-kind changes, unknown results
 and a later edit during an earlier save are policy tests, not injected native proof.
+
+`workspace-file-browser.extended.spec.mjs` uses an owned disposable hierarchy and
+checks actual lazy reads, duplicate basenames and unusual names, editor opening,
+Back restoration, dirty-editor Stay/Discard, empty directories, a genuine read
+failure and retry, refresh, reload, workspace switch and cleanup at desktop and
+narrow widths. Browser controls issue no file writes; disk bytes and the Git index
+are checked independently. Fixture preparation and permission changes are confined
+to the owned test repository. Overlapping initial refresh and retired replies are
+covered separately by shared-owner policy tests.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

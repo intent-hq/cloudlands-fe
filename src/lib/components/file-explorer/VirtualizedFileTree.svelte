@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nextFileTreeIndex, parentFileTreeIndex } from '$lib/utils/file-tree-navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
@@ -402,18 +403,7 @@
 
   // Find parent directory index for a given node
   function findParentIndex(currentIndex: number): number {
-    if (currentIndex < 0 || currentIndex >= effectiveNodes.length) return -1;
-    const currentDepth = effectiveNodes[currentIndex].depth;
-    if (currentDepth === 0) return -1; // Already at root level
-
-    // Walk backwards to find the first node with lower depth, skipping sentinel
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      if (effectiveNodes[i].node.path === CREATING_SENTINEL_PATH) continue;
-      if (effectiveNodes[i].depth < currentDepth) {
-        return i;
-      }
-    }
-    return -1;
+    return parentFileTreeIndex(effectiveNodes, currentIndex, CREATING_SENTINEL_PATH);
   }
 
   // Scroll focused item into view
@@ -449,12 +439,7 @@
 
     // Helper to find next navigable index (skips sentinel nodes)
     function nextIndex(from: number, direction: 1 | -1): number {
-      let idx = from + direction;
-      while (idx >= 0 && idx < nodeCount) {
-        if (effectiveNodes[idx].node.path !== CREATING_SENTINEL_PATH) return idx;
-        idx += direction;
-      }
-      return from; // No valid index found, stay put
+      return nextFileTreeIndex(effectiveNodes, from, direction, CREATING_SENTINEL_PATH);
     }
 
     switch (e.key) {

@@ -7553,5 +7553,7 @@
   "workspace_fileNavigation_discard_description": "저장하지 않은 로컬 편집을 버리고 이 파일에서 나가시겠습니까?",
   "workspace_fileNavigation_save_description": "저장이 진행 중이거나 결과를 알 수 없습니다. 나가도 이미 전송된 쓰기는 취소되지 않습니다. 이 세션 동안 결과 추적은 계속됩니다.",
   "workspace_fileNavigation_stay_label": "머무르기",
-  "workspace_fileNavigation_discard_label": "저장하지 않은 편집 버리기"
+  "workspace_fileNavigation_discard_label": "저장하지 않은 편집 버리기",
+  "workspace_fileBrowser_scope_description": "이 작업 공간의 기본 저장소를 탐색합니다.",
+  "workspace_fileBrowser_empty_label": "빈 디렉터리"
 }

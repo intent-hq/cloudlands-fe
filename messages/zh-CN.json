@@ -7553,5 +7553,7 @@
   "workspace_fileNavigation_discard_description": "放弃未保存的本地编辑并离开此文件？",
   "workspace_fileNavigation_save_description": "保存正在进行或结果未知。离开不会取消已经发送的写入。本次会话仍会跟踪其结果。",
   "workspace_fileNavigation_stay_label": "留下",
-  "workspace_fileNavigation_discard_label": "放弃未保存的编辑"
+  "workspace_fileNavigation_discard_label": "放弃未保存的编辑",
+  "workspace_fileBrowser_scope_description": "浏览此工作区的主仓库。",
+  "workspace_fileBrowser_empty_label": "空目录"
 }

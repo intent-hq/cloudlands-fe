@@ -49,6 +49,9 @@ export interface FileExplorerWorkspaceState {
   expandedPaths: string[];
   /** Paths of directories currently loading children */
   loadingPaths: string[];
+  /** Correlation for active directory reads; failures remain separate from empty results. */
+  directoryRequests: Record<string, string>;
+  directoryErrors: Record<string, string>;
   /** Agent IDs keyed by relative file path */
   agentFileEdits: Record<string, string[]>;
   isBulkOperation: boolean;

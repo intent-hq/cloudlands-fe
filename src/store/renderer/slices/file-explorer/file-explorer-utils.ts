@@ -124,6 +124,7 @@ export function flattenVisibleNodes(
   pathPrefix: string = '',
   result: FlattenedFileNode[] = [],
   compactedExpandedPaths: string[] = [],
+  compactChains = true,
 ): FlattenedFileNode[] {
   for (const childPath of childPaths) {
     const node = getItem(nodes, childPath);
@@ -135,7 +136,7 @@ export function flattenVisibleNodes(
       : compactedExpandedPaths;
 
     // Handle directory compaction
-    if (node.type === 'directory') {
+    if (compactChains && node.type === 'directory') {
       const onlyChild = onlyDirectoryChild(nodes, node);
       if (onlyChild) {
         const newPrefix = pathPrefix ? `${pathPrefix}/${node.name}` : node.name;
@@ -149,6 +150,7 @@ export function flattenVisibleNodes(
             newPrefix,
             result,
             currentCompactedExpandedPaths,
+            compactChains,
           );
         } else {
           result.push({
@@ -179,8 +181,31 @@ export function flattenVisibleNodes(
       (nodeExpanded || (pathPrefix && currentCompactedExpandedPaths.length > 0)) &&
       node.children.length > 0
     ) {
-      flattenVisibleNodes(nodes, node.children, expandedPaths, loadingPaths, depth + 1, '', result);
+      flattenVisibleNodes(
+        nodes,
+        node.children,
+        expandedPaths,
+        loadingPaths,
+        depth + 1,
+        '',
+        result,
+        [],
+        compactChains,
+      );
     }
   }
   return result;
+}
+
+export function mapFileNode(node: FileNode, path: string, anchorChildren: boolean): FileNode {
+  const mapped: FileNode = { name: node.name, path, type: node.type };
+  if (node.size !== undefined) mapped.size = node.size;
+  if (node.modified !== undefined) mapped.modified = node.modified;
+  if (node.isGitignored !== undefined) mapped.isGitignored = node.isGitignored;
+  if (node.type === 'directory') {
+    mapped.children = (node.children ?? []).map((child) =>
+      mapFileNode(child, anchorChildren ? `${path}/${child.name}` : child.path, anchorChildren),
+    );
+  }
+  return mapped;
 }

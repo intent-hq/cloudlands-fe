@@ -1,3 +1,4 @@
+import { WorkspaceFileBrowser } from './workspace-file-browser';
 import { WorkspaceCommitHistory } from './workspace-commit-history';
 import { WorkspaceDiff } from './workspace-diff';
 import { matchingGitDiffOrigin } from './workspace-diff-target';
@@ -322,6 +323,13 @@ export function WorkspaceOverview({
       !diffPath &&
       !noteId
     ) {
+      // The retained explorer restores its own exact row and viewport before this parent effect.
+      if (
+        content.current
+          ?.querySelector('[data-testid="workspace-file-browser"]')
+          ?.contains(document.activeElement)
+      )
+        return;
       const opener = content.current?.querySelector<HTMLAnchorElement>(
         `a[data-file-path="${CSS.escape(previous.filePath)}"]`,
       );
@@ -485,6 +493,12 @@ export function WorkspaceOverview({
                   />
                 </>
               )}
+              <WorkspaceFileBrowser
+                workspaceId={workspaceId}
+                hidden={Boolean(agentId || noteId || filePath || diffPath)}
+                query={query}
+                fileQuery={fileQuery}
+              />
               {!agentId && !noteId && !filePath && (
                 <WorkspaceCommitHistory
                   workspaceId={workspaceId}

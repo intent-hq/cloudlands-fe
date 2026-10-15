@@ -37,6 +37,8 @@ export const emptyFileExplorerWorkspaceState: FileExplorerWorkspaceState = {
   gitStatus: {},
   expandedPaths: [],
   loadingPaths: [],
+  directoryRequests: {},
+  directoryErrors: {},
   agentFileEdits: {},
   isBulkOperation: false,
   treeVersion: 0,
@@ -62,6 +64,8 @@ const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(
 export const initializeFileExplorer = createAction<
   [wsId: string, options: { workspacePath: string; workspaceId?: string }]
 >('fileExplorer/initializeFileExplorer');
+
+export const retireFileExplorer = createAction<[wsId: string]>('fileExplorer/retireFileExplorer');
 
 export const toggleDirectoryRequested = createAction<[wsId: string, nodePath: string]>(
   'fileExplorer/toggleDirectoryRequested',
@@ -139,8 +143,15 @@ export const setRootNode = createAction<[wsId: string, rootNode: FileNode | null
 );
 
 export const setChildrenAtPathAction = createAction<
-  [wsId: string, parentPath: string, children: FileNode[]]
+  [wsId: string, parentPath: string, children: FileNode[], requestId?: string]
 >('fileExplorer/setChildrenAtPath');
+
+export const directoryReadStarted = createAction<[wsId: string, path: string, requestId: string]>(
+  'fileExplorer/directoryReadStarted',
+);
+export const directoryReadSettled = createAction<
+  [wsId: string, path: string, requestId: string, error: string | null]
+>('fileExplorer/directoryReadSettled');
 
 export const setGitStatusMap = createAction<
   [wsId: string, gitStatus: Record<string, FileGitStatus>]
@@ -357,6 +368,12 @@ function replaceChildrenInCollection(
 // ---------------------------------------------------------------------------
 
 export const fileExplorerReducer = createReducer<FileExplorerState>(initialState);
+fileExplorerReducer.with(retireFileExplorer, (state, { payload: [wsId] }) => {
+  if (!(wsId in state.byWorkspaceId)) return state;
+  const byWorkspaceId = { ...state.byWorkspaceId };
+  delete byWorkspaceId[wsId];
+  return { ...state, byWorkspaceId };
+});
 fileExplorerReducer.with(
   fileSearchRequested,
   (state, { payload: [workspaceId, consumerId, requestId, query] }) => {
@@ -432,20 +449,58 @@ fileExplorerReducer.with(setRootNode, (state, { payload: [wsId, rootNode] }) => 
   return setWorkspaceState(state, wsId, {
     ...ws,
     ...normalizedTree,
+    directoryRequests: {},
+    directoryErrors: {},
+    loadingPaths: [],
     treeVersion: ws.treeVersion + 1,
   });
 });
 fileExplorerReducer.with(
   setChildrenAtPathAction,
-  (state, { payload: [wsId, parentPath, children] }) => {
+  (state, { payload: [wsId, parentPath, children, requestId] }) => {
     const ws = getWorkspaceState(state, wsId);
-    if (!ws.rootPath) return state;
+    if (!ws.rootPath || (requestId !== undefined && ws.directoryRequests[parentPath] !== requestId))
+      return state;
     const nodes = replaceChildrenInCollection(ws.nodes, parentPath, children);
     if (nodes === ws.nodes) return state;
     return setWorkspaceState(state, wsId, {
       ...ws,
       nodes,
+      loadingPaths: ws.loadingPaths.filter((path) => !!getItem(nodes, path)),
+      directoryRequests: removeRecordKeys(
+        ws.directoryRequests,
+        Object.keys(ws.directoryRequests).filter((path) => !getItem(nodes, path)),
+      ),
+      directoryErrors: removeRecordKeys(
+        ws.directoryErrors,
+        Object.keys(ws.directoryErrors).filter((path) => !getItem(nodes, path)),
+      ),
       treeVersion: ws.treeVersion + 1,
+    });
+  },
+);
+fileExplorerReducer.with(directoryReadStarted, (state, { payload: [wsId, path, requestId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (getItem(ws.nodes, path)?.type !== 'directory') return state;
+  if (ws.directoryRequests[path] === requestId && !(path in ws.directoryErrors)) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    directoryRequests: { ...ws.directoryRequests, [path]: requestId },
+    directoryErrors: removeRecordKeys(ws.directoryErrors, [path]),
+  });
+});
+fileExplorerReducer.with(
+  directoryReadSettled,
+  (state, { payload: [wsId, path, requestId, error] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.directoryRequests[path] !== requestId) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      directoryRequests: removeRecordKeys(ws.directoryRequests, [path]),
+      directoryErrors:
+        error === null
+          ? removeRecordKeys(ws.directoryErrors, [path])
+          : { ...ws.directoryErrors, [path]: error },
     });
   },
 );
@@ -523,10 +578,14 @@ fileExplorerReducer.with(setFileExplorerWorkspacePath, (state, { payload: [wsId,
   return setWorkspaceState(state, wsId, {
     ...ws,
     workspacePath: path,
+    isLoading: false,
+    isInitialized: false,
     rootPath: null,
     nodes: createEmptyNodesCollection(),
     expandedPaths: [],
     loadingPaths: [],
+    directoryRequests: {},
+    directoryErrors: {},
     error: null,
     treeVersion: ws.treeVersion + 1,
   });
