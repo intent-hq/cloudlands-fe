@@ -1,3 +1,8 @@
+import { MAX_CODE_EDITOR_CONTENT_SIZE } from '../../../../lib/utils/code-editor-policy';
+import type { ExplicitNoteEditorIdentity } from './workspace-notes-types';
+import { ContentType } from '../../../../shared/types';
+import { SPEC_NOTE_ID } from '../../../../shared/constants/notes';
+import { isNoteContentStale } from '../../../../shared/utils/note-content';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note } from '../../../../shared/types';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
@@ -42,3 +47,59 @@ export const getAllNotes = (
   if (!ws) return [];
   return getItems(ws.notes);
 };
+
+export const getExplicitNoteEditor = (state: WorkspaceNotesProjectionState, viewId: string) =>
+  getItem(state.workspaceNotes.explicitEditors, viewId);
+
+export const getExplicitNoteSaveOperations = (
+  state: WorkspaceNotesProjectionState,
+  workspaceId: string,
+  noteId: string,
+) =>
+  getItems(state.workspaceNotes.explicitSaveOperations).filter(
+    (operation) => operation.workspaceId === workspaceId && operation.noteId === noteId,
+  );
+
+export const getExplicitNoteEditorCurrent = (
+  state: WorkspaceNotesProjectionState,
+  identity: ExplicitNoteEditorIdentity,
+) => {
+  const editor = getExplicitNoteEditor(state, identity.viewId);
+  return (
+    !!editor &&
+    !editor.retired &&
+    !state.workspaceNotes.revokedEditorViews[identity.viewId] &&
+    editor.workspaceId === identity.workspaceId &&
+    editor.noteId === identity.noteId &&
+    editor.authority === identity.authority &&
+    editor.context === identity.context
+  );
+};
+
+/** The bounded explicit editor excludes structural/task/rich notes and unloaded slim rows. */
+export const isEditableMarkdownNote = (note: Note | undefined): note is Note & { rev: number } =>
+  !!note &&
+  note.id !== SPEC_NOTE_ID &&
+  !note.metadata?.task &&
+  !note.isDefault &&
+  note.contentType === ContentType.Markdown &&
+  isExplicitNoteContentSupported(note.content) &&
+  !isNoteContentStale(note) &&
+  typeof note.rev === 'number' &&
+  Number.isSafeInteger(note.rev) &&
+  note.rev >= 0;
+
+/** Bound the source editor and prevent note.setContent's task-conversion side effect. */
+export function isExplicitNoteContentSupported(content: string): boolean {
+  if (
+    typeof content !== 'string' ||
+    content.includes(String.fromCharCode(0)) ||
+    /@@@tasks?\b/u.test(content)
+  )
+    return false;
+  const encoded = new TextEncoder().encode(content);
+  return (
+    encoded.byteLength <= MAX_CODE_EDITOR_CONTENT_SIZE &&
+    new TextDecoder().decode(encoded) === content
+  );
+}

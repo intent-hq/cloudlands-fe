@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "重新命名工作區標題",
   "workspace_title_saving_label": "正在儲存工作區標題…",
   "workspace_title_failed_description": "標題未儲存。請選取標題進行編輯並重試。",
-  "workspace_title_unknown_description": "重新命名的結果未知。請先檢查目前標題，再進行其他變更。本次工作階段中將禁止重新命名；重新載入會清除此警告，但不會重試請求。"
+  "workspace_title_unknown_description": "重新命名的結果未知。請先檢查目前標題，再進行其他變更。本次工作階段中將禁止重新命名；重新載入會清除此警告，但不會重試請求。",
+  "workspace_noteEdit_edit_label": "編輯 Markdown",
+  "workspace_noteEdit_view_label": "檢視已儲存的筆記",
+  "workspace_noteEdit_editor_ariaLabel": "筆記 Markdown 編輯器",
+  "workspace_noteEdit_editorFailed_error": "無法載入筆記編輯器。請重新開啟筆記。",
+  "workspace_noteEdit_explicit_description": "使用按鈕或 Ctrl/Cmd+S 儲存。伺服器可能會合併同時進行的編輯。",
+  "workspace_noteEdit_uncertain_error": "儲存結果不明。本次工作階段已封鎖儲存。請檢查已儲存的筆記。重新載入會清除此警告，但不會重新執行儲存。",
+  "workspace_noteEdit_bounded_error": "僅可編輯不超過 500 KiB 的完整一般 Markdown 筆記。不支援任務指令。",
+  "workspace_noteEdit_leave_label": "離開此筆記？",
+  "workspace_noteEdit_discard_description": "捨棄本機未儲存的編輯並離開此筆記？"
 }

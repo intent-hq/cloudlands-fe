@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "Cambiar el título del espacio de trabajo",
   "workspace_title_saving_label": "Guardando el título del espacio de trabajo…",
   "workspace_title_failed_description": "El título no se guardó. Selecciónalo para editarlo e intentarlo de nuevo.",
-  "workspace_title_unknown_description": "Se desconoce el resultado del cambio de nombre. Comprueba el título actual antes de realizar más cambios. El cambio de nombre permanece bloqueado durante esta sesión; recargar elimina esta advertencia, pero no repite la solicitud."
+  "workspace_title_unknown_description": "Se desconoce el resultado del cambio de nombre. Comprueba el título actual antes de realizar más cambios. El cambio de nombre permanece bloqueado durante esta sesión; recargar elimina esta advertencia, pero no repite la solicitud.",
+  "workspace_noteEdit_edit_label": "Editar Markdown",
+  "workspace_noteEdit_view_label": "Ver nota guardada",
+  "workspace_noteEdit_editor_ariaLabel": "Editor Markdown de notas",
+  "workspace_noteEdit_editorFailed_error": "No se pudo cargar el editor. Vuelve a abrir la nota.",
+  "workspace_noteEdit_explicit_description": "Guarda con el botón o Ctrl/Cmd+S. El servidor puede combinar cambios simultáneos.",
+  "workspace_noteEdit_uncertain_error": "Se desconoce el resultado del guardado. No se puede guardar en esta sesión. Revisa la nota guardada. Recargar borra esta advertencia y nunca repite el guardado.",
+  "workspace_noteEdit_bounded_error": "Solo se pueden editar notas Markdown normales y completas de hasta 500 KiB. No se admiten directivas de tareas.",
+  "workspace_noteEdit_leave_label": "¿Salir de esta nota?",
+  "workspace_noteEdit_discard_description": "¿Descartar los cambios locales sin guardar y salir de esta nota?"
 }

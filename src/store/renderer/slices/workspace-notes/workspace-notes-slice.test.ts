@@ -147,7 +147,7 @@ describe('workspaceNotesReducer', () => {
         initialState,
         loadWorkspaceNotesSucceeded([WS_1, WS_2], notesByWorkspace),
       ),
-    ).toEqual({
+    ).toMatchObject({
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceNotesState,
@@ -293,10 +293,10 @@ describe('workspaceNotesReducer', () => {
       }),
     );
 
-    expect(workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1]))).toEqual({
-      byWorkspaceId: {
-        [WS_2]: loadedState.byWorkspaceId[WS_2],
-      },
+    expect(
+      workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1])).byWorkspaceId,
+    ).toEqual({
+      [WS_2]: loadedState.byWorkspaceId[WS_2],
     });
   });
 

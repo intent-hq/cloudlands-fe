@@ -216,7 +216,32 @@ another save for that resource in the current session. Reload never replays the
 write, but clears this in-memory warning; inspect the actual file before deciding
 whether to edit and save again. Use **Changed files** to review the resulting diff.
 
+## Existing workspace notes
+
+Open an ordinary note from **Notes**, then choose **Edit Markdown**. Complete Markdown
+notes up to 500 KiB support source editing with **Save** or **Ctrl/Cmd+S**. **View saved
+note** returns to the accepted rendered content after saving. Spec/default notes, task
+notes, incomplete bodies and task-conversion directives stay read-only in this preview.
+This does not include note creation, renaming, comments or the rich desktop editor.
+
+The canonical note writer sends the loaded revision as the daemon's merge base.
+Concurrent changes can be merged; the accepted response and revision become the next
+base while edits made during a save remain unsaved. This is not an atomic compare-and-swap
+guarantee: the daemon can fall back to replacement if historical merge content is
+unavailable, and can refuse a large content reduction. Review the accepted Markdown.
+
+Dirty navigation offers **Stay** or **Discard unsaved edits**. Discard never undoes a
+write already sent. Temporary reconnects retain the draft and do not resend Save;
+full reload loses unsaved drafts. A definite failure preserves the draft for explicit
+retry. An unknown result blocks further saves for that note in this app session.
+Inspect the saved note before deciding how to proceed; refetch alone does not prove
+which request succeeded. Reload clears the in-memory warning without replaying writes.
+
 ## Focused verification
+
+`workspace-note-edit.extended.spec.mjs` exercises existing-note Markdown editing,
+explicit Save with a genuine concurrent merge, dirty navigation, reload/reconnect and
+unchanged unrelated notes/repository state on an owned no-provider daemon at both widths.
 
 ```sh
 pnpm --filter @intent/react typecheck

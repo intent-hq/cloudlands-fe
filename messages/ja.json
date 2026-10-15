@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "ワークスペース名を変更",
   "workspace_title_saving_label": "ワークスペース名を保存中…",
   "workspace_title_failed_description": "名前は保存されませんでした。名前を選択して編集し、もう一度お試しください。",
-  "workspace_title_unknown_description": "名前変更の結果は不明です。変更を続ける前に現在の名前を確認してください。このセッションでは名前変更がブロックされます。再読み込みすると警告は消えますが、リクエストは再送されません。"
+  "workspace_title_unknown_description": "名前変更の結果は不明です。変更を続ける前に現在の名前を確認してください。このセッションでは名前変更がブロックされます。再読み込みすると警告は消えますが、リクエストは再送されません。",
+  "workspace_noteEdit_edit_label": "Markdownを編集",
+  "workspace_noteEdit_view_label": "保存済みのノートを表示",
+  "workspace_noteEdit_editor_ariaLabel": "ノートのMarkdownエディター",
+  "workspace_noteEdit_editorFailed_error": "ノートエディターを読み込めませんでした。ノートを開き直してください。",
+  "workspace_noteEdit_explicit_description": "ボタンまたはCtrl/Cmd+Sで保存します。同時に行われた編集はサーバーでマージされる場合があります。",
+  "workspace_noteEdit_uncertain_error": "保存結果は不明です。このセッションでは保存がブロックされています。保存済みのノートを確認してください。再読み込みすると警告が消えますが、保存は再実行されません。",
+  "workspace_noteEdit_bounded_error": "編集できるのは500 KiB以下の完全な通常のMarkdownノートのみです。タスク指示はサポートされていません。",
+  "workspace_noteEdit_leave_label": "このノートから移動しますか？",
+  "workspace_noteEdit_discard_description": "未保存のローカル編集を破棄して、このノートから移動しますか？"
 }

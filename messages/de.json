@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "Arbeitsbereichstitel umbenennen",
   "workspace_title_saving_label": "Arbeitsbereichstitel wird gespeichert…",
   "workspace_title_failed_description": "Der Titel wurde nicht gespeichert. Wähle ihn zum Bearbeiten und versuche es erneut.",
-  "workspace_title_unknown_description": "Das Ergebnis der Umbenennung ist unbekannt. Prüfe den aktuellen Titel vor weiteren Änderungen. Umbenennen bleibt in dieser Sitzung gesperrt. Neuladen entfernt die Warnung, wiederholt aber die Anfrage nicht."
+  "workspace_title_unknown_description": "Das Ergebnis der Umbenennung ist unbekannt. Prüfe den aktuellen Titel vor weiteren Änderungen. Umbenennen bleibt in dieser Sitzung gesperrt. Neuladen entfernt die Warnung, wiederholt aber die Anfrage nicht.",
+  "workspace_noteEdit_edit_label": "Markdown bearbeiten",
+  "workspace_noteEdit_view_label": "Gespeicherte Notiz anzeigen",
+  "workspace_noteEdit_editor_ariaLabel": "Markdown-Editor für Notizen",
+  "workspace_noteEdit_editorFailed_error": "Der Notizeditor konnte nicht geladen werden. Öffne die Notiz erneut.",
+  "workspace_noteEdit_explicit_description": "Speichere über die Schaltfläche oder Strg/Cmd+S. Gleichzeitige Änderungen können vom Server zusammengeführt werden.",
+  "workspace_noteEdit_uncertain_error": "Das Speicherergebnis ist unbekannt. Speichern ist in dieser Sitzung gesperrt. Prüfe die gespeicherte Notiz. Neuladen entfernt diese Warnung und wiederholt den Schreibvorgang nicht.",
+  "workspace_noteEdit_bounded_error": "Nur vollständige normale Markdown-Notizen bis 500 KiB sind bearbeitbar. Aufgabenanweisungen werden nicht unterstützt.",
+  "workspace_noteEdit_leave_label": "Diese Notiz verlassen?",
+  "workspace_noteEdit_discard_description": "Lokale ungespeicherte Änderungen verwerfen und diese Notiz verlassen?"
 }

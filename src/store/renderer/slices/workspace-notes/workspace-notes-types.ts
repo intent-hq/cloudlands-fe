@@ -1,3 +1,4 @@
+import type { SagaGenerator } from 'typed-redux-saga';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
 import type { LineAttributionData } from '../../../../lib/client/app-client';
@@ -71,4 +72,48 @@ export type WorkspaceNotesWorkspaceState = {
 
 export type WorkspaceNotesState = {
   byWorkspaceId: Record<string, WorkspaceNotesWorkspaceState>;
+  /** Draft/base history survives reconnects, but is discarded on genuine view departure. */
+  explicitEditors: Collection<ExplicitNoteEditor, 'viewId'>;
+  /** Unresolved operations survive departure; known retired receipts compact to one per note. */
+  explicitSaveOperations: Collection<ExplicitNoteSaveOperation, 'requestId'>;
+  /** Permanent ID-only tombstones fence departed views without retaining their bodies. */
+  revokedEditorViews: Record<string, true>;
+};
+
+/** The source writer contributes sibling commands to the same per-note FIFO. */
+export type NotesWriteQueue = {
+  enqueue(
+    workspaceId: string,
+    noteId: string,
+    run: () => SagaGenerator<unknown>,
+  ): SagaGenerator<unknown>;
+  flush(workspaceId: string, noteId: string): SagaGenerator<unknown>;
+};
+
+export type ExplicitNoteEditorIdentity = {
+  workspaceId: string;
+  noteId: string;
+  viewId: string;
+  authority: string;
+  context: string;
+};
+export type ExplicitNoteEditor = ExplicitNoteEditorIdentity & {
+  baseContent: string;
+  baseRev: number;
+  content: string;
+  draftSeq: number;
+  retired: boolean;
+  retiredContexts: string[];
+};
+export type ExplicitNoteSaveRequest = ExplicitNoteEditorIdentity & {
+  requestId: string;
+  draftSeq: number;
+};
+export type ExplicitNoteSaveOperation = ExplicitNoteSaveRequest & {
+  baseRev: number;
+  status: 'queued' | 'running' | 'confirmed' | 'failed' | 'unknown';
+  echoedRev?: number;
+  /** Necessary merge history while a confirmed receipt cannot yet be applied to its surviving draft. */
+  deferredRebase?: { sentContent: string; content: string; rev: number };
+  error?: string;
 };

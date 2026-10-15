@@ -8,18 +8,28 @@ import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   removeItem,
   replaceItem,
   updateItem,
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceUnmounted,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from './workspace-notes-types';
 import type {
   NoteAttributionViewState,
   NotePresenceViewer,
   NoteUiRequestState,
+} from './workspace-notes-types';
+import type {
+  ExplicitNoteEditorIdentity,
+  ExplicitNoteEditor,
+  ExplicitNoteSaveRequest,
+  ExplicitNoteSaveOperation,
 } from './workspace-notes-types';
 import type { LineAttributionData } from '../../../../lib/client/app-client';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
@@ -51,6 +61,9 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
 
 export const initialState: WorkspaceNotesState = {
   byWorkspaceId: {},
+  explicitEditors: createCollection('viewId'),
+  explicitSaveOperations: createCollection('requestId'),
+  revokedEditorViews: {},
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -345,12 +358,265 @@ const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
   'workspaceNotes/applyReadyTasksError',
 );
 
+/** Opt-in explicit editor lifecycle. Unique view IDs are permanently revoked on departure. */
+export const explicitNoteEditorOpened = createAction<[identity: ExplicitNoteEditorIdentity]>(
+  'workspaceNotes/explicitEditorOpened',
+);
+export const explicitNoteEditorAdmitted = createAction<[editor: ExplicitNoteEditor]>(
+  'workspaceNotes/explicitEditorAdmitted',
+);
+export const explicitNoteEditorRebound = createAction<[identity: ExplicitNoteEditorIdentity]>(
+  'workspaceNotes/explicitEditorRebound',
+);
+export const explicitNoteDraftChanged = createAction<[viewId: string, content: string]>(
+  'workspaceNotes/explicitDraftChanged',
+);
+export const explicitNoteEditorReleased = createAction<[viewId: string]>(
+  'workspaceNotes/explicitEditorReleased',
+);
+export const explicitNoteEditorsRetired = createAction<[]>('workspaceNotes/explicitEditorsRetired');
+export const explicitNoteSaveRequested = createAction<[request: ExplicitNoteSaveRequest]>(
+  'workspaceNotes/explicitSaveRequested',
+);
+export const explicitNoteSaveQueued = createAction<[operation: ExplicitNoteSaveOperation]>(
+  'workspaceNotes/explicitSaveQueued',
+);
+export const explicitNoteSaveStarted = createAction<[requestId: string]>(
+  'workspaceNotes/explicitSaveStarted',
+);
+export const explicitNoteSaveSettled = createAction<
+  [
+    requestId: string,
+    status: 'confirmed' | 'failed' | 'unknown',
+    echoedRev?: number,
+    error?: string,
+    deferredRebase?: ExplicitNoteSaveOperation['deferredRebase'],
+  ]
+>('workspaceNotes/explicitSaveSettled');
+export const explicitNoteContentAccepted = createAction<
+  [workspaceId: string, noteId: string, content: string, rev: number]
+>('workspaceNotes/explicitContentAccepted');
+export const explicitNoteSaveReconciled = createAction<[requestId: string]>(
+  'workspaceNotes/explicitSaveReconciled',
+);
+export const explicitNoteDraftRebased = createAction<
+  [viewId: string, expectedSeq: number, content: string, baseContent: string, baseRev: number]
+>('workspaceNotes/explicitDraftRebased');
+
+/** Retain one known departed-view receipt per note, plus every unresolved operation. */
+function compactRetiredExplicitReceipts(state: WorkspaceNotesState): WorkspaceNotesState {
+  let operations = state.explicitSaveOperations;
+  const latest = new Map<string, string>();
+  for (const operation of getItems(operations)) {
+    if (
+      !state.revokedEditorViews[operation.viewId] ||
+      (operation.status !== 'confirmed' && operation.status !== 'failed') ||
+      operation.deferredRebase
+    )
+      continue;
+    const key = JSON.stringify([operation.workspaceId, operation.noteId]);
+    const previous = latest.get(key);
+    if (previous) operations = removeItem(operations, previous);
+    latest.set(key, operation.requestId);
+  }
+  return operations === state.explicitSaveOperations
+    ? state
+    : { ...state, explicitSaveOperations: operations };
+}
+
+function retireExplicitEditors(
+  state: WorkspaceNotesState,
+  matches: (editor: ExplicitNoteEditor) => boolean,
+): WorkspaceNotesState {
+  let editors = state.explicitEditors;
+  let operations = state.explicitSaveOperations;
+  let revokedEditorViews = state.revokedEditorViews;
+  for (const editor of getItems(editors)) {
+    if (editor.retired || !matches(editor)) continue;
+    editors = removeItem(editors, editor.viewId);
+    // The ID alone fences all old contexts; departed draft/base bodies are no longer needed.
+    revokedEditorViews = { ...revokedEditorViews, [editor.viewId]: true };
+    for (const operation of getItems(operations)) {
+      if (operation.viewId !== editor.viewId) continue;
+      const { deferredRebase: _history, ...retired } = operation;
+      const status =
+        operation.status === 'queued'
+          ? 'failed'
+          : operation.status === 'running'
+            ? 'unknown'
+            : operation.status;
+      if (status !== operation.status || operation.deferredRebase)
+        operations = replaceItem(operations, operation.requestId, { ...retired, status });
+    }
+  }
+  return editors === state.explicitEditors
+    ? state
+    : compactRetiredExplicitReceipts({
+        ...state,
+        explicitEditors: editors,
+        explicitSaveOperations: operations,
+        revokedEditorViews,
+      });
+}
+
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
+workspaceNotesReducer.with(explicitNoteEditorAdmitted, (state, { payload: [editor] }) => {
+  if (state.revokedEditorViews[editor.viewId] || getItem(state.explicitEditors, editor.viewId))
+    return state;
+  return { ...state, explicitEditors: addItem(state.explicitEditors, editor) };
+});
+workspaceNotesReducer.with(explicitNoteEditorRebound, (state, { payload: [identity] }) => {
+  const editor = getItem(state.explicitEditors, identity.viewId);
+  if (
+    !editor ||
+    editor.retired ||
+    editor.context === identity.context ||
+    !identity.context ||
+    editor.workspaceId !== identity.workspaceId ||
+    editor.noteId !== identity.noteId ||
+    editor.authority !== identity.authority ||
+    editor.retiredContexts.includes(identity.context)
+  )
+    return state;
+  let operations = state.explicitSaveOperations;
+  for (const operation of getItems(operations)) {
+    if (operation.viewId === editor.viewId && operation.status === 'queued')
+      operations = updateItem(operations, { ...operation, status: 'failed' });
+  }
+  return {
+    ...state,
+    explicitSaveOperations: operations,
+    explicitEditors: updateItem(state.explicitEditors, {
+      ...editor,
+      context: identity.context,
+      retiredContexts: [...editor.retiredContexts, editor.context],
+    }),
+  };
+});
+workspaceNotesReducer.with(explicitNoteDraftChanged, (state, { payload: [viewId, content] }) => {
+  const editor = getItem(state.explicitEditors, viewId);
+  if (!editor || editor.retired || editor.content === content) return state;
+  return {
+    ...state,
+    explicitEditors: updateItem(state.explicitEditors, {
+      ...editor,
+      content,
+      draftSeq: editor.draftSeq + 1,
+    }),
+  };
+});
+workspaceNotesReducer.with(explicitNoteEditorReleased, (state, { payload: [viewId] }) => {
+  const retired = retireExplicitEditors(state, (editor) => editor.viewId === viewId);
+  return getItem(retired.explicitEditors, viewId) || retired.revokedEditorViews[viewId]
+    ? retired
+    : { ...retired, revokedEditorViews: { ...retired.revokedEditorViews, [viewId]: true } };
+});
+workspaceNotesReducer.with(explicitNoteEditorsRetired, (state) =>
+  retireExplicitEditors(state, () => true),
+);
+workspaceNotesReducer.with(workspaceDeleted, (state, { payload: [workspaceId] }) =>
+  retireExplicitEditors(state, (editor) => editor.workspaceId === workspaceId),
+);
+workspaceNotesReducer.with(explicitNoteSaveQueued, (state, { payload: [operation] }) => {
+  if (getItem(state.explicitSaveOperations, operation.requestId)) return state;
+  return { ...state, explicitSaveOperations: addItem(state.explicitSaveOperations, operation) };
+});
+workspaceNotesReducer.with(explicitNoteSaveStarted, (state, { payload: [requestId] }) => {
+  const operation = getItem(state.explicitSaveOperations, requestId);
+  if (operation?.status !== 'queued') return state;
+  return {
+    ...state,
+    explicitSaveOperations: updateItem(state.explicitSaveOperations, {
+      ...operation,
+      status: 'running',
+    }),
+  };
+});
+workspaceNotesReducer.with(
+  explicitNoteSaveSettled,
+  (state, { payload: [requestId, status, echoedRev, error, deferredRebase] }) => {
+    const operation = getItem(state.explicitSaveOperations, requestId);
+    if (
+      !operation ||
+      operation.status === 'confirmed' ||
+      operation.status === 'failed' ||
+      (operation.status === status &&
+        operation.echoedRev === echoedRev &&
+        operation.error === error)
+    )
+      return state;
+    const editor = getItem(state.explicitEditors, operation.viewId);
+    return compactRetiredExplicitReceipts({
+      ...state,
+      explicitSaveOperations: updateItem(state.explicitSaveOperations, {
+        ...operation,
+        status,
+        echoedRev,
+        error,
+        ...(deferredRebase && editor && !editor.retired ? { deferredRebase } : {}),
+      }),
+    });
+  },
+);
+workspaceNotesReducer.with(
+  explicitNoteContentAccepted,
+  (state, { payload: [workspaceId, noteId, content, rev] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    const note = ws ? getItem(ws.notes, noteId as Note['id']) : undefined;
+    if (
+      !ws ||
+      !note ||
+      (note.rev !== undefined && note.rev > rev) ||
+      (note.content === content && note.rev === rev)
+    )
+      return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      notes: updateItem(ws.notes, { ...note, content, rev }),
+      notesVersion: ws.notesVersion + 1,
+    });
+  },
+);
+workspaceNotesReducer.with(explicitNoteSaveReconciled, (state, { payload: [requestId] }) => {
+  const operation = getItem(state.explicitSaveOperations, requestId);
+  if (!operation?.deferredRebase) return state;
+  const { deferredRebase: _history, ...settled } = operation;
+  return {
+    ...state,
+    explicitSaveOperations: replaceItem(state.explicitSaveOperations, requestId, settled),
+  };
+});
+workspaceNotesReducer.with(
+  explicitNoteDraftRebased,
+  (state, { payload: [viewId, expectedSeq, content, baseContent, baseRev] }) => {
+    const editor = getItem(state.explicitEditors, viewId);
+    if (!editor || editor.retired || editor.draftSeq !== expectedSeq || editor.baseRev > baseRev)
+      return state;
+    if (
+      editor.content === content &&
+      editor.baseContent === baseContent &&
+      editor.baseRev === baseRev
+    )
+      return state;
+    return {
+      ...state,
+      explicitEditors: updateItem(state.explicitEditors, {
+        ...editor,
+        content,
+        baseContent,
+        baseRev,
+      }),
+    };
+  },
+);
 workspaceNotesReducer.with(
   clearWorkspaceNotesForWorkspaces,
   (state, { payload: [workspaceIds] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
-      return clearWorkspaceState(nextState, workspaceId);
+      return clearWorkspaceState(
+        retireExplicitEditors(nextState, (editor) => editor.workspaceId === workspaceId),
+        workspaceId,
+      );
     }, state);
   },
 );
@@ -453,6 +719,10 @@ workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, no
   });
 });
 workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
+  state = retireExplicitEditors(
+    state,
+    (editor) => editor.workspaceId === workspaceId && editor.noteId === noteId,
+  );
   const workspaceState = state.byWorkspaceId[workspaceId];
   if (!workspaceState?.initialized) return state;
 
@@ -826,5 +1096,8 @@ workspaceNotesReducer.with(applyReadyTasksError, (state, { payload: [workspaceId
   });
 });
 workspaceNotesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
+  clearWorkspaceState(
+    retireExplicitEditors(state, (editor) => editor.workspaceId === wsId),
+    wsId,
+  ),
 );

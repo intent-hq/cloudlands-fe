@@ -25,6 +25,7 @@ import { agentMetadataSaga } from './store/agent-session/sagas/agent-metadata-sa
 import { agentModelSaga } from './store/agent-model/sagas/agent-model-saga';
 import { hasAutoUpdatePreload } from './features/auto-update/auto-update.client';
 import { notesContentReadSaga } from './store/workspace-notes/sagas/notes-content-read-saga';
+import { notesWriteSaga } from './store/workspace-notes/sagas/notes-write-saga';
 import { gitStatusReadSaga } from './store/git/sagas/git-status-read-saga';
 import { readOnlyChatSaga } from './store/chat-state/sagas/read-only-chat-saga';
 import { filesSaveSaga } from './store/files/sagas/files-save-saga';
@@ -46,6 +47,7 @@ const cancelDirectoryPickerSaga = store.runSaga(directoryPickerSaga);
 const cancelLinkTooltipSaga = store.runSaga(linkTooltipSaga);
 const cancelAgentMemorySaga = store.runSaga(agentMemorySaga);
 const cancelNotesContentReadSaga = store.runSaga(notesContentReadSaga);
+const cancelNotesWriteSaga = store.runSaga(notesWriteSaga);
 const cancelCommitHistorySaga = store.runSaga(commitHistorySaga);
 const cancelGitConsumerReadSaga = store.runSaga(gitConsumerReadSaga);
 const cancelGitWriteSaga = store.runSaga(gitWriteSaga);
@@ -81,6 +83,7 @@ function dispose() {
   cancelAgentMetadataSaga();
   cancelAgentCreationSaga();
   cancelNotesContentReadSaga();
+  cancelNotesWriteSaga();
   cancelGitWriteSaga();
   cancelGitStatusReadSaga();
   cancelGitConsumerReadSaga();

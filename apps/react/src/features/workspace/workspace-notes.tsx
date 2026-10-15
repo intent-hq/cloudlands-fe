@@ -26,6 +26,8 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 import { filterContextNotes } from '$lib/components/workspace/sidebar/sidebar-search';
 import { m } from '$shared/paraglide/messages.js';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
+import { selectNoteEditReady } from '@/store/workspace-notes/note-edit-selectors';
+import { WorkspaceNoteEditor } from './workspace-note-editor';
 
 function NoteContent({
   workspaceId,
@@ -43,26 +45,30 @@ function NoteContent({
   const retry = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
   const [showSource, setShowSource] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const authority = selectPrincipalConnectionContext();
+  const admitted = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const note = selectNoteById(workspaceId, noteId);
+  const notesLoaded = selectWorkspaceNotesState(workspaceId).value.initialized;
   const view = selectNoteContentView(workspaceId, consumerId);
+  const editable = selectNoteEditReady(workspaceId, noteId, consumerId).value;
   const connection = authority.value;
   useLayoutEffect(() => {
-    if (!connection) return;
+    if (!connection || !admitted || !notesLoaded) return;
     store.dispatch(selectNote(workspaceId, noteId));
     store.dispatch(noteContentViewRequested(consumerId, crypto.randomUUID(), workspaceId, noteId));
     return () => {
       store.dispatch(noteContentViewReleased(workspaceId, consumerId));
     };
-  }, [consumerId, workspaceId, noteId, connection]);
+  }, [consumerId, workspaceId, noteId, connection, admitted, notesLoaded]);
   const current = view.value?.noteId === noteId ? view.value : undefined;
   const ready = current?.status === 'ready' && current.authority === connection;
   const failed = current?.status === 'error' && current.authority === connection;
   useLayoutEffect(() => {
-    if (ready) title.current?.focus();
+    if (ready && !editing) title.current?.focus();
     else if (failed) retry.current?.focus();
-  }, [ready, failed]);
+  }, [ready, failed, editing]);
   function openNote(targetWorkspaceId: string, targetNoteId: string) {
     void navigate({
       to: '/workspaces/$workspaceId',
@@ -125,8 +131,10 @@ function NoteContent({
     return true;
   }
   return (
-    <NoteContentSurface state={failed ? 'error' : !ready ? 'loading' : 'read-only'}>
-      {failed ? (
+    <NoteContentSurface
+      state={editing ? 'editor' : failed ? 'error' : !ready ? 'loading' : 'read-only'}
+    >
+      {failed && !editing ? (
         <div className="grid justify-items-start gap-4">
           <p role="alert">{current.error}</p>
           <Button
@@ -141,27 +149,40 @@ function NoteContent({
             {m.ui_combobox_retry_label()}
           </Button>
         </div>
-      ) : !ready ? (
+      ) : !ready && !editing ? (
         <LoadingState label="Loading note content" />
       ) : (
         <article className="grid min-w-0 gap-4" data-testid="workspace-note" data-note-id={noteId}>
           <header className="flex min-w-0 items-start gap-4">
             <h2 ref={title} tabIndex={-1} className="type-heading-sm min-w-0 flex-1">
-              {note.value?.title}
+              {connection ? note.value?.title : undefined}
             </h2>
             <Button
               variant="ghost"
               size="sm"
               aria-pressed={showSource}
+              disabled={editing}
               onClick={() => setShowSource(!showSource)}
             >
               Source
             </Button>
+            {editable && !editing && (
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                {m.workspace_noteEdit_edit_label()}
+              </Button>
+            )}
           </header>
           {navigationMessage && (
             <output className="type-caption text-muted-foreground">{navigationMessage}</output>
           )}
-          {showSource ? (
+          {editing ? (
+            <WorkspaceNoteEditor
+              workspaceId={workspaceId}
+              noteId={noteId}
+              consumerId={consumerId}
+              onView={() => setEditing(false)}
+            />
+          ) : showSource ? (
             <pre
               className="min-w-0 whitespace-pre-wrap break-words font-sans"
               data-testid="note-content"
@@ -228,8 +249,8 @@ export function WorkspaceNotes({
       (opener ?? filterHeader.current?.querySelector<HTMLElement>('input, button'))?.focus();
     }
   }, [noteId]);
-  if (!connection) return <p>Notes are not available for the current connection.</p>;
-  if (state.value.error)
+  if (!connection && !noteId) return <p>Notes are not available for the current connection.</p>;
+  if (state.value.error && !noteId)
     return (
       <div className="grid justify-items-start gap-4">
         <p role="alert">{state.value.error}</p>
@@ -238,8 +259,8 @@ export function WorkspaceNotes({
         </Button>
       </div>
     );
-  if (!state.value.initialized) return <LoadingState label="Loading notes" />;
-  if (notes.value.length === 0) return <p>This workspace has no notes.</p>;
+  if (!state.value.initialized && !noteId) return <LoadingState label="Loading notes" />;
+  if (notes.value.length === 0 && !noteId) return <p>This workspace has no notes.</p>;
   return (
     <section className="grid min-w-0 gap-6" data-testid="workspace-notes">
       {noteId ? (

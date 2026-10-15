@@ -16,6 +16,8 @@ export function CodeEditor({
   line,
   onChange,
   onSave,
+  ariaLabel,
+  errorLabel,
 }: {
   value: string;
   path: string;
@@ -26,13 +28,15 @@ export function CodeEditor({
   line?: number;
   onChange: (value: string) => void;
   onSave: () => void;
+  ariaLabel?: string;
+  errorLabel?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const instance = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const latest = useRef({ value, dark, fontFamily, readOnly, onChange, onSave });
+  const latest = useRef({ value, dark, fontFamily, readOnly, onChange, onSave, ariaLabel });
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   useLayoutEffect(() => {
-    latest.current = { value, dark, fontFamily, readOnly, onChange, onSave };
+    latest.current = { value, dark, fontFamily, readOnly, onChange, onSave, ariaLabel };
   });
   useLayoutEffect(() => {
     const host = container.current;
@@ -70,7 +74,7 @@ export function CodeEditor({
         wordWrap: 'on',
         scrollBeyondLastLine: false,
         readOnly: latest.current.readOnly,
-        ariaLabel: m.workspace_fileEdit_editor_ariaLabel(),
+        ariaLabel: latest.current.ariaLabel ?? m.workspace_fileEdit_editor_ariaLabel(),
         guides: { indentation: false },
       });
       disposables.push(view);
@@ -99,8 +103,12 @@ export function CodeEditor({
       model.setValue(value);
       if (selection) instance.current?.setSelection(selection);
     }
-    instance.current?.updateOptions({ readOnly, fontFamily });
-  }, [value, readOnly, fontFamily, phase]);
+    instance.current?.updateOptions({
+      readOnly,
+      fontFamily,
+      ariaLabel: ariaLabel ?? m.workspace_fileEdit_editor_ariaLabel(),
+    });
+  }, [value, readOnly, fontFamily, phase, ariaLabel]);
   useLayoutEffect(() => {
     let retired = false;
     void import('$lib/utils/monaco-theme').then((theme) => {
@@ -115,7 +123,9 @@ export function CodeEditor({
       {phase === 'loading' && (
         <LoadingState label={m.workspace_noteVersionHistory_loading_label()} />
       )}
-      {phase === 'error' && <p role="alert">{m.workspace_fileEdit_editorFailed_error()}</p>}
+      {phase === 'error' && (
+        <p role="alert">{errorLabel ?? m.workspace_fileEdit_editorFailed_error()}</p>
+      )}
       <div
         ref={container}
         className="h-96 min-w-0 overflow-hidden rounded border border-border"

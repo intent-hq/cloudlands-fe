@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "Renommer l’espace de travail",
   "workspace_title_saving_label": "Enregistrement du titre de l’espace de travail…",
   "workspace_title_failed_description": "Le titre n’a pas été enregistré. Sélectionnez-le pour le modifier et réessayer.",
-  "workspace_title_unknown_description": "Le résultat du changement de nom est inconnu. Vérifiez le titre actuel avant toute autre modification. Le renommage reste bloqué pendant cette session ; recharger efface cet avertissement sans renvoyer la demande."
+  "workspace_title_unknown_description": "Le résultat du changement de nom est inconnu. Vérifiez le titre actuel avant toute autre modification. Le renommage reste bloqué pendant cette session ; recharger efface cet avertissement sans renvoyer la demande.",
+  "workspace_noteEdit_edit_label": "Modifier le Markdown",
+  "workspace_noteEdit_view_label": "Voir la note enregistrée",
+  "workspace_noteEdit_editor_ariaLabel": "Éditeur Markdown de note",
+  "workspace_noteEdit_editorFailed_error": "Impossible de charger l’éditeur. Rouvrez la note.",
+  "workspace_noteEdit_explicit_description": "Enregistrez avec le bouton ou Ctrl/Cmd+S. Le serveur peut fusionner les modifications simultanées.",
+  "workspace_noteEdit_uncertain_error": "Le résultat de l’enregistrement est inconnu. L’enregistrement est bloqué pour cette session. Inspectez la note enregistrée. Recharger efface cet avertissement sans répéter l’écriture.",
+  "workspace_noteEdit_bounded_error": "Seules les notes Markdown ordinaires et complètes de 500 Kio maximum sont modifiables. Les directives de tâches ne sont pas prises en charge.",
+  "workspace_noteEdit_leave_label": "Quitter cette note ?",
+  "workspace_noteEdit_discard_description": "Abandonner les modifications locales non enregistrées et quitter cette note ?"
 }

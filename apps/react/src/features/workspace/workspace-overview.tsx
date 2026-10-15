@@ -250,6 +250,7 @@ export function WorkspaceOverview({
   const loaded = selectWorkspaceListLoadedForBackend(backendId);
   const workspace = selectWorkspaceById(workspaceId);
   const row = loaded.value ? workspace.value : undefined;
+  const activeNote = !!noteId && !agentId && !filePath && !diffPath;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const connection = authority.value;
   useWorkspaceViewLifetime(workspaceId, loaded.value && !row);
@@ -397,9 +398,9 @@ export function WorkspaceOverview({
       />
       <ScreenBody className="grid content-start gap-6">
         <WorkspaceTitleStatus workspaceId={workspaceId} />
-        {!loaded.value ? (
+        {!loaded.value && !activeNote ? (
           <WorkspaceReadiness />
-        ) : !row ? (
+        ) : loaded.value && !row ? (
           <ResourceNotFound
             kind="not_found"
             resourceLabel={m.workspace_page_workspaceResource_label()}
@@ -414,7 +415,7 @@ export function WorkspaceOverview({
           />
         ) : (
           <>
-            {!agentId && !noteId && !filePath && !diffPath && row.statusMessage && (
+            {!agentId && !noteId && !filePath && !diffPath && row?.statusMessage && (
               <p data-testid="workspace-status-message">{row.statusMessage}</p>
             )}
             <dl
@@ -426,17 +427,17 @@ export function WorkspaceOverview({
             >
               <div>
                 <dt className="type-caption text-muted-foreground">Repository</dt>
-                <dd data-testid="workspace-repository">{row.repositoryName}</dd>
+                <dd data-testid="workspace-repository">{row?.repositoryName}</dd>
               </div>
               <div>
                 <dt className="type-caption text-muted-foreground">Branch</dt>
                 <dd className="break-all" data-testid="workspace-branch">
-                  {row.branch}
+                  {row?.branch}
                 </dd>
               </div>
               <div>
                 <dt className="type-caption text-muted-foreground">Status</dt>
-                <dd data-testid="workspace-status">{row.status}</dd>
+                <dd data-testid="workspace-status">{row?.status}</dd>
               </div>
             </dl>
             <div key={workspaceId} ref={content} className="grid min-w-0 gap-6">

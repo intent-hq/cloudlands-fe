@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "Rename workspace title",
   "workspace_title_saving_label": "Saving workspace title…",
   "workspace_title_failed_description": "The title was not saved. Select the title to edit and try again.",
-  "workspace_title_unknown_description": "The rename outcome is unknown. Check the current title before making further changes. Renaming stays blocked in this session; reloading clears this warning but does not retry the request."
+  "workspace_title_unknown_description": "The rename outcome is unknown. Check the current title before making further changes. Renaming stays blocked in this session; reloading clears this warning but does not retry the request.",
+  "workspace_noteEdit_edit_label": "Edit Markdown",
+  "workspace_noteEdit_view_label": "View saved note",
+  "workspace_noteEdit_editor_ariaLabel": "Note Markdown editor",
+  "workspace_noteEdit_editorFailed_error": "The note editor could not load. Reopen the note to try again.",
+  "workspace_noteEdit_explicit_description": "Save explicitly with the button or Ctrl/Cmd+S. Concurrent edits may be merged by the server.",
+  "workspace_noteEdit_uncertain_error": "The save outcome is unknown. Saving is blocked in this session. Inspect the saved note before deciding what to do. Reloading clears this warning and never replays the save.",
+  "workspace_noteEdit_bounded_error": "Only complete ordinary Markdown notes up to 500 KiB are editable. Task directives are not supported.",
+  "workspace_noteEdit_leave_label": "Leave this note?",
+  "workspace_noteEdit_discard_description": "Discard local unsaved edits and leave this note?"
 }

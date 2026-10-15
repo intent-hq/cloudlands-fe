@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "重命名工作区标题",
   "workspace_title_saving_label": "正在保存工作区标题…",
   "workspace_title_failed_description": "标题未保存。请选择标题进行编辑并重试。",
-  "workspace_title_unknown_description": "重命名结果未知。请先检查当前标题，再进行其他更改。本次会话中将禁止重命名；重新加载会清除此警告，但不会重试请求。"
+  "workspace_title_unknown_description": "重命名结果未知。请先检查当前标题，再进行其他更改。本次会话中将禁止重命名；重新加载会清除此警告，但不会重试请求。",
+  "workspace_noteEdit_edit_label": "编辑 Markdown",
+  "workspace_noteEdit_view_label": "查看已保存的笔记",
+  "workspace_noteEdit_editor_ariaLabel": "笔记 Markdown 编辑器",
+  "workspace_noteEdit_editorFailed_error": "无法加载笔记编辑器。请重新打开笔记。",
+  "workspace_noteEdit_explicit_description": "使用按钮或 Ctrl/Cmd+S 保存。服务器可能会合并同时进行的编辑。",
+  "workspace_noteEdit_uncertain_error": "保存结果未知。本次会话中已阻止保存。请检查已保存的笔记。重新加载会清除此警告，但不会重新执行保存。",
+  "workspace_noteEdit_bounded_error": "仅可编辑不超过 500 KiB 的完整普通 Markdown 笔记。不支持任务指令。",
+  "workspace_noteEdit_leave_label": "离开此笔记？",
+  "workspace_noteEdit_discard_description": "放弃本地未保存的编辑并离开此笔记？"
 }

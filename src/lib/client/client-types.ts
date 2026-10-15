@@ -10,6 +10,8 @@ export type SubscriptionHandler<T> = (snapshot: T) => void;
 /** Uniform result for mutation methods. */
 export interface MutationResult extends SubmissionCorrelation {
   success: boolean;
+  /** Strict explicit note saves require a real content/revision receipt; never automatically resend unknown writes. */
+  contentOutcome?: 'confirmed' | 'failed' | 'unknown';
   error?: string;
   /** Current-index commits retain uncertainty until explicit inspection; never replay them. */
   commitOutcome?: { state: 'confirmed'; hash: string; files: string[] } | { state: 'unknown' };

@@ -1135,6 +1135,12 @@ export interface LineAttributionClient {
   computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
 }
 
+export type NoteSetContentOptions = {
+  requireContentReceipt: true;
+  /** Final transport boundary: throwing here prevents dispatch. */
+  onDispatch(): void;
+};
+
 export interface NotesClient {
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
@@ -1170,6 +1176,7 @@ export interface NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(

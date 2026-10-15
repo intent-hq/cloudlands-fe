@@ -7567,5 +7567,14 @@
   "workspace_title_edit_label": "워크스페이스 제목 변경",
   "workspace_title_saving_label": "워크스페이스 제목 저장 중…",
   "workspace_title_failed_description": "제목이 저장되지 않았습니다. 제목을 선택하여 편집하고 다시 시도하세요.",
-  "workspace_title_unknown_description": "제목 변경 결과를 알 수 없습니다. 추가 변경 전에 현재 제목을 확인하세요. 이 세션에서는 제목 변경이 차단됩니다. 새로고침하면 경고가 사라지지만 요청은 다시 전송되지 않습니다."
+  "workspace_title_unknown_description": "제목 변경 결과를 알 수 없습니다. 추가 변경 전에 현재 제목을 확인하세요. 이 세션에서는 제목 변경이 차단됩니다. 새로고침하면 경고가 사라지지만 요청은 다시 전송되지 않습니다.",
+  "workspace_noteEdit_edit_label": "Markdown 편집",
+  "workspace_noteEdit_view_label": "저장된 노트 보기",
+  "workspace_noteEdit_editor_ariaLabel": "노트 Markdown 편집기",
+  "workspace_noteEdit_editorFailed_error": "노트 편집기를 불러오지 못했습니다. 노트를 다시 여세요.",
+  "workspace_noteEdit_explicit_description": "버튼 또는 Ctrl/Cmd+S로 저장하세요. 동시 편집 내용은 서버에서 병합될 수 있습니다.",
+  "workspace_noteEdit_uncertain_error": "저장 결과를 알 수 없습니다. 이 세션에서는 저장이 차단됩니다. 저장된 노트를 확인하세요. 새로고침하면 경고가 사라지지만 저장을 다시 실행하지 않습니다.",
+  "workspace_noteEdit_bounded_error": "500 KiB 이하의 완전한 일반 Markdown 노트만 편집할 수 있습니다. 작업 지시문은 지원하지 않습니다.",
+  "workspace_noteEdit_leave_label": "이 노트를 나갈까요?",
+  "workspace_noteEdit_discard_description": "저장하지 않은 로컬 편집을 버리고 이 노트를 나갈까요?"
 }

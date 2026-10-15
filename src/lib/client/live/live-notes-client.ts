@@ -1,3 +1,4 @@
+import { createNoteSetContent } from './backend-note-set-content';
 /**
  * Live notes domain backed by the intentd daemon.
  *
@@ -140,20 +141,10 @@ export class LiveNotesClient implements NotesClient {
     return runMutation('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
   }
 
-  async setContent(
-    noteId: string,
-    content: string,
-    expectedVersion?: number,
-    workspaceId?: string,
-  ): Promise<MutationResult> {
-    return this.runNoteMutation(
-      noteId,
-      'note.setContent',
-      { content },
-      expectedVersion,
-      workspaceId,
-    );
-  }
+  setContent: NotesClient['setContent'] = createNoteSetContent({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+    resolveNoteWorkspaceId,
+  });
 
   async add(
     noteId: string,

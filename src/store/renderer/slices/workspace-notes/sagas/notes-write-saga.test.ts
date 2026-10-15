@@ -29,6 +29,8 @@ import {
   createNote,
   deleteNote,
   loadWorkspaceNotesSucceeded,
+  flushNoteContentRequested,
+  settleNoteContentRequested,
   resolveCommentRequested,
   updateNote,
   updateNoteContent,
@@ -925,6 +927,42 @@ describe('notesWriteSaga', () => {
     await settle();
     expect(setContent).toHaveBeenCalledWith(NOTE, 'saved after rejection', 4, WS);
     expect(run.task.isRunning()).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+  it('settles source flush and FIFO barriers when the owner is cancelled', async () => {
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValue(new Promise(() => {}));
+    const run = harness();
+    run.channel.put(updateNoteContent(WS, NOTE, 'debounced draft'));
+    const flush = flushNoteContentRequested(WS, NOTE);
+    const barrier = settleNoteContentRequested(WS, NOTE);
+    run.channel.put(flush);
+    run.channel.put(barrier);
+    await settle();
+    expect(setContent).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+    await expect(flush.promise).rejects.toBeInstanceOf(Error);
+    // A discarded FIFO barrier acknowledges the drain; no caller is left pending.
+    await expect(barrier.promise).resolves.toBeUndefined();
+  });
+
+  it('drains source queued work and completes barriers on workspace cleanup', async () => {
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockReturnValue(new Promise(() => {}));
+    const run = harness();
+    run.channel.put(updateNoteContent(WS, NOTE, 'first', true));
+    run.channel.put(updateNoteContent(WS, NOTE, 'queued', true));
+    const barrier = settleNoteContentRequested(WS, NOTE);
+    run.channel.put(barrier);
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    await expect(barrier.promise).resolves.toBeUndefined();
+    expect(setContent).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
