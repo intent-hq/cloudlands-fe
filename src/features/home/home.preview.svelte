@@ -19,6 +19,7 @@
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         setTitle: (id: string, title: string) => void;
+        setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
         setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
         roundTripSettings: () => void;
@@ -444,6 +445,12 @@
   });
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setPullRequests: (id, pulls, total) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(id, { pullRequests: pulls, pullRequestsTotal: total }),
+        ]),
+      ),
     setTitle: (id, title) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
     setPullRequest: (id, pullRequest) =>
