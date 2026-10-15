@@ -435,17 +435,34 @@ it('drops an original submission held by setup-probe settlement after readmissio
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it('does not create after validation completes on an unmounted initializer', async () => {
+  let resolveBranches!: (v: unknown) => void;
+  const branches = new Promise((r) => (resolveBranches = r));
+  // Isolate submission from the selector, then settle its read after disposal.
+  mocks.getBranches.mockReturnValue(branches);
   let release!: (v: unknown) => void;
   mocks.validate.mockReturnValue(
     new Promise((r) => {
       release = r;
     }),
   );
-  await submit();
-  cleanup();
-  release({ valid: true });
-  await new Promise((r) => setTimeout(r, 20));
-  expect(mocks.create).not.toHaveBeenCalled();
+  try {
+    await submit();
+    await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
+    cleanup();
+    release({ valid: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+  } finally {
+    cleanup();
+    resolveBranches({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    await branches;
+  }
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
 });
 

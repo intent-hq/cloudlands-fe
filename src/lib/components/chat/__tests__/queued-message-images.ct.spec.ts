@@ -377,9 +377,15 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   await expect(groups.nth(2).getByTestId('queued-image-thumbnail')).toHaveCount(2);
   await expect(groups.nth(2).getByTestId('queued-file-chip')).toHaveText('notes.txt');
   await expect.poll(widths).toEqual([32, 48, 64]);
-  await expect(row.getByTestId('queued-message-actions')).toHaveCount(1);
+  await expect(
+    component.getByTestId('queued-messages-header').getByTestId('queued-message-actions'),
+  ).toHaveCount(1);
   await expect(groups.getByTestId('queued-message-actions')).toHaveCount(0);
-  await expect(row.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(1);
+  await expect(
+    component
+      .getByTestId('queued-messages-header')
+      .getByRole('button', { name: 'Edit', exact: true }),
+  ).toHaveCount(1);
   await info.attach('retry-ordered-groups.png', {
     body: await queueScreenshot(component),
     contentType: 'image/png',
