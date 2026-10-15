@@ -78,6 +78,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
+  import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -362,6 +363,15 @@
         : [];
     }),
   );
+  const statusGroups = $derived(
+    groupHomeWorkspacesByStatus(filteredWorkspaces).map((group) => ({
+      ...group,
+      expanded:
+        $view$.expandedGroups[group.id] !== false ||
+        group.items.some((workspace) => workspace.id === selectedId),
+      collapsible: true,
+    })),
+  );
   const listGroups: {
     id: string;
     label: string;
@@ -370,7 +380,13 @@
     collapsible: boolean;
   }[] = $derived.by(() => {
     if ($view$.groupBy === 'none') return [];
-    const groups = ($view$.groupBy === 'repository' ? repositorySections : triageGroups)
+    const groups = (
+      $view$.groupBy === 'repository'
+        ? repositorySections
+        : $view$.groupBy === 'workspace-status'
+          ? statusGroups
+          : triageGroups
+    )
       .map((group) => ({
         ...group,
         items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),

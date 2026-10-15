@@ -1444,6 +1444,7 @@ async function executeAction(
           result: {
             ...result,
             ...(effectiveTabId ? { tabId: effectiveTabId } : {}),
+            ...(result.success ? { url: finalRewrite.url } : {}),
             ...(result.success && replaceTargetTabId ? { replaced: true } : {}),
             ...(displayed !== undefined ? { displayed } : {}),
             ...echo,
