@@ -28,7 +28,7 @@ type LegacyTaskStatusWriteDependencies = {
   onFailure(error?: string): void;
 };
 
-export type ExplicitTaskStatusHost = {
+type ExplicitTaskStatusHost = {
   getState(): { workspaceNotes: WorkspaceNotesState; workspaceTasks: WorkspaceTasksState };
   dispatch(
     action: ReturnType<

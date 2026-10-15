@@ -31,7 +31,7 @@ export const getWorkspaceTasksShouldLoad = (
   return !!ws?.demandIds.length && !ws.loading && (!ws.initialized || ws.stale);
 };
 
-export const getExplicitTaskStatusView = (state: WorkspaceTasksProjectionState, viewId: string) =>
+const getExplicitTaskStatusView = (state: WorkspaceTasksProjectionState, viewId: string) =>
   getItem(state.workspaceTasks.explicitStatusViews, viewId);
 export const getExplicitTaskStatusOperations = (
   state: WorkspaceTasksProjectionState,
