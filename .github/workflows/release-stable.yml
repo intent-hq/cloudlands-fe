@@ -295,6 +295,7 @@ jobs:
       - name: Setup publication pnpm
         uses: pnpm/action-setup@v6
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
 
       - name: Setup publication Node.js

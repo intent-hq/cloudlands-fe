@@ -122,6 +122,7 @@ describe('pnpm setup on persistent runners', () => {
         expect(setup).toBeDefined();
         expect(setup?.with?.cache).toBeUndefined();
         expect(setup?.with?.['package-manager-cache']).toBe(false);
+        expect(steps[pnpm].with?.dest).toMatch(/runner.name|github.run_id/);
       });
     }
   }

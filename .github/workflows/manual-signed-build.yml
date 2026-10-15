@@ -159,6 +159,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         timeout-minutes: 1
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
       - uses: actions/setup-node@v7
         timeout-minutes: 1
@@ -1230,6 +1231,7 @@ jobs:
           package-manager-cache: false
       - uses: pnpm/action-setup@v6
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
       - uses: actions/setup-node@v7
         with:
