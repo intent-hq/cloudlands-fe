@@ -41,6 +41,9 @@ export interface MessageComposerProps extends Omit<ComponentProps<'div'>, 'onCha
   >;
   status?: 'idle' | 'streaming';
   onStop?: () => void;
+  /** Explicit external queue admission. Never stores, clears, or drains a local queue. */
+  onEnqueue?: (value: string) => void;
+  enqueueDisabled?: boolean;
   queue?: QueuedMessage[];
   onQueueChange?: (queue: QueuedMessage[]) => void;
   showQueue?: boolean;

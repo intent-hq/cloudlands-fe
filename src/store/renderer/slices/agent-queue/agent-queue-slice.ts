@@ -37,6 +37,11 @@ export const hydrateAgentQueueRequested = createAction<[agentId: string, workspa
   'agentQueue/hydrateRequested',
 );
 
+/** Explicit read intent; the app's existing queue read owner performs reconciliation. */
+export const refreshAgentQueueRequested = createAction<
+  [agentId: string, workspaceId: string, consumerId: string]
+>('agentQueue/refreshRequested');
+
 export const replaceAgentQueue =
   createAction<[agentId: string, messages: QueuedMessage[], workspaceId?: string]>(
     'agentQueue/replaceQueue',
@@ -57,6 +62,16 @@ export const removeQueuedMessageFromAgentQueue = createAction<[agentId: string, 
  */
 export const queuedMessageMutationRequested = createAction<[request: QueuedMessageMutationRequest]>(
   'agentQueue/mutationRequested',
+);
+
+/** The wire may now have executed; departure cannot erase this request's evidence. */
+export const queuedMessageRemovalDispatched = createAction<[requestId: string]>(
+  'agentQueue/removalDispatched',
+);
+
+/** A validated receipt proves absence without suppressing later authoritative snapshots. */
+export const queuedMessageRemovalApplied = createAction<[agentId: string, messageId: string]>(
+  'agentQueue/removalApplied',
 );
 
 export const queuedMessageMutationFinished = createAction<
@@ -239,6 +254,23 @@ agentQueueReducer.with(queuedMessageMutationRequested, (state, { payload: [reque
     }),
   };
 });
+agentQueueReducer.with(queuedMessageRemovalDispatched, (state, { payload: [requestId] }) => {
+  const entry = getItem(state.mutations, requestId);
+  if (!entry || entry.kind !== 'remove' || entry.status !== 'pending' || entry.removalDispatched)
+    return state;
+  return {
+    ...state,
+    mutations: upsertItem(state.mutations, { ...entry, removalDispatched: true }),
+  };
+});
+agentQueueReducer.with(queuedMessageRemovalApplied, (state, { payload: [agentId, messageId] }) => {
+  const entry = state.byAgentId[agentId];
+  if (!entry || !getItem(entry.messages, messageId)) return state;
+  return setAgentQueueEntry(state, agentId, {
+    ...entry,
+    messages: removeItem(entry.messages, messageId),
+  });
+});
 agentQueueReducer.with(queuedMessageMutationFinished, (state, { payload: [requestId, result] }) => {
   const entry = getItem(state.mutations, requestId);
   if (entry?.status !== 'pending') return state;
@@ -247,6 +279,7 @@ agentQueueReducer.with(queuedMessageMutationFinished, (state, { payload: [reques
     mutations: upsertItem(state.mutations, {
       ...entry,
       status: result.status,
+      ...(result.removalOutcome ? { removalOutcome: result.removalOutcome } : {}),
       ...(result.sendOutcome ? { sendOutcome: result.sendOutcome } : {}),
       ...(result.error ? { error: result.error } : {}),
     }),
@@ -256,12 +289,19 @@ agentQueueReducer.with(
   queuedMessageMutationConsumed,
   (state, { payload: [consumerId, requestId] }) => {
     const entry = getItem(state.mutations, requestId);
-    if (entry?.consumerId !== consumerId || entry.status === 'pending') return state;
+    if (
+      entry?.consumerId !== consumerId ||
+      entry.status === 'pending' ||
+      (entry.removalDispatched && entry.removalOutcome === 'unknown')
+    )
+      return state;
     return { ...state, mutations: removeItem(state.mutations, requestId) };
   },
 );
 agentQueueReducer.with(queuedMessageMutationsReleased, (state, { payload: [consumerId] }) => {
-  const owned = getItems(state.mutations).filter((entry) => entry.consumerId === consumerId);
+  const owned = getItems(state.mutations).filter(
+    (entry) => entry.consumerId === consumerId && !entry.removalDispatched,
+  );
   if (owned.length === 0) return state;
   return {
     ...state,
@@ -272,7 +312,9 @@ agentQueueReducer.with(queuedMessageMutationsReleased, (state, { payload: [consu
   };
 });
 agentQueueReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
-  const owned = getItems(state.mutations).filter((entry) => entry.workspaceId === workspaceId);
+  const owned = getItems(state.mutations).filter(
+    (entry) => entry.workspaceId === workspaceId && !entry.removalDispatched,
+  );
   if (owned.length === 0) return state;
   return {
     ...state,

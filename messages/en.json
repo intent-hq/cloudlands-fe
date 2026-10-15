@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "Find a workspace note…",
   "chat_noteContext_empty_description": "No ordinary notes available.",
   "chat_noteContext_unavailable_error": "A selected note is unavailable. Refresh notes or remove its reference before sending.",
-  "chat_noteContext_busy_description": "Wait for the current response before sending note context."
+  "chat_noteContext_busy_description": "Wait for the current response before sending note context.",
+  "chat_connectedQueue_heading_label": "Queued messages",
+  "chat_connectedQueue_empty_description": "No messages are queued.",
+  "chat_connectedQueue_removing_description": "Removing queued message…",
+  "chat_connectedQueue_absent_description": "No longer queued. It may already have been delivered.",
+  "chat_connectedQueue_unknown_description": "Removal outcome unknown. Refresh checks the queue without repeating the removal.",
+  "chat_connectedQueue_merged_description": "Combined follow-ups. Remove applies to this whole entry."
 }

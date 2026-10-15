@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "尋找工作區筆記…",
   "chat_noteContext_empty_description": "沒有可用的一般筆記。",
   "chat_noteContext_unavailable_error": "所選筆記無法使用。請在傳送前重新整理筆記或移除其參照。",
-  "chat_noteContext_busy_description": "請等待目前回覆完成後再傳送筆記上下文。"
+  "chat_noteContext_busy_description": "請等待目前回覆完成後再傳送筆記上下文。",
+  "chat_connectedQueue_heading_label": "佇列中的訊息",
+  "chat_connectedQueue_empty_description": "沒有佇列中的訊息。",
+  "chat_connectedQueue_removing_description": "正在移除佇列中的訊息…",
+  "chat_connectedQueue_absent_description": "已不在佇列中。此訊息可能已經傳送。",
+  "chat_connectedQueue_unknown_description": "移除結果未知。重新整理只檢查佇列，不會重複移除。",
+  "chat_connectedQueue_merged_description": "後續訊息已合併。移除會套用至整個項目。"
 }

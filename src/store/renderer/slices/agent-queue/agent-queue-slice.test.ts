@@ -1,3 +1,4 @@
+import { getAgentQueueEntry, getQueuedMessageMutations } from './agent-queue-projections';
 import type { QueuedMessage } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
@@ -7,6 +8,8 @@ import {
   clearAgentQueue,
   hydrateAgentQueueRequested,
   initialState,
+  queuedMessageRemovalDispatched,
+  queuedMessageRemovalApplied,
   queuedMessageMutationConsumed,
   queuedMessageMutationFinished,
   queuedMessageMutationRequested,
@@ -40,6 +43,16 @@ function storeWith(agentQueue: AgentQueueState): StoreState {
 describe('agentQueueReducer', () => {
   it('returns initial state', () => {
     expect(agentQueueReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('distinguishes an unread queue and another workspace from an authoritative empty queue', () => {
+    expect(getAgentQueueEntry(storeWith(initialState), AGENT_ID, 'ws-1')).toBeUndefined();
+    const empty = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [], 'ws-1'));
+    expect(getAgentQueueEntry(storeWith(empty), AGENT_ID, 'ws-1')).toMatchObject({
+      isHydrating: false,
+      error: null,
+    });
+    expect(getAgentQueueEntry(storeWith(empty), AGENT_ID, 'ws-2')).toBeUndefined();
   });
 
   it('marks an agent queue as hydrating on hydrate request', () => {
@@ -293,6 +306,44 @@ describe('agentQueueReducer', () => {
       expect(getItem(state.mutations, 'r1')).toBeUndefined();
     });
 
+    it('retains a dispatched unknown removal across consumer release and queue reset', () => {
+      let state = agentQueueReducer(
+        initialState,
+        queuedMessageMutationRequested(request('remove', { operation: { kind: 'remove' } })),
+      );
+      state = agentQueueReducer(state, queuedMessageRemovalDispatched('remove'));
+      expect(agentQueueReducer(state, queuedMessageRemovalDispatched('remove'))).toBe(state);
+      state = agentQueueReducer(state, queuedMessageMutationsReleased('panel-a'));
+      state = agentQueueReducer(state, workspaceUnmounted('ws-1'));
+      state = agentQueueReducer(state, clearAgentQueue(AGENT_ID));
+      state = agentQueueReducer(
+        state,
+        queuedMessageMutationFinished('remove', { status: 'failed', removalOutcome: 'unknown' }),
+      );
+      expect(getItem(state.mutations, 'remove')).toMatchObject({
+        removalDispatched: true,
+        removalOutcome: 'unknown',
+        consumerId: 'panel-a',
+      });
+      expect(agentQueueReducer(state, queuedMessageMutationConsumed('panel-a', 'remove'))).toBe(
+        state,
+      );
+      expect(agentQueueReducer(state, queuedMessageRemovalDispatched('absent'))).toBe(state);
+    });
+
+    it('applies a receipt without permanently hiding a later authoritative row', () => {
+      const before = agentQueueReducer(
+        initialState,
+        replaceAgentQueue(AGENT_ID, [message('m1', 0), message('m2', 1)]),
+      );
+      const after = agentQueueReducer(before, queuedMessageRemovalApplied(AGENT_ID, 'm1'));
+      expect(getItems(after.byAgentId[AGENT_ID].messages)).toEqual([message('m2', 1)]);
+      expect(after.byAgentId[AGENT_ID].recentlyRemovedMessageIds).toEqual([]);
+      expect(agentQueueReducer(after, queuedMessageRemovalApplied(AGENT_ID, 'm1'))).toBe(after);
+      const refreshed = agentQueueReducer(after, replaceAgentQueue(AGENT_ID, [message('m1', 0)]));
+      expect(getItems(refreshed.byAgentId[AGENT_ID].messages)).toEqual([message('m1', 0)]);
+    });
+
     it('releases one consumer and clears an unmounted workspace without touching others', () => {
       let state = initialState;
       state = agentQueueReducer(state, queuedMessageMutationRequested(request('a1')));
@@ -328,6 +379,7 @@ describe('agentQueueReducer', () => {
       );
       const state = storeWith(queueState);
       const selected = selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1');
+      expect(getQueuedMessageMutations(state, AGENT_ID, 'ws-1')).toBe(selected);
       expect(selected.map((entry) => entry.requestId)).toEqual(['a1', 'b1']);
       expect(selectQueuedMessageMutations.select(state, AGENT_ID, 'ws-1')).toBe(selected);
       expect(

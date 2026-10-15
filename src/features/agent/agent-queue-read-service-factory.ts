@@ -121,7 +121,7 @@ export function createAgentQueueReadService({
     // Trailing follow-ups re-enter here without passing the public entry
     // point's guard: skip the RPC (and the slice-entry-creating dispatch) when
     // a deletion became pending while the leading fetch was in flight.
-    if (isAgentDeletionPending(agentId)) {
+    if (!ownership.isCurrent() || isAgentDeletionPending(agentId)) {
       hydrateFollowUpWantedByAgent.delete(key);
       return;
     }

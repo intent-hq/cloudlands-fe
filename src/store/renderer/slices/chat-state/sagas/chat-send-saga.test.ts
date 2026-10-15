@@ -1,3 +1,4 @@
+import { store as appStore } from '../../../store';
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
@@ -52,7 +53,19 @@ vi.mock('$lib/client', () => ({
       queue: mocks.queue,
       sendQueuedNow: mocks.sendQueuedNow,
       sendQueuedMessagesNow: mocks.sendQueuedMessagesNow,
-      removeQueued: mocks.removeQueued,
+      removeQueued: async (
+        agentId: string,
+        messageId: string,
+        wsId: string,
+        options?: { onDispatch(): void },
+      ) => {
+        options?.onDispatch();
+        const result = await mocks.removeQueued(agentId, messageId, wsId);
+        return {
+          ...result,
+          removalOutcome: result?.success === true ? 'no-longer-queued' : 'failed',
+        };
+      },
       editQueued: mocks.editQueued,
       stop: mocks.stop,
       rename: mocks.rename,
@@ -102,6 +115,7 @@ import type {
 } from '../../pending-submissions/pending-submissions-types';
 import { selectWorkspaceParticipationContext } from '../../workspace/workspace-selectors';
 import {
+  clearQueuedMessagesRequested,
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
   chatLastAttemptedMessageSet,
@@ -203,6 +217,7 @@ function harness(
     pendingSubmissions = pendingSubmissionsReducer(pendingSubmissions, action);
     return action;
   });
+  vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatch);
   const task = runSaga(
     {
       channel,
@@ -586,13 +601,48 @@ describe('chatSendSaga', () => {
     },
   );
 
-  it('keeps send-now atomic and queue removal optimistic when transport fails', async () => {
+  it('keeps clear-all sequential and stops at the first rejected removal', async () => {
+    mocks.removeQueued
+      .mockReset()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'denied' });
+    const run = harness();
+    const rows = ['one', 'two', 'three'].map((id, position) => ({
+      id,
+      content: id,
+      position,
+      queuedAt: '2026-10-15T00:00:00Z',
+    }));
+    run.dispatch(replaceAgentQueue(AGENT, rows, WS));
+    const request = clearQueuedMessagesRequested(AGENT, WS, ['one', 'one', 'two', 'three']);
+    run.channel.put(request);
+    await expect(request.promise).rejects.toThrow('denied');
+    expect(mocks.removeQueued.mock.calls).toEqual([
+      [AGENT, 'one', WS],
+      [AGENT, 'two', WS],
+    ]);
+    expect(run.queue().byAgentId[AGENT].messages.ids).toEqual(['two', 'three']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps send-now atomic and retains the queue row when removal transport fails', async () => {
     mocks.sendQueuedNow.mockResolvedValue({ success: true, turnId: 'turn-1' });
     mocks.removeQueued.mockRejectedValue(new Error('offline'));
     const run = harness();
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'ignored', queuedMessageId: 'queued-1' }));
-    run.request(queuedMutation('queued-2', { kind: 'remove' }));
-    await settle();
+    const queued = {
+      id: 'queued-2',
+      content: 'keep me',
+      queuedAt: '2026-10-15T00:00:00Z',
+      position: 0,
+    };
+    run.dispatch(replaceAgentQueue(AGENT, [queued], WS));
+    const removal = run.request(queuedMutation('queued-2', { kind: 'remove' }));
+    await expect(run.outcome(removal)).resolves.toMatchObject({
+      status: 'failed',
+      removalOutcome: 'unknown',
+    });
 
     expect(mocks.sendQueuedNow).toHaveBeenCalledWith({
       agentId: AGENT,
@@ -602,9 +652,8 @@ describe('chatSendSaga', () => {
     expect(run.dispatch).toHaveBeenCalledWith(chatQueueProcessingReceived(AGENT, 'turn-1'));
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2', WS);
-    expect(
-      run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage'),
-    ).toBe(true);
+    expect(getItem(run.queue().byAgentId[AGENT].messages, 'queued-2')).toEqual(queued);
+    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT, WS);
     run.task.cancel();
     await run.task.toPromise();
   });

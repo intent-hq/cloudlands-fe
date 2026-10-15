@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "Buscar una nota del espacio…",
   "chat_noteContext_empty_description": "No hay notas comunes disponibles.",
   "chat_noteContext_unavailable_error": "Una nota seleccionada no está disponible. Actualiza las notas o elimina su referencia antes de enviar.",
-  "chat_noteContext_busy_description": "Espera la respuesta actual antes de enviar contexto de notas."
+  "chat_noteContext_busy_description": "Espera la respuesta actual antes de enviar contexto de notas.",
+  "chat_connectedQueue_heading_label": "Mensajes en cola",
+  "chat_connectedQueue_empty_description": "No hay mensajes en cola.",
+  "chat_connectedQueue_removing_description": "Eliminando mensaje de la cola…",
+  "chat_connectedQueue_absent_description": "Ya no está en cola. Es posible que ya se haya entregado.",
+  "chat_connectedQueue_unknown_description": "Resultado de eliminación desconocido. Actualizar consulta la cola sin repetir la eliminación.",
+  "chat_connectedQueue_merged_description": "Mensajes de seguimiento combinados. Quitar afecta a toda esta entrada."
 }

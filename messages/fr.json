@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "Rechercher une note de l’espace…",
   "chat_noteContext_empty_description": "Aucune note ordinaire disponible.",
   "chat_noteContext_unavailable_error": "Une note sélectionnée est indisponible. Actualisez les notes ou retirez sa référence avant l’envoi.",
-  "chat_noteContext_busy_description": "Attendez la réponse en cours avant d’envoyer du contexte de notes."
+  "chat_noteContext_busy_description": "Attendez la réponse en cours avant d’envoyer du contexte de notes.",
+  "chat_connectedQueue_heading_label": "Messages en attente",
+  "chat_connectedQueue_empty_description": "Aucun message en attente.",
+  "chat_connectedQueue_removing_description": "Retrait du message en attente…",
+  "chat_connectedQueue_absent_description": "Ce message n’est plus en attente. Il a peut-être déjà été transmis.",
+  "chat_connectedQueue_unknown_description": "Résultat du retrait inconnu. Actualiser vérifie la file sans répéter le retrait.",
+  "chat_connectedQueue_merged_description": "Messages de suivi regroupés. Supprimer s’applique à toute cette entrée."
 }

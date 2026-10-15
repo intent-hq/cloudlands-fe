@@ -398,6 +398,8 @@ export interface SendMessagePayload {
   workspaceContextStr?: string;
   /** Mounted composer authority for final note validation; never persisted or sent. */
   noteContextOwnerId?: string;
+  /** Explicit plain-text queue activation; runtime-only composer identity. */
+  queueOwnerId?: string;
   noteIds?: string[];
   contextReferences?: MessageContextReference[];
   /** Image blocks extracted from serialized context items (inline or reference arm) */

@@ -98,7 +98,7 @@ const baseReply = async (method: string, params: any) => {
   if (method === 'agent.get') return { agent: shell() };
   if (method === 'agent.getConversation')
     return { messages: [previous], totalMessages: 1, truncated: false };
-  if (method === 'agent.getQueue') return { queue: [] };
+  if (method === 'agent.getQueue') return { success: true, queue: [] };
   if (method === 'agent.sendMessage')
     return { success: true, queued: false, messageId: params.messageId ?? 'retry-canonical' };
   return {};
@@ -657,7 +657,7 @@ describe('live queue transport uncertainty', () => {
         if (serverRows.length === 1) throw new Error('connection lost after enqueue');
         return { success: true, turnId: 'retry-turn', queuedMessage: confirmed };
       }
-      if (method === 'agent.getQueue') return { queue: serverRows };
+      if (method === 'agent.getQueue') return { success: true, queue: serverRows };
       return baseReply(method, params);
     });
     submitChatMessage(store, agent, {
@@ -795,7 +795,8 @@ describe('queue admission and command ordering through the live boundary', () =>
           });
         return Promise.resolve({ success: false, error: 'Request refused' });
       }
-      if (method === 'agent.getQueue') return Promise.resolve({ queue: authoritative });
+      if (method === 'agent.getQueue')
+        return Promise.resolve({ success: true, queue: authoritative });
       return baseReply(method, params);
     });
     startSending();
@@ -892,7 +893,7 @@ describe('queue control freshness after later daemon events', () => {
     expect(display().queue[0].blocksMutations).toBe(false);
     wire.request.mockImplementation((method, params) =>
       method === 'agent.getQueue'
-        ? Promise.resolve({ queue: authoritative })
+        ? Promise.resolve({ success: true, queue: authoritative })
         : baseReply(method, params),
     );
     cleanups.push(store.runSaga(chatReadSaga));
@@ -956,7 +957,8 @@ describe('queue freshness with the production standing subscription', () => {
       expect(display().queue[0].blocksMutations).toBe(false);
       let failHistory = rejectHistory;
       wire.request.mockClear().mockImplementation((method, params) => {
-        if (method === 'agent.getQueue') return Promise.resolve({ queue: [original] });
+        if (method === 'agent.getQueue')
+          return Promise.resolve({ success: true, queue: [original] });
         if (method === 'agent.getConversation' && failHistory)
           return Promise.reject(new Error('queue refresh history failure'));
         return baseReply(method, params);
@@ -1160,7 +1162,7 @@ it('coalesces live subscription bursts during reads, rejects stale publication a
     ),
   );
   expect(display().queue[0].blocksMutations).toBe(true);
-  qs[0]({ queue: [{ ...original, content: 'obsolete queue' }] });
+  qs[0]({ success: true, queue: [{ ...original, content: 'obsolete queue' }] });
   hs[0](history('obsolete history'));
   await vi.waitFor(() => {
     expect(qs).toHaveLength(2);
@@ -1171,7 +1173,7 @@ it('coalesces live subscription bursts during reads, rejects stale publication a
     'previous',
     'live-race',
   ]);
-  qs[1]({ queue: [{ ...original, content: 'fresh confirmed queue' }] });
+  qs[1]({ success: true, queue: [{ ...original, content: 'fresh confirmed queue' }] });
   await turn();
   expect(display().queue[0].blocksMutations).toBe(true);
   hs[1]({ messages: [previous], totalMessages: 1, truncated: false });
@@ -1191,11 +1193,12 @@ it.each(['send', 'send-all', 'clear', 'remove'] as const)(
   async (kind) => {
     const { a, original, handler, snapshot } = await standing();
     let failQueue = true;
-    wire.request.mockImplementation((m, p) => {
+    wire.request.mockImplementation((m, p, options) => {
+      options?.onDispatch?.();
       if (m === 'agent.getQueue')
         return failQueue
           ? Promise.reject(new Error('independent queue failure'))
-          : Promise.resolve({ queue: [original] });
+          : Promise.resolve({ success: true, queue: [original] });
       if (
         [
           'agent.sendQueuedMessageNow',
@@ -1298,8 +1301,9 @@ it.each([
         true,
       ),
     );
-    wire.request.mockImplementation(async (method, params) => {
-      if (method === 'agent.getQueue') return { queue: [confirmed] };
+    wire.request.mockImplementation(async (method, params, options) => {
+      options?.onDispatch?.();
+      if (method === 'agent.getQueue') return { success: true, queue: [confirmed] };
       if (method === 'agent.getConversation')
         return { messages: [delivered], totalMessages: 1, truncated: false };
       if (method === 'agent.get')

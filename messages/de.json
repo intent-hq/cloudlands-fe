@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "Arbeitsbereichsnotiz suchen…",
   "chat_noteContext_empty_description": "Keine gewöhnlichen Notizen verfügbar.",
   "chat_noteContext_unavailable_error": "Eine ausgewählte Notiz ist nicht verfügbar. Aktualisiere die Notizen oder entferne den Verweis vor dem Senden.",
-  "chat_noteContext_busy_description": "Warte auf die aktuelle Antwort, bevor du Notizkontext sendest."
+  "chat_noteContext_busy_description": "Warte auf die aktuelle Antwort, bevor du Notizkontext sendest.",
+  "chat_connectedQueue_heading_label": "Nachrichten in der Warteschlange",
+  "chat_connectedQueue_empty_description": "Keine Nachrichten in der Warteschlange.",
+  "chat_connectedQueue_removing_description": "Nachricht wird aus der Warteschlange entfernt…",
+  "chat_connectedQueue_absent_description": "Nicht mehr in der Warteschlange. Sie wurde möglicherweise bereits zugestellt.",
+  "chat_connectedQueue_unknown_description": "Ergebnis der Entfernung unbekannt. Aktualisieren prüft die Warteschlange, ohne die Entfernung zu wiederholen.",
+  "chat_connectedQueue_merged_description": "Zusammengefasste Folgemeldungen. Entfernen gilt für diesen gesamten Eintrag."
 }

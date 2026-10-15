@@ -1,3 +1,8 @@
+import type { StoreAction } from '@themislib/themis/types';
+import { createDaemonQueueEvents } from '../../../../../src/features/events/daemon-queue-events';
+import { queueReads, submissionEvidence } from '@/features/agent/chat-runtime';
+import { agentReadOwnership } from '@/features/agent/agent-read-service';
+import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
 import { parseAgentLocks } from '$lib/client/live/backend-agent-lock-reader';
 import { setAgentLockState } from '../../../../../src/store/renderer/slices/agent-lock/agent-lock-slice';
 import { selectGitWriteContext } from '@/store/git/git-write-selectors';
@@ -23,6 +28,17 @@ import {
 } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
 import type { AppliedSettingChange } from '$lib/client/settings-types';
 
+const queueEvents = createDaemonQueueEvents({
+  dispatch: (action: StoreAction<unknown>) => store.dispatch(action),
+  getSessionWorkspace: (id) => store.state.agentSessions.byAgentId[id]?.workspaceId,
+  isAgentReadWorkspaceCurrent: (id, wsId) => !!wsId &&
+    !!selectAdmittedWorkspaceReadContext.select(store.state, wsId) &&
+    store.state.chatState.byAgentId[id]?.trackedWorkspaceId === wsId &&
+    agentReadOwnership.isAgentReadWorkspaceCurrent(id, wsId),
+  observeSubmissionEvidence: submissionEvidence.observeSubmissionEvidence,
+  noteAgentQueueEventSnapshotApplied: queueReads.noteAgentQueueEventSnapshotApplied,
+});
+
 /** Admitted read, authority, and permission events share the existing subscription. */
 export function routeDaemonEventsNotification(
   method: string,
@@ -45,6 +61,8 @@ export function routeDaemonEventsNotification(
     return;
   const workspaceId = event.workspaceId;
   if (!workspaceId) return;
+  if (type === 'agent:queue:updated') queueEvents.handleQueueUpdatedEvent(event);
+  if (type === 'agent:queue:processing') queueEvents.handleQueueProcessingEvent(event);
   if (type === 'changes:agent-locks') {
     const data = event.data as { workspaceId?: string };
     const target = data?.workspaceId ?? workspaceId;

@@ -1,3 +1,10 @@
+import type { StoreAction } from '@themislib/themis/types';
+import { store } from '@/store';
+import { captureQueueRemovalAuthority } from '@/features/agent/queue-runtime';
+import { createQueueRemovalWorkers } from '../../../../../../src/store/renderer/slices/agent-queue/sagas/queue-removal-workers';
+import { queuedMessageMutationRequested, queuedMessageMutationFinished, refreshAgentQueueRequested } from '../../../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
+import { selectQueuedMessageMutation, selectQueueRemovalUncertain } from '@/store/agent-queue/agent-queue-selectors';
+import { selectChatDraftOwnerView } from '@/store/chat-drafts/chat-drafts-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, takeEvery, fork, join } from 'typed-redux-saga';
 import { takeEveryByContextFIFO } from '../../../../../../src/store/renderer/utils/context-saga-effects';
@@ -44,6 +51,7 @@ import {
   placeComposerAttachment,
   prepareComposerImages,
   imageRetryBlocks,
+  validateQueueAdmission,
 } from '@/features/agent/chat-runtime';
 const workers = createChatSendWorkers({
   appClient: { agents: chatCommands },
@@ -65,12 +73,21 @@ const workers = createChatSendWorkers({
   prepareImages: prepareComposerImages,
   retryImages: imageRetryBlocks,
   noteContextBusyError: () => m.chat_noteContext_busy_description(),
+  validateQueueAdmission,
 });
 const activation = createAgentActivationWorkers({
   selectAgentSession,
   captureAgentMutationOwnership: agentReadOwnership.captureAgentMutationOwnership,
   readAgentSession,
 });
+const removal = createQueueRemovalWorkers({
+  agents: chatCommands, dispatch: (action: StoreAction<unknown>) => store.dispatch(action), captureAuthority: captureQueueRemovalAuthority,
+  selectQueuedMessageMutation, selectQueueRemovalUncertain, selectAgentQueueMessages,
+  selectQueueMutationBlocked, hydrateAgentQueue: queueReads.hydrateAgentQueue,
+  noteAgentQueueEventSnapshotApplied: queueReads.noteAgentQueueEventSnapshotApplied,
+  getAgentQueueEventSnapshotSeq: queueReads.getAgentQueueEventSnapshotSeq,
+});
+type Command = ReturnType<typeof sendMessage> | ReturnType<typeof queuedMessageMutationRequested>;
 export function* chatCommandsSaga() {
   try {
     yield* fork(runChatDrafts, draftsClient, captureDraftOwnership);
@@ -91,10 +108,27 @@ export function* chatCommandsSaga() {
         yield* call(chatReads.loadChatTranscript, agentId, workspaceId);
       },
     );
+    yield* takeEvery(refreshAgentQueueRequested, function* ({payload:[agentId, workspaceId, consumerId]}) {
+      const view = yield* selectChatDraftOwnerView.effect(consumerId);
+      if (view?.restore?.agentId === agentId && view.restore.workspaceId === workspaceId)
+        yield* call(queueReads.hydrateAgentQueue, agentId, workspaceId);
+    });
     const commands = yield* takeEveryByContextFIFO(
-      sendMessage,
-      (action) => action.payload.agentId,
-      function* (action) {
+      [sendMessage, queuedMessageMutationRequested],
+      (action: Command) => {
+        if (action.type === queuedMessageMutationRequested.type) {
+          const request = action as ReturnType<typeof queuedMessageMutationRequested>;
+          removal.capture(request);
+          return request.payload[0].agentId;
+        }
+        return (action as ReturnType<typeof sendMessage>).payload.agentId;
+      },
+      function* (command: Command) {
+        if (command.type === queuedMessageMutationRequested.type) {
+          yield* call(removal.handleRemove, command as ReturnType<typeof queuedMessageMutationRequested>);
+          return;
+        }
+        const action = command as ReturnType<typeof sendMessage>;
         try {
           yield* call(workers.handleSend, action);
         } catch (error) {
@@ -106,7 +140,10 @@ export function* chatCommandsSaga() {
           );
         }
       },
-      {},
+      {onDiscardPending: function* (action: Command) {
+        if (action.type === queuedMessageMutationRequested.type)
+          yield* put(queuedMessageMutationFinished((action as ReturnType<typeof queuedMessageMutationRequested>).payload[0].requestId, {status:'cancelled'}));
+      }},
     );
     yield* join(commands);
   } finally {

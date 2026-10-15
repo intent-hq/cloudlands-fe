@@ -7588,5 +7588,11 @@
   "chat_noteContext_search_placeholder": "查找工作区笔记…",
   "chat_noteContext_empty_description": "没有可用的普通笔记。",
   "chat_noteContext_unavailable_error": "所选笔记不可用。请在发送前刷新笔记或移除其引用。",
-  "chat_noteContext_busy_description": "请等待当前回复完成后再发送笔记上下文。"
+  "chat_noteContext_busy_description": "请等待当前回复完成后再发送笔记上下文。",
+  "chat_connectedQueue_heading_label": "排队中的消息",
+  "chat_connectedQueue_empty_description": "没有排队中的消息。",
+  "chat_connectedQueue_removing_description": "正在移除排队中的消息…",
+  "chat_connectedQueue_absent_description": "已不在队列中。此消息可能已经发送。",
+  "chat_connectedQueue_unknown_description": "移除结果未知。刷新只检查队列，不会重复移除。",
+  "chat_connectedQueue_merged_description": "后续消息已合并。移除会作用于整个条目。"
 }

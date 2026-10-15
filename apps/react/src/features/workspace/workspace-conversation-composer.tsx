@@ -1,3 +1,4 @@
+import { WorkspaceConversationQueue } from './workspace-conversation-queue';
 import { Combobox } from '@/components/ui/combobox';
 import { ContextChip } from '@/features/chat/components/context-chip';
 import { prepareNoteContext } from '$lib/components/chat/chat-note-context';
@@ -286,7 +287,7 @@ export function WorkspaceConversationComposer({
       }),
     );
   }
-  function send(text: string) {
+  function send(text: string, enqueue = false) {
     if (
       !currentView() ||
       !restored ||
@@ -301,6 +302,8 @@ export function WorkspaceConversationComposer({
       return;
     const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
     const composerText = selectChatDraft.select(store.state, workspaceId, agentId);
+    if (enqueue && (items.length > 0 || !selectAgentIsResponding.select(store.state, agentId)))
+      return;
     if (
       items.some((item) => item.placementStatus === 'placing' || item.placementStatus === 'failed')
     )
@@ -330,6 +333,7 @@ export function WorkspaceConversationComposer({
       text,
       ...noteContext,
       ...blocks,
+      ...(enqueue ? { queueOwnerId: ownerId } : {}),
     });
     if (!admitted) {
       setLocalError(m.agent_streamLifecycle_sendFailed_error());
@@ -347,6 +351,7 @@ export function WorkspaceConversationComposer({
         text,
         ...noteContext,
         ...blocks,
+        ...(enqueue ? { queueOwnerId: ownerId } : {}),
         userAppMessageId: admitted.submission.appMessageId,
         submission: { scope: admitted.scope, id: admitted.submission.id },
       }),
@@ -561,10 +566,13 @@ export function WorkspaceConversationComposer({
           }}
         />
       )}
+      <WorkspaceConversationQueue workspaceId={workspaceId} agentId={agentId} ownerId={ownerId} />
       <MessageComposer
         value={value}
         onValueChange={edit}
-        onSend={send}
+        onSend={(text) => send(text)}
+        onEnqueue={(text) => send(text, true)}
+        enqueueDisabled={attachments.length > 0 || !!pending}
         hasAttachments={hasAttachments}
         sendDisabled={
           attachmentsBlocked ||
@@ -578,6 +586,9 @@ export function WorkspaceConversationComposer({
           if (files.length)
             dispatch(composerAttachmentsSelected(ownerId, workspaceId, agentId, files));
         }}
+        rightSlot={() => responding && value.trim() && !attachments.length ? <Button size="sm" variant="plain" onClick={() => {
+          if (currentView()) void dispatch(agentSessionStopChatRequested(agentId)).catch((error) => setLocalError(String(error)));
+        }}>{m.chat_richInput_stop_label()}</Button> : null}
         leftSlot={({ openFilePicker }) => (
           <>
             <WorkspaceConversationModel

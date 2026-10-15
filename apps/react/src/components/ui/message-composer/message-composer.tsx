@@ -151,6 +151,8 @@ export function MessageComposer({
   textareaProps,
   status,
   onStop,
+  onEnqueue,
+  enqueueDisabled = false,
   queue = NO_QUEUE,
   onQueueChange,
   showQueue = true,
@@ -191,7 +193,7 @@ export function MessageComposer({
   const currentQueue = useRef(queue);
   const previousStatus = useRef(status);
   const supportsFiles = onFilesChange !== undefined;
-  const supportsQueue = status !== undefined && onQueueChange !== undefined;
+  const supportsQueue = status !== undefined && onQueueChange !== undefined && onEnqueue === undefined;
   const streaming = status === 'streaming';
   const canSend =
     !disabled && !sendDisabled && (value.trim().length > 0 || files.length > 0 || hasAttachments);
@@ -209,7 +211,7 @@ export function MessageComposer({
         : 'rest';
   const buttonMode = !streaming
     ? 'send'
-    : canSend && supportsQueue
+    : canSend && (supportsQueue || (!!onEnqueue && !enqueueDisabled))
       ? 'queue'
       : onStop
         ? 'stop'
@@ -308,6 +310,10 @@ export function MessageComposer({
     const trimmed = currentValue.current.trim();
     if (disabled || sendDisabled || (!trimmed && files.length === 0 && !hasAttachments)) return;
     historyIndex.current = null;
+    if (streaming && onEnqueue) {
+      if (!enqueueDisabled) onEnqueue(trimmed);
+      return;
+    }
     if (streaming && supportsQueue) {
       const item = { id: crypto.randomUUID(), text: trimmed, files: [...files] };
       updateQueue([...currentQueue.current, item]);

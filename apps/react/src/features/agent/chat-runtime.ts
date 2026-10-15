@@ -1,4 +1,9 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { selectAdmittedWorkspaceReadContext } from '@/store/workspace-lifecycle/workspace-lifecycle-selectors';
+import { getPrincipalConnectionContext } from '../../../../../src/store/renderer/slices/principal/principal-context';
 import { selectChatDraftOwnerView } from '@/store/chat-drafts/chat-drafts-selectors';
+import { selectSubmissionIsCurrent } from '@/store/pending-submissions/pending-submissions-selectors';
+import type { SubmissionReference } from '../../../../../src/store/renderer/slices/pending-submissions/pending-submissions-types';
 import { selectAvailableContextNotes } from '@/store/chat-drafts/note-context-selectors';
 import { placementApi } from './attachment-placement-runtime';
 import { createChatDraftOwnership } from '../../../../../src/features/agent/chat-draft-ownership';
@@ -70,7 +75,18 @@ export async function prepareComposerImages(workspaceId: string, images: Images,
 export function imageRetryBlocks(error: unknown, images: Images): Images {
   return retryImageBlocks(error, images as WireImageBlock[]);
 }
-export const chatCommands = createBackendChatCommands(backend.backendRequest);
+export const chatCommands = createBackendChatCommands(backend.backendRequest, { strictQueue: true });
+export function validateQueueAdmission(agentId: string, workspaceId: string, ownerId: string,
+  submission: SubmissionReference | undefined) {
+  const owner = selectChatDraftOwnerView.select(store.state, ownerId)?.restore;
+  if (!owner || owner.status !== 'restored' || owner.workspaceId !== workspaceId ||
+    owner.agentId !== agentId || !submission ||
+    !selectSubmissionIsCurrent.select(store.state, submission) ||
+    submission.scope.authority !== getPrincipalConnectionContext(store.state) ||
+    !getWorkspaceParticipationContext(store.state, workspaceId) ||
+    store.state.agentSessions.byAgentId[agentId]?.workspaceId !== workspaceId)
+    throw new Error(m.workspace_client_accessChanged_error());
+}
 export const draftsClient = createBackendDraftsClient(
   async <T>(...args: Parameters<typeof backend.backendRequest>) => {
     const [method, params, options] = args;
@@ -101,7 +117,18 @@ export const submissionEvidence = createSubmissionEvidence(store);
 export const queueReads = createAgentQueueReadService({
   appStore: store,
   agents: chatCommands,
-  claimAgentReadOwnership: agentReadOwnership.claimAgentReadOwnership,
+  claimAgentReadOwnership: (agentId, workspaceId) => {
+    const lease = agentReadOwnership.claimAgentReadOwnership(agentId, workspaceId);
+    const context = workspaceId ? selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) : null;
+    const draftOwners = store.state.chatDrafts.owners;
+    // A queue read belongs to this admitted conversation lifetime, not merely its ID.
+    const owner = getItems(draftOwners).find((entry) => entry.restore?.agentId === agentId && entry.restore.workspaceId === workspaceId);
+    return { ...lease, key: JSON.stringify([lease.key, context, owner?.id]),
+      isCurrent: () => !!workspaceId && !!context && !!owner &&
+        selectChatDraftOwnerView.select(store.state, owner.id)?.restore?.agentId === agentId &&
+        selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) === context && lease.isCurrent(),
+    };
+  },
   onBackendReconnected,
   beginSubmissionRead: submissionEvidence.beginSubmissionRead,
 });

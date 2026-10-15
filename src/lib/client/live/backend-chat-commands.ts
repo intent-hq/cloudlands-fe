@@ -1,11 +1,20 @@
+import { m } from '$shared/paraglide/messages.js';
 import type { QueuedMessage } from '$shared/types';
-import type { ImageBlock, FileBlock, MutationResult } from '../app-client';
+import type {
+  ImageBlock,
+  FileBlock,
+  MutationResult,
+  QueueRemovalOptions,
+  QueueRemovalResult,
+} from '../app-client';
 import type { createBackendRuntime } from './backend-transport-runtime';
 import { mutationErrorMessage, createRunMutation } from './backend-mutation';
 import { isForbiddenErrorResponse } from './backend-transport-types';
 export function createBackendChatCommands(
   backendRequest: ReturnType<typeof createBackendRuntime>['backendRequest'],
+  options: { strictQueue?: boolean } = {},
 ) {
+  const strictQueue = options.strictQueue === true;
   const runMutation = createRunMutation(backendRequest);
   return {
     async queue(
@@ -14,6 +23,7 @@ export function createBackendChatCommands(
       options?: {
         workspaceId?: string;
         messageId?: string;
+        onDispatch?: () => void;
         imageBlocks?: ImageBlock[];
         fileBlocks?: FileBlock[];
         messageMetadata?: Record<string, unknown>;
@@ -26,7 +36,9 @@ export function createBackendChatCommands(
       // top-level `turnId` preferred, `queuedMessage.turnId` as the fallback).
       // Optional `imageBlocks` / `fileBlocks` / `messageMetadata` only ride
       // along when supplied so the daemon sees an omitted param otherwise.
+      let dispatched = false;
       try {
+        options?.onDispatch?.();
         const params: Record<string, unknown> = {
           agentId,
           content: message,
@@ -37,11 +49,33 @@ export function createBackendChatCommands(
         if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
         if (options?.messageMetadata !== undefined)
           params.messageMetadata = options.messageMetadata;
-        const result = await backendRequest<
+        type QueueReceipt =
           | { success?: boolean; error?: string; queuedMessage?: QueuedMessage; turnId?: unknown }
-          | undefined
-        >('agent.queueMessage', params);
+          | undefined;
+        const result = options?.onDispatch
+          ? await backendRequest<QueueReceipt>('agent.queueMessage', params, {
+              onDispatch: () => {
+                options.onDispatch?.();
+                dispatched = true;
+              },
+            })
+          : await backendRequest<QueueReceipt>('agent.queueMessage', params);
         if (result?.success === false) return { success: false, error: result.error };
+        if (
+          strictQueue &&
+          (result?.success !== true ||
+            !result.queuedMessage ||
+            typeof result.queuedMessage.id !== 'string' ||
+            !result.queuedMessage.id ||
+            typeof result.queuedMessage.content !== 'string' ||
+            typeof result.queuedMessage.queuedAt !== 'string' ||
+            !Number.isSafeInteger(result.queuedMessage.position) ||
+            result.queuedMessage.position < 0 ||
+            (options?.messageId !== undefined &&
+              result.queuedMessage.id !== options.messageId &&
+              !result.queuedMessage.submissionIds?.includes(options.messageId)))
+        )
+          throw new Error(m.agent_streamLifecycle_sendFailed_error());
         const queuedMessage = result?.queuedMessage;
         const turnId =
           typeof result?.turnId === 'string'
@@ -60,6 +94,7 @@ export function createBackendChatCommands(
         const rpcCode =
           error && typeof error === 'object' ? (error as { rpcCode?: unknown }).rpcCode : undefined;
         const rejected =
+          (!!options?.onDispatch && !dispatched) ||
           rpcCode === -32600 ||
           rpcCode === -32601 ||
           rpcCode === -32602 ||
@@ -108,15 +143,91 @@ export function createBackendChatCommands(
         return { success: false, error: mutationErrorMessage(error) };
       }
     },
-    async getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]> {
+    async getQueue(
+      agentId: string,
+      workspaceId?: string,
+      options?: { requireQueueReceipt: true },
+    ): Promise<QueuedMessage[]> {
       // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
       // daemon's queue array through verbatim (incl. optional `messageMetadata`).
       // Errors propagate as rejections, like the other reads.
-      const result = await backendRequest<{ queue?: QueuedMessage[] }>('agent.getQueue', {
-        agentId,
-        ...(workspaceId !== undefined ? { workspaceId } : {}),
-      });
+      const result = await backendRequest<{ success?: boolean; queue?: QueuedMessage[] }>(
+        'agent.getQueue',
+        {
+          agentId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+        },
+      );
+      if (strictQueue || options?.requireQueueReceipt) {
+        if (
+          result?.success !== true ||
+          !Array.isArray(result.queue) ||
+          result.queue.some(
+            (row) =>
+              !row ||
+              typeof row !== 'object' ||
+              typeof row.id !== 'string' ||
+              !row.id ||
+              typeof row.content !== 'string' ||
+              typeof row.queuedAt !== 'string' ||
+              !Number.isSafeInteger(row.position) ||
+              row.position < 0,
+          ) ||
+          new Set(result.queue.map((row) => row.id)).size !== result.queue.length
+        )
+          throw new Error(m.agent_streamLifecycle_sendFailed_error());
+        return result.queue;
+      }
       return Array.isArray(result?.queue) ? result.queue : [];
+    },
+    async removeQueued(
+      agentId: string,
+      messageId: string,
+      workspaceId?: string,
+      options?: QueueRemovalOptions,
+    ): Promise<QueueRemovalResult> {
+      let dispatched = false;
+      if (options && (!workspaceId || !agentId || !messageId))
+        return { success: false, removalOutcome: 'failed' };
+      try {
+        const params = {
+          agentId,
+          messageId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+        };
+        const result = options
+          ? await backendRequest<unknown>('agent.removeQueuedMessage', params, {
+              onDispatch: () => {
+                options.onDispatch();
+                dispatched = true;
+              },
+            })
+          : await backendRequest<unknown>('agent.removeQueuedMessage', params);
+        if (
+          result &&
+          typeof result === 'object' &&
+          !Array.isArray(result) &&
+          (result as { success?: unknown }).success === true &&
+          (dispatched || !options)
+        )
+          return {
+            success: true,
+            ...(options ? { removalOutcome: 'no-longer-queued' as const } : {}),
+          };
+        return { success: false, ...(options ? { removalOutcome: 'unknown' as const } : {}) };
+      } catch (error) {
+        const rpcCode = (error as { rpcCode?: unknown } | null)?.rpcCode;
+        const refused = [-32600, -32601, -32602, -32003].includes(rpcCode as number);
+        return {
+          success: false,
+          error: mutationErrorMessage(error),
+          ...(options
+            ? {
+                removalOutcome: !dispatched || refused ? ('failed' as const) : ('unknown' as const),
+              }
+            : {}),
+        };
+      }
     },
     async stop(agentId: string, workspaceId?: string): Promise<MutationResult> {
       // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.

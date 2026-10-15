@@ -92,6 +92,17 @@ Drafts queued under a retired account or backend are canceled. Reconnection resu
 without automatically resending an uncertain submission. An explicit retry may warn
 that delivery is uncertain before offering a resend.
 
+While a response is active, type a plain-text follow-up and choose **Queue message**
+(or press Enter). **Queued messages** shows the daemon's current entries and order. Consecutive plain-text
+follow-ups from the same author can merge into one entry; **Remove** removes that
+whole displayed entry. A confirmed receipt means it is no longer queued, but it may
+already have been delivered. Failed removals keep the row available for deliberate
+retry. An unknown removal stays blocked in this app session; **Refresh** only reads
+the queue. Reload/reconnect reads the actual queue and never replays input or removal.
+The queue control does not accept attachments or note context, and does not edit,
+reorder, send immediately, or clear the entire queue. Stop remains available while
+typing a follow-up. Removal receipts are not persisted across page reload or process restart.
+
 Use **Add note context** to select an existing ordinary Markdown note from this
 workspace. The picker shows note IDs to distinguish duplicate titles. Remove a
 note chip to exclude it. Acknowledged drafts restore references after reload;

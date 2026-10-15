@@ -1,4 +1,9 @@
 import type { ComboboxProps } from '@/components/ui/combobox';
+import {
+  replaceAgentQueue,
+  setAgentQueueHydrating,
+  setAgentQueueError,
+} from '../../../../../src/store/renderer/slices/agent-queue/agent-queue-slice';
 import { NoteId } from '$shared/types/branded-ids';
 import { ContentType, type Note } from '$shared/types';
 import { setWorkspaceHasLoaded } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
@@ -138,6 +143,29 @@ async function mount(expectedText = 'saved draft') {
 function entry() {
   return store.state.pendingSubmissions.byAgentId[agent];
 }
+it('does not claim an empty queue while its read is pending or failed', async () => {
+  await mount();
+  await act(async () => {
+    store.dispatch(replaceAgentQueue(agent, [], ws));
+    store.dispatch(setAgentQueueHydrating(agent, true));
+  });
+  await settle();
+  const queue = () => container.querySelector('[data-testid="conversation-queue"]')!;
+  expect(queue().textContent).not.toContain('No messages are queued.');
+  await act(async () => {
+    store.dispatch(setAgentQueueHydrating(agent, false));
+    store.dispatch(setAgentQueueError(agent, 'Queue unavailable'));
+  });
+  await settle();
+  expect(queue().textContent).toContain('Queue unavailable');
+  expect(queue().textContent).not.toContain('No messages are queued.');
+  await act(async () => {
+    store.dispatch(setAgentQueueError(agent, null));
+    store.dispatch(replaceAgentQueue(agent, [], ws));
+  });
+  await settle();
+  expect(queue().textContent).toContain('No messages are queued.');
+});
 it('restores through the draft saga and flushes the final edit when leaving', async () => {
   await mount();
   expect(ui.props?.value).toBe('saved draft');
@@ -541,8 +569,10 @@ it.each([
       await act(async () => {
         await action.promise;
       });
-      await settle();
-      expect(ui.props!.sendDisabled).toBe(false);
+      await vi.waitFor(async () => {
+        await settle();
+        expect(ui.props!.sendDisabled).toBe(false);
+      });
       if (retired) expect(getItems(store.state.agentModel.mutations)).toEqual([]);
     } finally {
       release();
@@ -758,4 +788,36 @@ it('real composer preserves a newer edit removing surrounding whitespace on old 
   await settle();
   expect(ui.props?.value).toBe('saved draft');
   expect(drafts.clear).not.toHaveBeenCalled();
+});
+
+it('explicit enqueue admits once, preserves a newer draft, and never auto-sends when idle', async () => {
+  const { updateSession } =
+    await import('../../../../../src/store/renderer/slices/agent-session/agent-session-slice');
+  await mount();
+  await act(async () => store.dispatch(updateSession(agent, { isStreaming: true })));
+  await settle();
+  const enqueue = ui.props!.onEnqueue!;
+  await act(async () => {
+    enqueue('saved draft');
+    enqueue('saved draft');
+  });
+  const submissions = getItems(entry().submissions);
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0].destination).toBe('queue');
+  expect(ui.props?.value).toBe('saved draft');
+  await act(async () => ui.props!.onValueChange!('newer unsent draft'));
+  await act(async () =>
+    store.dispatch(
+      pendingSubmissionSettled(entry().scope, submissions[0].id, 'accepted', Date.now()),
+    ),
+  );
+  await settle();
+  expect(ui.props?.value).toBe('newer unsent draft');
+  await act(async () => store.dispatch(updateSession(agent, { isStreaming: false })));
+  await settle();
+  expect(getItems(entry().submissions).map((s) => s.id)).toEqual([submissions[0].id]);
+  expect(drafts.clear).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  enqueue('stale callback');
+  expect(getItems(entry().submissions).map((s) => s.id)).toEqual([submissions[0].id]);
 });

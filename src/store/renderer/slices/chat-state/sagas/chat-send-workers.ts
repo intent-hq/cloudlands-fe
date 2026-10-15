@@ -63,6 +63,7 @@ type LifecycleSendOptions = {
   contextItems?: SendMessagePayload['contextItems'];
   noteContextOwnerId?: string;
   composerText?: string;
+  queueOwnerId?: string;
   messageMetadata?: SendMessagePayload['messageMetadata'];
   userAppMessageId?: string;
   model?: string;
@@ -88,6 +89,7 @@ export function createChatSendWorkers({
   prepareImages,
   retryImages,
   noteContextBusyError = m.agent_chatSend_sendNowRejected_error,
+  validateQueueAdmission,
 }: {
   appClient: { agents: Pick<AgentsClient, 'queue' | 'stop' | 'sendQueuedNow' | 'rename'> };
   captureAgentMutationOwnership: ReturnType<
@@ -111,6 +113,12 @@ export function createChatSendWorkers({
   retryImages: (error: unknown, images: Images) => Images;
   /** Ordinary note references cannot use the daemon queue, which drops per-turn hints. */
   noteContextBusyError?: () => string;
+  validateQueueAdmission?: (
+    agentId: string,
+    workspaceId: string,
+    ownerId: string,
+    submission: SubmissionReference | undefined,
+  ) => void;
 }) {
   const logger = createLogger('ChatSendSaga');
   const CANCELLED_ERROR = 'Chat send operation cancelled';
@@ -231,6 +239,23 @@ export function createChatSendWorkers({
         );
     }
     if (!(yield* current())) return;
+    if (options.queueOwnerId) {
+      try {
+        if (
+          !validateQueueAdmission ||
+          options.noteIds?.length ||
+          options.contextReferences?.length ||
+          options.imageBlocks?.length ||
+          options.fileBlocks?.length
+        )
+          throw new Error(m.agent_chatSend_queueRejected_error());
+        validateQueueAdmission(agentId, wsId, options.queueOwnerId, submission);
+      } catch (error) {
+        yield* settle('rejected');
+        yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
+        return;
+      }
+    }
     const workspace =
       wsId === CHIEF_WORKSPACE_ID
         ? createChiefVirtualWorkspace()
@@ -288,7 +313,7 @@ export function createChatSendWorkers({
       yield* put(chatSendFailed(agentId, noteContextBusyError()));
       return;
     }
-    if (!skipQueueCheck && isResponding) {
+    if (options.queueOwnerId || (!skipQueueCheck && isResponding)) {
       if (!submission) yield* put(clearChatDraft(wsId, agentId));
       try {
         const queueOptions = {
@@ -298,6 +323,19 @@ export function createChatSendWorkers({
           ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
           ...(options.messageMetadata !== undefined
             ? { messageMetadata: options.messageMetadata }
+            : {}),
+          ...(options.queueOwnerId
+            ? {
+                onDispatch: () => {
+                  if (
+                    !ownership.isCurrent(wsId) ||
+                    !validateQueueAdmission ||
+                    !options.queueOwnerId
+                  )
+                    throw new Error(CANCELLED_ERROR);
+                  validateQueueAdmission(agentId, wsId, options.queueOwnerId, submission);
+                },
+              }
             : {}),
         };
         // Captured BEFORE the wire call: an authoritative snapshot folded while
@@ -462,6 +500,7 @@ export function createChatSendWorkers({
         ...(payload.noteContextOwnerId !== undefined
           ? { noteContextOwnerId: payload.noteContextOwnerId }
           : {}),
+        ...(payload.queueOwnerId !== undefined ? { queueOwnerId: payload.queueOwnerId } : {}),
         ...(payload.contextReferences?.some((reference) => reference.type === 'note')
           ? { composerText: payload.composerText ?? payload.text }
           : {}),

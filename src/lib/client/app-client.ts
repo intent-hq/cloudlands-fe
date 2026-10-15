@@ -304,6 +304,17 @@ export interface AgentCancelDeleteResult extends MutationResult {
 export type AgentRetireResult =
   { success: true; retiredAt: string; alreadyRetired?: true } | { success: false; error: string };
 
+/** The idempotent daemon receipt proves absence, never that this request removed a row. */
+export interface QueueRemovalResult extends MutationResult {
+  removalOutcome?: 'no-longer-queued' | 'failed' | 'unknown';
+}
+
+export interface QueueRemovalOptions {
+  requireRemovalReceipt: true;
+  /** Final transport boundary; throwing prevents the write. */
+  onDispatch(): void;
+}
+
 export interface AgentsClient extends PermissionResponder, AgentsReadClient {
   get(agentId: string, workspaceId?: string): Promise<AgentSession | null>;
   /**
@@ -426,6 +437,8 @@ export interface AgentsClient extends PermissionResponder, AgentsReadClient {
       workspaceId?: string;
       /** Canonical submission identity, distinct from appMessageId. */
       messageId?: string;
+      /** Recheck captured admission immediately before the transport writes. */
+      onDispatch?: () => void;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -480,16 +493,23 @@ export interface AgentsClient extends PermissionResponder, AgentsReadClient {
    * messageMetadata? }`) verbatim; `[]` when the queue is empty. Transport /
    * daemon errors propagate as rejections, like the other reads.
    */
-  getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]>;
+  getQueue(
+    agentId: string,
+    workspaceId?: string,
+    options?: { requireQueueReceipt: true },
+  ): Promise<QueuedMessage[]>;
   /**
    * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
-   * **idempotent** — it always returns `{ success: true }` even when the queue
-   * is empty or the messageId is unknown — so callers MUST treat any thrown
-   * error as a transport failure, never as a "not found" that should roll the
-   * optimistic delete back. Emits `agent:queue:updated` (§6.5) only when the
-   * queue actually changed.
+   * **idempotent** — `{ success: true }` proves only that the message is no longer
+   * queued. Transport failure is uncertain; preserve the row until reconciliation.
+   * Strict callers also guard the final dispatch and retain uncertain receipts.
    */
-  removeQueued(agentId: string, messageId: string, workspaceId?: string): Promise<MutationResult>;
+  removeQueued(
+    agentId: string,
+    messageId: string,
+    workspaceId?: string,
+    options?: QueueRemovalOptions,
+  ): Promise<QueueRemovalResult>;
   /**
    * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
    * just an ack (`{ success: true }`); the daemon cancels the current turn
