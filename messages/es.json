@@ -7610,5 +7610,6 @@
   "workspace_quickSwitcher_loadingConversations_description": "Cargando conversaciones de este espacio…",
   "workspace_quickSwitcher_search_ariaLabel": "Buscar espacios y conversaciones",
   "workspace_quickSwitcher_search_placeholder": "Buscar por nombre o ID…",
-  "workspace_quickSwitcher_conversationsError_error": "No se pudieron cargar las conversaciones."
+  "workspace_quickSwitcher_conversationsError_error": "No se pudieron cargar las conversaciones.",
+  "workspace_conversation_messageUnavailable_description": "No se pudo abrir el mensaje enlazado en esta conversación."
 }

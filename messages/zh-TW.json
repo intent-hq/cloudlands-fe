@@ -7610,5 +7610,6 @@
   "workspace_quickSwitcher_loadingConversations_description": "正在載入此工作區的對話…",
   "workspace_quickSwitcher_search_ariaLabel": "搜尋工作區和對話",
   "workspace_quickSwitcher_search_placeholder": "依名稱或 ID 搜尋…",
-  "workspace_quickSwitcher_conversationsError_error": "無法載入對話。"
+  "workspace_quickSwitcher_conversationsError_error": "無法載入對話。",
+  "workspace_conversation_messageUnavailable_description": "無法在此對話中開啟連結的訊息。"
 }

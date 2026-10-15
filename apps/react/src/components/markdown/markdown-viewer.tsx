@@ -21,11 +21,14 @@ import type { TextBlockMedia } from '$shared/types/content-block';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { isCmdClickModifier, type LinkHandlerOptions } from '$shared/utils/link-helpers';
 import { MarkdownViewerDom } from './markdown-viewer-dom';
+import { linkifyMarkdownText } from './markdown-text-links';
 import '$lib/components/markdown/markdown-math.css';
 import './markdown-viewer.css';
 
 export interface MarkdownViewerProps {
   content: string;
+  /** Source chat plain URLs, without rewriting explicit links or literal code. */
+  linkifyPlainUrls?: boolean;
   isStreaming?: boolean;
   className?: string;
   workspaceId?: string;
@@ -75,6 +78,7 @@ const STREAMING_THROTTLE_MS = 150;
 
 export function MarkdownViewer({
   content,
+  linkifyPlainUrls = false,
   isStreaming = false,
   className = '',
   workspaceContext,
@@ -134,7 +138,13 @@ export function MarkdownViewer({
       try {
         const html = await processMarkdownToHTML(markdownContent, options);
         if (version !== state.renderVersion) return;
-        setProcessedContent(stampMarkdownImageDimensions(html, media, options.workspaceId));
+        setProcessedContent(
+          stampMarkdownImageDimensions(
+            linkifyPlainUrls ? linkifyMarkdownText(html) : html,
+            media,
+            options.workspaceId,
+          ),
+        );
       } catch (error) {
         if (version !== state.renderVersion) return;
         logger.error('Failed to process markdown:', error);
@@ -175,6 +185,7 @@ export function MarkdownViewer({
     };
   }, [
     markdownContent,
+    linkifyPlainUrls,
     taskBlockRenderMode,
     workspaceId,
     renderRichFencesAsCode,

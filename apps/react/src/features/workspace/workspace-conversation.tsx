@@ -15,7 +15,7 @@ import {
   composeTranscript,
   isConversationStartLoaded,
 } from '$lib/components/chat/chat-transcript-composition';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useRouter, useLocation } from '@tanstack/react-router';
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { store } from '@/store';
 import {
@@ -162,7 +162,12 @@ function ConversationBlock({
     );
   if (block.type === 'text')
     return (
-      <MarkdownViewer {...navigation} content={getContentBlockText(block)} renderRichFencesAsCode />
+      <MarkdownViewer
+        {...navigation}
+        content={getContentBlockText(block)}
+        linkifyPlainUrls={role === 'user'}
+        renderRichFencesAsCode
+      />
     );
   if (block.type === 'thinking')
     return <ThinkingBlock {...navigation} content={getContentBlockText(block)} />;
@@ -198,9 +203,25 @@ export function WorkspaceConversation({
 }) {
   const consumer = useId();
   const navigate = useNavigate();
+  const router = useRouter();
+  const location = useLocation();
   const dispatch = store.dispatch;
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const session = selectAgentSession(agentId).value;
+  const rootPath = selectWorkspaceById(workspaceId).value?.worktreePath;
+  const linkView = useMemo(
+    () => ({ workspaceId, agentId, authority, rootPath }),
+    [workspaceId, agentId, authority, rootPath],
+  );
+  const liveLinkView = useRef<typeof linkView | null>(null);
+  const linkAttempt = useRef(0);
+  useLayoutEffect(() => {
+    liveLinkView.current = linkView;
+    return () => {
+      if (liveLinkView.current === linkView) liveLinkView.current = null;
+      linkAttempt.current += 1;
+    };
+  }, [linkView]);
   const chat = selectChatAgentState(agentId).value;
   const history = selectAgentHistoryMessages(agentId).value;
   const historyMeta = selectHistorySegmentMeta(agentId).value;
@@ -299,11 +320,15 @@ export function WorkspaceConversation({
   const ready = current && chat.transcriptHydration === 'settled' && chat.liveStreamPhase !== null;
   const failed = authority && chat.transcriptHydration === 'error';
   const pendingTarget = useRef<{ messageId: string } | null>(null);
-  const [target, setTarget] = useState<{ messageId: string } | null>(null);
+  const [target, setTarget] = useState<{
+    messageId: string;
+    view: typeof linkView;
+    status: 'found' | 'unavailable';
+  } | null>(null);
   useLayoutEffect(() => {
     if (!ready || chat.initialHistoryPending || !messageId) return;
     const requestId = crypto.randomUUID();
-    const position = { messageId };
+    const position = { messageId, view: linkView, status: 'found' as const };
     pendingTarget.current = position;
     pendingAnchor.current = null;
     const release = () => {
@@ -318,10 +343,13 @@ export function WorkspaceConversation({
       messageHistoryRequested(consumer, workspaceId, agentId, messageId, requestId),
     ).then(
       (found) => {
-        if (found && pendingTarget.current === position) setTarget(position);
+        if (pendingTarget.current !== position) return;
+        setTarget(found ? position : { ...position, status: 'unavailable' });
       },
       () => {
-        if (pendingTarget.current === position) pendingTarget.current = null;
+        if (pendingTarget.current !== position) return;
+        pendingTarget.current = null;
+        setTarget({ ...position, status: 'unavailable' });
       },
     );
     return () => {
@@ -336,10 +364,17 @@ export function WorkspaceConversation({
     workspaceId,
     agentId,
     authority,
+    linkView,
     dispatch,
   ]);
   useLayoutEffect(() => {
-    if (!target || pendingTarget.current !== target || target.messageId !== messageId) return;
+    if (
+      !target ||
+      target.status !== 'found' ||
+      pendingTarget.current !== target ||
+      target.messageId !== messageId
+    )
+      return;
     const container = transcriptElement.current;
     const row = [...(container?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])].find(
       (element) => element.dataset.messageId === target.messageId,
@@ -347,14 +382,42 @@ export function WorkspaceConversation({
     if (!container || !row) return;
     pendingTarget.current = null;
     row.focus({ preventScroll: true });
-    container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top;
-    row.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    const position = location.state.messageReturn;
+    if (
+      position?.workspaceId === workspaceId &&
+      position.agentId === agentId &&
+      position.messageId === target.messageId &&
+      position.authority === authority &&
+      position.rootPath === rootPath &&
+      position.width === window.innerWidth &&
+      position.height === window.innerHeight &&
+      Number.isFinite(position.documentY) &&
+      position.documentY >= 0 &&
+      Number.isFinite(position.viewportY)
+    ) {
+      window.scrollTo({ top: position.documentY, behavior: 'instant' });
+      container.scrollTop += row.getBoundingClientRect().top - position.viewportY;
+    } else {
+      container.scrollTop +=
+        row.getBoundingClientRect().top - container.getBoundingClientRect().top;
+      row.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    }
     pendingAnchor.current = {
       element: row,
       offset: row.getBoundingClientRect().top - container.getBoundingClientRect().top,
       epoch: chat.scrollbackDiscardEpoch,
     };
-  }, [target, messageId, composed.groups, chat.scrollbackDiscardEpoch]);
+  }, [
+    target,
+    messageId,
+    composed.groups,
+    chat.scrollbackDiscardEpoch,
+    location.state,
+    workspaceId,
+    agentId,
+    authority,
+    rootPath,
+  ]);
   function open(
     targetWorkspace: string,
     search: { note?: string; file?: string; line?: number; agent?: string; message?: string },
@@ -366,6 +429,54 @@ export function WorkspaceConversation({
     });
   }
   function navigationFor(sourceMessageId: string): Navigation {
+    async function openMessage(id: string, targetAgentId: string, targetMessageId: string) {
+      const attempt = ++linkAttempt.current;
+      const admitted = () =>
+        liveLinkView.current === linkView &&
+        linkAttempt.current === attempt &&
+        !!authority &&
+        selectAdmittedWorkspaceReadContext.select(store.state, workspaceId) === authority &&
+        selectWorkspaceById.select(store.state, workspaceId)?.worktreePath === rootPath &&
+        selectAgentSession.select(store.state, agentId)?.workspaceId === workspaceId;
+      const row = [
+        ...(transcriptElement.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []),
+      ].find((element) => element.dataset.messageId === sourceMessageId);
+      if (!admitted() || !row) return;
+      const position = {
+        workspaceId,
+        agentId,
+        messageId: sourceMessageId,
+        authority: authority!,
+        rootPath,
+        viewportY: row.getBoundingClientRect().top,
+        documentY: window.scrollY,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+      // Replace only the source history entry, so Back names the clicked row rather than
+      // whatever message happened to be in the URL before the user read further.
+      await navigate({
+        to: '/workspaces/$workspaceId',
+        params: { workspaceId },
+        replace: true,
+        resetScroll: false,
+        search: (previous) => ({ ...previous, agent: agentId, message: sourceMessageId }),
+        state: (previous) => ({ ...previous, messageReturn: position }),
+      });
+      const source = router.state.location;
+      if (
+        !admitted() ||
+        source.search.agent !== agentId ||
+        source.search.message !== sourceMessageId
+      )
+        return;
+      await navigate({
+        to: '/workspaces/$workspaceId',
+        params: { workspaceId: id },
+        search: { agent: targetAgentId, message: targetMessageId },
+        state: (previous) => ({ ...previous, messageReturn: undefined }),
+      });
+    }
     function openFile(id: string, file: string, options?: { line?: number; attachment?: string }) {
       void navigate({
         to: '/workspaces/$workspaceId',
@@ -416,7 +527,7 @@ export function WorkspaceConversation({
           if (link.valid) {
             const id = link.workspaceId ?? workspaceId;
             if (link.type === 'message' && link.agentId)
-              open(id, { agent: link.agentId, message: link.resourceId });
+              void openMessage(id, link.agentId, link.resourceId);
             else if (link.type === 'note' || link.type === 'task')
               open(id, { note: link.resourceId });
             else if (link.type === 'file') openFile(id, link.resourceId, { line: link.line });
@@ -450,6 +561,17 @@ export function WorkspaceConversation({
       </div>
       <WorkspaceAgentNameStatus workspaceId={workspaceId} agentId={agentId} />
       <LiveStreamPhaseIndicator phase={authority ? chat.liveStreamPhase : 'connecting'} />
+      {ready &&
+        target?.view === linkView &&
+        target.messageId === messageId &&
+        target.status === 'unavailable' && (
+          <EmptyState
+            density="compact"
+            description={
+              <output>{m.workspace_conversation_messageUnavailable_description()}</output>
+            }
+          />
+        )}
       {failed ? (
         <ErrorState
           message={m.error_page_title()}
@@ -565,4 +687,21 @@ export function WorkspaceConversation({
       )}
     </section>
   );
+}
+
+// Browser-history UI position only. Canonical readers still admit every row independently.
+declare module '@tanstack/react-router' {
+  interface HistoryState {
+    messageReturn?: {
+      workspaceId: string;
+      agentId: string;
+      messageId: string;
+      authority: string;
+      rootPath?: string;
+      viewportY: number;
+      documentY: number;
+      width: number;
+      height: number;
+    };
+  }
 }

@@ -7610,5 +7610,6 @@
   "workspace_quickSwitcher_loadingConversations_description": "このワークスペースの会話を読み込み中…",
   "workspace_quickSwitcher_search_ariaLabel": "ワークスペースと会話を検索",
   "workspace_quickSwitcher_search_placeholder": "名前または ID で検索…",
-  "workspace_quickSwitcher_conversationsError_error": "会話を読み込めませんでした。"
+  "workspace_quickSwitcher_conversationsError_error": "会話を読み込めませんでした。",
+  "workspace_conversation_messageUnavailable_description": "この会話ではリンク先のメッセージを開けませんでした。"
 }

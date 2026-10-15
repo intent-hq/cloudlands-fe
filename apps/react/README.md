@@ -388,8 +388,8 @@ to the owned test repository. Overlapping initial refresh and retired replies ar
 covered separately by shared-owner policy tests.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
-root dead-code findings and separately recorded codec, avatar, native IME, genuine
-MESSAGE-link data, and publication limitations remain open.
+root dead-code findings and separately recorded codec, avatar, native IME, older
+in-body MESSAGE targets, full platform coverage, and publication limitations remain open.
 
 `workspace-git-staging.extended.spec.mjs` requires an explicitly owned disposable
 Git fixture and `ISOLATED_GIT_WRITES=owned-test-daemon`. It uses native keyboard and
@@ -430,3 +430,19 @@ Stay/Discard dialog; switching does not save or change files, notes, or conversa
 
 This remains an internal, unreleased React workflow. The released assistant app
 guide is not promoted or published by this checkpoint.
+
+## Links inside conversations (internal preview)
+
+Open a message link inside a persisted conversation to focus its exact target.
+Browser Back returns to the message containing the link and restores its reading
+position. Bare URLs in user messages are clickable; explicit Markdown links and
+code keep their existing meaning. Invalid message links do not navigate. A link
+that cannot be opened shows an unavailable-message notice and retains the transcript.
+
+The owned-fixture checkpoint covers resident targets in the same or another
+conversation, desktop/narrow navigation, Back, reload, reopening from the Agents
+list, and an unavailable target. Fixture messages were
+created through real Send/provider acknowledgements before navigation measurement.
+It does not extend the historical read-only direct-URL evidence to older in-body
+targets, cross-backend access or full desktop/platform parity. This remains internal
+and unreleased; the released assistant app guide is not promoted by this checkpoint.
