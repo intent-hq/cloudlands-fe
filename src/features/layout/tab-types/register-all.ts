@@ -123,6 +123,21 @@ export function registerAllTabTypes(): void {
     renameable: true,
   });
 
+  tabTypeRegistry.register({
+    type: 'discussion',
+    loadComponent: () => import('./DiscussionTabType.svelte'),
+    defaultWidthTier: 'chat',
+    icon: faComment,
+    get defaultTitle() {
+      return m.workspace_discussion_title();
+    },
+    get categoryLabel() {
+      return m.workspace_discussion_list_label();
+    },
+    sidebarTabId: 'people',
+    renameable: false,
+  });
+
   // Note tab
   tabTypeRegistry.register({
     type: 'note',

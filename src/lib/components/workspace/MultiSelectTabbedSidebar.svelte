@@ -91,6 +91,7 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
@@ -1158,6 +1159,7 @@
                       use:scrollFade
                     >
                       {#if tabId === 'people'}
+                        <WorkspaceDiscussionRow {workspaceId} {panelLayoutId} />
                         <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
                       {:else if tabId === 'agents'}
                         <div

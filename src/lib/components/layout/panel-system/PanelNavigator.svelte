@@ -146,6 +146,7 @@
 
   function getPanelIcon(type?: PanelTabType): IconDefinition {
     switch (type) {
+      case 'discussion':
       case 'agent':
         return faComment;
       case 'agent-overview':

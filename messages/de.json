@@ -7512,5 +7512,22 @@
   "workspace_peopleActivity_loadOlder_error": "Ältere Aktivitäten konnten nicht geladen werden.",
   "workspace_peopleActivity_loadMore_label": "Mehr laden",
   "browser_activity_browsing_label": "Surft auf {host}",
-  "browser_activity_unavailable_tooltip": "Dieser Browser-Tab ist nicht mehr verfügbar"
+  "browser_activity_unavailable_tooltip": "Dieser Browser-Tab ist nicht mehr verfügbar",
+  "workspace_discussion_title": "Workspace-Diskussion",
+  "workspace_discussion_list_label": "Diskussionen",
+  "workspace_discussion_unknownAuthor_label": "Workspace-Mitglied",
+  "workspace_discussion_loadOlder_label": "Ältere Nachrichten laden",
+  "workspace_discussion_loading_label": "Diskussion wird geladen…",
+  "workspace_discussion_empty_title": "Diskussion beginnen",
+  "workspace_discussion_empty_description": "Sende eine Nachricht an alle in diesem Workspace.",
+  "workspace_discussion_composer_label": "Nachricht",
+  "workspace_discussion_composer_placeholder": "Nachricht an alle…",
+  "workspace_discussion_send_label": "Senden",
+  "workspace_discussion_load_error": "Die Diskussion konnte nicht geladen werden. Versuche es erneut.",
+  "workspace_discussion_send_error": "Die Nachricht wurde nicht gesendet. Dein Entwurf ist gespeichert. Versuche es erneut.",
+  "workspace_discussion_unavailable_label": "Diskussionen sind mit Multiplayer in Labs verfügbar.",
+  "workspace_discussion_forbidden_label": "Du hast keinen Zugriff mehr auf diese Diskussion.",
+  "workspace_discussion_invalid_label": "Die Nachricht konnte nicht gesendet werden. Prüfe ihre Länge und versuche es erneut.",
+  "workspace_discussion_unsupported_label": "Dieser Host unterstützt Diskussionen noch nicht. Aktualisiere Intent auf dem Host, um fortzufahren.",
+  "workspace_discussion_tooLong_error": "Diese Nachricht ist zu lang. Kürze sie und versuche es erneut."
 }

@@ -81,6 +81,7 @@ test('opens People, receives live human activity, and restores focus on close', 
   await expect(panel).toHaveCount(0);
   await expect(launcher).toBeFocused();
   await launcher.press('Enter');
+  await expect(panel).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
   await expect(launcher).toBeFocused();
@@ -109,4 +110,29 @@ test('older human activity appears with its historical author', async ({ mount }
   await expect(panel).toContainText('Casey');
   await expect(panel).toContainText('Earlier plan');
   await expect(panel.getByRole('button', { name: /load more/i })).toHaveCount(0);
+});
+
+test('discussion opens once in the focused pane and leaves People activity available', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost);
+  await component.getByRole('button', { name: 'People', exact: true }).click();
+  const row = component.locator('[data-workspace-discussion-open]');
+  await row.click();
+  const navigation = component.locator('[data-people-navigation]');
+  await expect
+    .poll(async () => JSON.parse((await navigation.textContent()) || '{}'))
+    .toMatchObject({
+      focusedPanel: 'current',
+      panels: {
+        current: {
+          tabs: [{ id: 'original' }, { type: 'discussion', workspaceId: 'people-tile-preview' }],
+        },
+        neighbor: { activeTabId: 'neighbor-note' },
+      },
+    });
+  const opened = await navigation.textContent();
+  await row.click();
+  await expect(navigation).toHaveText(opened!);
+  await expect(component.locator('[data-people-activity]')).toBeVisible();
 });

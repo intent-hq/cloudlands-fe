@@ -7,6 +7,7 @@ import {
 /** Authoritative default tier for every built-in panel tab type on the frozen base. */
 const PANEL_DEFAULT_WIDTH_TIERS = {
   agent: 'chat',
+  discussion: 'chat',
   'agent-overview': 'narrow',
   'activity-changes': 'wide',
   browser: 'wide',

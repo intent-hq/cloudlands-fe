@@ -7512,5 +7512,22 @@
   "workspace_peopleActivity_loadOlder_error": "无法加载更早的活动。",
   "workspace_peopleActivity_loadMore_label": "加载更多",
   "browser_activity_browsing_label": "正在浏览 {host}",
-  "browser_activity_unavailable_tooltip": "此浏览器标签页已不可用"
+  "browser_activity_unavailable_tooltip": "此浏览器标签页已不可用",
+  "workspace_discussion_title": "工作区讨论",
+  "workspace_discussion_list_label": "讨论",
+  "workspace_discussion_unknownAuthor_label": "工作区成员",
+  "workspace_discussion_loadOlder_label": "加载更早的消息",
+  "workspace_discussion_loading_label": "正在加载讨论…",
+  "workspace_discussion_empty_title": "开始讨论",
+  "workspace_discussion_empty_description": "向此工作区中的所有人发送消息。",
+  "workspace_discussion_composer_label": "消息",
+  "workspace_discussion_composer_placeholder": "给所有人发消息…",
+  "workspace_discussion_send_label": "发送",
+  "workspace_discussion_load_error": "无法加载讨论，请重试。",
+  "workspace_discussion_send_error": "消息未发送。草稿已保存，请重试。",
+  "workspace_discussion_unavailable_label": "讨论功能可通过 Labs 中的多人协作使用。",
+  "workspace_discussion_forbidden_label": "你已无法访问此讨论。",
+  "workspace_discussion_invalid_label": "无法发送消息，请检查长度后重试。",
+  "workspace_discussion_unsupported_label": "此主机尚不支持讨论。请更新主机上的 Intent 以继续。",
+  "workspace_discussion_tooLong_error": "消息过长，请缩短后重试。"
 }

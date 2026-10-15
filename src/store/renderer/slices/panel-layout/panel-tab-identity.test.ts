@@ -12,6 +12,20 @@ const tab = (id: string, values: Partial<PanelTab>): PanelTab => ({
 });
 
 describe('panel tab canonical identity', () => {
+  it('reuses a discussion only within its workspace', () => {
+    const existing = tab('discussion', { type: 'discussion' });
+    expect(panelTabsAreEquivalent(existing, tab('same', { type: 'discussion' }))).toBe(true);
+    expect(
+      panelTabsAreEquivalent(existing, tab('other', { type: 'discussion', workspaceId: 'ws-2' })),
+    ).toBe(false);
+    expect(
+      panelTabsAreEquivalent(
+        existing,
+        tab('unscoped', { type: 'discussion', workspaceId: undefined }),
+      ),
+    ).toBe(false);
+  });
+
   it('normalizes file paths and keeps terminal identities distinct', () => {
     expect(
       panelTabsAreEquivalent(tab('f', { filePath: '/repo/src/a.ts' }), {
