@@ -8,7 +8,10 @@ import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
-import { bulkUpsertSessions } from '../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  updateSession,
+} from '../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
 import {
   chatTrackedWorkspaceSet,
   chatLiveStreamPhaseChanged,
@@ -137,4 +140,47 @@ it('renders the shared frozen divider and source prose inset after real transcri
   ).toBe('u');
 
   expect(store.state.unreadTracking.dividerSessionByAgentId[agent]).toEqual({ anchorId: 'u' });
+});
+
+it('uses the source card-to-body seam between saved conversation turns', async () => {
+  session();
+  store.dispatch(
+    updateSession(agent, {
+      messages: [
+        {
+          id: 'u1',
+          role: 'user',
+          timestamp: '2026-10-15T18:00:00Z',
+          contentBlocks: [{ type: 'text', text: 'First request' }],
+        },
+        {
+          id: 'a1',
+          role: 'assistant',
+          timestamp: '2026-10-15T18:00:01Z',
+          contentBlocks: [{ type: 'text', text: 'First reply' }],
+        },
+        {
+          id: 'u2',
+          role: 'user',
+          timestamp: '2026-10-15T18:00:02Z',
+          contentBlocks: [{ type: 'text', text: 'Follow-up' }],
+        },
+        {
+          id: 'a2',
+          role: 'assistant',
+          timestamp: '2026-10-15T18:00:03Z',
+          contentBlocks: [{ type: 'text', text: 'Second reply' }],
+        },
+      ],
+    }),
+  );
+  store.dispatch(chatTrackedWorkspaceSet(agent, ws));
+  store.dispatch(chatLiveStreamPhaseChanged(agent, 'live'));
+  store.dispatch(transcriptHydrationSettled(agent));
+  await render();
+  await settle();
+  const gap = host.querySelector('[data-testid="conversation-turn-gap"]');
+  expect(gap?.getAttribute('data-subscription-card-seam')).toBe('content');
+  expect(gap?.classList.contains('h-6')).toBe(true);
+  expect(host.querySelectorAll('[data-conversation-turn]')).toHaveLength(2);
 });

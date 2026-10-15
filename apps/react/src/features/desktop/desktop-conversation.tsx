@@ -9,6 +9,8 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 import { LiveStreamPhaseIndicator } from '@/features/chat/components/live-stream-phase-indicator';
 import { WorkspaceConversationComposer } from '@/features/workspace/workspace-conversation-composer';
 import { getConversationUserText } from '@/features/workspace/message-copy-text';
+import { DesktopMessageContent } from './desktop-message-content';
+import { OperationalPanelProvider } from '@/features/chat/components/operational-panel';
 import { DesktopComposer } from './desktop-composer';
 import { DesktopMessageNotice } from './desktop-message-notice';
 import { MessageActions } from '@/features/chat/components/message-actions';
@@ -47,15 +49,26 @@ import {
 } from '$lib/components/chat/user-message-surface';
 import { followBottom, animateScrollTo } from '$lib/utils/smartScroll';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
-import { indexConversationTurns } from '$lib/components/chat/conversation-turns';
+import {
+  hasOperationalAssistantTurnBoundary,
+  indexConversationTurns,
+} from '$lib/components/chat/conversation-turns';
 import {
   trackPinnedPrompt,
   attachPinnedPromptMessage,
   type PinnedPromptState,
 } from '$lib/components/chat/pinned-prompt';
 import { PinnedUserPrompt } from '@/features/chat/components/pinned-user-prompt';
+import { ConversationTurnGap } from '@/features/chat/components/conversation-turn-gap';
+import {
+  getSubscriptionCardSeam,
+  hasVisibleTurnBody,
+  isChatCardMessage,
+} from '$lib/components/chat/subscription-card-spacing';
+import { isEventWakeMessage } from '$lib/components/chat/event-wake-summary';
+import { isAttentionQuestionAnswerSeam } from '$lib/components/chat/attention-flow-spacing';
+import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
-import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from '$lib/components/chat/operational-disclosure-classes';
 import { m } from '$shared/paraglide/messages.js';
 import './desktop-chat.css';
 
@@ -90,6 +103,7 @@ export function DesktopConversation({
   const turns = useMemo(() => indexConversationTurns(transcript.groups), [transcript]);
   const [pinned, setPinned] = useState<PinnedPromptState | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
+  const getScrollRoot = useCallback(() => viewport.current ?? undefined, []);
   const scrollAction = useRef<ReturnType<typeof followBottom> | null>(null);
   const following = useRef(true);
   const divider = selectDividerSession(agentId).value;
@@ -271,199 +285,259 @@ export function DesktopConversation({
         data-testid="desktop-transcript"
         data-message-controls-root
       >
-        <div className="desktop-transcript-content">
-          {(transcript.groups.length > 0 || !ready) && (
-            <div className="desktop-transcript-spacer" />
-          )}
-          {ready && transcript.groups.length === 0 && !responding && (
-            <div className="mx-auto mt-16 flex w-full max-w-[40rem] flex-1 flex-col px-4 pb-6 pt-4 text-subtle">
-              <Button
-                variant="plain"
-                wrapContent={false}
-                className="mb-5 flex h-auto w-full items-center gap-3 whitespace-normal rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs"
-                data-testid="specialist-picker-trigger"
-                onClick={() => onUnavailable(m.workspace_createAgentSection_specialists_label())}
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted/50">
-                  <AgentAvatar agentId="blank" variant="emphasized" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="type-body block font-medium text-foreground">
-                    {session?.metadata?.specialist ??
-                      session?.agentMetadata?.specialist ??
-                      m.chat_shared_general_fallback()}
+        <OperationalPanelProvider getScrollRoot={getScrollRoot}>
+          <div className="desktop-transcript-content">
+            {(transcript.groups.length > 0 || !ready) && (
+              <div className="desktop-transcript-spacer" />
+            )}
+            {ready && transcript.groups.length === 0 && !responding && (
+              <div className="mx-auto mt-16 flex w-full max-w-[40rem] flex-1 flex-col px-4 pb-6 pt-4 text-subtle">
+                <Button
+                  variant="plain"
+                  wrapContent={false}
+                  className="mb-5 flex h-auto w-full items-center gap-3 whitespace-normal rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs"
+                  data-testid="specialist-picker-trigger"
+                  onClick={() => onUnavailable(m.workspace_createAgentSection_specialists_label())}
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted/50">
+                    <AgentAvatar agentId="blank" variant="emphasized" />
                   </span>
-                  <span className="type-caption mt-0.5 block text-muted-foreground">
-                    {m.chat_shared_noSpecializedBehavior_label()}
+                  <span className="min-w-0 flex-1">
+                    <span className="type-body block font-medium text-foreground">
+                      {session?.metadata?.specialist ??
+                        session?.agentMetadata?.specialist ??
+                        m.chat_shared_general_fallback()}
+                    </span>
+                    <span className="type-caption mt-0.5 block text-muted-foreground">
+                      {m.chat_shared_noSpecializedBehavior_label()}
+                    </span>
                   </span>
-                </span>
-                <span className="flex size-7 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
-                  <CaretDownIcon size={10} />
-                </span>
-              </Button>
-              <p className="mb-3 px-4 text-sm text-subtle leading-relaxed whitespace-pre-wrap">
-                {session?.metadata?.specialist || session?.agentMetadata?.specialist
-                  ? m.desktop_shell_unported_description()
-                  : m.chat_regularAgentWelcome_generalDescription_label()}
-              </p>
-            </div>
-          )}
-          {chat.transcriptHydration === 'error' ? (
-            <ErrorState
-              message={m.error_page_title()}
-              retryLabel={m.ui_combobox_retry_label()}
-              onRetry={() => {
-                if (current())
-                  store.dispatch(retainedChatTranscriptsSet(consumer, workspaceId, [agentId]));
-              }}
-            />
-          ) : !ready ? (
-            <LoadingState label={m.chat_chatMessage_loading_label()} />
-          ) : (
-            turns.groups.map(({ group, turns: groupTurns }, groupIndex) => (
-              <div className="desktop-transcript-group" key={group.groupKey ?? groupIndex}>
-                {groupTurns.map((turn, turnIndex) => (
-                  <div
-                    data-conversation-turn
-                    className="desktop-conversation-turn"
-                    key={turn.userMessage?.id ?? turnIndex}
-                  >
-                    {[
-                      ...(turn.userMessage ? [turn.userMessage] : []),
-                      ...turn.noticeMessages,
-                      ...turn.bodyMessages,
-                    ].map((message) => {
-                      const ordinary = message.role === 'user' || message.role === 'assistant';
-                      const text =
-                        message.role === 'user'
-                          ? getConversationUserText(message, workspace?.ownerPrincipalId)
-                          : (message.contentBlocks
-                              ?.filter((b) => b.type === 'text')
-                              .map(getContentBlockText)
-                              .join('\n\n') ?? '');
-                      const unsupported =
-                        !ordinary || message.contentBlocks?.some((b) => b.type !== 'text');
-                      return (
-                        <Fragment key={message.id}>
-                          <article
-                            data-pinned-prompt-id={message.role === 'user' ? message.id : undefined}
-                            ref={(element) => {
-                              if (element && message.role === 'user')
-                                attachPinnedPromptMessage(element, message);
-                            }}
-                            data-message-id={message.id}
-                            data-message-role={message.role}
-                            className={`desktop-chat-message group relative ${message.role === 'user' ? USER_MESSAGE_SURFACE_CLASS : ''}`}
-                          >
-                            {text &&
-                              (message.role === 'user' ? (
-                                <div className={`${USER_MESSAGE_TEXT_CLASS} whitespace-pre-wrap`}>
-                                  {text}
-                                </div>
-                              ) : (
-                                <div
-                                  className={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}
-                                  data-assistant-prose
-                                >
-                                  <MarkdownViewer
-                                    workspaceContext={{ workspaceId: WorkspaceId(workspaceId) }}
-                                    renderRichFencesAsCode
-                                    allowFileMedia={false}
-                                    onOpenFile={() =>
-                                      onUnavailable(m.desktop_shell_unported_description())
-                                    }
-                                    onOpenNote={() =>
-                                      onUnavailable(m.desktop_shell_unported_description())
-                                    }
-                                    content={text}
-                                    onOpenLink={() => {
-                                      onUnavailable(m.desktop_shell_unported_description());
-                                      return true;
-                                    }}
-                                  />
-                                </div>
-                              ))}
-                            {message.role === 'assistant' && (
-                              <DesktopMessageNotice message={message} />
-                            )}
-                            {unsupported && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  onUnavailable(m.desktop_shell_unported_description())
-                                }
-                              >
-                                {m.desktop_shell_unported_description()}
-                              </Button>
-                            )}
-                            {ordinary && !message.isStreaming && (
-                              <MessageActions
-                                role={message.role as 'user' | 'assistant'}
-                                timestamp={message.timestamp}
-                                className="absolute bottom-0 right-0 z-10"
-                                onCopy={() =>
-                                  onUnavailable(m.chat_messageActions_copyMessage_ariaLabel())
-                                }
-                                onEdit={
-                                  message.role === 'user'
-                                    ? () =>
-                                        onUnavailable(m.chat_messageActions_editMessage_ariaLabel())
-                                    : undefined
-                                }
-                                onRegenerate={
-                                  message.role === 'assistant'
-                                    ? () =>
-                                        onUnavailable(m.chat_messageActions_regenerate_ariaLabel())
-                                    : undefined
-                                }
-                                onScrollToPrevious={() =>
-                                  onUnavailable(m.chat_messageActions_scrollToPrevious_label())
-                                }
-                              />
-                            )}
-                          </article>
-                          {dividerAnchor === message.id && <NewMessagesDivider />}
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-                ))}
-                {group.messages.some((message) => !turns.turnKeyByMessageId.has(message.id)) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onUnavailable(m.desktop_shell_unported_description())}
-                  >
-                    {m.desktop_shell_unported_description()}
-                  </Button>
-                )}
+                  <span className="flex size-7 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
+                    <CaretDownIcon size={10} />
+                  </span>
+                </Button>
+                <p className="mb-3 px-4 text-sm text-subtle leading-relaxed whitespace-pre-wrap">
+                  {session?.metadata?.specialist || session?.agentMetadata?.specialist
+                    ? m.desktop_shell_unported_description()
+                    : m.chat_regularAgentWelcome_generalDescription_label()}
+                </p>
               </div>
-            ))
-          )}
-          <StreamingStatus
-            isStreaming={session?.isStreaming}
-            isProcessing={responding}
-            lastChunkTime={chat.lastChunkTime}
-            receivedFirstChunk={chat.receivedFirstChunk}
-            streamingStartTime={chat.streamingStartTime}
-            statusEvents={chat.statusEvents}
-            streamingContentLength={
-              session?.messages
-                .filter((message) => message.isStreaming)
-                .flatMap((message) => message.contentBlocks ?? [])
-                .filter((block) => block.type === 'text')
-                .map(getContentBlockText)
-                .join('').length ?? 0
-            }
-            processQueueHint={session?.processQueueHint}
-            onOpenAgentBackendSettings={() => onUnavailable(m.settings_sidebar_providers_label())}
-          />
-          <LiveStreamPhaseIndicator
-            phase={authority ? chat.liveStreamPhase : 'connecting'}
-            turnInFlight={Boolean(session?.turnInFlight)}
-          />
-        </div>
+            )}
+            {chat.transcriptHydration === 'error' ? (
+              <ErrorState
+                message={m.error_page_title()}
+                retryLabel={m.ui_combobox_retry_label()}
+                onRetry={() => {
+                  if (current())
+                    store.dispatch(retainedChatTranscriptsSet(consumer, workspaceId, [agentId]));
+                }}
+              />
+            ) : !ready ? (
+              <LoadingState label={m.chat_chatMessage_loading_label()} />
+            ) : (
+              turns.groups.map(({ group, turns: groupTurns }, groupIndex) => (
+                <div className="desktop-transcript-group" key={group.groupKey ?? groupIndex}>
+                  {groupTurns.map((turn, turnIndex) => {
+                    const next =
+                      groupTurns[turnIndex + 1] ?? turns.groups[groupIndex + 1]?.turns[0];
+                    const operational = hasOperationalAssistantTurnBoundary(turn, next);
+                    const attention = isAttentionQuestionAnswerSeam(turn, next);
+                    const body = hasVisibleTurnBody({
+                      assistantMessages: turn.assistantMessages,
+                      hasVisibleNotice: turn.noticeMessages.length > 0,
+                    });
+                    return (
+                      <Fragment key={turn.userMessage?.id ?? turnIndex}>
+                        <div
+                          data-conversation-turn
+                          className="desktop-conversation-turn"
+                          key={turn.userMessage?.id ?? turnIndex}
+                        >
+                          {[
+                            ...(turn.userMessage ? [turn.userMessage] : []),
+                            ...turn.noticeMessages,
+                            ...turn.bodyMessages,
+                          ].map((message) => {
+                            const ordinary =
+                              message.role === 'user' || message.role === 'assistant';
+                            const text =
+                              message.role === 'user'
+                                ? getConversationUserText(message, workspace?.ownerPrincipalId)
+                                : (message.contentBlocks
+                                    ?.filter((b) => b.type === 'text')
+                                    .map(getContentBlockText)
+                                    .join('\n\n') ?? '');
+                            const unsupported =
+                              !ordinary ||
+                              (message.role === 'user' &&
+                                message.contentBlocks?.some((b) => b.type !== 'text'));
+                            return (
+                              <Fragment key={message.id}>
+                                <article
+                                  data-pinned-prompt-id={
+                                    message.role === 'user' ? message.id : undefined
+                                  }
+                                  ref={(element) => {
+                                    if (element && message.role === 'user')
+                                      attachPinnedPromptMessage(element, message);
+                                  }}
+                                  data-message-id={message.id}
+                                  data-message-role={message.role}
+                                  className={`desktop-chat-message group relative ${message.role === 'user' ? USER_MESSAGE_SURFACE_CLASS : ''}`}
+                                >
+                                  {message.role === 'assistant' || text ? (
+                                    message.role === 'user' ? (
+                                      <div
+                                        className={`${USER_MESSAGE_TEXT_CLASS} whitespace-pre-wrap`}
+                                      >
+                                        {text}
+                                      </div>
+                                    ) : (
+                                      <DesktopMessageContent
+                                        blocks={message.contentBlocks ?? []}
+                                        agentId={agentId}
+                                        messageId={message.id}
+                                        isStreaming={Boolean(message.isStreaming)}
+                                        isLastConversationMessage={
+                                          message.id === session?.messages.at(-1)?.id
+                                        }
+                                        isCurrent={current}
+                                        onUnavailable={onUnavailable}
+                                        renderText={(body) => (
+                                          <MarkdownViewer
+                                            workspaceContext={{
+                                              workspaceId: WorkspaceId(workspaceId),
+                                            }}
+                                            renderRichFencesAsCode
+                                            allowFileMedia={false}
+                                            onOpenFile={() =>
+                                              onUnavailable(m.desktop_shell_unported_description())
+                                            }
+                                            onOpenNote={() =>
+                                              onUnavailable(m.desktop_shell_unported_description())
+                                            }
+                                            content={body}
+                                            onOpenLink={() => {
+                                              onUnavailable(m.desktop_shell_unported_description());
+                                              return true;
+                                            }}
+                                          />
+                                        )}
+                                      />
+                                    )
+                                  ) : null}
+                                  {message.role === 'assistant' && (
+                                    <DesktopMessageNotice message={message} />
+                                  )}
+                                  {unsupported && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        onUnavailable(m.desktop_shell_unported_description())
+                                      }
+                                    >
+                                      {m.desktop_shell_unported_description()}
+                                    </Button>
+                                  )}
+                                  {ordinary && !message.isStreaming && (
+                                    <MessageActions
+                                      role={message.role as 'user' | 'assistant'}
+                                      timestamp={message.timestamp}
+                                      className="absolute bottom-0 right-0 z-10"
+                                      onCopy={() =>
+                                        onUnavailable(m.chat_messageActions_copyMessage_ariaLabel())
+                                      }
+                                      onEdit={
+                                        message.role === 'user'
+                                          ? () =>
+                                              onUnavailable(
+                                                m.chat_messageActions_editMessage_ariaLabel(),
+                                              )
+                                          : undefined
+                                      }
+                                      onRegenerate={
+                                        message.role === 'assistant'
+                                          ? () =>
+                                              onUnavailable(
+                                                m.chat_messageActions_regenerate_ariaLabel(),
+                                              )
+                                          : undefined
+                                      }
+                                      onScrollToPrevious={() =>
+                                        onUnavailable(
+                                          m.chat_messageActions_scrollToPrevious_label(),
+                                        )
+                                      }
+                                    />
+                                  )}
+                                </article>
+                                {dividerAnchor === message.id && <NewMessagesDivider />}
+                              </Fragment>
+                            );
+                          })}
+                        </div>
+                        {next && (
+                          <ConversationTurnGap
+                            currentIsEventNotification={isEventWakeMessage(
+                              turn.userMessage ?? undefined,
+                            )}
+                            currentHasAssistantMessages={turn.assistantMessages.length > 0}
+                            nextIsEventNotification={isEventWakeMessage(
+                              next.userMessage ?? undefined,
+                            )}
+                            nextHasUserMessage={Boolean(
+                              next.userMessage && !isEventWakeMessage(next.userMessage),
+                            )}
+                            compactOperationalSeam={operational}
+                            zeroToolSeam={operational}
+                            attentionQuestionAnswerSeam={attention}
+                            batchedDeliverySeam={!attention && isBatchedDeliverySeam(turn, next)}
+                            subscriptionCardSeam={getSubscriptionCardSeam(
+                              isChatCardMessage(turn.userMessage) && !body,
+                              isChatCardMessage(next.userMessage),
+                            )}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  {group.messages.some((message) => !turns.turnKeyByMessageId.has(message.id)) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onUnavailable(m.desktop_shell_unported_description())}
+                    >
+                      {m.desktop_shell_unported_description()}
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+            <StreamingStatus
+              isStreaming={session?.isStreaming}
+              isProcessing={responding}
+              lastChunkTime={chat.lastChunkTime}
+              receivedFirstChunk={chat.receivedFirstChunk}
+              streamingStartTime={chat.streamingStartTime}
+              statusEvents={chat.statusEvents}
+              streamingContentLength={
+                session?.messages
+                  .filter((message) => message.isStreaming)
+                  .flatMap((message) => message.contentBlocks ?? [])
+                  .filter((block) => block.type === 'text')
+                  .map(getContentBlockText)
+                  .join('').length ?? 0
+              }
+              processQueueHint={session?.processQueueHint}
+              onOpenAgentBackendSettings={() => onUnavailable(m.settings_sidebar_providers_label())}
+            />
+            <LiveStreamPhaseIndicator
+              phase={authority ? chat.liveStreamPhase : 'connecting'}
+              turnInFlight={Boolean(session?.turnInFlight)}
+            />
+          </div>
+        </OperationalPanelProvider>
       </div>
       <div className="desktop-composer-lane">
         {admitted && (

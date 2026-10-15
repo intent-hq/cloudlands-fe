@@ -67,10 +67,6 @@
 .desktop-chat-message + .desktop-chat-message {
   margin-top: 24px;
 }
-.desktop-conversation-turn + .desktop-conversation-turn,
-.desktop-transcript-group + .desktop-transcript-group {
-  margin-top: 40px;
-}
 .desktop-composer-lane {
   padding: 8px 34px 24px 24px;
   flex: none;

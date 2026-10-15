@@ -36,6 +36,8 @@ export interface ChatOperationalRowProps {
   headerHeight?: number;
   leading: ReactNode;
   summary: ReactNode;
+  /** Keep summary controls beside the disclosure button, without nested interactive elements. */
+  summaryContainsControls?: boolean;
   trailing?: ReactNode;
   showChevron?: boolean;
   preview?: ReactNode;
@@ -117,6 +119,7 @@ function OperationalTrigger({
   ariaLabel,
   title,
   disclosureTestId,
+  overlay = false,
   children,
 }: Pick<
   ChatOperationalRowProps,
@@ -128,7 +131,7 @@ function OperationalTrigger({
   | 'ariaLabel'
   | 'title'
   | 'disclosureTestId'
-> & { children: ReactNode }) {
+> & { children: ReactNode; overlay?: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   useImperativeHandle(triggerElement, () => ref.current!, []);
   useLayoutEffect(() => {
@@ -149,7 +152,10 @@ function OperationalTrigger({
       type="button"
       truncateLabel={false}
       labelClass="type-body"
-      className="type-body col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2"
+      className={cn(
+        'type-body col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2',
+        overlay && 'peer absolute inset-0 h-full',
+      )}
       data-testid={disclosureTestId}
       aria-label={ariaLabel}
       aria-expanded={expanded}
@@ -307,6 +313,7 @@ export function ChatOperationalRow({
   headerHeight = 28,
   leading,
   summary,
+  summaryContainsControls = false,
   trailing,
   showChevron = true,
   preview,
@@ -373,7 +380,12 @@ export function ChatOperationalRow({
   );
   const summaryContent = (
     <span
-      className={cn(CHAT_OPERATIONAL_SUMMARY_CLASS, interactive && 'flex-1')}
+      className={cn(
+        CHAT_OPERATIONAL_SUMMARY_CLASS,
+        interactive && 'flex-1',
+        summaryContainsControls &&
+          'pointer-events-none relative [&_button]:pointer-events-auto peer-focus-visible:underline peer-focus-visible:underline-offset-2',
+      )}
       data-operational-summary=""
       data-tool-sentence={toolIcon || undefined}
       data-testid={summaryTestId}
@@ -404,7 +416,27 @@ export function ChatOperationalRow({
           data-operational-disclosure-row=""
           data-compact-tool-row=""
         >
-          {interactive ? (
+          {interactive && summaryContainsControls ? (
+            <div className="relative col-span-2 flex min-w-0 items-center gap-[var(--operational-leading-gap)]">
+              <OperationalTrigger
+                {...{
+                  triggerElement,
+                  onclick,
+                  onkeydown,
+                  expanded,
+                  controls,
+                  ariaLabel,
+                  title,
+                  disclosureTestId,
+                }}
+                overlay
+              >
+                {null}
+              </OperationalTrigger>
+              {leadingContent}
+              {summaryContent}
+            </div>
+          ) : interactive ? (
             <OperationalTrigger
               {...{
                 triggerElement,

@@ -41,8 +41,19 @@ reload restores acknowledged drafts. In a long transcript, the pinned user promp
 to its original message and follows the active conversation turn. Source-visible actions outside this slice show
 an explicit internal-port scope notice.
 
+Ordinary repository tool activity now keeps its source turn grouping and disclosure
+rows. Click a row, or use Enter/Space, to inspect the actual available input/result.
+Read, edit and benign command receipts are verified in the desktop pane; an absent
+result stays absent, and an exit code is not presented as file content. The current
+provider's workspace API envelope is shown as raw structured output. Expanded rows
+survive pane navigation. A truncated payload uses the existing explicit hydration
+owner. File-name actions retain an internal scope notice until the desktop editor
+is ported. Running/error recovery is covered by controlled owner tests; the native
+comparison establishes the persisted completed states, not every tool family.
+
 This is not full ChatPanel or desktop parity. Rich mentions,
-attachments/context intake, tool/permission/question bodies, message actions and
+attachments/context intake, rich diff/terminal/ContextEngine tool bodies,
+permission/question bodies, message actions and
 history navigation remain unported in this desktop surface. Model controls are reused
 but model changes are not native acceptance in this checkpoint. Rich note editing,
 terminal/browser/file bodies, workspace creation, Settings, PR/issue previews, full
