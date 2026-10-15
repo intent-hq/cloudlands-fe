@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import { createServer } from 'node:net';
 import { promisify } from 'node:util';
+import { runInNewContext } from 'node:vm';
 import { ctLockKey } from './verification-lock.mjs';
 import { resolveCtPortConfig } from '../playwright/ct-port';
 import { join, resolve } from 'node:path';
@@ -76,6 +77,18 @@ describe('required CT self-hosted-first routing', () => {
     expect
       .soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1]))
       .toBe(burst === 'true' ? 'pnpm' : '');
+
+    const timeout = ctJob.match(/^    timeout-minutes: (.*)$/m)![1];
+    expect(
+      runInNewContext(
+        timeout.replace(/^\$\{\{\s*|\s*\}\}$/g, '').replaceAll('needs.runner-route', 'needs.route'),
+        {
+          needs: { route: { outputs: { runners: context['needs.runner-route.outputs.runners'] } } },
+          fromJSON: JSON.parse,
+          contains: (values: string[], value: string) => values.includes(value),
+        },
+      ),
+    ).toBe(burst === 'true' ? 50 : 90);
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]

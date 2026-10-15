@@ -37,9 +37,10 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
-    # A healthy shard takes 36 min for tests plus setup/report/cache work.
-    # Leave headroom after passing tests hit 40 min (cloudlands-fe#3251).
-    timeout-minutes: 50
+    # Shared-host shards need more time than isolated Depot VMs: the first
+    # concurrent tinybox run reached 400-490/530 tests at the 50-minute limit.
+    # Keep the existing Depot budget and allow setup/report headroom on tinybox.
+    timeout-minutes: ${{ contains(fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'], 'self-hosted') && 90 || 50 }}
     permissions:
       contents: read
     env:
