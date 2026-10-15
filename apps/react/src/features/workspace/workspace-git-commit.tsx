@@ -93,9 +93,17 @@ export function WorkspaceGitCommit({ workspaceId }: { workspaceId: string }) {
   const consumerId = useId();
   const inputId = useId();
   const state = selectGitCommitState(workspaceId).value;
+  const messageInput = useRef<HTMLTextAreaElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
   const [inspect, setInspect] = useState(false);
+  useLayoutEffect(() => {
+    const input = messageInput.current;
+    // Selector rendering is coalesced. Synchronize from the current canonical
+    // value without restoring an older render value between native keystrokes.
+    const message = selectGitCommitState.select(store.state, workspaceId).message;
+    if (input && input.value !== message) input.value = message;
+  }, [workspaceId, state.context, state.message]);
   useLayoutEffect(
     () => () => {
       store.dispatch(gitWriteConsumerReleased(workspaceId, consumerId));
@@ -146,8 +154,9 @@ export function WorkspaceGitCommit({ workspaceId }: { workspaceId: string }) {
       </p>
       <Label htmlFor={inputId}>{m.workspace_mergePanel_commitMessage_label()}</Label>
       <Textarea
+        ref={messageInput}
         id={inputId}
-        value={state.message}
+        defaultValue={state.message}
         onChange={(event) =>
           store.dispatch(setCommitMessage(workspaceId, event.currentTarget.value))
         }

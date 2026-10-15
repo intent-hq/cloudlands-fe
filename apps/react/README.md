@@ -52,9 +52,31 @@ No Electron preload, protected local Themis patch, or live user workspace is req
 7. Reload and reopen the file through **Files** to see the saved content. Reload
    does not replay Save or Commit. Unsaved drafts are not persisted across reload.
 
-This sequence is verified on an owned Linux daemon without credentials at desktop
-and narrow widths. Provider-backed chat acceptance is a separate checkpoint.
-The following sections describe the supported boundaries and recovery behavior.
+This local sequence is verified on an owned Linux daemon without credentials at
+desktop and narrow widths. The agent-assisted variant below requires a configured
+provider. The following sections describe the supported boundaries and recovery behavior.
+
+## First agent-assisted edit
+
+1. Open an owned workspace and an idle conversation under **Agents**.
+2. Choose **Add repository file**, search for an existing small text file, and
+   select its exact path. Type a precise request to change only that file, then
+   choose **Send**. Context references point to live files; they do not freeze bytes.
+3. Wait for the provider to finish. Choose **Back to Workspace**, then
+   **Refresh git status** in **Changed files** to load the external edit.
+4. Open the unstaged diff and review the actual changes. Choose **Stage**, then
+   **Back**. Check all staged paths before continuing.
+5. Type a **Commit Message**, check its text, and choose **Commit**. Inspect the
+   confirmed SHA. This commits the current index locally; it does not push.
+6. Refresh **Commits**, open the new commit's file, then return and reload.
+   Reopen it through **Files** to inspect the saved result. Reload does not resend
+   the prompt or repeat the commit.
+
+The maintained Linux acceptance uses a configured Codex provider for one exact
+file edit, with real tool completion, disk/diff/index/tree checks and desktop/narrow
+browser input. Other providers and edits requiring restricted permissions are not
+established by this checkpoint. Use an owned test workspace; review every change
+before committing. The preview remains internal and unreleased.
 
 ## Workspace creation and conversations
 

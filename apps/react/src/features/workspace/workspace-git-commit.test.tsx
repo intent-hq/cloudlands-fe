@@ -63,6 +63,69 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const render = () => act(async () => root.render(<WorkspaceGitCommit workspaceId={ws} />));
+it('retains consecutive input before selector delivery and submits the exact canonical message', async () => {
+  store.dispatch(setCommitMessage(ws, ''));
+  await render();
+  const input = container.querySelector<HTMLTextAreaElement>('textarea')!;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+  const message = 'Reviewed greeting Ω';
+  await act(async () => {
+    input.focus();
+    for (const character of message) {
+      setValue.call(input, input.value + character);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    expect(input.value).toBe(message);
+    expect(selectGitCommitState.select(store.state, ws).message).toBe(message);
+  });
+  await vi.waitFor(() =>
+    expect(container.querySelector<HTMLButtonElement>('[data-git-commit]')!.disabled).toBe(false),
+  );
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-git-commit]')!.click());
+  const operations = store.state.gitWrite.byWorkspaceId[ws].operations;
+  expect(operations.ids).toHaveLength(1);
+  expect(operations.map[operations.ids[0]].operation).toMatchObject({
+    kind: 'commit',
+    params: { message },
+  });
+});
+
+it('reflects canonical replacement and clearing without replacing an unchanged caret', async () => {
+  await render();
+  const input = container.querySelector<HTMLTextAreaElement>('textarea')!;
+  input.focus();
+  input.setSelectionRange(3, 7);
+  await act(async () => store.dispatch(setCommitMessage(ws, 'Deliberate message')));
+  expect([input.selectionStart, input.selectionEnd]).toEqual([3, 7]);
+  await act(async () => store.dispatch(setCommitMessage(ws, 'External replacement')));
+  await vi.waitFor(() => expect(input.value).toBe('External replacement'));
+  await act(async () => store.dispatch(setCommitMessage(ws, '')));
+  await vi.waitFor(() => expect(input.value).toBe(''));
+  expect(container.querySelector<HTMLButtonElement>('[data-git-commit]')!.disabled).toBe(true);
+});
+
+it('rebinds the DOM field when the same component moves to another workspace', async () => {
+  await render();
+  const other = WorkspaceId('other-commit-view');
+  await act(async () => {
+    store.dispatch(
+      setWorkspaceEntity({
+        id: other,
+        myRole: 'owner',
+        worktreePath: '/owned/other-commit',
+      } as Workspace),
+    );
+    store.dispatch(workspaceMounted(other));
+    store.dispatch(setCommitMessage(other, 'Other workspace message'));
+    root.render(<WorkspaceGitCommit workspaceId={other} />);
+  });
+  await vi.waitFor(() => expect(container.querySelector('textarea')).not.toBeNull());
+  const input = container.querySelector<HTMLTextAreaElement>('textarea')!;
+  expect(input.value).toBe('Other workspace message');
+  await act(async () => store.dispatch(setCommitMessage(ws, 'Old workspace update')));
+  expect(input.value).toBe('Other workspace message');
+  expect(selectGitCommitState.select(store.state, ws).message).toBe('Old workspace update');
+});
 function operation() {
   const s = selectGitCommitState.select(store.state, ws);
   return {
