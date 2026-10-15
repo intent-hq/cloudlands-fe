@@ -24,9 +24,12 @@ vi.mock('./scripts-output-saga', () => ({ scriptsOutputSaga: function* () {} }))
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 
 import {
+  appendScriptOutput,
   applyScriptDefinitionChangesRequested,
+  createScriptFixAgentRequested,
   createScriptDefinitionRequested,
   detectScriptDefinitionsRequested,
+  detectScriptsWithAgentRequested,
   removeScriptDefinitionsRequested,
   removeScriptDefinitionRequested,
   refreshScripts,
@@ -39,6 +42,13 @@ import {
 } from '../scripts-slice';
 import { scriptsOperationSaga } from './scripts-operation-saga';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backgroundAgentExecutorReducer,
+  cancelExecution,
+  executeBackgroundAgent,
+  setExecutorState,
+} from '../../background-agent-executor/background-agent-executor-slice';
+import { createAgentFromConfigRequested } from '../../workspace-agents/workspace-agents-slice';
 
 const WS = 'ws-1';
 const definition = {
@@ -52,15 +62,19 @@ const definition = {
   runtime: { status: 'idle' as const, restartCount: 0 },
 };
 
+type DispatchedAction = { type: string; payload?: unknown; promise?: Promise<unknown> };
+
 function start() {
   const channel = stdChannel();
-  const actions: { type: string }[] = [];
+  const actions: DispatchedAction[] = [];
   const state = withLegacyPrincipal({
     scripts: scriptsReducer(undefined, { type: '@@init' }),
+    bgExecutor: backgroundAgentExecutorReducer(undefined, { type: '@@init' }),
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
   });
-  const dispatch = (action: { type: string }) => {
+  const dispatch = (action: DispatchedAction) => {
     state.scripts = scriptsReducer(state.scripts, action);
+    state.bgExecutor = backgroundAgentExecutorReducer(state.bgExecutor, action);
     actions.push(action);
     channel.put(action);
     return action;
@@ -389,15 +403,17 @@ describe('scriptsOperationSaga definition ownership', () => {
     await stop(run.task);
   });
 
-  it('cancels a bulk-removal consumer after its in-flight write settles', async () => {
+  it('finishes durable bulk removal after its UI consumer releases', async () => {
     const second = { ...definition, id: 'script-2', name: 'Second' };
     let resolveRemoval!: (value: { success: true }) => void;
-    transport.get.mockResolvedValueOnce(definition);
-    transport.remove.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveRemoval = resolve;
-      }),
-    );
+    transport.get.mockResolvedValueOnce(definition).mockResolvedValueOnce(second);
+    transport.remove
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRemoval = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ success: true });
     const run = start();
     const consumer = {
       consumerId: 'consumer-1',
@@ -415,9 +431,297 @@ describe('scriptsOperationSaga definition ownership', () => {
     run.dispatch(scriptWorkflowReleased(WS, consumer.consumerId));
     resolveRemoval({ success: true });
 
+    await expect(request.promise).resolves.toEqual({
+      removed: [definition.id, second.id],
+      failed: [],
+    });
+    expect(transport.get).toHaveBeenCalledTimes(2);
+    expect(transport.remove).toHaveBeenCalledTimes(2);
+    expect(run.state.scripts.byWorkspaceId[WS].workflowOutcomes).toBeUndefined();
+    await stop(run.task);
+  });
+
+  it('records a settled removal without stale publication after authority loss', async () => {
+    let resolveRemoval!: (value: { success: true }) => void;
+    transport.get.mockResolvedValueOnce(definition);
+    transport.remove.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRemoval = resolve;
+      }),
+    );
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    const request = removeScriptDefinitionsRequested(WS, [definition], 'Unable to remove script');
+    run.channel.put(request);
+    await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledOnce());
+    run.state.workspace.workspaces = createCollection('id');
+    resolveRemoval({ success: true });
+
+    await expect(request.promise).resolves.toEqual({ removed: [definition.id], failed: [] });
+    expect(run.state.scripts.byWorkspaceId[WS].scripts[definition.id]).toBeDefined();
+    await stop(run.task);
+  });
+
+  it('applies legacy agent detection results through the registered saga', async () => {
+    const detected = { name: 'Build', command: 'pnpm build', mode: 'command' as const };
+    transport.list.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    transport.create.mockResolvedValueOnce({
+      success: true,
+      script: { ...definition, id: 'script-build', ...detected },
+    });
+    const run = start();
+    const request = detectScriptsWithAgentRequested(WS);
+    run.channel.put(request);
+
+    await vi.waitFor(() =>
+      expect(run.actions.some((action) => action.type === executeBackgroundAgent.type)).toBe(true),
+    );
+    const execute = run.actions.find((action) => action.type === executeBackgroundAgent.type) as
+      ReturnType<typeof executeBackgroundAgent> | undefined;
+    const requestId = execute?.payload[2]?.requestId;
+    expect(requestId).toEqual(expect.any(String));
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId },
+      }),
+    );
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'success',
+        result: JSON.stringify([detected, detected]),
+        executionContext: { requestId },
+      }),
+    );
+
+    await expect(request.promise).resolves.toMatchObject({
+      source: 'agent',
+      presentation: 'legacy',
+      changes: { added: 1 },
+    });
+    expect(transport.create).toHaveBeenCalledOnce();
+    await stop(run.task);
+  });
+
+  it('falls back locally and identifies an unexpected agent result', async () => {
+    transport.list.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    transport.detectCandidates.mockResolvedValueOnce({ candidates: [], packageManager: 'pnpm' });
+    const run = start();
+    const request = detectScriptsWithAgentRequested(WS);
+    run.channel.put(request);
+
+    await vi.waitFor(() =>
+      expect(run.actions.some((action) => action.type === executeBackgroundAgent.type)).toBe(true),
+    );
+    const execute = run.actions.find((action) => action.type === executeBackgroundAgent.type) as
+      ReturnType<typeof executeBackgroundAgent> | undefined;
+    const requestId = execute?.payload[2]?.requestId;
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId },
+      }),
+    );
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'success',
+        result: 'not json',
+        executionContext: { requestId },
+      }),
+    );
+
+    await expect(request.promise).resolves.toMatchObject({
+      source: 'local',
+      fallbackReason: 'unexpected-format',
+      detection: { detected: 0 },
+    });
+    await stop(run.task);
+  });
+
+  it('falls back locally when applying agent changes fails', async () => {
+    transport.list
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('apply inventory failed'))
+      .mockResolvedValueOnce([]);
+    transport.detectCandidates.mockResolvedValueOnce({ candidates: [], packageManager: 'pnpm' });
+    const run = start();
+    const request = detectScriptsWithAgentRequested(WS);
+    run.channel.put(request);
+
+    await vi.waitFor(() =>
+      expect(run.actions.some((action) => action.type === executeBackgroundAgent.type)).toBe(true),
+    );
+    const execute = run.actions.find((action) => action.type === executeBackgroundAgent.type) as
+      ReturnType<typeof executeBackgroundAgent> | undefined;
+    const requestId = execute?.payload[2]?.requestId;
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId },
+      }),
+    );
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'success',
+        result: JSON.stringify({
+          add: [{ name: 'Build', command: 'pnpm build', mode: 'command' }],
+          update: [],
+          remove: [],
+        }),
+        executionContext: { requestId },
+      }),
+    );
+
+    await expect(request.promise).resolves.toMatchObject({
+      source: 'local',
+      fallbackReason: 'apply-failed',
+      detection: { detected: 0 },
+    });
+    await stop(run.task);
+  });
+
+  it('settles a superseded detector without cancelling the newer execution', async () => {
+    transport.list.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const run = start();
+    const first = detectScriptsWithAgentRequested(WS);
+    run.channel.put(first);
+
+    await vi.waitFor(() =>
+      expect(
+        run.actions.filter((action) => action.type === executeBackgroundAgent.type),
+      ).toHaveLength(1),
+    );
+    const firstExecute = run.actions.find(
+      (action) => action.type === executeBackgroundAgent.type,
+    ) as ReturnType<typeof executeBackgroundAgent>;
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId: firstExecute.payload[2]?.requestId },
+      }),
+    );
+
+    const second = detectScriptsWithAgentRequested(WS);
+    run.channel.put(second);
+    await vi.waitFor(() =>
+      expect(
+        run.actions.filter((action) => action.type === executeBackgroundAgent.type),
+      ).toHaveLength(2),
+    );
+    const executions = run.actions.filter(
+      (action) => action.type === executeBackgroundAgent.type,
+    ) as ReturnType<typeof executeBackgroundAgent>[];
+    const secondRequestId = executions[1].payload[2]?.requestId;
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId: secondRequestId },
+      }),
+    );
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'success',
+        result: JSON.stringify({ add: [], update: [], remove: [] }),
+        executionContext: { requestId: secondRequestId },
+      }),
+    );
+
+    await expect(first.promise).rejects.toThrow('superseded');
+    await expect(second.promise).resolves.toMatchObject({ source: 'agent' });
+    expect(run.actions.filter((action) => action.type === cancelExecution.type)).toHaveLength(0);
+    await stop(run.task);
+  });
+
+  it('cancels only the matching detector execution when its consumer releases', async () => {
+    transport.list.mockResolvedValueOnce([]);
+    const run = start();
+    const consumer = {
+      consumerId: 'detect-consumer',
+      requestId: 'detect-workflow',
+      resourceId: 'agent-detection',
+    };
+    const request = detectScriptsWithAgentRequested(WS, consumer);
+    run.channel.put(request);
+
+    await vi.waitFor(() =>
+      expect(run.actions.some((action) => action.type === executeBackgroundAgent.type)).toBe(true),
+    );
+    const execute = run.actions.find((action) => action.type === executeBackgroundAgent.type) as
+      ReturnType<typeof executeBackgroundAgent> | undefined;
+    run.dispatch(
+      setExecutorState(WS, 'script-detect', {
+        status: 'running',
+        executionContext: { requestId: execute?.payload[2]?.requestId },
+      }),
+    );
+    run.dispatch(scriptWorkflowReleased(WS, consumer.consumerId));
+
     await expect(request.promise).rejects.toThrow('cancelled');
-    expect(transport.get).toHaveBeenCalledOnce();
-    expect(transport.remove).toHaveBeenCalledOnce();
+    expect(run.actions).toContainEqual(cancelExecution(WS, 'script-detect'));
+    await stop(run.task);
+  });
+
+  it('prepares a fix agent from the full definition and live output tail', async () => {
+    store.init();
+    transport.get.mockResolvedValueOnce({
+      ...definition,
+      command: 'pnpm check --full',
+      runtime: { status: 'exited', exitCode: 2, restartCount: 0 },
+    });
+    const run = start();
+    run.dispatch(
+      appendScriptOutput(WS, definition.id, {
+        text: 'live failure\n',
+        timestamp: '2026-10-15T00:00:00Z',
+      }),
+    );
+    run.channel.put(createScriptFixAgentRequested(WS, definition.id, 'retained failure'));
+
+    await vi.waitFor(() =>
+      expect(
+        run.actions.some((action) => action.type === createAgentFromConfigRequested.type),
+      ).toBe(true),
+    );
+    const create = run.actions.find(
+      (action) => action.type === createAgentFromConfigRequested.type,
+    ) as ReturnType<typeof createAgentFromConfigRequested> | undefined;
+    expect(create?.payload).toEqual([
+      WS,
+      expect.objectContaining({
+        workspaceId: WS,
+        source: 'error-notification',
+        initialMessage: expect.stringContaining('Command: `pnpm check --full`'),
+      }),
+      { openAgent: true },
+    ]);
+    expect(create?.payload[1].initialMessage).toContain('failed with exit code 2');
+    expect(create?.payload[1].initialMessage).toContain('live failure');
+    expect(create?.payload[1].initialMessage).not.toContain('retained failure');
+    await stop(run.task);
+  });
+
+  it('suppresses fix-agent creation when its consumer releases during the definition read', async () => {
+    store.init();
+    let resolveDefinition!: (value: typeof definition) => void;
+    transport.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDefinition = resolve;
+      }),
+    );
+    const run = start();
+    await Promise.resolve();
+    run.channel.put(
+      createScriptFixAgentRequested(WS, definition.id, undefined, 'fix-agent-consumer'),
+    );
+    await vi.waitFor(() => expect(transport.get).toHaveBeenCalledOnce());
+    run.dispatch(scriptWorkflowReleased(WS, 'fix-agent-consumer'));
+    await Promise.resolve();
+    resolveDefinition(definition);
+    await Promise.resolve();
+
+    expect(run.actions.some((action) => action.type === createAgentFromConfigRequested.type)).toBe(
+      false,
+    );
     await stop(run.task);
   });
 

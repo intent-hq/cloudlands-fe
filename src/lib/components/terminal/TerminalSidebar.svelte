@@ -153,6 +153,7 @@
     requestId: string;
     workspaceId: string;
     selectedScriptId: string | null;
+    targetIds: string[];
   } | null>(null);
   let pendingRestore = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingSave = $state<{ requestId: string; workspaceId: string } | null>(null);
@@ -301,7 +302,11 @@
     }
     const compound = outcome.result as ScriptAgentDetectionOutcome;
     if (compound.source === 'local') {
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
+      notify.info(
+        compound.fallbackReason === 'unexpected-format'
+          ? m.terminal_sidebar_unexpectedFormat_info()
+          : m.terminal_sidebar_agentDetectFailed_info(),
+      );
       const result = compound.detection;
       showAgentAssist = result.detected === 0;
       notify[result.detected > 0 ? 'success' : 'info'](
@@ -394,8 +399,11 @@
     ) {
       onSelectScript?.(null);
     }
-    selectedScriptIds = new Set();
-    lastClickedScriptId = null;
+    const removedTargets = new Set(pending.targetIds);
+    selectedScriptIds = new Set(
+      Array.from(selectedScriptIds).filter((scriptId) => !removedTargets.has(scriptId)),
+    );
+    if (lastClickedScriptId && removedTargets.has(lastClickedScriptId)) lastClickedScriptId = null;
   });
 
   $effect(() => {
@@ -748,6 +756,7 @@
     action: 'start' | 'stop' | 'restart' | 'edit' | 'delete' | 'startAll' | 'stopAll',
   ) {
     if (action === 'delete') {
+      if (pendingRemove) return;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
       const requestId = crypto.randomUUID();
@@ -766,6 +775,7 @@
       pendingRemove = {
         requestId,
         workspaceId,
+        targetIds: idsToDelete,
         selectedScriptId:
           selectedScriptId && idsToDelete.includes(selectedScriptId) ? selectedScriptId : null,
       };

@@ -214,6 +214,7 @@ function parsedAgentChanges(
       existingKeys.has(`${candidate.name}::${candidate.command}`)
     )
       return [];
+    existingKeys.add(`${candidate.name}::${candidate.command}`);
     return [
       {
         name: candidate.name,
@@ -649,10 +650,11 @@ function* removeDefinitions(
         pendingWrite = request;
         const result = yield* call(() => request);
         pendingWrite = undefined;
-        yield* requireAuthority(workspaceId, authority);
         if (!result.success) throw new Error(result.error ?? failureMessage);
         outcome.removed.push(target.id);
-        yield* put(removeScript(workspaceId, target.id));
+        if ((yield* selectWorkspaceActionContext.effect(workspaceId)) === authority) {
+          yield* put(removeScript(workspaceId, target.id));
+        }
       } catch (error) {
         const message = errorMessage(error) || failureMessage;
         outcome.failed.push({ scriptId: target.id, error: message });
@@ -682,14 +684,9 @@ function* removeDefinitions(
 function* runRemoveDefinitions(
   action: ReturnType<typeof removeScriptDefinitionsRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, , , consumer] = action.payload;
-  if (!consumer) {
-    yield* call(removeDefinitions, action);
-    return;
-  }
+  const [workspaceId] = action.payload;
   yield* race({
     operation: call(removeDefinitions, action),
-    released: call(waitForDefinitionChangesRelease, workspaceId, consumer.consumerId),
     cleanup: take(matchesWorkspaceCleanup(workspaceId)),
   });
 }
@@ -697,11 +694,18 @@ function* runRemoveDefinitions(
 function* createScriptFixAgent(
   action: ReturnType<typeof createScriptFixAgentRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, scriptId, retainedOutput] = action.payload;
+  const [workspaceId, scriptId, retainedOutput, consumerId] = action.payload;
   let request: ReturnType<typeof createAgentFromConfigRequested>;
   try {
     const authority = yield* requireAuthority(workspaceId);
-    const script = yield* readDefinition(workspaceId, scriptId);
+    const script = consumerId
+      ? (yield* race({
+          definition: call(readDefinition, workspaceId, scriptId),
+          released: call(waitForDefinitionChangesRelease, workspaceId, consumerId),
+          cleanup: take(matchesWorkspaceCleanup(workspaceId)),
+        })).definition
+      : yield* readDefinition(workspaceId, scriptId);
+    if (!script) return;
     yield* requireAuthority(workspaceId, authority);
     const buffer = yield* selectScriptOutput.effect(workspaceId, scriptId);
     const lastLines =
@@ -742,16 +746,7 @@ function* createScriptFixAgent(
 function* runCreateScriptFixAgent(
   action: ReturnType<typeof createScriptFixAgentRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, , , consumerId] = action.payload;
-  if (!consumerId) {
-    yield* call(createScriptFixAgent, action);
-    return;
-  }
-  yield* race({
-    operation: call(createScriptFixAgent, action),
-    released: call(waitForDefinitionChangesRelease, workspaceId, consumerId),
-    cleanup: take(matchesWorkspaceCleanup(workspaceId)),
-  });
+  yield* call(createScriptFixAgent, action);
 }
 
 function detectionOutcome(input: {
@@ -1085,23 +1080,40 @@ function* runDefinitionChanges(
   });
 }
 
+class ScriptDetectorSupersededError extends Error {}
+
+class ScriptDetectorUnexpectedFormatError extends Error {}
+
 function* executeScriptDetector(workspaceId: string, prompt: string): SagaGenerator<string> {
   const requestId = crypto.randomUUID();
+  let started = false;
   try {
     yield* put(
       executeBackgroundAgent(workspaceId, 'script-detect', { message: prompt, requestId }),
     );
     for (;;) {
-      yield* take(setExecutorState);
+      const update = yield* take(setExecutorState);
+      if (update.payload[0] !== workspaceId || update.payload[1] !== 'script-detect') continue;
       const executor = yield* selectExecutorState.effect(workspaceId, 'script-detect');
-      if (executor.executionContext?.requestId !== requestId) continue;
+      if (executor.executionContext?.requestId !== requestId) {
+        if (started && executor.executionContext?.requestId) {
+          throw new ScriptDetectorSupersededError('Agent script detection superseded');
+        }
+        continue;
+      }
+      started = true;
       if (executor.status === 'success' && executor.result) return executor.result;
       if (executor.status === 'error' || executor.status === 'cancelled') {
         throw new Error(executor.error ?? m.terminal_sidebar_agentDetectFailed_info());
       }
     }
   } finally {
-    if (yield* cancelled()) yield* put(cancelExecution(workspaceId, 'script-detect'));
+    if (yield* cancelled()) {
+      const executor = yield* selectExecutorState.effect(workspaceId, 'script-detect');
+      if (executor.executionContext?.requestId === requestId) {
+        yield* put(cancelExecution(workspaceId, 'script-detect'));
+      }
+    }
   }
 }
 
@@ -1134,43 +1146,64 @@ function* runAgentDetection(
       : '';
     let parsed:
       { changes: ScriptDefinitionChanges; presentation: 'changes' | 'legacy' } | undefined;
+    let detectorCompleted = false;
     try {
       const result = yield* call(
         executeScriptDetector,
         workspaceId,
         SCRIPT_DETECT_PROMPT + context,
       );
+      detectorCompleted = true;
       yield* requireAuthority(workspaceId, authority);
       parsed = parsedAgentChanges(JSON.parse(result), existing ?? []) ?? undefined;
-      if (!parsed) throw new Error(m.terminal_sidebar_unexpectedFormat_info());
-    } catch {
+      if (!parsed) {
+        throw new ScriptDetectorUnexpectedFormatError(m.terminal_sidebar_unexpectedFormat_info());
+      }
+      const apply = applyScriptDefinitionChangesRequested(workspaceId, parsed.changes, existing);
+      yield* call(applyDefinitionChanges, apply);
+      const changes = yield* call(() => apply.promise);
+      const outcome: ScriptAgentDetectionOutcome = {
+        source: 'agent',
+        presentation: parsed.presentation,
+        changes,
+      };
+      yield* requireAuthority(workspaceId, authority);
+      yield* put(action.success(outcome));
+      yield* finishWorkflow(workspaceId, consumer, 'success', outcome);
+      settled = true;
+      return;
+    } catch (error) {
+      if (error instanceof ScriptDetectorSupersededError) throw error;
       yield* requireAuthority(workspaceId, authority);
       const fallback = detectScriptDefinitionsRequested(workspaceId);
       yield* call(detectDefinitions, fallback);
       const detection = yield* call(() => fallback.promise);
-      const outcome: ScriptAgentDetectionOutcome = { source: 'local', detection };
+      const outcome: ScriptAgentDetectionOutcome = {
+        source: 'local',
+        detection,
+        fallbackReason:
+          error instanceof ScriptDetectorUnexpectedFormatError || (detectorCompleted && !parsed)
+            ? 'unexpected-format'
+            : parsed
+              ? 'apply-failed'
+              : 'agent-failed',
+      };
       yield* requireAuthority(workspaceId, authority);
       yield* put(action.success(outcome));
       yield* finishWorkflow(workspaceId, consumer, 'success', outcome);
       settled = true;
       return;
     }
-    const apply = applyScriptDefinitionChangesRequested(workspaceId, parsed.changes, existing);
-    yield* call(applyDefinitionChanges, apply);
-    const changes = yield* call(() => apply.promise);
-    const outcome: ScriptAgentDetectionOutcome = {
-      source: 'agent',
-      presentation: parsed.presentation,
-      changes,
-    };
-    yield* requireAuthority(workspaceId, authority);
-    yield* put(action.success(outcome));
-    yield* finishWorkflow(workspaceId, consumer, 'success', outcome);
-    settled = true;
   } catch (error) {
     const failure = asError(error);
     yield* put(action.failure(failure));
-    yield* finishWorkflow(workspaceId, consumer, 'failure', undefined, failure.message);
+    yield* finishWorkflow(
+      workspaceId,
+      consumer,
+      error instanceof ScriptDetectorSupersededError ? 'cancelled' : 'failure',
+      undefined,
+      failure.message,
+    );
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {

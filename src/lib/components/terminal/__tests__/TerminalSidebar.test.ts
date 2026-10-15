@@ -73,6 +73,7 @@ const {
     asyncActionHandlers: {
       detect: null as ((action: any) => void) | null,
       apply: null as ((action: any) => void) | null,
+      remove: null as ((action: any) => void) | null,
     },
     notify: {
       success: vi.fn(),
@@ -151,10 +152,12 @@ vi.mock('$store/renderer/store', async () => {
               ? payload[1]
               : action.type === 'scripts/applyScriptDefinitionChangesRequested'
                 ? payload[3]
-                : action.type === 'scripts/restoreScriptDefinitionsRequested' ||
-                    action.type === 'scripts/listScriptDefinitionsRequested'
-                  ? payload[2]
-                  : undefined;
+                : action.type === 'scripts/removeScriptDefinitionsRequested'
+                  ? payload[3]
+                  : action.type === 'scripts/restoreScriptDefinitionsRequested' ||
+                      action.type === 'scripts/listScriptDefinitionsRequested'
+                    ? payload[2]
+                    : undefined;
     if (consumer)
       module.store.dispatch(
         scriptWorkflowFinished(payload[0], consumer, status, result as never, error),
@@ -211,6 +214,13 @@ vi.mock('$store/renderer/store', async () => {
         action.success({ id: scriptId, workspaceId, ...updates });
       } else if (action.type === 'scripts/removeScriptDefinitionRequested') {
         action.success(undefined);
+      } else if (action.type === 'scripts/removeScriptDefinitionsRequested') {
+        if (asyncActionHandlers.remove) asyncActionHandlers.remove(action);
+        else
+          action.success({
+            removed: action.payload[1].map((script: { id: string }) => script.id),
+            failed: [],
+          });
       } else if (action.type === 'scripts/detectScriptDefinitionsRequested') {
         action.success({ detected: 0, added: 0, updated: 0, removed: 0, skippedRunning: [] });
       } else if (action.type === 'scripts/applyScriptDefinitionChangesRequested') {
@@ -372,6 +382,7 @@ beforeEach(() => {
   executorState.agentId = null;
   asyncActionHandlers.detect = null;
   asyncActionHandlers.apply = null;
+  asyncActionHandlers.remove = null;
   mockGetNavigationContext.mockReset();
   selectorWorkspaceArgs.length = 0;
 });
@@ -664,6 +675,47 @@ describe('TerminalSidebar workspace prop changes', () => {
         }),
       ),
     );
+  });
+});
+
+describe('TerminalSidebar bulk removal outcomes', () => {
+  it('preserves scripts selected after the captured removal batch started', async () => {
+    scriptEntries.value = ['one', 'two', 'three'].map((id) => ({
+      id,
+      name: id,
+      command: `pnpm ${id}`,
+      mode: 'command',
+      source: 'user',
+      runtime: { status: 'idle', exitCode: null },
+    }));
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    const requests: any[] = [];
+    asyncActionHandlers.remove = (action) => requests.push(action);
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    const one = screen.getByRole('button', { name: /^one(?:\s|$)/ });
+    const two = screen.getByRole('button', { name: /^two(?:\s|$)/ });
+    const three = screen.getByRole('button', { name: /^three(?:\s|$)/ });
+    await fireEvent.click(one, { ctrlKey: true });
+    await fireEvent.click(two, { ctrlKey: true });
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^one(?:\s|$)/ }));
+    await waitFor(() => expect(screen.getByText(/^Delete/)).toBeTruthy());
+    await fireEvent.click(screen.getByText(/^Delete/));
+    expect(requests).toHaveLength(1);
+
+    await fireEvent.click(three, { ctrlKey: true });
+    requests[0].success({ removed: ['one', 'two'], failed: [] });
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/workflowConsumed' }),
+      ),
+    );
+
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^three(?:\s|$)/ }));
+    await waitFor(() => expect(screen.getByText(/^Delete/)).toBeTruthy());
+    await fireEvent.click(screen.getByText(/^Delete/));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].payload[1]).toEqual([expect.objectContaining({ id: 'three' })]);
   });
 });
 

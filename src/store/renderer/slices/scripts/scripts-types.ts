@@ -101,7 +101,11 @@ export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
 
 export type ScriptAgentDetectionOutcome =
   | { source: 'agent'; presentation: 'changes' | 'legacy'; changes: ScriptDefinitionChangesOutcome }
-  | { source: 'local'; detection: ScriptDetectionOutcome };
+  | {
+      source: 'local';
+      detection: ScriptDetectionOutcome;
+      fallbackReason: 'agent-failed' | 'unexpected-format' | 'apply-failed';
+    };
 
 export type ScriptRemovalTarget = Pick<
   WorkspaceScript,
