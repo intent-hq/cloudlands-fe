@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "建立可能已經完成。請復原同一要求，避免建立另一個工作區。",
   "workspace_localCreate_recover_label": "復原建立",
   "workspace_localCreate_draftSave_error": "無法儲存建立要求。請在建立工作區前重試。",
-  "workspace_localCreate_receiptUnavailable_description": "工作區建立已暫停，等待檢查已儲存的請求。建立工作區前，請重試載入。"
+  "workspace_localCreate_receiptUnavailable_description": "工作區建立已暫停，等待檢查已儲存的請求。建立工作區前，請重試載入。",
+  "workspace_gitReview_unavailable_description": "無法顯示文字差異。這可能是二進位檔案、被省略的大型差異，或沒有文字差異區塊的變更。"
 }

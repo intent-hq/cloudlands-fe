@@ -88,6 +88,17 @@ mode completes the proposal without implementing it. This does not establish
 ordinary command/file approval: the pinned daemon denies restricted Codex sandbox
 escalation. Do not loosen that policy to reproduce this preview.
 
+Open **Changed files** in a workspace to review a file's staged (HEAD to index)
+or unstaged (index to worktree) changes. The same path can have a separate row in
+each group. The read-only view shows line numbers and additions/deletions, with
+**Refresh** and **Back** to the originating row and filter. Deleted files do not
+require current file contents. This checkpoint covers the primary Git root only;
+there are no stage, commit, discard or push controls. The pinned daemon does not
+distinguish binary files from omitted oversized diffs, so path-only responses are
+shown as text diff unavailable, rather than as no changes. Rename hunks follow the
+daemon's destination-path representation; full editor and rename-history parity
+are not claimed.
+
 ## Focused verification
 
 ```sh
@@ -121,6 +132,12 @@ hash of a genuine, inspected, already-pending non-writing plan request and expli
 owned-daemon decision scope. It checks keyboard/pointer choice, reload/reconnect
 recovery, exact daemon acknowledgement, persisted plan content and reader cleanup.
 It does not fabricate requests or run requested commands.
+
+`workspace-git-review.extended.spec.mjs` uses an owned disposable repository with
+both stages of the same file, added/deleted/renamed paths and binary/large-file
+responses. It verifies genuine Git payloads, refresh, reload, Back focus/position,
+containment and read/worker cleanup at desktop and narrow widths. It performs no
+Git writes; fixture preparation is a separate owned-repository step.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

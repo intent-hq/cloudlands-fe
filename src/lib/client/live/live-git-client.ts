@@ -1,4 +1,5 @@
 import { createBackendGitReadRuntime } from './backend-git-read-runtime';
+import { createBackendGitDiffReader } from './backend-git-diff-reader';
 /**
  * Live git domain backed by the intentd daemon.
  *
@@ -23,8 +24,7 @@ import { createBackendGitReadRuntime } from './backend-git-read-runtime';
  * (workspace-create auto-pull). All fold the daemon outcome into a
  * `MutationResult`.
  */
-import { LineType } from '$shared/types';
-import type { DiffChunk, DiffLine, GitStatus } from '$shared/types';
+import type { DiffChunk, GitStatus } from '$shared/types';
 import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type {
   CommitDetailsResult,
@@ -201,47 +201,6 @@ function detachStatusTriggers(): void {
   statusTriggersOff = undefined;
 }
 
-/** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
-function toDiffLine(raw: unknown): DiffLine {
-  const line = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const rawType = typeof line.type === 'string' ? line.type : 'Context';
-  const type =
-    rawType === 'Addition'
-      ? LineType.Addition
-      : rawType === 'Deletion'
-        ? LineType.Deletion
-        : LineType.Context;
-  const out: DiffLine = { type, content: typeof line.content === 'string' ? line.content : '' };
-  if (typeof line.oldNumber === 'number') out.oldNumber = line.oldNumber;
-  if (typeof line.newNumber === 'number') out.newNumber = line.newNumber;
-  return out;
-}
-
-/** Map the daemon `git.diffs` bare-array result into renderer `DiffChunk[]`. */
-function toDiffChunks(result: unknown): DiffChunk[] {
-  const entries = Array.isArray(result) ? result : [];
-  const chunks: DiffChunk[] = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== 'object') continue;
-    const e = entry as Record<string, unknown>;
-    const file = typeof e.path === 'string' ? e.path : '';
-    if (!file) continue;
-    const rawHunks = Array.isArray(e.hunks) ? e.hunks : [];
-    const mapped = rawHunks.map((h) => {
-      const hunk = (h && typeof h === 'object' ? h : {}) as Record<string, unknown>;
-      return {
-        oldStart: Number(hunk.oldStart ?? 0),
-        oldLines: Number(hunk.oldLines ?? 0),
-        newStart: Number(hunk.newStart ?? 0),
-        newLines: Number(hunk.newLines ?? 0),
-        lines: Array.isArray(hunk.lines) ? hunk.lines.map(toDiffLine) : [],
-      };
-    });
-    chunks.push({ file, chunks: mapped });
-  }
-  return chunks;
-}
-
 /** Best-effort epoch timestamp from a daemon commit `date` (ISO/RFC string). */
 /** Map a daemon `git.commitDetails` entry into a renderer `CommitDetailsResult`. */
 function normalizeCommitDetails(
@@ -346,15 +305,9 @@ export class LiveGitClient implements GitClient {
   // Errors fold to `[]` so the diff viewer degrades cleanly rather than
   // throwing into the store.
   async diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]> {
-    const params: Record<string, unknown> = { workspaceId };
-    if (options?.path) params.path = options.path;
-    if (options?.paths?.length) params.paths = options.paths;
-    if (options?.staged === true) params.staged = true;
-    if (options?.commitHash) params.commitHash = options.commitHash;
-    if (options?.gitRootId) params.gitRootId = options.gitRootId;
+    // Compatibility for existing source callers until their error UI migrates to strict reads.
     try {
-      const result = await backendRequest<unknown>('git.diffs', params);
-      return toDiffChunks(result);
+      return await createBackendGitDiffReader(backendRequest)(workspaceId, options);
     } catch {
       return [];
     }

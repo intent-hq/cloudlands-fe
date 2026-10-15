@@ -9,6 +9,44 @@ import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { CommitInfo, GitStatus, DiffChunk } from '$shared/types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { CommitDetailsResult, GitDiffsOptions } from '$lib/client/app-client';
+import type { StoreAction } from '@themislib/themis/types';
+import type { SagaGenerator } from 'typed-redux-saga';
+
+/** Application ports; these and the resource bookkeeping never enter Redux state. */
+export interface GitConsumerReadDependencies {
+  read:
+    | ((...args: GitReadPortArguments) => SagaGenerator<GitReadResult>)
+    | ((...args: GitReadPortArguments) => Promise<GitReadResult>);
+  getMutationVersion: (workspaceId: string, gitRootId?: string) => number;
+  isMutationPending: (workspaceId: string, gitRootId?: string) => boolean;
+  waitForMutations:
+    | ((workspaceId: string, gitRootId?: string) => Promise<void>)
+    | ((workspaceId: string, gitRootId?: string) => SagaGenerator<void>);
+  /** Hosts with retiring authority use synchronous dispatch, fenced at invocation. */
+  dispatch?: (action: StoreAction<unknown>) => unknown;
+  bindAutoCommitEvents?: (
+    invalidateAgent: (agentId: string) => SagaGenerator<void>,
+  ) => SagaGenerator<void>;
+}
+
+type GitReadPortArguments = [
+  workspaceId: string,
+  request: GitReadRequest,
+  signal: AbortSignal,
+  // For trackedDiff this fences current-file I/O, not recorded transcript output.
+  canRead: () => boolean,
+];
+
+export interface GitReadResource {
+  workspaceId: string;
+  key: string;
+  request: GitReadRequest;
+  consumers: Map<string, { requestId: string; canRead?: () => boolean }>;
+  revision: number;
+  failed: boolean;
+}
+
+export type GitReadMessage = { resource: GitReadResource; cancel?: boolean };
 
 export type GitReadRequest =
   | ({ kind: 'diffs' } & GitDiffsOptions)

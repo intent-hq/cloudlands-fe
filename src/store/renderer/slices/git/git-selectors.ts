@@ -1,3 +1,4 @@
+import { getGitRead } from './git-read-projections';
 /**
  * Git Selectors
  *
@@ -7,9 +8,9 @@
 import { store } from '../../store';
 import type { AppSelector } from '../../types';
 import { defaultGitOperationFlags, getGitWorkspaceState } from './git-slice';
-import type { GitOperationFlags, PostMergeState, GitReadResult, GitReadView } from './git-types';
+import type { GitOperationFlags, PostMergeState, GitReadView } from './git-types';
 import type { GitStatus } from '$shared/types';
-import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { CommitFile } from '$features/file-tracking/types';
 import type { CommitInfo } from '$shared/types';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
@@ -55,33 +56,7 @@ export const selectGitCommitDetailsFiles: AppSelector<
 export const selectGitRead: AppSelector<
   GitReadView | undefined,
   [wsId: string, consumerId: string]
-> = store.createSelector((state, wsId: string, consumerId: string) => {
-  const ws = getGitWorkspaceState(state.git, wsId);
-  const consumer = getItem(ws.readConsumers, consumerId);
-  const entry = consumer && getItem(ws.reads, consumer.readKey);
-  if (!consumer || !entry) return undefined;
-  const stored = entry.result;
-  let result: GitReadResult | null = null;
-  if (stored?.kind === 'diffs') result = { ...stored, chunks: getItems(stored.chunks) };
-  else if (stored?.kind === 'commitDetails')
-    result = {
-      ...stored,
-      details: stored.details
-        ? { ...stored.details, fileDetails: getItems(stored.details.fileDetails) }
-        : null,
-    };
-  else if (stored?.kind === 'numstat') result = { ...stored, entries: getItems(stored.entries) };
-  else if (stored?.kind === 'autoCommitStatus')
-    result = { ...stored, statuses: getItems(stored.statuses).map(({ status }) => status) };
-  else result = stored;
-  return {
-    requestId: consumer.requestId,
-    request: entry.request,
-    loading: entry.loading,
-    error: entry.error,
-    result,
-  };
-});
+> = store.createSelector(getGitRead);
 
 export const selectGitStatus: AppSelector<GitStatus | null, [wsId: string]> = store.createSelector(
   (state, wsId: string) => getGitWorkspaceState(state.git, wsId).status,

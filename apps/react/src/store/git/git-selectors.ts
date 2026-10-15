@@ -1,3 +1,4 @@
+import { getGitRead } from '../../../../../src/store/renderer/slices/git/git-read-projections';
 import { store } from '../index';
 import { getGitWorkspaceState } from '../../../../../src/store/renderer/slices/git/git-slice';
 import { sidebarSearchMatches } from '$lib/components/workspace/sidebar/sidebar-search';
@@ -12,3 +13,5 @@ export const selectFilteredGitFiles = store.createSelector(
     return query.trim() ? files.filter((file) => sidebarSearchMatches(query, [file.path])) : files;
   },
 );
+
+export const selectGitRead = store.createSelector(getGitRead);

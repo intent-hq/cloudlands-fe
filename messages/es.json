@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "Es posible que la creación ya haya terminado. Recupera la misma solicitud para evitar crear otro espacio de trabajo.",
   "workspace_localCreate_recover_label": "Recuperar creación",
   "workspace_localCreate_draftSave_error": "No se pudo guardar la solicitud de creación. Inténtalo de nuevo antes de crear el espacio de trabajo.",
-  "workspace_localCreate_receiptUnavailable_description": "La creación del espacio de trabajo está pausada hasta comprobar la solicitud guardada. Vuelve a cargarla antes de crear un espacio de trabajo."
+  "workspace_localCreate_receiptUnavailable_description": "La creación del espacio de trabajo está pausada hasta comprobar la solicitud guardada. Vuelve a cargarla antes de crear un espacio de trabajo.",
+  "workspace_gitReview_unavailable_description": "Diferencia de texto no disponible. Puede ser un archivo binario, una diferencia grande omitida o un cambio sin bloques de texto."
 }

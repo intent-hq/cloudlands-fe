@@ -1,3 +1,4 @@
+import { parseGitDiffOrigin } from '@/features/workspace/workspace-diff-target';
 import { parseConversationFileOrigin } from '@/features/workspace/workspace-file-origin';
 import { createFileRoute, retainSearchParams } from '@tanstack/react-router';
 import { createClientOnlyFn } from '@tanstack/react-start';
@@ -22,6 +23,9 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
     message?: string;
     note?: string;
     q?: string;
+    diff?: string;
+    diffStage?: 'staged' | 'unstaged';
+    diffOrigin?: string;
     file?: string;
     fileOrigin?: string;
     attachment?: string;
@@ -42,6 +46,12 @@ export const Route = createFileRoute('/workspaces/$workspaceId')({
         : {}),
       ...(typeof search.note === 'string' && search.note ? { note: search.note } : {}),
       ...(typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+      ...(typeof search.diff === 'string' &&
+      search.diff &&
+      (search.diffStage === 'staged' || search.diffStage === 'unstaged')
+        ? { diff: search.diff, diffStage: search.diffStage }
+        : {}),
+      ...(parseGitDiffOrigin(search.diffOrigin) ? { diffOrigin: search.diffOrigin as string } : {}),
       ...(typeof search.file === 'string' &&
       search.file &&
       typeof search.fileOrigin === 'string' &&
@@ -79,6 +89,9 @@ function WorkspacePage() {
     note,
     q,
     file,
+    diff,
+    diffStage,
+    diffOrigin,
     fileOrigin,
     line,
     fileQuery,
@@ -94,6 +107,9 @@ function WorkspacePage() {
       messageId={message}
       noteId={note}
       query={q}
+      diffPath={diff}
+      diffStaged={diffStage === 'staged'}
+      diffOrigin={diffOrigin}
       filePath={file}
       fileOrigin={parseConversationFileOrigin(fileOrigin)}
       attachmentId={attachment}

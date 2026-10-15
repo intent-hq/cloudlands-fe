@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "Die Erstellung wurde möglicherweise bereits abgeschlossen. Stellen Sie dieselbe Anfrage wieder her, um keinen weiteren Arbeitsbereich zu erstellen.",
   "workspace_localCreate_recover_label": "Erstellung wiederherstellen",
   "workspace_localCreate_draftSave_error": "Die Erstellungsanfrage konnte nicht gespeichert werden. Versuchen Sie es vor der Erstellung erneut.",
-  "workspace_localCreate_receiptUnavailable_description": "Die Workspace-Erstellung ist angehalten, bis die gespeicherte Anfrage geprüft werden kann. Laden Sie sie erneut, bevor Sie einen Workspace erstellen."
+  "workspace_localCreate_receiptUnavailable_description": "Die Workspace-Erstellung ist angehalten, bis die gespeicherte Anfrage geprüft werden kann. Laden Sie sie erneut, bevor Sie einen Workspace erstellen.",
+  "workspace_gitReview_unavailable_description": "Textvergleich nicht verfügbar. Die Datei ist möglicherweise binär, der Vergleich zu groß oder die Änderung enthält keine Textblöcke."
 }

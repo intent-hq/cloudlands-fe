@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "Creation may already have completed. Recover the same request to avoid creating another workspace.",
   "workspace_localCreate_recover_label": "Recover creation",
   "workspace_localCreate_draftSave_error": "Could not save the creation request. Try again before creating the workspace.",
-  "workspace_localCreate_receiptUnavailable_description": "Workspace creation is paused until its saved request can be checked. Retry loading it before creating a workspace."
+  "workspace_localCreate_receiptUnavailable_description": "Workspace creation is paused until its saved request can be checked. Retry loading it before creating a workspace.",
+  "workspace_gitReview_unavailable_description": "Text diff unavailable. This may be a binary file, an omitted large diff, or a change without text hunks."
 }

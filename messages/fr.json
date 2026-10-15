@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "La création est peut-être déjà terminée. Récupérez la même demande pour éviter de créer un autre espace de travail.",
   "workspace_localCreate_recover_label": "Récupérer la création",
   "workspace_localCreate_draftSave_error": "Impossible d’enregistrer la demande de création. Réessayez avant de créer l’espace de travail.",
-  "workspace_localCreate_receiptUnavailable_description": "La création de l’espace de travail est suspendue jusqu’à la vérification de la demande enregistrée. Rechargez-la avant de créer un espace de travail."
+  "workspace_localCreate_receiptUnavailable_description": "La création de l’espace de travail est suspendue jusqu’à la vérification de la demande enregistrée. Rechargez-la avant de créer un espace de travail.",
+  "workspace_gitReview_unavailable_description": "Différence de texte indisponible. Il peut s’agir d’un fichier binaire, d’une différence trop volumineuse ou d’un changement sans blocs de texte."
 }

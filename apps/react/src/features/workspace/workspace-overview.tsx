@@ -1,3 +1,5 @@
+import { WorkspaceDiff } from './workspace-diff';
+import { matchingGitDiffOrigin } from './workspace-diff-target';
 import { WorkspaceCreate } from './workspace-create';
 import { useWorkspaceViewLifetime } from './workspace-view-lifetime';
 import type { ConversationFileOrigin } from './workspace-file-origin';
@@ -203,6 +205,9 @@ export function WorkspaceOverview({
   noteId,
   query,
   filePath,
+  diffPath,
+  diffStaged = false,
+  diffOrigin,
   fileOrigin,
   attachmentId,
   attachmentAgentId,
@@ -217,6 +222,9 @@ export function WorkspaceOverview({
   noteId?: string;
   query?: string;
   filePath?: string;
+  diffPath?: string;
+  diffStaged?: boolean;
+  diffOrigin?: string;
   fileOrigin?: ConversationFileOrigin;
   attachmentId?: string;
   attachmentAgentId?: string;
@@ -248,27 +256,67 @@ export function WorkspaceOverview({
       !agentId &&
       !noteId &&
       !filePath &&
+      !diffPath &&
       (firstEntry || !document.activeElement?.matches('[data-navigation-workspace]'))
     )
       title.current?.focus();
-  }, [workspaceId, agentId, noteId, filePath]);
+  }, [workspaceId, agentId, noteId, filePath, diffPath]);
   const previousAgent = useRef(agentId);
   useLayoutEffect(() => {
     const previous = previousAgent.current;
     previousAgent.current = agentId;
     if (previous && !agentId && !noteId && !filePath) title.current?.focus();
   }, [agentId, noteId, filePath]);
+  const previousDiff = useRef({
+    workspaceId,
+    path: diffPath,
+    staged: diffStaged,
+    origin: diffOrigin,
+  });
+  useLayoutEffect(() => {
+    const previous = previousDiff.current;
+    previousDiff.current = { workspaceId, path: diffPath, staged: diffStaged, origin: diffOrigin };
+    if (
+      previous.workspaceId !== workspaceId ||
+      !previous.path ||
+      diffPath ||
+      filePath ||
+      agentId ||
+      noteId
+    )
+      return;
+    const opener = content.current?.querySelector<HTMLAnchorElement>(
+      `a[data-git-row="${CSS.escape(`${previous.staged}:${previous.path}`)}"]`,
+    );
+    if (!opener) return;
+    const origin = matchingGitDiffOrigin(
+      previous.origin,
+      workspaceId,
+      previous.path,
+      previous.staged,
+    );
+    opener.focus({ preventScroll: true });
+    if (origin)
+      window.scrollBy({ top: opener.getBoundingClientRect().y - origin.y, behavior: 'instant' });
+    else opener.scrollIntoView({ block: 'center' });
+  }, [workspaceId, diffPath, diffStaged, diffOrigin, filePath, agentId, noteId]);
   const previousFile = useRef({ workspaceId, filePath });
   useLayoutEffect(() => {
     const previous = previousFile.current;
     previousFile.current = { workspaceId, filePath };
-    if (previous.workspaceId === workspaceId && previous.filePath && !filePath && !noteId) {
+    if (
+      previous.workspaceId === workspaceId &&
+      previous.filePath &&
+      !filePath &&
+      !diffPath &&
+      !noteId
+    ) {
       const opener = content.current?.querySelector<HTMLAnchorElement>(
         `a[data-file-path="${CSS.escape(previous.filePath)}"]`,
       );
       (opener ?? content.current?.querySelector<HTMLElement>('h2'))?.focus();
     }
-  }, [workspaceId, filePath, noteId]);
+  }, [workspaceId, filePath, noteId, diffPath]);
   useLayoutEffect(() => {
     if (!connection) return;
     store.dispatch(workspaceNotesHydrationRequested(workspaceId, ++nextHydrationGeneration, true));
@@ -335,12 +383,14 @@ export function WorkspaceOverview({
           />
         ) : (
           <>
-            {!agentId && !noteId && !filePath && row.statusMessage && (
+            {!agentId && !noteId && !filePath && !diffPath && row.statusMessage && (
               <p data-testid="workspace-status-message">{row.statusMessage}</p>
             )}
             <dl
               className={
-                agentId || noteId || filePath ? 'hidden' : 'grid min-w-0 gap-4 sm:grid-cols-3'
+                agentId || noteId || filePath || diffPath
+                  ? 'hidden'
+                  : 'grid min-w-0 gap-4 sm:grid-cols-3'
               }
             >
               <div>
@@ -365,6 +415,14 @@ export function WorkspaceOverview({
                   workspaceId={workspaceId}
                   agentId={agentId}
                   messageId={messageId}
+                />
+              ) : diffPath ? (
+                <WorkspaceDiff
+                  workspaceId={workspaceId}
+                  path={diffPath}
+                  staged={diffStaged}
+                  query={query}
+                  fileQuery={fileQuery}
                 />
               ) : filePath ? (
                 <WorkspaceFile

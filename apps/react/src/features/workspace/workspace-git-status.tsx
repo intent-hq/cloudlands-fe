@@ -81,9 +81,42 @@ export function WorkspaceGitStatus({
           <Link
             to="/workspaces/$workspaceId"
             params={{ workspaceId }}
-            search={{ file: item.path, q: query || undefined, fileQuery: fileQuery || undefined }}
+            search={{
+              diff: item.path,
+              diffStage: item.staged ? 'staged' : 'unstaged',
+              q: query || undefined,
+              fileQuery: fileQuery || undefined,
+            }}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.altKey ||
+                event.shiftKey
+              )
+                return;
+              event.preventDefault();
+              void navigate({
+                to: '/workspaces/$workspaceId',
+                params: { workspaceId },
+                search: {
+                  diff: item.path,
+                  diffStage: item.staged ? 'staged' : 'unstaged',
+                  q: query || undefined,
+                  fileQuery: fileQuery || undefined,
+                  diffOrigin: JSON.stringify({
+                    workspaceId,
+                    path: item.path,
+                    staged: item.staged,
+                    y: event.currentTarget.getBoundingClientRect().y,
+                  }),
+                },
+              });
+            }}
             className="block min-w-0 rounded-md hover:bg-muted focus-visible:outline"
             data-file-path={item.path}
+            data-git-row={`${item.staged}:${item.path}`}
           >
             <ListRow
               title={

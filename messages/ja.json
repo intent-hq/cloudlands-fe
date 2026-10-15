@@ -7532,5 +7532,6 @@
   "workspace_localCreate_uncertain_description": "作成はすでに完了している可能性があります。別のワークスペースを作成しないよう、同じリクエストを復旧してください。",
   "workspace_localCreate_recover_label": "作成を復旧",
   "workspace_localCreate_draftSave_error": "作成リクエストを保存できませんでした。ワークスペースを作成する前に再試行してください。",
-  "workspace_localCreate_receiptUnavailable_description": "保存済みのリクエストを確認できるまでワークスペースの作成を一時停止しています。作成する前に、読み込みを再試行してください。"
+  "workspace_localCreate_receiptUnavailable_description": "保存済みのリクエストを確認できるまでワークスペースの作成を一時停止しています。作成する前に、読み込みを再試行してください。",
+  "workspace_gitReview_unavailable_description": "テキスト差分を表示できません。バイナリファイル、大きすぎる差分、またはテキストの変更箇所がない可能性があります。"
 }
