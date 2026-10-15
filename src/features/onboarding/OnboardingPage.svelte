@@ -30,7 +30,6 @@
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
-  import { v4 as uuidv4 } from 'uuid';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -47,10 +46,6 @@
     setOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { STEP_ORDER as ONBOARDING_STEP_ORDER } from '$store/renderer/slices/onboarding/onboarding-types';
-  import {
-    beginWorkspaceCreateProgress,
-    clearWorkspaceCreateProgress,
-  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { cancelGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
@@ -95,12 +90,10 @@
     type TestPromptFailureGuidance,
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
   import { buildContextLinks } from '$lib/components/workspace/initializer/context-links';
 
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
@@ -111,16 +104,11 @@
     parseRuntimeMentions,
     extractLinearIssue,
     extractSentryIssue,
-    type ContextReference,
   } from '$features/onboarding/utils/parse-context-references';
-  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     hasStagedFileItems,
     heldImageBlocks,
-    redeemStagedAttachments,
-    retainImagePlacementIdentity,
-    sendHeldFirstMessage,
   } from '$lib/components/workspace/initializer/staged-attachments';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -139,7 +127,7 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
-    setWorkspaceInitializerLastSubmittedAgent,
+    workspaceInitializationRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
@@ -147,17 +135,22 @@
   } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializationOutcome,
     selectWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    selectPrincipalActionContext,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import type {
+    WorkspaceInitializationOutcome,
+    WorkspaceInitializationRequest,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
 
-  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
     findEmbeddedPRBranch,
@@ -382,11 +375,10 @@
   // the held first-message send) failed: submit resumes this flow instead of
   // creating a second workspace. The created workspace is never rolled back.
   let onboardingPendingSend = $state<{
-    workspaceId: string;
-    agentId?: string;
-    prompt: string;
-    contextReferences: ContextReference[];
+    request: WorkspaceInitializationRequest;
   } | null>(null);
+  const initializationConsumerId = crypto.randomUUID();
+  let onboardingInitializationGeneration = 0;
 
   // §5.31 gate — enhance is auggie-only; the daemon derives the effective
   // provider from settings, so the FE mirror gates on the same derivation.
@@ -1068,126 +1060,161 @@
     }
   }
 
-  /**
-   * Resume a create whose staged-attachment placement or first-message send
-   * failed: the workspace already exists, so re-place the remaining staged
-   * items and deliver the held message instead of creating again.
-   */
-  async function resumeOnboardingPendingSend() {
-    const pending = onboardingPendingSend;
-    if (!pending) return;
-    isOnboardingCreating = true;
-    onboardingCreationError = null;
-    try {
-      const redemption = await redeemStagedAttachments(pending.workspaceId, onboardingStagedItems);
-      onboardingStagedItems = redemption.items;
-      if (redemption.failedCount > 0) {
-        onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
-        return;
-      }
-      // `sendHeldFirstMessage` rebuilds the wire params as plain JSON: this
-      // pending state is a Svelte $state deep-reactive Proxy tree, which
-      // Electron's structured clone rejects — passing it through verbatim
-      // made the held send fail before reaching the daemon (monorepo#2576).
-      const snapshot = $state.snapshot(pending);
-      // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
-      // snapshot: the thumbnails stay editable while the failed send is
-      // resumable, so a removed image must not ride the retry. The items
-      // carry the placement identity retained from the failed attempt, so
-      // the retry replays committed placements instead of re-placing them.
-      const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
-      const sendResult = await sendHeldFirstMessage(
-        {
-          workspaceId: snapshot.workspaceId,
-          agentId: snapshot.agentId,
-          content: snapshot.prompt,
-          imageBlocks,
-          contextReferences: snapshot.contextReferences,
+  function applyInitializationFailure(
+    request: WorkspaceInitializationRequest,
+    outcome: WorkspaceInitializationOutcome | undefined,
+  ) {
+    const stagedItems = outcome?.stagedItems as ContextItem[] | undefined;
+    if (stagedItems) {
+      onboardingImageItems = stagedItems.filter((item) => item.imageData && item.imageMimeType);
+      onboardingStagedItems = stagedItems.filter((item) => !(item.imageData && item.imageMimeType));
+    }
+    onboardingCreationErrorCode = outcome?.errorCode ?? null;
+    if (outcome?.stage === 'pull') {
+      onboardingPullError = outcome.error || m.onboarding_page_pullFailed_error();
+      onboardingShowPullConflictDialog = true;
+    }
+    if (
+      request.heldMessage &&
+      outcome?.workspaceId &&
+      (outcome.stage === 'attachments' || outcome.stage === 'first-message')
+    ) {
+      onboardingPendingSend = {
+        request: {
+          ...request,
+          createRequest: undefined,
+          pull: undefined,
+          resume: { workspaceId: outcome.workspaceId, agentId: outcome.agentId },
+          stagedItems: outcome.stagedItems ?? request.stagedItems,
+          heldMessage: {
+            ...request.heldMessage,
+            imageBlocks: outcome.retryImageBlocks ?? request.heldMessage.imageBlocks,
+          },
         },
-        redemption.fileBlocks,
-      );
-      if (!sendResult.sent) {
-        onboardingImageItems = retainImagePlacementIdentity(
-          onboardingImageItems,
-          sendResult.imageBlocks,
-        );
-        // Framed like the compact initializer: the workspace already exists,
-        // Create resumes this flow — with the daemon's detail when available.
-        throw new Error(
-          sendResult.errorDetail
-            ? m.onboarding_page_firstMessageSendFailedDetail_error({
-                detail: sendResult.errorDetail,
-              })
-            : m.onboarding_page_firstMessageSendFailed_error(),
-        );
-      }
+      };
+    } else if (outcome?.stage === 'create') {
       onboardingPendingSend = null;
-      onboardingStagedItems = [];
-      onboardingImageItems = [];
-      // The held first message is sent — cancel any armed debounced save
-      // (its timer would fire drafts.set AFTER drafts.clear and resurrect
-      // the draft), then clear the persisted daemon draft and stop saving so
-      // a late flush can't resurrect it either.
-      onboardingDraftCleared = true;
-      onboardingDraftSaver.cancel();
-      clearNewWorkspaceDraft(appClient.drafts);
-      await goto(`/workspace/${pending.workspaceId}`);
-    } catch (err) {
-      onboardingCreationError =
-        err instanceof Error ? err.message : m.onboarding_page_createFailed_error();
-    } finally {
-      isOnboardingCreating = false;
+    }
+    onboardingCreationError =
+      outcome?.stage === 'attachments'
+        ? m.onboarding_page_attachmentPlacementFailed_error()
+        : outcome?.stage === 'first-message'
+          ? outcome.error && outcome.error !== 'first-message-send-failed'
+            ? m.onboarding_page_firstMessageSendFailedDetail_error({ detail: outcome.error })
+            : m.onboarding_page_firstMessageSendFailed_error()
+          : outcome?.error || m.onboarding_page_unexpected_error();
+  }
+
+  async function submitWorkspaceInitialization(
+    request: WorkspaceInitializationRequest,
+    resourceId: string,
+  ) {
+    const action = workspaceInitializationRequested(request, {
+      id: initializationConsumerId,
+      resourceId,
+    });
+    onboardingCreateProgressId = action.payload.progressId;
+    try {
+      const result = await appStore.dispatch(action);
+      return result;
+    } catch {
+      applyInitializationFailure(
+        request,
+        selectWorkspaceInitializationOutcome.select(
+          appStore.state,
+          initializationConsumerId,
+          resourceId,
+        ),
+      );
+      return null;
     }
   }
 
   async function handleOnboardingSubmit() {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
-    // Failed staged-attachment pills block create (retry or remove first —
-    // unless a created workspace is waiting on its held first message, in
-    // which case submit IS the retry).
-    if (onboardingPendingSend) {
-      await resumeOnboardingPendingSend();
+    if (hasBlockingAttachments(onboardingStagedItems)) {
+      notify.error(m.onboarding_page_blockingAttachments_toast());
       return;
     }
 
-    // Existing repositories cannot be created until BranchSelector resolves
-    // (or the user manually enters) a branch. Snapshot the effective branch
-    // before the prompt step unmounts so workspace.create never receives ''.
+    const admission = selectPrincipalActionContext.select(appStore.state);
+    if (admission === null || !selectWorkspaceCreationVisible.select(appStore.state)) return;
+    const resourceId = `onboarding:${admission}:${++onboardingInitializationGeneration}`;
+    const lastSubmittedAgent = {
+      selectedSpecialist: setupSpecialistId ?? null,
+      isTeamMode: false,
+      selectedModel: onboardingSelectedModel,
+      modelWasOverridden: onboardingModelWasOverridden,
+      selectedReasoningEffort: undefined,
+      selectedProvider: onboardingSelectedProvider,
+    };
+    const complete = async (workspaceId: string, workspacePath?: string) => {
+      onboardingPendingSend = null;
+      onboardingStagedItems = [];
+      onboardingImageItems = [];
+      setupRepoStatus = 'done';
+      setupBranchStatus = 'done';
+      if (setupScriptStatus) setupScriptStatus = 'active';
+      setupAgentStatus = setupScriptStatus ? 'pending' : 'active';
+      setupWorktreePath = workspacePath;
+      setupWorkspaceId = workspaceId;
+      if (setupScriptStatus) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        setupScriptStatus = 'done';
+      }
+      setupAgentStatus = 'active';
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      setupAgentStatus = 'done';
+      onboardingDraftCleared = true;
+      onboardingDraftSaver.cancel();
+      clearNewWorkspaceDraft(appClient.drafts);
+      appStore.dispatch(resetOnboarding());
+      appStore.dispatch(setHasCompletedProviderSetup(true));
+      appStore.dispatch(setOnboardingWorkspaceId(workspaceId));
+      appStore.dispatch(goToStep('ready'));
+      onHoldActiveChange(true);
+      onFadingOutChange(false);
+      await goto(`/workspace/${workspaceId}`, { replaceState: true });
+    };
+
+    const pending = onboardingPendingSend;
+    if (pending) {
+      isOnboardingCreating = true;
+      onboardingCreationError = null;
+      const request: WorkspaceInitializationRequest = {
+        ...pending.request,
+        admission,
+        stagedItems: $state.snapshot([...onboardingStagedItems, ...onboardingImageItems]),
+        heldMessage: pending.request.heldMessage
+          ? {
+              ...pending.request.heldMessage,
+              imageBlocks: heldImageBlocks($state.snapshot(onboardingImageItems)),
+            }
+          : undefined,
+      };
+      const result = await submitWorkspaceInitialization(request, resourceId);
+      if (result) await complete(result.workspaceId, result.workspacePath);
+      isOnboardingCreating = false;
+      return;
+    }
+
     const treatAsNewRepo = shouldTreatAsNewRepo(projectSelection);
-    const currentBranch = projectSelection.branch;
     const effectiveBranch =
-      selectedPRBranch && currentBranch !== selectedPRBranch && !treatAsNewRepo
+      selectedPRBranch && projectSelection.branch !== selectedPRBranch && !treatAsNewRepo
         ? selectedPRBranch
-        : currentBranch;
+        : projectSelection.branch;
     if (!treatAsNewRepo && !effectiveBranch.trim()) {
       notify.error(m.onboarding_page_branchRequired_toast());
       return;
     }
 
-    if (hasBlockingAttachments(onboardingStagedItems)) {
-      // The error banner's Retry also lands here — surface why nothing
-      // happened instead of a silent no-op (pills must be retried/removed).
-      notify.error(m.onboarding_page_blockingAttachments_toast());
-      return;
-    }
-
-    // Snapshot the picker's effective default selection AND all
-    // editor-derived state BEFORE flipping isOnboardingCreating: the flag
-    // swaps the form for the setup card, destroying the prompt step (and
-    // nulling promptStepRef) by the time any awaited call below settles —
-    // reads after that point return empty and silently drop mentions
-    // (intent-hq/intent#4050).
     const defaultModelPreview = onboardingModelWasOverridden
       ? undefined
       : promptStepRef?.getEffectiveDefaultModel();
     const richTextareaMentions = getOnboardingRichTextarea()?.getMentions() ?? [];
     const contextMentions = getOnboardingRichTextarea()?.getContextMentions() ?? [];
-    // Images live in the context-item list (bound to the prompt step's
-    // thumbnail row), not the editor — snapshot to plain JSON so the $state
-    // Proxy tree never reaches Electron's structured clone (monorepo#2576).
     const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
-
     isOnboardingCreating = true;
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
@@ -1196,124 +1223,37 @@
     setupAgentStatus = 'pending';
     setupScriptStatus = setupScript.trim() ? 'pending' : undefined;
 
-    // FE-minted correlation id for this create's provisioning progress: the
-    // daemon echoes it on git:clone:progress/done frames (PROTOCOL §5.1), and
-    // the bridge folds them into the workspaceCreateProgress slice. Registered
-    // BEFORE the request so mid-flight frames always find their entry; cleared
-    // in the finally below once the create settles.
-    const createProgressId = uuidv4();
-    appStore.dispatch(beginWorkspaceCreateProgress(createProgressId));
-    onboardingCreateProgressId = createProgressId;
-
     try {
       const reduxState = appStore.state;
-      const {
-        provider,
-        model: effectiveModel,
-        behaviorPrompt,
-        specialistId,
-        specialistName,
-      } = await resolveOnboardingModel(
-        reduxState,
-        onboardingModelWasOverridden && onboardingSelectedModel
-          ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
-          : undefined,
-      );
+      const { provider, model, behaviorPrompt, specialistId, specialistName } =
+        await resolveOnboardingModel(
+          reduxState,
+          onboardingModelWasOverridden && onboardingSelectedModel
+            ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
+            : undefined,
+        );
       setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
-      // General (null specialist) uses the modal's generic agent name.
       const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
-
-      // The prompt-step picker is the authoritative source of the initial
-      // default provider + default model (monorepo#3044): commit the resolved
-      // provider and the picker's displayed default at create-submit time.
-      // An explicit pick already persisted at pick time via selectModel;
-      // resolution failures throw above, so an aborted create commits nothing.
       if (!onboardingModelWasOverridden) {
         commitOnboardingDefaultModel({
           provider,
-          // The preview was resolved under the picker's provider context —
-          // only trust it when that matches the create's resolved provider.
           effectiveDefaultModel:
             defaultModelPreview?.provider === provider ? defaultModelPreview.model : undefined,
           activeProviderId: selectActiveProviderId.select(reduxState) ?? '',
           dispatch: appStore.dispatch,
         });
       }
-      const agentType = createAgentTypeId('workspace');
-
-      // Parse context from the editor state snapshotted above
-      const contextMentionRefs = parseContextMentions(contextMentions);
-      const fileMentionRefs = parseFileMentions(richTextareaMentions);
-      const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
-      // Staged folder pills (dropped folders, local daemon only) ride as
-      // path context references on the initial message — never placed via
-      // file.placeAttachment (the daemon rejects directories). Same shape a
-      // folder @-mention produces in chat (type 'file' + absolute path).
-      const folderRefs = $state
-        .snapshot(onboardingStagedItems)
-        .filter((item) => item.type === 'folder' && item.path)
-        .map((item) => ({ type: 'file', path: item.path, title: item.label }));
       const contextReferences = [
-        ...contextMentionRefs,
-        ...fileMentionRefs,
-        ...runtimeMentionRefs,
-        ...folderRefs,
+        ...parseContextMentions(contextMentions),
+        ...parseFileMentions(richTextareaMentions),
+        ...(await parseRuntimeMentions(richTextareaMentions, logger)),
+        ...$state
+          .snapshot(onboardingStagedItems)
+          .filter((item) => item.type === 'folder' && item.path)
+          .map((item) => ({ type: 'file', path: item.path, title: item.label })),
       ];
-      const linearIssue = extractLinearIssue(contextReferences);
-      const sentryIssue = extractSentryIssue(contextReferences);
-
-      // Pull only for direct mode. Isolated creation must not mutate the source checkout.
-      if (
-        shouldPullSourceRepositoryBeforeCreate({
-          branchBehind: onboardingBranchBehind,
-          isLocalRepository: projectSelection.type === 'local',
-          isNewRepository: treatAsNewRepo,
-          skipIsolation: onboardingSkipIsolation,
-          pullEnabled: onboardingShouldPullBeforeCreate,
-        })
-      ) {
-        logger.info('Auto-pulling latest changes before workspace creation (onboarding)', {
-          branch: projectSelection.branch,
-          behind: onboardingBranchBehind,
-        });
-        try {
-          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
-          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
-          // folds the daemon's structured `{ ok: false, error }` failure into
-          // `{ success: false, error }` and never throws.
-          const pullResult =
-            typeof window !== 'undefined' && window.electronAPI
-              ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
-              : undefined;
-          if (!pullResult?.success) {
-            onboardingPullError = pullResult?.error || m.onboarding_page_pullFailed_error();
-            onboardingShowPullConflictDialog = true;
-            isOnboardingCreating = false;
-            return;
-          }
-          onboardingBranchBehind = 0;
-          logger.info('Successfully pulled latest changes before workspace creation (onboarding)', {
-            branch: projectSelection.branch,
-          });
-        } catch (err) {
-          onboardingPullError =
-            err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
-          onboardingShowPullConflictDialog = true;
-          isOnboardingCreating = false;
-          return;
-        }
-      }
-
-      // Await any in-flight repo-config probe (bounded, sub-second) so the
-      // setup-script decision below sees the committed `.intent/config.json`
-      // instead of racing the probe (monorepo#1862).
       await setupScriptProbeScheduler.settled();
-
-      // The shown script is what runs: send it as-is, EXCEPT the unedited
-      // repo-config script — the daemon persists an explicit setupScript into
-      // the worktree's tracked .intent/config.json (PROTOCOL §5.1) and the
-      // committed file already holds it (it still executes when omitted).
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
@@ -1322,280 +1262,94 @@
         repoConfigScript,
         repoConfigScriptRepo,
       });
-
-      // Picked repo (GitHub selection): the daemon hydrates the checkout
-      // from its repo cache — send githubUrl + branch ONLY, no
-      // clonePath/repositoryPath (repoPath holds the owner/repo shorthand,
-      // not a local path). Mirrors CompactWorkspaceInitializer's flow.
       const isGithubPick = projectSelection.type === 'github' && !!projectSelection.githubUrl;
-
-      // Staged non-image files cannot ride the daemon-owned initial prompt:
-      // placement needs the workspace to exist. With staged files, hold the
-      // prompt out of initialAgent and send it after placement (create →
-      // placeAttachment → agent.sendMessage with the attachment references).
-      // Images follow the same held path (monorepo#3338): they too are
-      // placed post-create and travel as attachment-reference blocks, so no
-      // inline base64 rides the workspace.create frame.
       const hasStagedFiles = hasStagedFileItems(onboardingStagedItems) || imageBlocks.length > 0;
-
       const requestContextLinks = buildContextLinks(contextMentions);
-
-      const result = await workspaceClient.create({
-        title: '',
-        repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
-        githubUrl: projectSelection.githubUrl,
-        baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
-        isNewRepo: treatAsNewRepo,
-        skipIsolation: onboardingSkipIsolation || undefined,
-        scope: projectSelection.scope || undefined,
-        setupScript: setupScriptParam,
-        contextLinks: requestContextLinks,
-        linearIssue,
-        sentryIssue,
-        initialAgent: {
-          name: agentName,
-          model: effectiveModel,
-          prompt: hasStagedFiles ? undefined : prompt,
-          agentType,
-          specialist: specialistId ?? undefined,
-          behaviorPrompt,
-          provider,
-          contextReferences:
-            !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
-          imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
-          metadata: {
-            source: 'onboarding',
-            isInitialAgent: true,
+      const request: WorkspaceInitializationRequest = {
+        entrypoint: 'onboarding',
+        admission,
+        pull: shouldPullSourceRepositoryBeforeCreate({
+          branchBehind: onboardingBranchBehind,
+          isLocalRepository: projectSelection.type === 'local',
+          isNewRepository: treatAsNewRepo,
+          skipIsolation: onboardingSkipIsolation,
+          pullEnabled: onboardingShouldPullBeforeCreate,
+        })
+          ? { repositoryPath: projectSelection.repoPath, branch: projectSelection.branch }
+          : undefined,
+        createRequest: {
+          title: '',
+          repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
+          githubUrl: projectSelection.githubUrl,
+          baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
+          isNewRepo: treatAsNewRepo,
+          skipIsolation: onboardingSkipIsolation || undefined,
+          scope: projectSelection.scope || undefined,
+          setupScript: setupScriptParam,
+          contextLinks: requestContextLinks,
+          linearIssue: extractLinearIssue(contextReferences),
+          sentryIssue: extractSentryIssue(contextReferences),
+          initialAgent: {
+            name: agentName,
+            model,
+            prompt: hasStagedFiles ? undefined : prompt,
+            agentType: createAgentTypeId('workspace'),
             specialist: specialistId ?? undefined,
+            behaviorPrompt,
+            provider,
+            contextReferences:
+              !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
+            imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
+            metadata: {
+              source: 'onboarding',
+              isInitialAgent: true,
+              specialist: specialistId ?? undefined,
+            },
           },
         },
-        progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
-      });
-
-      if (!result.ok) {
-        // Keep the daemon's machine-readable code (clone failure taxonomy,
-        // PROTOCOL §9.1) alongside the human message so the error block can
-        // classify without prose matching.
-        onboardingCreationErrorCode = result.errorCode ?? null;
-        throw new Error(result.error || m.onboarding_page_createFailed_error());
-      }
-
-      const workspace = result.data.workspace;
-      // The daemon assigns the initial agent's id and returns it on the
-      // create result; the FE no longer pre-mints one.
-      const agentId = result.data.initialAgent?.id;
-
-      // Install the panel layout before attachment delivery so both the normal
-      // path and a later attachment retry open the daemon-created initial
-      // agent. Legacy navigation stays empty so drawer migration cannot
-      // replace the canonical panel seed.
-      try {
-        getPanelLayoutManager(workspace.id).clearLayout();
-      } catch {
-        /* ignore */
-      }
-      try {
-        const { workspaceStorageManager: wsm } =
-          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
-        wsm.clearState(workspace.id);
-      } catch {
-        /* ignore */
-      }
-      appStore.dispatch(setWorkspaceEntity(workspace));
-      if (agentId) {
-        appStore.dispatch(setInitialAgentId(workspace.id, agentId));
-      }
-      // Seed the New Workspace modal's remembered choice with the onboarding
-      // agent (single-agent Developer, or General when it was unavailable);
-      // the workspace-initializer saga persists it.
-      appStore.dispatch(
-        setWorkspaceInitializerLastSubmittedAgent({
-          selectedSpecialist: specialistId,
-          isTeamMode: false,
-          selectedModel: onboardingSelectedModel,
-          modelWasOverridden: onboardingModelWasOverridden,
-          selectedReasoningEffort: undefined,
-          selectedProvider: onboardingSelectedProvider,
-        }),
-      );
-      appStore.dispatch(
-        bootstrapNewWorkspaceLayout(
-          workspace.id,
-          agentId ?? null,
-          agentName,
-          // The Developer writes a spec before implementing (like the
-          // Coordinator did), so the spec-first layout is kept; a General
-          // agent does not.
-          specialistId !== null,
-          undefined,
-          // Daemon-persisted links are canonical; fall back to the request's
-          // links when an older daemon does not echo them (PROTOCOL §5.1).
-          workspace.contextLinks ?? requestContextLinks,
-        ),
-      );
-      appStore.dispatch(
-        hydrateWorkspaceNavigation(workspace.id, {
-          version: 2,
-          workspace: { id: workspace.id },
-          mainPanel: { type: 'empty' },
-          drawer: { open: false, type: null, itemId: null },
-          navigation: { history: [], currentIndex: -1 },
-          ui: { hasInitialized: false },
-        }),
-      );
-      appStore.dispatch(openWorkspaceTab(workspace.id));
-
-      // Place staged attachments now that the workspace exists and deliver
-      // the held-back first message with the attachment-reference blocks.
-      // On failure the failed pills stay visible (retry or remove) and
-      // `onboardingPendingSend` makes the Create button resume this flow —
-      // the created workspace is never rolled back or duplicated.
-      if (hasStagedFiles) {
-        onboardingPendingSend = {
-          workspaceId: workspace.id,
-          agentId,
-          prompt,
-          contextReferences,
-        };
-        const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
-        onboardingStagedItems = redemption.items;
-        if (redemption.failedCount > 0) {
-          onboardingCreationErrorCode = null;
-          throw new Error(m.onboarding_page_attachmentPlacementFailed_error());
-        }
-        // `sendHeldFirstMessage` rebuilds the wire params as plain JSON so
-        // reactive Proxies from $state never reach Electron's structured
-        // clone (monorepo#2576); on failure `onboardingPendingSend` stays
-        // set so submit resumes this flow.
-        const sendResult = await sendHeldFirstMessage(
-          {
-            workspaceId: workspace.id,
-            agentId,
-            content: prompt,
-            imageBlocks,
-            contextReferences,
-          },
-          redemption.fileBlocks,
-        );
-        if (!sendResult.sent) {
-          onboardingCreationErrorCode = null;
-          // Retain the failed attempt's image placement identity on the
-          // thumbnail items so the resumed send replays, not re-places.
-          onboardingImageItems = retainImagePlacementIdentity(
-            onboardingImageItems,
-            sendResult.imageBlocks,
-          );
-          // Framed like the compact initializer: the workspace already
-          // exists, submit resumes — with the daemon's detail when available.
-          throw new Error(
-            sendResult.errorDetail
-              ? m.onboarding_page_firstMessageSendFailedDetail_error({
-                  detail: sendResult.errorDetail,
-                })
-              : m.onboarding_page_firstMessageSendFailed_error(),
-          );
-        }
-        onboardingPendingSend = null;
-        onboardingStagedItems = [];
-        onboardingImageItems = [];
-      }
-      logger.info('Workspace created with paths', {
-        id: workspace.id,
-        path: workspace.path,
-        repositoryPath: workspace.repositoryPath,
-        worktreePath: workspace.worktreePath,
-        initialAgentId: agentId,
-      });
-
-      // Daemon-backed (`workspace.update`, PROTOCOL §5.1) via workspaceClient —
-      // the legacy `workspace:update` IPC channel is unbridged in this build.
-      if (selectedPRNumber && workspace.id) {
-        void workspaceClient
-          .update({ id: workspace.id, prNumber: selectedPRNumber })
-          .then((updateResult) => {
-            if (!updateResult.ok) {
-              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+        agentTitle: agentName,
+        coordinator: specialistId !== null,
+        stagedItems: $state.snapshot([...onboardingStagedItems, ...onboardingImageItems]),
+        heldMessage: hasStagedFiles
+          ? {
+              content: prompt,
+              imageBlocks,
+              contextReferences: contextReferences as never,
             }
-          });
+          : undefined,
+        lastSubmittedAgent: {
+          ...lastSubmittedAgent,
+          selectedSpecialist: specialistId,
+        },
+        selectedPrNumber: selectedPRNumber ?? undefined,
+      };
+      const result = await submitWorkspaceInitialization(request, resourceId);
+      if (!result) return;
+      if (setupScript.trim() && projectSelection.repoPath) {
+        const isUneditedRepoConfigScript =
+          setupScriptNameSource === 'repo-config' &&
+          setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+          repoConfigScriptRepo === projectSelection.repoPath &&
+          setupScript.trim() === (repoConfigScript ?? '').trim();
+        if (!isUneditedRepoConfigScript) {
+          recordLastUsedSetupScript(
+            projectSelection.repoPath,
+            {
+              name: setupScriptName || m.onboarding_page_customScript_label(),
+              content: setupScript,
+              nameSource: setupScriptName ? setupScriptNameSource : 'named',
+            },
+            projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
+          );
+        }
       }
-
-      // Record the script as this repo's last-used default (localStorage).
-      // Skip the unedited repo-config script — the committed .intent/config.json
-      // is its source of truth, and recording a copy would shadow future
-      // repo-config changes as the last-used default.
-      const isUneditedRepoConfigScript =
-        setupScriptNameSource === 'repo-config' &&
-        setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
-        repoConfigScriptRepo === projectSelection.repoPath &&
-        setupScript.trim() === (repoConfigScript ?? '').trim();
-      if (setupScript.trim() && projectSelection.repoPath && !isUneditedRepoConfigScript) {
-        recordLastUsedSetupScript(
-          projectSelection.repoPath,
-          {
-            name: setupScriptName || m.onboarding_page_customScript_label(),
-            content: setupScript,
-            nameSource: setupScriptName ? setupScriptNameSource : 'named',
-          },
-          projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
-        );
-      }
-
-      setupRepoStatus = 'done';
-      setupBranchStatus = 'done';
-      if (setupScriptStatus) setupScriptStatus = 'active';
-      setupAgentStatus = setupScriptStatus ? 'pending' : 'active';
-      setupWorktreePath = workspace.worktreePath || workspace.repositoryPath;
-      setupWorkspaceId = workspace.id;
-      logger.info('Workspace paths for setup card', {
-        worktreePath: workspace.worktreePath,
-        repositoryPath: workspace.repositoryPath,
-        setupWorktreePath,
-      });
-
-      if (setupScriptStatus) {
-        await new Promise((r) => setTimeout(r, 300));
-        setupScriptStatus = 'done';
-      }
-      setupAgentStatus = 'active';
-      await new Promise((r) => setTimeout(r, 300));
-      setupAgentStatus = 'done';
-
-      // The prompt was submitted — cancel any armed debounced save (its
-      // timer would fire drafts.set AFTER drafts.clear and resurrect the
-      // draft), then immediately clear the persisted daemon draft
-      // (drafts.clear under the sentinel keys, PROTOCOL §5.16) and stop
-      // saving so a late flush can't resurrect it either.
-      onboardingDraftCleared = true;
-      onboardingDraftSaver.cancel();
-      clearNewWorkspaceDraft(appClient.drafts);
-
-      // Use the onboarding reset action as the cleanup signal; initializer
-      // persistence/session cleanup is handled by the workspace-initializer saga.
-      appStore.dispatch(resetOnboarding());
-
-      // Mark provider setup as complete so the app shell won't redirect back here.
-      appStore.dispatch(setHasCompletedProviderSetup(true));
-
-      appStore.dispatch(setOnboardingWorkspaceId(workspace.id));
-      appStore.dispatch(goToStep('ready'));
-
-      logger.info('Workspace created, transitioning in-place', { workspaceId: workspace.id });
-
-      onHoldActiveChange(true);
-      onFadingOutChange(false);
-
-      await goto(`/workspace/${workspace.id}`, { replaceState: true });
+      await complete(result.workspaceId, result.workspacePath);
     } catch (err) {
-      logger.error('Workspace creation failed', err as Error);
+      logger.error('Workspace initialization preparation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
-      isOnboardingCreating = false;
     } finally {
-      // The create settled (success or failure) — drop the transient progress
-      // entry so the slice never accumulates stale ids. The local
-      // onboardingCreateProgressId is kept: the card stays mounted on success
-      // and its selector just reads null; a retry mints a fresh id.
-      appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
+      isOnboardingCreating = false;
     }
   }
 </script>
