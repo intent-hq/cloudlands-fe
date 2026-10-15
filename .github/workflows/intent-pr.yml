@@ -443,6 +443,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         id: pnpm_setup
         # Registry timeouts can exhaust the installer's fetch retries before
@@ -596,6 +601,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -687,6 +697,11 @@ jobs:
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
             git fetch --no-tags --depth=1 origin "$LINT_BASELINE_BASE_REF"
           fi
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -759,6 +774,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -837,6 +857,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

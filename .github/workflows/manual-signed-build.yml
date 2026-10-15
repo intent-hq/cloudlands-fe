@@ -151,6 +151,11 @@ jobs:
         timeout-minutes: 1
         with:
           persist-credentials: false
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - uses: pnpm/action-setup@v6
         timeout-minutes: 1
         with:
@@ -231,6 +236,11 @@ jobs:
           echo "Selected $xcode ($version)"
           DEVELOPER_DIR="$developer_dir" xcrun --find actool
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -622,6 +632,11 @@ jobs:
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -937,6 +952,11 @@ jobs:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -1203,6 +1223,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - uses: pnpm/action-setup@v6
         with:
           version: 10.30.3

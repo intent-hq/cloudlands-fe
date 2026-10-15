@@ -220,6 +220,11 @@ jobs:
           echo "Selected $xcode ($version)"
           DEVELOPER_DIR="$developer_dir" xcrun --find actool
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -467,6 +472,11 @@ jobs:
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -623,6 +633,11 @@ jobs:
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -775,6 +790,11 @@ jobs:
 
       # Feed assembly uses the updater's locked YAML and semver dependencies.
       # Ignore install hooks: publishing never rebuilds native app dependencies.
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

@@ -287,6 +287,11 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .release-tools
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup publication pnpm
         uses: pnpm/action-setup@v6
         with:

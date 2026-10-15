@@ -1,6 +1,6 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
@@ -106,4 +106,23 @@ describe('Type Check & Lint pnpm setup recovery', () => {
       });
     }
   });
+});
+
+describe('pnpm setup on persistent runners', () => {
+  for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
+    const workflow = load(readFileSync(`.github/workflows/${file}`, 'utf8'));
+    for (const [name, job] of Object.entries(workflow.jobs) as [string, { steps?: Step[] }][]) {
+      const steps = job.steps ?? [];
+      const pnpm = steps.findIndex((step) => step.uses?.startsWith('pnpm/action-setup@'));
+      if (pnpm < 0) continue;
+      it(`${file}/${name} installs complete Node before pnpm without requiring pnpm for a cache`, () => {
+        const setup = steps
+          .slice(0, pnpm)
+          .find((step) => step.uses?.startsWith('actions/setup-node@'));
+        expect(setup).toBeDefined();
+        expect(setup?.with?.cache).toBeUndefined();
+        expect(setup?.with?.['package-manager-cache']).toBe(false);
+      });
+    }
+  }
 });

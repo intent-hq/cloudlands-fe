@@ -54,6 +54,11 @@ jobs:
         run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -322,6 +327,11 @@ jobs:
         run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -426,6 +436,11 @@ jobs:
         run: echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TOOL_CACHE/intent-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
