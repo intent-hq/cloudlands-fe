@@ -61,6 +61,7 @@
   import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { notify } from '$lib/components/patterns/notify';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -97,6 +98,11 @@
     gitlabHost?: string;
     gitlabStatusReady?: boolean;
     canAdministerHost?: boolean;
+    sharingEnabled?: boolean | null;
+    sharingChecking?: boolean;
+    sharingEnabling?: boolean;
+    sharingError?: string | null;
+    onEnableSharing?: () => void;
     /**
      * The connected daemon serves the identity seam — `pinProvider` /
      * `pinHost` on `workspace.invite.create` and `identity` on member rows.
@@ -173,6 +179,11 @@
     gitlabHost = '',
     gitlabStatusReady = true,
     canAdministerHost = true,
+    sharingEnabled = true,
+    sharingChecking = false,
+    sharingEnabling = false,
+    sharingError = null,
+    onEnableSharing,
     identitySeamSupported = false,
     hostMembershipSupported = false,
     identityProvider = null,
@@ -208,6 +219,46 @@
 
   const busy = $derived(
     revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
+  );
+  const sharingReady = $derived(
+    (canAdministerHost ? sharingEnabled === true : sharingEnabled !== false) &&
+      !sharingChecking &&
+      !sharingEnabling,
+  );
+  const sharingSetup = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'workspace-sharing-setup',
+          title: m.workspace_share_enableSharing_label(),
+          entries: [
+            {
+              id: 'workspace-sharing-enable',
+              kind: 'switch',
+              label: m.workspace_share_enableSharing_label(),
+              description: canAdministerHost
+                ? m.workspace_share_enableSharing_description()
+                : m.workspace_share_sharingAdminRequired_notice(),
+              get: () => sharingEnabled === true,
+              set: (enabled) => {
+                if (enabled && canAdministerHost && !sharingChecking && !sharingEnabling)
+                  onEnableSharing?.();
+              },
+              disabled: !canAdministerHost || sharingChecking || sharingEnabling,
+              busy: sharingChecking || sharingEnabling,
+              error: sharingError ?? undefined,
+              status: sharingEnabling
+                ? m.workspace_share_sharingEnabling_label()
+                : sharingChecking
+                  ? m.workspace_share_sharingChecking_label()
+                  : undefined,
+              statusTone: 'subtle',
+              class: 'grid-cols-[minmax(0,1fr)_auto] items-start gap-4 py-0 first:pt-0 last:pb-0',
+            },
+          ],
+        },
+      ],
+    }),
   );
   /** GitLab counts as an identity forge only once the daemon serves the seam. */
   const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
@@ -406,7 +457,7 @@
   }
 
   function createInvite() {
-    if (!workspaceId || !canManage || creating || atGuestCap) return;
+    if (!workspaceId || !canManage || creating || atGuestCap || !sharingReady) return;
     const login = selectedUser ? selectedUser.login : pinLogin.trim();
     let pin: InvitePin | undefined;
     if (
@@ -591,6 +642,10 @@
         <p class="text-sm text-subtle">
           {m.workspace_share_dialog_description({ title: workspaceTitle })}
         </p>
+
+        {#if (canAdministerHost && sharingEnabled !== true) || sharingEnabled === false || sharingEnabling || sharingError}
+          <SettingsForm schema={sharingSetup} embedded />
+        {/if}
 
         {#if principals.length > 0 || loading || selectedPrincipalId}
           <section
@@ -847,7 +902,8 @@
               type="submit"
               variant="secondary"
               size="sm"
-              disabled={creating ||
+              disabled={!sharingReady ||
+                creating ||
                 atGuestCap ||
                 (!!(selectedUser?.login || pinLogin.trim()) &&
                   pinProvider === 'gitlab' &&

@@ -21,6 +21,11 @@
     members: WorkspaceMember[];
     invites: WorkspaceInvite[];
     principals: HostPrincipal[];
+    sharingEnabled?: boolean | null;
+    sharingChecking?: boolean;
+    sharingEnabling?: boolean;
+    sharingError?: string | null;
+    canAdministerHost?: boolean;
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -109,12 +114,35 @@
     invites: [gitlabPinnedInvite, githubPinnedInvite, openInvite],
     principals: [knownGuest],
   };
+  const sharingSetup: ShareDialogPreviewProps = {
+    ...bothConnected,
+    gitlabConnected: false,
+    gitlabEnabled: false,
+    identityProvider: 'github',
+    members: [owner],
+    invites: [],
+    principals: [],
+    sharingEnabled: false,
+  };
 
   export const preview = definePreview<ShareDialogPreviewProps>({
     id: 'share-workspace-dialog',
     title: 'Share workspace dialog (identity seam)',
     defaultState: 'both-connected',
     states: {
+      'sharing-disabled': { props: sharingSetup },
+      'sharing-checking': {
+        props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
+      },
+      'sharing-enabling': { props: { ...sharingSetup, sharingEnabling: true } },
+      'sharing-error': {
+        props: {
+          ...sharingSetup,
+          sharingError:
+            'The sharing service is missing. Install Tailcat, restart the app, and try again.',
+        },
+      },
+      'sharing-admin-required': { props: { ...sharingSetup, canAdministerHost: false } },
       'both-connected': { props: bothConnected },
       'gitlab-lab-off': { props: { ...bothConnected, gitlabEnabled: false } },
       'gitlab-only': {
@@ -157,7 +185,7 @@
     workspaceTitle="Polish workspace hover cards"
     gitlabHost={GITLAB_HOST}
     canManage
-    guestCount={3}
+    guestCount={props.members.length - 1}
     guestLimit={5}
     {...props}
   />
