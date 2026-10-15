@@ -1,52 +1,94 @@
-name: Nightly Browser Tests
+# Diagnostic ref only. Never merge this workflow or fixture instrumentation.
+name: Dev Console Stall Diagnostic
 
 on:
-  schedule:
-    - cron: '17 2 * * *'
-  # Always rerun the complete suites; no test/shard filters.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A manual run should not cancel a nightly run and discard its evidence.
 concurrency:
-  group: nightly-browser-tests-${{ github.ref }}
+  group: dev-console-stall-diagnostic-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  manifest:
-    name: Expected browser reports
-    runs-on: depot-ubuntu-24.04
-    timeout-minutes: 5
+  diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/diagnostic/dev-console-stall-20261015' }}
+    runs-on: depot-ubuntu-24.04-8
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - name: Checkout exact dispatched ref
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Record diagnostic source and command
+        run: python3 scripts/dev-console-stall-diagnostic.py --prepare
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          # Keep concurrent runner installations isolated.
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Record expected artifacts
-        run: node scripts/browser-test-artifacts.mjs manifest
-      - name: Upload expected artifacts
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Electron binary
+        # Electron installs lazily; keep downloads outside native test deadlines.
+        timeout-minutes: 5
+        run: |
+          pnpm exec install-electron
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = path.dirname(require.resolve('electron/package.json'));
+          const executable = fs.readFileSync(path.join(root, 'path.txt'), 'utf8').trim();
+          const binary = path.join(root, 'dist', executable);
+          fs.accessSync(binary, fs.constants.X_OK);
+          console.log(`Electron binary ready: ${binary}`);
+          NODE
+      - name: Generate i18n messages
+        # The fixture renderer imports paraglide messages through the
+        # production browser panel; the compiled output is gitignored.
+        run: pnpm run generate:i18n
+      - name: Ensure Xvfb
+        # Electron needs a display even with show:false windows. xvfb is
+        # preinstalled on the GH-hosted image; retry the fallback install
+        # if apt is temporarily locked (monorepo#1515).
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          if command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run present; skipping apt."
+            exit 0
+          fi
+          for i in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; then
+              exit 0
+            fi
+            if [ "$i" -eq 3 ]; then exit 1; fi
+            sleep $((i * 15))
+          done
+      - name: Verify generated inputs and record executable identity
+        run: python3 scripts/dev-console-stall-diagnostic.py --ready
+      - name: Run one instrumented Electron case
+        run: python3 scripts/dev-console-stall-diagnostic.py --run
+      - name: Seal diagnostic artifacts
+        if: always()
+        run: python3 scripts/dev-console-stall-diagnostic.py --seal
+      - name: Upload diagnostic evidence on every outcome
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: browser-test-manifest
-          path: browser-test-manifest.json
+          name: dev-console-stall-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .diagnostics/dev-console-stall/
+          include-hidden-files: true
           if-no-files-found: error
-          overwrite: true
           retention-days: 7
-
-  test-ct:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: ct
-
-  test-playwright:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: root
-
-  test-electron:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: electron

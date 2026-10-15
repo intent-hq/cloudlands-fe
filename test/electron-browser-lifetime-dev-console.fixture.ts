@@ -1,6 +1,7 @@
 /** Real Electron + production native manager/preload; fixture traffic, no daemon connection. */
 import { _electron as electron, expect, test } from '@playwright/test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, copyFile } from 'node:fs/promises';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -9,6 +10,15 @@ import { execFileSync } from 'node:child_process';
 
 test('native console isolation, duplicate focus, reload, crash, load failure and reopen', async () => {
   test.setTimeout(60000);
+  const diagnosticDir = process.env.DEV_CONSOLE_DIAGNOSTIC_DIR!;
+  if (!diagnosticDir) throw new Error('Missing isolated diagnostic directory');
+  let phase = 'setup';
+  let journalCount = 0;
+  const record = (event: string, extra: Record<string, unknown> = {}) => {
+    if (journalCount++ < 3000) appendFileSync(join(diagnosticDir, 'automation.jsonl'), JSON.stringify({ at: Date.now(), event, phase, ...extra }) + '\n');
+  };
+  const readJournal = (file: string) => readFileSync(join(diagnosticDir, file), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  record('test-start', { pid: process.pid });
   // This lane starts from a fresh checkout; exercise the real generated preload.
   execFileSync('pnpm', ['run', 'build:preload'], { cwd: process.cwd(), stdio: 'pipe' });
   const root = await mkdtemp(join(tmpdir(), 'intent-dev-console-'));
@@ -53,6 +63,27 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
       join(root, 'main.cjs'),
       `
       const { app, BrowserWindow } = require('electron');
+      const fs = require('node:fs');
+      const journalPath = ${JSON.stringify(join(diagnosticDir, 'main.jsonl'))};
+      let journalCount = 0;
+      const journal = (event, extra = {}) => {
+        if (journalCount++ < 3000) fs.appendFileSync(journalPath, JSON.stringify({ at: Date.now(), pid: process.pid, event, ...extra }) + '\\n');
+      };
+      globalThis.diagnosticJournal = journal;
+      journal('main-start');
+      const pulse = setInterval(() => journal('heartbeat', { observers: globalThis.fixture?.observers.size ?? null }), 100);
+      pulse.unref();
+      for (const event of ['before-quit', 'will-quit', 'quit', 'window-all-closed']) app.on(event, () => journal(event));
+      process.on('exit', code => journal('process-exit', { code }));
+      app.on('browser-window-created', (_event, window) => {
+        const id = window.id;
+        journal('window-created', { id });
+        window.on('closed', () => journal('window-closed', { id }));
+        for (const event of ['did-start-loading', 'did-stop-loading', 'did-start-navigation', 'did-fail-load', 'render-process-gone', 'destroyed']) {
+          window.webContents.on(event, () => journal(event, { id }));
+        }
+      });
+
       const { DevConsoleWindows, DevConsoleCaptureService, registerDevConsoleIPC, stampWindowWithBackend } = require('./console.cjs');
       app.setPath('userData', ${JSON.stringify(join(root, 'profile'))});
       app.whenReady().then(async () => {
@@ -73,11 +104,40 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
           !key.startsWith('DD_') && !['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE'].includes(key),
       ),
     );
+    await copyFile(join(root, 'main.cjs'), join(diagnosticDir, 'generated-main.cjs'));
+    await copyFile(join(root, 'console.cjs'), join(diagnosticDir, 'generated-console.cjs'));
     application = await electron.launch({
       args: [join(root, 'main.cjs')],
       env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
     const app = application;
+    const child = app.process();
+    record('child-attached', { pid: child.pid, stderr: !!child.stderr });
+    child.on('exit', (code, signal) => record('child-exit', { code, signal }));
+    child.on('close', (code, signal) => record('child-close', { code, signal }));
+    let stderrBytes = 0;
+    child.stderr?.on('data', chunk => {
+      if (stderrBytes >= 65536) return;
+      const text = String(chunk).slice(0, Math.min(2048, 65536 - stderrBytes))
+        .replace(/(?:https?|wss?):\/\/[^\s]+/g, '[url]')
+        .replace(/(?:Bearer\s+|token[=:]\s*)[A-Za-z0-9._-]+/gi, '[credential]');
+      stderrBytes += Buffer.byteLength(text);
+      record('child-stderr', { text });
+    });
+    const evaluate = app.evaluate.bind(app);
+    let callId = 0;
+    app.evaluate = (async (...args: Parameters<typeof app.evaluate>) => {
+      const id = ++callId;
+      record('evaluate-start', { id });
+      try {
+        const value = await (evaluate as any)(...args);
+        record('evaluate-end', { id });
+        return value;
+      } catch (error) {
+        record('evaluate-error', { id, name: error instanceof Error ? error.name : 'unknown' });
+        throw error;
+      }
+    }) as typeof app.evaluate;
     await expect.poll(() => app.evaluate(() => !!(globalThis as any).fixture)).toBe(true);
     const opener = await app.firstWindow();
     const firstId = await opener.evaluate(() => window.electronAPI.invoke('dev-console:open', {}));
@@ -144,6 +204,21 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(1);
     await app.evaluate(() => (globalThis as any).fixture.windows.open('fixture-a').close());
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
+    phase = 'probe-verification';
+    await app.evaluate(() => {
+      (globalThis as any).diagnosticJournal('probe-marker');
+      process.stderr.write('DIAGNOSTIC_STDERR_READY\n');
+    });
+    await expect.poll(() => readJournal('main.jsonl').filter(row => row.event === 'heartbeat').length).toBeGreaterThanOrEqual(2);
+    expect(readJournal('main.jsonl').some(row => row.event === 'window-created')).toBe(true);
+    await expect.poll(() => readJournal('automation.jsonl').some(row => row.event === 'child-stderr' && row.text.includes('DIAGNOSTIC_STDERR_READY'))).toBe(true);
+    expect(readJournal('automation.jsonl').some(row => row.event === 'evaluate-end')).toBe(true);
+    expect(readJournal('protocol.jsonl').some(row => row.method === 'Runtime.callFunctionOn' && row.direction === 'send')).toBe(true);
+    expect(readJournal('protocol.jsonl').some(row => row.method === 'Runtime.callFunctionOn' && row.direction === 'receive')).toBe(true);
+    expect(child.pid).toBeGreaterThan(0);
+    process.kill(child.pid!, 0);
+    record('all-probes-active');
+    phase = 'load-failure';
     failConsoleRequests = true;
     const failedLoad = await app.evaluate(async () => {
       const fixture = (globalThis as any).fixture;
@@ -162,6 +237,8 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
       });
     });
     expect(failedLoad).toEqual({ url: `${base}/dev-console`, isMainFrame: true });
+    record('load-failure-assertion-passed');
+    phase = 'observer-after-load-failure';
     failConsoleRequests = false;
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
     await app.evaluate(() => {
@@ -171,7 +248,10 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     });
     expect(await app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
   } finally {
+    phase = 'finally-close';
+    record('close-start');
     await application?.close();
+    record('close-end');
     await new Promise<void>((done) => server.close(() => done()));
     await rm(root, { recursive: true, force: true });
   }
