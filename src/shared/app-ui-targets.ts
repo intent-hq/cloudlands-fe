@@ -154,7 +154,6 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['agent-backend', 'Agent Backend', 'Agent backend settings.', 'advanced'],
     ['connection', 'Connection', 'Daemon connection details.', 'advanced'],
     ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
-    ['data', 'Data', 'Data import settings.', 'advanced'],
     ['developer', 'Developer', 'Development-only settings.', 'advanced'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({

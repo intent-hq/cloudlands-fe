@@ -938,7 +938,8 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       ['13.0', true],
       ['13.0.1', true],
       ['14.0', true],
-      ['15.0', false],
+      ['15.0', true],
+      ['16.0', false],
       ['12', false],
       ['12.0-preview', false],
       [undefined, false],
@@ -979,11 +980,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
   it.each(
     ['file.read', 'file.readChunk'].flatMap((method) =>
       ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
-        ['11.0', '12.0', '13.0', '14.0', '15.0', 'invalid', undefined].map((nextVersion) => ({
-          method,
-          protocolVersion,
-          nextVersion,
-        })),
+        ['11.0', '12.0', '13.0', '14.0', '15.0', '16.0', 'invalid', undefined].map(
+          (nextVersion) => ({
+            method,
+            protocolVersion,
+            nextVersion,
+          }),
+        ),
       ),
     ),
   )(
@@ -1030,7 +1033,12 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       }
       const result = await second;
       client.dispose();
-      if (nextVersion === '12.0' || nextVersion === '13.0' || nextVersion === '14.0') {
+      if (
+        nextVersion === '12.0' ||
+        nextVersion === '13.0' ||
+        nextVersion === '14.0' ||
+        nextVersion === '15.0'
+      ) {
         expect(result).toEqual(response);
         expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
           'client.hello',

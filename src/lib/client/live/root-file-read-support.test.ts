@@ -14,7 +14,7 @@ describe('registered-root file read support', () => {
     undefined,
     '11.0',
     '10.99',
-    '15.0',
+    '16.0',
     '12',
     '12.0-preview',
     '13',
@@ -40,6 +40,9 @@ describe('registered-root file read support', () => {
     '14.0',
     '14.1',
     '14.0.1',
+    '15.0',
+    '15.1',
+    '15.0.1',
   ])('accepts supported known-generation sending connection %s', (protocolVersion) => {
     for (const method of ['file.read', 'file.readChunk']) {
       expect(() =>
