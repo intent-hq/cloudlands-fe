@@ -7521,5 +7521,7 @@
   "ui_messageComposer_attachments_one": "{count} attachment",
   "ui_messageComposer_attachments_many": "{count} attachments",
   "files_read_partialPreview_label": "Partial preview: first {shown} of {total}. The file may change after this read.",
-  "files_read_previewReadOnly_error": "This is a read-only preview."
+  "files_read_previewReadOnly_error": "This is a read-only preview.",
+  "chat_inlinePermission_submitting_label": "Sending decision…",
+  "chat_inlinePermission_responseFailed_error": "The decision could not be confirmed. Choose an option to retry."
 }

@@ -3,7 +3,10 @@ import type { PermissionResponder } from '$lib/client/permission-client-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { permissionRecoverySaga } from './permission-recovery-saga';
 import { selectWorkspacePermissionContext } from '@/store/workspace/workspace-selectors';
-import { selectPermissionRequestsCollection } from '../permission-selectors';
+import {
+  selectPermissionRequestsCollection,
+  selectPermissionResponsesCollection,
+} from '../permission-selectors';
 
 /**
  * The later permission host must supply a genuine app-client-compatible agents
@@ -16,5 +19,6 @@ export function createPermissionResponseSaga(appClient: { agents: PermissionResp
     logger: createLogger('PermissionResponseSaga'),
     selectWorkspacePermissionContext,
     selectPermissionRequestsCollection,
+    selectPermissionResponsesCollection,
   });
 }

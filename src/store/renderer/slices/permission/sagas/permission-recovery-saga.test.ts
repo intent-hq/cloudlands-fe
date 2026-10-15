@@ -4,6 +4,8 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   initialState,
+  permissionScopeChanged,
+  permissionReducer,
   permissionRequestReceived,
   removePermissionRequest,
   setPendingRequests,
@@ -38,7 +40,14 @@ function recoveryFixture(count = 1) {
   ) as typeof state.agentSessions.byAgentId;
   const listeners = new Set<() => void>();
   const channel = stdChannel();
-  const dispatch = vi.fn();
+  const snapshots = vi.fn();
+  const scopes = vi.fn();
+  const dispatch = vi.fn((action) => {
+    state = { ...state, permission: permissionReducer(state.permission, action) };
+    if (action.type === setPendingRequests.type) snapshots(action);
+    if (action.type === permissionScopeChanged.type) scopes(action);
+    listeners.forEach((listener) => listener());
+  });
   const reduxStore = {
     getState: () => state,
     subscribe(listener: () => void) {
@@ -48,6 +57,8 @@ function recoveryFixture(count = 1) {
   };
   return {
     dispatch,
+    snapshots,
+    scopes,
     channel,
     get state() {
       return state;
@@ -79,7 +90,9 @@ describe('bounded subscription recovery', () => {
     f.start();
     await settle();
     expect(request.mock.calls).toEqual([['agent.pendingPermissions', {}]]);
-    expect(f.dispatch).toHaveBeenCalledWith(setPendingRequests([{ ...prompt, workspaceId: 'ws' }]));
+    expect(f.snapshots).toHaveBeenCalledWith(
+      setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
+    );
   });
 
   it('does not restart scans for discovery or unrelated scope updates', async () => {
@@ -159,16 +172,16 @@ describe('snapshot races and admission', () => {
     const f = recoveryFixture(0);
     f.start();
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
     discover(f, 'a1');
     await settle();
     expect(request.mock.calls).toEqual([['agent.pendingPermissions', {}]]);
-    expect(f.dispatch).toHaveBeenCalledExactlyOnceWith(
+    expect(f.snapshots).toHaveBeenCalledExactlyOnceWith(
       setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
     );
     discover(f, 'a2');
     await settle();
-    expect(f.dispatch).toHaveBeenCalledTimes(1);
+    expect(f.snapshots).toHaveBeenCalledTimes(1);
   });
 
   it('keeps unrelated snapshot prompts while live updates and resolutions win the race', async () => {
@@ -182,7 +195,7 @@ describe('snapshot races and admission', () => {
       requests: [prompt, { ...prompt, requestId: 'live' }, { ...prompt, requestId: 'resolved' }],
     });
     await settle();
-    expect(f.dispatch).toHaveBeenCalledExactlyOnceWith(
+    expect(f.snapshots).toHaveBeenCalledExactlyOnceWith(
       setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
     );
   });
@@ -201,7 +214,7 @@ describe('snapshot races and admission', () => {
       );
       discover(f, 'a1');
       await settle();
-      expect(f.dispatch).not.toHaveBeenCalled();
+      expect(f.snapshots).not.toHaveBeenCalled();
       expect(request).toHaveBeenCalledTimes(1);
     },
   );
@@ -215,7 +228,7 @@ describe('snapshot races and admission', () => {
       f.start();
       await settle();
       expect(request.mock.calls).toEqual([['agent.pendingPermissions', {}]]);
-      expect(f.dispatch).toHaveBeenCalledWith(
+      expect(f.snapshots).toHaveBeenCalledWith(
         setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
       );
       discover(f, 'a2');
@@ -234,7 +247,7 @@ describe('snapshot races and admission', () => {
     discover(f, 'a2', 'unknown');
     f.start();
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
   });
 
   it('waits for current workspace capability hydration before binding prompts', async () => {
@@ -244,7 +257,7 @@ describe('snapshot races and admission', () => {
     f.update({ ...f.state, workspace: { ...f.state.workspace, capabilityContext: null } });
     f.start();
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
     f.update({
       ...f.state,
       workspace: {
@@ -253,7 +266,9 @@ describe('snapshot races and admission', () => {
       },
     });
     await settle();
-    expect(f.dispatch).toHaveBeenCalledWith(setPendingRequests([{ ...prompt, workspaceId: 'ws' }]));
+    expect(f.snapshots).toHaveBeenCalledWith(
+      setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
+    );
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -314,7 +329,7 @@ describe('snapshot races and admission', () => {
       old.resolve({ requests: [prompt] });
       await settle();
       expect(request).toHaveBeenCalledTimes(2);
-      expect(f.dispatch).not.toHaveBeenCalled();
+      expect(f.snapshots).not.toHaveBeenCalled();
     },
   );
 
@@ -327,7 +342,7 @@ describe('snapshot races and admission', () => {
     authorizeRole(f, 'guest', false);
     reply.resolve({ requests: [prompt] });
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
   });
 
   it('takes one fresh snapshot for a new management grant, but not equivalent workspace updates', async () => {
@@ -336,14 +351,14 @@ describe('snapshot races and admission', () => {
     authorizeRole(f, 'guest', false);
     f.start();
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
     authorizeRole(f, 'guest', true);
     await settle();
     expect(request.mock.calls).toEqual([
       ['agent.pendingPermissions', {}],
       ['agent.pendingPermissions', {}],
     ]);
-    expect(f.dispatch).toHaveBeenCalledExactlyOnceWith(
+    expect(f.snapshots).toHaveBeenCalledExactlyOnceWith(
       setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
     );
     authorizeRole(f, 'guest', true);
@@ -360,7 +375,7 @@ describe('snapshot races and admission', () => {
     await settle();
     authorizeRole(f, 'guest', true);
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -372,7 +387,7 @@ describe('snapshot races and admission', () => {
     discover(f, 'a2');
     await settle();
     expect(request).toHaveBeenCalledTimes(1);
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
     f.update(
       withLegacyPrincipal({
         ...f.state,
@@ -381,7 +396,9 @@ describe('snapshot races and admission', () => {
     );
     await settle();
     expect(request).toHaveBeenCalledTimes(2);
-    expect(f.dispatch).toHaveBeenCalledWith(setPendingRequests([{ ...prompt, workspaceId: 'ws' }]));
+    expect(f.snapshots).toHaveBeenCalledWith(
+      setPendingRequests([{ ...prompt, workspaceId: 'ws' }]),
+    );
   });
 
   it.each([
@@ -393,6 +410,22 @@ describe('snapshot races and admission', () => {
     const f = recoveryFixture();
     f.start();
     await settle();
-    expect(f.dispatch).not.toHaveBeenCalled();
+    expect(f.snapshots).not.toHaveBeenCalled();
   });
+});
+
+it('retires the retained runtime snapshot on restart, even with an unchanged subscription identity', async () => {
+  request.mockResolvedValue({ requests: [prompt] });
+  const f = recoveryFixture();
+  const first = f.start();
+  await settle();
+  expect(f.state.permission.requests.ids).toEqual(['p1']);
+  first.cancel();
+  await first.toPromise();
+  request.mockResolvedValue({ requests: [] });
+  f.start();
+  await settle();
+  expect(f.state.permission.requests.ids).toEqual([]);
+  expect(f.scopes).toHaveBeenCalledWith(permissionScopeChanged(null));
+  expect(request).toHaveBeenCalledTimes(2);
 });

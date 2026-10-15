@@ -1,10 +1,11 @@
 // Source: src/lib/components/chat/InlinePermissionRequest.svelte.
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { IconDefinitionIcon } from '@/components/icons/icon-definition';
 import { Button } from '@/components/ui/button';
 import { createTransition, fly } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { store as appStore } from '@/store';
+import { selectPermissionResponse } from '@/store/permission/permission-selectors';
 import { selectWorkspacePermissionContext } from '@/store/workspace/workspace-selectors';
 import { getCategoryColor } from '$lib/components/chat/permission-category-classes';
 import { parsePermissionRequest } from '$lib/components/chat/permission-parser';
@@ -19,17 +20,23 @@ export interface InlinePermissionRequestProps {
   request: PermissionRequest;
   pendingCount?: number;
   keyboardShortcutsEnabled?: boolean;
+  /** Optional DOM owner for hosts that require focused, local shortcuts. */
+  keyboardShortcutScope?: RefObject<HTMLElement | null>;
 }
 
 export function InlinePermissionRequest({
   request,
   pendingCount = 1,
   keyboardShortcutsEnabled = false,
+  keyboardShortcutScope,
 }: InlinePermissionRequestProps) {
   const [showDetails, setShowDetails] = useState(false);
   // A synchronous, instance-local guard, matching the source's transient dispatch window.
   const processing = useRef(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const permissionContext = selectWorkspacePermissionContext(request.workspaceId ?? '');
+  const response = selectPermissionResponse(request.requestId);
+  const renderContext = permissionContext.value;
+  const isProcessing = response.value?.status === 'submitting';
   const ref = useRef<HTMLDivElement>(null);
 
   const display = parsePermissionRequest(request.title, request.description);
@@ -43,20 +50,29 @@ export function InlinePermissionRequest({
     if (
       processing.current ||
       !request.workspaceId ||
-      !selectWorkspacePermissionContext.select(appStore.state, request.workspaceId)
+      !renderContext ||
+      renderContext !==
+        selectWorkspacePermissionContext.select(appStore.state, request.workspaceId) ||
+      selectPermissionResponse.select(appStore.state, request.requestId)?.status === 'submitting'
     )
       return;
     processing.current = true;
-    setIsProcessing(true);
-    appStore.dispatch(selectPermissionOption(request.requestId, optionId));
+    appStore.dispatch(selectPermissionOption(request.requestId, optionId, renderContext));
     processing.current = false;
-    setIsProcessing(false);
   }
 
   // Rebind at each commit so the native listener always sees the current request and props.
   useLayoutEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
-      if (processing.current || !shouldHandlePermissionShortcut(event, keyboardShortcutsEnabled))
+      if (
+        processing.current ||
+        isProcessing ||
+        (keyboardShortcutScope &&
+          (!keyboardShortcutScope.current?.contains(document.activeElement) ||
+            !(event.target instanceof Node) ||
+            !keyboardShortcutScope.current.contains(event.target))) ||
+        !shouldHandlePermissionShortcut(event, keyboardShortcutsEnabled)
+      )
         return;
 
       const num = parseInt(event.key, 10);
@@ -94,6 +110,8 @@ export function InlinePermissionRequest({
   return (
     <div
       ref={ref}
+      aria-busy={isProcessing}
+      data-permission-request={request.requestId}
       className="inline-permission-request my-3 rounded-lg border border-border bg-card overflow-hidden"
     >
       <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
@@ -183,6 +201,16 @@ export function InlinePermissionRequest({
           ))}
         </div>
 
+        {isProcessing && (
+          <output className="type-caption mt-2 block text-subtle">
+            {m.chat_inlinePermission_submitting_label()}
+          </output>
+        )}
+        {response.value?.status === 'failed' && (
+          <p role="alert" className="type-caption mt-2 text-destructive">
+            {m.chat_inlinePermission_responseFailed_error()}
+          </p>
+        )}
         <div className="type-caption mt-2 text-left text-subtle">
           {m.chat_inlinePermission_keyboardHint_label()}
         </div>

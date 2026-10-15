@@ -7521,5 +7521,7 @@
   "ui_messageComposer_attachments_one": "{count} pièce jointe",
   "ui_messageComposer_attachments_many": "{count} pièces jointes",
   "files_read_partialPreview_label": "Aperçu partiel : les premiers {shown} sur {total}. Le fichier peut changer après cette lecture.",
-  "files_read_previewReadOnly_error": "Cet aperçu est en lecture seule."
+  "files_read_previewReadOnly_error": "Cet aperçu est en lecture seule.",
+  "chat_inlinePermission_submitting_label": "Envoi de la décision…",
+  "chat_inlinePermission_responseFailed_error": "La décision n’a pas pu être confirmée. Choisissez une option pour réessayer."
 }

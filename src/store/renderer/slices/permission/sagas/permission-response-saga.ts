@@ -2,7 +2,10 @@ import { permissionRecoverySaga } from './permission-recovery-saga';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectWorkspacePermissionContext } from '../../workspace/workspace-selectors';
-import { selectPermissionRequestsCollection } from '../permission-selectors';
+import {
+  selectPermissionRequestsCollection,
+  selectPermissionResponsesCollection,
+} from '../permission-selectors';
 import { createPermissionResponseSaga } from './permission-response-saga-factory';
 
 const logger = createLogger('PermissionResponseSaga');
@@ -14,4 +17,5 @@ export const permissionResponseSaga = createPermissionResponseSaga({
   logger,
   selectWorkspacePermissionContext,
   selectPermissionRequestsCollection,
+  selectPermissionResponsesCollection,
 });

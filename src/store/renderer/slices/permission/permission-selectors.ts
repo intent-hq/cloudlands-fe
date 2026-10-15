@@ -8,6 +8,10 @@ import { store } from '../../store';
 import { createPermissionRecoveryProjections } from './permission-recovery-projections';
 import * as projections from './permission-projections';
 
+export const selectPermissionResponsesCollection = store.createSelector(
+  projections.getPermissionResponsesCollection,
+);
+
 export const selectPermissionRequestsCollection = store.createSelector(
   projections.getPermissionRequestsCollection,
 );

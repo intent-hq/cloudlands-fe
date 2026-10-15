@@ -7521,5 +7521,7 @@
   "ui_messageComposer_attachments_one": "{count} 个附件",
   "ui_messageComposer_attachments_many": "{count} 个附件",
   "files_read_partialPreview_label": "部分预览：共 {total}，显示前 {shown}。读取后文件可能会发生变化。",
-  "files_read_previewReadOnly_error": "此预览为只读。"
+  "files_read_previewReadOnly_error": "此预览为只读。",
+  "chat_inlinePermission_submitting_label": "正在发送决定…",
+  "chat_inlinePermission_responseFailed_error": "无法确认决定。请选择一个选项重试。"
 }

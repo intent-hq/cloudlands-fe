@@ -1,3 +1,4 @@
+import { WorkspaceConversationPermissions } from './workspace-conversation-permissions';
 import {
   agentMetadataAcquired,
   agentMetadataReleased,
@@ -553,6 +554,7 @@ export function WorkspaceConversation({
           )}
         </>
       )}
+      {current && <WorkspaceConversationPermissions workspaceId={workspaceId} agentId={agentId} />}
       {current && (
         <WorkspaceConversationComposer
           key={`${workspaceId}:${agentId}`}

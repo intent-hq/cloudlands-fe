@@ -54,6 +54,20 @@ Clearing browser storage removes this browser's client identity and its access t
 client-scoped drafts; it does not delete the daemon's chat history. If browser
 storage is unavailable, client identity lasts for the tab session.
 
+Pending permission requests appear in their agent conversation. Inspect the
+request details, then choose one of the provider's available one-time options.
+Submitting disables the choices; a failed response keeps the request visible for
+an explicit retry. Reconnection and reload recover requests still pending at the
+daemon. Number and Escape shortcuts apply only while focus is inside that request,
+not while editing the composer.
+
+The native permission checkpoint covers Codex's non-writing **Implement this plan?**
+review with an isolated daemon configured for interactive permissions and a
+read-only sandbox. Approving resumes the approved chat-only plan; keeping plan
+mode completes the proposal without implementing it. This does not establish
+ordinary command/file approval: the pinned daemon denies restricted Codex sandbox
+escalation. Do not loosen that policy to reproduce this preview.
+
 ## Focused verification
 
 ```sh
@@ -77,6 +91,12 @@ corroborates exactly one created agent and its configured provider/model, sends 
 first message, checks genuine streaming and persisted IDs, then verifies reload,
 list navigation and subscription cleanup at desktop and narrow widths. Unit policy
 tests are separate from provider acceptance.
+
+`workspace-permission-decision.extended.spec.mjs` additionally requires an exact
+hash of a genuine, inspected, already-pending non-writing plan request and explicit
+owned-daemon decision scope. It checks keyboard/pointer choice, reload/reconnect
+recovery, exact daemon acknowledgement, persisted plan content and reader cleanup.
+It does not fabricate requests or run requested commands.
 
 This checkpoint does not establish full Svelte migration or visual parity. Existing
 root dead-code findings and separately recorded codec, avatar, native IME, genuine

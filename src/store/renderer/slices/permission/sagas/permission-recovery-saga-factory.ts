@@ -9,6 +9,7 @@ import type { AgentSession } from '$shared/types/agent-session';
 import type { createBackendRuntime } from '$lib/client/live/backend-transport-runtime';
 import {
   permissionRequestReceived,
+  permissionScopeChanged,
   removePermissionRequest,
   setPendingRequests,
   type PermissionRequest,
@@ -117,9 +118,13 @@ export function createPermissionRecoverySaga<State>({
   }
 
   function* permissionRecoverySaga(): SagaGenerator<void> {
+    // A new runtime must recover its own snapshot, even if the retained Store's
+    // subscription context happens to be identical to the previous mount.
+    yield* put(permissionScopeChanged(null));
     yield* takeLatestFromSelector(
       selectPermissionRecoveryScope,
       function* ({ payload }: SelectorChannelPayload<string | null>) {
+        yield* put(permissionScopeChanged(payload));
         if (payload) yield* call(recoverPendingPermissions);
       },
     );

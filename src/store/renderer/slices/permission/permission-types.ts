@@ -20,4 +20,15 @@ export interface PermissionRequest {
 export type PermissionState = {
   /** All pending permission requests */
   requests: Collection<PermissionRequest, 'requestId'>;
+  /** Current admitted recovery/subscription scope; a new scope retires old prompts. */
+  scope: string | null;
+  responses: Collection<PermissionResponse, 'requestId'>;
 };
+
+export interface PermissionResponse {
+  requestId: string;
+  context: string;
+  attempt: number;
+  status: 'submitting' | 'failed';
+  error?: string;
+}

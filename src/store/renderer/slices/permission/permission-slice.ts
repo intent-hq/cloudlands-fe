@@ -4,9 +4,11 @@ import {
   addItem,
   addItems,
   createCollection,
+  getItem,
+  upsertItem,
   removeItem,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type { PermissionRequest, PermissionState } from './permission-types';
+import type { PermissionRequest, PermissionResponse, PermissionState } from './permission-types';
 
 // ============================================================================
 // Types
@@ -21,6 +23,8 @@ export type { PermissionRequest, PermissionState } from './permission-types';
 
 export const initialState: PermissionState = {
   requests: createCollection<PermissionRequest, 'requestId'>('requestId'),
+  scope: null,
+  responses: createCollection<PermissionResponse, 'requestId'>('requestId'),
 };
 
 // ============================================================================
@@ -52,15 +56,66 @@ export const denyPermission = createAction<[requestId: string]>('permission/deny
 export const cancelPermission = createAction<[requestId: string]>('permission/cancelPermission');
 
 /** Select a specific option for a permission request (triggers saga) */
-export const selectPermissionOption = createAction<[requestId: string, optionId: string]>(
-  'permission/selectPermissionOption',
+export const selectPermissionOption = createAction<
+  [requestId: string, optionId: string, expectedContext?: string]
+>('permission/selectPermissionOption');
+
+export const permissionScopeChanged =
+  createAction<[scope: string | null]>('permission/scopeChanged');
+export const permissionResponseStarted = createAction<[requestId: string, context: string]>(
+  'permission/responseStarted',
 );
+export const permissionResponseFailed = createAction<
+  [requestId: string, context: string, attempt: number, error: string]
+>('permission/responseFailed');
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
 export const permissionReducer = createReducer<PermissionState>(initialState);
+permissionReducer.with(permissionScopeChanged, (state, { payload: [scope] }) =>
+  state.scope === scope
+    ? state
+    : state.scope === null && scope !== null
+      ? // The event owner can admit buffered events at the new subscription ack
+        // before capability hydration completes. Binding that first scope must not
+        // erase those live prompts. Retirement already cleared the previous scope.
+        { ...state, scope }
+      : { ...initialState, scope },
+);
+permissionReducer.with(permissionResponseStarted, (state, { payload: [requestId, context] }) => {
+  if (!getItem(state.requests, requestId)) return state;
+  const previous = getItem(state.responses, requestId);
+  if (previous?.context === context && previous.status === 'submitting') return state;
+  return {
+    ...state,
+    responses: upsertItem(state.responses, {
+      requestId,
+      context,
+      attempt: (previous?.attempt ?? 0) + 1,
+      status: 'submitting',
+      error: undefined,
+    }),
+  };
+});
+permissionReducer.with(
+  permissionResponseFailed,
+  (state, { payload: [requestId, context, attempt, error] }) => {
+    const current = getItem(state.responses, requestId);
+    if (
+      !current ||
+      current.context !== context ||
+      current.attempt !== attempt ||
+      current.status !== 'submitting'
+    )
+      return state;
+    return {
+      ...state,
+      responses: upsertItem(state.responses, { ...current, status: 'failed', error }),
+    };
+  },
+);
 permissionReducer.with(permissionRequestReceived, (state, { payload: [request] }) => {
   const requests = addItem(state.requests, request);
   if (requests === state.requests) {
@@ -85,12 +140,14 @@ permissionReducer.with(setPendingRequests, (state, { payload: [requests] }) => {
 });
 permissionReducer.with(removePermissionRequest, (state, { payload: [requestId] }) => {
   const requests = removeItem(state.requests, requestId);
-  if (requests === state.requests) {
+  const responses = removeItem(state.responses, requestId);
+  if (requests === state.requests && responses === state.responses) {
     return state;
   }
 
   return {
     ...state,
     requests,
+    responses,
   };
 });

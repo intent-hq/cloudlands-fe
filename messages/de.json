@@ -7521,5 +7521,7 @@
   "ui_messageComposer_attachments_one": "{count} Anhang",
   "ui_messageComposer_attachments_many": "{count} Anhänge",
   "files_read_partialPreview_label": "Teilvorschau: die ersten {shown} von {total}. Die Datei kann sich nach diesem Lesen ändern.",
-  "files_read_previewReadOnly_error": "Dies ist eine schreibgeschützte Vorschau."
+  "files_read_previewReadOnly_error": "Dies ist eine schreibgeschützte Vorschau.",
+  "chat_inlinePermission_submitting_label": "Entscheidung wird gesendet…",
+  "chat_inlinePermission_responseFailed_error": "Die Entscheidung konnte nicht bestätigt werden. Wählen Sie eine Option, um es erneut zu versuchen."
 }

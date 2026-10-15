@@ -12,6 +12,7 @@ import {
   cancelPermission,
   denyPermission,
   initialState,
+  permissionScopeChanged,
   permissionReducer,
   permissionRequestReceived,
   selectPermissionOption,
@@ -82,38 +83,110 @@ function harness(requests: PermissionRequest[] = [request('request-1')]) {
     dispatch,
     task,
     hasRequest: (requestId: string) => getItem(permission.requests, requestId) !== undefined,
+    response: (requestId: string) => getItem(permission.responses, requestId),
   };
 }
 
 describe('permissionResponseSaga', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('maps all four outcomes exactly and runs takeEvery workers concurrently', async () => {
+  it('maps all four outcomes exactly and responds concurrently to distinct requests', async () => {
     const resolvers: Array<(value: unknown) => void> = [];
     mocks.respondPermission.mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)),
+    );
+    const run = harness([
+      request('approve'),
+      request('deny'),
+      request('cancel'),
+      request('option', [{ id: 'allow-custom', label: 'Allow' }]),
+    ]);
+    run.channel.put(approvePermission('approve'));
+    run.channel.put(denyPermission('deny'));
+    run.channel.put(cancelPermission('cancel'));
+    run.channel.put(selectPermissionOption('option', 'allow-custom'));
+    await settle();
+    expect(mocks.respondPermission.mock.calls).toEqual([
+      ['approve', { outcome: 'selected', optionId: 'allow-custom' }, 'ws-1'],
+      ['deny', { outcome: 'selected', optionId: 'deny-custom' }, 'ws-1'],
+      ['cancel', { outcome: 'cancelled' }, 'ws-1'],
+      ['option', { outcome: 'selected', optionId: 'allow-custom' }, 'ws-1'],
+    ]);
+    expect(resolvers).toHaveLength(4);
+    for (const id of ['approve', 'deny', 'cancel', 'option'])
+      expect(run.response(id)?.status).toBe('submitting');
+    for (const resolve of resolvers) resolve({ success: true, resolved: true });
+    await settle();
+    for (const id of ['approve', 'deny', 'cancel', 'option']) {
+      expect(run.hasRequest(id)).toBe(false);
+      expect(run.response(id)).toBeUndefined();
+    }
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces repeated decisions for one pending request and retains visible failure for retry', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.respondPermission.mockImplementation(
       () =>
-        new Promise((resolve) => {
-          resolvers.push(resolve);
+        new Promise((done) => {
+          resolve = done;
         }),
     );
     const run = harness();
-    run.channel.put(approvePermission('request-1'));
+    run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
+    run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
     run.channel.put(denyPermission('request-1'));
-    run.channel.put(cancelPermission('request-1'));
-    run.channel.put(selectPermissionOption('request-1', 'allow-always'));
     await settle();
-
-    expect(mocks.respondPermission.mock.calls).toEqual([
-      ['request-1', { outcome: 'selected', optionId: 'allow-custom' }, 'ws-1'],
-      ['request-1', { outcome: 'selected', optionId: 'deny-custom' }, 'ws-1'],
-      ['request-1', { outcome: 'cancelled' }, 'ws-1'],
-      ['request-1', { outcome: 'selected', optionId: 'allow-always' }, 'ws-1'],
-    ]);
-    expect(resolvers).toHaveLength(4);
-    expect(run.hasRequest('request-1')).toBe(true);
-    for (const resolve of resolvers) resolve({ success: true, resolved: true });
+    expect(mocks.respondPermission).toHaveBeenCalledTimes(1);
+    resolve({ success: false, error: 'offline' });
+    await settle();
+    expect(run.response('request-1')).toMatchObject({
+      status: 'failed',
+      error: 'offline',
+      attempt: 1,
+    });
+    run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
+    await settle();
+    expect(mocks.respondPermission).toHaveBeenCalledTimes(2);
+    expect(run.response('request-1')).toMatchObject({ status: 'submitting', attempt: 2 });
+    resolve({ success: true, resolved: true });
     await settle();
     expect(run.hasRequest('request-1')).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects stale rendered authority and unknown options before transport', async () => {
+    const run = harness();
+    run.channel.put(selectPermissionOption('request-1', 'allow-custom', 'retired-authority'));
+    run.channel.put(selectPermissionOption('request-1', 'not-an-option'));
+    await settle();
+    expect(mocks.respondPermission).not.toHaveBeenCalled();
+    expect(run.response('request-1')).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not remove a replacement prompt when a retired response completes', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.respondPermission.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const run = harness();
+    run.dispatch(permissionScopeChanged('old-principal'));
+    run.dispatch(permissionRequestReceived(request('request-1')));
+    run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
+    await settle();
+    run.dispatch(permissionScopeChanged('new-principal'));
+    run.dispatch(permissionRequestReceived(request('request-1')));
+    resolve({ success: true, resolved: true });
+    await settle();
+    expect(run.hasRequest('request-1')).toBe(true);
+    expect(run.response('request-1')).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -200,7 +273,9 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(mocks.respondPermission).not.toHaveBeenCalled();
-    expect(run.dispatch).not.toHaveBeenCalled();
+    expect(
+      run.dispatch.mock.calls.filter(([action]) => action.type !== 'permission/scopeChanged'),
+    ).toHaveLength(0);
     run.task.cancel();
     await run.task.toPromise();
   });

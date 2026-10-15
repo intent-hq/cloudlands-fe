@@ -6,6 +6,9 @@ import {
   setPendingRequests,
   removePermissionRequest,
   initialState,
+  permissionScopeChanged,
+  permissionResponseStarted,
+  permissionResponseFailed,
   type PermissionState,
   type PermissionRequest,
 } from './permission-slice';
@@ -38,6 +41,7 @@ describe('permissionReducer', () => {
 
     it('should append to existing requests', () => {
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [
           makeRequest({ requestId: 'req-1' }),
         ]),
@@ -54,6 +58,7 @@ describe('permissionReducer', () => {
     it('should add pending requests avoiding duplicates', () => {
       const existing = makeRequest({ requestId: 'req-1' });
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [existing]),
       };
       const incoming = [
@@ -68,6 +73,7 @@ describe('permissionReducer', () => {
     it('should return same state if no new requests', () => {
       const existing = makeRequest({ requestId: 'req-1' });
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [existing]),
       };
       const state = permissionReducer(prev, setPendingRequests([existing]));
@@ -84,6 +90,7 @@ describe('permissionReducer', () => {
   describe('removePermissionRequest', () => {
     it('should remove a request by ID', () => {
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [
           makeRequest({ requestId: 'req-1' }),
           makeRequest({ requestId: 'req-2' }),
@@ -98,5 +105,47 @@ describe('permissionReducer', () => {
       const state = permissionReducer(initialState, removePermissionRequest('nonexistent'));
       expect(state).toBe(initialState);
     });
+  });
+});
+
+describe('permission operation ownership', () => {
+  it('coalesces a pending decision, accepts only its current failure and removes both records on resolution', () => {
+    const scoped = permissionReducer(initialState, permissionScopeChanged('scope'));
+    const pending = permissionReducer(scoped, permissionRequestReceived(makeRequest()));
+    expect(permissionReducer(pending, permissionResponseStarted('missing', 'owner'))).toBe(pending);
+    const started = permissionReducer(pending, permissionResponseStarted('req-1', 'owner'));
+    expect(permissionReducer(started, permissionResponseStarted('req-1', 'owner'))).toBe(started);
+    expect(
+      permissionReducer(started, permissionResponseFailed('req-1', 'old-owner', 1, 'old')),
+    ).toBe(started);
+    expect(permissionReducer(started, permissionResponseFailed('req-1', 'owner', 0, 'old'))).toBe(
+      started,
+    );
+    const failed = permissionReducer(
+      started,
+      permissionResponseFailed('req-1', 'owner', 1, 'offline'),
+    );
+    const retry = permissionReducer(failed, permissionResponseStarted('req-1', 'owner'));
+    expect(getItems(retry.responses)).toEqual([
+      { requestId: 'req-1', context: 'owner', attempt: 2, status: 'submitting', error: undefined },
+    ]);
+    expect(permissionReducer(retry, permissionResponseFailed('req-1', 'owner', 1, 'old'))).toBe(
+      retry,
+    );
+    const removed = permissionReducer(retry, removePermissionRequest('req-1'));
+    expect(getItems(removed.responses)).toEqual([]);
+    expect(getItems(removed.requests)).toEqual([]);
+    expect(permissionReducer(removed, removePermissionRequest('req-1'))).toBe(removed);
+  });
+  it('retains equivalent scope references and retires prompts/operations at an authority boundary', () => {
+    let state = permissionReducer(initialState, permissionScopeChanged('first'));
+    state = permissionReducer(state, permissionRequestReceived(makeRequest()));
+    state = permissionReducer(state, permissionResponseStarted('req-1', 'owner'));
+    expect(permissionReducer(state, permissionScopeChanged('first'))).toBe(state);
+    const next = permissionReducer(state, permissionScopeChanged('second'));
+    expect(next).toEqual({ ...initialState, scope: 'second' });
+    expect(permissionReducer(next, permissionResponseFailed('req-1', 'owner', 1, 'old'))).toBe(
+      next,
+    );
   });
 });

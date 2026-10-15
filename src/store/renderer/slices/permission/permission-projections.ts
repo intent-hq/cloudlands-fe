@@ -7,6 +7,9 @@ export const getPermissionRequestsCollection = (state: PermissionProjectionState
   return state.permission.requests;
 };
 
+export const getPermissionResponsesCollection = (state: PermissionProjectionState) =>
+  state.permission.responses;
+
 export const getPermissionRequests = (requests: PermissionState['requests']) => {
   return getItems(requests);
 };
