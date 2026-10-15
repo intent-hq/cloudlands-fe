@@ -17,7 +17,15 @@ import {
   setComposerContextItems,
   setChatDraft,
 } from '../../../../../src/store/renderer/slices/transient-ui/transient-ui-slice';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
 import { selectAgentModelSubmissionPending } from '@/store/agent-model/agent-model-selectors';
 import { WorkspaceConversationModel } from './workspace-conversation-model';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -40,7 +48,7 @@ import {
   composerAttachmentRetryRequested,
   composerAttachmentsReleased,
 } from '../../../../../src/store/renderer/slices/chat-drafts/chat-drafts-slice';
-import { MessageComposer } from '@/components/ui/message-composer';
+import { MessageComposer, type MessageComposerProps } from '@/components/ui/message-composer';
 import { ErrorState, LoadingState } from '@/components/patterns/screen';
 import {
   selectChatDraftOwnerView,
@@ -72,11 +80,19 @@ export function WorkspaceConversationComposer({
   workspaceId,
   agentId,
   transcriptReady = true,
+  presentation,
 }: {
   workspaceId: string;
   agentId: string;
   transcriptReady?: boolean;
+  /** Desktop presentation shares this exact draft/submission lifetime owner. */
+  presentation?: {
+    Composer: ComponentType<MessageComposerProps>;
+    isCurrent: () => boolean;
+    onAdmitted?: () => void;
+  };
 }) {
+  const Composer = presentation?.Composer ?? MessageComposer;
   const ownerId = useId();
   const value = selectChatDraft(workspaceId, agentId).value;
   const [localError, setLocalError] = useState<string>();
@@ -107,6 +123,7 @@ export function WorkspaceConversationComposer({
   }, [view]);
   const currentView = useCallback(() => {
     return (
+      (presentation?.isCurrent() ?? true) &&
       liveView.current === view &&
       mounted.current &&
       !!participation &&
@@ -114,7 +131,7 @@ export function WorkspaceConversationComposer({
       connection === selectPrincipalConnectionContext.select(store.state) &&
       store.state.agentSessions.byAgentId[agentId]?.workspaceId === workspaceId
     );
-  }, [view, participation, connection, workspaceId, agentId]);
+  }, [view, participation, connection, workspaceId, agentId, presentation]);
   const notes = selectAvailableContextNotes(workspaceId).value;
   const notesState = selectWorkspaceNotesState(workspaceId).value;
   const modelPending = selectAgentModelSubmissionPending(agentId, workspaceId).value;
@@ -364,6 +381,7 @@ export function WorkspaceConversationComposer({
       setLocalError(m.agent_streamLifecycle_sendFailed_error());
       return;
     }
+    if (!enqueue) presentation?.onAdmitted?.();
     submitting.current = admitted.submission.id;
     setSubmitted({
       id: admitted.submission.id,
@@ -601,26 +619,28 @@ export function WorkspaceConversationComposer({
           }}
         />
       )}
-      <Combobox
-        value=""
-        options={notes
-          .filter(
-            (note) =>
-              !selectedNotes.some(
-                (item) => item.noteId === note.id && item.workspaceId === workspaceId,
-              ),
-          )
-          .map((note) => ({ value: note.id, label: note.title, description: note.id }))}
-        ariaLabel={m.chat_noteContext_add_label()}
-        placeholder={m.chat_noteContext_add_label()}
-        searchPlaceholder={m.chat_noteContext_search_placeholder()}
-        emptyText={m.chat_noteContext_empty_description()}
-        loading={notesState.loading}
-        disabled={!restored || !participation}
-        onChange={(id) => {
-          if (typeof id === 'string') selectContextNote(id);
-        }}
-      />
+      {!presentation && (
+        <Combobox
+          value=""
+          options={notes
+            .filter(
+              (note) =>
+                !selectedNotes.some(
+                  (item) => item.noteId === note.id && item.workspaceId === workspaceId,
+                ),
+            )
+            .map((note) => ({ value: note.id, label: note.title, description: note.id }))}
+          ariaLabel={m.chat_noteContext_add_label()}
+          placeholder={m.chat_noteContext_add_label()}
+          searchPlaceholder={m.chat_noteContext_search_placeholder()}
+          emptyText={m.chat_noteContext_empty_description()}
+          loading={notesState.loading}
+          disabled={!restored || !participation}
+          onChange={(id) => {
+            if (typeof id === 'string') selectContextNote(id);
+          }}
+        />
+      )}
       {notesState.error && (
         <ErrorState
           density="compact"
@@ -638,13 +658,20 @@ export function WorkspaceConversationComposer({
           }}
         />
       )}
-      <WorkspaceConversationFilePicker
+      {!presentation && (
+        <WorkspaceConversationFilePicker
+          workspaceId={workspaceId}
+          disabled={!restored || !participation}
+          onSelect={selectContextFile}
+        />
+      )}
+      <WorkspaceConversationQueue
         workspaceId={workspaceId}
-        disabled={!restored || !participation}
-        onSelect={selectContextFile}
+        agentId={agentId}
+        ownerId={ownerId}
+        hideEmpty={Boolean(presentation)}
       />
-      <WorkspaceConversationQueue workspaceId={workspaceId} agentId={agentId} ownerId={ownerId} />
-      <MessageComposer
+      <Composer
         value={value}
         onValueChange={edit}
         onSend={(text) => send(text)}
@@ -683,6 +710,11 @@ export function WorkspaceConversationComposer({
         leftSlot={({ openFilePicker }) => (
           <>
             <WorkspaceConversationModel
+              triggerClass={
+                presentation
+                  ? 'relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4'
+                  : undefined
+              }
               workspaceId={workspaceId}
               agentId={agentId}
               disabled={
@@ -690,15 +722,17 @@ export function WorkspaceConversationComposer({
               }
               responding={responding}
             />
-            <Button
-              variant="plain"
-              size="icon-sm"
-              iconOnly
-              aria-label={m.chat_richInput_attachFiles_label()}
-              onClick={() => openFilePicker()}
-            >
-              <PaperclipIcon size={16} />
-            </Button>
+            {!presentation && (
+              <Button
+                variant="plain"
+                size="icon-sm"
+                iconOnly
+                aria-label={m.chat_richInput_attachFiles_label()}
+                onClick={() => openFilePicker()}
+              >
+                <PaperclipIcon size={16} />
+              </Button>
+            )}
           </>
         )}
         status={responding ? 'streaming' : 'idle'}
@@ -711,6 +745,7 @@ export function WorkspaceConversationComposer({
           (!!pending && !responding)
         }
         onStop={() => {
+          if (!currentView()) return;
           void dispatch(agentSessionStopChatRequested(agentId)).catch((e) =>
             setLocalError(String(e)),
           );

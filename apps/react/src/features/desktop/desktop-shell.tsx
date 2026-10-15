@@ -75,6 +75,7 @@ import {
   reconcileWorkspaceSurfaces,
 } from '../../../../../src/routes/(app)/workspace/[id]/workspace-surface-retention';
 import { m } from '$shared/paraglide/messages.js';
+import { DesktopAgents } from './desktop-agents';
 import { DesktopPanels } from './desktop-panels';
 import { DesktopResizeHandle } from './desktop-resize-handle';
 import './desktop-shell.css';
@@ -362,6 +363,8 @@ function DesktopWorkspace({
   const admitted = selectAdmittedWorkspaceReadContext(workspaceId).value;
   const [query, setQuery] = useState('');
   const contextOpen = selected.includes('context');
+  const agentsOpen = selected.includes('agents');
+  const sidebarOpen = contextOpen || agentsOpen;
   const titles = [
     m.workspace_multiSelectSidebar_agentsTab_label(),
     m.workspace_multiSelectSidebar_contextTab_label(),
@@ -371,6 +374,9 @@ function DesktopWorkspace({
     m.workspace_multiSelectSidebar_shellTab_label(),
   ];
   const icons = [RobotIcon, TextAlignLeftIcon, CodeIcon, FoldersIcon, GlobeIcon, TerminalIcon];
+  function showAgents() {
+    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, agentsOpen ? [] : ['agents']));
+  }
   function showContext() {
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, contextOpen ? [] : ['context']));
   }
@@ -425,7 +431,14 @@ function DesktopWorkspace({
             </div>
           </div>
           <div className="desktop-sidebar-fill" />
-          {contextOpen ? (
+          {agentsOpen ? (
+            <DesktopAgents
+              workspaceId={workspaceId}
+              active={active}
+              onClose={showAgents}
+              onUnavailable={onUnavailable}
+            />
+          ) : contextOpen ? (
             <section className="desktop-context-card">
               <div className="desktop-context-heading">
                 <h2 className="text-ui font-semibold flex-1">{titles[1]}</h2>
@@ -475,7 +488,9 @@ function DesktopWorkspace({
                   key={title}
                   className="desktop-launcher"
                   variant="outline"
-                  onClick={() => (index === 1 ? showContext() : onUnavailable(title))}
+                  onClick={() =>
+                    index === 0 ? showAgents() : index === 1 ? showContext() : onUnavailable(title)
+                  }
                 >
                   <span className="desktop-launcher-icon">
                     {index === 1 ? (
@@ -494,10 +509,16 @@ function DesktopWorkspace({
             </div>
           )}
           <nav
-            className={`desktop-sidebar-dock ${contextOpen ? 'expanded' : ''}`}
+            className={`desktop-sidebar-dock ${sidebarOpen ? 'expanded' : ''}`}
             aria-label={m.workspace_layout_ariaLabel()}
           >
-            {contextOpen && <span className="desktop-sidebar-dock-indicator" aria-hidden="true" />}
+            {sidebarOpen && (
+              <span
+                className="desktop-sidebar-dock-indicator"
+                style={{ transform: `translateX(${agentsOpen ? 0 : 100}%)` }}
+                aria-hidden="true"
+              />
+            )}
             {titles.map((title, index) => {
               const Icon = icons[index]!;
               return (
@@ -505,9 +526,15 @@ function DesktopWorkspace({
                   key={title}
                   variant="plain"
                   size="icon-compact"
-                  aria-label={index === 1 && contextOpen ? m.ui_tab_close_ariaLabel() : title}
-                  aria-pressed={index === 1 && contextOpen}
-                  onClick={() => (index === 1 ? showContext() : onUnavailable(title))}
+                  aria-label={
+                    (index === 1 && contextOpen) || (index === 0 && agentsOpen)
+                      ? m.ui_tab_close_ariaLabel()
+                      : title
+                  }
+                  aria-pressed={(index === 1 && contextOpen) || (index === 0 && agentsOpen)}
+                  onClick={() =>
+                    index === 0 ? showAgents() : index === 1 ? showContext() : onUnavailable(title)
+                  }
                 >
                   <Icon size={16} />
                 </Button>

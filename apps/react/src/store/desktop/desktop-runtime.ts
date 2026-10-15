@@ -1,4 +1,5 @@
 import { store } from '@/store';
+import { desktopUnreadTrackingSaga } from '@/features/desktop/desktop-unread-runtime';
 import { tabStateSaga } from '../tab-state/sagas/tab-state-saga';
 import { sidebarNavSaga } from '../sidebar-nav/sagas/sidebar-nav-saga';
 import { createReactPanelLayoutSagas } from '../panel-layout/sagas/panel-layout-saga';
@@ -17,6 +18,7 @@ export function startDesktopRuntime() {
     store.runSaga(sidebarNavSaga),
     store.runSaga(tabStateSaga),
     store.runSaga(workspaceLoadCompositionSaga),
+    store.runSaga(desktopUnreadTrackingSaga),
   ];
   return () => disposers.reverse().forEach((dispose) => dispose());
 }

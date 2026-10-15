@@ -1,3 +1,4 @@
+import { useInputText } from '@/lib/use-input-text';
 // Source: src/lib/components/ui/message-composer/message-composer.svelte.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- Rich listbox options keep keyboard focus in the textarea; native select cannot represent this interaction. */
 import {
@@ -169,14 +170,7 @@ export function MessageComposer({
   const contextSize = useSize();
   const resolvedSize = size ?? contextSize;
   const compact = resolvedSize === 'compact';
-  // Svelte's bindable value also works without a binding. Keep that local-draft
-  // behavior while synchronizing explicit value changes from the consumer.
-  const [draft, setDraft] = useState({ prop: valueProp, value: valueProp });
-  let value = draft.value;
-  if (draft.prop !== valueProp) {
-    value = valueProp;
-    setDraft({ prop: valueProp, value: valueProp });
-  }
+  const [value, editValue] = useInputText(valueProp, onValueChange);
   const currentValue = useRef(value);
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -279,8 +273,7 @@ export function MessageComposer({
 
   function updateValue(next: string) {
     currentValue.current = next;
-    setDraft({ prop: valueProp, value: next });
-    onValueChange?.(next);
+    editValue(next);
   }
 
   function updateQueue(next: QueuedMessage[]) {

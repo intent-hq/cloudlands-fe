@@ -38,3 +38,14 @@ export type UnreadTrackingState = {
    */
   watchedStreamingTailByAgentId: Record<string, string>;
 };
+
+export type DividerBoundaryStateSnapshot = {
+  chiefCardVisible: boolean;
+  chiefSessionAgentIds: string[];
+  dividerSessionAgentIds: string[];
+  openAgentTabIds: string[];
+};
+
+export type DividerBoundarySnapshot = DividerBoundaryStateSnapshot & {
+  activeWorkspaceId: string | null;
+};

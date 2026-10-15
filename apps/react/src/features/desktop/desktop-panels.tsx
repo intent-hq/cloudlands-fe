@@ -1,3 +1,5 @@
+import { DesktopConversation } from './desktop-conversation';
+import { DesktopAgentAvatar } from './desktop-agent-avatar';
 import { KebabIcon } from '@/components/icons/kebab-icon';
 import { getEffectiveShortcut, useEffectiveShortcut } from '@/lib/effective-shortcuts';
 import { matchesShortcut } from '$lib/utils/shortcut-bindings';
@@ -194,6 +196,7 @@ function PanelNode({
         panel={panel}
         workspaceId={workspaceId}
         focused={focusedPanelId === panel.id}
+        showFocusBorder={Object.keys(panels).length > 1}
         active={active}
         onUnavailable={onUnavailable}
       />
@@ -242,6 +245,7 @@ function DesktopPanel({
   panel,
   workspaceId,
   focused,
+  showFocusBorder,
   active,
   onUnavailable,
 }: {
@@ -249,6 +253,7 @@ function DesktopPanel({
   panel: PanelState;
   workspaceId: string;
   focused: boolean;
+  showFocusBorder: boolean;
   active: boolean;
 }) {
   const authority = selectAdmittedWorkspaceReadContext(workspaceId).value;
@@ -284,6 +289,7 @@ function DesktopPanel({
       className={`desktop-panel ${tab ? 'populated' : ''}`}
       data-panel-id={panel.id}
       data-panel-focused={focused}
+      data-focus-border-visible={active && focused && showFocusBorder}
       aria-label={m.layout_panel_ariaLabel()}
       onPointerDownCapture={() => {
         if (!focused) dispatch(focusPanel(workspaceId, panel.id));
@@ -297,7 +303,11 @@ function DesktopPanel({
           <Menu.Root>
             <Menu.Trigger asChild>
               <Button variant="plain" wrapContent={false} className="desktop-panel-picker">
-                <ResourceIconTile kind="note" />
+                {tab.type === 'agent' && tab.agentId ? (
+                  <DesktopAgentAvatar agentId={tab.agentId} active />
+                ) : (
+                  <ResourceIconTile kind="note" />
+                )}
                 <span className="truncate">{tab.title}</span>
                 <svg
                   viewBox="0 0 8 14"
@@ -400,6 +410,15 @@ function DesktopPanel({
           >
             {item.type === 'note' && item.noteId ? (
               <DesktopNotePreview workspaceId={workspaceId} noteId={item.noteId} tabId={item.id} />
+            ) : item.type === 'agent' && item.agentId ? (
+              <DesktopConversation
+                workspaceId={workspaceId}
+                agentId={item.agentId}
+                panelId={panel.id}
+                tabId={item.id}
+                active={active && item.id === panel.activeTabId}
+                onUnavailable={onUnavailable}
+              />
             ) : (
               <output className="p-6 text-subtle">{m.desktop_shell_unported_description()}</output>
             )}

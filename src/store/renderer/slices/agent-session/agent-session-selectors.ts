@@ -264,11 +264,7 @@ export const selectAgentSessionStreamingContent = store.createSelector(
  * streaming assistant message is genuinely the last thing in the transcript.
  */
 export const selectAgentSessionHasStreamingTailMessage = store.createSelector(
-  (state, agentId: string): boolean => {
-    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
-    const lastMessage = messages[messages.length - 1];
-    return lastMessage?.role === 'assistant' && isStreamingMessage(lastMessage);
-  },
+  projections.getAgentSessionHasStreamingTailMessage,
 );
 
 /** Select the workspace ID for a given agent session. */

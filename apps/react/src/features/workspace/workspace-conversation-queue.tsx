@@ -32,10 +32,12 @@ export function WorkspaceConversationQueue({
   agentId,
   workspaceId,
   ownerId,
+  hideEmpty = false,
 }: {
   agentId: string;
   workspaceId: string;
   ownerId: string;
+  hideEmpty?: boolean;
 }) {
   const entry = selectAgentQueueEntry(agentId, workspaceId).value;
   const queue = selectAgentQueueMessages(agentId, workspaceId).value;
@@ -73,6 +75,13 @@ export function WorkspaceConversationQueue({
     });
     if (request) store.dispatch(queuedMessageMutationRequested(request));
   }
+  if (
+    hideEmpty &&
+    visible.length === 0 &&
+    !entry?.error &&
+    !outcomes.some((item) => item.status !== 'cancelled')
+  )
+    return null;
   return (
     <section
       className="grid min-w-0 gap-2"

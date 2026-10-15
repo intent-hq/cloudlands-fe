@@ -326,13 +326,13 @@
   box-shadow: var(--elevation-raised);
   border: 1px solid transparent;
 }
-.desktop-panel[data-panel-focused='true'] {
+.desktop-panel[data-focus-border-visible='true'] {
   border-color: var(--color-border);
 }
 .desktop-panel-header {
   padding: 0 8px;
 }
-.desktop-panel-header button svg {
+.desktop-panel-header button svg:not(.agent-avatar) {
   width: 16px;
   height: 16px;
 }
@@ -560,7 +560,7 @@
   --resource-icon-glyph-size: 16px;
   flex: none;
 }
-.desktop-panel-picker svg.desktop-panel-picker-caret {
+.desktop-panel-header .desktop-panel-picker svg.desktop-panel-picker-caret {
   width: 8px;
   height: 14px;
   flex: none;
@@ -583,4 +583,11 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   pointer-events: none;
+}
+
+/* Source PanelTabBar leading surface contract; sidebar avatars retain their own size. */
+.desktop-panel-picker {
+  --agent-avatar-emphasized-surface-size: 26px;
+  --agent-avatar-emphasized-art-size: 18px;
+  --agent-avatar-emphasized-corner-radius: 5px;
 }

@@ -30,14 +30,31 @@ reopens the most recently closed panel content or workspace tab, using the sourc
 close timestamps. Closing a pane and closing a whole column are distinct operations. Workspace switching retains mounted panels;
 reload restores the canonical saved layout and sidebar width.
 
-This checkpoint renders notes in **Rendered preview**, paired against that explicit
-Svelte mode. Rich note editing, agent/chat/terminal/browser/file bodies, workspace
-creation, Settings, PR/issue previews and the full Home detail surface are not
-ported here. Their entrypoints disclose this boundary. This is not full desktop
-parity: pane dragging, the complete leader-key system and remaining inner-view
-actions still require source-matched migration. No provider is needed for the
-workspace/notes shell. Acceptance is limited to actual Linux Electron windows and
-owned data; historical browser or narrow-width checks are not desktop proof.
+Notes render in **Rendered preview**, paired against that explicit Svelte mode.
+The **Agents** dock opens the source-shaped foreground conversation list. Select an
+existing agent to read ordinary saved user/assistant text; Ctrl/Cmd-click opens an
+adjacent pane; an already open conversation keeps its existing pane. The edge-docked composer shares the canonical draft and submission
+owners: Enter sends, Shift-Enter inserts a newline, and **Stop** interrupts an active
+response. Drag the composer’s top handle to resize it; double-click the handle to
+restore automatic sizing. A configured provider is required for Send. Switching panes retains drafts;
+reload restores acknowledged drafts. In a long transcript, the pinned user prompt returns
+to its original message and follows the active conversation turn. Source-visible actions outside this slice show
+an explicit internal-port scope notice.
+
+This is not full ChatPanel or desktop parity. Rich mentions,
+attachments/context intake, tool/permission/question bodies, message actions and
+history navigation remain unported in this desktop surface. Model controls are reused
+but model changes are not native acceptance in this checkpoint. Rich note editing,
+terminal/browser/file bodies, workspace creation, Settings, PR/issue previews, full
+Home detail, pane dragging and the complete leader-key system remain separate work.
+No provider is needed for the workspace/notes shell. Acceptance is limited to actual
+Linux Electron windows and owned data; historical browser or narrow-width checks are
+not desktop proof. The reference Svelte cold reload can log provider discovery before
+host admission: its successful Send/Stop assertions do not make that whole run green.
+The target's resize/reset handle is verified with native pointer input. The pinned
+Svelte reference's handle remains pointer-inaccessible because its focus-class
+selector does not match the panel's `data-focused` attribute; this is an observed
+source defect, not a passing paired interaction.
 
 Guide impact: internal development entrypoint and bounded shell only. The released
 assistant app guide remains unchanged; no companion release is requested.

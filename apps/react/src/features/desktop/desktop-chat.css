@@ -1,0 +1,156 @@
+/* Measured mounted Svelte WorkspaceAgentsList, ChatPanel and edge-docked SimpleRichInput. */
+.desktop-agents-card .desktop-context-heading {
+  /* Source heading pb-1 + mb-0.5 and following content pt-2. */
+  padding-bottom: 14px;
+}
+.desktop-agents-card > .desktop-agent-rows:last-child {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.desktop-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-left: 0;
+  padding: 8px 8px 8px 0;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+.desktop-agent-row .desktop-agent-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  line-height: var(--text-body-line-height);
+  font-weight: 400;
+  letter-spacing: -0.016em;
+}
+.desktop-conversation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.desktop-transcript-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.desktop-transcript-content {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 24px 28px;
+}
+.desktop-transcript-spacer {
+  flex: 1;
+}
+.desktop-transcript-group {
+  display: flex;
+  flex-direction: column;
+}
+.desktop-chat-message {
+  flex: none;
+  min-height: 32px;
+}
+.desktop-chat-message + .desktop-chat-message {
+  margin-top: 24px;
+}
+.desktop-conversation-turn + .desktop-conversation-turn,
+.desktop-transcript-group + .desktop-transcript-group {
+  margin-top: 40px;
+}
+.desktop-composer-lane {
+  padding: 8px 34px 24px 24px;
+  flex: none;
+}
+.desktop-composer-lane [data-testid='composer-attachments']:empty {
+  display: none;
+}
+.desktop-text-composer {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 80px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  padding: 8px 0;
+}
+.desktop-composer-input[data-slot='textarea'] {
+  flex: 1 1 auto;
+  resize: none;
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 8px 8px 14px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: -0.016em;
+  box-shadow: none;
+  outline: none;
+}
+.desktop-composer-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+  height: 29px;
+  margin-top: 4px;
+  padding: 0 8px 0 14px;
+}
+.desktop-composer-submit,
+.desktop-composer-more {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  flex: none;
+}
+
+.desktop-pinned-prompt {
+  position: absolute;
+  inset: 0 0 auto;
+  padding: 0 34px 0 24px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.desktop-composer-input::placeholder {
+  color: var(--color-subtle);
+  opacity: 0.85;
+}
+
+.desktop-composer-resize {
+  position: absolute;
+  left: 50%;
+  top: -0.5px;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  width: 48px;
+  height: 16px;
+  min-height: 16px;
+  opacity: 0;
+  pointer-events: none;
+}
+.desktop-panel[data-panel-focused='true'] .desktop-composer-resize {
+  opacity: 1;
+  pointer-events: auto;
+}
+.desktop-text-composer[data-manual-height='true'] .desktop-composer-input {
+  flex-basis: 0;
+}

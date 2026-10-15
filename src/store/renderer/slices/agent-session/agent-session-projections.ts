@@ -106,3 +106,16 @@ export const getAgentRenameViewCurrent = (
     session?.workspaceId === request.workspaceId
   );
 };
+
+/** The actual final row must be an assistant stream, not an earlier interrupted row. */
+export const getAgentSessionHasStreamingTailMessage = (
+  state: { agentSessions: AgentSessionState },
+  agentId: string,
+): boolean => {
+  const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+  const lastMessage = messages[messages.length - 1];
+  return (
+    lastMessage?.role === 'assistant' &&
+    (lastMessage.isStreaming === true || lastMessage.streamingComplete === false)
+  );
+};

@@ -51,8 +51,10 @@ import { linkTooltipReducer } from './link-tooltip/link-tooltip-slice';
 import { workspaceNotesReducer } from '../../../../src/store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { gitReducer } from '../../../../src/store/renderer/slices/git/git-slice';
 import { filesReducer } from '../../../../src/store/renderer/slices/files/files-slice';
+import { unreadTrackingReducer } from '../../../../src/store/renderer/slices/unread-tracking/unread-tracking-slice';
 
 export const store = new ReactStore({
+  unreadTracking: unreadTrackingReducer,
   workspaceInitializer: workspaceInitializerReducer,
   workspaceCreateProgress: workspaceCreateProgressReducer,
   githubRepos: githubReposReducer,

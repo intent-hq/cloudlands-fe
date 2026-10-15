@@ -1,3 +1,5 @@
+import { createBackendAgentSeen } from './backend-agent-seen';
+const markAgentSeen = createBackendAgentSeen((...args) => backendRequest(...args));
 import { createBackendAgentCreator } from './backend-agent-creator';
 import { createBackendChatCommands } from './backend-chat-commands';
 const chatCommands = createBackendChatCommands((...args) => backendRequest(...args));
@@ -369,24 +371,13 @@ export class LiveAgentsClient implements AgentsClient {
     if (params.detail !== undefined) rpcParams.detail = params.detail;
     return runMutation('agent.resolveProposal', rpcParams);
   }
-  async markSeen(params: {
+  // Source AppClient compatibility until renderer cutover; wire behavior has one owner.
+  markSeen(params: {
     agentId: string;
     workspaceId: string;
     messageId: string;
   }): Promise<MutationResult> {
-    // `agent.markSeen` (§5.5) takes `{ workspaceId, agentId, messageId }`
-    // (all required — workspace mismatch surfaces as NotFound); the wire ack
-    // is `{ success: true, lastSeenMessageId }`, folded by `runMutation` into
-    // a plain `MutationResult`. The daemon persists the marker in session
-    // metadata (survives reload) and emits `agent:updated` so all clients
-    // converge on the advanced marker. Idempotent on the same messageId.
-    // Transport / daemon errors fold into `{ success: false, error }` — the
-    // fire-and-forget trigger never awaits this for UI flow.
-    return runMutation('agent.markSeen', {
-      workspaceId: params.workspaceId,
-      agentId: params.agentId,
-      messageId: params.messageId,
-    });
+    return markAgentSeen(params);
   }
   setReasoningEffort(params: {
     agentId: string;

@@ -27,6 +27,7 @@ export function WorkspaceConversationModel(props: {
   agentId: string;
   disabled: boolean;
   responding: boolean;
+  triggerClass?: string;
 }) {
   const connection = selectPrincipalConnectionContext().value;
   const participation = selectWorkspaceParticipationContext(props.workspaceId).value;
@@ -43,11 +44,13 @@ function ConversationModelHost({
   agentId,
   disabled,
   responding,
+  triggerClass,
 }: {
   workspaceId: string;
   agentId: string;
   disabled: boolean;
   responding: boolean;
+  triggerClass?: string;
 }) {
   const session = selectAgentSession(agentId).value;
   const provider = selectAgentProvider(agentId).value;
@@ -98,6 +101,7 @@ function ConversationModelHost({
   return (
     <div className="min-w-0" data-testid="conversation-model-controls">
       <ModelPicker
+        triggerClass={triggerClass}
         selectedModel={session.model}
         providerId={provider}
         workspaceId={workspaceId}

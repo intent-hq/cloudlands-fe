@@ -31,7 +31,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { store } from '@/store';
 import { WorkspaceConversationComposer } from './workspace-conversation-composer';
-import type { MessageComposerProps } from '@/components/ui/message-composer';
+import { MessageComposer, type MessageComposerProps } from '@/components/ui/message-composer';
 import { createAdmittedLegacyPrincipal } from '../../../../../src/test/fixtures/admitted-legacy-principal';
 import { setWorkspaceEntity } from '../../../../../src/store/renderer/slices/workspace/workspace-slice';
 import { bulkUpsertSessions } from '../../../../../src/store/renderer/slices/agent-session/agent-session-slice';
@@ -857,3 +857,32 @@ it.each(['valid', 'other-root', 'malformed'] as const)(
     expect(drafts.clear).not.toHaveBeenCalled();
   },
 );
+
+it('uses a desktop presenter without a second draft owner and rejects its parked callbacks', async () => {
+  let active = true;
+  await act(async () =>
+    root.render(
+      <WorkspaceConversationComposer
+        workspaceId={ws}
+        agentId={agent}
+        presentation={{ Composer: MessageComposer, isCurrent: () => active }}
+      />,
+    ),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.value).toBe('saved draft');
+  });
+  const captured = ui.props!;
+  await act(async () => captured.onValueChange?.('desktop draft Ω'));
+  await settle();
+  expect(selectChatDraft.select(store.state, ws, agent)).toBe('desktop draft Ω');
+  active = false;
+  await act(async () => {
+    captured.onValueChange?.('stale');
+    captured.onSend?.('stale', []);
+    captured.onStop?.();
+  });
+  expect(selectChatDraft.select(store.state, ws, agent)).toBe('desktop draft Ω');
+  expect(entry()).toBeUndefined();
+});
