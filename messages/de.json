@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "Das Speicherergebnis ist unbekannt. Speichern ist in dieser Sitzung gesperrt. Prüfe die gespeicherte Notiz. Neuladen entfernt diese Warnung und wiederholt den Schreibvorgang nicht.",
   "workspace_noteEdit_bounded_error": "Nur vollständige normale Markdown-Notizen bis 500 KiB sind bearbeitbar. Aufgabenanweisungen werden nicht unterstützt.",
   "workspace_noteEdit_leave_label": "Diese Notiz verlassen?",
-  "workspace_noteEdit_discard_description": "Lokale ungespeicherte Änderungen verwerfen und diese Notiz verlassen?"
+  "workspace_noteEdit_discard_description": "Lokale ungespeicherte Änderungen verwerfen und diese Notiz verlassen?",
+  "workspace_noteCreate_new_label": "Neue Notiz",
+  "workspace_noteCreate_create_label": "Notiz erstellen",
+  "workspace_noteCreate_title_label": "Notiztitel",
+  "workspace_noteCreate_pending_description": "Die Notiz wird erstellt. Das Schließen dieses Formulars bricht eine gesendete Anfrage nicht ab.",
+  "workspace_noteCreate_unknown_description": "Das Ergebnis der Erstellung ist unbekannt. Prüfe die Notizliste, bevor du eine weitere Notiz erstellst. Diese Sitzung sendet die Anfrage nicht erneut.",
+  "workspace_noteCreate_failed_description": "Die Notiz konnte nicht erstellt werden. Dein Titel bleibt erhalten; wähle „Notiz erstellen“, um es erneut zu versuchen.",
+  "workspace_noteCreate_retired_description": "Dieses Formular ist nicht mehr mit seiner ursprünglichen Workspace-Sitzung verbunden. Schließe es und öffne „Neue Notiz“ erneut."
 }

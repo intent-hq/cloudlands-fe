@@ -52,6 +52,8 @@ type ReadyTasksState = {
 
 export type WorkspaceNotesWorkspaceState = {
   notes: Collection<Note, 'id'>;
+  /** Deletion events fence late creation acknowledgements during this workspace lifetime. */
+  deletedNoteIds: Record<string, true>;
   loading: boolean;
   error: string | null;
   initialized: boolean;
@@ -78,6 +80,9 @@ export type WorkspaceNotesState = {
   explicitSaveOperations: Collection<ExplicitNoteSaveOperation, 'requestId'>;
   /** Permanent ID-only tombstones fence departed views without retaining their bodies. */
   revokedEditorViews: Record<string, true>;
+  explicitCreators: Collection<ExplicitNoteCreatorIdentity, 'viewId'>;
+  explicitCreateOperations: Collection<ExplicitNoteCreateOperation, 'requestId'>;
+  revokedCreatorViews: Record<string, true>;
 };
 
 /** The source writer contributes sibling commands to the same per-note FIFO. */
@@ -115,5 +120,20 @@ export type ExplicitNoteSaveOperation = ExplicitNoteSaveRequest & {
   echoedRev?: number;
   /** Necessary merge history while a confirmed receipt cannot yet be applied to its surviving draft. */
   deferredRebase?: { sentContent: string; content: string; rev: number };
+  error?: string;
+};
+
+export type ExplicitNoteCreatorIdentity = {
+  workspaceId: string;
+  viewId: string;
+  authority: string;
+  context: string;
+};
+export type ExplicitNoteCreateRequest = ExplicitNoteCreatorIdentity & { requestId: string };
+/** Operation facts survive departure/reset; note bodies remain solely in workspace notes. */
+export type ExplicitNoteCreateOperation = ExplicitNoteCreateRequest & {
+  status: 'queued' | 'running' | 'confirmed' | 'failed' | 'unknown';
+  noteId?: string;
+  echoedRev?: number;
   error?: string;
 };

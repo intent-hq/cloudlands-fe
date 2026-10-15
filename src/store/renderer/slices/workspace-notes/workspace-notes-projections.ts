@@ -1,6 +1,9 @@
 import { MAX_CODE_EDITOR_CONTENT_SIZE } from '../../../../lib/utils/code-editor-policy';
-import type { ExplicitNoteEditorIdentity } from './workspace-notes-types';
-import { ContentType } from '../../../../shared/types';
+import type {
+  ExplicitNoteEditorIdentity,
+  ExplicitNoteCreatorIdentity,
+} from './workspace-notes-types';
+import { ContentType, NoteVisibility, type CreateNoteRequest } from '../../../../shared/types';
 import { SPEC_NOTE_ID } from '../../../../shared/constants/notes';
 import { isNoteContentStale } from '../../../../shared/utils/note-content';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -50,6 +53,51 @@ export const getAllNotes = (
 
 export const getExplicitNoteEditor = (state: WorkspaceNotesProjectionState, viewId: string) =>
   getItem(state.workspaceNotes.explicitEditors, viewId);
+
+export const getExplicitNoteCreator = (state: WorkspaceNotesProjectionState, viewId: string) =>
+  getItem(state.workspaceNotes.explicitCreators, viewId);
+
+/** Omit authority only for conservative workspace-wide admission; UI receipts require it. */
+export const getExplicitNoteCreateOperations = (
+  state: WorkspaceNotesProjectionState,
+  workspaceId: string,
+  authority?: string,
+) =>
+  getItems(state.workspaceNotes.explicitCreateOperations).filter(
+    (operation) =>
+      operation.workspaceId === workspaceId &&
+      (authority === undefined || operation.authority === authority),
+  );
+
+export const getExplicitNoteCreatorCurrent = (
+  state: WorkspaceNotesProjectionState,
+  identity: ExplicitNoteCreatorIdentity,
+) => {
+  const creator = getExplicitNoteCreator(state, identity.viewId);
+  return (
+    !!creator &&
+    !state.workspaceNotes.revokedCreatorViews[identity.viewId] &&
+    creator.workspaceId === identity.workspaceId &&
+    creator.authority === identity.authority &&
+    creator.context === identity.context
+  );
+};
+
+/** The explicit creation flow creates only an ordinary, initially empty Markdown note. */
+export function isExplicitNoteCreationSupported(
+  data: Omit<CreateNoteRequest, 'workspaceId'>,
+): boolean {
+  return (
+    typeof data.title === 'string' &&
+    data.title.trim().length > 0 &&
+    isExplicitNoteContentSupported(data.title) &&
+    data.content === '' &&
+    (data.contentType === undefined || data.contentType === ContentType.Markdown) &&
+    (data.tags === undefined || (Array.isArray(data.tags) && data.tags.length === 0)) &&
+    data.parentId === undefined &&
+    (data.visibility === undefined || data.visibility === NoteVisibility.Workspace)
+  );
+}
 
 export const getExplicitNoteSaveOperations = (
   state: WorkspaceNotesProjectionState,

@@ -1,4 +1,5 @@
 import { createNoteSetContent } from './backend-note-set-content';
+import { createNoteCreate } from './backend-note-create';
 /**
  * Live notes domain backed by the intentd daemon.
  *
@@ -12,7 +13,7 @@ import { createNoteSetContent } from './backend-note-set-content';
  * events-driven refetch.
  */
 import { AuthorType } from '$shared/types';
-import type { Author, CreateNoteRequest, Note, NoteVersion } from '$shared/types';
+import type { Author, Note, NoteVersion } from '$shared/types';
 import type {
   LineAttributionClient,
   LineAttributionData,
@@ -30,7 +31,6 @@ import { normalizeNote } from './note-normalization';
 export { normalizeNote } from './note-normalization';
 import { createDeltaSubscription } from './delta-subscription';
 import {
-  newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutation,
@@ -137,9 +137,10 @@ export class LiveNotesClient implements NotesClient {
   // `workspaceId` wins when provided, otherwise the workspace is resolved via
   // `resolveNoteWorkspaceId` (fallback-only; the cache is last-writer-wins).
 
-  async create(request: CreateNoteRequest): Promise<MutationResult> {
-    return runMutation('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
-  }
+  create: NotesClient['create'] = createNoteCreate({
+    backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),
+    rememberNoteWorkspace,
+  });
 
   setContent: NotesClient['setContent'] = createNoteSetContent({
     backendRequest: <T>(...args: Parameters<typeof backendRequest>) => backendRequest<T>(...args),

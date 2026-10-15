@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "保存结果未知。本次会话中已阻止保存。请检查已保存的笔记。重新加载会清除此警告，但不会重新执行保存。",
   "workspace_noteEdit_bounded_error": "仅可编辑不超过 500 KiB 的完整普通 Markdown 笔记。不支持任务指令。",
   "workspace_noteEdit_leave_label": "离开此笔记？",
-  "workspace_noteEdit_discard_description": "放弃本地未保存的编辑并离开此笔记？"
+  "workspace_noteEdit_discard_description": "放弃本地未保存的编辑并离开此笔记？",
+  "workspace_noteCreate_new_label": "新建笔记",
+  "workspace_noteCreate_create_label": "创建笔记",
+  "workspace_noteCreate_title_label": "笔记标题",
+  "workspace_noteCreate_pending_description": "正在创建笔记。关闭此表单不会取消已发送的请求。",
+  "workspace_noteCreate_unknown_description": "创建结果未知。创建其他笔记前，请检查笔记列表。本次会话不会重新发送请求。",
+  "workspace_noteCreate_failed_description": "无法创建笔记。标题已保留，请选择“创建笔记”重试。",
+  "workspace_noteCreate_retired_description": "此表单已不再连接到原来的工作区会话。请关闭表单并重新打开“新建笔记”。"
 }

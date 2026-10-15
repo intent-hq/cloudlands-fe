@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "保存結果は不明です。このセッションでは保存がブロックされています。保存済みのノートを確認してください。再読み込みすると警告が消えますが、保存は再実行されません。",
   "workspace_noteEdit_bounded_error": "編集できるのは500 KiB以下の完全な通常のMarkdownノートのみです。タスク指示はサポートされていません。",
   "workspace_noteEdit_leave_label": "このノートから移動しますか？",
-  "workspace_noteEdit_discard_description": "未保存のローカル編集を破棄して、このノートから移動しますか？"
+  "workspace_noteEdit_discard_description": "未保存のローカル編集を破棄して、このノートから移動しますか？",
+  "workspace_noteCreate_new_label": "新しいノート",
+  "workspace_noteCreate_create_label": "ノートを作成",
+  "workspace_noteCreate_title_label": "ノートのタイトル",
+  "workspace_noteCreate_pending_description": "ノートを作成しています。このフォームを閉じても、送信済みのリクエストはキャンセルされません。",
+  "workspace_noteCreate_unknown_description": "作成結果は不明です。別のノートを作成する前にノート一覧を確認してください。このセッションではリクエストを再送信しません。",
+  "workspace_noteCreate_failed_description": "ノートを作成できませんでした。タイトルは保持されています。「ノートを作成」を選択して再試行してください。",
+  "workspace_noteCreate_retired_description": "このフォームは元のワークスペースセッションに接続されていません。閉じてから「新しいノート」を開き直してください。"
 }

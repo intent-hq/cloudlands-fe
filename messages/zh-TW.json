@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "儲存結果不明。本次工作階段已封鎖儲存。請檢查已儲存的筆記。重新載入會清除此警告，但不會重新執行儲存。",
   "workspace_noteEdit_bounded_error": "僅可編輯不超過 500 KiB 的完整一般 Markdown 筆記。不支援任務指令。",
   "workspace_noteEdit_leave_label": "離開此筆記？",
-  "workspace_noteEdit_discard_description": "捨棄本機未儲存的編輯並離開此筆記？"
+  "workspace_noteEdit_discard_description": "捨棄本機未儲存的編輯並離開此筆記？",
+  "workspace_noteCreate_new_label": "新增筆記",
+  "workspace_noteCreate_create_label": "建立筆記",
+  "workspace_noteCreate_title_label": "筆記標題",
+  "workspace_noteCreate_pending_description": "正在建立筆記。關閉此表單不會取消已傳送的請求。",
+  "workspace_noteCreate_unknown_description": "建立結果不明。建立其他筆記前，請檢查筆記清單。本次工作階段不會重新傳送請求。",
+  "workspace_noteCreate_failed_description": "無法建立筆記。標題已保留，請選擇「建立筆記」重試。",
+  "workspace_noteCreate_retired_description": "此表單已不再連線至原本的工作區工作階段。請關閉表單並重新開啟「新增筆記」。"
 }

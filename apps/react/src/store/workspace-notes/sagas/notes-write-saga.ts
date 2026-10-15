@@ -11,9 +11,30 @@ import {
   selectNoteWriteReady,
 } from '../note-edit-selectors';
 
+import {
+  selectNoteCreateAuthority,
+  selectNoteCreateContext,
+  selectExplicitNoteCreator,
+  selectExplicitNoteCreatorCurrent,
+  selectExplicitNoteCreateOperations,
+} from '../note-create-selectors';
+
 export const notesWriteSaga = createNotesWriteSaga({
   notes: notesWriteClient,
   selectNoteById,
+  creation: {
+    notes: notesWriteClient,
+    selectCreator: selectExplicitNoteCreator,
+    selectOperations: selectExplicitNoteCreateOperations,
+    isCurrent: (identity) =>
+      selectExplicitNoteCreatorCurrent.select(store.state, identity) &&
+      selectNoteCreateAuthority.select(store.state, identity.workspaceId) === identity.authority &&
+      selectNoteCreateContext.select(store.state, identity.workspaceId) === identity.context,
+    canPublish: (identity) =>
+      selectNoteCreateAuthority.select(store.state, identity.workspaceId) === identity.authority &&
+      selectNoteCreateContext.select(store.state, identity.workspaceId) === identity.context,
+    dispatch: (action) => store.dispatch(action),
+  },
   explicit: {
     selectEditor: selectExplicitNoteEditor,
     selectOperations: selectExplicitNoteSaveOperations,

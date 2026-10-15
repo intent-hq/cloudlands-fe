@@ -26,6 +26,12 @@ import {
   noteWorkspaceRootRequested,
   setWorkspaceNotesLoading,
   workspaceNotesReducer,
+  explicitNoteCreatorAdmitted,
+  explicitNoteCreatorReleased,
+  explicitNoteCreateQueued,
+  explicitNoteCreateStarted,
+  explicitNoteCreateSettled,
+  noteCreationAccepted,
 } from './workspace-notes-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
@@ -50,6 +56,82 @@ function mockNote(id: string, workspaceId = WS_1, overrides: Partial<Note> = {})
 }
 
 describe('workspaceNotesReducer', () => {
+  it('keeps creation receipts through reset and permanently revokes departed creator IDs', () => {
+    const identity = {
+      workspaceId: WS_1,
+      viewId: 'creator',
+      authority: 'owner',
+      context: 'connection',
+    };
+    let state = workspaceNotesReducer(undefined, explicitNoteCreatorAdmitted(identity));
+    expect(workspaceNotesReducer(state, explicitNoteCreatorAdmitted(identity))).toBe(state);
+    state = workspaceNotesReducer(
+      state,
+      explicitNoteCreateQueued({ ...identity, requestId: 'op', status: 'queued' }),
+    );
+    expect(
+      workspaceNotesReducer(
+        state,
+        explicitNoteCreateQueued({ ...identity, requestId: 'op', status: 'queued' }),
+      ),
+    ).toBe(state);
+    state = workspaceNotesReducer(state, explicitNoteCreateStarted('op'));
+    expect(workspaceNotesReducer(state, explicitNoteCreateStarted('op'))).toBe(state);
+    state = workspaceNotesReducer(state, clearWorkspaceNotesForWorkspaces([WS_1]));
+    expect(getItem(state.explicitCreateOperations, 'op')?.status).toBe('unknown');
+    expect(getItem(state.explicitCreators, 'creator')).toBeUndefined();
+    expect(workspaceNotesReducer(state, explicitNoteCreatorAdmitted(identity))).toBe(state);
+    state = workspaceNotesReducer(
+      state,
+      explicitNoteCreateSettled('op', 'confirmed', 'created', 0),
+    );
+    expect(getItem(state.explicitCreateOperations, 'op')).toMatchObject({
+      ...identity,
+      status: 'confirmed',
+      noteId: 'created',
+      echoedRev: 0,
+    });
+    expect(workspaceNotesReducer(state, explicitNoteCreateSettled('op', 'unknown'))).toBe(state);
+    expect(workspaceNotesReducer(state, explicitNoteCreatorReleased('creator'))).toBe(state);
+    expect(structuredClone(state)).toEqual(state);
+  });
+
+  it('fences release before admission and settles queued creation as not sent', () => {
+    const identity = {
+      workspaceId: WS_1,
+      viewId: 'creator',
+      authority: 'owner',
+      context: 'connection',
+    };
+    const released = workspaceNotesReducer(undefined, explicitNoteCreatorReleased('creator'));
+    expect(workspaceNotesReducer(released, explicitNoteCreatorAdmitted(identity))).toBe(released);
+    let state = workspaceNotesReducer(undefined, explicitNoteCreatorAdmitted(identity));
+    state = workspaceNotesReducer(
+      state,
+      explicitNoteCreateQueued({ ...identity, requestId: 'op', status: 'queued' }),
+    );
+    state = workspaceNotesReducer(state, explicitNoteCreatorReleased('creator'));
+    expect(getItem(state.explicitCreateOperations, 'op')?.status).toBe('failed');
+    expect(
+      workspaceNotesReducer(state, explicitNoteCreateSettled('op', 'confirmed', 'unexpected', 0)),
+    ).toBe(state);
+  });
+
+  it('accepts creation into canonical notes without replacing a newer subscription entity', () => {
+    const note = mockNote('created', WS_1, { rev: 0, content: '' });
+    let state = workspaceNotesReducer(undefined, noteCreationAccepted(WS_1, note));
+    expect(getItem(state.byWorkspaceId[WS_1].notes, note.id)).toEqual(note);
+    expect(state.byWorkspaceId[WS_1].newlyCreatedNoteId).toBeNull();
+    const newer = { ...note, rev: 3, content: 'subscription' };
+    state = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'created', newer));
+    expect(workspaceNotesReducer(state, noteCreationAccepted(WS_1, note))).toBe(state);
+    state = workspaceNotesReducer(state, noteCreationAccepted(WS_1, note, true));
+    expect(getItem(state.byWorkspaceId[WS_1].notes, note.id)).toEqual(newer);
+    expect(state.byWorkspaceId[WS_1].newlyCreatedNoteId).toBe('created');
+    expect(workspaceNotesReducer(state, noteCreationAccepted(WS_1, note, true))).toBe(state);
+    expect(workspaceNotesReducer(state, noteCreationAccepted(WS_2, note))).toBe(state);
+  });
+
   it('returns the initial state', () => {
     expect(workspaceNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
@@ -391,7 +473,14 @@ describe('workspaceNotesReducer', () => {
 
     const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, 'note-missing'));
 
-    expect(nextState).toBe(loadedState);
+    expect(nextState.byWorkspaceId[WS_1].notes).toBe(loadedState.byWorkspaceId[WS_1].notes);
+    expect(nextState.byWorkspaceId[WS_1].notesVersion).toBe(
+      loadedState.byWorkspaceId[WS_1].notesVersion,
+    );
+    expect(nextState.byWorkspaceId[WS_1].deletedNoteIds).toEqual({ 'note-missing': true });
+    expect(workspaceNotesReducer(nextState, applyNoteDeleted(WS_1, 'note-missing'))).toBe(
+      nextState,
+    );
   });
 
   it('replaces updated notes when a full note payload is available', () => {
@@ -549,5 +638,22 @@ describe('workspaceNotesReducer', () => {
 
     expect(nextState.byWorkspaceId[WS_1]).toBeUndefined();
     expect(nextState.byWorkspaceId[WS_2]).toEqual(loadedState.byWorkspaceId[WS_2]);
+  });
+
+  it('retains deletion history for late creation receipts, clears it on a new authoritative create, and retires it with the workspace', () => {
+    const note = mockNote('late', WS_1, { rev: 0 });
+    const loaded = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [] }),
+    );
+    const deleted = workspaceNotesReducer(loaded, applyNoteDeleted(WS_1, 'late'));
+    expect(workspaceNotesReducer(deleted, applyNoteDeleted(WS_1, 'late'))).toBe(deleted);
+    expect(workspaceNotesReducer(deleted, noteCreationAccepted(WS_1, note))).toBe(deleted);
+    const recreated = workspaceNotesReducer(deleted, applyNoteCreated(WS_1, note));
+    expect(recreated.byWorkspaceId[WS_1].deletedNoteIds).toEqual({});
+    expect(getItem(recreated.byWorkspaceId[WS_1].notes, note.id)).toEqual(note);
+    expect(
+      workspaceNotesReducer(deleted, workspaceUnmounted(WS_1)).byWorkspaceId[WS_1],
+    ).toBeUndefined();
   });
 });

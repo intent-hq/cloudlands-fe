@@ -1,7 +1,8 @@
-import { call, cancelled, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
+import type { NoteCreateResult } from '$lib/client/app-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -22,7 +23,7 @@ import {
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import { selectNoteById } from '../workspace-notes-selectors';
 import {
   addOptimisticNote,
   addCommentRequested,
@@ -31,7 +32,7 @@ import {
   applyNoteDeleted,
   applyNoteUpdated,
   createNote,
-  createNotePersistRequested,
+  noteCreationAccepted,
   deleteCommentRequested,
   deleteNote,
   deleteNotePersistRequested,
@@ -507,45 +508,29 @@ function* createNewNote(
   data: Omit<CreateNoteRequest, 'workspaceId'>,
 ): SagaGenerator<string | undefined> {
   const tempId = temporaryNoteId();
-  const state = yield* selectWorkspaceNotesState.effect(workspaceId);
-  const before = new Set(state.notes.ids.map(String));
   const optimistic = optimisticNote(workspaceId, tempId, data);
-  let keepOptimistic = true;
   yield* put(addOptimisticNote(workspaceId, optimistic));
 
   try {
-    const result: MutationResult = yield* call(
+    const result: NoteCreateResult = yield* call(
       [appClient.notes, appClient.notes.create],
       createRequest(workspaceId, data),
     );
-    if (!result.success) {
-      yield* put(removeOptimisticNote(workspaceId, tempId));
-      keepOptimistic = false;
+    if (
+      !result.success ||
+      !result.note ||
+      result.note.workspaceId !== workspaceId ||
+      !result.note.id
+    ) {
       logger.error('Failed to create note', result.error);
       return undefined;
     }
 
-    try {
-      const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-        [appClient.notes, appClient.notes.list],
-        workspaceId,
-      );
-      const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
-      keepOptimistic = false;
-      const created = notes.find((note) => !before.has(String(note.id)));
-      if (!created) return undefined;
-      yield* put(addOptimisticNote(workspaceId, created));
-      return String(created.id);
-    } catch (error) {
-      keepOptimistic = false;
-      logger.error('Failed to refetch notes after creating a note', error);
-      return undefined;
-    }
+    yield* put(noteCreationAccepted(workspaceId, result.note, true));
+    const accepted = yield* selectNoteById.effect(workspaceId, String(result.note.id));
+    return accepted ? String(result.note.id) : undefined;
   } finally {
-    if (keepOptimistic && (yield* cancelled())) {
-      yield* put(removeOptimisticNote(workspaceId, tempId));
-    }
+    yield* put(removeOptimisticNote(workspaceId, tempId));
   }
 }
 
@@ -556,16 +541,6 @@ function* handleCreateAction(action: ReturnType<typeof createNote>) {
     create: call(createNewNote, workspaceId, data),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-}
-
-function* handleCreatePersistRequested(action: ReturnType<typeof createNotePersistRequested>) {
-  const [workspaceId, data] = action.payload;
-  try {
-    const noteId = yield* call(createNewNote, workspaceId, data);
-    yield* put(action.success(noteId));
-  } catch (error) {
-    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
-  }
 }
 
 function* handleCreateRequested(action: ReturnType<typeof createNoteRequested>) {
@@ -604,6 +579,7 @@ export const notesWriteSaga = createNotesWriteSaga({
   notes: appClient.notes,
   selectNoteById,
   source: {
+    create: createNewNote,
     *onContentFailure(workspaceId, error, reported) {
       logger.error('Failed to save note content', error);
       if (reported)
@@ -619,7 +595,6 @@ export const notesWriteSaga = createNotesWriteSaga({
       yield* takeEvery(deleteNote, handleDeleteAction, queue);
       yield* takeEvery(deleteNotePersistRequested, handleDeleteRequested, queue);
       yield* takeEvery(createNote, handleCreateAction);
-      yield* takeEvery(createNotePersistRequested, handleCreatePersistRequested);
       yield* takeEvery(createNoteRequested, handleCreateRequested);
       yield* takeEvery(addCommentRequested, handleAddComment, queue);
       yield* takeEvery(respondToCommentRequested, handleRespondComment, queue);

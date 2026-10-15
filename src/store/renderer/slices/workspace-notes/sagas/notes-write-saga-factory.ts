@@ -1,5 +1,9 @@
 import { m } from '../../../../../shared/paraglide/messages.js';
 import {
+  createNotesCreationSaga,
+  type NotesCreationDependencies,
+} from './notes-creation-saga-factory';
+import {
   isEditableMarkdownNote,
   isExplicitNoteContentSupported,
 } from '../workspace-notes-projections';
@@ -11,6 +15,7 @@ import {
   explicitNoteSaveReconciled,
   explicitNoteContentAccepted,
   explicitNoteEditorsRetired,
+  explicitNoteCreatorsRetired,
   explicitNoteSaveRequested,
   explicitNoteSaveQueued,
   explicitNoteSaveStarted,
@@ -96,9 +101,11 @@ export function createNotesWriteSaga({
   selectNoteById,
   source,
   explicit,
+  creation,
 }: {
   notes: Pick<NotesClient, 'setContent'>;
   selectNoteById: { effect(workspaceId: string, noteId: string): SagaGenerator<Note | undefined> };
+  creation?: NotesCreationDependencies;
   explicit?: {
     selectEditor: { effect(viewId: string): SagaGenerator<ExplicitNoteEditor | undefined> };
     selectOperations: {
@@ -118,6 +125,10 @@ export function createNotesWriteSaga({
     ): unknown;
   };
   source?: {
+    create?: (
+      workspaceId: string,
+      data: Omit<import('../../../../../shared/types').CreateNoteRequest, 'workspaceId'>,
+    ) => SagaGenerator<string | undefined>;
     register(queue: NotesWriteQueue): SagaGenerator<void>;
     onContentFailure(workspaceId: string, error: unknown, reported: boolean): SagaGenerator<void>;
   };
@@ -776,6 +787,14 @@ export function createNotesWriteSaga({
     const queue = channel<MutationEnvelope>(buffers.expanding());
     noteMutationQueue = queue;
     try {
+      if (creation || source?.create)
+        yield* fork(
+          createNotesCreationSaga({
+            explicit: creation,
+            sourceCreate: source?.create,
+            selectNoteById,
+          }),
+        );
       if (explicit) {
         yield* takeEvery(explicitNoteEditorOpened, openExplicitEditor);
         yield* takeEvery(explicitNoteEditorRebound, rebindExplicitEditor);
@@ -804,6 +823,7 @@ export function createNotesWriteSaga({
       yield* takeEvery(workspaceUnmounted, cleanupWorkspace);
       yield* call(consumeMutations, queue);
     } finally {
+      creation?.dispatch(explicitNoteCreatorsRetired());
       const queued = yield* flush(queue);
       for (const envelope of queued) yield* call(settleDiscardedMutation, envelope);
       pendingContent.clear();

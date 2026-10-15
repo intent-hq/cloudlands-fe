@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "Le résultat de l’enregistrement est inconnu. L’enregistrement est bloqué pour cette session. Inspectez la note enregistrée. Recharger efface cet avertissement sans répéter l’écriture.",
   "workspace_noteEdit_bounded_error": "Seules les notes Markdown ordinaires et complètes de 500 Kio maximum sont modifiables. Les directives de tâches ne sont pas prises en charge.",
   "workspace_noteEdit_leave_label": "Quitter cette note ?",
-  "workspace_noteEdit_discard_description": "Abandonner les modifications locales non enregistrées et quitter cette note ?"
+  "workspace_noteEdit_discard_description": "Abandonner les modifications locales non enregistrées et quitter cette note ?",
+  "workspace_noteCreate_new_label": "Nouvelle note",
+  "workspace_noteCreate_create_label": "Créer la note",
+  "workspace_noteCreate_title_label": "Titre de la note",
+  "workspace_noteCreate_pending_description": "Création de la note. Fermer ce formulaire ne permet pas d’annuler une demande déjà envoyée.",
+  "workspace_noteCreate_unknown_description": "Le résultat de la création est inconnu. Vérifiez la liste des notes avant d’en créer une autre. Cette session ne renverra pas la demande.",
+  "workspace_noteCreate_failed_description": "La note n’a pas pu être créée. Votre titre est conservé ; choisissez Créer la note pour réessayer.",
+  "workspace_noteCreate_retired_description": "Ce formulaire n’est plus connecté à sa session d’espace de travail d’origine. Fermez-le et rouvrez Nouvelle note."
 }

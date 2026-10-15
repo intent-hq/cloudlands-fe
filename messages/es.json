@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "Se desconoce el resultado del guardado. No se puede guardar en esta sesión. Revisa la nota guardada. Recargar borra esta advertencia y nunca repite el guardado.",
   "workspace_noteEdit_bounded_error": "Solo se pueden editar notas Markdown normales y completas de hasta 500 KiB. No se admiten directivas de tareas.",
   "workspace_noteEdit_leave_label": "¿Salir de esta nota?",
-  "workspace_noteEdit_discard_description": "¿Descartar los cambios locales sin guardar y salir de esta nota?"
+  "workspace_noteEdit_discard_description": "¿Descartar los cambios locales sin guardar y salir de esta nota?",
+  "workspace_noteCreate_new_label": "Nueva nota",
+  "workspace_noteCreate_create_label": "Crear nota",
+  "workspace_noteCreate_title_label": "Título de la nota",
+  "workspace_noteCreate_pending_description": "Creando la nota. Cerrar este formulario no cancela una solicitud enviada.",
+  "workspace_noteCreate_unknown_description": "El resultado de la creación es desconocido. Revisa la lista de notas antes de crear otra. Esta sesión no reenviará la solicitud.",
+  "workspace_noteCreate_failed_description": "No se pudo crear la nota. Se conserva el título; selecciona Crear nota para volver a intentarlo.",
+  "workspace_noteCreate_retired_description": "Este formulario ya no está conectado a su sesión original del espacio de trabajo. Ciérralo y vuelve a abrir Nueva nota."
 }

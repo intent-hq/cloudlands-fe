@@ -28,13 +28,16 @@ import { m } from '$shared/paraglide/messages.js';
 import { parseWorkspaceFileTarget } from './workspace-file-target';
 import { selectNoteEditReady } from '@/store/workspace-notes/note-edit-selectors';
 import { WorkspaceNoteEditor } from './workspace-note-editor';
+import { WorkspaceNoteCreate } from './workspace-note-create';
 
 function NoteContent({
   workspaceId,
   noteId,
   query,
   fileQuery,
+  startEditing = false,
 }: {
+  startEditing?: boolean;
   workspaceId: string;
   noteId: string;
   query: string;
@@ -46,6 +49,7 @@ function NoteContent({
   const navigate = useNavigate();
   const [showSource, setShowSource] = useState(false);
   const [editing, setEditing] = useState(false);
+  const openedEditor = useRef(false);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const authority = selectPrincipalConnectionContext();
   const admitted = selectAdmittedWorkspaceReadContext(workspaceId).value;
@@ -54,6 +58,12 @@ function NoteContent({
   const view = selectNoteContentView(workspaceId, consumerId);
   const editable = selectNoteEditReady(workspaceId, noteId, consumerId).value;
   const connection = authority.value;
+  useLayoutEffect(() => {
+    if (startEditing && editable && !openedEditor.current) {
+      openedEditor.current = true;
+      setEditing(true);
+    }
+  }, [startEditing, editable]);
   useLayoutEffect(() => {
     if (!connection || !admitted || !notesLoaded) return;
     store.dispatch(selectNote(workspaceId, noteId));
@@ -230,6 +240,7 @@ export function WorkspaceNotes({
   const authority = selectAdmittedWorkspaceReadContext(workspaceId);
   const state = selectWorkspaceNotesState(workspaceId);
   const notes = selectAllNotes(workspaceId);
+  const [createdEditor, setCreatedEditor] = useState<string | null>(null);
   const filteredNotes = filterContextNotes(notes.value, query);
   const list = useRef<HTMLUListElement>(null);
   const filterHeader = useRef<HTMLElement>(null);
@@ -260,7 +271,6 @@ export function WorkspaceNotes({
       </div>
     );
   if (!state.value.initialized && !noteId) return <LoadingState label="Loading notes" />;
-  if (notes.value.length === 0 && !noteId) return <p>This workspace has no notes.</p>;
   return (
     <section className="grid min-w-0 gap-6" data-testid="workspace-notes">
       {noteId ? (
@@ -275,6 +285,7 @@ export function WorkspaceNotes({
           </Link>
           <NoteContent
             key={noteId}
+            startEditing={createdEditor === noteId}
             workspaceId={workspaceId}
             noteId={noteId}
             query={query}
@@ -285,6 +296,21 @@ export function WorkspaceNotes({
         <>
           <header ref={filterHeader} className="flex min-w-0 items-center gap-4">
             <h2 className="type-heading-sm flex-1">Notes</h2>
+            <WorkspaceNoteCreate
+              workspaceId={workspaceId}
+              onCreated={(createdId) => {
+                setCreatedEditor(createdId);
+                void navigate({
+                  to: '/workspaces/$workspaceId',
+                  params: { workspaceId },
+                  search: {
+                    note: createdId,
+                    q: query || undefined,
+                    fileQuery: fileQuery || undefined,
+                  },
+                });
+              }}
+            />
             <SidebarExpandableSearch
               query={query}
               onQueryChange={(value) => {
@@ -301,7 +327,9 @@ export function WorkspaceNotes({
           </header>
           {filteredNotes.length === 0 && (
             <output className="text-muted-foreground">
-              {m.onboarding_dirPicker_noSearchResults_description()}
+              {notes.value.length === 0
+                ? m.notes_panel_empty_label()
+                : m.onboarding_dirPicker_noSearchResults_description()}
             </output>
           )}
           <ul ref={list} className="grid gap-1">

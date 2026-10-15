@@ -23,10 +23,12 @@ import {
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  addOptimisticNote,
   addCommentRequested,
   applyNoteUpdated,
+  applyNoteDeleted,
   createNote,
+  createNotePersistRequested,
+  noteCreationAccepted,
   deleteNote,
   loadWorkspaceNotesSucceeded,
   flushNoteContentRequested,
@@ -200,15 +202,10 @@ describe('notesWriteSaga', () => {
       content: '',
       tags: ['tag'],
     });
-    const wireCreated = {
-      ...created,
-      is_pinned: true,
-      is_archived: true,
-      created_at: 'wire-created',
-      updated_at: 'wire-updated',
-    } as Note;
-    const create = vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
-    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), wireCreated]);
+    const create = vi
+      .spyOn(appClient.notes, 'create')
+      .mockResolvedValue({ success: true, note: created });
+    const list = vi.spyOn(appClient.notes, 'list');
     const run = harness();
 
     run.channel.put(createNote(WS, { title: 'Fresh', content: '', tags: ['tag'] }));
@@ -217,11 +214,8 @@ describe('notesWriteSaga', () => {
     expect(create.mock.calls).toEqual([
       [{ workspaceId: WS, title: 'Fresh', content: '', tags: ['tag'] }],
     ]);
-    expect(list.mock.calls).toEqual([[WS]]);
-    expect(run.actions.slice(-2)).toEqual([
-      loadWorkspaceNotesSucceeded([WS], { [WS]: [note(), created] }),
-      addOptimisticNote(WS, created),
-    ]);
+    expect(list.mock.calls).toEqual([]);
+    expect(run.actions).toContainEqual(noteCreationAccepted(WS, created, true));
     expect(run.getState().byWorkspaceId[WS]?.notes.ids.map(String)).toEqual([NOTE, 'note-created']);
     run.task.cancel();
     await run.task.toPromise();
@@ -253,7 +247,9 @@ describe('notesWriteSaga', () => {
       title: 'New Note',
       content: '',
     });
-    const create = vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
+    const create = vi
+      .spyOn(appClient.notes, 'create')
+      .mockResolvedValue({ success: true, note: created });
     const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), created]);
     const run = harness();
 
@@ -263,16 +259,16 @@ describe('notesWriteSaga', () => {
     expect(create.mock.calls).toEqual([
       [{ workspaceId: WS, title: 'New Note', content: '', tags: [] }],
     ]);
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([]);
     const orderedSuccess = run.actions.filter((action) => {
-      if (action.type === addOptimisticNote.type) {
+      if (action.type === noteCreationAccepted.type) {
         return String((action.payload as [string, Note])[1].id) === 'note-created';
       }
       return action.type === markNoteRead.type || action.type === openTab.type;
     });
     const opened = orderedSuccess[2] as ReturnType<typeof openTab>;
     expect(orderedSuccess).toEqual([
-      addOptimisticNote(WS, created),
+      noteCreationAccepted(WS, created, true),
       markNoteRead(WS, 'note-created'),
       openTab(
         WS,
@@ -301,7 +297,7 @@ describe('notesWriteSaga', () => {
       title: 'New Note',
       content: '',
     });
-    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true, note: created });
     vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), created]);
     const run = harness();
 
@@ -309,7 +305,7 @@ describe('notesWriteSaga', () => {
     await settle();
 
     const orderedSuccess = run.actions.filter((action) => {
-      if (action.type === addOptimisticNote.type) {
+      if (action.type === noteCreationAccepted.type) {
         return String((action.payload as [string, Note])[1].id) === 'note-created';
       }
       return (
@@ -318,7 +314,7 @@ describe('notesWriteSaga', () => {
     });
     const opened = orderedSuccess[2] as ReturnType<typeof openTabInRightmostColumnRequested>;
     expect(orderedSuccess).toEqual([
-      addOptimisticNote(WS, created),
+      noteCreationAccepted(WS, created, true),
       markNoteRead(WS, 'note-created'),
       openTabInRightmostColumnRequested(
         'nested-layout',
@@ -334,6 +330,75 @@ describe('notesWriteSaga', () => {
       ),
     ]);
     expect(run.actions.some((action) => action.type === openTab.type)).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses the returned identity when a sibling note appears first and retains its newer subscription revision', async () => {
+    const created = note({ id: NoteId('ours'), title: 'Fresh', content: '', rev: 0 });
+    const sibling = note({ id: NoteId('sibling'), title: 'Fresh', content: '' });
+    let resolve!: (result: { success: boolean; note: Note }) => void;
+    vi.spyOn(appClient.notes, 'create').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([sibling, created]);
+    const run = harness();
+    const request = createNotePersistRequested(WS, { title: 'Fresh', content: '' });
+    run.channel.put(request);
+    run.dispatch(applyNoteUpdated(WS, 'sibling', sibling));
+    run.dispatch(
+      applyNoteUpdated(WS, 'ours', { ...created, content: 'newer subscription', rev: 3 }),
+    );
+    resolve({ success: true, note: created });
+    await expect(request.promise).resolves.toBe('ours');
+    expect(list).not.toHaveBeenCalled();
+    expect(run.getState().byWorkspaceId[WS].notes.map.ours).toMatchObject({
+      content: 'newer subscription',
+      rev: 3,
+    });
+    expect(run.getState().byWorkspaceId[WS].newlyCreatedNoteId).toBe('ours');
+    expect(run.getState().byWorkspaceId[WS].notes.ids.map(String)).toEqual([
+      NOTE,
+      'sibling',
+      'ours',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not restore or open a created note deleted before its acknowledgement', async () => {
+    const created = note({ id: NoteId('ours'), title: 'Fresh', content: '', rev: 0 });
+    let resolve!: (result: { success: boolean; note: Note }) => void;
+    vi.spyOn(appClient.notes, 'create').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const run = harness();
+    const request = createNotePersistRequested(WS, { title: 'Fresh', content: '' });
+    run.channel.put(request);
+    run.dispatch(applyNoteUpdated(WS, 'ours', created));
+    run.dispatch(applyNoteDeleted(WS, 'ours'));
+    resolve({ success: true, note: created });
+    await expect(request.promise).resolves.toBeUndefined();
+    expect(run.getState().byWorkspaceId[WS].notes.map.ours).toBeUndefined();
+    expect(run.getState().byWorkspaceId[WS].newlyCreatedNoteId).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not guess identity or route when a resolved create lacks its note', async () => {
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
+    const run = harness();
+    const request = createNotePersistRequested(WS, { title: 'Fresh', content: '' });
+    run.channel.put(request);
+    await expect(request.promise).resolves.toBeUndefined();
+    expect(run.getState().byWorkspaceId[WS].notes.ids.map(String)).toEqual([NOTE]);
+    expect(run.getState().byWorkspaceId[WS].newlyCreatedNoteId).toBeNull();
     run.task.cancel();
     await run.task.toPromise();
   });

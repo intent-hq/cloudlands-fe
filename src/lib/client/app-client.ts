@@ -1141,6 +1141,18 @@ export type NoteSetContentOptions = {
   onDispatch(): void;
 };
 
+export type NoteCreateOptions = {
+  requireCreationReceipt: true;
+  idempotencyKey: string;
+  /** Final transport boundary: throwing here prevents dispatch. */
+  onDispatch(): void;
+};
+
+export interface NoteCreateResult extends MutationResult {
+  note?: Note;
+  createOutcome?: 'confirmed' | 'failed' | 'unknown';
+}
+
 export interface NotesClient {
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
@@ -1161,7 +1173,7 @@ export interface NotesClient {
   get(noteId: string, workspaceId?: string): Promise<Note | null>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
-  create(request: CreateNoteRequest): Promise<MutationResult>;
+  create(request: CreateNoteRequest, options?: NoteCreateOptions): Promise<NoteCreateResult>;
   /**
    * Full-replacement of a note's content (`note.setContent`). Optional
    * `expectedVersion` (§11.4-D) is forwarded ONLY when the caller knows the

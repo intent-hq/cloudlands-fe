@@ -216,13 +216,21 @@ another save for that resource in the current session. Reload never replays the
 write, but clears this in-memory warning; inspect the actual file before deciding
 whether to edit and save again. Use **Changed files** to review the resulting diff.
 
-## Existing workspace notes
+## Workspace notes
 
-Open an ordinary note from **Notes**, then choose **Edit Markdown**. Complete Markdown
+Choose **New note** in **Notes**, enter a nonempty title, then choose **Create note**.
+The confirmed note opens in the Markdown editor, including when the list was empty.
+The title form stays open on a definite failure so you can deliberately retry. Closing
+a pending form does not cancel an already-sent creation or open its eventual result.
+An unknown creation outcome blocks another creation in this app session: inspect the
+notes list, but do not infer success from a matching title. Reconnect never resends;
+full reload clears this in-memory warning without replaying the request.
+
+Open an existing ordinary note from **Notes**, then choose **Edit Markdown**. Complete Markdown
 notes up to 500 KiB support source editing with **Save** or **Ctrl/Cmd+S**. **View saved
 note** returns to the accepted rendered content after saving. Spec/default notes, task
 notes, incomplete bodies and task-conversion directives stay read-only in this preview.
-This does not include note creation, renaming, comments or the rich desktop editor.
+This does not include note renaming, deletion, comments or the rich desktop editor.
 
 The canonical note writer sends the loaded revision as the daemon's merge base.
 Concurrent changes can be merged; the accepted response and revision become the next
@@ -238,6 +246,9 @@ Inspect the saved note before deciding how to proceed; refetch alone does not pr
 which request succeeded. Reload clears the in-memory warning without replaying writes.
 
 ## Focused verification
+
+`workspace-note-create.extended.spec.mjs` exercises title entry, exact returned creation
+identity alongside a concurrent sibling, explicit Save, filtering and reload/reconnect.
 
 `workspace-note-edit.extended.spec.mjs` exercises existing-note Markdown editing,
 explicit Save with a genuine concurrent merge, dirty navigation, reload/reconnect and

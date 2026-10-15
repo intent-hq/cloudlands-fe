@@ -7576,5 +7576,12 @@
   "workspace_noteEdit_uncertain_error": "The save outcome is unknown. Saving is blocked in this session. Inspect the saved note before deciding what to do. Reloading clears this warning and never replays the save.",
   "workspace_noteEdit_bounded_error": "Only complete ordinary Markdown notes up to 500 KiB are editable. Task directives are not supported.",
   "workspace_noteEdit_leave_label": "Leave this note?",
-  "workspace_noteEdit_discard_description": "Discard local unsaved edits and leave this note?"
+  "workspace_noteEdit_discard_description": "Discard local unsaved edits and leave this note?",
+  "workspace_noteCreate_new_label": "New note",
+  "workspace_noteCreate_create_label": "Create note",
+  "workspace_noteCreate_title_label": "Note title",
+  "workspace_noteCreate_pending_description": "Creating the note. Closing this form will not cancel a sent request.",
+  "workspace_noteCreate_unknown_description": "The creation outcome is unknown. Check the notes list before creating another note. This session will not resend the request.",
+  "workspace_noteCreate_failed_description": "The note could not be created. Your title is kept; choose Create note to try again.",
+  "workspace_noteCreate_retired_description": "This form is no longer connected to its original workspace session. Close it and reopen New note."
 }
