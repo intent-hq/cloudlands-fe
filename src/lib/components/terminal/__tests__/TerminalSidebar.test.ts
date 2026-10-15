@@ -71,6 +71,7 @@ const {
     mockGetNavigationContext: vi.fn(),
     selectorWorkspaceArgs: [] as unknown[],
     asyncActionHandlers: {
+      agentDetect: null as ((action: any) => void) | null,
       detect: null as ((action: any) => void) | null,
       apply: null as ((action: any) => void) | null,
       remove: null as ((action: any) => void) | null,
@@ -148,6 +149,7 @@ vi.mock('$store/renderer/store', async () => {
               action.type === 'scripts/getScriptDefinitionRequested'
             ? payload[2]
             : action.type === 'scripts/detectScriptDefinitionsRequested' ||
+                action.type === 'scripts/detectScriptsWithAgentRequested' ||
                 action.type === 'scripts/saveScriptDefinitionsToRepoRequested'
               ? payload[1]
               : action.type === 'scripts/applyScriptDefinitionChangesRequested'
@@ -202,6 +204,11 @@ vi.mock('$store/renderer/store', async () => {
         };
       }
       if (
+        action.type === 'scripts/detectScriptsWithAgentRequested' &&
+        asyncActionHandlers.agentDetect
+      ) {
+        asyncActionHandlers.agentDetect(action);
+      } else if (
         action.type === 'scripts/detectScriptDefinitionsRequested' &&
         asyncActionHandlers.detect
       ) {
@@ -380,6 +387,7 @@ beforeEach(() => {
   activeWorkspaceState.byWorkspaceId = {};
   executorState.isRunning = false;
   executorState.agentId = null;
+  asyncActionHandlers.agentDetect = null;
   asyncActionHandlers.detect = null;
   asyncActionHandlers.apply = null;
   asyncActionHandlers.remove = null;
@@ -481,6 +489,86 @@ describe('TerminalSidebar detection flow', () => {
         payload: ['ws-1', expect.objectContaining({ resourceId: 'agent-detection' })],
       }),
     );
+  });
+
+  it('renders a local fallback outcome from the compound detection workflow', async () => {
+    const requests: any[] = [];
+    asyncActionHandlers.agentDetect = (action) => requests.push(action);
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+    requests[0].success({
+      source: 'local',
+      fallbackReason: 'unexpected-format',
+      detection: { detected: 0, added: 0, updated: 0, removed: 0, skippedRunning: [] },
+    });
+
+    await waitFor(() => expect(notify.info).toHaveBeenCalledTimes(2));
+    expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('offers Undo and reports skipped live scripts for a grounded changes outcome', async () => {
+    const requests: any[] = [];
+    const snapshot = [
+      {
+        id: 'dev',
+        workspaceId: 'ws-1',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        source: 'auto-detected',
+        createdAt: '2026-10-15T00:00:00Z',
+      },
+    ];
+    asyncActionHandlers.agentDetect = (action) => requests.push(action);
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+    requests[0].success({
+      source: 'agent',
+      presentation: 'changes',
+      changes: {
+        detected: 1,
+        added: 1,
+        updated: 0,
+        removed: 0,
+        skippedRunning: ['dev'],
+        snapshot,
+      },
+    });
+
+    await waitFor(() => expect(notify.success).toHaveBeenCalledOnce());
+    expect(notify.warning).toHaveBeenCalledOnce();
+    notify.success.mock.calls[0][1].action.onClick();
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/restoreScriptDefinitionsRequested',
+        payload: ['ws-1', snapshot, expect.objectContaining({ resourceId: 'restore' })],
+      }),
+    );
+  });
+
+  it('handles the grounded legacy detection presentation without offering Undo', async () => {
+    const requests: any[] = [];
+    asyncActionHandlers.agentDetect = (action) => requests.push(action);
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect with AI' }));
+    requests[0].success({
+      source: 'agent',
+      presentation: 'legacy',
+      changes: {
+        detected: 1,
+        added: 1,
+        updated: 0,
+        removed: 0,
+        skippedRunning: [],
+        snapshot: [],
+      },
+    });
+
+    await waitFor(() => expect(notify.success).toHaveBeenCalledOnce());
+    expect(notify.success.mock.calls[0][1]).toBeUndefined();
   });
 
   it.each(['switch', 'unmount'] as const)(
@@ -716,6 +804,82 @@ describe('TerminalSidebar bulk removal outcomes', () => {
     await fireEvent.click(screen.getByText(/^Delete/));
     expect(requests).toHaveLength(2);
     expect(requests[1].payload[1]).toEqual([expect.objectContaining({ id: 'three' })]);
+  });
+
+  it('does not clear a script selected after the captured removal batch started', async () => {
+    scriptEntries.value = ['one', 'two', 'three'].map((id) => ({
+      id,
+      name: id,
+      command: `pnpm ${id}`,
+      mode: 'command',
+      source: 'user',
+      runtime: { status: 'idle', exitCode: null },
+    }));
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    const requests: any[] = [];
+    const onSelectScript = vi.fn();
+    asyncActionHandlers.remove = (action) => requests.push(action);
+    const view = render(TerminalSidebar, {
+      props: { workspaceId: 'ws-1', selectedScriptId: 'one', onSelectScript },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^one(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /^two(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^one(?:\s|$)/ }));
+    await fireEvent.click(screen.getByText(/^Delete/));
+    expect(requests).toHaveLength(1);
+
+    await view.rerender({ workspaceId: 'ws-1', selectedScriptId: 'three', onSelectScript });
+    requests[0].success({ removed: ['one', 'two'], failed: [] });
+
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/workflowConsumed' }),
+      ),
+    );
+    expect(onSelectScript).not.toHaveBeenCalled();
+  });
+
+  it('clears only successfully removed rows from a partial bulk outcome', async () => {
+    scriptEntries.value = ['one', 'two'].map((id) => ({
+      id,
+      name: id,
+      command: `pnpm ${id}`,
+      mode: 'command',
+      source: 'user',
+      runtime: { status: 'idle', exitCode: null },
+    }));
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    const requests: any[] = [];
+    asyncActionHandlers.remove = (action) => requests.push(action);
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^one(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /^two(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^one(?:\s|$)/ }));
+    await fireEvent.click(screen.getByText(/^Delete/));
+    requests[0].success({
+      removed: ['one'],
+      failed: [{ scriptId: 'two', error: 'still in use' }],
+    });
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/workflowConsumed' }),
+      ),
+    );
+
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^two(?:\s|$)/ }));
+    await fireEvent.click(screen.getByText(/^Delete/));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].payload[1]).toEqual([expect.objectContaining({ id: 'two' })]);
   });
 });
 

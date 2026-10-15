@@ -11,6 +11,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { notify } from '$lib/components/patterns/notify';
 import { scriptDefinitionTransport } from '$features/scripts/script-definition-transport';
+import type { DetectedScriptCandidate } from '$features/scripts/detect-scripts';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptOutputTailText } from '$lib/utils/script-output-text';
@@ -121,9 +122,9 @@ type ScriptOperationRequest = ReturnType<
 >;
 
 // i18n-ignore (agent-facing prompt, kept in English)
-const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
+const SCRIPT_DETECT_PROMPT = `Review the manifest-derived script candidates supplied below. You do not have file or tool access, so use only those candidates and the supplied current definitions.
 
-For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
+You may refine mode ("service" for long-running like dev servers, "command" for one-shot like build/test) and category (one of: dev, build, test, lint, typecheck, format, storybook, other). Never invent a script name or command. Add or update only manifest-derived candidates. Remove only existing auto-detected definitions that have no manifest-derived candidate.
 
 CRITICAL INSTRUCTIONS:
 1. You MUST wrap your JSON result in <<<DETECTED_SCRIPTS>>> and <<</DETECTED_SCRIPTS>>> tags
@@ -153,82 +154,123 @@ const validModes = new Set(['service', 'command']);
 function parsedAgentChanges(
   parsed: unknown,
   existing: ScriptWithState[],
+  groundedCandidates: DetectedScriptCandidate[],
 ): { changes: ScriptDefinitionChanges; presentation: 'changes' | 'legacy' } | null {
+  const candidatesByName = new Map(
+    groundedCandidates.map((candidate) => [candidate.name, candidate]),
+  );
+  const candidatesByKey = new Set(
+    groundedCandidates.map((candidate) => `${candidate.name}::${candidate.command}`),
+  );
+  const existingById = new Map(existing.map((script) => [script.id, script]));
+  const existingNames = new Set(existing.map((script) => script.name));
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const value = parsed as Record<string, unknown>;
     if ('add' in value || 'update' in value || 'remove' in value) {
-      const remove = Array.isArray(value.remove)
-        ? value.remove.filter((id): id is string => typeof id === 'string')
-        : [];
-      const update: ScriptDefinitionChanges['update'] = Array.isArray(value.update)
-        ? value.update.flatMap((entry) => {
-            if (!entry || typeof entry !== 'object') return [];
-            const candidate = entry as Record<string, unknown>;
-            if (typeof candidate.id !== 'string') return [];
-            const updates: ScriptDefinitionUpdate = {};
-            if (typeof candidate.name === 'string') updates.name = candidate.name;
-            if (typeof candidate.command === 'string') updates.command = candidate.command;
-            if (validModes.has(String(candidate.mode)))
-              updates.mode = candidate.mode as ScriptDefinitionUpdate['mode'];
-            if (validCategories.has(String(candidate.category)))
-              updates.category = candidate.category as string;
-            return [{ id: candidate.id, updates }];
-          })
-        : [];
-      const add: ScriptDefinitionInput[] = Array.isArray(value.add)
-        ? value.add.flatMap((entry) => {
-            if (!entry || typeof entry !== 'object') return [];
-            const candidate = entry as Record<string, unknown>;
-            if (
-              typeof candidate.name !== 'string' ||
-              typeof candidate.command !== 'string' ||
-              !validModes.has(String(candidate.mode))
-            )
-              return [];
-            return [
-              {
-                name: candidate.name,
-                command: candidate.command,
-                mode: candidate.mode as ScriptDefinitionInput['mode'],
-                purpose: 'saved' as const,
-                category: validCategories.has(String(candidate.category))
-                  ? String(candidate.category)
-                  : 'other',
-                source: 'auto-detected',
-              },
-            ];
-          })
-        : [];
+      if (!Array.isArray(value.add) || !Array.isArray(value.update) || !Array.isArray(value.remove))
+        return null;
+      const remove: string[] = [];
+      for (const id of value.remove) {
+        if (typeof id !== 'string') return null;
+        const current = existingById.get(id);
+        if (!current || current.source !== 'auto-detected' || candidatesByName.has(current.name))
+          return null;
+        remove.push(id);
+      }
+      const update: ScriptDefinitionChanges['update'] = [];
+      for (const entry of value.update) {
+        if (!entry || typeof entry !== 'object') return null;
+        const candidate = entry as Record<string, unknown>;
+        if (typeof candidate.id !== 'string') return null;
+        const current = existingById.get(candidate.id);
+        const grounded = current ? candidatesByName.get(current.name) : undefined;
+        if (!current || current.source !== 'auto-detected' || !grounded) return null;
+        if (candidate.name !== undefined && candidate.name !== grounded.name) return null;
+        if (candidate.command !== undefined && candidate.command !== grounded.command) return null;
+        const updates: ScriptDefinitionUpdate = {};
+        if (candidate.name !== undefined) updates.name = grounded.name;
+        if (candidate.command !== undefined) updates.command = grounded.command;
+        if (candidate.mode !== undefined) {
+          if (!validModes.has(String(candidate.mode))) return null;
+          updates.mode = candidate.mode as ScriptDefinitionUpdate['mode'];
+        }
+        if (candidate.category !== undefined) {
+          if (!validCategories.has(String(candidate.category))) return null;
+          updates.category = candidate.category as string;
+        }
+        if (Object.keys(updates).length === 0) return null;
+        update.push({ id: candidate.id, updates });
+      }
+      const add: ScriptDefinitionInput[] = [];
+      for (const entry of value.add) {
+        if (!entry || typeof entry !== 'object') return null;
+        const candidate = entry as Record<string, unknown>;
+        if (
+          typeof candidate.name !== 'string' ||
+          typeof candidate.command !== 'string' ||
+          !validModes.has(String(candidate.mode)) ||
+          !candidatesByKey.has(`${candidate.name}::${candidate.command}`) ||
+          existingNames.has(candidate.name)
+        )
+          return null;
+        add.push({
+          name: candidate.name,
+          command: candidate.command,
+          mode: candidate.mode as ScriptDefinitionInput['mode'],
+          purpose: 'saved',
+          category: validCategories.has(String(candidate.category))
+            ? String(candidate.category)
+            : 'other',
+          source: 'auto-detected',
+        });
+      }
       return { changes: { add, update, remove }, presentation: 'changes' };
     }
   }
   if (!Array.isArray(parsed)) return null;
   const existingKeys = new Set(existing.map((script) => `${script.name}::${script.command}`));
-  const add: ScriptDefinitionInput[] = parsed.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return [];
+  const add: ScriptDefinitionInput[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object') return null;
     const candidate = entry as Record<string, unknown>;
     if (
       typeof candidate.name !== 'string' ||
       typeof candidate.command !== 'string' ||
       !validModes.has(String(candidate.mode)) ||
-      existingKeys.has(`${candidate.name}::${candidate.command}`)
+      !candidatesByKey.has(`${candidate.name}::${candidate.command}`)
     )
-      return [];
+      return null;
+    if (existingNames.has(candidate.name)) continue;
+    if (existingKeys.has(`${candidate.name}::${candidate.command}`)) continue;
     existingKeys.add(`${candidate.name}::${candidate.command}`);
-    return [
-      {
-        name: candidate.name,
-        command: candidate.command,
-        mode: candidate.mode as ScriptDefinitionInput['mode'],
-        purpose: 'saved' as const,
-        category: validCategories.has(String(candidate.category))
-          ? String(candidate.category)
-          : 'other',
-        source: 'auto-detected',
-      },
-    ];
-  });
+    add.push({
+      name: candidate.name,
+      command: candidate.command,
+      mode: candidate.mode as ScriptDefinitionInput['mode'],
+      purpose: 'saved',
+      category: validCategories.has(String(candidate.category))
+        ? String(candidate.category)
+        : 'other',
+      source: 'auto-detected',
+    });
+  }
   return { changes: { add, update: [], remove: [] }, presentation: 'legacy' };
+}
+
+function scriptDetectPrompt(
+  candidates: DetectedScriptCandidate[],
+  existing: ScriptWithState[],
+): string {
+  const definitions = existing.map((script) => ({
+    id: script.id,
+    name: script.name,
+    command: script.command,
+    mode: script.mode,
+    purpose: script.purpose ?? 'saved',
+    category: script.category,
+    source: script.source,
+  }));
+  return `${SCRIPT_DETECT_PROMPT}\n\nManifest-derived candidates:\n${JSON.stringify(candidates, null, 2)}\n\nCurrent definitions:\n${JSON.stringify(definitions, null, 2)}`;
 }
 
 function errorMessage(error: unknown): string {
@@ -749,6 +791,10 @@ function* runCreateScriptFixAgent(
   yield* call(createScriptFixAgent, action);
 }
 
+function fixAgentContext(action: ReturnType<typeof createScriptFixAgentRequested>): string {
+  return `${action.payload[0]}:${action.payload[1]}`;
+}
+
 function detectionOutcome(input: {
   detected: number;
   added: number;
@@ -1103,7 +1149,10 @@ function* executeScriptDetector(workspaceId: string, prompt: string): SagaGenera
       }
       started = true;
       if (executor.status === 'success' && executor.result) return executor.result;
-      if (executor.status === 'error' || executor.status === 'cancelled') {
+      if (executor.status === 'cancelled') {
+        throw new ScriptDetectorSupersededError('Agent script detection superseded');
+      }
+      if (executor.status === 'error') {
         throw new Error(executor.error ?? m.terminal_sidebar_agentDetectFailed_info());
       }
     }
@@ -1124,6 +1173,10 @@ function* runAgentDetection(
   let settled = false;
   try {
     const authority = yield* requireAuthority(workspaceId);
+    const initialDetection = yield* call(() =>
+      scriptDefinitionTransport.detectCandidates(workspaceId),
+    );
+    yield* requireAuthority(workspaceId, authority);
     let existing: ScriptWithState[] | undefined;
     try {
       existing = yield* call(() =>
@@ -1133,17 +1186,6 @@ function* runAgentDetection(
     } catch {
       yield* requireAuthority(workspaceId, authority);
     }
-    const definitions = (existing ?? []).map((script) => ({
-      id: script.id,
-      name: script.name,
-      command: script.command,
-      mode: script.mode,
-      purpose: script.purpose ?? 'saved',
-      category: script.category,
-    }));
-    const context = definitions.length
-      ? `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(definitions, null, 2)}`
-      : '';
     let parsed:
       { changes: ScriptDefinitionChanges; presentation: 'changes' | 'legacy' } | undefined;
     let detectorCompleted = false;
@@ -1151,11 +1193,17 @@ function* runAgentDetection(
       const result = yield* call(
         executeScriptDetector,
         workspaceId,
-        SCRIPT_DETECT_PROMPT + context,
+        scriptDetectPrompt(initialDetection.candidates, existing ?? []),
       );
       detectorCompleted = true;
       yield* requireAuthority(workspaceId, authority);
-      parsed = parsedAgentChanges(JSON.parse(result), existing ?? []) ?? undefined;
+      const currentDetection = yield* call(() =>
+        scriptDefinitionTransport.detectCandidates(workspaceId),
+      );
+      yield* requireAuthority(workspaceId, authority);
+      parsed =
+        parsedAgentChanges(JSON.parse(result), existing ?? [], currentDetection.candidates) ??
+        undefined;
       if (!parsed) {
         throw new ScriptDetectorUnexpectedFormatError(m.terminal_sidebar_unexpectedFormat_info());
       }
@@ -1415,7 +1463,7 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
     takeEvery(updateScriptDefinitionRequested, updateDefinition),
     takeEvery(removeScriptDefinitionRequested, removeDefinition),
     takeEvery(removeScriptDefinitionsRequested, runRemoveDefinitions),
-    takeEvery(createScriptFixAgentRequested, runCreateScriptFixAgent),
+    takeLeadingInContext(createScriptFixAgentRequested, fixAgentContext, runCreateScriptFixAgent),
     takeEvery(detectScriptDefinitionsRequested, runDetectDefinitions),
     takeEvery(detectScriptsWithAgentRequested, detectWithAgent),
     takeEvery(applyScriptDefinitionChangesRequested, runDefinitionChanges),

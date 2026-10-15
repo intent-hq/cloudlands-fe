@@ -395,11 +395,12 @@
     if (
       outcome.status === 'success' &&
       pending.selectedScriptId &&
+      selectedScriptId === pending.selectedScriptId &&
       result?.removed.includes(pending.selectedScriptId)
     ) {
       onSelectScript?.(null);
     }
-    const removedTargets = new Set(pending.targetIds);
+    const removedTargets = new Set(outcome.status === 'success' && result ? result.removed : []);
     selectedScriptIds = new Set(
       Array.from(selectedScriptIds).filter((scriptId) => !removedTargets.has(scriptId)),
     );
