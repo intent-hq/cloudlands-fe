@@ -4,22 +4,19 @@ vi.mock(
   async () =>
     (await import('../../../../../test/mocks/backend-transport.mock')).mockBackendTransportModule,
 );
-vi.mock('../attachment-placement', async (original) => ({
-  ...(await original()),
-  MAX_REMOTE_ATTACHMENT_BYTES: 3,
-  UPLOAD_CHUNK_BYTES: 3,
-}));
 import {
   installMockBackend,
   resetMockBackend,
 } from '../../../../../test/mocks/backend-transport.mock';
 import { placeImageAttachment } from '../image-attachment-placement';
 afterEach(resetMockBackend);
+// Exercise the real upload threshold, without replacing production caps.
+const imageData = btoa('abc').repeat((30 * 1024 * 1024) / 3);
 function setup(fail = false) {
   const backend = installMockBackend();
   backend.onRequest('file.attachmentUpload.begin', () => ({
     uploadId: 'opaque-upload',
-    maxChunkBytes: 3,
+    maxChunkBytes: 16 * 1024 * 1024,
   }));
   backend.onRequest('file.attachmentUpload.chunk', () => {
     if (fail) throw new Error('chunk rejected');
@@ -30,7 +27,7 @@ function setup(fail = false) {
     attachmentId: 'att',
     path: 'a.png',
     fileName: 'a.png',
-    size: 6,
+    size: 30 * 1024 * 1024,
     uploadedAt: '2026-09-28T00:00:00Z',
   }));
   backend.onRequest('file.attachmentUpload.abort', () => ({
@@ -43,7 +40,7 @@ describe('Image upload origin', () => {
   it('carries the begin workspace through real chunk and commit adapters', async () => {
     const b = setup();
     await placeImageAttachment('workspace-a', 'a.png', {
-      data: btoa('abcdef'),
+      data: imageData,
       mimeType: 'image/png',
     });
     expect(
@@ -59,7 +56,7 @@ describe('Image upload origin', () => {
   it('carries the begin workspace through real abort adapter', async () => {
     const b = setup(true);
     await expect(
-      placeImageAttachment('workspace-a', 'a.png', { data: btoa('abcdef'), mimeType: 'image/png' }),
+      placeImageAttachment('workspace-a', 'a.png', { data: imageData, mimeType: 'image/png' }),
     ).rejects.toThrow('chunk rejected');
     expect(b.requests.find((r) => r.method === 'file.attachmentUpload.abort')?.params).toEqual({
       uploadId: 'opaque-upload',
@@ -75,7 +72,7 @@ it('recovers a lost commit reply in the captured workspace after focus changes',
     'file.attachmentUpload.begin',
     () =>
       new Promise((resolve) => {
-        finishBegin = () => resolve({ uploadId: 'opaque-upload', maxChunkBytes: 3 });
+        finishBegin = () => resolve({ uploadId: 'opaque-upload', maxChunkBytes: 16 * 1024 * 1024 });
       }),
   );
   backend.onRequest('file.attachmentUpload.commit', () => {
@@ -85,14 +82,14 @@ it('recovers a lost commit reply in the captured workspace after focus changes',
     attachmentId: 'recovered',
     path: 'a.png',
     fileName: 'a.png',
-    size: 6,
+    size: 30 * 1024 * 1024,
     mimeType: 'image/png',
     uploadedAt: '2026-09-28T00:00:00Z',
     exists: true,
   }));
   let selectedWorkspace = 'workspace-a';
   const placement = placeImageAttachment(selectedWorkspace, 'a.png', {
-    data: btoa('abcdef'),
+    data: imageData,
     mimeType: 'image/png',
     idempotencyKey: 'image-key',
   });

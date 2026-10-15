@@ -147,3 +147,18 @@ chatDraftsReducer.with(
       return saves === owner.saves ? owner : { ...owner, saves };
     }),
 );
+
+/** File handles are transient command resources, never reduced into Redux state. */
+export const composerAttachmentsSelected = createAction<
+  [ownerId: string, workspaceId: string, agentId: string, files: File[]]
+>('chatDrafts/attachmentsSelected');
+export const composerAttachmentRemoved = createAction<
+  [ownerId: string, workspaceId: string, agentId: string, itemId: string]
+>('chatDrafts/attachmentRemoved');
+export const composerAttachmentRetryRequested = createAction<
+  [ownerId: string, workspaceId: string, agentId: string, itemId: string]
+>('chatDrafts/attachmentRetryRequested');
+/** Release upload resources before the draft owner's final save is flushed. */
+export const composerAttachmentsReleased = createAction<[ownerId: string]>(
+  'chatDrafts/attachmentsReleased',
+);

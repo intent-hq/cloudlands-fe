@@ -27,6 +27,10 @@ export interface MessageComposerProps extends Omit<ComponentProps<'div'>, 'onCha
   clickToFocus?: boolean;
   sendLabel?: string;
   files?: File[];
+  /** Registered attachments rendered by the parent; no synthetic File handles. */
+  hasAttachments?: boolean;
+  /** Block submission while allowing edits and attachment removal during placement. */
+  sendDisabled?: boolean;
   onFilesChange?: (files: File[]) => void;
   accept?: string;
   maxFiles?: number;

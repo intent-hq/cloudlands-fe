@@ -6,7 +6,7 @@
  * restore effect: a cache hit hydrates the composer synchronously with no
  * gate, while `drafts.get` still revalidates in the background.
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +15,14 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
+import { store } from '$store/renderer/store';
+import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+import { AgentStatus } from '$shared/types';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
+import { createTestAgent } from '../../../../test/factories/agent.factory';
 import { clearDraftCacheForTests, getCachedDraft } from '../chat-draft-cache';
 import ChatDraftHarness from './mocks/ChatDraftHarness.svelte';
 
@@ -58,12 +66,27 @@ const AGENT_1 = 'agent-1';
 const AGENT_2 = 'agent-2';
 
 describe('ChatPanel draft cache (mounted)', () => {
+  let stopRoot: () => void;
+
   beforeEach(() => {
     vi.useFakeTimers();
     clearDraftCacheForTests();
+    stopRoot = startRootStoreLifecycle(store, { startSagas: () => [] });
+    admitLegacyPrincipal();
+    store.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WS, myRole: 'owner' })));
+    store.dispatch(
+      bulkUpsertSessions(
+        ['agent-1', 'agent-2'].map((id) =>
+          createTestAgent({ id, workspaceId: WS, status: AgentStatus.Idle }),
+        ),
+      ),
+    );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    cleanup();
+    await flushMicrotasks();
+    stopRoot();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });

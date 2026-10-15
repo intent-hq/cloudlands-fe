@@ -17,7 +17,6 @@
  * instead of placing a collision-suffixed duplicate.
  */
 import { invoke } from '$lib/electron-bridge';
-import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import {
@@ -27,56 +26,41 @@ import {
   getAttachmentInfo,
   placeAttachment,
   sendAttachmentUploadChunk,
-  type AttachmentInfo,
   type PlaceAttachmentResult,
 } from './context-api';
 
-/**
- * Byte cap for the remote single-shot `data` arm. Base64 inflates by 4/3
- * and the serialized JSON-RPC frame is capped at 40 MiB (PROTOCOL §1.3), so
- * raw bytes must stay well under that; 25 MB matches the daemon's
- * serialized `attachments` payload cap precedent. Larger files go through
- * the chunked upload session instead.
- */
-export const MAX_REMOTE_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+import {
+  assertUploadActive,
+  MAX_REMOTE_ATTACHMENT_BYTES,
+  placeAttachmentBytes,
+  placeAttachmentWithRecovery,
+  recoverPlacementByKey as recoverByKey,
+  supportsIdempotentPlacementProtocol,
+} from '$lib/client/live/attachment-upload';
+import type { UploadProgressCallback } from '$lib/client/live/attachment-upload-types';
 
-/**
- * The daemon's per-attachment byte cap (`file.attachmentUpload.begin`
- * rejects declared sizes above 1 GiB, PROTOCOL §5.9) — the effective remote
- * attachment limit now that oversized files go through the chunked session.
- */
-export const MAX_REMOTE_ATTACHMENT_TOTAL_BYTES = 1024 * 1024 * 1024;
+// Compatibility exports for the source input and its tests. Remove once those
+// consumers import the shared upload owner directly; locality remains source-owned.
+export {
+  assertPlacementCurrent,
+  isPlacementCancellation,
+  isAlreadyCommittedError,
+  MAX_REMOTE_ATTACHMENT_BYTES,
+  MAX_REMOTE_ATTACHMENT_TOTAL_BYTES,
+  UPLOAD_CHUNK_BYTES,
+  shouldRecoverPlacement,
+  supportsIdempotentPlacementProtocol,
+} from '$lib/client/live/attachment-upload';
+export type { UploadProgressCallback } from '$lib/client/live/attachment-upload-types';
 
-/**
- * Raw bytes per upload chunk — matches the daemon's 16 MiB decoded-slice
- * cap (`maxChunkBytes` from `begin`; the effective size is min of both).
- */
-export const UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
-
-/**
- * Fraction of chunks acknowledged by the daemon, for the uploading pill's
- * percent progress. Only the chunked (>25MB) path reports progress.
- */
-export type UploadProgressCallback = (fraction: number) => void;
-
-const UPLOAD_CANCELLED_MESSAGE = 'attachment upload cancelled'; // i18n-ignore (internal sentinel, caller checks signal.aborted — never rendered)
-
-/**
- * True when a placement failure is the caller's own cancellation (the
- * `signal` passed to `placeAttachmentViaTransport` was aborted), so callers
- * can skip failure UI for uploads the user deliberately discarded.
- */
-export function isPlacementCancellation(error: unknown, signal?: AbortSignal): boolean {
-  return (
-    signal?.aborted === true ||
-    (error instanceof Error && error.message === UPLOAD_CANCELLED_MESSAGE)
-  );
-}
-
-/** Throw the cancellation sentinel when the caller aborted. */
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new Error(UPLOAD_CANCELLED_MESSAGE);
-}
+const placementApi = {
+  placeAttachment,
+  beginAttachmentUpload,
+  sendAttachmentUploadChunk,
+  commitAttachmentUpload,
+  abortAttachmentUpload,
+  getAttachmentInfo,
+};
 
 /**
  * True when the daemon host is NOT the user's machine, i.e. `sourcePath`
@@ -87,21 +71,6 @@ function throwIfAborted(signal?: AbortSignal): void {
  */
 export function isRemoteBackend(): boolean {
   return !selectIsDaemonLocal.select(appStore.state);
-}
-
-/**
- * True when the daemon accepts `idempotencyKey` on `file.placeAttachment` /
- * `file.attachmentUpload.begin` and the key arm of `file.getAttachmentInfo`
- * (PROTOCOL §5.9). Older daemons reject unknown params, so the key
- * is never sent to them.
- */
-export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
-  if (!protocolVersion) return false;
-  const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2] ?? 0);
-  return major > 9 || (major === 9 && minor >= 13);
 }
 
 /** Whether the daemon connected right now accepts keyed placement. */
@@ -123,98 +92,13 @@ export function mintPlacementIdempotencyKey(existing?: string): string | undefin
   return existing ?? crypto.randomUUID();
 }
 
-/** A daemon `-32602` rejection (the request was received and refused). */
-function isInvalidParamsError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const { rpcCode, code } = error as { rpcCode?: unknown; code?: unknown };
-  return rpcCode === -32602 || code === 'INVALID_PARAMS';
-}
-
-/**
- * `file.attachmentUpload.begin` refusing a key already bound to a committed
- * attachment (PROTOCOL §5.9) — the earlier commit's reply was lost;
- * the attachment is recovered through the lookup arm.
- */
-export function isAlreadyCommittedError(error: unknown): boolean {
-  return (
-    isInvalidParamsError(error) &&
-    /already committed/i.test(String((error as { message?: unknown }).message ?? ''))
-  );
-}
-
-/** Rebuild a `placeAttachment`-shaped result from the registry row a key resolves to. */
-function attachmentInfoToPlacementResult(info: AttachmentInfo): PlaceAttachmentResult {
-  return {
-    ok: true,
-    path: info.path,
-    fileName: info.fileName,
-    size: info.size,
-    attachmentId: info.attachmentId,
-    ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
-    uploadedAt: info.uploadedAt,
-    replayed: true,
-  };
-}
-
-/**
- * Lost-reply recovery: resolve the attachment a placement `idempotencyKey`
- * is bound to (`file.getAttachmentInfo { workspaceId, idempotencyKey }`,
- * PROTOCOL §5.9). Resolves `undefined` when the key is unknown (the
- * placement never landed — the original failure stands) or the lookup
- * itself fails.
- */
-export async function recoverPlacementByKey(
+/** Source compatibility for the default lookup; remove when callers inject their API. */
+export function recoverPlacementByKey(
   workspaceId: string,
   idempotencyKey: string,
   lookup: typeof getAttachmentInfo = getAttachmentInfo,
 ): Promise<PlaceAttachmentResult | undefined> {
-  try {
-    return attachmentInfoToPlacementResult(await lookup({ workspaceId, idempotencyKey }));
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Whether a failed placement is worth a key lookup: the request was keyed,
- * the failure is not a daemon `-32602` refusal (nothing was placed) and not
- * the caller's own cancellation.
- */
-export function shouldRecoverPlacement(
-  error: unknown,
-  idempotencyKey: string | undefined,
-  signal?: AbortSignal,
-): idempotencyKey is string {
-  return (
-    idempotencyKey !== undefined &&
-    !isInvalidParamsError(error) &&
-    !isPlacementCancellation(error, signal)
-  );
-}
-
-/**
- * Run one placement attempt; on a transport-loss class failure of a keyed
- * attempt, recover the committed attachment through the key lookup before
- * surfacing the failure.
- */
-async function placeWithRecovery(
-  workspaceId: string,
-  idempotencyKey: string | undefined,
-  signal: AbortSignal | undefined,
-  attempt: () => Promise<PlaceAttachmentResult>,
-  current: () => boolean = () => true,
-): Promise<PlaceAttachmentResult> {
-  try {
-    assertPlacementCurrent(current);
-    return await attempt();
-  } catch (error) {
-    assertPlacementCurrent(current);
-    if (shouldRecoverPlacement(error, idempotencyKey, signal)) {
-      const recovered = await recoverPlacementByKey(workspaceId, idempotencyKey);
-      if (recovered) return recovered;
-    }
-    throw error;
-  }
+  return recoverByKey(workspaceId, idempotencyKey, lookup);
 }
 
 /** Main-process `file:read` response envelope (see `file.ipc.ts`). */
@@ -290,20 +174,6 @@ async function hashFileSha256(path: string): Promise<string> {
 }
 
 /**
- * Messages too generic to render as the user-visible failure reason: the
- * daemon's bare `-32603` message, the electron-ipc-transport fallback for a
- * payload-less IPC failure, and this module's own `file:read` envelope
- * fallbacks. Filtering them keeps the tooltip/toast detail daemon-reasons
- * (or informative IPC reasons) only, so untranslated fallbacks never render.
- */
-const GENERIC_PLACEMENT_MESSAGES = new Set([
-  'Internal error', // i18n-ignore (verbatim daemon -32603 message, filtered)
-  'Backend request failed', // i18n-ignore (verbatim electron-ipc-transport fallback, filtered)
-  UNEXPECTED_READ_RESPONSE_MESSAGE,
-  READ_FAILED_MESSAGE,
-]);
-
-/**
  * Place an attachment picking the arm by backend locality: `sourcePath`
  * (daemon copies directly, no bytes on the wire) against the local sidecar,
  * bytes read off the FE host against a remote backend — the single-shot
@@ -330,166 +200,40 @@ export async function placeAttachmentViaTransport(
   signal?: AbortSignal,
   current: () => boolean = () => true,
 ): Promise<PlaceAttachmentResult> {
-  assertPlacementCurrent(current);
-  const idempotencyKey = daemonSupportsIdempotentPlacement() ? source.idempotencyKey : undefined;
-  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
+  const options = {
+    mimeType: source.mimeType,
+    idempotencyKey: daemonSupportsIdempotentPlacement() ? source.idempotencyKey : undefined,
+    onProgress,
+    signal,
+    current,
+  };
+  assertUploadActive(options);
   if (!isRemoteBackend()) {
-    return placeWithRecovery(
-      workspaceId,
-      idempotencyKey,
-      signal,
-      () =>
-        placeAttachment(workspaceId, fileName, {
-          sourcePath: source.sourcePath,
-          mimeType: source.mimeType,
-          ...keyed,
-        }),
-      current,
-    );
-  }
-  const size = await statFileSize(source.sourcePath);
-  assertPlacementCurrent(current);
-  if (size > MAX_REMOTE_ATTACHMENT_TOTAL_BYTES) {
-    throw new Error(
-      m.chat_attachmentPlacement_tooLargeRemote_error({
-        name: fileName,
-        maxGb: Math.round(MAX_REMOTE_ATTACHMENT_TOTAL_BYTES / (1024 * 1024 * 1024)),
+    return placeAttachmentWithRecovery(placementApi, workspaceId, options, () =>
+      placeAttachment(workspaceId, fileName, {
+        sourcePath: source.sourcePath,
+        mimeType: source.mimeType,
+        ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
       }),
     );
   }
-  if (size > MAX_REMOTE_ATTACHMENT_BYTES) {
-    return placeAttachmentChunked(
-      workspaceId,
-      fileName,
-      { ...source, idempotencyKey },
-      size,
-      onProgress,
-      signal,
-      current,
-    );
-  }
-  const data = await readFileBase64(source.sourcePath);
-  assertPlacementCurrent(current);
-  throwIfAborted(signal);
-  return placeWithRecovery(
+  const size = await statFileSize(source.sourcePath);
+  assertUploadActive(options);
+  return placeAttachmentBytes(
+    placementApi,
     workspaceId,
-    idempotencyKey,
-    signal,
-    () => placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType, ...keyed }),
-    current,
+    fileName,
+    {
+      size,
+      sha256: () => hashFileSha256(source.sourcePath),
+      readBase64: async (offset, length) =>
+        size <= MAX_REMOTE_ATTACHMENT_BYTES
+          ? readFileBase64(source.sourcePath)
+          : (await readFileChunkBase64(source.sourcePath, offset, length)).content,
+    },
+    options,
   );
 }
 
-/**
- * Chunked remote placement: `begin` (declares size + FE-computed SHA-256),
- * sequential 16 MiB `chunk` reads/sends, then `commit` (daemon verifies the
- * checksum and places through the `placeAttachment` path). Any failure
- * after `begin` aborts the session (best-effort — abort is idempotent and
- * the daemon sweeps orphans) and rethrows; retry re-runs the whole flow.
- * Keyed (`idempotencyKey`): a begin refused because the key is "already committed"
- * (an earlier commit whose reply was lost) and a commit whose own reply is
- * lost both resolve through the key lookup instead of failing.
- */
-async function placeAttachmentChunked(
-  workspaceId: string,
-  fileName: string,
-  source: { sourcePath: string; mimeType?: string; idempotencyKey?: string },
-  size: number,
-  onProgress?: UploadProgressCallback,
-  signal?: AbortSignal,
-  current: () => boolean = () => true,
-): Promise<PlaceAttachmentResult> {
-  assertPlacementCurrent(current);
-  const sha256 = await hashFileSha256(source.sourcePath);
-  assertPlacementCurrent(current);
-  throwIfAborted(signal);
-  let uploadId: string;
-  let maxChunkBytes: number;
-  try {
-    ({ uploadId, maxChunkBytes } = await beginAttachmentUpload(
-      workspaceId,
-      fileName,
-      size,
-      sha256,
-      {
-        mimeType: source.mimeType,
-        ...(source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {}),
-      },
-    ));
-  } catch (error) {
-    assertPlacementCurrent(current);
-    if (source.idempotencyKey !== undefined && isAlreadyCommittedError(error)) {
-      const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
-      if (recovered) return recovered;
-    }
-    throw error;
-  }
-  const chunkBytes = Math.min(UPLOAD_CHUNK_BYTES, maxChunkBytes);
-  const totalChunks = Math.ceil(size / chunkBytes);
-  let committing = false;
-  try {
-    for (let seq = 0; seq < totalChunks; seq++) {
-      assertPlacementCurrent(current);
-      throwIfAborted(signal);
-      const { content } = await readFileChunkBase64(
-        source.sourcePath,
-        seq * chunkBytes,
-        chunkBytes,
-      );
-      assertPlacementCurrent(current);
-      await sendAttachmentUploadChunk(uploadId, seq, content, workspaceId);
-      assertPlacementCurrent(current);
-      onProgress?.((seq + 1) / totalChunks);
-    }
-    throwIfAborted(signal);
-    assertPlacementCurrent(current);
-    committing = true;
-    return await commitAttachmentUpload(uploadId, workspaceId);
-  } catch (error) {
-    assertPlacementCurrent(current);
-    // Only a commit can have placed the file before its reply was lost; a
-    // failed chunk never binds the key, so no lookup is attempted for it.
-    if (committing && shouldRecoverPlacement(error, source.idempotencyKey, signal)) {
-      const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
-      if (recovered) return recovered;
-    }
-    assertPlacementCurrent(current);
-    await abortAttachmentUpload(uploadId, workspaceId).catch(() => {
-      // Best-effort: the daemon sweeps orphaned sessions on the next begin.
-    });
-    throw error;
-  }
-}
-
-/**
- * Extract a human-readable failure reason from a placement error for the
- * failed pill tooltip / toast. Prefers the daemon's structured
- * `error.data.detail` (the transport maps a plain-string JSON-RPC `data`
- * there), then a non-generic error message (`-32602` messages carry the
- * classified reason, e.g. "sourcePath is a directory"); returns undefined
- * for generic transport/daemon fallbacks so callers keep the localized
- * generic copy.
- */
-export function extractPlacementErrorDetail(error: unknown): string | undefined {
-  if (!error || typeof error !== 'object') return undefined;
-  const data = (error as { data?: unknown }).data;
-  if (data && typeof data === 'object') {
-    const detail = (data as { detail?: unknown }).detail;
-    if (typeof detail === 'string' && detail.trim().length > 0) return detail.trim();
-  }
-  const message = (error as { message?: unknown }).message;
-  if (
-    typeof message === 'string' &&
-    message.trim().length > 0 &&
-    !GENERIC_PLACEMENT_MESSAGES.has(message.trim())
-  ) {
-    return message.trim();
-  }
-  return undefined;
-}
-
-/** Original submission authority must survive every local read and wire step. */
-export function assertPlacementCurrent(current: () => boolean): void {
-  // i18n-ignore (internal cancellation, never shown for an obsolete form)
-  if (!current()) throw new DOMException('Obsolete attachment submission', 'AbortError');
-}
+// Source callers retain this error-formatting import until the input facade retires.
+export { extractPlacementErrorDetail } from '$lib/client/live/attachment-upload';

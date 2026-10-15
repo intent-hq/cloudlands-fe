@@ -10,20 +10,22 @@
  * placed attachments persist only the registry `attachmentId` + metadata;
  * staged items persist only their `sourcePath` + metadata (no bytes ever —
  * placement copies from the path at redemption, and a path gone stale by
- * then fails the placement into a visible failed pill).
+ * then fails the placement into a visible failed pill). Browser selections
+ * without a host path retain failed metadata and must be reselected after reload.
  */
 import type { DraftAttachment } from '$lib/client/app-client';
-import type { ContextItem } from './input/context-api';
+import type { ContextItem } from './input/context-item';
 
 /**
  * Project attachment context items into wire-safe draft attachments. Items
  * carrying `imageData` + `imageMimeType` (images), an `attachmentId` (placed
  * attachments), or a `sourcePath` (staged path-only items awaiting placement)
- * are persisted; the `File` handle and other non-serializable fields are
+ * and pending/failed browser selection metadata are persisted; the `File` handle and other non-serializable fields are
  * dropped. A chat-input item whose placement was still in flight or failed
  * persists `placementStatus: 'failed'` (an in-flight placement cannot survive
  * a reload) so the restore renders a blocking, retryable failed pill instead
- * of silently dropping the attachment from the send. Pre-workspace staged
+ * of silently dropping the attachment from the send. Browser-only selections
+ * cannot retry after reload without reselecting their bytes. Pre-workspace staged
  * items (modal/onboarding) carry no `placementStatus` and round-trip
  * status-free — they are placed at workspace.create redemption. Dropped
  * folders (type 'folder', path-only, never placed) persist their absolute
@@ -36,6 +38,8 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
         (item.imageData && item.imageMimeType) ||
         item.attachmentId ||
         item.sourcePath ||
+        item.placementStatus === 'placing' ||
+        item.placementStatus === 'failed' ||
         (item.type === 'folder' && item.path) ||
         (item.type === 'selection' && item.content),
     )
@@ -71,7 +75,7 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
  * placement at redemption (a stale path fails there, into a failed pill).
  * A persisted `placementStatus: 'failed'` restores as a failed pill: it
  * blocks send and its retry re-attempts placement from the `sourcePath` —
- * never a silent drop. Folder items (type 'folder') rehydrate path-only —
+ * never a silent drop. Without a sourcePath, the browser asks for reselection. Folder items (type 'folder') rehydrate path-only —
  * they are never placed; the path rides as a context reference at send.
  */
 export function deserializeDraftAttachments(attachments: DraftAttachment[]): ContextItem[] {

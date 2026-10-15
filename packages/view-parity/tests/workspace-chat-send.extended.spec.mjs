@@ -231,11 +231,14 @@ test('isolated existing-agent Send, stream, Stop, draft/reconnect and persisted 
     expect(sendCount()).toBe(2);
     after = await geometry();
     expect(after.scrollWidth).toBeLessThanOrEqual(after.viewport);
+    await composer.scrollIntoViewIfNeeded();
     await writeFile(
       info.outputPath('composer-narrow.png'),
       await stableLocatorScreenshot(page, composer),
     );
     await page.setViewportSize({ width: 1280, height: 900 });
+    // Wait for native locator stability after responsive layout, before capture.
+    await composer.scrollIntoViewIfNeeded();
     await writeFile(
       info.outputPath('composer-desktop.png'),
       await stableLocatorScreenshot(page, composer),

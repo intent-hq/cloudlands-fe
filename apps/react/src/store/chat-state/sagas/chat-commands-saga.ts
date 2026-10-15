@@ -3,6 +3,11 @@ import { takeEveryByContextFIFO } from '../../../../../../src/store/renderer/uti
 import { createChatSendWorkers } from '../../../../../../src/store/renderer/slices/chat-state/sagas/chat-send-workers';
 import { createAgentActivationWorkers } from '../../../../../../src/store/renderer/slices/agent-session/sagas/agent-activation-workers';
 import { runChatDrafts } from '../../../../../../src/store/renderer/slices/chat-drafts/sagas/chat-drafts-worker';
+import { createComposerAttachmentsSaga } from '../../../../../../src/store/renderer/slices/chat-drafts/sagas/composer-attachments-saga-factory';
+import {
+  selectComposerContextItems,
+  selectChatDraft,
+} from '@/store/chat-drafts/chat-drafts-selectors';
 import {
   sendMessage,
   chatSendFailed,
@@ -35,8 +40,10 @@ import {
   sendAgentMessage,
   chatReads,
   queueReads,
+  placeComposerAttachment,
+  prepareComposerImages,
+  imageRetryBlocks,
 } from '@/features/agent/chat-runtime';
-import { m } from '$shared/paraglide/messages.js';
 const workers = createChatSendWorkers({
   appClient: { agents: chatCommands },
   captureAgentMutationOwnership: agentReadOwnership.captureAgentMutationOwnership,
@@ -54,11 +61,8 @@ const workers = createChatSendWorkers({
   hydrateAgentQueue: queueReads.hydrateAgentQueue,
   getAgentQueueEventSnapshotSeq: queueReads.getAgentQueueEventSnapshotSeq,
   sendAgentMessage,
-  // Connected composer currently exposes text only. Inline placement stays with the source upload owner.
-  prepareImages: async () => {
-    throw new Error(m.agent_streamLifecycle_sendFailed_error());
-  },
-  retryImages: (_error, images) => images,
+  prepareImages: prepareComposerImages,
+  retryImages: imageRetryBlocks,
 });
 const activation = createAgentActivationWorkers({
   selectAgentSession,
@@ -68,6 +72,14 @@ const activation = createAgentActivationWorkers({
 export function* chatCommandsSaga() {
   try {
     yield* fork(runChatDrafts, draftsClient, captureDraftOwnership);
+    yield* fork(
+      createComposerAttachmentsSaga({
+        selectItems: selectComposerContextItems,
+        selectText: selectChatDraft,
+        captureOwnership: captureDraftOwnership,
+        place: placeComposerAttachment,
+      }),
+    );
     yield* takeEvery(restoreAgentSessionRequested, activation.restoreAgent);
     yield* takeEvery(activateAgentRequested, activation.activateAgent);
     yield* takeEvery(agentSessionStopChatRequested, workers.handleStop);

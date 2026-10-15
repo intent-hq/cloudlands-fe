@@ -16,6 +16,12 @@ import {
   questionWizardDraftChanged,
 } from '$store/renderer/slices/question-ui/question-ui-slice';
 import { startChatFixtureSagas } from './chat-fixture-sagas';
+import { AgentStatus } from '$shared/types';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { admitLegacyPrincipal } from './fixtures/principal-state';
+import { createMockWorkspace } from './factories/workspace.factory';
+import { createTestAgent } from './factories/agent.factory';
 
 let stopRoot: () => void;
 let stops: Array<() => void>;
@@ -27,6 +33,13 @@ beforeEach(() => {
   vi.useFakeTimers();
   clearDraftCacheForTests();
   stopRoot = startRootStoreLifecycle(store, { startSagas: () => [] });
+  admitLegacyPrincipal();
+  store.dispatch(setWorkspaceEntity(createMockWorkspace({ id: 'workspace', myRole: 'owner' })));
+  store.dispatch(
+    bulkUpsertSessions([
+      createTestAgent({ id: 'agent', workspaceId: 'workspace', status: AgentStatus.Idle }),
+    ]),
+  );
   stops = startChatFixtureSagas(store);
 });
 

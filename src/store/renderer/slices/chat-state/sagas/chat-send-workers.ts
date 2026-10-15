@@ -102,7 +102,7 @@ export function createChatSendWorkers({
   hydrateAgentQueue: (agentId: string, wsId?: string) => Promise<void>;
   getAgentQueueEventSnapshotSeq: (agentId: string, wsId?: string) => number;
   sendAgentMessage: ReturnType<typeof createAgentSender>;
-  prepareImages: (wsId: string, images: Images) => Promise<Images>;
+  prepareImages: (wsId: string, images: Images, agentId: string) => Promise<Images>;
   retryImages: (error: unknown, images: Images) => Images;
 }) {
   const logger = createLogger('ChatSendSaga');
@@ -251,7 +251,7 @@ export function createChatSendWorkers({
       try {
         options = {
           ...options,
-          imageBlocks: yield* call(prepareImages, wsId, imageBlocks),
+          imageBlocks: yield* call(prepareImages, wsId, imageBlocks, agentId),
         };
       } catch (error) {
         if (!(yield* current())) return;

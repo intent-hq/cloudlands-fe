@@ -9,7 +9,7 @@ import {
   setComposerContextItems,
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-import type { Workspace } from '$shared/types';
+import { AgentStatus, type Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
@@ -25,6 +25,11 @@ import {
 } from '$lib/utils/smartScroll';
 
 import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
+import { createTestAgent } from '../../../../test/factories/agent.factory';
+import {
+  agentSessionReducer,
+  bulkUpsertSessions,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   workspaceReducer,
   setWorkspaceEntity,
@@ -813,6 +818,20 @@ beforeEach(() => {
   mocks.chatQuotaExceeded.set(null);
   mocks.storeState = {
     ...createAdmittedLegacyPrincipal(),
+    // Draft ownership reads the canonical session/workspace pair independently
+    // of the presentation selector mock. Keep that authority state real.
+    agentSessions: agentSessionReducer(
+      undefined,
+      bulkUpsertSessions(
+        ['a', 'b'].map((suffix) =>
+          createTestAgent({
+            status: AgentStatus.Idle,
+            id: `agent-${suffix}` as import('$shared/types').AgentId,
+            workspaceId: `workspace-${suffix}` as Workspace['id'],
+          }),
+        ),
+      ),
+    ),
     pendingSubmissions: { byAgentId: {} },
     workspace: workspaceReducer(
       workspaceReducer(
@@ -1439,6 +1458,27 @@ describe('ChatPanel mounted lifecycle', () => {
       'workspace-d',
       'workspace-e',
     ];
+    const state = mocks.storeState as import('$store/renderer/types').StoreState;
+    mocks.storeState = {
+      ...state,
+      workspace: workspaceIds.reduce(
+        (current, id) =>
+          workspaceReducer(current, setWorkspaceEntity({ ...workspace(id), myRole: 'owner' })),
+        state.workspace,
+      ),
+      agentSessions: agentSessionReducer(
+        state.agentSessions,
+        bulkUpsertSessions(
+          workspaceIds.map((id) =>
+            createTestAgent({
+              status: AgentStatus.Idle,
+              id: `agent-${id}` as import('$shared/types').AgentId,
+              workspaceId: id as Workspace['id'],
+            }),
+          ),
+        ),
+      ),
+    };
     OwnershipResizeObserver.live.clear();
     OwnershipIntersectionObserver.live.clear();
     vi.stubGlobal('ResizeObserver', OwnershipResizeObserver);

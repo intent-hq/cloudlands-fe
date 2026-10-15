@@ -68,18 +68,18 @@ export const clearChatDraft = createAction<[workspaceId: string, agentId: string
   'transientUi/clearChatDraft',
 );
 export const setComposerContextItems = createAction<
-  [workspaceId: string, agentId: string, items: ComposerContextItem[]]
+  [workspaceId: string, agentId: string, items: ComposerContextItem[], retainEmpty?: boolean]
 >('transientUi/setComposerContextItems');
 
 export const transientUiReducer = createReducer<TransientUiState>(initialState);
 transientUiReducer.with(
   setComposerContextItems,
-  (state, { payload: [workspaceId, agentId, items] }) =>
+  (state, { payload: [workspaceId, agentId, items, retainEmpty] }) =>
     updateWorkspaceState(state, workspaceId, (workspaceState) => {
       const current = workspaceState.composerContextByAgentId[agentId];
-      if (!current && items.length === 0) return workspaceState;
+      if (!current && items.length === 0 && !retainEmpty) return workspaceState;
       const composerContextByAgentId = { ...workspaceState.composerContextByAgentId };
-      if (items.length === 0) delete composerContextByAgentId[agentId];
+      if (items.length === 0 && !retainEmpty) delete composerContextByAgentId[agentId];
       else
         composerContextByAgentId[agentId] = createCollection<ComposerContextItem, 'id'>(
           'id',

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { extractAttachmentBlocks } from './chat-attachment-blocks';
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
@@ -5542,36 +5543,6 @@
   // remaining placed-attachment items (file.placeAttachment — UUID +
   // metadata, no bytes). Inline image blocks are placed and swapped to
   // references by the send saga before the wire call.
-  function extractAttachmentBlocks(items: ContextItem[]) {
-    const imageBlocks = items
-      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
-      .map((item) =>
-        item.attachmentId
-          ? {
-              type: 'image' as const,
-              attachmentId: item.attachmentId,
-              // The neutral 'image' marker (reference restored without a
-              // persisted mime) stays off the wire — mimeType is optional
-              // on the reference arm.
-              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
-            }
-          : {
-              type: 'image' as const,
-              data: item.imageData!,
-              mimeType: item.imageMimeType!,
-            },
-      );
-    const fileBlocks = items
-      .filter((item) => item.attachmentId && !item.imageMimeType)
-      .map((item) => ({
-        type: 'file' as const,
-        attachmentId: item.attachmentId!,
-        fileName: item.label,
-        ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
-        ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
-      }));
-    return { imageBlocks, fileBlocks };
-  }
 
   // Handle sending messages
   function handleSend(text: string) {

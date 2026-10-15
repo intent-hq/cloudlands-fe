@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import { File as NativeFile } from 'node:buffer';
 import { store } from '@/store';
 import { draftsClient, captureDraftOwnership } from '@/features/agent/chat-runtime';
 import { createAdmittedLegacyPrincipal } from '../../../../../src/test/fixtures/admitted-legacy-principal';
@@ -79,3 +80,67 @@ it('does not save a prior principal draft through a newly admitted principal', a
     dispose();
   }
 });
+
+it.each(['9.13', '9.12'])(
+  'checks the actual daemon protocol before placing bytes (%s)',
+  async (protocolVersion) => {
+    const { placeComposerAttachment } = await import('./chat-runtime');
+    transport.request.mockReset();
+    transport.request.mockImplementation(async (method) =>
+      method === 'system.status'
+        ? { protocolVersion }
+        : {
+            attachmentId: 'placed',
+            fileName: 'safe.txt',
+            path: '.intent/attachments/safe.txt',
+            size: 5,
+          },
+    );
+    const controller = new AbortController();
+    const file = new NativeFile(['hello'], 'safe.txt', { type: 'text/plain' }) as unknown as File;
+    await placeComposerAttachment('workspace', file, {
+      idempotencyKey: 'key',
+      signal: controller.signal,
+      current: () => true,
+      onProgress: () => {},
+    });
+    expect(transport.request.mock.calls[0][0]).toBe('system.status');
+    expect(transport.request.mock.calls.at(-1)?.slice(0, 2)).toEqual([
+      'file.placeAttachment',
+      {
+        workspaceId: 'workspace',
+        fileName: 'safe.txt',
+        data: 'aGVsbG8=',
+        mimeType: 'text/plain',
+        ...(protocolVersion === '9.13' ? { idempotencyKey: 'key' } : {}),
+      },
+    ]);
+  },
+);
+it.each(['authority', 'cancel'] as const)(
+  'does not upload after %s retires while status is pending',
+  async (retirement) => {
+    const { placeComposerAttachment } = await import('./chat-runtime');
+    let resolve!: (value: { protocolVersion: string }) => void;
+    transport.request.mockReset().mockImplementation(
+      () =>
+        new Promise((ok) => {
+          resolve = ok;
+        }),
+    );
+    const controller = new AbortController();
+    let current = true;
+    const promise = placeComposerAttachment('workspace', new File(['hello'], 'safe.txt'), {
+      idempotencyKey: 'key',
+      signal: controller.signal,
+      current: () => current,
+      onProgress: () => {},
+    });
+    const rejected = expect(promise).rejects.toThrow();
+    if (retirement === 'authority') current = false;
+    else controller.abort();
+    resolve({ protocolVersion: '9.13' });
+    await rejected;
+    expect(transport.request).toHaveBeenCalledTimes(1);
+  },
+);

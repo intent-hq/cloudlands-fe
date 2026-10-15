@@ -158,6 +158,7 @@ it('keeps unsupported attachment drafts intact without sending or rewriting them
     updatedAt: '',
   } as Awaited<ReturnType<DraftsClient['get']>>);
   await mount('with attachment');
+  expect(ui.props?.sendDisabled).toBe(true);
   expect(ui.props?.disabled).toBe(true);
   expect(ui.props?.value).toBe('with attachment');
   await act(async () => ui.props!.onSend!('with attachment', []));
@@ -233,3 +234,169 @@ it.each(['retained edit', ''])(
     await vi.waitFor(() => expect(drafts.set).toHaveBeenCalledWith(ws, agent, text, undefined));
   },
 );
+
+it('restores registered image and file drafts and admits their canonical wire blocks', async () => {
+  vi.mocked(drafts.get).mockResolvedValue({
+    text: '',
+    attachments: [
+      {
+        id: 'image',
+        type: 'file',
+        label: 'shapes.png',
+        attachmentId: 'image-id',
+        attachmentMimeType: 'image/png',
+        imageMimeType: 'image/png',
+        attachmentSize: 30,
+      },
+      {
+        id: 'file',
+        type: 'file',
+        label: 'notes.txt',
+        attachmentId: 'file-id',
+        attachmentMimeType: 'text/plain',
+        attachmentSize: 12,
+      },
+    ],
+    updatedAt: '',
+  });
+  await mount('');
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.hasAttachments).toBe(true);
+  });
+  expect(ui.props?.sendDisabled).toBe(false);
+  await act(async () => ui.props!.onSend!('', []));
+  const sent = getItems(entry().submissions)[0];
+  expect(sent).toBeTruthy();
+  expect(JSON.stringify(sent)).toContain('image-id');
+  expect(JSON.stringify(sent)).toContain('file-id');
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, sent.id, 'accepted', Date.now())),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.hasAttachments).toBe(false);
+  });
+  expect(drafts.clear).toHaveBeenCalledOnce();
+});
+
+it('retains a newer attachment when an earlier submission is accepted', async () => {
+  const { setComposerContextItems } =
+    await import('../../../../../src/store/renderer/slices/transient-ui/transient-ui-slice');
+  await mount();
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  const sent = getItems(entry().submissions)[0];
+  await act(async () =>
+    store.dispatch(
+      setComposerContextItems(
+        ws,
+        agent,
+        [{ id: 'new-file', type: 'file', label: 'new.txt', attachmentId: 'new-id' }],
+        true,
+      ),
+    ),
+  );
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, sent.id, 'accepted', Date.now())),
+  );
+  await settle();
+  expect(ui.props?.hasAttachments).toBe(true);
+  expect(ui.props?.value).toBe('saved draft');
+  expect(drafts.clear).not.toHaveBeenCalled();
+});
+
+it('restores an interrupted local upload visibly without sending or silently losing it on edit', async () => {
+  vi.mocked(drafts.get).mockResolvedValue({
+    text: 'draft',
+    attachments: [
+      {
+        id: 'lost-file',
+        type: 'file',
+        label: 'lost.txt',
+        attachmentMimeType: 'text/plain',
+        attachmentSize: 5,
+        placementStatus: 'failed',
+      },
+    ],
+    updatedAt: '',
+  });
+  await mount('draft');
+  expect(ui.props?.sendDisabled).toBe(true);
+  expect(container.textContent).toContain('lost.txt');
+  await act(async () => ui.props!.onSend!('draft', []));
+  expect(entry()).toBeUndefined();
+  await act(async () => ui.props!.onValueChange!('new text'));
+  await act(async () => root.unmount());
+  await vi.waitFor(() =>
+    expect(drafts.set).toHaveBeenCalledWith(ws, agent, 'new text', [
+      expect.objectContaining({ id: 'lost-file', placementStatus: 'failed' }),
+    ]),
+  );
+});
+
+it('clears the matching attachment draft after a rejected send is retried from a remounted composer', async () => {
+  const { chatSubmission, submissionRetry } = await import('@/features/agent/chat-runtime');
+  const { chatLastAttemptedMessageSet } =
+    await import('../../../../../src/store/renderer/slices/chat-state/chat-state-slice');
+  const file = {
+    id: 'file',
+    type: 'file',
+    label: 'notes.txt',
+    attachmentId: 'file-id',
+    attachmentMimeType: 'text/plain',
+    attachmentSize: 12,
+  };
+  vi.mocked(drafts.get).mockResolvedValue({
+    text: 'saved draft',
+    attachments: [file],
+    updatedAt: '',
+  });
+  await mount();
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.hasAttachments).toBe(true);
+  });
+  await act(async () => ui.props!.onSend!('saved draft', []));
+  const first = getItems(entry().submissions)[0];
+  await act(async () => {
+    store.dispatch(pendingSubmissionSettled(entry().scope, first.id, 'rejected', Date.now()));
+    store.dispatch(
+      chatLastAttemptedMessageSet(agent, {
+        text: 'saved draft',
+        options: { fileBlocks: [{ type: 'file', attachmentId: 'file-id', fileName: 'notes.txt' }] },
+        submission: { reference: { scope: entry().scope, id: first.id }, outcome: 'rejected' },
+      }),
+    );
+    store.dispatch(chatSendFailed(agent, 'send rejected'));
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mount();
+  vi.mocked(submissionRetry.requestChatMessageRetry).mockImplementation(
+    async (_agent, _workspace, _model, onAdmitted) => {
+      const admitted = chatSubmission.admitChatMessage(store, agent, {
+        wsId: ws,
+        text: 'saved draft',
+        fileBlocks: [{ type: 'file', attachmentId: 'file-id', fileName: 'notes.txt' }],
+      });
+      expect(admitted).toBeTruthy();
+      onAdmitted!(admitted!.submission.id);
+    },
+  );
+  const retry = Array.from(container.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes('Retry'),
+  );
+  expect(retry).toBeTruthy();
+  await act(async () => retry!.click());
+  const next = getItems(entry().submissions)[0];
+  expect(next.id).not.toBe(first.id);
+  await act(async () =>
+    store.dispatch(pendingSubmissionSettled(entry().scope, next.id, 'accepted', Date.now())),
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(ui.props?.hasAttachments).toBe(false);
+    expect(ui.props?.value).toBe('');
+  });
+  expect(drafts.clear).toHaveBeenCalledOnce();
+});

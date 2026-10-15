@@ -142,6 +142,8 @@ export function MessageComposer({
   clickToFocus = true,
   sendLabel = m.chat_richInput_send_label(),
   files = NO_FILES,
+  hasAttachments = false,
+  sendDisabled = false,
   onFilesChange,
   accept = DEFAULT_ACCEPT,
   maxFiles,
@@ -191,7 +193,8 @@ export function MessageComposer({
   const supportsFiles = onFilesChange !== undefined;
   const supportsQueue = status !== undefined && onQueueChange !== undefined;
   const streaming = status === 'streaming';
-  const canSend = !disabled && (value.trim().length > 0 || files.length > 0);
+  const canSend =
+    !disabled && !sendDisabled && (value.trim().length > 0 || files.length > 0 || hasAttachments);
   const filesOpen = files.length > 0;
   const queueOpen = supportsQueue && showQueue && queue.length > 0;
   const suggestionsOpen = suggestions.length > 0 && value === '';
@@ -303,7 +306,7 @@ export function MessageComposer({
 
   function handleSend() {
     const trimmed = currentValue.current.trim();
-    if (disabled || (!trimmed && files.length === 0)) return;
+    if (disabled || sendDisabled || (!trimmed && files.length === 0 && !hasAttachments)) return;
     historyIndex.current = null;
     if (streaming && supportsQueue) {
       const item = { id: crypto.randomUUID(), text: trimmed, files: [...files] };
@@ -422,6 +425,7 @@ export function MessageComposer({
   }
 
   function matchesAccept(file: File) {
+    if (!accept.trim()) return true;
     return accept
       .split(',')
       .map((token) => token.trim())

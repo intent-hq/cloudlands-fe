@@ -1,20 +1,12 @@
-import { getChatDraft } from './transient-ui-projections';
+import { getChatDraft, getComposerContextItems } from './transient-ui-projections';
 import { store } from '../../store';
 import { emptyWorkspaceTransientUiState, type NoteViewMode } from './transient-ui-slice';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import type { ComposerContextItem } from './transient-ui-types';
 
 const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {
   return state.transientUi.byWorkspaceId[workspaceId] ?? emptyWorkspaceTransientUiState;
 });
 
-export const selectComposerContextItems = store.createSelector(
-  (state, workspaceId: string, agentId: string): ComposerContextItem[] => {
-    const items = selectTransientUiWorkspaceState.select(state, workspaceId)
-      .composerContextByAgentId?.[agentId];
-    return items ? getItems(items) : [];
-  },
-);
+export const selectComposerContextItems = store.createSelector(getComposerContextItems);
 
 export const selectWorkspaceComposerContext = store.createSelector(
   (state, workspaceId: string) =>

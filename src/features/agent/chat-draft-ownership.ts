@@ -12,19 +12,34 @@ export function createChatDraftOwnership(
   appStore: { state: WorkspaceAuthorityProjectionState & { agentSessions: AgentSessionState } },
   capture: ReturnType<typeof createAgentReadOwnership>['captureAgentMutationOwnership'],
 ) {
-  return (workspaceId: string, agentId: string): (() => boolean) => {
+  return (workspaceId: string, agentId: string) => {
     const participation = getWorkspaceParticipationContext(appStore.state, workspaceId);
-    const principal = getPrincipalSnapshot(appStore.state)?.principal.id;
+    const snapshot = getPrincipalSnapshot(appStore.state);
+    const principal = snapshot?.principal.id;
+    const backendId = appStore.state.connections.windowBackendId;
     const context = getPrincipalConnectionContext(appStore.state);
     const ownership = capture(agentId, workspaceId);
-    return () =>
+    const sameAuthority = () =>
       !!participation &&
       !!principal &&
       !!context &&
-      getWorkspaceParticipationContext(appStore.state, workspaceId) === participation &&
+      getWorkspaceParticipationContext(appStore.state, workspaceId) !== null &&
+      appStore.state.connections.windowBackendId === backendId &&
       getPrincipalSnapshot(appStore.state)?.principal.id === principal &&
-      getPrincipalConnectionContext(appStore.state) === context &&
-      appStore.state.agentSessions.byAgentId[agentId]?.workspaceId === workspaceId &&
-      ownership.isCurrent(workspaceId);
+      getPrincipalSnapshot(appStore.state)?.principal.hostMembershipRevision ===
+        snapshot?.principal.hostMembershipRevision &&
+      appStore.state.agentSessions.byAgentId[agentId]?.workspaceId === workspaceId;
+    // Same-identity explicit retries may obtain a new mutation lease after reconnect.
+    // Queued drafts and in-flight uploads retain their original admission epoch.
+    return Object.assign(
+      () =>
+        sameAuthority() &&
+        getWorkspaceParticipationContext(appStore.state, workspaceId) === participation &&
+        getPrincipalConnectionContext(appStore.state) === context &&
+        ownership.isCurrent(workspaceId),
+      {
+        sameAuthority,
+      },
+    );
   };
 }

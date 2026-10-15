@@ -1,3 +1,5 @@
+import { createBackendAttachmentPlacement } from '$lib/client/live/backend-attachment-placement';
+import type { AttachmentPlacementApi } from '$lib/client/live/attachment-upload-types';
 import { createAttachmentInfoRead } from '$lib/client/live/backend-attachment-info';
 import type {
   AttachmentInfo,
@@ -73,158 +75,25 @@ export async function searchFiles(
   }
 }
 
-/** Result of `file.placeAttachment` (PROTOCOL §5.9, plus registry fields). */
-export interface PlaceAttachmentResult {
-  ok: boolean;
-  /** Workspace-relative path under `.intent/attachments/`. */
-  path: string;
-  /** The collision-safe file name the daemon actually chose. */
-  fileName: string;
-  /** Placed byte length. */
-  size: number;
-  /** UUID key of the attachment registry row. */
-  attachmentId: string;
-  /** MIME type recorded in the registry (when the caller supplied one). */
-  mimeType?: string;
-  /** ISO timestamp of the registry row. */
-  uploadedAt: string;
-  /**
-   * Presence-detected (keyed placement): the keyed call replayed an earlier placement
-   * bound to the same `idempotencyKey` and placed nothing. Absent on a first
-   * placement or an unkeyed call.
-   */
-  replayed?: boolean;
-}
-
 /**
- * Place a chat attachment into the workspace's `.intent/attachments/`
- * directory via the daemon (`file.placeAttachment`, PROTOCOL §5.9).
- * Exactly one of `data` (base64, `data:` URL prefix tolerated) or
- * `sourcePath` (absolute host-local path the daemon copies directly) must be
- * provided; optional `mimeType` is recorded in the attachment registry.
- * Optional `idempotencyKey` makes a same-key retry replay the bound
- * placement instead of placing a duplicate — only send it to daemons that
- * accept keyed placement. Errors propagate to the caller.
+ * Source compatibility boundary: retain existing consumers/mocks until they inject
+ * the shared attachment adapter. Request construction lives in the shared factory.
  */
-export async function placeAttachment(
-  workspaceId: string,
-  fileName: string,
-  source: { data?: string; sourcePath?: string; mimeType?: string; idempotencyKey?: string },
-): Promise<PlaceAttachmentResult> {
-  logger.debug('Placing attachment', {
-    workspaceId,
-    fileName,
-    viaSourcePath: source.sourcePath !== undefined,
-    keyed: source.idempotencyKey !== undefined,
-  });
-  return await backendRequest<PlaceAttachmentResult>('file.placeAttachment', {
-    workspaceId,
-    fileName,
-    ...(source.data !== undefined ? { data: source.data } : {}),
-    ...(source.sourcePath !== undefined ? { sourcePath: source.sourcePath } : {}),
-    ...(source.mimeType !== undefined && source.mimeType !== ''
-      ? { mimeType: source.mimeType }
-      : {}),
-    ...(source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {}),
-  });
-}
-
-/** Result of `file.attachmentUpload.begin` (PROTOCOL §5.9). */
-export interface BeginAttachmentUploadResult {
-  uploadId: string;
-  /** Daemon's decoded-bytes-per-chunk cap (16 MiB). */
-  maxChunkBytes: number;
-  /**
-   * Presence-detected (keyed begin): a same-key begin re-answered a still-live
-   * session's `uploadId` (a lost begin reply) instead of opening a second one.
-   */
-  replayed?: boolean;
-}
-
-/**
- * Open a staged chunked attachment upload session on the daemon
- * (`file.attachmentUpload.begin`, PROTOCOL §5.9). The daemon verifies
- * the assembled payload against `sha256` (lowercase hex) at commit. Optional
- * `idempotencyKey` binds the committed attachment to the key so a
- * lost commit reply is recoverable via `getAttachmentInfo`; a key already
- * bound to a committed attachment rejects begin with -32602 ("already
- * committed"). Errors propagate to the caller.
- */
-export async function beginAttachmentUpload(
-  workspaceId: string,
-  fileName: string,
-  sizeBytes: number,
-  sha256: string,
-  options: { mimeType?: string; idempotencyKey?: string } = {},
-): Promise<BeginAttachmentUploadResult> {
-  return await backendRequest<BeginAttachmentUploadResult>('file.attachmentUpload.begin', {
-    workspaceId,
-    fileName,
-    sizeBytes,
-    sha256,
-    ...(options.mimeType !== undefined && options.mimeType !== ''
-      ? { mimeType: options.mimeType }
-      : {}),
-    ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
-  });
-}
-
-/**
- * Per-call timeout for chunk sends and commit. A 16 MiB chunk is ~21.3 MiB
- * of base64 on the wire, which blows the transport's flat 30s default on
- * connections below ~6 Mbit/s; 5 minutes tolerates ~0.6 Mbit/s. Commit gets
- * the same bound: the daemon assembles and SHA-256-verifies up to 1 GiB
- * before replying.
- */
-const UPLOAD_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
-
-/**
- * Stage one seq-numbered base64 slice of a chunked upload
- * (`file.attachmentUpload.chunk`, PROTOCOL §5.9). Retrying a seq is
- * idempotent on the daemon side.
- */
-export async function sendAttachmentUploadChunk(
-  uploadId: string,
-  seq: number,
-  data: string,
-  workspaceId?: string,
-): Promise<{ uploadId: string; seq: number; receivedBytes: number }> {
-  return await backendRequest(
-    'file.attachmentUpload.chunk',
-    { uploadId, seq, data, ...(workspaceId !== undefined ? { workspaceId } : {}) },
-    { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
-  );
-}
-
-/**
- * Verify and place a completed chunked upload
- * (`file.attachmentUpload.commit`, PROTOCOL §5.9). The result is
- * byte-shape-identical to a successful `file.placeAttachment`.
- */
-export async function commitAttachmentUpload(
-  uploadId: string,
-  workspaceId?: string,
-): Promise<PlaceAttachmentResult> {
-  return await backendRequest<PlaceAttachmentResult>(
-    'file.attachmentUpload.commit',
-    { uploadId, ...(workspaceId !== undefined ? { workspaceId } : {}) },
-    { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
-  );
-}
-
-/**
- * Drop a staged chunked upload session and its staging directory
- * (`file.attachmentUpload.abort`, PROTOCOL §5.9). Idempotent.
- */
-export async function abortAttachmentUpload(
-  uploadId: string,
-  workspaceId?: string,
-): Promise<{ uploadId: string; aborted: boolean }> {
-  return await backendRequest('file.attachmentUpload.abort', {
-    uploadId,
-    ...(workspaceId !== undefined ? { workspaceId } : {}),
-  });
-}
+export type {
+  PlaceAttachmentResult,
+  BeginAttachmentUploadResult,
+} from '$lib/client/live/attachment-upload-types';
+export const placeAttachment: AttachmentPlacementApi['placeAttachment'] = (...args) =>
+  createBackendAttachmentPlacement(backendRequest).placeAttachment(...args);
+export const beginAttachmentUpload: AttachmentPlacementApi['beginAttachmentUpload'] = (...args) =>
+  createBackendAttachmentPlacement(backendRequest).beginAttachmentUpload(...args);
+export const sendAttachmentUploadChunk: AttachmentPlacementApi['sendAttachmentUploadChunk'] = (
+  ...args
+) => createBackendAttachmentPlacement(backendRequest).sendAttachmentUploadChunk(...args);
+export const commitAttachmentUpload: AttachmentPlacementApi['commitAttachmentUpload'] = (...args) =>
+  createBackendAttachmentPlacement(backendRequest).commitAttachmentUpload(...args);
+export const abortAttachmentUpload: AttachmentPlacementApi['abortAttachmentUpload'] = (...args) =>
+  createBackendAttachmentPlacement(backendRequest).abortAttachmentUpload(...args);
 
 export type {
   AttachmentInfo,
