@@ -63,7 +63,7 @@
     orderPRSectionsForSelection,
     sectionPRs,
   } from './sidebar-changes-utils';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     selectGitRoots,
     type WorkspaceGitRootEntry,
@@ -187,7 +187,7 @@
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
 
   // Agent PR monitors (PROTOCOL §6.9): live rows join the PR list below.
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const prMonitors$ = selectReviewMonitors(workspaceIdStore);
 
   const workspaceRepo = $derived(
     $workspace?.repositoryOwner && $workspace?.repositoryName

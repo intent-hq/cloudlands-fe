@@ -650,6 +650,16 @@ describe('authored browser tests require their complete PR suites', () => {
     ['src/features/backend/main/repository-checkout-feed.ts', true],
     ['src/lib/client/live/repository-checkout-transport.ts', true],
     ['src/shared/types/repository-checkout.ts', true],
+    ['test/fixtures/pr-monitor-native/main.ts', true],
+    ['test/fixtures/pr-monitor-native/monitor.electron.ts', true],
+    ['test/fixtures/pr-monitor-native/playwright.config.ts', true],
+    ['src/features/backend/main/pr-monitor-lifecycle.ts', true],
+    ['src/features/backend/main/backend.ipc.ts', true],
+    ['src/features/backend/main/json-rpc-client.ts', true],
+    ['src/lib/client/live/pr-monitor-transport.ts', true],
+    ['src/lib/client/live/electron-ipc-transport.ts', true],
+    ['src/shared/types/pr-monitor.ts', true],
+    ['src/preload/index.template.ts', true],
     ['.github/workflows/browser-tests.yml', true],
     ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
@@ -660,6 +670,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
     ['test/fixtures/repository-checkout-other/main.ts', false],
+    ['test/fixtures/pr-monitor-native-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');
