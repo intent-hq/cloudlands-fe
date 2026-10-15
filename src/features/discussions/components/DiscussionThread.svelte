@@ -108,7 +108,15 @@
   });
 
   function send() {
-    if (!canSend || sending || composing || tooLong || !draft.trim()) return;
+    const body = composer?.value ?? draft;
+    if (
+      !canSend ||
+      sending ||
+      composing ||
+      new TextEncoder().encode(body).byteLength > DISCUSSION_MAX_BODY_BYTES ||
+      !body.trim()
+    )
+      return;
     onSend();
     composer?.focus({ preventScroll: true });
   }

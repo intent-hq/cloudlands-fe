@@ -72,6 +72,30 @@ test('failed sends keep the draft and retry the same message identity', async ({
   ).toHaveCount(1);
 });
 
+test('Enter uses the current input before the rendered draft catches up', async ({
+  mount,
+}, testInfo) => {
+  const component = await mount(DiscussionHost);
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeEditable();
+  await composer.fill('🌎'.repeat(4097));
+  await expect(component.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  await expect(composer).toHaveAttribute('aria-invalid', 'true');
+  await composer.evaluate((element: HTMLTextAreaElement) => {
+    element.value = 'Send the current input';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await expect(composer).toHaveValue('');
+  const sends = (await recorded(component)).filter((r) => r.method === 'discussion.send');
+  expect(sends).toHaveLength(1);
+  expect(sends[0].params.body).toBe('Send the current input');
+  await expect(component.getByRole('log')).toContainText('Send the current input');
+  await component.locator('[data-discussion-test-pane]').screenshot({
+    path: testInfo.outputPath('discussion-immediate-send.png'),
+  });
+});
+
 test('older messages preserve the reading anchor, draft and focus; live arrivals do not pull the reader down', async ({
   mount,
 }) => {
