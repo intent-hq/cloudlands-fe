@@ -32,6 +32,11 @@
  * links at render time. Failures are logged as bounded codes only.
  */
 
+import {
+  readSetting,
+  updateSettings,
+  invalidateSettingsReadCache,
+} from '$lib/client/live/live-settings-client';
 import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
 import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
@@ -71,6 +76,9 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingEnabled,
   selectShareAddingPrincipalId,
   selectShareMembers,
   selectWorkspaceRosterMembers,
@@ -86,6 +94,10 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
+  sharePrerequisitesRequested,
+  shareEnableRequested,
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   shareIntegrationAuthRequested,
   shareIntegrationAuthLoaded,
   closeShareDialog,
@@ -261,22 +273,81 @@ function* loadShareData(): SagaGenerator<void> {
   yield* call(() => read.settled);
 }
 
-/**
- * Inline error for a failed `workspace.invite.create`: the pin failure names
- * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) and `tunnel-down` (the Tailcat tunnel is off, so no tunnel-only
- * link can be minted) each name the one setting to turn on; `guest-limit`
- * (the cap was spent between the dialog's read and the create) names the
- * cap; anything else stays generic.
- */
+const SHARING_PATHS = ['server.wsApi.enabled', 'server.tunnel.enabled'] as const;
+
+/** Both values must be known. A missing or failed setting is never “disabled”. */
+async function readSharingPrerequisites(): Promise<boolean[]> {
+  invalidateSettingsReadCache(SHARING_PATHS);
+  const results = await Promise.allSettled(SHARING_PATHS.map((path) => readSetting(path)));
+  return results.map((result) => {
+    if (result.status === 'rejected') throw result.reason;
+    if (typeof result.value?.value !== 'boolean') throw new Error('Missing sharing setting');
+    return result.value.value;
+  });
+}
+
+/** One setup operation per admitted dialog; duplicate clicks never issue another write. */
+function* sharingPrerequisites(
+  action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target || !(yield* selectCanAdministerHost.effect())) return;
+  if ((yield* selectShareSharingChecking.effect()) || (yield* selectShareSharingEnabling.effect()))
+    return;
+  const enabling = action.type === shareEnableRequested.type;
+  if (enabling && (yield* selectShareSharingEnabled.effect()) === true) return;
+  yield* put(sharePrerequisitesStarted({ target, enabling }));
+  try {
+    let values = yield* call(readSharingPrerequisites);
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    if (enabling) {
+      // Listener first: starting Tailcat requires it. Leave all other settings alone.
+      const changes = SHARING_PATHS.flatMap((path, index) =>
+        values[index] ? [] : [{ path, value: true }],
+      );
+      if (changes.length) {
+        yield* call(updateSettings, changes);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+        values = yield* call(readSharingPrerequisites);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+      }
+    }
+    const enabled = values.every(Boolean);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled,
+        error: enabling && !enabled ? m.workspace_share_sharingEnableFailed_error() : null,
+      }),
+    );
+  } catch (error) {
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    // A rejected batch can roll back applied settings. Discard pre-write cached values.
+    invalidateSettingsReadCache(SHARING_PATHS);
+    const message = error instanceof Error ? error.message : '';
+    const missingTailcat =
+      /tailcat/i.test(message) && /not found|not installed|missing|no such file/i.test(message);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled: null,
+        error: isForbiddenErrorResponse(error)
+          ? m.workspace_share_sharingAdminRequired_notice()
+          : missingTailcat
+            ? m.workspace_share_sharingTailcatMissing_error()
+            : enabling
+              ? m.workspace_share_sharingEnableFailed_error()
+              : m.workspace_share_sharingLoadFailed_error(),
+      }),
+    );
+  }
+}
+
+/** Inline error for an invite failure unrelated to host setup. */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
-    case 'listener-down':
-      return m.workspace_share_listenerDown_error();
-    case 'tunnel-down':
-      return m.workspace_share_tunnelDown_error();
     case 'identity-unverifiable':
       return m.collaboration_pin_unverifiable_error();
     case 'guest-limit':
@@ -328,6 +399,20 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   if (!outcome.success) {
     if (outcome.code === 'forbidden') {
       yield* put(shareAccessWithheld({ target }));
+      return;
+    }
+    if (outcome.code === 'listener-down' || outcome.code === 'tunnel-down') {
+      const administrator = yield* selectCanAdministerHost.effect();
+      yield* put(
+        shareInviteCreateFailed({
+          target,
+          request,
+          error: administrator
+            ? m.workspace_share_createFailed_error()
+            : m.workspace_share_sharingAdminRequired_notice(),
+        }),
+      );
+      if (administrator) yield* put(sharePrerequisitesRequested());
       return;
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
@@ -459,6 +544,7 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
+  yield* put(sharePrerequisitesRequested());
   // The pin's default forge follows the host's `identity.provider` setting.
   yield* put(initializeIdentity());
 }
@@ -577,8 +663,33 @@ export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
 }
 
 export function* workspaceShareSaga(): SagaGenerator<void> {
+  const setupFlights = new Map<string, { refresh: boolean }>();
+  function* setup(
+    action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+  ): SagaGenerator<void> {
+    const target = yield* manageableTarget();
+    if (!target || !(yield* selectCanAdministerHost.effect())) return;
+    const key = JSON.stringify(target);
+    const flight = setupFlights.get(key);
+    if (flight) {
+      if (action.type === sharePrerequisitesRequested.type) flight.refresh = true;
+      return;
+    }
+    const mine = { refresh: false };
+    setupFlights.set(key, mine);
+    try {
+      yield* call(sharingPrerequisites, action);
+      while (mine.refresh && (yield* stillTargets(target))) {
+        mine.refresh = false;
+        yield* call(sharingPrerequisites, sharePrerequisitesRequested());
+      }
+    } finally {
+      setupFlights.delete(key);
+    }
+  }
   yield* all([
     takeLatest(shareIntegrationAuthRequested, loadIntegrationAuth),
+    takeEvery([sharePrerequisitesRequested, shareEnableRequested], setup),
     takeEvery(openShareDialog, requestDataOnOpen),
     takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),

@@ -4,6 +4,10 @@
 
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
+import {
+  selectPrincipalActionContext,
+  selectCanAdministerHost,
+} from '../principal/principal-selectors';
 import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
@@ -157,4 +161,25 @@ export const selectWorkspaceRosterRemoveError = store.createSelector(
 
 export const selectShareIntegrationAuth = store.createSelector(
   (state) => state.workspaceShare.integrationAuth,
+);
+
+/** Never present another host/identity's prerequisite result, even before its next read. */
+const selectSharePrerequisitesCurrent = store.createSelector(
+  (state) =>
+    selectShareCanManage.select(state) &&
+    selectCanAdministerHost.select(state) &&
+    state.workspaceShare.sharingContext !== null &&
+    state.workspaceShare.sharingContext === selectPrincipalActionContext.select(state),
+);
+export const selectShareSharingEnabled = store.createSelector((state) =>
+  selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingEnabled : null,
+);
+export const selectShareSharingChecking = store.createSelector(
+  (state) => selectSharePrerequisitesCurrent.select(state) && state.workspaceShare.sharingChecking,
+);
+export const selectShareSharingEnabling = store.createSelector(
+  (state) => selectSharePrerequisitesCurrent.select(state) && state.workspaceShare.sharingEnabling,
+);
+export const selectShareSharingError = store.createSelector((state) =>
+  selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingError : null,
 );

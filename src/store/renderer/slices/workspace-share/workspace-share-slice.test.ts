@@ -7,6 +7,8 @@ import type {
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
 import {
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   closeShareDialog,
   getRosterState,
   initialRosterState,
@@ -696,5 +698,59 @@ describe('workspaceShareReducer', () => {
       // Another workspace is unaffected by the refusal.
       expect(getRosterState(withheld, 'ws-2').withheld).toBe(false);
     });
+  });
+});
+
+describe('sharing prerequisite settlements', () => {
+  it('preserves loaded members and links while setup runs and settles', () => {
+    const original = opened();
+    const scoped = { ...target(original), authority: 'host-a' };
+    const state = reduce(
+      original,
+      shareDataLoaded({
+        target: scoped,
+        generation: 0,
+        members: [owner],
+        invites: [invite],
+        guestCount: 1,
+        guestLimit: 5,
+      }),
+      sharePrincipalsLoaded({ target: scoped, principals: [hostGuest] }),
+    );
+    const started = reduce(state, sharePrerequisitesStarted({ target: scoped, enabling: true }));
+    expect(started.sharingEnabling).toBe(true);
+    expect(started.members).toBe(state.members);
+    expect(started.invites).toBe(state.invites);
+    expect(started.principals).toBe(state.principals);
+    expect(started.session).toBe(state.session);
+    const settled = reduce(
+      started,
+      sharePrerequisitesSettled({ target: scoped, enabled: true, error: null }),
+    );
+    expect(settled.sharingEnabled).toBe(true);
+    expect(settled.sharingEnabling).toBe(false);
+    expect(settled.principals).toBe(state.principals);
+  });
+
+  it('rejects replies from an old authority, closed dialog, and previous session', () => {
+    const original = opened();
+    const scoped = { ...target(original), authority: 'host-a' };
+    const started = reduce(
+      original,
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+    );
+    const stale = sharePrerequisitesSettled({ target: scoped, enabled: true, error: null });
+    const changed = reduce(
+      started,
+      sharePrerequisitesStarted({ target: { ...scoped, authority: 'host-b' }, enabling: false }),
+    );
+    expect(reduce(changed, stale)).toBe(changed);
+    const closed = reduce(started, closeShareDialog());
+    expect(reduce(closed, stale)).toBe(closed);
+    const reopened = reduce(
+      closed,
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
+    );
+    expect(reduce(reopened, stale)).toBe(reopened);
   });
 });

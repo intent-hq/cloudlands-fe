@@ -81,6 +81,12 @@ export const initialRosterState: WorkspaceRosterState = {
 
 export interface WorkspaceShareState {
   integrationAuth: { github: boolean; gitlab: boolean };
+  /** Prerequisites belong to one admitted host identity and dialog session. */
+  sharingContext: string | null;
+  sharingEnabled: boolean | null;
+  sharingChecking: boolean;
+  sharingEnabling: boolean;
+  sharingError: string | null;
   /** Hover-card rosters by workspace id; absent until a card asks for one. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
@@ -140,6 +146,11 @@ export interface WorkspaceShareState {
 
 export const initialState: WorkspaceShareState = {
   integrationAuth: { github: false, gitlab: false },
+  sharingContext: null,
+  sharingEnabled: null,
+  sharingChecking: false,
+  sharingEnabling: false,
+  sharingError: null,
   byWorkspaceId: {},
   open: false,
   workspaceId: null,
@@ -168,6 +179,16 @@ export const initialState: WorkspaceShareState = {
 export const openShareDialog = createAction<
   [payload: { workspaceId: string; workspaceTitle: string }]
 >('workspaceShare/openDialog');
+
+/** Recheck the current host without resetting the dialog's selections. */
+export const sharePrerequisitesRequested = createAction('workspaceShare/prerequisitesRequested');
+export const shareEnableRequested = createAction('workspaceShare/enableRequested');
+export const sharePrerequisitesStarted = createAction<
+  [payload: { target: WorkspaceShareTarget; enabling: boolean }]
+>('workspaceShare/prerequisitesStarted');
+export const sharePrerequisitesSettled = createAction<
+  [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
+>('workspaceShare/prerequisitesSettled');
 
 /** Close the Share dialog and drop every loaded row. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
@@ -342,6 +363,34 @@ workspaceShareReducer.with(closeShareDialog, (state) => ({
   byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
+workspaceShareReducer.with(
+  sharePrerequisitesStarted,
+  (state, { payload: [{ target, enabling }] }) => {
+    if (!targets(state, target) || state.withheld || !target.authority) return state;
+    return {
+      ...state,
+      sharingContext: target.authority,
+      sharingEnabled: null,
+      sharingChecking: !enabling,
+      sharingEnabling: enabling,
+      sharingError: null,
+    };
+  },
+);
+workspaceShareReducer.with(
+  sharePrerequisitesSettled,
+  (state, { payload: [{ target, enabled, error }] }) => {
+    if (!targets(state, target) || state.withheld || state.sharingContext !== target.authority)
+      return state;
+    return {
+      ...state,
+      sharingEnabled: enabled,
+      sharingChecking: false,
+      sharingEnabling: false,
+      sharingError: error,
+    };
+  },
+);
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
@@ -434,7 +483,16 @@ workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error 
 });
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
-  return { ...withoutRows(state), withheld: true, loadStatus: 'loaded', loadError: null };
+  return {
+    ...withoutRows(state),
+    sharingEnabled: null,
+    sharingChecking: false,
+    sharingEnabling: false,
+    sharingError: null,
+    withheld: true,
+    loadStatus: 'loaded',
+    loadError: null,
+  };
 });
 workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
   if (!state.open || state.withheld) return state;
