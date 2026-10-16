@@ -74,7 +74,7 @@
       discussionPageReceived(
         target,
         'catch-up-test',
-        { messages: [backend.message(100)], hasMore: true },
+        { messages: [backend.message(100)], hasMore: true, conversation: backend.conversation() },
         'newer',
       ),
     );

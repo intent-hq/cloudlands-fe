@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "Un utilisateur GitHub précis",
   "workspace_share_audienceGitlab_label": "Un utilisateur GitLab précis",
   "workspace_share_invited_label": "Invité",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "Nouvelle discussion",
+  "workspace_discussion_to_label": "À",
+  "workspace_discussion_recipients_label": "Destinataires de la discussion",
+  "workspace_discussion_chooseRecipients_placeholder": "Choisir des membres de l’espace de travail…",
+  "workspace_discussion_addRecipient_placeholder": "Ajouter des personnes…",
+  "workspace_discussion_removeRecipient_label": "Retirer {name}",
+  "workspace_discussion_noMembers_label": "Aucun membre trouvé dans cet espace de travail",
+  "workspace_discussion_members_error": "Impossible de charger les membres. Réessayez.",
+  "workspace_discussion_list_error": "Impossible de charger les discussions. Réessayez.",
+  "workspace_discussion_selectedComposer_placeholder": "Écrire aux personnes sélectionnées…",
+  "workspace_discussion_group_title": "Discussion de groupe",
+  "workspace_discussion_loadMore_label": "Charger plus de discussions",
+  "workspace_discussion_loadMoreMembers_label": "Charger plus de membres",
+  "workspace_discussion_recipientsLocked_label": "Les destinataires sont fixés après le premier envoi. Réessayez ce message pour terminer la création de la discussion.",
+  "workspace_discussion_multipleUnsupported_label": "Cet hôte ne prend pas encore en charge plusieurs discussions. Mettez à jour Intent sur l’hôte.",
+  "workspace_discussion_selectedEmpty_description": "Envoyez un message pour démarrer cette discussion.",
+  "workspace_discussion_create_error": "Impossible de créer la discussion. Vérifiez les destinataires et réessayez."
 }

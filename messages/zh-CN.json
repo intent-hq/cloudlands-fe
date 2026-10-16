@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "指定的 GitHub 用户",
   "workspace_share_audienceGitlab_label": "指定的 GitLab 用户",
   "workspace_share_invited_label": "已邀请",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "新建讨论",
+  "workspace_discussion_to_label": "收件人",
+  "workspace_discussion_recipients_label": "讨论参与者",
+  "workspace_discussion_chooseRecipients_placeholder": "选择工作区成员…",
+  "workspace_discussion_addRecipient_placeholder": "添加成员…",
+  "workspace_discussion_removeRecipient_label": "移除{name}",
+  "workspace_discussion_noMembers_label": "未找到工作区成员",
+  "workspace_discussion_members_error": "无法加载工作区成员，请重试。",
+  "workspace_discussion_list_error": "无法加载讨论，请重试。",
+  "workspace_discussion_selectedComposer_placeholder": "向所选成员发送消息…",
+  "workspace_discussion_group_title": "群组讨论",
+  "workspace_discussion_loadMore_label": "加载更多讨论",
+  "workspace_discussion_loadMoreMembers_label": "加载更多成员",
+  "workspace_discussion_recipientsLocked_label": "首次尝试发送后无法更改收件人。请重试此消息以完成创建讨论。",
+  "workspace_discussion_multipleUnsupported_label": "此主机尚不支持多个讨论。请更新主机上的 Intent。",
+  "workspace_discussion_selectedEmpty_description": "发送消息以开始此讨论。",
+  "workspace_discussion_create_error": "无法创建讨论。请检查收件人后重试。"
 }

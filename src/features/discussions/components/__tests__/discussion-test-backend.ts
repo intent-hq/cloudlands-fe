@@ -6,6 +6,7 @@ import { store } from '$store/renderer/store';
 import { workspaceDiscussionSaga } from '$store/renderer/slices/workspace-discussion/sagas/workspace-discussion-saga';
 import type {
   DiscussionMessage,
+  DiscussionConversation,
   DiscussionListParams,
   DiscussionSendParams,
 } from '$shared/types/workspace-discussion';
@@ -23,12 +24,36 @@ export function installDiscussionTestBackend(
   workspaceId: string,
   failSend: () => boolean,
   onRequests: (requests: Array<{ method: string; params: unknown }>) => void,
+  options: { deferSend?: boolean; rejectSend?: 'invalid' | 'forbidden' } = {},
 ) {
   const requests: Array<{ method: string; params: unknown }> = [];
   let sendAttempts = 0;
   let finishOlder: (() => void) | undefined;
+  let finishSend: (() => void) | undefined;
   const previousBridge = window.electronAPI;
   const author = { principalId: 'owner', displayName: 'Sam', login: 'sam', avatarUrl: null };
+  const recipientMembers = [
+    { principalId: 'alex', displayName: 'Alex', login: 'river-runner', avatarUrl: null },
+    { principalId: 'jordan', displayName: 'Jordan', login: 'jordan', avatarUrl: null },
+    { principalId: 'morgan', displayName: 'Morgan', login: 'morgan', avatarUrl: null },
+  ];
+  const self = { ...author, principalId: 'principal' };
+  const conversation = (
+    id = 'default',
+    participants = [self, recipientMembers[0]],
+  ): DiscussionConversation => ({
+    id,
+    workspaceId,
+    kind: id === 'default' ? 'workspace' : participants.length === 2 ? 'direct' : 'group',
+    participants: id === 'default' ? [] : participants,
+    createdAt: '2026-10-16T10:00:00Z',
+  });
+  const conversations = [
+    conversation(),
+    conversation('0199e991-0000-7000-8000-000000000001'),
+    conversation('0199e991-0000-7000-8000-000000000002', [self, recipientMembers[1]]),
+  ];
+  const histories = new Map<string, DiscussionMessage[]>();
   function message(
     sequence: number,
     body = `Review note ${sequence}: keeping the discussion in view while the team works through the plan.`,
@@ -36,6 +61,7 @@ export function installDiscussionTestBackend(
     return {
       id: `message-${sequence}`,
       workspaceId,
+      conversationId: 'default',
       sequence,
       body,
       author,
@@ -83,6 +109,37 @@ export function installDiscussionTestBackend(
     );
   }
   installMockElectronBridge({
+    'system.capabilities': () => ({ discussionConversations: 1 }),
+    'discussion.conversations': (params) => {
+      record('discussion.conversations', params);
+      return {
+        conversations: [...conversations].sort((a, b) =>
+          a.id === b.id
+            ? 0
+            : a.id === 'default'
+              ? -1
+              : b.id === 'default'
+                ? 1
+                : a.id > b.id
+                  ? -1
+                  : 1,
+        ),
+        hasMore: false,
+      };
+    },
+    'discussion.recipients': (params) => {
+      record('discussion.recipients', params);
+      const query = (params as { query?: string }).query?.toLowerCase() ?? '';
+      return {
+        members: recipientMembers.filter((person) =>
+          [person.displayName, person.login, person.principalId]
+            .join(' ')
+            .toLowerCase()
+            .includes(query),
+        ),
+        hasMore: false,
+      };
+    },
     'presence.snapshot': () => ({ workspaceId, members: [] }),
     'workspace.members.list': () => ({ members: [] }),
     'presence.update': (params) => {
@@ -92,29 +149,82 @@ export function installDiscussionTestBackend(
     'discussion.list': async (value) => {
       const params = value as DiscussionListParams;
       record('discussion.list', params);
+      const descriptor = conversations.find(
+        (item) => item.id === (params.conversationId ?? 'default'),
+      )!;
+      if (params.conversationId && params.conversationId !== 'default')
+        return {
+          conversation: descriptor,
+          messages: (histories.get(params.conversationId) ?? []).filter(
+            (message) =>
+              (params.afterSequence === undefined || message.sequence > params.afterSequence) &&
+              (params.beforeSequence === undefined || message.sequence < params.beforeSequence),
+          ),
+          hasMore: false,
+        };
       if (params.afterSequence === 100)
-        return { messages: [message(101, 'Recovered after reconnect.')], hasMore: false };
-      if (params.afterSequence !== undefined) return { messages: [], hasMore: false };
+        return {
+          conversation: descriptor,
+          messages: [message(101, 'Recovered after reconnect.')],
+          hasMore: false,
+        };
+      if (params.afterSequence !== undefined)
+        return { conversation: descriptor, messages: [], hasMore: false };
       if (params.beforeSequence) {
         await new Promise<void>((resolve) => {
           finishOlder = resolve;
         });
-        return { messages: Array.from({ length: 10 }, (_, i) => message(i + 1)), hasMore: false };
+        return {
+          conversation: descriptor,
+          messages: Array.from({ length: 10 }, (_, i) => message(i + 1)),
+          hasMore: false,
+        };
       }
-      return { messages: Array.from({ length: 25 }, (_, i) => message(i + 11)), hasMore: true };
+      return {
+        conversation: descriptor,
+        messages: Array.from({ length: 25 }, (_, i) => message(i + 11)),
+        hasMore: true,
+      };
     },
-    'discussion.send': (value) => {
+    'discussion.send': async (value) => {
       const params = value as DiscussionSendParams;
       record('discussion.send', params);
       sendAttempts++;
+      if (options.deferSend && sendAttempts === 1)
+        await new Promise<void>((resolve) => (finishSend = resolve));
+      if (options.rejectSend && sendAttempts === 1)
+        throw Object.assign(new Error('Rejected recipients'), {
+          rpcCode: options.rejectSend === 'invalid' ? -32602 : -32003,
+        });
       if (failSend() && sendAttempts === 1) throw new Error('Temporary connection failure');
-      return { message: { ...message(35 + sendAttempts, params.body), id: crypto.randomUUID() } };
+      let descriptor = conversations.find(
+        (item) => item.id === (params.conversationId ?? 'default'),
+      )!;
+      if (params.recipientPrincipalIds) {
+        descriptor = conversation(crypto.randomUUID(), [
+          self,
+          ...recipientMembers.filter((person) =>
+            params.recipientPrincipalIds?.includes(person.principalId),
+          ),
+        ]);
+        conversations.push(descriptor);
+      }
+      const sent = {
+        ...message(35 + sendAttempts, params.body),
+        id: crypto.randomUUID(),
+        author: self,
+        conversationId: descriptor.id,
+      };
+      histories.set(descriptor.id, [...(histories.get(descriptor.id) ?? []), sent]);
+      return { message: sent, conversation: descriptor };
     },
   });
   return {
     message,
+    conversation,
     receiveTyping,
     finishOlder: () => finishOlder?.(),
+    finishSend: () => finishSend?.(),
     restore: () => {
       window.electronAPI = previousBridge;
     },

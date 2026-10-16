@@ -26,6 +26,36 @@ describe('panel tab canonical identity', () => {
     ).toBe(false);
   });
 
+  it('keeps saved conversations and the new composer distinct while restoring legacy default tabs', () => {
+    const existing = tab('one', { type: 'discussion', data: { conversationId: 'one' } });
+    expect(
+      panelTabsAreEquivalent(
+        existing,
+        tab('same', { type: 'discussion', data: { conversationId: 'one' } }),
+      ),
+    ).toBe(true);
+    for (const conversationId of ['two', 'new', 'default']) {
+      expect(
+        panelTabsAreEquivalent(
+          existing,
+          tab('other', { type: 'discussion', data: { conversationId } }),
+        ),
+      ).toBe(false);
+    }
+    expect(
+      panelTabsAreEquivalent(
+        tab('legacy', { type: 'discussion' }),
+        tab('default', { type: 'discussion', data: { conversationId: 'default' } }),
+      ),
+    ).toBe(true);
+    expect(
+      panelTabsAreEquivalent(
+        tab('draft', { type: 'discussion', data: { conversationId: 'new' } }),
+        tab('draft-again', { type: 'discussion', data: { conversationId: 'new' } }),
+      ),
+    ).toBe(true);
+  });
+
   it('normalizes file paths and keeps terminal identities distinct', () => {
     expect(
       panelTabsAreEquivalent(tab('f', { filePath: '/repo/src/a.ts' }), {

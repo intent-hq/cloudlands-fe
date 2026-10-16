@@ -97,7 +97,12 @@ export function panelTabsAreEquivalent(
       );
     }
     case 'discussion':
-      return !!requested.workspaceId && existing.workspaceId === requested.workspaceId;
+      return (
+        !!requested.workspaceId &&
+        existing.workspaceId === requested.workspaceId &&
+        (existing.data?.conversationId ?? 'default') ===
+          (requested.data?.conversationId ?? 'default')
+      );
     case 'activity':
     case 'code-review':
     case 'settings':

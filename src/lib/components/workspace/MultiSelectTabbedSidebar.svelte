@@ -94,7 +94,7 @@
   import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
@@ -106,7 +106,6 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
-    selectCanShareWorkspace,
     selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
@@ -359,7 +358,6 @@
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0);
-  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
   let agentSearchQuery = $state('');
@@ -533,11 +531,6 @@
 
   function createTerminal() {
     appStore.dispatch(openTerminalOverlay(workspaceId));
-  }
-
-  function shareWorkspace() {
-    if (!$workspace || !selectCanShareWorkspace.select(appStore.state, workspaceId)) return;
-    appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: $workspace.title }));
   }
 
   let pendingLauncherFocusTabId = $state<LauncherTabId | null>(null);
@@ -1034,13 +1027,12 @@
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
                           {#if tabId === 'people'}
-                            {#if $canShare$}
-                              <SidebarHeaderAction
-                                icon="plus"
-                                label={m.workspace_share_menu_label()}
-                                onclick={shareWorkspace}
-                              />
-                            {/if}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.workspace_discussion_new_title()}
+                              onclick={() =>
+                                openWorkspaceDiscussion(workspaceId, panelLayoutId, 'new')}
+                            />
                           {:else if tabId === 'agents'}
                             <SidebarExpandableSearch
                               bind:query={agentSearchQuery}

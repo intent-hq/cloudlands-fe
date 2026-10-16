@@ -23,7 +23,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-regular-svg-icons';
   import { ContentHeader } from '$features/layout/components/content-header';
   import { presenceTypingLabel } from '$features/presence/components/presence-person';
@@ -35,6 +35,17 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import type { DiscussionMessage } from '$shared/types/workspace-discussion';
   import DiscussionThread from './DiscussionThread.svelte';
+  import {
+    selectDiscussionContext,
+    selectDiscussionOwner,
+  } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
+  import {
+    discussionContextChanged,
+    discussionWorkspacesChanged,
+    discussionCapabilityReceived,
+    discussionDirectoryStarted,
+    discussionDirectoryReceived,
+  } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
   import { m } from '$shared/paraglide/messages.js';
 
   let { narrow = false, state: previewState = 'ready' }: Props = $props();
@@ -58,7 +69,7 @@
     'I’ve added the first pass of the People sidebar. What do you think?',
     'Looks good. Can we keep the discussion next to the activity while we review?',
     'Yes, that makes it easier to follow along. I’ll check the narrow layout too.',
-    'Nice. Let’s keep this first version simple: one conversation for everyone in the workspace.',
+    'Nice. I’ll start a separate discussion with Morgan about the keyboard flow.',
     'Agreed. I’ll try it with a second window and check that the messages arrive.',
   ];
   let messages = $state<DiscussionMessage[]>([]);
@@ -134,7 +145,48 @@
     ];
     hasMore = false;
   }
-  onDestroy(() => store.dispatch(clearPanelLayout(workspaceId)));
+  onMount(() => {
+    if (narrow) return;
+    const context = selectDiscussionContext.select(store.state);
+    if (!context) return;
+    store.dispatch(discussionContextChanged(context, selectDiscussionOwner.select(store.state)));
+    store.dispatch(discussionWorkspacesChanged([workspaceId]));
+    store.dispatch(discussionCapabilityReceived(context, true));
+    store.dispatch(discussionDirectoryStarted(context, workspaceId, 'preview-directory'));
+    const self = { ...authors[0], principalId: store.state.principal.snapshot!.principal.id };
+    store.dispatch(
+      discussionDirectoryReceived(context, workspaceId, 'preview-directory', {
+        conversations: [
+          {
+            id: 'default',
+            workspaceId,
+            kind: 'workspace',
+            participants: [],
+            createdAt: '2026-10-16T10:00:00Z',
+          },
+          {
+            id: '0199e991-0000-7000-8000-000000000001',
+            workspaceId,
+            kind: 'direct',
+            participants: [self, authors[1]],
+            createdAt: '2026-10-16T10:01:00Z',
+          },
+          {
+            id: '0199e991-0000-7000-8000-000000000002',
+            workspaceId,
+            kind: 'group',
+            participants: [self, authors[1], authors[2]],
+            createdAt: '2026-10-16T10:02:00Z',
+          },
+        ],
+        hasMore: false,
+      }),
+    );
+  });
+  onDestroy(() => {
+    store.dispatch(clearPanelLayout(workspaceId));
+    if (!narrow) store.dispatch(discussionWorkspacesChanged([]));
+  });
 </script>
 
 <div

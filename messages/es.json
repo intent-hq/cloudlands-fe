@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "Un usuario específico de GitHub",
   "workspace_share_audienceGitlab_label": "Un usuario específico de GitLab",
   "workspace_share_invited_label": "Invitado",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "Nueva conversación",
+  "workspace_discussion_to_label": "Para",
+  "workspace_discussion_recipients_label": "Destinatarios de la conversación",
+  "workspace_discussion_chooseRecipients_placeholder": "Elige miembros del espacio de trabajo…",
+  "workspace_discussion_addRecipient_placeholder": "Añadir personas…",
+  "workspace_discussion_removeRecipient_label": "Quitar a {name}",
+  "workspace_discussion_noMembers_label": "No se encontraron miembros del espacio de trabajo",
+  "workspace_discussion_members_error": "No se pudieron cargar los miembros. Inténtalo de nuevo.",
+  "workspace_discussion_list_error": "No se pudieron cargar las conversaciones. Inténtalo de nuevo.",
+  "workspace_discussion_selectedComposer_placeholder": "Mensaje a las personas seleccionadas…",
+  "workspace_discussion_group_title": "Conversación grupal",
+  "workspace_discussion_loadMore_label": "Cargar más conversaciones",
+  "workspace_discussion_loadMoreMembers_label": "Cargar más miembros",
+  "workspace_discussion_recipientsLocked_label": "Los destinatarios quedan fijados tras el primer intento de envío. Reintenta el mensaje para crear la conversación.",
+  "workspace_discussion_multipleUnsupported_label": "Este anfitrión aún no admite varias conversaciones. Actualiza Intent en el anfitrión.",
+  "workspace_discussion_selectedEmpty_description": "Envía un mensaje para iniciar esta conversación.",
+  "workspace_discussion_create_error": "No se pudo crear la conversación. Revisa los destinatarios e inténtalo de nuevo."
 }

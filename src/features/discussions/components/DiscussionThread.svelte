@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
@@ -12,6 +12,7 @@
   } from '$shared/types/workspace-discussion';
 
   interface Props {
+    header?: Snippet;
     messages: readonly DiscussionMessage[];
     draft: string;
     typingLabel?: string | null;
@@ -23,10 +24,17 @@
     hasMore?: boolean;
     error?: string | null;
     sendError?: string | null;
+    retryDraft?: boolean;
     sending?: boolean;
     failedMessages?: readonly { id: string; body: string; error: string }[];
     onRetryMessage?: (id: string) => void;
     canSend?: boolean;
+    canSendDraft?: boolean;
+    canCompose?: boolean;
+    focusComposer?: boolean;
+    showEmptyState?: boolean;
+    emptyDescription?: string;
+    composerPlaceholder?: string;
     isActive?: boolean;
     isPanelFocused?: boolean;
     onDraftChange: (value: string) => void;
@@ -36,6 +44,7 @@
   }
 
   let {
+    header,
     messages,
     draft,
     typingLabel = null,
@@ -47,10 +56,17 @@
     hasMore = false,
     error = null,
     sendError = null,
+    retryDraft = true,
     sending = false,
     failedMessages = [],
     onRetryMessage,
     canSend = true,
+    canSendDraft = true,
+    canCompose,
+    focusComposer = true,
+    showEmptyState = true,
+    emptyDescription,
+    composerPlaceholder,
     isActive = true,
     isPanelFocused = false,
     onDraftChange,
@@ -108,7 +124,7 @@
   });
 
   $effect(() => {
-    if (isActive && isPanelFocused && composer) {
+    if (focusComposer && isActive && isPanelFocused && composer) {
       untrack(() => composer?.focus({ preventScroll: true }));
     }
   });
@@ -131,6 +147,7 @@
     const body = composer?.value ?? draft;
     if (
       !canSend ||
+      !canSendDraft ||
       sending ||
       composing ||
       new TextEncoder().encode(body).byteLength > DISCUSSION_MAX_BODY_BYTES ||
@@ -170,6 +187,7 @@
 </script>
 
 <div class="flex h-full min-h-0 min-w-0 flex-col bg-background" data-workspace-discussion>
+  {#if header}{@render header()}{/if}
   <div
     bind:this={scroller}
     class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [overflow-anchor:none]"
@@ -191,10 +209,11 @@
       </ErrorState>
     {:else if !initialized && loading}
       <LoadingState label={m.workspace_discussion_loading_label()} count={3} />
-    {:else if initialized && messages.length === 0}
+    {:else if showEmptyState && initialized && messages.length === 0}
       <EmptyState density="compact">
         {#snippet title()}{m.workspace_discussion_empty_title()}{/snippet}
-        {#snippet description()}{m.workspace_discussion_empty_description()}{/snippet}
+        {#snippet description()}{emptyDescription ??
+            m.workspace_discussion_empty_description()}{/snippet}
       </EmptyState>
     {/if}
     <div
@@ -260,10 +279,10 @@
         bind:ref={composer}
         value={draft}
         aria-label={m.workspace_discussion_composer_label()}
-        placeholder={m.workspace_discussion_composer_placeholder()}
+        placeholder={composerPlaceholder ?? m.workspace_discussion_composer_placeholder()}
         class="min-h-20 resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         rows={3}
-        readonly={!canSend}
+        readonly={!(canCompose ?? canSend)}
         aria-invalid={tooLong || undefined}
         oninput={input}
         onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
@@ -279,11 +298,13 @@
       <div class="flex items-center justify-end gap-2 px-2 pb-2">
         <Button
           size="sm"
-          disabled={!canSend || !draft.trim() || sending || tooLong}
+          disabled={!canSend || !canSendDraft || !draft.trim() || sending || tooLong}
           loading={sending}
           onclick={send}
         >
-          {sendError ? m.ui_errorToast_retry_label() : m.workspace_discussion_send_label()}
+          {sendError && retryDraft
+            ? m.ui_errorToast_retry_label()
+            : m.workspace_discussion_send_label()}
         </Button>
       </div>
     </div>

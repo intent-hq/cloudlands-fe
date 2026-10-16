@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "Ein bestimmter GitHub-Nutzer",
   "workspace_share_audienceGitlab_label": "Ein bestimmter GitLab-Nutzer",
   "workspace_share_invited_label": "Eingeladen",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "Neue Diskussion",
+  "workspace_discussion_to_label": "An",
+  "workspace_discussion_recipients_label": "Diskussionsteilnehmer",
+  "workspace_discussion_chooseRecipients_placeholder": "Workspace-Mitglieder auswählen…",
+  "workspace_discussion_addRecipient_placeholder": "Personen hinzufügen…",
+  "workspace_discussion_removeRecipient_label": "{name} entfernen",
+  "workspace_discussion_noMembers_label": "Keine Workspace-Mitglieder gefunden",
+  "workspace_discussion_members_error": "Workspace-Mitglieder konnten nicht geladen werden. Versuche es erneut.",
+  "workspace_discussion_list_error": "Diskussionen konnten nicht geladen werden. Versuche es erneut.",
+  "workspace_discussion_selectedComposer_placeholder": "Nachricht an ausgewählte Personen…",
+  "workspace_discussion_group_title": "Gruppendiskussion",
+  "workspace_discussion_loadMore_label": "Weitere Diskussionen laden",
+  "workspace_discussion_loadMoreMembers_label": "Weitere Mitglieder laden",
+  "workspace_discussion_recipientsLocked_label": "Nach dem ersten Sendeversuch stehen die Empfänger fest. Sende die Nachricht erneut, um die Diskussion zu erstellen.",
+  "workspace_discussion_multipleUnsupported_label": "Dieser Host unterstützt noch keine mehreren Diskussionen. Aktualisiere Intent auf dem Host.",
+  "workspace_discussion_selectedEmpty_description": "Sende eine Nachricht, um diese Diskussion zu beginnen.",
+  "workspace_discussion_create_error": "Die Diskussion konnte nicht erstellt werden. Prüfe die Empfänger und versuche es erneut."
 }

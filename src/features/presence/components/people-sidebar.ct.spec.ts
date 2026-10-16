@@ -76,7 +76,8 @@ test('opens People, receives live human activity, and restores focus on close', 
   await component.getByRole('button', { name: 'Add live activity', exact: true }).click();
   await expect(panel).toContainText('Taylor');
   await panel.locator('[data-sidebar-action="plus"]').click();
-  await expect(component.locator('[data-share-dialog-open]')).toHaveText('true');
+  await expect(component.locator('[data-share-dialog-open]')).toHaveText('false');
+  await expect(component.locator('[data-people-navigation]')).toContainText('New discussion');
   await panel.locator('[data-sidebar-close]').click();
   await expect(panel).toHaveCount(0);
   await expect(launcher).toBeFocused();
@@ -94,7 +95,7 @@ test('guests can read the feed and lose the panel when multiplayer is disabled',
   await component.getByRole('button', { name: 'People', exact: true }).click();
   const panel = component.locator('[data-sidebar-card-tab="people"]');
   await expect(panel).toContainText('Luke');
-  await expect(panel.locator('[data-sidebar-action="plus"]')).toHaveCount(0);
+  await expect(panel.locator('[data-sidebar-action="plus"]')).toHaveCount(1);
   await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
   await expect(panel).toHaveCount(0);
   await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);

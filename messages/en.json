@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "A specific GitHub user",
   "workspace_share_audienceGitlab_label": "A specific GitLab user",
   "workspace_share_invited_label": "Invited",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "New discussion",
+  "workspace_discussion_to_label": "To",
+  "workspace_discussion_recipients_label": "Discussion recipients",
+  "workspace_discussion_chooseRecipients_placeholder": "Choose workspace members…",
+  "workspace_discussion_addRecipient_placeholder": "Add people…",
+  "workspace_discussion_removeRecipient_label": "Remove {name}",
+  "workspace_discussion_noMembers_label": "No workspace members found",
+  "workspace_discussion_members_error": "Could not load workspace members. Try again.",
+  "workspace_discussion_list_error": "Could not load discussions. Try again.",
+  "workspace_discussion_selectedComposer_placeholder": "Message selected people…",
+  "workspace_discussion_group_title": "Group discussion",
+  "workspace_discussion_loadMore_label": "Load more discussions",
+  "workspace_discussion_loadMoreMembers_label": "Load more members",
+  "workspace_discussion_recipientsLocked_label": "Recipients are fixed after the first send attempt. Retry this message to finish creating the discussion.",
+  "workspace_discussion_multipleUnsupported_label": "This host does not support multiple discussions yet. Update Intent on the host to continue.",
+  "workspace_discussion_selectedEmpty_description": "Send a message to start this discussion.",
+  "workspace_discussion_create_error": "The discussion could not be created. Check the recipients and try again."
 }

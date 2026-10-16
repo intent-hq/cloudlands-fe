@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "指定的 GitHub 使用者",
   "workspace_share_audienceGitlab_label": "指定的 GitLab 使用者",
   "workspace_share_invited_label": "已邀請",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "新增討論",
+  "workspace_discussion_to_label": "收件者",
+  "workspace_discussion_recipients_label": "討論參與者",
+  "workspace_discussion_chooseRecipients_placeholder": "選擇工作區成員…",
+  "workspace_discussion_addRecipient_placeholder": "新增成員…",
+  "workspace_discussion_removeRecipient_label": "移除{name}",
+  "workspace_discussion_noMembers_label": "找不到工作區成員",
+  "workspace_discussion_members_error": "無法載入工作區成員，請重試。",
+  "workspace_discussion_list_error": "無法載入討論，請重試。",
+  "workspace_discussion_selectedComposer_placeholder": "傳送訊息給所選成員…",
+  "workspace_discussion_group_title": "群組討論",
+  "workspace_discussion_loadMore_label": "載入更多討論",
+  "workspace_discussion_loadMoreMembers_label": "載入更多成員",
+  "workspace_discussion_recipientsLocked_label": "首次嘗試傳送後無法變更收件者。請重試此訊息以完成建立討論。",
+  "workspace_discussion_multipleUnsupported_label": "此主機尚不支援多個討論。請更新主機上的 Intent。",
+  "workspace_discussion_selectedEmpty_description": "傳送訊息以開始此討論。",
+  "workspace_discussion_create_error": "無法建立討論。請檢查收件人後再試一次。"
 }

@@ -7550,5 +7550,22 @@
   "workspace_share_audienceGithub_label": "特定のGitHubユーザー",
   "workspace_share_audienceGitlab_label": "特定のGitLabユーザー",
   "workspace_share_invited_label": "招待済み",
-  "workspace_share_guestCount_label": "{count} / {limit}"
+  "workspace_share_guestCount_label": "{count} / {limit}",
+  "workspace_discussion_new_title": "新しいディスカッション",
+  "workspace_discussion_to_label": "宛先",
+  "workspace_discussion_recipients_label": "ディスカッションの参加者",
+  "workspace_discussion_chooseRecipients_placeholder": "ワークスペースのメンバーを選択…",
+  "workspace_discussion_addRecipient_placeholder": "メンバーを追加…",
+  "workspace_discussion_removeRecipient_label": "{name}を削除",
+  "workspace_discussion_noMembers_label": "ワークスペースのメンバーが見つかりません",
+  "workspace_discussion_members_error": "メンバーを読み込めませんでした。もう一度お試しください。",
+  "workspace_discussion_list_error": "ディスカッションを読み込めませんでした。もう一度お試しください。",
+  "workspace_discussion_selectedComposer_placeholder": "選択したメンバーにメッセージ…",
+  "workspace_discussion_group_title": "グループディスカッション",
+  "workspace_discussion_loadMore_label": "ディスカッションをさらに読み込む",
+  "workspace_discussion_loadMoreMembers_label": "メンバーをさらに読み込む",
+  "workspace_discussion_recipientsLocked_label": "最初の送信試行後は宛先を変更できません。このメッセージを再送してディスカッションを作成してください。",
+  "workspace_discussion_multipleUnsupported_label": "このホストは複数のディスカッションに未対応です。ホストのIntentを更新してください。",
+  "workspace_discussion_selectedEmpty_description": "メッセージを送信して、このディスカッションを始めましょう。",
+  "workspace_discussion_create_error": "ディスカッションを作成できませんでした。宛先を確認して、もう一度お試しください。"
 }
