@@ -8822,6 +8822,48 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     ]);
   });
 
+  it('pr:updated applies queue entry and omitted-flag exit without a detail read', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const requestsBefore = backendRequestSpy.mock.calls.length;
+    const handler = capturedHandlers[0]!;
+    for (const queued of [true, false]) {
+      const pull = {
+        id: '42',
+        number: 42,
+        url: 'https://github.com/acme/app/pull/42',
+        title: 'Fix Home PR status',
+        status: 'Open',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        ...(queued ? { isInMergeQueue: true } : {}),
+      };
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: `evt-queue-${queued}`,
+            workspaceId: PR_WS,
+            timestamp: '2026-01-02T00:00:00Z',
+            type: 'pr:updated',
+            actor: { type: 'system' },
+            data: {
+              workspaceId: PR_WS,
+              prNumber: 42,
+              prStatus: 'Open',
+              activePullRequest: pull,
+              pullRequests: [pull],
+            },
+          },
+        },
+      });
+      const row = await readWorkspace();
+      expect(row.activePullRequest).toEqual(pull);
+      expect(row.pullRequests).toEqual([pull]);
+    }
+    expect(backendRequestSpy.mock.calls).toHaveLength(requestsBefore);
+  });
+
   it('pr:unlinked clears the active-PR fields but retains the pullRequests list', async () => {
     await seedWorkspace();
     await primeBridge();

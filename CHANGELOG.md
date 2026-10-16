@@ -4,6 +4,64 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.7...v2.219.8) (2026-10-16)
+
+
+### 🐛 Bug Fixes
+
+* **mac:** restore one Apple Silicon update feed and drop Intel ([#3434](https://github.com/intent-hq/cloudlands-fe/issues/3434)) ([5659032](https://github.com/intent-hq/cloudlands-fe/commit/565903253cda2c0f2c9b0c99174b9d7d8956f904))
+
+## [2.219.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.6...v2.219.7) (2026-10-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.0 ([#3432](https://github.com/intent-hq/cloudlands-fe/issues/3432)) ([04d498a](https://github.com/intent-hq/cloudlands-fe/commit/04d498a98988dac9b743a70b8ef66e102503c2e1))
+
+## [2.219.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.5...v2.219.6) (2026-10-16)
+
+
+### 🐛 Bug Fixes
+
+* persist note checklist checked state ([#3428](https://github.com/intent-hq/cloudlands-fe/issues/3428)) ([ac20283](https://github.com/intent-hq/cloudlands-fe/commit/ac202835edcaee701a2ca424fc4f74232ad6a385))
+
+## [2.219.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.4...v2.219.5) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** close continuation lifetime gaps ([#3399](https://github.com/intent-hq/cloudlands-fe/issues/3399)) ([29b02f6](https://github.com/intent-hq/cloudlands-fe/commit/29b02f680cb34c2a7cc8d5aeb98f99acb99f6a54))
+
+## [2.219.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.3...v2.219.4) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* prioritize unfinished PRs in Home badges ([#3422](https://github.com/intent-hq/cloudlands-fe/issues/3422)) ([2a99e31](https://github.com/intent-hq/cloudlands-fe/commit/2a99e310a4a6b9f0ebfab0d2c8a6fbd330192c25))
+
+## [2.219.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.2...v2.219.3) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.50 ([#3424](https://github.com/intent-hq/cloudlands-fe/issues/3424)) ([732edba](https://github.com/intent-hq/cloudlands-fe/commit/732edba5e8da0db8fc193aa1cb60f6381b10c549))
+
+## [2.219.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.1...v2.219.2) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.49 ([#3423](https://github.com/intent-hq/cloudlands-fe/issues/3423)) ([406fcb7](https://github.com/intent-hq/cloudlands-fe/commit/406fcb71d82435329a8db3fbd4095c4c56ea30e3))
+* prioritize queued PR status on Home ([#3398](https://github.com/intent-hq/cloudlands-fe/issues/3398)) ([910e3ab](https://github.com/intent-hq/cloudlands-fe/commit/910e3ab5a097dccbfcda21a4b5f4ada0323d4aee))
+* retire obsolete merge-queue checks safely ([#3404](https://github.com/intent-hq/cloudlands-fe/issues/3404)) ([c7fc085](https://github.com/intent-hq/cloudlands-fe/commit/c7fc08503e2dbd36bffc961cd46b8dcf614e8d90))
+
+## [2.219.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.0...v2.219.1) (2026-10-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.48 ([#3418](https://github.com/intent-hq/cloudlands-fe/issues/3418)) ([9eb775e](https://github.com/intent-hq/cloudlands-fe/commit/9eb775e0eda4079cb88e668a9e9ceb01205f338a))
+
 ## [2.219.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.218.0...v2.219.0) (2026-10-15)
 
 

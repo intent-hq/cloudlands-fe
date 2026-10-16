@@ -4,6 +4,14 @@ Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
+## CI
+
+PR updates run Linux metadata, static consumer contracts, and workflow policy checks.
+The merge queue runs type/lint checks, builds, unit/integration tests, and relevant
+browser/native fixture suites against the merged tree. Browser suites also retain
+complete nightly/manual runs. Release-only diffs keep their validated exemptions;
+the required CI Gate rejects unexpected queue skips or failed jobs.
+
 ## Architecture
 
 The renderer is a SvelteKit application running inside Electron. It never talks
@@ -163,6 +171,21 @@ each pointing the auto-updater at the latest build for that channel:
 - **stable** — same promotion model via `.github/workflows/release-stable.yml`;
   it additionally marks the promoted version as Latest.
 
+Mac desktop builds support **Apple Silicon only**; new Intel Mac builds are no
+longer published. Each channel publishes the selected release's ARM64 metadata
+under `latest-mac.yml`, restoring automatic discovery for older native Apple
+Silicon installations. Beta and stable feeds
+advance only when that version is promoted to the respective channel.
+
+Alpha builds using the retired `latest-arm64-mac.yml` feed need a one-time Apple
+Silicon reinstall to return to the standard feed. That feed never reached beta
+or stable.
+
+Intel Macs are unsupported and cannot use the Apple Silicon installer.
+
+The pinned prerelease cleanup command protects versions referenced by the Mac
+feed in both the source and release-mirror repositories.
+
 ## Project layout
 
 ```text
@@ -247,11 +270,11 @@ attribution and lineage details.
 Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
 when unavailable or busy. Other checks and automation use Depot. Linux ARM64
 builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
-and Apple Silicon jobs use Depot’s latest macOS. Native Intel desktop release and
-manual packaging builds deliberately retain GitHub's `macos-latest-large` runners.
+and Apple Silicon jobs use Depot’s latest macOS. Mac desktop release and manual
+packaging builds target ARM64 only.
 
 From-source Rust sidecars use managed sccache without Rust cache actions.
 The setup script installs a pinned, checksum-verified binary. Depot supplies
-cache access automatically; GitHub Intel runners use the `DEPOT_TOKEN` Actions
-secret. Without credentials, compilation proceeds uncached with a notice.
+cache access automatically. Without credentials, compilation proceeds uncached
+with a notice.
 pnpm dependency caching remains unchanged.

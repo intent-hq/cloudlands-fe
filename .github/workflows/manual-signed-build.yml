@@ -30,12 +30,12 @@ on:
   workflow_dispatch:
     inputs:
       build_macos:
-        description: 'Build macOS DMGs for the selected architectures'
+        description: 'Build macOS DMG for Apple Silicon'
         required: false
         type: boolean
         default: false
       macos_arch:
-        description: 'Manual Mac builds use Apple Silicon; Intel is release-only'
+        description: 'Mac builds require Apple Silicon'
         required: false
         type: choice
         default: arm64
@@ -109,7 +109,7 @@ jobs:
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
-            *) echo "::error::Manual Mac builds support arm64 only; Intel is release-only"; exit 1 ;;
+            *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
           esac
           {
             echo "matrix={\"include\":$TARGETS}"

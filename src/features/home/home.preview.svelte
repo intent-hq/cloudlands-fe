@@ -8,6 +8,7 @@
     type AgentSession,
     type AgentMessage,
     type Workspace,
+    type PullRequestInfo,
   } from '$shared/types';
   import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
@@ -18,6 +19,8 @@
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         setTitle: (id: string, title: string) => void;
+        setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
+        setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
         roundTripSettings: () => void;
       };
@@ -442,8 +445,23 @@
   });
   const showCreateModal$ = selectShowCreateModal();
   window.__homeWorkspacePreview = {
+    setPullRequests: (id, pulls, total) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(id, { pullRequests: pulls, pullRequestsTotal: total }),
+        ]),
+      ),
     setTitle: (id, title) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { title })])),
+    setPullRequest: (id, pullRequest) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(id, {
+            pullRequests: [pullRequest],
+            activePullRequest: pullRequest,
+          }),
+        ]),
+      ),
     setStatus: (id, status) =>
       store.dispatch(
         bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),

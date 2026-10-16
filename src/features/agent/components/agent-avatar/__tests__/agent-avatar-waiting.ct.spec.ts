@@ -81,24 +81,27 @@ test('keeps waiting separate through a live same-node state transition', async (
       rgbString(waitingByTheme[theme]),
     );
     await reactive.evaluate((node) => ((window as any).__waitingAvatarNode = node));
-    const colors = await surfaceColors(component);
-
-    expect(parseRgb(colors.waiting)).toEqual(waitingByTheme[theme]);
-    for (const color of [
-      colors.idle,
-      colors.running,
-      colors.completed,
-      colors.unread,
-      colors.failed,
-    ]) {
-      expect(colorDistance(parseRgb(colors.waiting), parseRgb(color))).toBeGreaterThan(60);
-    }
-    expect(colors.running).not.toBe(colors.completed);
-    expect(colors.unread).toBe(colors.idle);
-    expect(colors.failed).not.toBe(colors.permission);
-    expect(colors.question).toBe(colors.permission);
-    expect(colors.question).toBe(colors.discussion);
-    expect(colors.question).toBe(colors.blocker);
+    // Waiting can reach its theme color before the other surfaces finish
+    // transitioning. Compare the full palette again until those colors settle.
+    await expect(async () => {
+      const colors = await surfaceColors(component);
+      expect(parseRgb(colors.waiting)).toEqual(waitingByTheme[theme]);
+      for (const color of [
+        colors.idle,
+        colors.running,
+        colors.completed,
+        colors.unread,
+        colors.failed,
+      ]) {
+        expect(colorDistance(parseRgb(colors.waiting), parseRgb(color))).toBeGreaterThan(60);
+      }
+      expect(colors.running).not.toBe(colors.completed);
+      expect(colors.unread).toBe(colors.idle);
+      expect(colors.failed).not.toBe(colors.permission);
+      expect(colors.question).toBe(colors.permission);
+      expect(colors.question).toBe(colors.discussion);
+      expect(colors.question).toBe(colors.blocker);
+    }).toPass({ timeout: 5_000 });
     const semanticForeground = await systemColor(
       page,
       'color',

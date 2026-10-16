@@ -18,8 +18,8 @@ afterEach(() => {
 describe('production scoped readers across a daemon downgrade', () => {
   it.each(
     (['text', 'chunks'] as const).flatMap((kind) =>
-      ['11.1', '12.0', '13.0', '14.0'].flatMap((protocolVersion) =>
-        ['11.0', '15.0'].map((nextVersion) => ({ kind, protocolVersion, nextVersion })),
+      ['11.1', '12.0', '13.0', '14.0', '15.0'].flatMap((protocolVersion) =>
+        ['11.0', '16.0'].map((nextVersion) => ({ kind, protocolVersion, nextVersion })),
       ),
     ),
   )(

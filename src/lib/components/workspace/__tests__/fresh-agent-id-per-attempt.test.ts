@@ -106,6 +106,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationOutcome: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -244,6 +246,7 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { warmImport } from '../../../../test/warm-import';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const PREFILL_KEY = 'workspace-prefill';
 
@@ -267,6 +270,9 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      createWorkspaceInitializationDispatchAdapter({ create: mocks.create, pull: mocks.pull }),
+    );
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
@@ -554,8 +560,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     );
   });
 
-  it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {
-    // Remembered orchestration choice — the coordinator layout is bootstrapped.
+  it('submits the remembered coordinator choice before navigating to the workspace', async () => {
     mocks.compactFormState$.set({ selectedSpecialist: 'spec-writer', isTeamMode: true });
     mocks.create.mockResolvedValue({
       ok: true,
@@ -586,32 +591,6 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
         initialAgent: expect.objectContaining({ prompt: 'Build the thing' }),
       }),
     );
-
-    const dispatched = mocks.dispatch.mock.calls.map(([action]) => action);
-    const hydrateIndex = dispatched.findIndex(
-      (action) => action.type === 'workspaceNavigation/hydrateWorkspaceNavigation',
-    );
-    const bootstrapIndex = dispatched.findIndex(
-      (action) => action.type === 'panelLayout/bootstrapNewWorkspaceLayout',
-    );
-    const openIndex = dispatched.findIndex((action) => action.type === 'tabState/openWorkspaceTab');
-    expect(dispatched[hydrateIndex]?.payload).toEqual([
-      'ws-created',
-      expect.objectContaining({
-        mainPanel: { type: 'empty' },
-        drawer: { open: false, type: null, itemId: null },
-      }),
-    ]);
-    expect(dispatched[bootstrapIndex]?.payload).toEqual(
-      expect.objectContaining({
-        wsId: 'ws-created',
-        initialAgentId: 'agent-created',
-        coordinator: true,
-      }),
-    );
-    expect(dispatched[openIndex]?.payload).toEqual(['ws-created']);
-    expect(bootstrapIndex).toBeLessThan(hydrateIndex);
-    expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 
   it('sends picked effort atomically before the initial prompt can start', async () => {

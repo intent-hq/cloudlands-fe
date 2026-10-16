@@ -23,7 +23,7 @@ import {
   unmarkWindowSessionTeardown,
 } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
-import { configureMacUpdateCompatibility, macUpdateChannel } from './mac-update-compatibility';
+import { configureMacUpdateCompatibility } from './mac-update-compatibility';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -428,8 +428,8 @@ class AutoUpdateService {
       return;
     }
     const feedUrl = `${baseUrl}/${channel}`;
-    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, ...macUpdateChannel() });
-    // Setting a channel must never permit the no-history legacy feed to downgrade.
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    // A channel switch must never permit downgrades.
     autoUpdater.allowDowngrade = false;
     logger.info('Update channel set', { channel, feedUrl });
   }
