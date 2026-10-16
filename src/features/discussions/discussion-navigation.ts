@@ -15,9 +15,11 @@ export function openWorkspaceDiscussion(
   layoutId = workspaceId,
   conversationId = 'default',
   title?: string,
+  targetPanelId?: string,
 ) {
   if (!selectLabsMultiplayerEnabled.select(store.state)) return;
   const panelId =
+    targetPanelId ??
     selectFocusedPanelId.select(store.state, layoutId) ??
     selectPanelIds.select(store.state, layoutId)[0];
   if (!panelId) return;

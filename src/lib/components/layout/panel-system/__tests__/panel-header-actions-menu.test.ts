@@ -120,6 +120,8 @@ vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () =
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
+import DiscussionPanelHeaderHost from './mocks/DiscussionPanelHeaderHost.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { PANE_DRAG_MIME, getDraggedPane, setDraggedPane } from '../panel-drag';
 
 const panelTypes = ['agent', 'note', 'browser', 'terminal', 'changes'] as const;
@@ -596,4 +598,34 @@ describe('mounted panel header actions menu', () => {
       tabId: 'terminal-tab',
     });
   });
+});
+
+it('keeps mixed-pane navigation, move and close available in the discussion header', async () => {
+  const onTabClick = vi.fn();
+  const onMovePaneLeft = vi.fn();
+  const onTabClose = vi.fn();
+  const view = render(DiscussionPanelHeaderHost, { onTabClick, onMovePaneLeft, onTabClose });
+  expect(
+    view.container.querySelector('[data-panel-content-header]')?.getAttribute('draggable'),
+  ).toBe('true');
+  await fireEvent.click(screen.getByRole('button', { name: m.workspace_discussion_list_label() }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: 'main.ts' }));
+  expect(onTabClick).toHaveBeenCalledExactlyOnceWith('file');
+  await fireEvent.click(
+    within(view.container.querySelector('[data-panel-content-header]') as HTMLElement).getByRole(
+      'button',
+      { name: m.ui_breadcrumb_more_label() },
+    ),
+  );
+  await fireEvent.click(
+    await screen.findByRole('menuitem', { name: m.layout_panelTabBar_movePanelLeft_label() }),
+  );
+  expect(onMovePaneLeft).toHaveBeenCalledOnce();
+  await fireEvent.click(
+    within(view.container.querySelector('[data-panel-content-header]') as HTMLElement).getByRole(
+      'button',
+      { name: m.layout_panelTabBar_closePane_ariaLabel() },
+    ),
+  );
+  expect(onTabClose).toHaveBeenCalledWith('discussion');
 });
