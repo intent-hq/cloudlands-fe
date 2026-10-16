@@ -511,6 +511,7 @@
 <DropdownMenu
   align="end"
   side="bottom"
+  alignIconColumn={false}
   bind:open={dropdownOpen}
   contentClass="px-0"
   contentMaxHeight="var(--bits-dropdown-menu-content-available-height)"
