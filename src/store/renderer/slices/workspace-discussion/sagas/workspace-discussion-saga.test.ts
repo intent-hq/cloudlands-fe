@@ -190,50 +190,248 @@ describe('workspace discussion transport', () => {
     expect(pending()).toEqual([]);
     expect(row().draft).toBe('');
   });
-  it('pages reconnect history back to the last cached message and retains drafts', async () => {
-    wire.request.mockResolvedValueOnce(page(1, 2));
-    await open();
-    store.dispatch(discussionDraftChanged('ws', 'unsent'));
+  async function reconnect() {
     store.dispatch(connectionStatusChanged('disconnected'));
     await settle();
-    wire.request
-      .mockResolvedValueOnce(page(53, 102, true))
-      .mockResolvedValueOnce(page(3, 52, true))
-      .mockResolvedValueOnce(page(1, 2));
     store.dispatch(connectionStatusChanged('connected'));
     store.dispatch(daemonEventsSubscribed());
     admit();
     await settle();
+  }
+  it('recovers forward from synchronized history and retains drafts', async () => {
+    wire.request.mockResolvedValueOnce(page(1, 2));
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'unsent'));
+    wire.request.mockResolvedValueOnce(page(3, 52, true)).mockResolvedValueOnce(page(53, 102));
+    await reconnect();
     expect(messages()).toHaveLength(102);
-    expect(row().draft).toBe('unsent');
-    expect(row().catchUp).toBeNull();
-    expect(wire.request.mock.calls.map(([, params]) => params.beforeSequence)).toEqual([
+    expect(row()).toMatchObject({ draft: 'unsent', syncedSequence: 102, catchUp: false });
+    expect(wire.request.mock.calls.map(([, params]) => params.afterSequence)).toEqual([
       undefined,
-      undefined,
-      53,
-      3,
+      2,
+      52,
     ]);
   });
-  it('bounds a long catch-up and resumes its cursor on explicit retry', async () => {
+  it('bounds a long catch-up at 500 messages and resumes its cursor on explicit retry', async () => {
     wire.request.mockResolvedValueOnce(page(1, 1));
     await open();
     wire.request.mockImplementation(async (_method, params) => {
-      const end = (params.beforeSequence ?? 552) - 1;
-      return page(Math.max(1, end - 49), end, end > 50);
+      const start = params.afterSequence + 1;
+      return page(start, Math.min(551, start + 49), start + 49 < 551);
     });
-    store.dispatch(discussionRequested('ws'));
-    await settle();
+    await reconnect();
     expect(wire.request).toHaveBeenCalledTimes(11);
     expect(row()).toMatchObject({
       loading: false,
       error: 'unknown',
-      catchUp: { beforeSequence: 52, afterSequence: 1 },
+      catchUp: true,
+      syncedSequence: 501,
     });
+    expect(messages().map((m) => m.sequence)).toEqual(Array.from({ length: 501 }, (_, i) => i + 1));
     store.dispatch(discussionRequested('ws'));
     await settle();
-    expect(row().catchUp).toBeNull();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.list', {
+      workspaceId: 'ws',
+      afterSequence: 501,
+      limit: 50,
+    });
+    expect(row()).toMatchObject({ catchUp: false, syncedSequence: 551, error: null });
     expect(messages()).toHaveLength(551);
   });
+  it('resumes each completed page across repeated reconnects and rejects cancelled late pages', async () => {
+    wire.request.mockResolvedValueOnce(page(1, 1));
+    await open();
+    const first = deferred<ReturnType<typeof page>>();
+    const second = deferred<ReturnType<typeof page>>();
+    wire.request.mockResolvedValueOnce(page(2, 51, true)).mockReturnValueOnce(first.promise);
+    await reconnect();
+    expect(row().syncedSequence).toBe(51);
+    wire.request.mockResolvedValueOnce(page(52, 101, true)).mockReturnValueOnce(second.promise);
+    await reconnect();
+    expect(row().syncedSequence).toBe(101);
+    wire.request.mockResolvedValueOnce(page(102, 151));
+    await reconnect();
+    first.resolve(page(52, 101, true));
+    second.resolve(page(102, 151, true));
+    await settle();
+    expect(wire.request.mock.calls.map(([, params]) => params.afterSequence)).toEqual([
+      undefined,
+      1,
+      51,
+      51,
+      101,
+      101,
+    ]);
+    expect(row()).toMatchObject({ syncedSequence: 151, loading: false, catchUp: false });
+    expect(messages()).toHaveLength(151);
+  });
+  it('does not skip history when live messages arrive before the first read completes', async () => {
+    const first = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(first.promise);
+    await open();
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(100)),
+    );
+    first.resolve(page(1, 2));
+    await settle();
+    expect(row().syncedSequence).toBe(2);
+    const recovery = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(recovery.promise).mockResolvedValueOnce(page(53, 100));
+    await reconnect();
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(101)),
+    );
+    recovery.resolve(page(3, 52, true));
+    await settle();
+    expect(wire.request.mock.calls.map(([, params]) => params.afterSequence)).toEqual([
+      undefined,
+      2,
+      52,
+    ]);
+    expect(messages()).toHaveLength(101);
+    expect(row().syncedSequence).toBe(100);
+  });
+  it('recovers from zero after an empty initial history, allowing gaps in the sequence', async () => {
+    await open();
+    expect(row().syncedSequence).toBe(0);
+    wire.request
+      .mockResolvedValueOnce({ messages: [message(5), message(9)], hasMore: true })
+      .mockResolvedValueOnce({ messages: [message(100)], hasMore: false });
+    await reconnect();
+    expect(wire.request.mock.calls.map(([, params]) => params.afterSequence)).toEqual([
+      undefined,
+      0,
+      9,
+    ]);
+    expect(messages().map((m) => m.sequence)).toEqual([5, 9, 100]);
+    expect(row().syncedSequence).toBe(100);
+  });
+  it.each([
+    { messages: [], hasMore: true },
+    { messages: [message(20)], hasMore: true },
+    { messages: [message(20)], hasMore: false },
+    { messages: [message(19), message(21)], hasMore: true },
+  ])(
+    'stops invalid/nonadvancing forward pages and retries from the unchanged cursor',
+    async (invalid) => {
+      wire.request.mockResolvedValueOnce(page(20, 20, true));
+      await open();
+      wire.request.mockResolvedValueOnce(invalid);
+      await reconnect();
+      expect(wire.request).toHaveBeenCalledTimes(2);
+      expect(row()).toMatchObject({
+        syncedSequence: 20,
+        catchUp: true,
+        loading: false,
+        error: 'unknown',
+        beforeSequence: 20,
+        hasMore: true,
+      });
+      expect(messages()).toEqual([message(20)]);
+      wire.request.mockResolvedValueOnce(page(21, 21));
+      store.dispatch(discussionRequested('ws'));
+      await settle();
+      expect(wire.request).toHaveBeenLastCalledWith('discussion.list', {
+        workspaceId: 'ws',
+        afterSequence: 20,
+        limit: 50,
+      });
+      expect(row()).toMatchObject({ syncedSequence: 21, catchUp: false, error: null });
+    },
+  );
+  it('keeps late older history and echoes separate from the recovery cursor', async () => {
+    wire.request.mockResolvedValueOnce(page(10, 20, true));
+    await open();
+    const older = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(older.promise);
+    store.dispatch(discussionOlderRequested('ws'));
+    await settle();
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(50)),
+    );
+    older.resolve(page(1, 9));
+    await settle();
+    wire.request.mockResolvedValueOnce(page(21, 50));
+    await reconnect();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.list', {
+      workspaceId: 'ws',
+      afterSequence: 20,
+      limit: 50,
+    });
+    expect(messages()).toHaveLength(50);
+    expect(row()).toMatchObject({ syncedSequence: 50, beforeSequence: 1, hasMore: false });
+  });
+  it('ignores a cancelled older page after forward recovery and can still load that history', async () => {
+    wire.request.mockResolvedValueOnce(page(10, 20, true));
+    await open();
+    const older = deferred<ReturnType<typeof page>>();
+    wire.request.mockReturnValueOnce(older.promise);
+    store.dispatch(discussionOlderRequested('ws'));
+    await settle();
+    wire.request.mockResolvedValueOnce(page(21, 50));
+    await reconnect();
+    older.resolve(page(1, 9));
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, message(50)),
+    );
+    await settle();
+    expect(messages()).toHaveLength(41);
+    expect(row()).toMatchObject({ syncedSequence: 50, beforeSequence: 10, hasMore: true });
+    wire.request.mockResolvedValueOnce(page(1, 9));
+    store.dispatch(discussionOlderRequested('ws'));
+    await settle();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.list', {
+      workspaceId: 'ws',
+      beforeSequence: 10,
+      limit: 50,
+    });
+    expect(messages()).toHaveLength(50);
+    expect(row()).toMatchObject({ syncedSequence: 50, beforeSequence: 1, hasMore: false });
+  });
+  it('preserves the retry body after InvalidParams even when the user edits the draft', async () => {
+    await open();
+    wire.request
+      .mockRejectedValueOnce({ rpcCode: -32602, data: { code: 'invalid-params' } })
+      .mockResolvedValueOnce({ message: message(1) });
+    store.dispatch(discussionDraftChanged('ws', 'hello'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(row()).toMatchObject({ sending: false, sendError: 'invalid', draft: 'hello' });
+    const id = pending()[0].id;
+    store.dispatch(discussionDraftChanged('ws', 'changed body'));
+    store.dispatch(discussionRetryRequested('ws', id));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[1][1]).toEqual(sends[0][1]);
+    expect(row().draft).toBe('changed body');
+    expect(pending()).toEqual([]);
+  });
+  it.each([
+    { message: { ...message(1), body: 'wrong body' } },
+    { message: message(1, 'other') },
+    { message: null },
+    null,
+  ])(
+    'retains the original send after malformed success and retries identical parameters',
+    async (invalid) => {
+      await open();
+      wire.request.mockResolvedValueOnce(invalid).mockResolvedValueOnce({ message: message(1) });
+      store.dispatch(discussionDraftChanged('ws', 'hello'));
+      store.dispatch(discussionSendRequested('ws'));
+      await settle();
+      expect(row()).toMatchObject({ draft: 'hello', sending: false, sendError: 'unknown' });
+      const retry = pending()[0];
+      expect(retry).toMatchObject({ body: 'hello', status: 'failed' });
+      store.dispatch(discussionDraftChanged('ws', 'new draft'));
+      store.dispatch(discussionRetryRequested('ws', retry.id));
+      await settle();
+      const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+      expect(sends[1][1]).toEqual(sends[0][1]);
+      expect(row()).toMatchObject({ draft: 'new draft', sending: false, sendError: null });
+      expect(pending()).toEqual([]);
+      expect(messages()).toEqual([message(1)]);
+    },
+  );
   it.each(['identity', 'backend', 'workspace'] as const)(
     'drops delayed replies after a %s change',
     async (change) => {
@@ -419,7 +617,7 @@ describe('workspace discussion transport', () => {
     expect(messages()).toEqual([message(1)]);
     expect(row().draft).toBe('unsent draft');
     expect(selectDiscussionReady.select(store.state, 'ws')).toBe(false);
-    wire.request.mockResolvedValueOnce(page(1, 2));
+    wire.request.mockResolvedValueOnce(page(2, 2));
     admit();
     await settle();
     expect(messages()).toEqual([message(1), message(2)]);

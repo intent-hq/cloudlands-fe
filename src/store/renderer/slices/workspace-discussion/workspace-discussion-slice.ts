@@ -6,10 +6,11 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type {
-  DiscussionError,
-  DiscussionMessage,
-  DiscussionListResult,
+import {
+  isDiscussionMessage,
+  type DiscussionError,
+  type DiscussionMessage,
+  type DiscussionListResult,
 } from '$shared/types/workspace-discussion';
 
 export interface PendingDiscussionMessage {
@@ -30,8 +31,10 @@ export interface WorkspaceDiscussion {
   initialized: boolean;
   hasMore: boolean;
   beforeSequence: number | null;
-  /** Resume a bounded reconnect catch-up without skipping an unread interval. */
-  catchUp: { beforeSequence?: number; afterSequence: number } | null;
+  /** Last history row synchronized by a list page; live messages never advance it. */
+  syncedSequence: number | null;
+  /** A forward read is unfinished; Retry must resume it before loading older history. */
+  catchUp: boolean;
   requestId: string | null;
   error: DiscussionError | null;
   unsupported: boolean;
@@ -63,7 +66,8 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   initialized: false,
   hasMore: false,
   beforeSequence: null,
-  catchUp: null,
+  syncedSequence: null,
+  catchUp: false,
   requestId: null,
   error: null,
   unsupported: false,
@@ -111,11 +115,7 @@ export const discussionPageReceived = createAction<
     target: DiscussionTarget,
     requestId: string,
     result: DiscussionListResult,
-    pagination: {
-      beforeSequence: number | null;
-      hasMore: boolean;
-      catchUp: WorkspaceDiscussion['catchUp'];
-    },
+    direction: 'initial' | 'older' | 'newer',
   ]
 >('workspaceDiscussion/pageReceived');
 export const discussionLoadFinished = createAction<
@@ -185,7 +185,6 @@ workspaceDiscussionReducer.with(
           id,
           {
             ...row,
-            catchUp: row.catchUp ? { afterSequence: row.catchUp.afterSequence } : null,
             loading: false,
             loadingOlder: false,
             requestId: null,
@@ -250,6 +249,7 @@ workspaceDiscussionReducer.with(
           requestId,
           loading: !older,
           loadingOlder: older,
+          catchUp: row.catchUp || (!older && row.initialized),
           error: null,
           unsupported: false,
         })
@@ -258,7 +258,7 @@ workspaceDiscussionReducer.with(
 );
 workspaceDiscussionReducer.with(
   discussionPageReceived,
-  (state, { payload: [target, requestId, result, pagination] }) => {
+  (state, { payload: [target, requestId, result, direction] }) => {
     const row = current(state, target);
     if (
       !row ||
@@ -268,7 +268,18 @@ workspaceDiscussionReducer.with(
       return state;
     return set(state, target.workspaceId, {
       ...receive(row, result.messages),
-      ...pagination,
+      ...(direction === 'newer'
+        ? {
+            syncedSequence: result.messages.at(-1)?.sequence ?? row.syncedSequence,
+            catchUp: result.hasMore,
+          }
+        : {
+            beforeSequence: result.messages[0]?.sequence ?? row.beforeSequence,
+            hasMore: result.hasMore,
+            ...(direction === 'initial'
+              ? { syncedSequence: result.messages.at(-1)?.sequence ?? 0, catchUp: false }
+              : {}),
+          }),
       initialized: true,
     });
   },
@@ -301,21 +312,28 @@ workspaceDiscussionReducer.with(discussionSendStarted, (state, { payload: [targe
     sendError: null,
   });
 });
+function failSend(
+  row: WorkspaceDiscussion,
+  messageId: string,
+  error: DiscussionError,
+): WorkspaceDiscussion {
+  const pending = getItems(row.pending).map((m) =>
+    m.id === messageId ? { ...m, status: 'failed' as const, error } : m,
+  );
+  return {
+    ...row,
+    pending: createCollection('id', pending),
+    sending: pending.some((m) => m.status === 'sending'),
+    sendError: error,
+    unsupported: row.unsupported || error === 'unsupported',
+  };
+}
 workspaceDiscussionReducer.with(
   discussionSendFailed,
   (state, { payload: [target, messageId, error] }) => {
     const row = current(state, target);
     if (!row || !getItem(row.pending, messageId)) return state;
-    const pending = getItems(row.pending).map((m) =>
-      m.id === messageId ? { ...m, status: 'failed' as const, error } : m,
-    );
-    return set(state, target.workspaceId, {
-      ...row,
-      pending: createCollection('id', pending),
-      sending: pending.some((m) => m.status === 'sending'),
-      sendError: error,
-      unsupported: row.unsupported || error === 'unsupported',
-    });
+    return set(state, target.workspaceId, failSend(row, messageId, error));
   },
 );
 
@@ -323,9 +341,15 @@ workspaceDiscussionReducer.with(
   discussionSendSucceeded,
   (state, { payload: [target, messageId, message] }) => {
     const row = current(state, target);
-    if (!row || message.workspaceId !== target.workspaceId) return state;
+    if (!row) return state;
     const sent = getItem(row.pending, messageId);
-    if (!sent || sent.body !== message.body) return state;
+    if (!sent) return state;
+    if (
+      !isDiscussionMessage(message) ||
+      message.workspaceId !== target.workspaceId ||
+      sent.body !== message.body
+    )
+      return set(state, target.workspaceId, failSend(row, messageId, 'unknown'));
     const pending = getItems(row.pending).filter((m) => m.id !== messageId);
     return set(state, target.workspaceId, {
       ...receive(row, [message]),

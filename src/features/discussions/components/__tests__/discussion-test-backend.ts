@@ -40,8 +40,9 @@ export function installDiscussionTestBackend(
     'discussion.list': async (value) => {
       const params = value as DiscussionListParams;
       record('discussion.list', params);
-      if (params.beforeSequence === 100)
-        return { messages: [message(99, 'Recovered after reconnect.')], hasMore: false };
+      if (params.afterSequence === 100)
+        return { messages: [message(101, 'Recovered after reconnect.')], hasMore: false };
+      if (params.afterSequence !== undefined) return { messages: [], hasMore: false };
       if (params.beforeSequence) {
         await new Promise<void>((resolve) => {
           finishOlder = resolve;

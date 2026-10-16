@@ -35,7 +35,8 @@ export const workspaceDiscussionClient = {
         (message) =>
           isDiscussionMessage(message) &&
           message.workspaceId === params.workspaceId &&
-          (params.beforeSequence === undefined || message.sequence < params.beforeSequence),
+          (params.beforeSequence === undefined || message.sequence < params.beforeSequence) &&
+          (params.afterSequence === undefined || message.sequence > params.afterSequence),
       ) ||
       (result.hasMore && result.messages.length === 0)
     ) {

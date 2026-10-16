@@ -57,7 +57,7 @@ describe('workspace discussion reducer', () => {
         target,
         'read',
         { messages: [message(1), message(2)], hasMore: false },
-        { beforeSequence: 1, hasMore: false, catchUp: null },
+        'initial',
       ),
     );
     state = reduce(state, discussionMessageReceived(target, message(2)));
@@ -118,6 +118,60 @@ describe('workspace discussion reducer', () => {
       reduce(state, discussionMessageReceived(current, { ...message(1), workspaceId: 'other' })),
     ).toBe(state);
   });
+  it('keeps synchronized history independent of late older pages, live events, and send replies', () => {
+    const setupState = setup();
+    let state = setupState.state;
+    const target = setupState.target;
+    state = reduce(state, discussionLoadStarted(target, 'initial', false));
+    state = reduce(
+      state,
+      discussionPageReceived(
+        target,
+        'initial',
+        { messages: [message(10), message(20)], hasMore: true },
+        'initial',
+      ),
+    );
+    state = reduce(state, discussionLoadStarted(target, 'older', true));
+    state = reduce(state, discussionMessageReceived(target, message(100)));
+    state = reduce(state, discussionDraftChanged('ws', 'hello'));
+    state = reduce(state, discussionSendStarted(target, pending));
+    state = reduce(state, discussionSendSucceeded(target, pending.id, message(101)));
+    state = reduce(
+      state,
+      discussionPageReceived(target, 'older', { messages: [message(1)], hasMore: false }, 'older'),
+    );
+    state = reduce(state, discussionMessageReceived(target, message(20)));
+    expect(state.byWorkspaceId.ws).toMatchObject({
+      syncedSequence: 20,
+      beforeSequence: 1,
+      hasMore: false,
+    });
+    expect(getItems(state.byWorkspaceId.ws.messages).map((m) => m.sequence)).toEqual([
+      1, 10, 20, 100, 101,
+    ]);
+  });
+  it.each([
+    { ...message(1), body: 'different body' },
+    { ...message(1), workspaceId: 'other' },
+    { ...message(1), sequence: 0 },
+  ])('settles an invalid success as a failed retry without losing the original text', (reply) => {
+    const setupState = setup();
+    let state = setupState.state;
+    const target = setupState.target;
+    state = reduce(state, discussionDraftChanged('ws', 'hello'));
+    state = reduce(state, discussionSendStarted(target, pending));
+    state = reduce(state, discussionSendSucceeded(target, pending.id, reply));
+    expect(state.byWorkspaceId.ws).toMatchObject({
+      sending: false,
+      sendError: 'unknown',
+      draft: 'hello',
+    });
+    expect(getItems(state.byWorkspaceId.ws.pending)).toEqual([
+      { ...pending, status: 'failed', error: 'unknown' },
+    ]);
+    expect(getItems(state.byWorkspaceId.ws.messages)).toEqual([]);
+  });
   it('ignores history from an overtaken request', () => {
     const setupState = setup();
     let state = setupState.state;
@@ -130,7 +184,7 @@ describe('workspace discussion reducer', () => {
           target,
           'old',
           { messages: [message(1)], hasMore: false },
-          { beforeSequence: 1, hasMore: false, catchUp: null },
+          'initial',
         ),
       ),
     ).toBe(state);

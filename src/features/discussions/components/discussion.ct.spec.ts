@@ -149,7 +149,7 @@ test('retry resumes a partial reconnect page before requesting older history', a
     .poll(async () => (await recorded(component)).at(-1))
     .toEqual({
       method: 'discussion.list',
-      params: { workspaceId: 'discussion-test', limit: 50, beforeSequence: 100 },
+      params: { workspaceId: 'discussion-test', limit: 50, afterSequence: 100 },
     });
   await expect(component.getByRole('log')).toContainText('Recovered after reconnect.');
   await expect(component.getByRole('alert')).toHaveCount(0);

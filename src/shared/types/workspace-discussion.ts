@@ -18,6 +18,7 @@ export interface DiscussionMessage {
 export interface DiscussionListParams {
   workspaceId: string;
   beforeSequence?: number;
+  afterSequence?: number;
   limit?: number;
 }
 export interface DiscussionListResult {

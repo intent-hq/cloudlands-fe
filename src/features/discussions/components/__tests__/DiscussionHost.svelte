@@ -73,7 +73,7 @@
         target,
         'catch-up-test',
         { messages: [backend.message(100)], hasMore: true },
-        { beforeSequence: 11, hasMore: true, catchUp: { beforeSequence: 100, afterSequence: 35 } },
+        'newer',
       ),
     );
     store.dispatch(discussionLoadFinished(target, 'catch-up-test', 'unknown'));

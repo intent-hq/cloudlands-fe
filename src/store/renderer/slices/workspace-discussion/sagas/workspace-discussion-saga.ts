@@ -68,10 +68,9 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
   const row = yield* select(selectWorkspaceDiscussion.select, workspaceId);
   const older = action.type === discussionOlderRequested.type;
   if (older && (!row.hasMore || row.catchUp)) return;
-  const existing = getItems(row.messages);
-  const newest = row.initialized ? existing.at(-1)?.sequence : undefined;
-  const afterSequence = older ? undefined : (row.catchUp?.afterSequence ?? newest);
-  let beforeSequence = older ? (row.beforeSequence ?? undefined) : row.catchUp?.beforeSequence;
+  const direction = older ? 'older' : row.syncedSequence === null ? 'initial' : 'newer';
+  let afterSequence = older ? undefined : (row.syncedSequence ?? undefined);
+  const beforeSequence = older ? (row.beforeSequence ?? undefined) : undefined;
   const requestId = uuid();
   yield* put(discussionLoadStarted(target, requestId, older));
   try {
@@ -79,28 +78,18 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       if (!(yield* isCurrent(target))) return;
       const result = yield* call(workspaceDiscussionClient.list, {
         workspaceId,
-        beforeSequence,
+        ...(beforeSequence !== undefined ? { beforeSequence } : {}),
+        ...(afterSequence !== undefined ? { afterSequence } : {}),
         limit: DISCUSSION_PAGE_SIZE,
       });
       if (!(yield* isCurrent(target))) return;
-      const first = result.messages[0]?.sequence;
-      const catchUp =
-        afterSequence !== undefined &&
-        result.hasMore &&
-        first !== undefined &&
-        first > afterSequence
-          ? { beforeSequence: first, afterSequence }
-          : null;
-      const pagination =
-        older || afterSequence === undefined
-          ? { beforeSequence: first ?? row.beforeSequence, hasMore: result.hasMore, catchUp: null }
-          : { beforeSequence: row.beforeSequence, hasMore: row.hasMore, catchUp };
-      yield* put(discussionPageReceived(target, requestId, result, pagination));
-      if (!catchUp) {
+      yield* put(discussionPageReceived(target, requestId, result, direction));
+      if (direction !== 'newer' || !result.hasMore) {
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
       }
-      beforeSequence = catchUp.beforeSequence;
+      // The client rejects empty/nonadvancing pages before a cursor can be committed.
+      afterSequence = result.messages.at(-1)?.sequence ?? afterSequence;
     }
     // Leave the continuation cursor visible through error/retry instead of hiding a gap.
     yield* put(discussionLoadFinished(target, requestId, 'unknown'));
