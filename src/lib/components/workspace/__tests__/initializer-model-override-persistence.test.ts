@@ -12,6 +12,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const mocks = vi.hoisted(() => {
   function writable<T>(initial: T) {
@@ -108,6 +109,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
+  selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
+  selectWorkspaceInitializationOutcome: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -352,6 +355,9 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
   beforeEach(() => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+    );
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.selectedModel$.set('');

@@ -38,16 +38,19 @@
     recordLastUsedSetupScript,
   } from '$features/setup-scripts/last-used';
   import {
+    clearWorkspaceInitializationOutcome,
     workspaceInitializerGitCheckRequested,
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
     setWorkspaceInitializerBranchForRepo,
-    setWorkspaceInitializerLastSubmittedAgent,
+    workspaceInitializerDraftClearRequested,
+    workspaceInitializerDraftFlushRequested,
+    workspaceInitializerDraftOwnerReleased,
+    workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
+    workspaceInitializerDraftSaveScheduled,
+    workspaceInitializationRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import {
-    beginWorkspaceCreateProgress,
-    clearWorkspaceCreateProgress,
-  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import {
     selectWorkspaceInitializerGitAvailability,
     selectCompactWorkspaceInitializerFormState,
@@ -57,24 +60,19 @@
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerDefaultParentPath,
+    selectWorkspaceInitializerDraftRestore,
+    selectWorkspaceInitializationOutcome,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
+    WorkspaceInitializationRequest,
+    WorkspaceInitializationStagedItem,
     WorkspaceInitializerRepoSelection,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-  import {
-    hydrateWorkspaceNavigation,
-    type WorkspaceNavigationWorkspaceState,
-  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { Input } from '$lib/components/ui/input';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectSpecialists,
@@ -116,8 +114,6 @@
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { invoke } from '$lib/electron-bridge';
-  import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
-  import { appClient } from '$lib/client';
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
@@ -191,18 +187,13 @@
     imageFilesToContextItems,
     REFERENCE_IMAGE_MAX_BYTES,
   } from '$lib/components/chat/input/image-context-items';
-  import {
-    hasStagedFileItems,
-    redeemStagedAttachments,
-    sendHeldFirstMessage,
-    type HeldFirstMessage,
-  } from './initializer/staged-attachments';
+  import { hasStagedFileItems, heldImageBlocks } from './initializer/staged-attachments';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
-    clearNewWorkspaceDraft,
-    createNewWorkspaceDraftSaver,
-    restoreNewWorkspaceDraft,
+    buildNewWorkspaceDraftPayload,
+    LEGACY_PROMPT_SESSION_KEY,
   } from './initializer/new-workspace-draft';
+  import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
   import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
   import { buildContextLinks } from './initializer/context-links';
   import { createRepoCacheWarmer } from './initializer/warm-repo-cache';
@@ -216,6 +207,9 @@
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
+  const draftOwnerId = 'compact-workspace-initializer';
+  const draftRestoreRequestId = crypto.randomUUID();
+  const draftRestore$ = selectWorkspaceInitializerDraftRestore(draftOwnerId, draftRestoreRequestId);
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
@@ -997,31 +991,34 @@
   // survives app restarts. Gates the save effect below until it settles so an
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
-  let draftRestoreFailed = false;
   let draftRestoreCancelled = false;
-  onDestroy(() => {
-    draftRestoreCancelled = true;
+  let draftRestoreApplied = false;
+  onMount(() => {
+    appStore.dispatch(
+      workspaceInitializerDraftRestoreRequested(
+        draftOwnerId,
+        draftRestoreRequestId,
+        LEGACY_PROMPT_SESSION_KEY,
+      ),
+    );
   });
-  (async () => {
-    try {
-      const restore = await restoreNewWorkspaceDraft(appClient.drafts);
-      if (draftRestoreCancelled) return;
-      draftRestoreFailed = restore.status === 'error';
-      if (restore.status === 'restored') {
-        if (restore.contextItems.length > 0 && contextItems.length === 0) {
-          contextItems = restore.contextItems;
-        }
-        if (restore.text && !initialPrompt) {
-          initialPrompt = restore.text;
-          setTimeout(() => {
-            if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
-          }, 50);
-        }
+  $effect(() => {
+    const restore = $draftRestore$;
+    if (!restore || restore.status === 'pending' || draftRestoreApplied || draftRestoreCancelled)
+      return;
+    draftRestoreApplied = true;
+    if (restore.status === 'restored') {
+      const restoredItems = deserializeDraftAttachments(restore.attachments);
+      if (restoredItems.length > 0 && contextItems.length === 0) contextItems = restoredItems;
+      if (restore.text && !initialPrompt) {
+        initialPrompt = restore.text;
+        setTimeout(() => {
+          if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
+        }, 50);
       }
-    } finally {
-      draftRestored = true;
     }
-  })();
+    draftRestored = true;
+  });
 
   // Save the draft to the daemon (debounced) so it survives app restarts.
   // Empty text with no attachments is the documented clear (PROTOCOL §5.16).
@@ -1029,22 +1026,25 @@
   // ever reassigned wholesale, so the reference read is sufficient for
   // reactivity. If the restore failed, the saver skips an empty save so it
   // can't clear a daemon draft we never got to read.
-  const draftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
-    skipEmptySave: () => draftRestoreFailed,
-  });
   $effect(() => {
     if (!draftRestored) return;
-    draftSaver.schedule(initialPrompt, contextItems);
+    const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
+    if (payload) appStore.dispatch(workspaceInitializerDraftSaveScheduled(draftOwnerId, payload));
   });
 
   // A reload (cmd+R) or window close inside the debounce window would drop
   // the newest keystrokes — flush the pending save on unload and destroy.
-  const flushDraftSave = () => draftSaver.flush();
+  const flushDraftSave = () =>
+    appStore.dispatch(workspaceInitializerDraftFlushRequested(draftOwnerId));
   onMount(() => {
     window.addEventListener('beforeunload', flushDraftSave);
     return () => window.removeEventListener('beforeunload', flushDraftSave);
   });
-  onDestroy(flushDraftSave);
+  onDestroy(() => {
+    draftRestoreCancelled = true;
+    flushDraftSave();
+    appStore.dispatch(workspaceInitializerDraftOwnerReleased(draftOwnerId, draftRestoreRequestId));
+  });
 
   // Notify context mention pills when the branch changes (for switch-to-pr-branch feature)
   $effect(() => {
@@ -1580,6 +1580,13 @@
   let processingImageCount = $state(0);
   const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
+  const initializationConsumerId = `compact-workspace-initializer:${uuidv4()}`;
+  let activeInitializationSeq: number | null = null;
+
+  function releaseInitialization(seq: number) {
+    appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
+    if (activeInitializationSeq === seq) activeInitializationSeq = null;
+  }
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
@@ -1992,6 +1999,7 @@
   onDestroy(() => {
     mounted = false;
     submissionGeneration++;
+    if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
   });
 
   let pullContinuation: (() => boolean) | null = null;
@@ -2003,7 +2011,7 @@
   async function submitWorkspace(continuation?: () => boolean) {
     if (continuation && !continuation()) return;
     if (pendingFirstMessage) {
-      if (pendingFirstMessage.current()) await retryPendingFirstMessage();
+      await retryPendingFirstMessage();
       return;
     }
     const admission = selectPrincipalActionContext.select(appStore.state);
@@ -2047,14 +2055,9 @@
     isCreating = true;
     error = null;
 
-    // FE-minted correlation id for this create's provisioning progress: the
-    // daemon echoes it on git:clone:progress/done frames (PROTOCOL §5.1), and
-    // the bridge folds them into the workspaceCreateProgress slice. Registered
-    // BEFORE the request so mid-flight frames always find their entry; cleared
-    // in the finally below once the create settles.
-    const createProgressId = uuidv4();
-    appStore.dispatch(beginWorkspaceCreateProgress(createProgressId));
-    activeCreateProgressId = createProgressId;
+    const initializationResourceId = `${admission}:${generation}`;
+    let initializationRequest: WorkspaceInitializationRequest | null = null;
+    let initializationSeq: number | null = null;
 
     try {
       // Validate
@@ -2081,59 +2084,6 @@
         const repoValidation = await validateRepoPath(repoPath, isNewRepo);
         if (!current()) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
-      }
-
-      // Direct mode uses the selected checkout, so update it before create.
-      // Isolated mode resolves baseRef from the remote-tracking ref and must not
-      // rebase or stash the user's source checkout.
-      if (
-        shouldPullSourceRepositoryBeforeCreate({
-          branchBehind,
-          isLocalRepository: repoType === 'local',
-          isNewRepository: isNewRepo,
-          skipIsolation,
-          pullEnabled: shouldPullBeforeCreate,
-        })
-      ) {
-        isPulling = true;
-        logger.info('Auto-pulling latest changes before workspace creation', {
-          branch,
-          behind: branchBehind,
-        });
-        try {
-          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
-          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
-          // folds the daemon's structured `{ ok: false, error }` failure into
-          // `{ success: false, error }` and never throws.
-          const pullResult =
-            typeof window !== 'undefined' && window.electronAPI
-              ? await appClient.git.pull(repoPath, branch)
-              : undefined;
-          if (!current()) return;
-          if (!pullResult?.success) {
-            pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
-            pullContinuation = current;
-            showPullConflictDialog = true;
-            isPulling = false;
-            isCreating = false;
-            return; // Stop workspace creation - user will handle via dialog
-          }
-          // Pull succeeded - reset behind count
-          branchBehind = 0;
-          logger.info('Successfully pulled latest changes before workspace creation', {
-            branch,
-          });
-        } catch (err) {
-          if (!current()) return;
-          pullError =
-            err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
-          pullContinuation = current;
-          showPullConflictDialog = true;
-          isPulling = false;
-          isCreating = false;
-          return; // Stop workspace creation - user will handle via dialog
-        }
-        isPulling = false;
       }
 
       // Auto-apply PR branch: when a PR context mention set selectedPRBranch, the
@@ -2510,7 +2460,7 @@
       );
 
       if (!current()) return;
-      const result = await workspaceClient.create({
+      const createRequest = {
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         ...(repositoryCheckout
           ? { repositoryCheckout }
@@ -2532,115 +2482,58 @@
         setupScript: setupScriptParam,
         scope: scope || undefined, // Scope for subdirectories of git repos
         initialAgent,
-        progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
-      });
-
-      if (!current()) return;
-      if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
-
-      const workspace = result.data.workspace;
-      // The daemon assigns the initial agent's id and returns it on the
-      // create result; the FE no longer pre-mints one.
-      const initialAgentId = result.data.initialAgent?.id;
-
-      // Clear reused-ID state before installing the authoritative first-frame
-      // layout. The panel seed owns the initial agent identity; legacy
-      // navigation stays an empty shell so drawer migration cannot compete.
-      try {
-        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
-        if (!current()) return;
-        getPanelLayoutManager(workspace.id).clearLayout();
-      } catch (error) {
-        logger.debug('Could not clear panel layout', { error });
-      }
-      try {
-        const { workspaceStorageManager } =
-          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
-        if (!current()) return;
-        workspaceStorageManager.clearState(workspace.id);
-      } catch (error) {
-        logger.debug('Could not clear workspace storage state', { error });
-      }
-
-      if (!current()) return;
-      appStore.dispatch(setWorkspaceEntity(workspace));
-      if (initialAgentId) {
-        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
-      }
-      appStore.dispatch(
-        bootstrapNewWorkspaceLayout(
-          workspace.id,
-          initialAgentId ?? null,
-          agentName,
-          specialistId !== undefined &&
-            specialistId === selectOrchestratorSpecialist.select(appStore.state)?.id,
-          undefined,
-          // Daemon-persisted links are canonical; fall back to the request's
-          // links when an older daemon does not echo them (PROTOCOL §5.1).
-          workspace.contextLinks ?? requestContextLinks,
-        ),
-      );
-      const initialState: WorkspaceNavigationWorkspaceState = {
-        version: 2,
-        workspace: { id: workspace.id },
-        mainPanel: { type: 'empty' },
-        drawer: { open: false, type: null, itemId: null },
-        navigation: { history: [], currentIndex: -1 },
-        ui: { hasInitialized: false },
       };
-      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
-      appStore.dispatch(openWorkspaceTab(workspace.id));
-      // Redeem staged attachments now that the workspace exists: place each
-      // from its sourcePath, then send the held-back first message with the
-      // attachment-reference file blocks. A placement failure keeps the modal
-      // open with failed pills (retry/remove) and the create button resumes
-      // this flow — the created workspace itself is never rolled back.
-      if (hasStagedFiles) {
-        pendingFirstMessage = {
-          current,
-          workspaceId: workspace.id,
-          agentId: initialAgentId,
-          content: initialPrompt.trim(),
-          imageBlocks,
-          contextReferences,
-        };
-        const sent = await placeAndSendFirstMessage();
-        if (!sent) {
-          isCreating = false;
-          return;
-        }
-      }
-      if (!current()) return;
-
-      // Register a picked repo as a path-less GitHub recent so re-picking it
-      // prefills the tab (keyed by the owner/repo shorthand, no local path).
-      if (isGithubPick) {
-        const ghInfo = parseGitHubUrl(githubUrl);
-        if (ghInfo) {
-          void invoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
-            repository: `${ghInfo.owner}/${ghInfo.repo}`,
-            name: ghInfo.repo,
-            owner: ghInfo.owner,
-            githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
-          }).catch((err) => {
-            logger.warn('Failed to register picked repo as recent', { error: err });
-          });
-        }
-      }
-
-      // If a PR context mention was used, store the PR number on the workspace
-      // so PR discovery can find the right PR later. Daemon-backed
-      // (`workspace.update`, PROTOCOL §5.1) via workspaceClient — the legacy
-      // `workspace:update` IPC channel is unbridged in this build.
-      if (!repositoryCheckout && selectedPRNumber && workspace.id) {
-        void workspaceClient
-          .update({ id: workspace.id, prNumber: selectedPRNumber })
-          .then((updateResult) => {
-            if (!updateResult.ok) {
-              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+      const ghInfo = isGithubPick ? parseGitHubUrl(githubUrl) : null;
+      initializationRequest = {
+        entrypoint: 'compact',
+        admission,
+        createRequest,
+        pull: shouldPullSourceRepositoryBeforeCreate({
+          branchBehind,
+          isLocalRepository: repoType === 'local',
+          isNewRepository: isNewRepo,
+          skipIsolation,
+          pullEnabled: shouldPullBeforeCreate,
+        })
+          ? { repositoryPath: repoPath, branch }
+          : undefined,
+        agentTitle: agentName,
+        coordinator:
+          specialistId !== undefined &&
+          specialistId === selectOrchestratorSpecialist.select(appStore.state)?.id,
+        stagedItems: $state.snapshot(contextItems) as WorkspaceInitializationStagedItem[],
+        heldMessage: hasStagedFiles
+          ? { content: initialPrompt.trim(), imageBlocks, contextReferences }
+          : undefined,
+        lastSubmittedAgent: {
+          selectedSpecialist,
+          selectedModel,
+          modelWasOverridden,
+          selectedReasoningEffort,
+          isTeamMode,
+          selectedProvider,
+        },
+        selectedPrNumber: !repositoryCheckout && selectedPRNumber ? selectedPRNumber : undefined,
+        recentGitHubRepository: ghInfo
+          ? {
+              repository: `${ghInfo.owner}/${ghInfo.repo}`,
+              name: ghInfo.repo,
+              owner: ghInfo.owner,
+              githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
             }
-          });
-      }
+          : undefined,
+      };
+      const initialization = workspaceInitializationRequested(initializationRequest, {
+        id: initializationConsumerId,
+        resourceId: initializationResourceId,
+      });
+      initializationSeq = initialization.seq;
+      activeInitializationSeq = initialization.seq;
+      activeCreateProgressId = initialization.payload.progressId;
+      isPulling = Boolean(initializationRequest.pull);
+      const result = await dispatch(initialization);
+      isPulling = false;
+      if (!current()) return;
 
       // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
@@ -2663,48 +2556,84 @@
         );
       }
 
-      // Save last submitted agent settings before clearing form.
-      // This allows the form to restore these values after submission.
-      appStore.dispatch(
-        setWorkspaceInitializerLastSubmittedAgent({
-          selectedSpecialist,
-          selectedModel,
-          modelWasOverridden,
-          selectedReasoningEffort,
-          isTeamMode,
-          selectedProvider,
-        }),
-      );
-
       // Clear before navigation can unmount the form and flush its draft.
       clearForm(true);
       if (!current()) return;
       // Close the accepted form before the route loader can renegotiate the
       // connection and retire its checkout. Admission still owns this callback.
-      const navigation = goto(`/workspace/${workspace.id}`);
+      const navigation = goto(`/workspace/${result.workspaceId}`);
       if (current()) oncreate?.();
       await navigation;
     } catch (err) {
       if (!current()) return;
-      if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+      const outcome = selectWorkspaceInitializationOutcome.select(
+        appStore.state,
+        initializationConsumerId,
+        initializationResourceId,
+      );
+      if (outcome?.pullCompleted) branchBehind = 0;
+      isPulling = false;
+      if (outcome?.stage === 'pull') {
+        pullError = outcome.error || m.workspace_compactInitializer_pullFailed_error();
+        pullContinuation = current;
+        showPullConflictDialog = true;
+        return;
+      }
+      if (
+        initializationRequest &&
+        outcome?.workspaceId &&
+        (outcome.stage === 'post-create' ||
+          outcome.stage === 'attachments' ||
+          outcome.stage === 'first-message')
+      ) {
+        const stagedItems = outcome.stagedItems ?? initializationRequest.stagedItems;
+        contextItems = stagedItems as ContextItem[];
+        pendingFirstMessage = {
+          request: {
+            ...initializationRequest,
+            createRequest: undefined,
+            pull: undefined,
+            resume: {
+              workspaceId: outcome.workspaceId,
+              agentId: outcome.agentId,
+              workspacePath: outcome.workspacePath,
+            },
+            stagedItems,
+            heldMessage: initializationRequest.heldMessage
+              ? {
+                  ...initializationRequest.heldMessage,
+                  imageBlocks:
+                    outcome.retryImageBlocks ?? initializationRequest.heldMessage.imageBlocks,
+                }
+              : undefined,
+          },
+        };
+        error =
+          outcome.stage === 'attachments'
+            ? m.workspace_compactInitializer_attachmentPlacementFailed_error()
+            : outcome.error
+              ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
+                  detail: outcome.error,
+                })
+              : m.workspace_compactInitializer_firstMessageSendFailed_error();
+        return;
+      }
+      const failureMessage = outcome?.error ?? (err instanceof Error ? err.message : '');
+      if (failureMessage.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
         error = m.workspace_compactInitializer_specialistUnavailable_error();
       } else {
-        error =
-          err instanceof Error
-            ? getGitErrorMessage(err.message)
-            : m.workspace_compactInitializer_createFailed_error();
+        error = failureMessage
+          ? getGitErrorMessage(failureMessage)
+          : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
+      if (initializationSeq !== null) releaseInitialization(initializationSeq);
       if (mounted && generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
       }
-      // The create settled (success, failure, or early return) — drop the
-      // transient progress entry so the slice never accumulates stale ids.
-      // Dispatch belongs to the captured Redux instance, never a replacement store.
-      dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
 
@@ -2739,10 +2668,10 @@
     richTextarea?.clear(); // Clear the TipTap editor content
     // Cancel the queued save before clearing: an immediate close/unmount can
     // flush the submitted prompt before the empty-state effect runs (#5569).
-    draftSaver.cancel();
+    appStore.dispatch(workspaceInitializerDraftSaveCancelled(draftOwnerId));
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
-    clearNewWorkspaceDraft(appClient.drafts);
+    appStore.dispatch(workspaceInitializerDraftClearRequested(draftOwnerId, crypto.randomUUID()));
     // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
@@ -3062,78 +2991,10 @@
     return Boolean((item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'));
   }
 
-  // Set when workspace.create succeeded but staged-attachment placement (or
-  // the first-message send) failed: the workspace exists, the modal stays
-  // open with failed pills, and the create button resumes this flow instead
-  // of creating a second workspace.
-  let pendingFirstMessage = $state.raw<(HeldFirstMessage & { current: () => boolean }) | null>(
-    null,
-  );
-
-  /**
-   * Place all staged attachments into the created workspace (sourcePath-only,
-   * `file.placeAttachment` PROTOCOL §5.9) and send the held-back first
-   * message with the resulting attachment-reference file blocks. Returns
-   * false when any placement failed — the failed pills stay visible with
-   * retry/remove, `pendingFirstMessage` stays set, and the caller must NOT
-   * proceed with navigation/cleanup.
-   */
-  async function placeAndSendFirstMessage(): Promise<boolean> {
-    const pending = pendingFirstMessage;
-    if (!pending) return true;
-    const current = pending.current;
-    if (!current()) return false;
-
-    const redemption = await redeemStagedAttachments(
-      pending.workspaceId,
-      contextItems,
-      undefined,
-      undefined,
-      current,
-    );
-    if (!current()) return false;
-    contextItems = redemption.items;
-    if (redemption.failedCount > 0) {
-      error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
-      return false;
-    }
-
-    // `sendHeldFirstMessage` rebuilds the wire params as plain JSON: this
-    // pending state is a Svelte $state deep-reactive Proxy tree, which
-    // Electron's structured clone rejects outright — passing it through
-    // verbatim made every staged-attachment first send fail before reaching
-    // the daemon (monorepo#2576).
-    const sendResult = await sendHeldFirstMessage(
-      {
-        workspaceId: pending.workspaceId,
-        agentId: pending.agentId,
-        content: pending.content,
-        imageBlocks: pending.imageBlocks,
-        contextReferences: pending.contextReferences,
-      },
-      redemption.fileBlocks,
-      undefined,
-      undefined,
-      current,
-    );
-    if (!current()) return false;
-    if (!sendResult.sent) {
-      logger.error('First-message send failed after attachment placement', {
-        error: sendResult.errorDetail,
-      });
-      // Keep the retry blocks (placed references + keyed inline blocks) so
-      // the resumed send replays committed image placements, not duplicates.
-      if (sendResult.imageBlocks) pending.imageBlocks = sendResult.imageBlocks;
-      error = sendResult.errorDetail
-        ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
-            detail: sendResult.errorDetail,
-          })
-        : m.workspace_compactInitializer_firstMessageSendFailed_error();
-      return false;
-    }
-    if (pendingFirstMessage === pending) pendingFirstMessage = null;
-    return true;
-  }
+  // The saga returns a resumable request after create succeeded but attachment
+  // placement or first-message delivery failed. Keeping it component-local
+  // preserves the editable pills without putting runtime objects in Redux.
+  let pendingFirstMessage = $state.raw<{ request: WorkspaceInitializationRequest } | null>(null);
 
   /**
    * Resume a create whose staged-attachment placement failed: re-place the
@@ -3142,17 +3003,84 @@
    */
   async function retryPendingFirstMessage(): Promise<void> {
     const pending = pendingFirstMessage;
-    if (!pending || !pending.current()) return;
+    const admission = pending?.request.admission;
+    if (
+      !pending ||
+      admission === null ||
+      admission !== selectPrincipalActionContext.select(appStore.state) ||
+      !selectWorkspaceCreationVisible.select(appStore.state)
+    )
+      return;
+    const generation = ++submissionGeneration;
+    const dispatch = appStore.dispatch;
+    const current = () =>
+      mounted &&
+      generation === submissionGeneration &&
+      appStore.dispatch === dispatch &&
+      admission === selectPrincipalActionContext.select(appStore.state) &&
+      selectWorkspaceCreationVisible.select(appStore.state);
+    const resourceId = `${admission}:${generation}`;
+    const request: WorkspaceInitializationRequest = {
+      ...pending.request,
+      admission,
+      stagedItems: $state.snapshot(contextItems) as WorkspaceInitializationStagedItem[],
+      heldMessage: pending.request.heldMessage
+        ? {
+            ...pending.request.heldMessage,
+            imageBlocks: heldImageBlocks($state.snapshot(contextItems)),
+          }
+        : undefined,
+    };
     isCreating = true;
     error = null;
+    let initializationSeq: number | null = null;
     try {
-      const sent = await placeAndSendFirstMessage();
-      if (!sent || !pending.current()) return;
+      const initialization = workspaceInitializationRequested(request, {
+        id: initializationConsumerId,
+        resourceId,
+      });
+      initializationSeq = initialization.seq;
+      activeInitializationSeq = initialization.seq;
+      await dispatch(initialization);
+      if (!current()) return;
+      pendingFirstMessage = null;
       clearForm(true);
-      await goto(`/workspace/${pending.workspaceId}`);
-      if (pending.current()) oncreate?.();
+      await goto(`/workspace/${request.resume?.workspaceId}`);
+      if (current()) oncreate?.();
+    } catch (retryError) {
+      if (!current()) return;
+      const outcome = selectWorkspaceInitializationOutcome.select(
+        appStore.state,
+        initializationConsumerId,
+        resourceId,
+      );
+      const stagedItems = outcome?.stagedItems ?? request.stagedItems;
+      contextItems = stagedItems as ContextItem[];
+      pendingFirstMessage = {
+        request: {
+          ...request,
+          stagedItems,
+          heldMessage: request.heldMessage
+            ? {
+                ...request.heldMessage,
+                imageBlocks: outcome?.retryImageBlocks ?? request.heldMessage.imageBlocks,
+              }
+            : undefined,
+        },
+      };
+      error =
+        outcome?.stage === 'attachments'
+          ? m.workspace_compactInitializer_attachmentPlacementFailed_error()
+          : outcome?.error
+            ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
+                detail: outcome.error,
+              })
+            : retryError instanceof Error
+              ? retryError.message
+              : m.workspace_compactInitializer_firstMessageSendFailed_error();
     } finally {
-      if (pending.current()) isCreating = false;
+      if (initializationSeq !== null) releaseInitialization(initializationSeq);
+      if (current()) isCreating = false;
     }
   }
 
@@ -3167,7 +3095,6 @@
     const item = contextItems.find((i) => i.id === id);
     if (!item) return;
     if (pendingFirstMessage) {
-      if (!pendingFirstMessage.current()) return;
       // Workspace exists: reset this pill to staged and re-run the flow.
       contextItems = contextItems.map((i) =>
         i.id === id ? { ...i, placementStatus: undefined } : i,

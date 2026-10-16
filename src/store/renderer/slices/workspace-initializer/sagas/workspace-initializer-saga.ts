@@ -1,4 +1,7 @@
 import { workspaceInitializerGitSaga } from './workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from './workspace-initialization-saga';
+import { workspaceInitializerRepositorySaga } from './workspace-initializer-repository-saga';
+import { workspaceInitializerDraftSaga } from './workspace-initializer-draft-saga';
 import {
   selectCanAdministerHost,
   selectHostAdministrationContext,
@@ -51,6 +54,7 @@ import {
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
+  workspaceInitializerDraftClearRequested,
 } from '../workspace-initializer-slice';
 import type {
   CompactWorkspaceInitializerFormState,
@@ -72,7 +76,6 @@ const DEFAULT_PARENT_PATH_KEY = 'workspace-initializer-default-parent';
 const RECENT_REPOS_KEY = 'workspace-initializer-recent-repos';
 const REMOTE_SETUPS_KEY = 'remote-setups';
 const LAST_SUBMITTED_AGENT_KEY = 'workspace-initializer-last-agent';
-const ONBOARDING_PROMPT_SESSION_KEY = 'onboarding-prompt';
 const ONBOARDING_FORM_STATE_DEBOUNCE_MS = 300;
 
 type HydrationGate = { settled: boolean; queued: boolean };
@@ -281,16 +284,6 @@ export function* hydrateWorkspaceInitializerWorker() {
   }
 }
 
-function removeOnboardingPrompt(): void {
-  try {
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(ONBOARDING_PROMPT_SESSION_KEY);
-    }
-  } catch {
-    // Reset remains non-fatal when session storage is unavailable.
-  }
-}
-
 function* applyDebouncedOnboardingFormWorker(
   action: ReturnType<typeof debounceWorkspaceInitializerOnboardingFormState>,
 ) {
@@ -304,8 +297,13 @@ function* applyDebouncedOnboardingFormWorker(
 }
 
 function* resetWorkspaceInitializerWorker() {
+  yield* put(
+    workspaceInitializerDraftClearRequested(
+      'onboarding-workspace-initializer',
+      crypto.randomUUID(),
+    ),
+  );
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
-  yield* call(removeOnboardingPrompt);
 }
 
 function* watchDebouncedOnboardingForm() {
@@ -371,6 +369,9 @@ function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<s
 
 export function* workspaceInitializerSaga() {
   yield* fork(workspaceInitializerGitSaga);
+  yield* fork(workspaceInitializationSaga);
+  yield* fork(workspaceInitializerRepositorySaga);
+  yield* fork(workspaceInitializerDraftSaga);
   yield* fork(watchDebouncedOnboardingForm);
   yield* fork(watchOnboardingReset);
   yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateOwnerInitializer);

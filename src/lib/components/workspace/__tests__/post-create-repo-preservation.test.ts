@@ -13,7 +13,12 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DraftAttachment } from '$lib/client/app-client';
-import type { CompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import type {
+  CompactWorkspaceInitializerFormState,
+  WorkspaceInitializerDraftRestore,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import { createWorkspaceDraftDispatchAdapter } from './workspace-draft-dispatch.test-helper';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
@@ -27,6 +32,21 @@ const mocks = vi.hoisted(() => {
       return () => {};
     },
   });
+  function writable<T>(initial: T) {
+    let value = initial;
+    const subscribers = new Set<(value: T) => void>();
+    return {
+      subscribe(run: (value: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subscribers) run(next);
+      },
+    };
+  }
   return {
     readable,
     dispatch: vi.fn(),
@@ -43,6 +63,7 @@ const mocks = vi.hoisted(() => {
     } | null,
     getLastUsedSetupScript: vi.fn(() => undefined),
     recordLastUsedSetupScript: vi.fn(),
+    draftRestore$: writable<WorkspaceInitializerDraftRestore | undefined>(undefined),
     // Per-test persisted form state returned by the selector mock (read
     // synchronously at component init as `savedState`).
     savedFormState: null as unknown,
@@ -74,6 +95,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftRestore: () => mocks.draftRestore$,
+  selectWorkspaceInitializationOutcome: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -263,7 +286,16 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('post-create repo-field preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    const initialize = createWorkspaceInitializationDispatchAdapter({ create: mocks.create });
+    const drafts = createWorkspaceDraftDispatchAdapter({
+      get: mocks.draftGet,
+      set: mocks.draftSet,
+      clear: mocks.draftClear,
+      setRestore: (restore) => mocks.draftRestore$.set(restore),
+    });
+    mocks.dispatch.mockImplementation((action) => (drafts(action) ? action : initialize(action)));
     sessionStorage.clear();
+    mocks.draftRestore$.set(undefined);
     mocks.savedFormState = null;
     mocks.persistedDraft = null;
     mocks.goto.mockReset();
