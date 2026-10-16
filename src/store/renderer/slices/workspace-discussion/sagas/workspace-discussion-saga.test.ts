@@ -1,3 +1,5 @@
+import { workspaceDiscussionClient } from '$lib/client/live/workspace-discussion';
+import { settingsChanged } from '../../settings-events/settings-events-slice';
 import { initializeLayout, closeTab, reopenClosedTab } from '../../panel-layout/panel-layout-slice';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,11 +10,18 @@ import { store } from '../../../store';
 import { authRejectedReceived, connectionsListReceived } from '../../connections/connections-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-slice';
-import { replaceWorkspaceList } from '../../workspace/workspace-slice';
+import { replaceWorkspaceList, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import { principalContextChanged, principalReceived } from '../../principal/principal-slice';
-import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import {
+  selectPrincipalConnectionContext,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
+import {
+  discussionReadThrough,
+  discussionReplySelected,
+  discussionReactionRequested,
+  discussionEnableSharingRequested,
   discussionRequested,
   discussionOlderRequested,
   discussionDraftChanged,
@@ -26,6 +35,9 @@ import {
   discussionMembershipInvalidated,
 } from '../workspace-discussion-slice';
 import {
+  selectDiscussionUnread,
+  selectDiscussionCanSend,
+  selectDiscussionCanInteract,
   selectDiscussionMessages,
   selectDiscussionConversations,
   selectDiscussionRecipients,
@@ -38,7 +50,12 @@ import {
 } from '../workspace-discussion-selectors';
 import { workspaceDiscussionSaga } from './workspace-discussion-saga';
 
-const wire = vi.hoisted(() => ({ request: vi.fn() }));
+const wire = vi.hoisted(() => ({ request: vi.fn(), readSetting: vi.fn() }));
+vi.mock('$lib/client/live/live-settings-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/live-settings-client')>()),
+  readSetting: wire.readSetting,
+  invalidateSettingsReadCache: vi.fn(),
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: wire.request }));
 const message = (sequence: number, workspaceId = 'ws', body = 'hello'): DiscussionMessage => ({
   id: `server-${sequence}`,
@@ -107,6 +124,8 @@ describe('workspace discussion transport', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     dispose = store.init();
+    vi.spyOn(workspaceDiscussionClient, 'supportsMessageActions').mockResolvedValue(false);
+    wire.readSetting.mockReset().mockResolvedValue({ value: true });
     wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
     store.dispatch(
       connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
@@ -121,6 +140,7 @@ describe('workspace discussion transport', () => {
   afterEach(() => {
     cancel();
     dispose();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
   async function open() {
@@ -984,5 +1004,394 @@ describe('workspace discussion transport', () => {
     expect(selectDiscussionMessages.select(store.state, 'ws', 'c1').map((m) => m.id)).toEqual([
       'c1-1',
     ]);
+  });
+  const withActions = (row: DiscussionMessage): DiscussionMessage => ({
+    ...row,
+    replyToMessageId: null,
+    replyTo: null,
+    reactions: [],
+    reactionVersion: 0,
+  });
+  it('keeps unread counts per thread through remount and reconnect, excluding own sends and older history', async () => {
+    wire.request.mockResolvedValue({ messages: [message(10)], hasMore: true });
+    await open();
+    const target = selectDiscussionTarget.select(store.state, 'ws')!;
+    store.dispatch(
+      discussionMessageReceived(target, {
+        ...message(20),
+        author: { ...message(20).author, principalId: 'other' },
+      }),
+    );
+    store.dispatch(discussionMessageReceived(target, message(30)));
+    expect(selectDiscussionUnread.select(store.state, 'ws')).toEqual({
+      count: 1,
+      firstSequence: 20,
+    });
+    wire.request.mockResolvedValue({ messages: [], hasMore: false });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(1);
+    store.dispatch(discussionReadThrough({ ...target, epoch: target.epoch + 1 }, 20));
+    store.dispatch(discussionReadThrough(target, 999));
+    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(1);
+    store.dispatch(discussionReadThrough(target, 20));
+    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(0);
+    expect(row().readSequence).toBe(20);
+    store.dispatch(discussionReadThrough(target, 10));
+    expect(row().readSequence).toBe(20);
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    expect(row().readSequence).toBe(20);
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit('someone-else');
+    await settle();
+    expect(row().readSequence).not.toBe(20);
+  });
+  it('retains pending author, timestamp, body, and reply target across uncertain retries and deduplicates acknowledgement', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    const original = withActions(message(1));
+    wire.request.mockResolvedValue({ messages: [original], hasMore: false });
+    await open();
+    store.dispatch(discussionReplySelected('ws', original.id));
+    store.dispatch(discussionDraftChanged('ws', 'a reply'));
+    wire.request.mockRejectedValueOnce(new Error('lost ack'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const failed = pending()[0];
+    expect(failed).toMatchObject({
+      body: 'a reply',
+      author: { principalId: 'me' },
+      replyToMessageId: 'server-1',
+      status: 'failed',
+    });
+    expect(Number.isFinite(Date.parse(failed.createdAt!))).toBe(true);
+    store.dispatch(discussionReplySelected('ws', null));
+    store.dispatch(discussionDraftChanged('ws', 'different draft'));
+    const reply = {
+      ...withActions(message(2, 'ws', 'a reply')),
+      replyToMessageId: 'server-1',
+      replyTo: { id: 'server-1', author: original.author, body: original.body },
+    };
+    wire.request.mockResolvedValue({ message: reply });
+    store.dispatch(
+      discussionMessageReceived(selectDiscussionTarget.select(store.state, 'ws')!, reply),
+    );
+    store.dispatch(discussionRetryRequested('ws', failed.id));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[1][1]).toEqual(sends[0][1]);
+    expect(sends[0][1]).toMatchObject({ replyToMessageId: 'server-1' });
+    expect(messages().filter((m) => m.id === reply.id)).toHaveLength(1);
+    expect(pending()).toEqual([]);
+    expect(row().draft).toBe('different draft');
+    expect(row().replyToMessageId).toBeNull();
+  });
+  it('uses explicit idempotent reaction state and rejects stale responses without changing unread/history cursors', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    wire.request.mockResolvedValue({ messages: [withActions(message(1))], hasMore: false });
+    await open();
+    const late = deferred<{
+      messageId: string;
+      reactions: { reaction: '👍'; count: number; reacted: boolean }[];
+      reactionVersion: number;
+    }>();
+    wire.request.mockReturnValueOnce(late.promise);
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    await settle();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
+      workspaceId: 'ws',
+      messageId: 'server-1',
+      reaction: '👍',
+      active: true,
+    });
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'current',
+        event: {
+          id: 'reaction-event',
+          type: 'discussion:reaction',
+          workspaceId: 'ws',
+          data: {
+            workspaceId: 'ws',
+            conversationId: 'default',
+            messageId: 'server-1',
+            reactions: [{ reaction: '👍', count: 2, reacted: true }],
+            reactionVersion: 2,
+          },
+        },
+      },
+      ['current'],
+    );
+    late.resolve({
+      messageId: 'server-1',
+      reactions: [{ reaction: '👍', count: 1, reacted: true }],
+      reactionVersion: 1,
+    });
+    await settle();
+    expect(messages()[0]).toMatchObject({
+      reactionVersion: 2,
+      reactions: [{ reaction: '👍', count: 2, reacted: true }],
+    });
+    expect(row().syncedSequence).toBe(1);
+    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(0);
+    wire.request.mockResolvedValue({
+      messageId: 'server-1',
+      reactions: [{ reaction: '👍', count: 1, reacted: false }],
+      reactionVersion: 3,
+    });
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    await settle();
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
+      workspaceId: 'ws',
+      messageId: 'server-1',
+      reaction: '👍',
+      active: false,
+    });
+  });
+  it('refreshes reactions on old cached messages after reconnect without rewinding forward history', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    wire.request.mockResolvedValue({
+      messages: [withActions(message(1)), withActions(message(50))],
+      hasMore: false,
+    });
+    await open();
+    wire.request.mockImplementation((method, params) => {
+      if (method !== 'discussion.list') throw new Error('unexpected method');
+      if (params.afterSequence === 50) return { messages: [], hasMore: false };
+      if (params.afterSequence === 49)
+        return { messages: [withActions(message(50))], hasMore: false };
+      if (params.beforeSequence === 51)
+        return {
+          messages: [
+            {
+              ...withActions(message(1)),
+              reactions: [{ reaction: '🙂', count: 1, reacted: false }],
+              reactionVersion: 4,
+            },
+            withActions(message(50)),
+          ],
+          hasMore: false,
+        };
+      throw new Error('unexpected cursor');
+    });
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    expect(messages()[0]).toMatchObject({
+      reactionVersion: 4,
+      reactions: [{ reaction: '🙂', count: 1, reacted: false }],
+    });
+    expect(row().syncedSequence).toBe(50);
+    expect(row().metadataBefore).toBeNull();
+  });
+  it('retains history and draft while sharing is off, rejects sends, and opens the existing authorized sharing dialog', async () => {
+    wire.readSetting.mockResolvedValue({ value: false });
+    wire.request.mockResolvedValue({ messages: [message(1)], hasMore: false });
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'retained'));
+    expect(selectDiscussionCanSend.select(store.state, 'ws')).toBe(false);
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.send')).toBe(false);
+    expect(messages()).toHaveLength(1);
+    expect(row().draft).toBe('retained');
+    store.dispatch(
+      setWorkspaceHasLoaded(true, 'local', selectPrincipalActionContext.select(store.state)),
+    );
+    store.dispatch(discussionEnableSharingRequested('ws'));
+    await settle();
+    expect(store.state.workspaceShare).toMatchObject({ open: true, workspaceId: 'ws' });
+    wire.readSetting.mockResolvedValue({ value: true });
+    store.dispatch(settingsChanged([{ path: 'server.tunnel.enabled', value: true }]));
+    await settle();
+    expect(selectDiscussionCanSend.select(store.state, 'ws')).toBe(true);
+  });
+  it('does not expose message actions on an older daemon or issue owner settings reads for a guest', async () => {
+    await open();
+    expect(selectDiscussionCanInteract.select(store.state, 'ws')).toBe(false);
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    await settle();
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.react')).toBe(false);
+    const context = selectPrincipalConnectionContext.select(store.state)!;
+    store.dispatch(principalContextChanged(context));
+    const p = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        { context, invalidation: p.invalidation, presentationVersion: p.presentationVersion },
+        {
+          principal: {
+            id: 'me',
+            hostRole: 'guest',
+            isAdministrator: false,
+            hostMembershipRevision: 2,
+            login: null,
+            displayName: null,
+            avatarUrl: null,
+          },
+          capabilities: {
+            hostMembership: true,
+            collaborationIdentity: true,
+            personalPairing: true,
+            authenticatedDevices: true,
+          },
+        },
+      ),
+    );
+    await settle();
+    wire.readSetting.mockClear();
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(wire.readSetting).not.toHaveBeenCalled();
+    store.dispatch(discussionEnableSharingRequested('ws'));
+    await settle();
+    expect(store.state.workspaceShare.open).toBe(false);
+  });
+  it('bounds metadata catch-up and resumes the independent cursor on retry beyond 500 cached messages', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    wire.request.mockResolvedValue({
+      messages: [withActions(message(1)), withActions(message(600))],
+      hasMore: false,
+    });
+    await open();
+    const target = selectDiscussionTarget.select(store.state, 'ws')!;
+    for (let n = 2; n < 600; n++)
+      store.dispatch(discussionMessageReceived(target, withActions(message(n))));
+    wire.request.mockImplementation((method, params) => {
+      if (method !== 'discussion.list') throw new Error('unexpected method');
+      if (params.afterSequence === 600) return { messages: [], hasMore: false };
+      const before = params.beforeSequence;
+      if (typeof before !== 'number') throw new Error('missing metadata cursor');
+      const start = Math.max(1, before - 50);
+      return {
+        messages: Array.from({ length: before - start }, (_, i) => ({
+          ...withActions(message(start + i)),
+          reactionVersion: 3,
+          reactions: [{ reaction: '👍', count: 2, reacted: false }],
+        })),
+        hasMore: start > 1,
+      };
+    });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row()).toMatchObject({
+      syncedSequence: 600,
+      metadataBefore: 101,
+      metadataFloor: 1,
+      error: 'unknown',
+    });
+    expect(
+      wire.request.mock.calls.filter(
+        ([method, params]) => method === 'discussion.list' && params.beforeSequence,
+      ),
+    ).toHaveLength(10);
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row()).toMatchObject({
+      syncedSequence: 600,
+      metadataBefore: null,
+      metadataFloor: null,
+      error: null,
+    });
+    expect(messages()).toHaveLength(600);
+    expect(messages()[0]).toMatchObject({ reactionVersion: 3 });
+    expect(
+      wire.request.mock.calls
+        .filter(([method, params]) => method === 'discussion.list' && params.beforeSequence)
+        .map(([, params]) => params.beforeSequence),
+    ).toEqual([601, 551, 501, 451, 401, 351, 301, 251, 201, 151, 101, 51]);
+  });
+  it('restarts an interrupted metadata sweep on reconnect and discards the old connection page', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    wire.request.mockResolvedValue({
+      messages: [1, 2, 3].map((n) => withActions(message(n))),
+      hasMore: false,
+    });
+    await open();
+    const stale = deferred<unknown>();
+    let generation = 1;
+    wire.request.mockImplementation((method, params) => {
+      if (method !== 'discussion.list') throw new Error('unexpected method');
+      if (params.afterSequence === 3) return { messages: [], hasMore: false };
+      if (params.beforeSequence === 4)
+        return {
+          messages: [2, 3].map((n) => ({
+            ...withActions(message(n)),
+            reactionVersion: generation,
+            reactions: [{ reaction: '👍', count: generation, reacted: false }],
+          })),
+          hasMore: true,
+        };
+      if (params.beforeSequence === 2)
+        return generation === 1
+          ? stale.promise
+          : {
+              messages: [withActions(message(1))],
+              hasMore: false,
+            };
+      throw new Error('unexpected cursor');
+    });
+    store.dispatch(discussionRequested('ws'));
+    await settle();
+    expect(row().metadataBefore).toBe(2);
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    expect(row().metadataBefore).toBeNull();
+    generation = 2;
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    expect(messages().at(-1)).toMatchObject({
+      reactionVersion: 2,
+      reactions: [{ reaction: '👍', count: 2, reacted: false }],
+    });
+    expect(row()).toMatchObject({
+      syncedSequence: 3,
+      readSequence: 3,
+      metadataBefore: null,
+      metadataFloor: null,
+      error: null,
+    });
+    stale.resolve({
+      messages: [
+        {
+          ...withActions(message(1)),
+          reactionVersion: 99,
+          reactions: [{ reaction: '🙂', count: 99, reacted: false }],
+        },
+      ],
+      hasMore: false,
+    });
+    await settle();
+    expect(messages()[0].reactionVersion).toBe(0);
+    expect(
+      wire.request.mock.calls
+        .filter(([method, params]) => method === 'discussion.list' && params.beforeSequence)
+        .map(([, params]) => params.beforeSequence),
+    ).toEqual([4, 2, 4, 2]);
+  });
+  it('cancels pending reactions and discards late replies when workspace access is lost', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    wire.request.mockResolvedValue({ messages: [withActions(message(1))], hasMore: false });
+    await open();
+    const response = deferred<unknown>();
+    wire.request.mockReturnValueOnce(response.promise);
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    await settle();
+    store.dispatch(replaceWorkspaceList([workspace('other')]));
+    await settle();
+    response.resolve({
+      messageId: 'server-1',
+      reactions: [{ reaction: '👍', count: 1, reacted: true }],
+      reactionVersion: 1,
+    });
+    await settle();
+    expect(messages()).toEqual([]);
+    expect(store.state.workspaceDiscussion.byWorkspaceId.ws).toBeUndefined();
   });
 });

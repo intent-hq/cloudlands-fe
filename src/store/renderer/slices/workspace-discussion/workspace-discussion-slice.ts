@@ -7,6 +7,9 @@ import {
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
+  isDiscussionReactionResult,
+  type DiscussionReactionResult,
+  type DiscussionReactionValue,
   isDiscussionMessage,
   isDiscussionConversation,
   DEFAULT_DISCUSSION_ID,
@@ -29,9 +32,21 @@ export interface PendingDiscussionMessage {
   status: 'sending' | 'failed';
   error: DiscussionError | null;
   recipientPrincipalIds?: string[];
+  author?: DiscussionAuthor;
+  createdAt?: string;
+  replyToMessageId?: string;
+  replyTo?: DiscussionMessage['replyTo'];
+  replyVersion?: number;
 }
 export interface WorkspaceDiscussion {
   epoch: number;
+  replyToMessageId: string | null;
+  replyVersion: number;
+  reactionUpdates: Collection<DiscussionReactionResult, 'messageId'>;
+  reacting: string[];
+  reactionError: DiscussionError | null;
+  metadataBefore: number | null;
+  metadataFloor: number | null;
   authorized: boolean;
   recipientPrincipalIds: string[];
   recipientsLocked: boolean;
@@ -47,6 +62,8 @@ export interface WorkspaceDiscussion {
   beforeSequence: number | null;
   /** Last history row synchronized by a list page; live messages never advance it. */
   syncedSequence: number | null;
+  /** Local read boundary; independent of synchronized history and retained across pane mounts. */
+  readSequence: number | null;
   /** A forward read is unfinished; Retry must resume it before loading older history. */
   catchUp: boolean;
   requestId: string | null;
@@ -64,6 +81,8 @@ export interface WorkspaceDiscussionState {
   nextEpoch: number;
   byWorkspaceId: Record<string, Record<string, WorkspaceDiscussion>>;
   conversationsSupported: boolean | null;
+  sharingEnabled: boolean | null;
+  messageActionsSupported: boolean | null;
   directories: Record<string, DiscussionDirectory>;
   recipients: Record<string, DiscussionRecipients>;
   directoryRequestedIds: string[];
@@ -76,6 +95,13 @@ export interface DiscussionTarget {
 }
 export const emptyDiscussion: WorkspaceDiscussion = {
   epoch: 0,
+  replyToMessageId: null,
+  replyVersion: 0,
+  reactionUpdates: createCollection('messageId'),
+  reacting: [],
+  reactionError: null,
+  metadataBefore: null,
+  metadataFloor: null,
   authorized: false,
   recipientPrincipalIds: [],
   recipientsLocked: false,
@@ -90,6 +116,7 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   hasMore: false,
   beforeSequence: null,
   syncedSequence: null,
+  readSequence: null,
   catchUp: false,
   requestId: null,
   error: null,
@@ -105,6 +132,8 @@ export const initialState: WorkspaceDiscussionState = {
   nextEpoch: 0,
   byWorkspaceId: {},
   conversationsSupported: null,
+  sharingEnabled: null,
+  messageActionsSupported: null,
   directories: {},
   recipients: {},
   directoryRequestedIds: [],
@@ -125,6 +154,50 @@ export const discussionSendRequested = createAction<[workspaceId: string, conver
 export const discussionRetryRequested = createAction<
   [workspaceId: string, messageId: string, conversationId?: string]
 >('workspaceDiscussion/retryRequested');
+export const discussionMessageActionsReceived = createAction<[context: string, supported: boolean]>(
+  'workspaceDiscussion/messageActionsReceived',
+);
+export const discussionReplySelected = createAction<
+  [workspaceId: string, messageId: string | null, conversationId?: string]
+>('workspaceDiscussion/replySelected');
+export const discussionReactionRequested = createAction<
+  [
+    workspaceId: string,
+    messageId: string,
+    reaction: DiscussionReactionValue,
+    conversationId?: string,
+  ]
+>('workspaceDiscussion/reactionRequested');
+export const discussionReactionReceived = createAction<
+  [target: DiscussionTarget, result: DiscussionReactionResult]
+>('workspaceDiscussion/reactionReceived');
+export const discussionReactionStarted = createAction<[target: DiscussionTarget, key: string]>(
+  'workspaceDiscussion/reactionStarted',
+);
+export const discussionReactionFinished = createAction<
+  [target: DiscussionTarget, key: string, error: DiscussionError | null]
+>('workspaceDiscussion/reactionFinished');
+export const discussionMetadataProgress = createAction<
+  [
+    target: DiscussionTarget,
+    requestId: string,
+    messages: DiscussionMessage[],
+    before: number | null,
+    floor: number | null,
+  ]
+>('workspaceDiscussion/metadataProgress');
+export const discussionSharingReceived = createAction<[context: string, enabled: boolean | null]>(
+  'workspaceDiscussion/sharingReceived',
+);
+export const discussionSharingRefreshRequested = createAction(
+  'workspaceDiscussion/sharingRefreshRequested',
+);
+export const discussionEnableSharingRequested = createAction<[workspaceId: string]>(
+  'workspaceDiscussion/enableSharingRequested',
+);
+export const discussionReadThrough = createAction<[target: DiscussionTarget, sequence: number]>(
+  'workspaceDiscussion/readThrough',
+);
 export const discussionContextChanged = createAction<
   [context: string | null, owner: string | null]
 >('workspaceDiscussion/contextChanged');
@@ -207,7 +280,29 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
   const merged = new Map(getItems(row.messages).map((m) => [m.id, m]));
   for (const message of messages) {
     // Server IDs differ from send retry keys. An echo never settles a local retry.
-    if (!merged.has(message.id)) merged.set(message.id, message);
+    const previous = merged.get(message.id);
+    if (!previous) merged.set(message.id, message);
+    else {
+      const newer = (message.reactionVersion ?? -1) > (previous.reactionVersion ?? -1);
+      if (newer || (previous.replyTo === undefined && message.replyTo !== undefined))
+        merged.set(message.id, {
+          ...previous,
+          ...(previous.replyTo === undefined
+            ? { replyTo: message.replyTo, replyToMessageId: message.replyToMessageId }
+            : {}),
+          ...(newer
+            ? { reactions: message.reactions, reactionVersion: message.reactionVersion }
+            : {}),
+        });
+    }
+    const update = getItem(row.reactionUpdates, message.id);
+    const currentMessage = merged.get(message.id) ?? message;
+    if (update && update.reactionVersion > (currentMessage.reactionVersion ?? -1))
+      merged.set(message.id, {
+        ...currentMessage,
+        reactions: update.reactions,
+        reactionVersion: update.reactionVersion,
+      });
   }
   return {
     ...row,
@@ -224,6 +319,9 @@ function interrupted(row: WorkspaceDiscussion): WorkspaceDiscussion {
     loadingOlder: false,
     requestId: null,
     sending: false,
+    reacting: [],
+    metadataBefore: null,
+    metadataFloor: null,
     pending: createCollection(
       'id',
       getItems(row.pending).map((m) =>
@@ -250,6 +348,8 @@ workspaceDiscussionReducer.with(
       ...state,
       context,
       conversationsSupported: null,
+      sharingEnabled: null,
+      messageActionsSupported: null,
       directories: {},
       recipients: {},
       byWorkspaceId: Object.fromEntries(
@@ -327,6 +427,17 @@ workspaceDiscussionReducer.with(
       : state;
   },
 );
+workspaceDiscussionReducer.with(discussionReadThrough, (state, { payload: [target, sequence] }) => {
+  const row = current(state, target);
+  if (
+    !row?.authorized ||
+    !Number.isSafeInteger(sequence) ||
+    sequence <= (row.readSequence ?? -1) ||
+    !getItems(row.messages).some((message) => message.sequence === sequence)
+  )
+    return state;
+  return set(state, target, { ...row, readSequence: sequence });
+});
 workspaceDiscussionReducer.with(
   discussionMessageReceived,
   (state, { payload: [target, message] }) => {
@@ -370,7 +481,11 @@ workspaceDiscussionReducer.with(
             beforeSequence: result.messages[0]?.sequence ?? row.beforeSequence,
             hasMore: result.hasMore,
             ...(direction === 'initial'
-              ? { syncedSequence: result.messages.at(-1)?.sequence ?? 0, catchUp: false }
+              ? {
+                  syncedSequence: result.messages.at(-1)?.sequence ?? 0,
+                  readSequence: row.readSequence ?? result.messages.at(-1)?.sequence ?? 0,
+                  catchUp: false,
+                }
               : {}),
           }),
       initialized: true,
@@ -481,7 +596,8 @@ workspaceDiscussionReducer.with(
           conversation.id !== message.conversationId ||
           conversation.id === DEFAULT_DISCUSSION_ID
         : !matches(target, message)) ||
-      sent.body !== message.body
+      sent.body !== message.body ||
+      (sent.replyToMessageId ?? null) !== (message.replyToMessageId ?? null)
     )
       return set(state, target, failSend(row, messageId, 'unknown'));
     const pending = getItems(row.pending).filter((m) => m.id !== messageId);
@@ -489,7 +605,17 @@ workspaceDiscussionReducer.with(
     const settled = {
       ...receive(row, [message]),
       pending: createCollection('id', pending),
-      draft: row.draftVersion === sent.draftVersion && row.draft === sent.body ? '' : row.draft,
+      draft:
+        row.draftVersion === sent.draftVersion &&
+        row.draft === sent.body &&
+        (sent.replyVersion === undefined || row.replyVersion === sent.replyVersion)
+          ? ''
+          : row.draft,
+      replyToMessageId:
+        row.replyVersion === sent.replyVersion &&
+        row.replyToMessageId === (sent.replyToMessageId ?? null)
+          ? null
+          : row.replyToMessageId,
       sending: pending.some((m) => m.status === 'sending'),
       sendError: pending.find((m) => m.status === 'failed')?.error ?? null,
     };
@@ -855,3 +981,102 @@ function forgetConversation(
     },
   };
 }
+
+workspaceDiscussionReducer.with(
+  discussionSharingReceived,
+  (state, { payload: [context, enabled] }) =>
+    state.context === context ? { ...state, sharingEnabled: enabled } : state,
+);
+
+workspaceDiscussionReducer.with(
+  discussionMessageActionsReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, messageActionsSupported: supported } : state,
+);
+workspaceDiscussionReducer.with(
+  discussionReplySelected,
+  (state, { payload: [workspaceId, messageId, conversationId = DEFAULT_DISCUSSION_ID] }) => {
+    const row = discussionRow(state, workspaceId, conversationId);
+    if (
+      !state.context ||
+      !row?.authorized ||
+      (messageId !== null &&
+        (state.messageActionsSupported !== true || !getItem(row.messages, messageId)))
+    )
+      return state;
+    return set(
+      state,
+      { workspaceId, conversationId },
+      { ...row, replyToMessageId: messageId, replyVersion: row.replyVersion + 1 },
+    );
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionReactionReceived,
+  (state, { payload: [target, result] }) => {
+    const row = current(state, target);
+    if (!row || !isDiscussionReactionResult(result)) return state;
+    const previous = getItem(row.reactionUpdates, result.messageId);
+    const message = getItem(row.messages, result.messageId);
+    if (
+      result.reactionVersion <=
+      Math.max(previous?.reactionVersion ?? -1, message?.reactionVersion ?? -1)
+    )
+      return state;
+    const updated = {
+      ...row,
+      reactionUpdates: createCollection('messageId', [
+        ...getItems(row.reactionUpdates).filter((r) => r.messageId !== result.messageId),
+        result,
+      ]),
+    };
+    return set(state, target, receive(updated, getItems(row.messages)));
+  },
+);
+workspaceDiscussionReducer.with(discussionReactionStarted, (state, { payload: [target, key] }) => {
+  const row = current(state, target);
+  return row
+    ? set(state, target, {
+        ...row,
+        reacting: [...row.reacting.filter((k) => k !== key), key],
+        reactionError: null,
+      })
+    : state;
+});
+workspaceDiscussionReducer.with(
+  discussionReactionFinished,
+  (state, { payload: [target, key, error] }) => {
+    const row = current(state, target);
+    if (
+      row &&
+      error === 'forbidden' &&
+      target.conversationId &&
+      target.conversationId !== DEFAULT_DISCUSSION_ID
+    )
+      return set(forgetConversation(state, target.workspaceId, target.conversationId), target, {
+        ...emptyDiscussion,
+        epoch: row.epoch,
+        error,
+      });
+    return row
+      ? set(state, target, {
+          ...row,
+          reacting: row.reacting.filter((k) => k !== key),
+          reactionError: error,
+        })
+      : state;
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionMetadataProgress,
+  (state, { payload: [target, requestId, messages, before, floor] }) => {
+    const row = current(state, target);
+    if (!row || row.requestId !== requestId || messages.some((m) => !matches(target, m)))
+      return state;
+    return set(state, target, {
+      ...receive(row, messages),
+      metadataBefore: before,
+      metadataFloor: floor,
+    });
+  },
+);

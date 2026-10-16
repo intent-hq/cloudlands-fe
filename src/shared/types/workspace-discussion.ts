@@ -15,6 +15,11 @@ export interface DiscussionMessage {
   body: string;
   author: DiscussionAuthor;
   createdAt: string;
+  /** Present together on daemons with discussionMessageActions:1. */
+  replyToMessageId?: string | null;
+  replyTo?: { id: string; author: DiscussionAuthor; body: string } | null;
+  reactions?: DiscussionReaction[];
+  reactionVersion?: number;
 }
 
 export interface DiscussionListParams {
@@ -35,6 +40,7 @@ export interface DiscussionSendParams {
   recipientPrincipalIds?: string[];
   messageId: string;
   body: string;
+  replyToMessageId?: string;
 }
 export interface DiscussionSendResult {
   message: DiscussionMessage;
@@ -142,7 +148,11 @@ export function isDiscussionMessage(value: unknown): value is DiscussionMessage 
     typeof value.body === 'string' &&
     typeof value.createdAt === 'string' &&
     Number.isFinite(Date.parse(value.createdAt)) &&
-    isDiscussionAuthor(value.author)
+    isDiscussionAuthor(value.author) &&
+    (['replyToMessageId', 'replyTo', 'reactions', 'reactionVersion'].every(
+      (key) => value[key] === undefined,
+    ) ||
+      hasDiscussionMessageActions(value))
   );
 }
 
@@ -159,5 +169,76 @@ export function isDiscussionMessageEvent(value: unknown): value is DiscussionMes
       : isDiscussionConversation(value.conversation) &&
         value.conversation.workspaceId === value.workspaceId &&
         value.conversation.id === (value.conversationId ?? DEFAULT_DISCUSSION_ID))
+  );
+}
+
+export type DiscussionReactionValue = '👍' | '🙂';
+interface DiscussionReaction {
+  reaction: DiscussionReactionValue;
+  count: number;
+  reacted: boolean;
+}
+export interface DiscussionReactParams {
+  workspaceId: string;
+  conversationId?: string;
+  messageId: string;
+  reaction: DiscussionReactionValue;
+  active: boolean;
+}
+export interface DiscussionReactionResult {
+  messageId: string;
+  reactions: DiscussionReaction[];
+  reactionVersion: number;
+}
+interface DiscussionReactionEvent extends DiscussionReactionResult {
+  workspaceId: string;
+  conversationId: string;
+}
+export function isDiscussionReactionResult(value: unknown): value is DiscussionReactionResult {
+  return (
+    record(value) &&
+    typeof value.messageId === 'string' &&
+    value.messageId.length > 0 &&
+    typeof value.reactionVersion === 'number' &&
+    Number.isSafeInteger(value.reactionVersion) &&
+    value.reactionVersion >= 0 &&
+    Array.isArray(value.reactions) &&
+    value.reactions.length <= 2 &&
+    new Set(value.reactions.map((r) => (record(r) ? r.reaction : undefined))).size ===
+      value.reactions.length &&
+    value.reactions.every(
+      (r) =>
+        record(r) &&
+        (r.reaction === '👍' || r.reaction === '🙂') &&
+        typeof r.count === 'number' &&
+        Number.isSafeInteger(r.count) &&
+        r.count > 0 &&
+        typeof r.reacted === 'boolean',
+    )
+  );
+}
+export function hasDiscussionMessageActions(value: unknown): boolean {
+  if (!record(value) || !isDiscussionReactionResult({ ...value, messageId: value.id }))
+    return false;
+  return value.replyToMessageId === null
+    ? value.replyTo === null
+    : typeof value.replyToMessageId === 'string' &&
+        value.replyToMessageId.length > 0 &&
+        value.replyToMessageId !== value.id &&
+        record(value.replyTo) &&
+        value.replyTo.id === value.replyToMessageId &&
+        typeof value.replyTo.body === 'string' &&
+        new TextEncoder().encode(value.replyTo.body).length <= DISCUSSION_MAX_BODY_BYTES &&
+        isDiscussionAuthor(value.replyTo.author);
+}
+export function isDiscussionReactionEvent(value: unknown): value is DiscussionReactionEvent {
+  return (
+    record(value) &&
+    isDiscussionReactionResult(value) &&
+    typeof value.workspaceId === 'string' &&
+    value.workspaceId.length > 0 &&
+    typeof value.conversationId === 'string' &&
+    value.conversationId.length > 0 &&
+    value.conversationId !== NEW_DISCUSSION_ID
   );
 }

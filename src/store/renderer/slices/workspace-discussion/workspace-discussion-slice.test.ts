@@ -6,6 +6,10 @@ import {
   workspaceDiscussionReducer as reduce,
   discussionContextChanged,
   discussionWorkspacesChanged,
+  discussionReactionReceived,
+  discussionReplySelected,
+  discussionMessageActionsReceived,
+  discussionReadThrough,
   discussionRequested,
   discussionDraftChanged,
   discussionMessageReceived,
@@ -190,5 +194,108 @@ describe('workspace discussion reducer', () => {
         ),
       ),
     ).toBe(state);
+  });
+});
+
+describe('discussion presentation state', () => {
+  const full = (sequence: number): DiscussionMessage => ({
+    ...message(sequence),
+    replyToMessageId: null,
+    replyTo: null,
+    reactions: [],
+    reactionVersion: 0,
+  });
+  it('merges a reaction event before history and resists stale pages and echoed snapshots', () => {
+    const initial = setup();
+    const target = initial.target;
+    let state = initial.state;
+    state = reduce(state, discussionLoadStarted(target, 'read', false));
+    state = reduce(
+      state,
+      discussionReactionReceived(target, {
+        messageId: 'server-1',
+        reactions: [{ reaction: '👍', count: 3, reacted: true }],
+        reactionVersion: 3,
+      }),
+    );
+    state = reduce(
+      state,
+      discussionPageReceived(target, 'read', { messages: [full(1)], hasMore: false }, 'initial'),
+    );
+    expect(getItems(state.byWorkspaceId.ws.default.messages)[0]).toMatchObject({
+      reactionVersion: 3,
+      reactions: [{ count: 3 }],
+    });
+    state = reduce(state, discussionMessageReceived(target, full(1)));
+    state = reduce(
+      state,
+      discussionReactionReceived(target, {
+        messageId: 'server-1',
+        reactions: [],
+        reactionVersion: 1,
+      }),
+    );
+    expect(getItems(state.byWorkspaceId.ws.default.messages)[0].reactionVersion).toBe(3);
+    expect(state.byWorkspaceId.ws.default).toMatchObject({ syncedSequence: 1, readSequence: 1 });
+    state = reduce(state, discussionContextChanged('new-owner', 'new-owner'));
+    expect(
+      reduce(
+        state,
+        discussionReactionReceived(target, {
+          messageId: 'server-1',
+          reactions: [],
+          reactionVersion: 4,
+        }),
+      ),
+    ).toBe(state);
+  });
+  it('retains a newly selected reply and unchanged draft while the prior reply acknowledgement settles', () => {
+    const initial = setup();
+    const target = initial.target;
+    let state = initial.state;
+    state = reduce(state, discussionMessageActionsReceived('connection-1', true));
+    state = reduce(state, discussionMessageReceived(target, full(1)));
+    state = reduce(state, discussionMessageReceived(target, full(2)));
+    state = reduce(state, discussionReplySelected('ws', 'server-1'));
+    state = reduce(state, discussionDraftChanged('ws', 'hello'));
+    const replyPending = {
+      ...pending,
+      replyToMessageId: 'server-1',
+      replyVersion: state.byWorkspaceId.ws.default.replyVersion,
+    };
+    state = reduce(state, discussionSendStarted(target, replyPending));
+    state = reduce(state, discussionReplySelected('ws', 'server-2'));
+    const ack = {
+      ...full(3),
+      replyToMessageId: 'server-1',
+      replyTo: { id: 'server-1', author: message(1).author, body: 'hello' },
+    };
+    state = reduce(state, discussionSendSucceeded(target, pending.id, ack));
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
+      draft: 'hello',
+      replyToMessageId: 'server-2',
+      sending: false,
+    });
+  });
+  it('initializes read history separately from a live arrival racing the initial page and fences read acknowledgements', () => {
+    const initial = setup();
+    const target = initial.target;
+    let state = initial.state;
+    state = reduce(state, discussionLoadStarted(target, 'read', false));
+    state = reduce(state, discussionMessageReceived(target, message(100)));
+    state = reduce(
+      state,
+      discussionPageReceived(target, 'read', { messages: [message(10)], hasMore: true }, 'initial'),
+    );
+    expect(state.byWorkspaceId.ws.default.readSequence).toBe(10);
+    state = reduce(state, discussionLoadStarted(target, 'old', true));
+    state = reduce(
+      state,
+      discussionPageReceived(target, 'old', { messages: [message(1)], hasMore: false }, 'older'),
+    );
+    expect(state.byWorkspaceId.ws.default.readSequence).toBe(10);
+    expect(reduce(state, discussionReadThrough({ ...target, context: 'stale' }, 100))).toBe(state);
+    state = reduce(state, discussionReadThrough(target, 100));
+    expect(state.byWorkspaceId.ws.default.readSequence).toBe(100);
   });
 });

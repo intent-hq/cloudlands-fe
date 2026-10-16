@@ -3,10 +3,13 @@ import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/wor
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   isDiscussionMessageEvent,
+  isDiscussionReactionEvent,
+  hasDiscussionMessageActions,
   DEFAULT_DISCUSSION_ID,
 } from '$shared/types/workspace-discussion';
 import {
   discussionMessageReceived,
+  discussionReactionReceived,
   discussionConversationReceived,
   discussionMembershipInvalidated,
 } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
@@ -3751,10 +3754,32 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'discussion:reaction') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionReactionEvent(data) ||
+      appStore.state.workspaceDiscussion.messageActionsSupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target) appStore.dispatch(discussionReactionReceived(target, data));
+    return;
+  }
+
   // Discussion history belongs to its own slice, never the activity timeline.
   if (type === 'discussion:message') {
     const data = (event as { data?: unknown }).data;
-    if (isDiscussionMessageEvent(data)) {
+    if (
+      isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
+        hasDiscussionMessageActions(data.message))
+    ) {
       const envelopeWorkspaceId = workspaceIdOf(event);
       if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
       const conversationId = data.conversationId ?? DEFAULT_DISCUSSION_ID;
@@ -4516,6 +4541,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'discussion:message',
+  'discussion:reaction',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

@@ -16,7 +16,7 @@ import type {
 } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import { store } from '../../store';
-import { selectDiscussionReady } from '../workspace-discussion/workspace-discussion-selectors';
+import { selectDiscussionCanSend } from '../workspace-discussion/workspace-discussion-selectors';
 import { selectActiveWorkspaceIds } from '../tab-state/tab-state-selectors';
 import {
   selectCollaborationReady,
@@ -252,7 +252,7 @@ const selectDiscussionTypingWorkspace = store.createSelector((state): string | n
     state.presence.windowVisible &&
     state.tabState.currentTabId === id &&
     state.presence.discussionComposerConversationId !== NEW_DISCUSSION_ID &&
-    selectDiscussionReady.select(state, id, state.presence.discussionComposerConversationId)
+    selectDiscussionCanSend.select(state, id, state.presence.discussionComposerConversationId)
     ? id
     : null;
 });
@@ -270,7 +270,7 @@ export const selectDiscussionTypingPeople = store.createSelector<
 >((state, workspaceId, conversationId = DEFAULT_DISCUSSION_ID) => {
   if (
     (conversationId !== DEFAULT_DISCUSSION_ID &&
-      !selectDiscussionReady.select(state, workspaceId, conversationId)) ||
+      !selectDiscussionCanSend.select(state, workspaceId, conversationId)) ||
     !sharedWorkspace(state, workspaceId) ||
     state.presence.ownPrincipalId === null
   )

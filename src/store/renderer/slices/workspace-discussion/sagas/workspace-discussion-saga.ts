@@ -1,3 +1,11 @@
+import { readSetting, invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
+import { selectCanAdministerHost } from '../../principal/principal-selectors';
+import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import { settingsChanged } from '../../settings-events/settings-events-slice';
+import {
+  openShareDialog,
+  sharePrerequisitesSettled,
+} from '../../workspace-share/workspace-share-slice';
 import { selectPanelLayoutWorkspaces } from '../../panel-layout/panel-layout-selectors';
 import { discussionTitle } from '$features/discussions/discussion-title';
 import { promoteDiscussionTab } from '../../panel-layout/panel-layout-slice';
@@ -19,6 +27,7 @@ import {
   take,
   select,
   takeEvery,
+  takeLatest,
   fork,
   type SagaGenerator,
 } from 'typed-redux-saga';
@@ -34,6 +43,15 @@ import {
 } from '$shared/types/workspace-discussion';
 import { takeLeadingInContext, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
+  discussionMessageActionsReceived,
+  discussionReactionRequested,
+  discussionReactionStarted,
+  discussionReactionFinished,
+  discussionReactionReceived,
+  discussionMetadataProgress,
+  discussionSharingReceived,
+  discussionSharingRefreshRequested,
+  discussionEnableSharingRequested,
   discussionContextChanged,
   discussionWorkspacesChanged,
   discussionRequested,
@@ -59,6 +77,11 @@ import {
   discussionMembershipInvalidated,
 } from '../workspace-discussion-slice';
 import {
+  selectDiscussionMessageActionsSupported,
+  selectDiscussionCanInteract,
+  selectDiscussionCanSend,
+  selectDiscussionCanEnableSharing,
+  selectDiscussionAuthor,
   selectDiscussionContext,
   selectDiscussionCapability,
   selectDiscussionDirectoryRequestedIds,
@@ -68,7 +91,6 @@ import {
   selectDiscussionWorkspaceIds,
   selectDiscussionTarget,
   selectWorkspaceDiscussion,
-  selectDiscussionReady,
   selectDiscussionRequestedIds,
   selectDiscussionUninitializedIds,
 } from '../workspace-discussion-selectors';
@@ -102,6 +124,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
   const requestId = uuid();
   yield* put(discussionLoadStarted(target, requestId, older));
   try {
+    const actionsSupported = yield* ensureMessageActions();
     const supported =
       conversationId === DEFAULT_DISCUSSION_ID ? false : yield* ensureConversations();
     if (conversationId === NEW_DISCUSSION_ID) {
@@ -121,6 +144,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
           limit: DISCUSSION_PAGE_SIZE,
         },
         supported,
+        actionsSupported,
       );
       if (!(yield* isCurrent(target))) return;
       if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
@@ -131,6 +155,8 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       }
       yield* put(discussionPageReceived(target, requestId, result, direction));
       if (direction !== 'newer' || !result.hasMore) {
+        if (direction === 'newer' && actionsSupported)
+          yield* refreshMessageMetadata(target, requestId, supported);
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
       }
@@ -151,23 +177,43 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
     (action.type === discussionRetryRequested.type ? action.payload[2] : action.payload[1]) ??
     DEFAULT_DISCUSSION_ID;
   const target = yield* select(selectDiscussionTarget.select, workspaceId, conversationId);
-  if (!target || !(yield* select(selectDiscussionReady.select, workspaceId, conversationId)))
+  if (!target || !(yield* select(selectDiscussionCanSend.select, workspaceId, conversationId)))
     return;
   const row = yield* select(selectWorkspaceDiscussion.select, workspaceId, conversationId);
   if (row.sending) return;
   const retryId = action.type === discussionRetryRequested.type ? action.payload[1] : undefined;
   const previous = retryId
     ? getItem(row.pending, retryId)
-    : getItems(row.pending).find((m) => m.body === row.draft && m.status === 'failed');
+    : getItems(row.pending).find(
+        (m) =>
+          m.body === row.draft &&
+          (m.replyToMessageId ?? null) === row.replyToMessageId &&
+          m.status === 'failed',
+      );
   if (retryId && !previous) return;
   // An uncertain create must retry its original key/body/recipients before any new send.
   if (conversationId === NEW_DISCUSSION_ID && getItems(row.pending).length && !previous) return;
   if (conversationId === NEW_DISCUSSION_ID && !row.recipientPrincipalIds.length) return;
   const body = previous?.body ?? row.draft;
   if (!body.trim()) return;
+  const author = yield* select(selectDiscussionAuthor.select);
+  if (!author) return;
+  const replyId = previous ? previous.replyToMessageId : (row.replyToMessageId ?? undefined);
+  const reply = replyId ? getItem(row.messages, replyId) : undefined;
   const pending = {
     id: previous?.id ?? uuid(),
     body,
+    author: previous?.author ?? author,
+    createdAt: previous?.createdAt ?? new Date().toISOString(),
+    replyVersion: previous?.replyVersion ?? row.replyVersion,
+    ...(replyId
+      ? {
+          replyToMessageId: replyId,
+          replyTo:
+            previous?.replyTo ??
+            (reply ? { id: reply.id, author: reply.author, body: reply.body } : null),
+        }
+      : {}),
     draftVersion: previous?.draftVersion ?? row.draftVersion,
     status: 'sending' as const,
     error: null,
@@ -181,6 +227,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
     return;
   }
   try {
+    const actionsSupported = yield* ensureMessageActions();
     const supported = (yield* select(selectDiscussionCapability.select)) === true;
     const { message, conversation } = yield* call(
       workspaceDiscussionClient.send,
@@ -188,6 +235,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
         workspaceId,
         messageId: pending.id,
         body,
+        ...(pending.replyToMessageId ? { replyToMessageId: pending.replyToMessageId } : {}),
         ...(conversationId === NEW_DISCUSSION_ID
           ? { recipientPrincipalIds: pending.recipientPrincipalIds }
           : conversationId !== DEFAULT_DISCUSSION_ID
@@ -195,6 +243,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
             : {}),
       },
       supported,
+      actionsSupported,
     );
     const owner = yield* select(selectDiscussionOwner.select);
     if (!owner || message.author.principalId !== JSON.parse(owner)[1])
@@ -261,7 +310,19 @@ function* runDiscussion({
         loadRecipients,
       ),
     );
+    tasks.push(
+      yield* takeLeadingInContext(
+        discussionReactionRequested,
+        (a) => JSON.stringify(a.payload),
+        reactWhileWorkspaceExists,
+      ),
+    );
     tasks.push(yield* takeEvery(discussionMembershipInvalidated, refreshMembership));
+    tasks.push(yield* takeLatest(discussionSharingRefreshRequested, refreshSharing));
+    tasks.push(
+      yield* takeEvery([settingsChanged, sharePrerequisitesSettled], requestSharingRefresh),
+    );
+    tasks.push(yield* takeEvery(discussionEnableSharingRequested, openSharing));
     const directories = yield* select(selectDiscussionDirectoryRequestedIds.select);
     for (const ws of directories) yield* put(discussionDirectoryRequested(ws));
     const ids = yield* select(selectDiscussionRequestedIds.select);
@@ -289,6 +350,7 @@ function workspaceRemoved(workspaceId: string) {
   };
 }
 function* readWhileWorkspaceExists(action: ReadAction): SagaGenerator<void> {
+  if (action.type === discussionRequested.type) yield* put(discussionSharingRefreshRequested());
   yield* race({
     done: call(loadDiscussion, action),
     removed: take(workspaceRemoved(action.payload[0])),
@@ -415,4 +477,143 @@ function* promoteCreatedConversation(
     );
     for (const id of ids) yield* put(promoteDiscussionTab(layoutId, id, conversation.id, title));
   }
+}
+
+const SHARING_PATHS = ['server.wsApi.enabled', 'server.tunnel.enabled'] as const;
+function* requestSharingRefresh(
+  action: ReturnType<typeof settingsChanged | typeof sharePrerequisitesSettled>,
+): SagaGenerator<void> {
+  if (
+    action.type === settingsChanged.type &&
+    !(action as ReturnType<typeof settingsChanged>).payload[0].some(({ path }) =>
+      SHARING_PATHS.some((p) => p === path),
+    )
+  )
+    return;
+  yield* put(discussionSharingRefreshRequested());
+}
+function* refreshSharing(): SagaGenerator<void> {
+  if (!(yield* select(selectCanAdministerHost.select))) return;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return;
+  try {
+    invalidateSettingsReadCache(SHARING_PATHS);
+    const values = yield* all(SHARING_PATHS.map((path) => call(readSetting, path)));
+    const enabled = values.every((v) => typeof v?.value === 'boolean')
+      ? values.every((v) => v?.value === true)
+      : null;
+    yield* put(discussionSharingReceived(context, enabled));
+  } catch {
+    yield* put(discussionSharingReceived(context, null));
+  }
+}
+function* openSharing({
+  payload: [workspaceId],
+}: ReturnType<typeof discussionEnableSharingRequested>): SagaGenerator<void> {
+  if (!(yield* select(selectDiscussionCanEnableSharing.select, workspaceId))) return;
+  const workspace = yield* select(selectWorkspaceById.select, workspaceId);
+  if (workspace) yield* put(openShareDialog({ workspaceId, workspaceTitle: workspace.title }));
+}
+
+function* ensureMessageActions(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionMessageActionsSupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsMessageActions);
+  yield* put(discussionMessageActionsReceived(context, supported));
+  return supported;
+}
+function* reactToMessage({
+  payload: [workspaceId, messageId, reaction, conversationId = DEFAULT_DISCUSSION_ID],
+}: ReturnType<typeof discussionReactionRequested>): SagaGenerator<void> {
+  const target = yield* select(selectDiscussionTarget.select, workspaceId, conversationId);
+  if (!target || !(yield* select(selectDiscussionCanInteract.select, workspaceId, conversationId)))
+    return;
+  const row = yield* select(selectWorkspaceDiscussion.select, workspaceId, conversationId);
+  const message = getItem(row.messages, messageId);
+  if (!message) return;
+  const key = JSON.stringify([messageId, reaction]);
+  const active = !message.reactions?.find((r) => r.reaction === reaction)?.reacted;
+  yield* put(discussionReactionStarted(target, key));
+  try {
+    const result = yield* call(
+      workspaceDiscussionClient.react,
+      {
+        workspaceId,
+        ...(conversationId !== DEFAULT_DISCUSSION_ID ? { conversationId } : {}),
+        messageId,
+        reaction,
+        active,
+      },
+      true,
+    );
+    if (!(yield* isCurrent(target))) return;
+    yield* put(discussionReactionReceived(target, result));
+    yield* put(discussionReactionFinished(target, key, null));
+  } catch (error) {
+    if (yield* isCurrent(target))
+      yield* put(discussionReactionFinished(target, key, discussionError(error)));
+  }
+}
+function* reactWhileWorkspaceExists(
+  action: ReturnType<typeof discussionReactionRequested>,
+): SagaGenerator<void> {
+  yield* race({
+    done: call(reactToMessage, action),
+    removed: take(workspaceRemoved(action.payload[0])),
+  });
+}
+/** Re-read metadata on cached rows without advancing or rewinding the new-message cursor. */
+function* refreshMessageMetadata(
+  target: DiscussionTarget,
+  requestId: string,
+  conversationsSupported: boolean,
+): SagaGenerator<void> {
+  const row = yield* select(
+    selectWorkspaceDiscussion.select,
+    target.workspaceId,
+    target.conversationId,
+  );
+  const messages = getItems(row.messages);
+  if (!messages.length) return;
+  const floor = row.metadataFloor ?? messages[0].sequence;
+  const latest = messages[messages.length - 1].sequence;
+  let before: number | undefined =
+    row.metadataBefore ?? (latest < Number.MAX_SAFE_INTEGER ? latest + 1 : undefined);
+  for (let page = 0; page < MAX_CATCH_UP_PAGES; page++) {
+    if (before !== undefined && before <= floor) {
+      yield* put(discussionMetadataProgress(target, requestId, [], null, null));
+      return;
+    }
+    const result = yield* call(
+      workspaceDiscussionClient.list,
+      {
+        workspaceId: target.workspaceId,
+        ...(target.conversationId !== DEFAULT_DISCUSSION_ID
+          ? { conversationId: target.conversationId }
+          : {}),
+        ...(before !== undefined ? { beforeSequence: before } : {}),
+        limit: DISCUSSION_PAGE_SIZE,
+      },
+      conversationsSupported,
+      true,
+    );
+    if (!(yield* isCurrent(target))) return;
+    const next = result.messages[0]?.sequence;
+    if (next === undefined && result.hasMore) throw new Error('Nonadvancing discussion metadata');
+    const done = !result.hasMore || next === undefined || next <= floor;
+    yield* put(
+      discussionMetadataProgress(
+        target,
+        requestId,
+        result.messages.filter((message) => message.sequence >= floor),
+        done ? null : next,
+        done ? null : floor,
+      ),
+    );
+    if (done || next === undefined) return;
+    before = next;
+  }
+  throw new Error('Discussion metadata refresh incomplete');
 }

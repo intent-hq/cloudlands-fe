@@ -135,3 +135,102 @@ describe('discussion conversation wire contract', () => {
     ).toBe(false);
   });
 });
+
+describe('discussion reply and reaction wire contract', () => {
+  const supportedMessage = {
+    ...message,
+    replyToMessageId: null,
+    replyTo: null,
+    reactions: [],
+    reactionVersion: 0,
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])(
+    'requires exact message-actions capability %s',
+    async (value) => {
+      wire.request.mockResolvedValue({ discussionMessageActions: value });
+      expect(await client.supportsMessageActions()).toBe(value === 1);
+      expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+    },
+  );
+  it('blocks replies and reactions before sending to unsupported daemons', async () => {
+    await expect(
+      client.send({
+        workspaceId: 'ws',
+        messageId: 'key',
+        body: 'reply',
+        replyToMessageId: 'original',
+      }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    await expect(
+      client.react({ workspaceId: 'ws', messageId: 'original', reaction: '👍', active: true }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('sends exact reply targets and rejects a mismatched or stripped acknowledgement', async () => {
+    const params = {
+      workspaceId: 'ws',
+      conversationId: 'c2',
+      messageId: 'key',
+      body: 'hello',
+      replyToMessageId: 'original',
+    };
+    const reply = {
+      ...supportedMessage,
+      replyToMessageId: 'original',
+      replyTo: { id: 'original', body: 'quote', author: author('other') },
+    };
+    wire.request.mockResolvedValue({ message: reply, conversation });
+    expect(await client.send(params, true, true)).toEqual({ message: reply, conversation });
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    wire.request.mockResolvedValue({ message: supportedMessage, conversation });
+    await expect(client.send(params, true, true)).rejects.toThrow();
+    wire.request.mockResolvedValue({ message, conversation });
+    await expect(
+      client.send({ ...params, replyToMessageId: undefined }, true, true),
+    ).rejects.toThrow();
+  });
+  it('accepts legacy history only without the message-actions capability', async () => {
+    wire.request.mockResolvedValue({ messages: [message], hasMore: false, conversation });
+    await expect(
+      client.list({ workspaceId: 'ws', conversationId: 'c2' }, true, false),
+    ).resolves.toMatchObject({ messages: [message] });
+    await expect(
+      client.list({ workspaceId: 'ws', conversationId: 'c2' }, true, true),
+    ).rejects.toThrow();
+    wire.request.mockResolvedValue({
+      messages: [{ ...supportedMessage, reactionVersion: -1 }],
+      hasMore: false,
+      conversation,
+    });
+    await expect(
+      client.list({ workspaceId: 'ws', conversationId: 'c2' }, true, true),
+    ).rejects.toThrow();
+  });
+  it('validates exact desired reaction payloads and rejects malformed projections', async () => {
+    const params = {
+      workspaceId: 'ws',
+      conversationId: 'c2',
+      messageId: 'server',
+      reaction: '👍' as const,
+      active: false,
+    };
+    const response = {
+      messageId: 'server',
+      reactions: [{ reaction: '👍', count: 2, reacted: false }],
+      reactionVersion: 4,
+    };
+    wire.request.mockResolvedValue(response);
+    expect(await client.react(params, true)).toEqual(response);
+    expect(wire.request).toHaveBeenCalledWith('discussion.react', params);
+    for (const invalid of [
+      { ...response, messageId: 'wrong' },
+      { ...response, reactionVersion: -1 },
+      { ...response, reactions: [{ reaction: '🚀', count: 1, reacted: true }] },
+      { ...response, reactions: [{ reaction: '👍', count: 0, reacted: false }] },
+      { ...response, reactions: [...response.reactions, ...response.reactions] },
+    ]) {
+      wire.request.mockResolvedValue(invalid);
+      await expect(client.react(params, true)).rejects.toThrow();
+    }
+  });
+});

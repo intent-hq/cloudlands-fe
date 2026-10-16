@@ -6,6 +6,10 @@ import {
   isDiscussionMessage,
   isDiscussionConversation,
   isDiscussionAuthor,
+  hasDiscussionMessageActions,
+  isDiscussionReactionResult,
+  type DiscussionReactParams,
+  type DiscussionReactionResult,
   type DiscussionError,
   type DiscussionListParams,
   type DiscussionListResult,
@@ -35,6 +39,24 @@ function requireConversations(supported: boolean): void {
 const pageLimit = (limit?: number) =>
   Math.min(DISCUSSION_PAGE_SIZE, Math.max(1, limit ?? DISCUSSION_PAGE_SIZE));
 export const workspaceDiscussionClient = {
+  async supportsMessageActions(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionMessageActions?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionMessageActions === 1;
+    } catch {
+      return false;
+    }
+  },
+  async react(params: DiscussionReactParams, supported = false): Promise<DiscussionReactionResult> {
+    requireConversations(supported);
+    const result = await backendRequest<DiscussionReactionResult>('discussion.react', params);
+    if (!isDiscussionReactionResult(result) || result.messageId !== params.messageId)
+      throw new Error('Invalid discussion reaction response');
+    return result;
+  },
   async supportsConversations(): Promise<boolean> {
     try {
       const result = await backendRequest<{ discussionConversations?: unknown }>(
@@ -46,7 +68,11 @@ export const workspaceDiscussionClient = {
       return false;
     }
   },
-  async list(params: DiscussionListParams, supported = false): Promise<DiscussionListResult> {
+  async list(
+    params: DiscussionListParams,
+    supported = false,
+    actionsSupported = false,
+  ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
     if (id === NEW_DISCUSSION_ID) throw new Error('Local discussion has no history');
@@ -63,6 +89,7 @@ export const workspaceDiscussionClient = {
       !result.messages.every(
         (message) =>
           isDiscussionMessage(message) &&
+          (!actionsSupported || hasDiscussionMessageActions(message)) &&
           message.workspaceId === params.workspaceId &&
           (message.conversationId ?? DEFAULT_DISCUSSION_ID) === id &&
           (params.beforeSequence === undefined || message.sequence < params.beforeSequence) &&
@@ -84,7 +111,12 @@ export const workspaceDiscussionClient = {
       throw new Error('Duplicate discussion list rows');
     return { ...result, messages };
   },
-  async send(params: DiscussionSendParams, supported = false): Promise<DiscussionSendResult> {
+  async send(
+    params: DiscussionSendParams,
+    supported = false,
+    actionsSupported = false,
+  ): Promise<DiscussionSendResult> {
+    if (params.replyToMessageId !== undefined) requireConversations(actionsSupported);
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID || params.recipientPrincipalIds !== undefined)
       requireConversations(supported);
@@ -94,6 +126,8 @@ export const workspaceDiscussionClient = {
     const resultId = result?.message?.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (
       !isDiscussionMessage(result?.message) ||
+      (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
+      (result?.message?.replyToMessageId ?? null) !== (params.replyToMessageId ?? null) ||
       result.message.workspaceId !== params.workspaceId ||
       result.message.body !== params.body ||
       (params.recipientPrincipalIds ? resultId === DEFAULT_DISCUSSION_ID : resultId !== id) ||

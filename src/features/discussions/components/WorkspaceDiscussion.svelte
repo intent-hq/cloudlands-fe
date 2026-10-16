@@ -4,18 +4,31 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { DiscussionError } from '$shared/types/workspace-discussion';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
+  import { notify } from '$lib/components/patterns/notify';
+  import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { store } from '$store/renderer/store';
   import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectWorkspaceDiscussion,
     selectDiscussionMessages,
-    selectDiscussionReady,
+    selectDiscussionCanSend,
+    selectDiscussionUnread,
+    selectDiscussionTarget,
+    selectDiscussionReply,
+    selectDiscussionCanInteract,
+    selectDiscussionSharingOff,
+    selectDiscussionCanEnableSharing,
     selectDiscussionContext,
     selectDiscussionPending,
+    selectDiscussionRecipientsForComposer,
     selectDiscussionRecipients,
     selectDiscussionCanCreate,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import {
+    discussionReadThrough,
+    discussionReplySelected,
+    discussionReactionRequested,
+    discussionEnableSharingRequested,
     discussionRequested,
     discussionOlderRequested,
     discussionDraftChanged,
@@ -36,11 +49,13 @@
 
   let {
     workspaceId,
+    sourcePanelId,
     conversationId = 'default',
     isActive = true,
     isPanelFocused = false,
   }: {
     workspaceId: string;
+    sourcePanelId?: string;
     conversationId?: string;
     isActive?: boolean;
     isPanelFocused?: boolean;
@@ -54,10 +69,33 @@
   const pending$ = selectDiscussionPending(workspaceId$, conversationId$);
   const typing$ = selectDiscussionTypingPeople(workspaceId$, conversationId$);
   const recipients$ = selectDiscussionRecipients(workspaceId$);
+  const composerRecipients$ = selectDiscussionRecipientsForComposer(workspaceId$, conversationId$);
   const canCreate$ = selectDiscussionCanCreate(workspaceId$);
   const context$ = selectDiscussionContext();
-  const ready$ = selectDiscussionReady(workspaceId$, conversationId$);
+  const ready$ = selectDiscussionCanSend(workspaceId$, conversationId$);
+  const unread$ = selectDiscussionUnread(workspaceId$, conversationId$);
+  const target$ = selectDiscussionTarget(workspaceId$, conversationId$);
+  const reply$ = selectDiscussionReply(workspaceId$, conversationId$);
+  const canInteract$ = selectDiscussionCanInteract(workspaceId$, conversationId$);
+  const sharingOff$ = selectDiscussionSharingOff();
+  const canEnableSharing$ = selectDiscussionCanEnableSharing(workspaceId$);
   const multiplayer$ = selectLabsMultiplayerEnabled();
+  const composerNames = $derived(
+    $composerRecipients$.map(
+      (person) =>
+        person.displayName || person.login || m.workspace_discussion_unknownAuthor_label(),
+    ),
+  );
+  const composerPlaceholder = $derived(
+    composerNames.length === 1
+      ? m.workspace_discussion_composerPerson_placeholder({ name: composerNames[0] })
+      : composerNames.length === 2
+        ? m.workspace_discussion_composerPair_placeholder({
+            first: composerNames[0],
+            second: composerNames[1],
+          })
+        : undefined,
+  );
   const isNew = $derived(conversationId === 'new');
   const recipientProfiles = $derived([
     ...$recipients$.members,
@@ -90,15 +128,78 @@
 
 {#if $multiplayer$}
   <DiscussionThread
+    {workspaceId}
+    {conversationId}
+    {sourcePanelId}
     messages={$messages$}
+    pendingMessages={$pending$.flatMap((message) =>
+      message.author && message.createdAt
+        ? [
+            {
+              id: message.id,
+              body: message.body,
+              author: message.author,
+              createdAt: message.createdAt,
+              status: message.status,
+              ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+              ...(message.error ? { error: errorText(message.error, true) ?? undefined } : {}),
+            },
+          ]
+        : [],
+    )}
+    typingAuthors={$typing$}
+    reactionsByMessage={Object.fromEntries(
+      $messages$.map((message) => [
+        message.id,
+        (message.reactions ?? []).map((r) => ({
+          emoji: r.reaction,
+          count: r.count,
+          reacted: r.reacted,
+        })),
+      ]),
+    )}
+    unreadAfterSequence={$unread$.count > 0 ? $discussion$.readSequence : null}
+    unreadCount={$unread$.count}
+    firstUnreadSequence={$unread$.firstSequence}
+    onReadThrough={(sequence) => {
+      if (
+        $target$ &&
+        isActive &&
+        isPanelFocused &&
+        document.visibilityState === 'visible' &&
+        document.hasFocus()
+      )
+        store.dispatch(discussionReadThrough($target$, sequence));
+    }}
+    onReply={$canInteract$
+      ? (message) =>
+          store.dispatch(discussionReplySelected(workspaceId, message.id, conversationId))
+      : undefined}
+    onReaction={$canInteract$
+      ? (id, emoji) => {
+          if (emoji === '👍' || emoji === '🙂')
+            store.dispatch(discussionReactionRequested(workspaceId, id, emoji, conversationId));
+        }
+      : undefined}
+    onCopyMessage={(message) =>
+      void writeTextToClipboard(message.body).catch(() =>
+        notify.error(m.layout_panelTabBar_copyFailed_error()),
+      )}
+    interactionError={$discussion$.reactionError ? m.workspace_discussion_reaction_error() : null}
+    replyTo={$reply$}
+    onCancelReply={() => store.dispatch(discussionReplySelected(workspaceId, null, conversationId))}
+    sharingOff={$sharingOff$}
+    canEnableSharing={$canEnableSharing$}
+    onEnableSharing={() => store.dispatch(discussionEnableSharingRequested(workspaceId))}
     showEmptyState={!isNew}
     emptyDescription={conversationId !== 'default'
       ? m.workspace_discussion_selectedEmpty_description()
       : undefined}
     focusComposer={!isNew}
-    composerPlaceholder={isNew || conversationId !== 'default'
-      ? m.workspace_discussion_selectedComposer_placeholder()
-      : undefined}
+    composerPlaceholder={composerPlaceholder ??
+      (isNew || conversationId !== 'default'
+        ? m.workspace_discussion_selectedComposer_placeholder()
+        : undefined)}
     typingLabel={isNew ? null : presenceTypingLabel($typing$)}
     onComposerFocusChange={(focused) =>
       !isNew &&
@@ -116,15 +217,8 @@
     loadingOlder={$discussion$.loadingOlder}
     hasMore={$discussion$.hasMore}
     error={isNew && $recipients$.error ? null : errorText($discussion$.error)}
-    sendError={errorText(
-      $pending$.find(
-        (message) => message.status === 'failed' && message.body === $discussion$.draft,
-      )?.error ?? ($pending$.length === 0 ? $discussion$.sendError : null),
-      true,
-    )}
-    retryDraft={$pending$.some(
-      (message) => message.status === 'failed' && message.body === $discussion$.draft,
-    )}
+    sendError={$pending$.length === 0 ? errorText($discussion$.sendError, true) : null}
+    retryDraft={false}
     sending={$discussion$.sending}
     failedMessages={$pending$
       .filter((message) => message.status === 'failed' && message.body !== $discussion$.draft)
@@ -135,7 +229,7 @@
       }))}
     onRetryMessage={(id) =>
       store.dispatch(discussionRetryRequested(workspaceId, id, conversationId))}
-    canCompose={isNew ? $canCreate$ : undefined}
+    canCompose={$ready$ && (!isNew || $canCreate$)}
     canSendDraft={!isNew ||
       !$discussion$.recipientsLocked ||
       $pending$.some((message) => message.body === $discussion$.draft)}

@@ -1,8 +1,14 @@
-import { DEFAULT_DISCUSSION_ID, NEW_DISCUSSION_ID } from '$shared/types/workspace-discussion';
+import {
+  DEFAULT_DISCUSSION_ID,
+  NEW_DISCUSSION_ID,
+  type DiscussionAuthor,
+} from '$shared/types/workspace-discussion';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '../../store';
 import {
+  selectCanAdministerHost,
   selectCollaborationReady,
   selectPrincipalActionContext,
   selectPrincipalSnapshot,
@@ -164,4 +170,82 @@ export const selectDiscussionDirectoryRequestedIds = store.createSelector(
 );
 export const selectDiscussionRecipientState = store.createSelector(
   (state, workspaceId: string) => state.workspaceDiscussion.recipients[workspaceId],
+);
+
+export const selectDiscussionAuthor = store.createSelector((state): DiscussionAuthor | null => {
+  const principal = selectPrincipalSnapshot.select(state)?.principal;
+  return principal
+    ? {
+        principalId: principal.id,
+        login: principal.login ?? null,
+        displayName: principal.displayName ?? null,
+        avatarUrl: principal.avatarUrl ?? null,
+      }
+    : null;
+});
+export const selectDiscussionUnread = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
+    const row = selectWorkspaceDiscussion.select(state, workspaceId, conversationId);
+    const owner = state.workspaceDiscussion.owner;
+    const principalId =
+      selectDiscussionAuthor.select(state)?.principalId ??
+      (owner ? (JSON.parse(owner) as [string, string])[1] : null);
+    const readSequence = row.readSequence;
+    const unread =
+      readSequence === null
+        ? []
+        : selectDiscussionMessages
+            .select(state, workspaceId, conversationId)
+            .filter(
+              (message) =>
+                message.sequence > readSequence && message.author.principalId !== principalId,
+            );
+    return { count: unread.length, firstSequence: unread[0]?.sequence ?? null };
+  },
+);
+
+export const selectDiscussionSharingOff = store.createSelector(
+  (state) =>
+    state.workspaceDiscussion.context === selectDiscussionContext.select(state) &&
+    state.workspaceDiscussion.sharingEnabled === false,
+);
+export const selectDiscussionCanSend = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    selectDiscussionReady.select(state, workspaceId, conversationId) &&
+    !selectDiscussionSharingOff.select(state),
+);
+export const selectDiscussionCanEnableSharing = store.createSelector(
+  (state, workspaceId: string) =>
+    selectCanAdministerHost.select(state) && selectCanShareWorkspace.select(state, workspaceId),
+);
+
+export const selectDiscussionMessageActionsSupported = store.createSelector(
+  (state) => state.workspaceDiscussion.messageActionsSupported,
+);
+export const selectDiscussionCanInteract = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    conversationId !== NEW_DISCUSSION_ID &&
+    state.workspaceDiscussion.messageActionsSupported === true &&
+    selectDiscussionCanSend.select(state, workspaceId, conversationId),
+);
+export const selectDiscussionReply = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
+    const row = selectWorkspaceDiscussion.select(state, workspaceId, conversationId);
+    return row.replyToMessageId && row.authorized
+      ? (getItem(row.messages, row.replyToMessageId) ?? null)
+      : null;
+  },
+);
+
+export const selectDiscussionRecipientsForComposer = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
+    if (conversationId === NEW_DISCUSSION_ID)
+      return selectDiscussionRecipients.select(state, workspaceId).selectedMembers;
+    const conversation = getItem(
+      selectDiscussionDirectory.select(state, workspaceId).conversations,
+      conversationId,
+    );
+    const principalId = selectDiscussionAuthor.select(state)?.principalId;
+    return conversation?.participants.filter((person) => person.principalId !== principalId) ?? [];
+  },
 );
