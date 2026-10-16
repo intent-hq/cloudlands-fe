@@ -165,9 +165,20 @@ function* refreshRecentRepositoriesWorker(
     );
   } catch (error) {
     if (!(yield* call(refreshCurrent, id, requestId, admission, dispatch))) return;
+    const current = yield* selectWorkspaceInitializerRecentRepoRefresh.effect(id);
     logger.error(
       'Failed to load recent repositories',
       handleError(error, { component: 'RepoSelector', action: 'loadRecentRepos' }),
+    );
+    yield* put(
+      workspaceInitializerRecentReposRefreshFinished(
+        id,
+        requestId,
+        'failed',
+        current?.repos ?? [],
+        current?.workspaces ?? [],
+        current?.registryRepos ?? [],
+      ),
     );
   } finally {
     performanceMonitor.end('loadRecentRepos');

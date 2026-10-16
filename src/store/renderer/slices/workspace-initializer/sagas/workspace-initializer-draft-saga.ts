@@ -1,5 +1,5 @@
-import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, fork, put, take } from 'typed-redux-saga';
+import { buffers, type Task } from 'redux-saga';
+import { actionChannel, call, cancel, delay, fork, put, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -81,7 +81,13 @@ function* persistDraft(payload: WorkspaceInitializerDraftPayload) {
   }
 }
 
-function* restoreDraft(id: string, requestId: string, legacyKey: string) {
+function* restoreDraft(
+  id: string,
+  requestId: string,
+  legacyKey: string,
+  restoreEpoch: number,
+  mutationEpoch: { value: number },
+) {
   try {
     const draft = yield* call(
       [appClient.drafts, appClient.drafts.get],
@@ -108,9 +114,10 @@ function* restoreDraft(id: string, requestId: string, legacyKey: string) {
       return 'empty' as const;
     }
 
-    // Serialize the one-time migration with every later save/clear. A migration
-    // failure is non-fatal: the in-memory legacy prompt still restores.
-    yield* call(persistDraft, { text: legacyPrompt });
+    // Persist the one-time migration only if no newer save/clear was admitted
+    // while the daemon read was pending. The in-memory legacy prompt still
+    // restores when migration loses that race or persistence fails.
+    if (mutationEpoch.value === restoreEpoch) yield* call(persistDraft, { text: legacyPrompt });
     yield* put(
       workspaceInitializerDraftRestoreFinished(id, requestId, 'restored', legacyPrompt, []),
     );
@@ -122,6 +129,19 @@ function* restoreDraft(id: string, requestId: string, legacyKey: string) {
     yield* put(workspaceInitializerDraftRestoreFinished(id, requestId, 'error', '', []));
     return 'error' as const;
   }
+}
+
+function* restoreDraftInBackground(
+  id: string,
+  requestId: string,
+  legacyKey: string,
+  activeRestoreRequestIds: Record<string, string | undefined>,
+  restoreStatuses: Record<string, 'pending' | 'restored' | 'empty' | 'error' | undefined>,
+  restoreEpoch: number,
+  mutationEpoch: { value: number },
+) {
+  const status = yield* call(restoreDraft, id, requestId, legacyKey, restoreEpoch, mutationEpoch);
+  if (activeRestoreRequestIds[id] === requestId) restoreStatuses[id] = status;
 }
 
 export function* workspaceInitializerDraftSaga() {
@@ -140,8 +160,11 @@ export function* workspaceInitializerDraftSaga() {
   let pending: Record<string, PendingSave | undefined> = {};
   const restoreStatuses: Record<string, 'pending' | 'restored' | 'empty' | 'error' | undefined> =
     {};
+  const restoreTasks: Record<string, Task | undefined> = {};
+  const activeRestoreRequestIds: Record<string, string | undefined> = {};
   const stoppedOwners = new Set<string>();
   let version = 0;
+  const mutationEpoch = { value: 0 };
 
   try {
     while (true) {
@@ -150,9 +173,21 @@ export function* workspaceInitializerDraftSaga() {
         const [id, requestId, legacyKey] = (
           action as ReturnType<typeof workspaceInitializerDraftRestoreRequested>
         ).payload;
+        const previousRestore = restoreTasks[id];
+        if (previousRestore) yield* cancel(previousRestore);
         stoppedOwners.delete(id);
+        activeRestoreRequestIds[id] = requestId;
         restoreStatuses[id] = 'pending';
-        restoreStatuses[id] = yield* call(restoreDraft, id, requestId, legacyKey);
+        restoreTasks[id] = yield* fork(
+          restoreDraftInBackground,
+          id,
+          requestId,
+          legacyKey,
+          activeRestoreRequestIds,
+          restoreStatuses,
+          mutationEpoch.value,
+          mutationEpoch,
+        );
         continue;
       }
 
@@ -160,6 +195,7 @@ export function* workspaceInitializerDraftSaga() {
         const [id, payload] = (action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>)
           .payload;
         if (stoppedOwners.has(id)) continue;
+        mutationEpoch.value++;
         const nextVersion = ++version;
         pending[id] = {
           payload,
@@ -216,7 +252,16 @@ export function* workspaceInitializerDraftSaga() {
           action as ReturnType<typeof workspaceInitializerDraftClearRequested>
         ).payload;
         stoppedOwners.add(id);
+        mutationEpoch.value++;
         pending = {};
+        for (const task of Object.values(restoreTasks)) {
+          if (task) yield* cancel(task);
+        }
+        for (const ownerId of Object.keys(restoreTasks)) {
+          delete restoreTasks[ownerId];
+          delete activeRestoreRequestIds[ownerId];
+          delete restoreStatuses[ownerId];
+        }
         yield* call(removeAllLegacyPrompts);
         try {
           yield* call(
@@ -232,9 +277,16 @@ export function* workspaceInitializerDraftSaga() {
         continue;
       }
 
-      const [id] = (action as ReturnType<typeof workspaceInitializerDraftOwnerReleased>).payload;
+      const [id, restoreRequestId] = (
+        action as ReturnType<typeof workspaceInitializerDraftOwnerReleased>
+      ).payload;
+      if (activeRestoreRequestIds[id] !== restoreRequestId) continue;
+      const restoreTask = restoreTasks[id];
+      if (restoreTask) yield* cancel(restoreTask);
       delete pending[id];
       delete restoreStatuses[id];
+      delete restoreTasks[id];
+      delete activeRestoreRequestIds[id];
       stoppedOwners.delete(id);
     }
   } finally {

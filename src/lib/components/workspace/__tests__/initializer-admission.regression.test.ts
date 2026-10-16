@@ -438,6 +438,34 @@ it('does not create after validation completes on an unmounted initializer', asy
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
 });
 
+it('releases an in-flight create when the initializer unmounts', async () => {
+  let release!: (value: unknown) => void;
+  mocks.create.mockReturnValue(
+    new Promise((resolve) => {
+      release = resolve;
+    }),
+  );
+  sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
+  const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  const button = view.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  await fireEvent.click(button);
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+
+  view.unmount();
+  release({
+    ok: true,
+    data: {
+      workspace: { id: 'created', title: 'created', status: 'active' },
+      initialAgent: { id: 'created-agent' },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(mocks.placement).not.toHaveBeenCalled();
+  expect(mocks.goto).not.toHaveBeenCalled();
+});
+
 function admitHostMember() {
   store.dispatch(setLabsMultiplayerEnabled(true));
   const { principal } = withHostPrincipal(store.state, 'member');

@@ -124,6 +124,7 @@
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
+    clearWorkspaceInitializationOutcome,
     debounceWorkspaceInitializerOnboardingFormState,
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
@@ -383,6 +384,12 @@
   } | null>(null);
   const initializationConsumerId = crypto.randomUUID();
   let onboardingInitializationGeneration = 0;
+  let activeInitializationSeq: number | null = null;
+
+  function releaseInitialization(seq: number) {
+    appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
+    if (activeInitializationSeq === seq) activeInitializationSeq = null;
+  }
 
   // §5.31 gate — enhance is auggie-only; the daemon derives the effective
   // provider from settings, so the FE mirror gates on the same derivation.
@@ -466,7 +473,7 @@
         }
       }
     }
-    onboardingDraftRestored = true;
+    onboardingDraftRestored = restore.status !== 'error';
   });
 
   /** Debounced daemon draft save: prompt text + image context items +
@@ -763,6 +770,7 @@
         onboardingDraftRestoreRequestId,
       ),
     );
+    if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     setupScriptProbeScheduler.dispose();
   });
@@ -1084,6 +1092,7 @@
     request: WorkspaceInitializationRequest,
     outcome: WorkspaceInitializationOutcome | undefined,
   ) {
+    if (outcome?.pullCompleted) onboardingBranchBehind = 0;
     const stagedItems = outcome?.stagedItems as ContextItem[] | undefined;
     if (stagedItems) {
       onboardingImageItems = stagedItems.filter((item) => item.imageData && item.imageMimeType);
@@ -1095,21 +1104,28 @@
       onboardingShowPullConflictDialog = true;
     }
     if (
-      request.heldMessage &&
       outcome?.workspaceId &&
-      (outcome.stage === 'attachments' || outcome.stage === 'first-message')
+      (outcome.stage === 'post-create' ||
+        outcome.stage === 'attachments' ||
+        outcome.stage === 'first-message')
     ) {
       onboardingPendingSend = {
         request: {
           ...request,
           createRequest: undefined,
           pull: undefined,
-          resume: { workspaceId: outcome.workspaceId, agentId: outcome.agentId },
-          stagedItems: outcome.stagedItems ?? request.stagedItems,
-          heldMessage: {
-            ...request.heldMessage,
-            imageBlocks: outcome.retryImageBlocks ?? request.heldMessage.imageBlocks,
+          resume: {
+            workspaceId: outcome.workspaceId,
+            agentId: outcome.agentId,
+            workspacePath: outcome.workspacePath,
           },
+          stagedItems: outcome.stagedItems ?? request.stagedItems,
+          heldMessage: request.heldMessage
+            ? {
+                ...request.heldMessage,
+                imageBlocks: outcome.retryImageBlocks ?? request.heldMessage.imageBlocks,
+              }
+            : undefined,
         },
       };
     } else if (outcome?.stage === 'create') {
@@ -1134,6 +1150,7 @@
       resourceId,
     });
     onboardingCreateProgressId = action.payload.progressId;
+    activeInitializationSeq = action.seq;
     try {
       const result = await appStore.dispatch(action);
       return result;
@@ -1147,17 +1164,14 @@
         ),
       );
       return null;
+    } finally {
+      releaseInitialization(action.seq);
     }
   }
 
   async function handleOnboardingSubmit() {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
-    if (hasBlockingAttachments(onboardingStagedItems)) {
-      notify.error(m.onboarding_page_blockingAttachments_toast());
-      return;
-    }
-
     const admission = selectPrincipalActionContext.select(appStore.state);
     if (admission === null || !selectWorkspaceCreationVisible.select(appStore.state)) return;
     const resourceId = `onboarding:${admission}:${++onboardingInitializationGeneration}`;
@@ -1215,6 +1229,11 @@
       const result = await submitWorkspaceInitialization(request, resourceId);
       if (result) await complete(result.workspaceId, result.workspacePath);
       isOnboardingCreating = false;
+      return;
+    }
+
+    if (hasBlockingAttachments(onboardingStagedItems)) {
+      notify.error(m.onboarding_page_blockingAttachments_toast());
       return;
     }
 

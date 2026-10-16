@@ -19,6 +19,7 @@ import {
   workspaceInitializerDraftClearFinished,
   workspaceInitializerDraftClearRequested,
   workspaceInitializerDraftFlushRequested,
+  workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreFinished,
   workspaceInitializerDraftRestoreRequested,
   workspaceInitializerDraftSaveScheduled,
@@ -30,6 +31,14 @@ const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 describe('workspaceInitializerDraftSaga', () => {
   let channel: ReturnType<typeof stdChannel>;
@@ -102,6 +111,64 @@ describe('workspaceInitializerDraftSaga', () => {
         [{ id: 'image-1', type: 'file', label: 'image.png' }],
       ],
     ]);
+  });
+
+  it('flushes a newer save while restore is still pending', async () => {
+    const held = deferred<null>();
+    mocks.get.mockReturnValue(held.promise);
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-1', 'legacy-key'));
+    channel.put(workspaceInitializerDraftSaveScheduled('compact', { text: 'typed while loading' }));
+    channel.put(workspaceInitializerDraftFlushRequested('compact'));
+    await settle();
+
+    expect(mocks.set.mock.calls).toEqual([
+      ['__new-workspace__', '__initializer__', 'typed while loading', undefined],
+    ]);
+    expect(mocks.get).toHaveBeenCalledOnce();
+    held.resolve(null);
+  });
+
+  it('does not let late legacy migration overwrite a newer flushed save', async () => {
+    const held = deferred<null>();
+    mocks.get.mockReturnValue(held.promise);
+    sessionStorage.setItem('legacy-key', 'legacy prompt');
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-1', 'legacy-key'));
+    channel.put(workspaceInitializerDraftSaveScheduled('compact', { text: 'new prompt' }));
+    channel.put(workspaceInitializerDraftFlushRequested('compact'));
+    await settle();
+    held.resolve(null);
+    await settle();
+
+    expect(mocks.set.mock.calls).toEqual([
+      ['__new-workspace__', '__initializer__', 'new prompt', undefined],
+    ]);
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished(
+        'compact',
+        'restore-1',
+        'restored',
+        'legacy prompt',
+        [],
+      ),
+    );
+  });
+
+  it('ignores a stale owner release after a newer restore starts', async () => {
+    const oldRestore = deferred<null>();
+    const newRestore = deferred<{ text: string; attachments: never[] }>();
+    mocks.get.mockReturnValueOnce(oldRestore.promise).mockReturnValueOnce(newRestore.promise);
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-old', 'legacy-key'));
+    await settle();
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-new', 'legacy-key'));
+    channel.put(workspaceInitializerDraftOwnerReleased('compact', 'restore-old'));
+    await settle();
+    newRestore.resolve({ text: 'current', attachments: [] });
+    await settle();
+
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'restore-new', 'restored', 'current', []),
+    );
+    oldRestore.resolve(null);
   });
 
   it('cancels pending saves before clear and removes both legacy keys', async () => {

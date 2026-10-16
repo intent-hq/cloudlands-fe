@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
     appState: {} as Record<string, unknown>,
     dispatch: vi.fn(),
     channel: null as ReturnType<typeof stdChannel> | null,
+    originUrl: vi.fn(),
   };
 });
 
@@ -165,7 +166,10 @@ import {
   dismissWorkspaceInitializerRecentRepo,
   workspaceInitializerReducer,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-import { selectWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+import {
+  selectWorkspaceInitializerRecentRepoRefresh,
+  selectWorkspaceInitializerRecentRepos,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { tick } from 'svelte';
 import { performanceMonitor } from '$lib/utils/performance';
 import type { StoreState } from '$store/renderer/types';
@@ -228,6 +232,8 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset();
   vi.mocked(workspaceClient.list).mockReset();
   vi.mocked(performanceMonitor.end).mockClear();
+  mocks.originUrl.mockReset();
+  mocks.originUrl.mockResolvedValue(null);
   setState(admit());
   vi.mocked(workspaceClient.list).mockResolvedValue({ ok: true, data: [] });
   vi.mocked(invoke).mockResolvedValue({ success: true, data: [] });
@@ -239,7 +245,7 @@ beforeEach(() => {
       dispatch: store.dispatch,
     },
     workspaceInitializerRepositorySaga,
-    { git: { originUrl: vi.fn(async () => null) } } as never,
+    { git: { originUrl: mocks.originUrl } } as never,
   );
 });
 afterEach(() => {
@@ -271,6 +277,28 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
     await tick();
     expect(recents()).toEqual([saved]);
     expect(writes()).toHaveLength(0);
+  });
+
+  it('settles the current refresh as failed when origin inspection throws', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: [{ path: '/repo/local', name: 'local', type: 'local' }],
+    });
+    mocks.originUrl.mockRejectedValue(new Error('origin unavailable'));
+    await openDropdown();
+    const refreshId = (
+      mocks.dispatch.mock.calls.find(
+        ([action]) => action.type === 'workspaceInitializer/recentReposRefreshRequested',
+      )?.[0] as { payload: [string] }
+    ).payload[0];
+
+    await waitFor(() =>
+      expect(
+        selectWorkspaceInitializerRecentRepoRefresh.select(mocks.appState as StoreState, refreshId)
+          ?.status,
+      ).toBe('failed'),
+    );
+    expect(recents()).toEqual([saved]);
   });
 
   it('waits for initial owner hydration instead of queuing an empty overwrite', async () => {

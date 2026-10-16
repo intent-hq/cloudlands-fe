@@ -207,7 +207,8 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
   let stage: WorkspaceInitializationOutcome['stage'] = request.resume ? 'attachments' : 'create';
   let workspaceId = request.resume?.workspaceId;
   let agentId = request.resume?.agentId;
-  let workspacePath: string | undefined;
+  let workspacePath = request.resume?.workspacePath;
+  let pullCompleted = false;
   const dispatch = appStore.dispatch;
   if (!request.resume) yield* put(beginWorkspaceCreateProgress(progressId));
   try {
@@ -220,6 +221,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       );
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       if (!pull.success) throw new Error(pull.error || 'pull-failed');
+      pullCompleted = true;
     }
     if (!request.resume) {
       stage = 'create';
@@ -237,10 +239,12 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       workspaceId = workspace.id;
       agentId = result.data.initialAgent?.id;
       workspacePath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
+      stage = 'post-create';
       yield* call(installWorkspace, action, workspace, dispatch, agentId);
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
     }
     if (!workspaceId) throw new Error('missing-workspace-id');
+    stage = request.heldMessage ? 'attachments' : 'post-create';
     const delivery = yield* call(deliverHeldMessage, action, workspaceId, dispatch, agentId);
     if (!current(action, dispatch)) throw new Error('initialization-cancelled');
     if (delivery.stage) {
@@ -255,6 +259,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       settled = true;
       return;
     }
+    stage = 'post-create';
     yield* put(setWorkspaceInitializerLastSubmittedAgent(request.lastSubmittedAgent));
     if (request.selectedPrNumber) yield* fork(storePrNumber, workspaceId, request.selectedPrNumber);
     if (request.recentGitHubRepository) yield* fork(registerRecent, request.recentGitHubRepository);
@@ -263,6 +268,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       workspaceId,
       agentId,
       workspacePath,
+      ...(pullCompleted ? { pullCompleted: true } : {}),
       stagedItems: delivery.stagedItems,
     });
     yield* put(action.success({ workspaceId, agentId, workspacePath }));
@@ -277,6 +283,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       workspaceId,
       agentId,
       workspacePath,
+      ...(pullCompleted ? { pullCompleted: true } : {}),
       error: errorMessage(error),
       ...(errorCode ? { errorCode } : {}),
     });

@@ -38,6 +38,7 @@
     recordLastUsedSetupScript,
   } from '$features/setup-scripts/last-used';
   import {
+    clearWorkspaceInitializationOutcome,
     workspaceInitializerGitCheckRequested,
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
@@ -1580,6 +1581,12 @@
   const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
   const initializationConsumerId = `compact-workspace-initializer:${uuidv4()}`;
+  let activeInitializationSeq: number | null = null;
+
+  function releaseInitialization(seq: number) {
+    appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
+    if (activeInitializationSeq === seq) activeInitializationSeq = null;
+  }
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
@@ -1992,6 +1999,7 @@
   onDestroy(() => {
     mounted = false;
     submissionGeneration++;
+    if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
   });
 
   let pullContinuation: (() => boolean) | null = null;
@@ -2049,6 +2057,7 @@
 
     const initializationResourceId = `${admission}:${generation}`;
     let initializationRequest: WorkspaceInitializationRequest | null = null;
+    let initializationSeq: number | null = null;
 
     try {
       // Validate
@@ -2518,6 +2527,8 @@
         id: initializationConsumerId,
         resourceId: initializationResourceId,
       });
+      initializationSeq = initialization.seq;
+      activeInitializationSeq = initialization.seq;
       activeCreateProgressId = initialization.payload.progressId;
       isPulling = Boolean(initializationRequest.pull);
       const result = await dispatch(initialization);
@@ -2560,6 +2571,7 @@
         initializationConsumerId,
         initializationResourceId,
       );
+      if (outcome?.pullCompleted) branchBehind = 0;
       isPulling = false;
       if (outcome?.stage === 'pull') {
         pullError = outcome.error || m.workspace_compactInitializer_pullFailed_error();
@@ -2568,9 +2580,11 @@
         return;
       }
       if (
-        initializationRequest?.heldMessage &&
+        initializationRequest &&
         outcome?.workspaceId &&
-        (outcome.stage === 'attachments' || outcome.stage === 'first-message')
+        (outcome.stage === 'post-create' ||
+          outcome.stage === 'attachments' ||
+          outcome.stage === 'first-message')
       ) {
         const stagedItems = outcome.stagedItems ?? initializationRequest.stagedItems;
         contextItems = stagedItems as ContextItem[];
@@ -2579,13 +2593,19 @@
             ...initializationRequest,
             createRequest: undefined,
             pull: undefined,
-            resume: { workspaceId: outcome.workspaceId, agentId: outcome.agentId },
-            stagedItems,
-            heldMessage: {
-              ...initializationRequest.heldMessage,
-              imageBlocks:
-                outcome.retryImageBlocks ?? initializationRequest.heldMessage.imageBlocks,
+            resume: {
+              workspaceId: outcome.workspaceId,
+              agentId: outcome.agentId,
+              workspacePath: outcome.workspacePath,
             },
+            stagedItems,
+            heldMessage: initializationRequest.heldMessage
+              ? {
+                  ...initializationRequest.heldMessage,
+                  imageBlocks:
+                    outcome.retryImageBlocks ?? initializationRequest.heldMessage.imageBlocks,
+                }
+              : undefined,
           },
         };
         error =
@@ -2609,6 +2629,7 @@
           : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
+      if (initializationSeq !== null) releaseInitialization(initializationSeq);
       if (mounted && generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
@@ -3012,11 +3033,14 @@
     };
     isCreating = true;
     error = null;
+    let initializationSeq: number | null = null;
     try {
       const initialization = workspaceInitializationRequested(request, {
         id: initializationConsumerId,
         resourceId,
       });
+      initializationSeq = initialization.seq;
+      activeInitializationSeq = initialization.seq;
       await dispatch(initialization);
       if (!current()) return;
       pendingFirstMessage = null;
@@ -3055,6 +3079,7 @@
               ? retryError.message
               : m.workspace_compactInitializer_firstMessageSendFailed_error();
     } finally {
+      if (initializationSeq !== null) releaseInitialization(initializationSeq);
       if (current()) isCreating = false;
     }
   }

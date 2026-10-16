@@ -36,7 +36,10 @@ import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createMockWorkspace } from '../../../../../test/factories/workspace.factory';
 import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
-import { workspaceInitializationRequested } from '../workspace-initializer-slice';
+import {
+  clearWorkspaceInitializationOutcome,
+  workspaceInitializationRequested,
+} from '../workspace-initializer-slice';
 import type {
   WorkspaceInitializationRequest,
   WorkspaceInitializationStagedItem,
@@ -88,6 +91,14 @@ const installationActionTypes = [
   openWorkspaceTab.type,
 ];
 const created = { ok: true, data: { workspace, initialAgent: { id: 'agent-1' } } } as const;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -191,6 +202,7 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       workspaceId: 'ws-1',
       agentId: 'agent-1',
       workspacePath: '/wt/ws-1',
+      pullCompleted: true,
       stagedItems: placed,
     });
     expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual(agentSettings);
@@ -224,7 +236,10 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       failedCount: 0,
     });
     const resume = workspaceInitializationRequested(
-      request({ resume: { workspaceId: 'ws-1', agentId: 'agent-1' }, stagedItems: failed }),
+      request({
+        resume: { workspaceId: 'ws-1', agentId: 'agent-1', workspacePath: '/wt/ws-1' },
+        stagedItems: failed,
+      }),
       consumer,
     );
     appStore.dispatch(resume);
@@ -232,7 +247,7 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
     await expect(resume.promise).resolves.toEqual({
       workspaceId: 'ws-1',
       agentId: 'agent-1',
-      workspacePath: undefined,
+      workspacePath: '/wt/ws-1',
     });
     expect(create).toHaveBeenCalledTimes(1);
     expect(mocks.redeem.mock.calls[1]?.slice(0, 2)).toEqual(['ws-1', failed]);
@@ -251,6 +266,55 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       stage: 'first-message',
       stagedItems: placed,
     });
+  });
+
+  it('marks a successful pull when create fails so a retry does not pull again', async () => {
+    create.mockResolvedValue({ ok: false, error: 'create failed' });
+    const action = workspaceInitializationRequested(
+      request({ pull: { repositoryPath: '/repo', branch: 'main' } }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('create failed');
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      status: 'failure',
+      stage: 'create',
+      pullCompleted: true,
+    });
+  });
+
+  it('publishes an unexpected post-create delivery failure as resumable', async () => {
+    mocks.redeem.mockRejectedValueOnce(new Error('placement transport failed'));
+    const action = workspaceInitializationRequested(request(), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('placement transport failed');
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      status: 'failure',
+      stage: 'attachments',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      workspacePath: '/wt/ws-1',
+    });
+  });
+
+  it('stops post-create work after the consumer releases an in-flight outcome', async () => {
+    const held = deferred<typeof created>();
+    create.mockReturnValue(held.promise);
+    const action = workspaceInitializationRequested(request(), consumer);
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+    appStore.dispatch(clearWorkspaceInitializationOutcome(consumer.id, action.seq));
+    held.resolve(created);
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(outcome()).toBeUndefined();
+    expect(mocks.clearLayout).not.toHaveBeenCalled();
+    expect(mocks.redeem).not.toHaveBeenCalled();
   });
 
   it('does not install or publish for a consumer replaced during installation', async () => {

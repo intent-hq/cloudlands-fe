@@ -239,7 +239,7 @@ export interface WorkspaceInitializationRequest {
   entrypoint: 'compact' | 'onboarding';
   admission: string;
   createRequest?: CreateWorkspaceRequest;
-  resume?: { workspaceId: string; agentId?: string };
+  resume?: { workspaceId: string; agentId?: string; workspacePath?: string };
   pull?: { repositoryPath: string; branch: string };
   agentTitle: string;
   coordinator: boolean;
@@ -260,10 +260,11 @@ export interface WorkspaceInitializationOutcome extends WorkspaceInitializationC
   seq: number;
   entrypoint: WorkspaceInitializationRequest['entrypoint'];
   status: 'pending' | 'success' | 'failure' | 'cancelled';
-  stage?: 'pull' | 'create' | 'attachments' | 'first-message';
+  stage?: 'pull' | 'create' | 'post-create' | 'attachments' | 'first-message';
   workspaceId?: string;
   agentId?: string;
   workspacePath?: string;
+  pullCompleted?: boolean;
   error?: string;
   errorCode?: string;
   stagedItems?: WorkspaceInitializationStagedItem[];

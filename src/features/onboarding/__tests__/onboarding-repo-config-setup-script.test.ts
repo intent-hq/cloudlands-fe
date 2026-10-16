@@ -1663,6 +1663,43 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     ]);
   });
 
+  it('retries failed attachment placement instead of blocking on the failed pill', async () => {
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+    const staged = { id: 'file-1', type: 'file', label: 'a.txt', sourcePath: '/tmp/a.txt' };
+    const failed = { ...staged, placementStatus: 'failed', placementError: 'gone' };
+    const placed = { ...staged, placementStatus: 'placed', attachmentId: 'attachment-1' };
+    mocks.redeemStagedAttachments
+      .mockResolvedValueOnce({ items: [failed], failedCount: 1, fileBlocks: [] })
+      .mockResolvedValueOnce({
+        items: [placed],
+        failedCount: 0,
+        fileBlocks: [{ type: 'file', attachmentId: 'attachment-1', fileName: 'a.txt' }],
+      });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setStagedContextItems([staged]);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+    await waitFor(() => expect(mocks.redeemStagedAttachments).toHaveBeenCalledTimes(1));
+
+    captured().onSubmit();
+    await waitFor(() => expect(mocks.redeemStagedAttachments).toHaveBeenCalledTimes(2));
+    expect(mocks.workspaceCreate).toHaveBeenCalledOnce();
+    expect(mocks.sendHeldFirstMessage).toHaveBeenCalledOnce();
+  });
+
   it('sends the prompt on the create frame when no attachments are staged', async () => {
     mocks.workspaceCreate.mockResolvedValue({
       ok: true,
