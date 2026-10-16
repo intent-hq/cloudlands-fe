@@ -360,6 +360,23 @@ short-lived workflow artifacts (7-day retention), version-suffixed `-manual.<run
 Nothing publishes to intent-hq/cloudlands-releases and no auto-updater manifest is
 produced — manual install/testing only.
 
+## Update compatibility
+
+Released clients are part of the compatibility contract. Changes to update feed
+filenames or URLs, channel metadata, installers, or architecture support must preserve
+an automatic upgrade path for existing supported installations within each channel.
+A migration must not require users to install the migration code manually first.
+
+Test behavior shipped in a prior release, including its requested feed filenames and
+architecture selection. New-client tests and successful builds/uploads are insufficient.
+Keep these regression tests in required verification. For Mac feeds, extend
+`scripts/mac-channel-feeds.test.ts`: `latest-mac.yml`, used by released beta/stable
+clients, must advertise the selected release for each channel independently.
+
+If a compatibility break is unavoidable, identify the exact affected installations and
+obtain explicit human authorization for that break. Documenting a workaround is not
+authorization; ending Intel support does not authorize stranding native Apple Silicon.
+
 ## Verification
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
