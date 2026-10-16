@@ -29,8 +29,6 @@ export interface PanelHeaderState {
 }
 
 export interface PanelHeaderActions {
-  /** Conversation-specific header, used only by discussion tabs. */
-  discussionHeader?: Snippet<[paneItems: Snippet | undefined, paneActions: Snippet]>;
   /** Legacy content menu items, rendered in the Actions section. Prefer actions. */
   primary?: Snippet;
   /** Presentation and view controls shown in the Display section. */

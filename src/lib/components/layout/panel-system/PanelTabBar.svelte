@@ -1466,59 +1466,6 @@
   {/if}
 {/snippet}
 
-{#snippet paneStackItems(otherTypesOnly = false)}
-  {#each tabs
-    .toReversed()
-    .filter((tab) => !otherTypesOnly || tab.type !== 'discussion') as tab (tab.id)}
-    {@const current = tab.id === activeTabId}
-    <Menu.Item
-      class="panel-selector-row"
-      aria-current={current ? 'page' : undefined}
-      aria-label={attentionPaneIds.has(tab.id)
-        ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
-        : getTabTitle(tab)}
-      onclick={() => activatePane(tab.id)}
-      data-pane-stack-item={tab.id}
-      data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
-    >
-      {#snippet leading()}
-        <span
-          class="panel-selector-row-avatar flex shrink-0 items-center justify-center"
-          data-pane-stack-item-identity={tab.type}
-        >
-          {#if tab.type === 'agent' && tab.agentId}
-            {#key tab.agentId}<PanelHeaderAgentAvatar agentId={tab.agentId} />{/key}
-          {:else}
-            {@render panelIdentity(tab, true)}
-          {/if}
-        </span>
-      {/snippet}
-      <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
-      {#if attentionPaneIds.has(tab.id)}
-        <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
-      {/if}
-      {#if current}
-        <span
-          class="flex size-(--menu-icon-size) shrink-0 items-center justify-center"
-          aria-hidden="true"
-          data-pane-stack-current-check
-        >
-          <Fa icon={faCheck} class="size-(--menu-icon-size) text-muted-foreground" />
-        </span>
-      {/if}
-    </Menu.Item>
-  {/each}
-{/snippet}
-
-{#snippet otherPaneStackItems()}
-  {@render paneStackItems(true)}
-{/snippet}
-
-{#snippet discussionPaneActions()}
-  {@render panelActionsDropdown('compact')}
-  {@render panelCloseButton(activeTab ?? undefined)}
-{/snippet}
-
 {#snippet paneStackSelector()}
   <span
     class="pane-stack-selector relative z-10 min-w-0 shrink self-center"
@@ -1616,7 +1563,45 @@
         data-pane-stack-menu
       >
         <div class="overflow-y-auto overscroll-contain" data-pane-stack-list>
-          {@render paneStackItems()}
+          {#each tabs.toReversed() as tab (tab.id)}
+            {@const current = tab.id === activeTabId}
+            <Menu.Item
+              class="panel-selector-row"
+              aria-current={current ? 'page' : undefined}
+              aria-label={attentionPaneIds.has(tab.id)
+                ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
+                : getTabTitle(tab)}
+              onclick={() => activatePane(tab.id)}
+              data-pane-stack-item={tab.id}
+              data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
+            >
+              {#snippet leading()}
+                <span
+                  class="panel-selector-row-avatar flex shrink-0 items-center justify-center"
+                  data-pane-stack-item-identity={tab.type}
+                >
+                  {#if tab.type === 'agent' && tab.agentId}
+                    {#key tab.agentId}<PanelHeaderAgentAvatar agentId={tab.agentId} />{/key}
+                  {:else}
+                    {@render panelIdentity(tab, true)}
+                  {/if}
+                </span>
+              {/snippet}
+              <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+              {#if attentionPaneIds.has(tab.id)}
+                <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
+              {/if}
+              {#if current}
+                <span
+                  class="flex size-(--menu-icon-size) shrink-0 items-center justify-center"
+                  aria-hidden="true"
+                  data-pane-stack-current-check
+                >
+                  <Fa icon={faCheck} class="size-(--menu-icon-size) text-muted-foreground" />
+                </span>
+              {/if}
+            </Menu.Item>
+          {/each}
         </div>
       </Menu.Content>
     </Menu.Root>
@@ -1817,7 +1802,6 @@
       class={cn(
         'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-background pr-2.5 active:cursor-grabbing',
         activeTab.type === 'agent' && 'panel-agent-header',
-        activeTab.type === 'discussion' && contentActions?.discussionHeader && 'h-[54px] pr-0',
         isFocused && 'focused',
       )}
       data-column-focused={isFocused ? '' : undefined}
@@ -1833,43 +1817,34 @@
       data-pane-stack
       data-pane-stack-size={tabs.length}
     >
-      {#if activeTab.type === 'discussion' && contentActions?.discussionHeader}
-        {@render contentActions.discussionHeader(
-          tabs.some((tab) => tab.type !== 'discussion') ? otherPaneStackItems : undefined,
-          discussionPaneActions,
-        )}
+      {#if renamingTabId === activeTab.id && !showTabStrip}
+        <Input
+          bind:ref={renameInputRef}
+          bind:value={renameValue}
+          class="min-w-0 flex-1"
+          aria-label={m.ui_editableName_rename_tooltip()}
+          onblur={saveInlineRename}
+          onkeydown={async (event) => {
+            if (event.key !== 'Enter' && event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            const header = event.currentTarget.closest('[data-panel-tabless-header]');
+            if (event.key === 'Enter') saveInlineRename();
+            else cancelInlineRename();
+            await tick();
+            header?.querySelector<HTMLButtonElement>('[data-pane-stack-selector-trigger]')?.focus();
+          }}
+        />
       {:else}
-        {#if renamingTabId === activeTab.id && !showTabStrip}
-          <Input
-            bind:ref={renameInputRef}
-            bind:value={renameValue}
-            class="min-w-0 flex-1"
-            aria-label={m.ui_editableName_rename_tooltip()}
-            onblur={saveInlineRename}
-            onkeydown={async (event) => {
-              if (event.key !== 'Enter' && event.key !== 'Escape') return;
-              event.preventDefault();
-              event.stopPropagation();
-              const header = event.currentTarget.closest('[data-panel-tabless-header]');
-              if (event.key === 'Enter') saveInlineRename();
-              else cancelInlineRename();
-              await tick();
-              header
-                ?.querySelector<HTMLButtonElement>('[data-pane-stack-selector-trigger]')
-                ?.focus();
-            }}
-          />
-        {:else}
-          {@render paneStackSelector()}
-        {/if}
-        <div class="min-w-0 flex-1" aria-hidden="true"></div>
-
-        <!-- Right: all actions at the far edge in stable order. -->
-        <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
-          {@render panelActionsDropdown('compact')}
-          {@render panelCloseButton(activeTab)}
-        </div>
+        {@render paneStackSelector()}
       {/if}
+      <div class="min-w-0 flex-1" aria-hidden="true"></div>
+
+      <!-- Right: all actions at the far edge in stable order. -->
+      <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
+        {@render panelActionsDropdown('compact')}
+        {@render panelCloseButton(activeTab)}
+      </div>
     </div>
   {:else}
     <div

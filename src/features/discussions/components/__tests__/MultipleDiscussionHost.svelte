@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import { ContentHeader } from '$features/layout/components/content-header';
-  import { faComment } from '@fortawesome/free-regular-svg-icons';
+  import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
+  import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import PeoplePreview from '$features/presence/components/workspace-people-tile.preview.svelte';
   import DiscussionTabType from '$features/layout/tab-types/DiscussionTabType.svelte';
   import { store } from '$store/renderer/store';
@@ -11,6 +12,7 @@
     initializeLayout,
     clearPanelLayout,
     closeTab,
+    setActiveTab,
     reopenClosedTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
@@ -19,12 +21,14 @@
     selectRecentlyClosed,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { installDiscussionTestBackend, startDiscussionTestSaga } from './discussion-test-backend';
+  registerAllTabTypes();
   let {
     failSend = false,
     deferSend = false,
     rejectSend,
   }: { failSend?: boolean; deferSend?: boolean; rejectSend?: 'invalid' | 'forbidden' } = $props();
   const workspaceId = 'people-tile-preview';
+  const { actions } = createPanelHeaderContext();
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
   const backend = installDiscussionTestBackend(
     workspaceId,
@@ -64,7 +68,16 @@
   </aside>
   <section class="flex min-w-0 flex-1 flex-col" data-discussion-pane>
     {#if $tab$}
-      <ContentHeader title={$tab$.title} icon={faComment} />
+      <PanelTabBar
+        tabs={$panel$?.tabs ?? []}
+        activeTabId={$tab$.id}
+        panelId="current"
+        {workspaceId}
+        contentActions={actions.current ?? undefined}
+        onTabClick={(id) => store.dispatch(setActiveTab(workspaceId, id, 'current'))}
+        onTabClose={(id) =>
+          store.dispatch(closeTab(workspaceId, id, 'current', undefined, { preservePanel: true }))}
+      />
       <div class="min-h-0 flex-1">
         <DiscussionTabType
           tab={$tab$}
@@ -77,14 +90,6 @@
     {/if}
   </section>
 </div>
-<Button
-  onclick={() => {
-    if ($tab$)
-      store.dispatch(
-        closeTab(workspaceId, $tab$.id, 'current', undefined, { preservePanel: true }),
-      );
-  }}>Close current discussion</Button
->
 <output data-discussion-requests>{JSON.stringify(requests)}</output>
 <output data-discussion-panel>{JSON.stringify($panel$)}</output>
 

@@ -1,10 +1,8 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import WorkspaceDiscussion from '$features/discussions/components/WorkspaceDiscussion.svelte';
-  import DiscussionHeader from '$features/discussions/components/DiscussionHeader.svelte';
   import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -13,7 +11,6 @@
   import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectDiscussionConversations,
-    selectDiscussionDirectory,
     selectDiscussionContext,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import {
@@ -25,7 +22,7 @@
     selectPanel,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectPrincipalSnapshot } from '$store/renderer/slices/principal/principal-selectors';
-  import { updateTabTitle, closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { updateTabTitle } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import type { TabTypeComponentProps } from './registry';
   let { tab, workspaceId, layoutId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
   const workspaceId$ = writable('');
@@ -35,28 +32,11 @@
   );
   $effect(() => workspaceId$.set(resolvedWorkspaceId));
   const conversations$ = selectDiscussionConversations(workspaceId$);
-  const directory$ = selectDiscussionDirectory(workspaceId$);
   const context$ = selectDiscussionContext();
   const multiplayer$ = selectLabsMultiplayerEnabled();
   const principal$ = selectPrincipalSnapshot();
   const headerContext = getPanelHeaderContext();
   const targetLayout = $derived(layoutId ?? workspaceId);
-  const rows = $derived([
-    { id: 'default', title: m.workspace_discussion_title() },
-    ...$conversations$
-      .filter((item) => item.id !== 'default')
-      .map((item) => ({ id: item.id, title: discussionTitle(item, $principal$?.principal.id) })),
-  ]);
-  const title = $derived(
-    conversationId === 'new'
-      ? m.workspace_discussion_new_title()
-      : (rows.find((row) => row.id === conversationId)?.title ?? tab.title),
-  );
-  const directParticipant = $derived(
-    $conversations$
-      .find((item) => item.id === conversationId && item.kind === 'direct')
-      ?.participants.find((person) => person.principalId !== $principal$?.principal.id),
-  );
   function panelId() {
     return selectPanelIds
       .select(store.state, targetLayout)
@@ -80,7 +60,7 @@
   });
   $effect(() => {
     if (isActive && $multiplayer$)
-      return headerContext?.registerActions({ discussionHeader, actions: discussionActions });
+      return headerContext?.registerActions({ actions: discussionActions });
   });
   $effect(() => {
     if (conversationId === 'new') return;
@@ -99,26 +79,6 @@
     >{m.workspace_discussion_new_title()}</Menu.Item
   >
   <Menu.Item onclick={refresh}>{m.workspace_commitsTimeline_refresh_label()}</Menu.Item>
-{/snippet}
-
-{#snippet discussionHeader(paneItems: Snippet | undefined, paneActions: Snippet)}
-  <DiscussionHeader
-    {title}
-    avatar={directParticipant?.avatarUrl}
-    avatarName={directParticipant ? title : undefined}
-    {paneItems}
-    {paneActions}
-    {conversationId}
-    {rows}
-    onSelect={selectConversation}
-    onNew={() => selectConversation('new')}
-    onClose={() => store.dispatch(closeTab(targetLayout, tab.id, panelId()))}
-    onRefresh={refresh}
-    loading={$directory$.status === 'loading'}
-    hasMore={$directory$.hasMore}
-    error={$directory$.error}
-    onLoadMore={() => store.dispatch(discussionDirectoryRequested(resolvedWorkspaceId, true))}
-  />
 {/snippet}
 
 {#key `${resolvedWorkspaceId}:${conversationId}`}

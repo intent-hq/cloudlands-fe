@@ -36,10 +36,14 @@
   import { Button } from '$lib/components/ui/button';
   import type { DiscussionAuthor, DiscussionMessage } from '$shared/types/workspace-discussion';
   import { m } from '$shared/paraglide/messages.js';
-  import DiscussionHeader from './DiscussionHeader.svelte';
+  import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
+  import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import * as Menu from '$lib/components/ui/menu';
   import DiscussionRecipients from './DiscussionRecipients.svelte';
   import DiscussionThread from './DiscussionThread.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
+  registerAllTabTypes();
   let { state: previewState = 'direct' }: Props = $props();
   const workspaceId = 'discussion-design-preview';
   const sam = { principalId: 'sam', displayName: 'Sam Breed', login: 'sam', avatarUrl: null };
@@ -231,7 +235,27 @@
         : [...prior, { emoji, count: 1, reacted: true }],
     };
   }
+  const activeTabId = $derived(scene === 'new' ? 'new' : scene === 'direct' ? 'direct' : 'default');
+  const tabs = $derived<PanelTab[]>([
+    { id: 'default', type: 'discussion', title: 'Feature UI', closable: true },
+    { id: 'direct', type: 'discussion', title: 'Alex', closable: true },
+    ...(scene === 'new'
+      ? [
+          {
+            id: 'new',
+            type: 'discussion' as const,
+            title: m.workspace_discussion_new_title(),
+            closable: true,
+          },
+        ]
+      : []),
+  ]);
 </script>
+
+{#snippet discussionActions()}
+  <Menu.Item onclick={() => reset('new')}>{m.workspace_discussion_new_title()}</Menu.Item>
+  <Menu.Item onclick={() => reset(scene)}>{m.workspace_commitsTimeline_refresh_label()}</Menu.Item>
+{/snippet}
 
 <div
   class="flex h-[720px] w-full min-w-0 max-w-[420px] flex-col overflow-hidden rounded-[10px] border border-border bg-background"
@@ -239,23 +263,14 @@
 >
   {#if closed}<Button onclick={() => (closed = false)}>{m.workspace_discussion_title()}</Button
     >{:else}
-    <DiscussionHeader
-      avatarName={scene === 'direct' ? 'Alex' : undefined}
-      avatar={null}
-      title={scene === 'new'
-        ? m.workspace_discussion_new_title()
-        : scene === 'direct'
-          ? 'Alex'
-          : 'Feature UI'}
-      conversationId={scene === 'new' ? 'new' : scene === 'direct' ? 'direct' : 'default'}
-      rows={[
-        { id: 'default', title: 'Feature UI' },
-        { id: 'direct', title: 'Alex' },
-      ]}
-      onSelect={(id) => reset(id === 'direct' ? 'direct' : 'reactions')}
-      onNew={() => reset('new')}
-      onClose={() => (closed = true)}
-      onRefresh={() => reset(scene)}
+    <PanelTabBar
+      {tabs}
+      {activeTabId}
+      panelId="discussion-preview"
+      {workspaceId}
+      contentActions={{ actions: discussionActions }}
+      onTabClick={(id) => reset(id === 'direct' ? 'direct' : id === 'new' ? 'new' : 'reactions')}
+      onTabClose={() => (closed = true)}
     />
     <div class="min-h-0 flex-1">
       <DiscussionThread

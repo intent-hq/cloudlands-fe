@@ -608,7 +608,11 @@ it('keeps mixed-pane navigation, move and close available in the discussion head
   expect(
     view.container.querySelector('[data-panel-content-header]')?.getAttribute('draggable'),
   ).toBe('true');
-  await fireEvent.click(screen.getByRole('button', { name: m.workspace_discussion_list_label() }));
+  await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
+  expect(screen.getByRole('menuitem', { name: 'Workspace' }).getAttribute('aria-current')).toBe(
+    'page',
+  );
+  expect(screen.queryByRole('menuitem', { name: m.workspace_discussion_new_title() })).toBeNull();
   await fireEvent.click(screen.getByRole('menuitem', { name: 'main.ts' }));
   expect(onTabClick).toHaveBeenCalledExactlyOnceWith('file');
   await fireEvent.click(

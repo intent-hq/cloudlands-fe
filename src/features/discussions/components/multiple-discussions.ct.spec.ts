@@ -46,7 +46,7 @@ test('People plus retains a local composer, creates a group on first send, and r
   expect((await calls(component)).filter((call) => call.method === 'discussion.send')).toHaveLength(
     0,
   );
-  await component.getByRole('button', { name: 'Close current discussion' }).click();
+  await component.getByRole('button', { name: 'Close active pane' }).click();
   await revealPeople(component);
   expect((await calls(component)).filter((call) => call.method === 'discussion.send')).toHaveLength(
     0,
@@ -79,7 +79,7 @@ test('People plus retains a local composer, creates a group on first send, and r
       },
     },
   ]);
-  await component.getByRole('button', { name: 'Close current discussion' }).click();
+  await component.getByRole('button', { name: 'Close active pane' }).click();
   await revealPeople(component);
   await component.locator(`[data-workspace-discussion-open="${conversationId}"]`).click();
   await expect(component.getByRole('log')).toContainText('Let’s review the new flow together.');
@@ -205,7 +205,7 @@ test('first-send completion promotes a closed composer before a fresh discussion
         (await calls(component)).filter((call) => call.method === 'discussion.send').length,
     )
     .toBe(1);
-  await component.getByRole('button', { name: 'Close current discussion' }).click();
+  await component.getByRole('button', { name: 'Close active pane' }).click();
   await revealPeople(component);
   await expect(composer).toHaveCount(0);
   await component.getByRole('button', { name: 'Finish sending' }).click();
@@ -284,4 +284,62 @@ test('recipient search finds a login that differs from its display name', async 
     (call) => call.method === 'discussion.recipients',
   );
   expect(queries.some((call) => call.params.query === 'river-runner')).toBe(true);
+});
+
+test('discussion panes use the shared switcher and keep New discussion and Refresh in panel actions', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(MultipleDiscussionHost);
+  const alex = '0199e991-0000-7000-8000-000000000001';
+  const jordan = '0199e991-0000-7000-8000-000000000002';
+  await component.locator(`[data-workspace-discussion-open="${alex}"]`).click();
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await composer.fill('Alex draft');
+  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
+  const selector = component.getByTestId('pane-stack-selector-trigger');
+  await selector.press('Enter');
+  const menu = page.locator('[data-pane-stack-menu]');
+  await expect(menu.getByRole('menuitem', { name: 'Jordan', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(menu.getByRole('menuitem', { name: 'New discussion', exact: true })).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: 'Alex', exact: true }).press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(selector).toContainText('Alex');
+  await expect(composer).toHaveValue('Alex draft');
+  await selector.press('Enter');
+  await menu.evaluate(async (element) => {
+    await Promise.allSettled(
+      element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+    );
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+  await page.keyboard.press('Escape');
+  await expect(selector).toBeFocused();
+  const actions = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  const before = (await calls(component)).filter(
+    (call) => call.method === 'discussion.list',
+  ).length;
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'Refresh', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await calls(component)).filter((call) => call.method === 'discussion.list').length,
+    )
+    .toBeGreaterThan(before);
+  await expect(actions).toBeFocused();
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'New discussion', exact: true }).click();
+  await expect(selector).toContainText('New discussion');
+  await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toBeVisible();
+  await component.getByRole('button', { name: 'Close active pane' }).click();
+  await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toHaveCount(0);
+  await selector.click();
+  await expect(menu.getByRole('menuitem', { name: 'New discussion', exact: true })).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: 'Alex', exact: true }).click();
+  await expect(selector).toContainText('Alex');
+  await expect(composer).toHaveValue('Alex draft');
 });

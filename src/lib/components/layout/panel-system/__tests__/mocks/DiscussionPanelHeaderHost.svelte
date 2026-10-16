@@ -1,30 +1,25 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
   import PanelTabBar from '../../PanelTabBar.svelte';
-  import DiscussionHeader from '$features/discussions/components/DiscussionHeader.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import { m } from '$shared/paraglide/messages.js';
   let {
     onTabClick,
     onMovePaneLeft,
     onTabClose,
+    onNew = () => {},
+    onRefresh = () => {},
   }: {
     onTabClick: (id: string) => void;
     onMovePaneLeft: () => void;
     onTabClose: (id: string) => void;
+    onNew?: () => void;
+    onRefresh?: () => void;
   } = $props();
 </script>
 
-{#snippet discussionHeader(paneItems: Snippet | undefined, paneActions: Snippet)}
-  <DiscussionHeader
-    title="Workspace"
-    conversationId="default"
-    rows={[{ id: 'default', title: 'Workspace' }]}
-    onSelect={() => {}}
-    onNew={() => {}}
-    onRefresh={() => {}}
-    onClose={() => {}}
-    {paneItems}
-    {paneActions}
-  />
+{#snippet discussionActions()}
+  <Menu.Item onclick={onNew}>{m.workspace_discussion_new_title()}</Menu.Item>
+  <Menu.Item onclick={onRefresh}>{m.workspace_commitsTimeline_refresh_label()}</Menu.Item>
 {/snippet}
 
 <PanelTabBar
@@ -35,7 +30,7 @@
   activeTabId="discussion"
   panelId="panel-1"
   workspaceId="workspace-1"
-  contentActions={{ discussionHeader }}
+  contentActions={{ actions: discussionActions }}
   {onTabClick}
   {onMovePaneLeft}
   {onTabClose}
