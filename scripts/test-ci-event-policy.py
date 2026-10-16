@@ -72,6 +72,16 @@ class EventPolicy(unittest.TestCase):
             self.assertEqual(schedule(mutated, 'pull_request')[job], 'success')
             self.assertNotEqual({n for n, r in schedule(mutated, 'pull_request').items() if r == 'success'}, LIGHT | {'gate'})
 
+    def test_consumer_caller_grants_only_declared_permissions_and_secrets(self):
+        caller = self.workflow['jobs']['monorepo-consumer-checks']
+        self.assertEqual(caller['permissions'], {'actions': 'read', 'contents': 'read'})
+        self.assertEqual(caller['secrets'], {
+            'CI_QUEUE_READ_TOKEN': '${{ secrets.CI_QUEUE_READ_TOKEN }}',
+            'DEPOT_TOKEN': '${{ secrets.DEPOT_TOKEN }}',
+        })
+        self.assertEqual(caller['with']['component'], 'cloudlands-fe')
+        self.assertEqual(caller['with']['head-sha'], '${{ github.event.pull_request.head.sha || github.sha }}')
+
     def test_gate_rejects_failed_cancelled_missing_and_required_skips(self):
         for event in ('pull_request', 'merge_group'):
             results = schedule(self.workflow, event)

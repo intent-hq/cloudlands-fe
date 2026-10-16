@@ -975,14 +975,18 @@ jobs:
   # called workflow, and a failed monorepo checkout is fail-soft there
   # (warning, job green), so a monorepo outage never blocks this repo.
   # Runs on pull_request AND merge_group; the caller's own `if:` carries
-  # the same-repo guard (fork-PR hardening note). No secrets are passed and
-  # `contents: read` is all the called workflow needs. Not routed: it runs
-  # on GH-hosted ubuntu-latest inside the called workflow.
+  # the same-repo guard (fork-PR hardening note). Actions-read permission and
+  # the declared routing/cache secrets support the shared runner routing and
+  # queue-only connected runtime proof; PRs run static consumer checks.
   monorepo-consumer-checks:
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
+      actions: read
       contents: read
-    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@b0a3dc55179f7ff2b89fc22f6e576aa76d0cde14
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@0e12255c6207b474a218e633ec61e9b051d3e990
     with:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
