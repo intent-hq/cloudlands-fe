@@ -73,11 +73,6 @@ export async function assembleReleaseAssets(downloads, output, version) {
       dump(info, { sortKeys: true, lineWidth: -1, noRefs: true }),
       { flag: 'wx' },
     );
-    await writeFile(
-      join(output, 'latest-arm64-mac.yml'),
-      dump(info, { sortKeys: true, lineWidth: -1, noRefs: true }),
-      { flag: 'wx' },
-    );
     validateReleaseAssetNames(output);
     await validateMacUpdateFeed(join(output, 'latest-mac.yml'));
     for (const feed of ['latest.yml', 'latest-linux.yml', 'latest-linux-arm64.yml']) {

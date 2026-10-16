@@ -283,7 +283,6 @@ it.each(['x64', 'arm64'] as const)(
         expect(updaterModule.autoUpdater.setFeedURL).toHaveBeenLastCalledWith({
           provider: 'generic',
           url: `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}`,
-          ...(arch === 'arm64' ? { channel: 'latest-arm64' } : {}),
         });
       }
     } finally {

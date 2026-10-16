@@ -110,10 +110,17 @@ jobs:
 
       # workflow_dispatch uses the workflow from the selected ref, but builds
       # the requested tag. Tags predating the native wrapper retain their
-      # original ARM packaging; publication tools prepare both ARM feed aliases.
+      # original ARM packaging; publication tools prepare the standard Mac feed.
       - name: Select Mac release targets
         id: macos
         run: |
+          # Rebuilding a retired alpha tag would embed its old updater URL even
+          # though current publication tools emit only the standard Mac feed.
+          COMPATIBILITY_SOURCE=src/features/auto-update/main/mac-update-compatibility.ts
+          if [ -f "$COMPATIBILITY_SOURCE" ] && grep -Fq 'latest-arm64' "$COMPATIBILITY_SOURCE"; then
+            echo "::error::This tag uses the retired alpha Mac feed. Publish a new build using latest-mac.yml."
+            exit 1
+          fi
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
@@ -803,7 +810,7 @@ jobs:
           ls -lh dist-electron/
           node scripts/validate-release-asset-names.mjs dist-electron
           MISSING=""
-          for FEED in latest-mac.yml latest-arm64-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
+          for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
             if [ ! -f "dist-electron/$FEED" ]; then
               MISSING="${MISSING:+$MISSING, }$FEED"
             fi
@@ -970,7 +977,6 @@ jobs:
             dist-electron/*.deb \
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml \
-            dist-electron/latest-arm64-mac.yml \
             dist-electron/latest.yml \
             dist-electron/latest-linux.yml \
             dist-electron/latest-linux-arm64.yml \
@@ -992,7 +998,7 @@ jobs:
               --prerelease
           fi
 
-          # Upload versioned payloads before switching either Mac feed. If any
+          # Upload versioned payloads before switching the feeds. If any
           # upload fails, the previous feeds still refer to available archives.
           cd dist-electron
           PAYLOADS=()
@@ -1005,8 +1011,8 @@ jobs:
           done
           gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${PAYLOADS[@]}"
           gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${FEEDS[@]}"
-          # Retained legacy feeds use immutable URLs, so old rolling payloads
-          # can be removed only after every new feed was uploaded successfully.
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after every new feed was uploaded successfully.
           gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             if [ ! -f "$asset" ]; then
               gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes
@@ -1149,7 +1155,7 @@ jobs:
             echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
-            echo "- Auto-updater feeds: [latest-mac.yml]($ALPHA_URL/latest-mac.yml), [latest-arm64-mac.yml]($ALPHA_URL/latest-arm64-mac.yml), [latest.yml]($ALPHA_URL/latest.yml), [latest-linux.yml]($ALPHA_URL/latest-linux.yml), [latest-linux-arm64.yml]($ALPHA_URL/latest-linux-arm64.yml)"
+            echo "- Auto-updater feeds: [latest-mac.yml]($ALPHA_URL/latest-mac.yml), [latest.yml]($ALPHA_URL/latest.yml), [latest-linux.yml]($ALPHA_URL/latest-linux.yml), [latest-linux-arm64.yml]($ALPHA_URL/latest-linux-arm64.yml)"
             echo ""
             echo "### Releases"
             echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"

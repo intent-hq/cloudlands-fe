@@ -7,28 +7,18 @@ import { validateMacFeedStructure, validateMacUpdateFeed } from './mac-update-fe
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const { load, dump, JSON_SCHEMA } = updaterRequire('js-yaml');
 
-/** Both generations of ARM clients must discover the selected channel release. */
+/** Publish the selected Apple Silicon release under the production Mac filename. */
 export async function prepareMacChannelFeeds(directory, channel, expectedVersion) {
   if (!['alpha', 'beta', 'stable'].includes(channel)) throw new Error('Invalid release channel');
   const sharedPath = join(directory, 'latest-mac.yml');
-  const armPath = join(directory, 'latest-arm64-mac.yml');
-  let sourcePath = armPath;
-  let content;
-  try {
-    content = await readFile(armPath, 'utf8');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    sourcePath = sharedPath;
-    content = await readFile(sharedPath, 'utf8');
+  if ((await readdir(directory)).includes('latest-arm64-mac.yml')) {
+    throw new Error('Retired alpha Mac feed: publish a new build using latest-mac.yml');
   }
+  const content = await readFile(sharedPath, 'utf8');
   const source = load(content, { schema: JSON_SCHEMA });
   validateMacFeedStructure(
     source,
-    sourcePath === armPath
-      ? ['arm64']
-      : source?.files?.some((file) => file.url?.includes('x64'))
-        ? ['x64', 'arm64']
-        : ['arm64'],
+    source?.files?.some((file) => file.url?.includes('x64')) ? ['x64', 'arm64'] : ['arm64'],
   );
   if (expectedVersion !== undefined && source.version !== expectedVersion) {
     throw new Error('Mac feed must match the selected release version');
@@ -39,12 +29,10 @@ export async function prepareMacChannelFeeds(directory, channel, expectedVersion
   const arm = { ...metadata, files, path: zip.url, sha512: zip.sha512 };
   validateMacFeedStructure(arm, ['arm64']);
   const serialized = dump(arm, { sortKeys: true, lineWidth: -1, noRefs: true });
-  const temporary = `${armPath}.tmp`;
+  const temporary = `${sharedPath}.tmp`;
   try {
     await writeFile(temporary, serialized, { flag: 'wx' });
     await validateMacUpdateFeed(temporary);
-    await rename(temporary, armPath);
-    await writeFile(temporary, serialized, { flag: 'wx' });
     await rename(temporary, sharedPath);
   } finally {
     await rm(temporary, { force: true });

@@ -370,8 +370,8 @@ A migration must not require users to install the migration code manually first.
 Test behavior shipped in a prior release, including its requested feed filenames and
 architecture selection. New-client tests and successful builds/uploads are insufficient.
 Keep these regression tests in required verification. For Mac feeds, extend
-`scripts/mac-channel-feeds.test.ts`: both `latest-mac.yml` and `latest-arm64-mac.yml`
-must advertise the selected release for alpha, beta, and stable independently.
+`scripts/mac-channel-feeds.test.ts`: `latest-mac.yml`, used by released beta/stable
+clients, must advertise the selected release for each channel independently.
 
 If a compatibility break is unavoidable, identify the exact affected installations and
 obtain explicit human authorization for that break. Documenting a workaround is not

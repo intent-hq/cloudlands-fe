@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -145,7 +145,7 @@ const assemble = (dir: string, version = '1.2.3') =>
   });
 
 describe('release artifact assembly through the publish workflow', () => {
-  it('preserves ARM archives and blockmaps, other platforms, and identical Mac feeds', () => {
+  it('preserves ARM archives and blockmaps, other platforms, and only the standard Mac feed', () => {
     const dir = temp();
     fixtures(dir);
     const result = assemble(dir);
@@ -162,13 +162,11 @@ describe('release artifact assembly through the publish workflow', () => {
       expect(readFileSync(join(output, `${f.url}.blockmap`), 'utf8')).toBe(`blockmap ${f.url}`);
     }
     expect(feed.path).toBe('Intent-1.2.3-arm64-mac.zip');
-    expect(readFileSync(join(output, 'latest-arm64-mac.yml'), 'utf8')).toBe(
-      readFileSync(join(output, 'latest-mac.yml'), 'utf8'),
-    );
+    expect(existsSync(join(output, 'latest-arm64-mac.yml'))).toBe(false);
     expect(readFileSync(join(output, 'Intent.Setup.1.2.3.exe'), 'utf8')).toBe(
       'release-windows payload',
     );
-    expect(readdirSync(output)).toHaveLength(12);
+    expect(readdirSync(output)).toHaveLength(11);
     expect(existsSync(join(dir, 'release-downloads/release-macos-arm64/latest-mac.yml'))).toBe(
       true,
     );
@@ -327,7 +325,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
 
 describe.each(['beta', 'stable'])('%s promotion', (channel) => {
   const name = channel === 'beta' ? 'promote-beta' : 'release-stable';
-  it('uploads ARM assets and blockmaps before replacing both feed aliases', () => {
+  it('uploads ARM assets and blockmaps before replacing the standard Mac feed', () => {
     const dir = temp();
     fixtures(dir);
     expect(assemble(dir).status).toBe(0);
@@ -357,55 +355,74 @@ describe.each(['beta', 'stable'])('%s promotion', (channel) => {
     expect(calls[0]).toContain('Intent-1.2.3.AppImage');
     expect(calls[0]).toContain('Intent-1.2.3-arm64.AppImage');
     expect(calls[1]).toContain('latest-mac.yml');
-    expect(calls[1]).toContain('latest-arm64-mac.yml');
+    expect(calls[1]).not.toContain('latest-arm64-mac.yml');
   });
-  it('promotes only the selected historical release, stripping Intel payloads without a channel lookup', () => {
-    const dir = temp();
-    const downloads = fixtures(dir, ['x64', 'arm64']);
-    const assets = join(dir, 'selected-assets');
-    mkdirSync(assets);
-    const feeds = ['x64', 'arm64'].map((arch) => {
-      const job = join(downloads, `release-macos-${arch}`);
-      cpSync(job, assets, { recursive: true });
-      return load(readFileSync(join(job, 'latest-mac.yml'), 'utf8'));
-    });
-    writeFileSync(
-      join(assets, 'latest-mac.yml'),
-      dump({
-        ...feeds[0],
-        files: feeds.flatMap((feed) => feed.files),
-      }),
-    );
-    stub(
-      dir,
-      'gh',
-      `
+  it.each(['combined', 'split'])(
+    'promotes canonical historical releases and rejects retired split releases: %s',
+    (format) => {
+      const dir = temp();
+      const downloads = fixtures(dir, ['x64', 'arm64']);
+      const assets = join(dir, 'selected-assets');
+      mkdirSync(assets);
+      const feeds = ['x64', 'arm64'].map((arch) => {
+        const job = join(downloads, `release-macos-${arch}`);
+        cpSync(job, assets, { recursive: true });
+        return load(readFileSync(join(job, 'latest-mac.yml'), 'utf8'));
+      });
+      writeFileSync(
+        join(assets, 'latest-mac.yml'),
+        dump({
+          ...feeds[0],
+          files: feeds.flatMap((feed) => feed.files),
+        }),
+      );
+      if (format === 'split') {
+        writeFileSync(join(assets, 'latest-arm64-mac.yml'), dump(feeds[1]));
+        writeFileSync(join(assets, 'latest-mac.yml'), dump({ ...feeds[0], version: '1.0.0' }));
+      }
+      stub(
+        dir,
+        'gh',
+        `
       printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-calls"
       if [ "$1 $2 $3" != 'release download v1.2.3' ]; then exit 42; fi
       cp -R "$RUNNER_TEMP/selected-assets/." .
     `,
-    );
-    const downloaded = shell(
-      dir,
-      step(name, `promote-to-${channel}`, 'Download versioned release assets').run!,
-      { VERSION: '1.2.3' },
-    );
-    expect(downloaded.status, downloaded.stderr).toBe(0);
-    const result = shell(
-      dir,
-      step(name, `promote-to-${channel}`, 'Prepare architecture-safe Mac channel feeds').run!,
-      { VERSION: '1.2.3' },
-    );
-    expect(result.status, result.stderr).toBe(0);
-    const output = join(dir, 'release-assets');
-    const shared = readFileSync(join(output, 'latest-mac.yml'), 'utf8');
-    expect(readFileSync(join(output, 'latest-arm64-mac.yml'), 'utf8')).toBe(shared);
-    expect(load(shared)).toMatchObject({ version: '1.2.3', path: 'Intent-1.2.3-arm64-mac.zip' });
-    expect(readdirSync(output).some((file) => file.includes('x64'))).toBe(false);
-    expect(readFileSync(join(dir, 'gh-calls'), 'utf8').trim().split('\n')).toEqual([
-      'release download v1.2.3 --repo intent-hq/cloudlands-releases',
-    ]);
-  });
+      );
+      const downloaded = shell(
+        dir,
+        step(name, `promote-to-${channel}`, 'Download versioned release assets').run!,
+        { VERSION: '1.2.3' },
+      );
+      expect(downloaded.status, downloaded.stderr).toBe(0);
+      const result = shell(
+        dir,
+        step(name, `promote-to-${channel}`, 'Prepare architecture-safe Mac channel feeds').run!,
+        { VERSION: '1.2.3' },
+      );
+      const output = join(dir, 'release-assets');
+      if (format === 'split') {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('Retired alpha Mac feed');
+        expect(readdirSync(output).sort()).toEqual(readdirSync(assets).sort());
+        for (const file of readdirSync(assets)) {
+          expect(readFileSync(join(output, file))).toEqual(readFileSync(join(assets, file)));
+        }
+        expect(readFileSync(join(dir, 'gh-calls'), 'utf8').trim().split('\n')).toEqual([
+          'release download v1.2.3 --repo intent-hq/cloudlands-releases',
+        ]);
+        return;
+      }
+      expect(result.status, result.stderr).toBe(0);
+      const shared = readFileSync(join(output, 'latest-mac.yml'), 'utf8');
+      expect(existsSync(join(output, 'latest-arm64-mac.yml'))).toBe(false);
+      expect(load(shared)).toMatchObject({ version: '1.2.3', path: 'Intent-1.2.3-arm64-mac.zip' });
+      expect(readdirSync(output).some((file) => file.includes('x64'))).toBe(false);
+      expect(readFileSync(join(dir, 'gh-calls'), 'utf8').trim().split('\n')).toEqual([
+        'release download v1.2.3 --repo intent-hq/cloudlands-releases',
+      ]);
+    },
+  );
   it.each([false, true])('compares the whole feed with changed ARM metadata=%s', (corrupt) => {
     const dir = temp();
     const original =
@@ -799,6 +816,33 @@ function releasePlan(dir: string) {
 }
 
 describe('release tag capability routing', () => {
+  it.each([false, true])(
+    'rejects source using the retired alpha feed before scheduling native tooling=%s',
+    (modern) => {
+      const dir = temp();
+      if (!modern) legacyCheckout(dir);
+      const source = join(dir, 'src/features/auto-update/main/mac-update-compatibility.ts');
+      mkdirSync(dirname(source), { recursive: true });
+      // Frozen retired-alpha routing, independent of the current client implementation.
+      writeFileSync(
+        source,
+        "export const macUpdateChannel = () => ({ channel: 'latest-arm64' });\n",
+      );
+      expect(() => releasePlan(dir)).toThrow('retired alpha Mac feed');
+      expect(existsSync(join(dir, 'release-plan'))).toBe(false);
+    },
+  );
+
+  it('admits current source after the retired feed routing is removed', () => {
+    const dir = temp();
+    const source = join(dir, 'src/features/auto-update/main/mac-update-compatibility.ts');
+    mkdirSync(dirname(source), { recursive: true });
+    copyFileSync(resolve('src/features/auto-update/main/mac-update-compatibility.ts'), source);
+    expect(JSON.parse(releasePlan(dir).matrix).include.map((row: Matrix) => row.arch)).toEqual([
+      'arm64',
+    ]);
+  });
+
   it('never looks up or schedules Intel sidecars', () => {
     const dir = temp();
     stub(dir, 'gh', 'echo unexpected lookup > "$RUNNER_TEMP/gh-calls"; exit 1');
@@ -890,77 +934,170 @@ describe('release tag capability routing', () => {
   });
 });
 
-it.each(['alpha', 'beta', 'stable'])(
-  'rejects a mismatched selected release before publishing %s',
-  (channel) => {
-    const dir = temp();
-    fixtures(dir);
-    expect(assemble(dir).status).toBe(0);
-    symlinkSync(join(dir, 'dist-electron'), join(dir, 'release-assets'));
-    stub(dir, 'gh', 'echo published > "$RUNNER_TEMP/published"');
-    const name =
-      channel === 'alpha'
-        ? 'release-alpha'
-        : channel === 'beta'
-          ? 'promote-beta'
-          : 'release-stable';
-    const job = channel === 'alpha' ? 'publish' : `promote-to-${channel}`;
-    const prepare = step(name, job, 'Prepare architecture-safe Mac channel feeds');
-    const publish = step(
-      name,
-      job,
-      channel === 'alpha'
-        ? 'Publish to GitHub Releases (versioned tag)'
-        : `Upload new assets to ${channel}`,
+it.each(
+  ['alpha', 'beta', 'stable'].flatMap((channel) =>
+    ['mismatched', 'retired alpha'].map((failure) => ({ channel, failure })),
+  ),
+)('rejects a $failure release before publishing $channel', ({ channel, failure }) => {
+  const dir = temp();
+  fixtures(dir);
+  expect(assemble(dir).status).toBe(0);
+  symlinkSync(join(dir, 'dist-electron'), join(dir, 'release-assets'));
+  if (failure === 'retired alpha') {
+    copyFileSync(
+      join(dir, 'dist-electron/latest-mac.yml'),
+      join(dir, 'dist-electron/latest-arm64-mac.yml'),
     );
-    const result = shell(dir, `${prepare.run}\n${publish.run}`, {
-      VERSION: '9.9.9',
-      GITHUB_OUTPUT: join(dir, 'outputs'),
-    });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('Mac feed must match the selected release');
-    expect(existsSync(join(dir, 'published'))).toBe(false);
-  },
-);
+  }
+  stub(dir, 'gh', 'echo published > "$RUNNER_TEMP/published"');
+  const name =
+    channel === 'alpha' ? 'release-alpha' : channel === 'beta' ? 'promote-beta' : 'release-stable';
+  const job = channel === 'alpha' ? 'publish' : `promote-to-${channel}`;
+  const prepare = step(name, job, 'Prepare architecture-safe Mac channel feeds');
+  const publish = step(
+    name,
+    job,
+    channel === 'alpha'
+      ? 'Publish to GitHub Releases (versioned tag)'
+      : `Upload new assets to ${channel}`,
+  );
+  const result = shell(dir, `${prepare.run}\n${publish.run}`, {
+    VERSION: failure === 'mismatched' ? '9.9.9' : '1.2.3',
+    GITHUB_OUTPUT: join(dir, 'outputs'),
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    failure === 'mismatched'
+      ? 'Mac feed must match the selected release'
+      : 'Retired alpha Mac feed',
+  );
+  expect(existsSync(join(dir, 'published'))).toBe(false);
+});
 
-it.each(['alpha', 'beta', 'stable'])(
-  'does not switch %s feeds after a failed payload upload',
-  (channel) => {
-    const dir = temp();
-    fixtures(dir);
-    expect(assemble(dir).status).toBe(0);
-    symlinkSync(join(dir, 'dist-electron'), join(dir, 'release-assets'));
-    stub(
-      dir,
-      'gh',
-      `
-    printf '%s\\n' "$*" >> "$RUNNER_TEMP/publish-calls"
-    if [ "$1 $2" = 'release upload' ]; then exit 42; fi
+it('creates a versioned release with only the standard Mac feed', () => {
+  const dir = temp();
+  fixtures(dir);
+  expect(assemble(dir).status).toBe(0);
+  writeFileSync(join(dir, 'dist-electron/Intent-1.2.3.deb'), 'Debian package');
+  writeFileSync(join(dir, 'release-manifest.json'), '{}');
+  stub(
+    dir,
+    'gh',
+    `
+    printf '%s\\n' "$@" > "$RUNNER_TEMP/versioned-args"
+    for arg in "$@"; do
+      case "$arg" in dist-electron/*) test -f "$arg" || exit 42 ;; esac
+    done
   `,
-    );
-    const publish =
-      channel === 'alpha'
-        ? step('release-alpha', 'publish', 'Publish to GitHub Releases (rolling alpha tag)')
-        : step(
-            channel === 'beta' ? 'promote-beta' : 'release-stable',
-            `promote-to-${channel}`,
-            `Upload new assets to ${channel}`,
-          );
-    expect(
-      shell(dir, publish.run!, { VERSION: '1.2.3', GITHUB_OUTPUT: join(dir, 'outputs') }).status,
-    ).toBe(42);
-    const calls = readFileSync(join(dir, 'publish-calls'), 'utf8');
-    expect(calls).toContain('Intent-1.2.3-arm64-mac.zip');
-    expect(calls).not.toContain('latest-mac.yml');
-    expect(calls).not.toContain('latest-arm64-mac.yml');
-    expect(calls).not.toContain('delete-asset');
-  },
-);
+  );
+  const result = shell(
+    dir,
+    step('release-alpha', 'publish', 'Publish to GitHub Releases (versioned tag)').run!,
+    {
+      VERSION: '1.2.3',
+    },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  const args = readFileSync(join(dir, 'versioned-args'), 'utf8').trim().split('\n');
+  expect(args.slice(0, 3)).toEqual(['release', 'create', 'v1.2.3']);
+  expect(args.filter((arg) => arg.endsWith('.yml'))).toEqual([
+    'dist-electron/latest-mac.yml',
+    'dist-electron/latest.yml',
+    'dist-electron/latest-linux.yml',
+    'dist-electron/latest-linux-arm64.yml',
+  ]);
+});
 
-it.each(['beta', 'stable'])(
-  'reads %s advancement from the ARM feed, with legacy fallback only on 404',
-  (channel) => {
-    for (const status of ['200', '404', '503']) {
+it('refuses to change an existing versioned release', () => {
+  const dir = temp();
+  stub(dir, 'gh', `printf '%s\\n' "$*" >> "$RUNNER_TEMP/gh-calls"`);
+  const result = shell(
+    dir,
+    [
+      step('release-alpha', 'resolve', 'Check for duplicate release').run,
+      step('release-alpha', 'publish', 'Publish to GitHub Releases (versioned tag)').run,
+    ].join('\n'),
+    { VERSION: '1.2.3' },
+  );
+  expect(result.status).not.toBe(0);
+  expect(readFileSync(join(dir, 'gh-calls'), 'utf8').trim().split('\n')).toEqual([
+    'api repos/intent-hq/cloudlands-releases/releases/tags/v1.2.3',
+  ]);
+});
+
+describe.each(['alpha', 'beta', 'stable'])('%s rolling publication', (channel) => {
+  it.each(['success', 'payload failure', 'feed failure'])(
+    'removes obsolete assets only after canonical feed publication: %s',
+    (outcome) => {
+      const dir = temp();
+      fixtures(dir);
+      expect(assemble(dir).status).toBe(0);
+      symlinkSync(join(dir, 'dist-electron'), join(dir, 'release-assets'));
+      stub(
+        dir,
+        'gh',
+        `
+        printf '%s\\n' "$*" >> "$RUNNER_TEMP/publish-calls"
+        if [ "$1 $2" = 'release upload' ]; then
+          case " $* " in
+            *' latest-mac.yml '*) [ "$FAIL_UPLOAD" != feed ] || exit 42 ;;
+            *) [ "$FAIL_UPLOAD" != payload ] || exit 42 ;;
+          esac
+        fi
+        if [ "$1 $2" = 'release view' ] && [[ " $* " == *' --json assets '* ]]; then
+          printf '%s\\n' latest-arm64-mac.yml latest-mac.yml Intent-1.0.0-arm64-mac.zip Intent-1.2.3-arm64-mac.zip latest.yml
+        fi
+      `,
+      );
+      const name =
+        channel === 'alpha'
+          ? 'release-alpha'
+          : channel === 'beta'
+            ? 'promote-beta'
+            : 'release-stable';
+      const job = channel === 'alpha' ? 'publish' : `promote-to-${channel}`;
+      const labels = new Set(
+        channel === 'alpha'
+          ? ['Publish to GitHub Releases (rolling alpha tag)']
+          : [`Upload new assets to ${channel}`, 'Delete previous version assets'],
+      );
+      // Execute the production steps in workflow order, each in its own shell scope.
+      const run = workflow(name)
+        .jobs[job].steps.filter((s) => labels.has(s.name))
+        .map((s) => `(\n${s.run}\n)`)
+        .join('\n');
+      const result = shell(dir, run, {
+        VERSION: '1.2.3',
+        GITHUB_OUTPUT: join(dir, 'outputs'),
+        FAIL_UPLOAD: outcome.split(' ')[0],
+      });
+      expect(result.status, result.stderr).toBe(outcome === 'success' ? 0 : 42);
+      const calls = readFileSync(join(dir, 'publish-calls'), 'utf8').trim().split('\n');
+      const uploads = calls.filter((call) => call.startsWith('release upload '));
+      expect(uploads).toHaveLength(outcome === 'payload failure' ? 1 : 2);
+      expect(uploads[0]).toContain('Intent-1.2.3-arm64-mac.zip');
+      expect(uploads[0]).not.toContain('latest-mac.yml');
+      expect(uploads.join('\n')).not.toContain('latest-arm64-mac.yml');
+      const deletions = calls.filter((call) => call.startsWith('release delete-asset '));
+      if (outcome === 'success') {
+        expect(uploads[1]).toContain('latest-mac.yml');
+        expect(deletions).toEqual([
+          `release delete-asset ${channel} latest-arm64-mac.yml --repo intent-hq/cloudlands-releases --yes`,
+          `release delete-asset ${channel} Intent-1.0.0-arm64-mac.zip --repo intent-hq/cloudlands-releases --yes`,
+        ]);
+        expect(calls.indexOf(deletions[0])).toBeGreaterThan(calls.indexOf(uploads[1]));
+        expect(calls.every((call) => call.split(' ')[2] === channel)).toBe(true);
+      } else {
+        expect(deletions).toEqual([]);
+      }
+    },
+  );
+});
+
+describe.each(['beta', 'stable'])('%s promotion version discovery', (channel) => {
+  it.each(['200', '404', '503'])(
+    'reads only the standard Mac feed when HTTP status is %s',
+    (status) => {
       const dir = temp();
       stub(
         dir,
@@ -970,10 +1107,8 @@ it.each(['beta', 'stable'])(
         if [ "$1" = '-o' ]; then out="$2"; shift 2; else url="$1"; shift; fi
       done
       printf '%s\\n' "$url" >> "$RUNNER_TEMP/urls"
-      case "$url" in
-        *latest-arm64-mac.yml) echo 'version: 3.0.0' > "$out"; printf '%s' '${status}' ;;
-        *) echo 'version: 2.0.0' > "$out"; printf '200' ;;
-      esac
+      echo 'version: 3.0.0' > "$out"
+      printf '%s' '${status}'
     `,
       );
       const run = step(
@@ -985,14 +1120,53 @@ it.each(['beta', 'stable'])(
       if (status === '503') expect(result.status).not.toBe(0);
       else {
         expect(result.status, result.stderr).toBe(0);
-        expect(readFileSync(join(dir, 'outputs'), 'utf8')).toContain(
-          `prev_${channel}=${status === '200' ? '3.0.0' : '2.0.0'}`,
-        );
+        expect(readFileSync(join(dir, 'outputs'), 'utf8').trim().split('\n')).toEqual([
+          `prev_${channel}=${status === '200' ? '3.0.0' : ''}`,
+          `is_first_promotion=${status === '404'}`,
+        ]);
       }
-      expect(readFileSync(join(dir, 'urls'), 'utf8').trim().split('\n')).toHaveLength(
-        status === '404' ? 2 : 1,
-      );
-    }
+      expect(readFileSync(join(dir, 'urls'), 'utf8').trim().split('\n')).toEqual([
+        `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}/latest-mac.yml`,
+      ]);
+    },
+  );
+});
+
+it.each([
+  ['200', '1.2.2', false],
+  ['200', '1.2.3', true],
+  ['200', '1.2.4', true],
+  ['200', '1.2.3-beta.1', false],
+  ['404', '', false],
+  ['503', '', false],
+])(
+  'keeps the beta-first guard on the standard feed: HTTP %s, version %s',
+  (status, version, accepted) => {
+    const dir = temp();
+    stub(
+      dir,
+      'curl',
+      `
+    out=''; while [ "$#" -gt 0 ]; do
+      if [ "$1" = '-o' ]; then out="$2"; shift 2; else url="$1"; shift; fi
+    done
+    printf '%s\\n' "$url" >> "$RUNNER_TEMP/urls"
+    echo 'version: ${version}' > "$out"
+    printf '%s' '${status}'
+  `,
+    );
+    const result = shell(
+      dir,
+      step('release-stable', 'promote-to-stable', 'Verify version was promoted to beta').run!,
+      {
+        VERSION: '1.2.3',
+        SKIP_BETA_CHECK: 'false',
+      },
+    );
+    expect(result.status === 0, result.stdout + result.stderr).toBe(accepted);
+    expect(readFileSync(join(dir, 'urls'), 'utf8').trim().split('\n')).toEqual([
+      'https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml',
+    ]);
   },
 );
 

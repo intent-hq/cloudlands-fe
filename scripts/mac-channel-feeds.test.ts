@@ -57,7 +57,7 @@ function read(dir: string, name = 'latest-mac.yml') {
 function client(
   dir: string,
   channel: string,
-  generation: 'before' | 'split',
+  generation: 'production' | 'current' | 'split-alpha',
   hardware: 'arm64' | 'intel',
 ) {
   const arch = hardware === 'arm64' ? 'arm64' : 'x64';
@@ -71,7 +71,7 @@ function client(
   const value = Object.create(MacUpdater.prototype);
   const transfer = vi.fn(async ({ fileInfo }) => [fileInfo.url.href]);
   Object.assign(value, {
-    currentVersion: new SemVer(generation === 'before' ? '2.216.5' : '2.219.7'),
+    currentVersion: new SemVer(generation === 'production' ? '2.212.1' : '2.219.7'),
     allowDowngrade: false,
     autoDownload: true,
     _logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -79,11 +79,11 @@ function client(
     isUserWithinRollout: () => true,
     executeDownload: transfer,
   });
-  if (generation !== 'before') configureMacUpdateCompatibility(value, 'darwin', arch);
+  if (generation !== 'production') configureMacUpdateCompatibility(value, 'darwin', arch);
   const requests: string[] = [];
-  // Feed settings shipped in 2.216.5 and 2.219.7 must not follow future client changes.
+  // Production 2.212.1 used the default; only alpha 2.219.x used the split filename.
   const installedChannel =
-    generation === 'before' || arch !== 'arm64' ? {} : { channel: 'latest-arm64' };
+    generation === 'split-alpha' && arch === 'arm64' ? { channel: 'latest-arm64' } : {};
   const provider = new GenericProvider(
     {
       provider: 'generic',
@@ -115,11 +115,9 @@ afterEach(() => {
 
 describe('Mac channel migration', () => {
   it.each(['alpha', 'beta', 'stable'])(
-    'advances both %s feeds using only the selected release, even with frozen history',
+    'publishes the selected %s release using only the standard Mac feed',
     async (channel) => {
-      const dir = incoming();
-      writeFileSync(join(dir, 'latest-arm64-mac.yml'), readFileSync(join(dir, 'latest-mac.yml')));
-      writeFileSync(join(dir, 'latest-mac.yml'), dump(feed('2.216.5', ['x64', 'arm64'])));
+      const dir = incoming(['x64', 'arm64']);
       await prepareMacChannelFeeds(dir, channel);
       expect(read(dir)).toMatchObject({
         version: '2.220.0',
@@ -127,9 +125,7 @@ describe('Mac channel migration', () => {
         releaseNotes: 'Selected release',
         minimumSystemVersion: '13.0.0',
       });
-      expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(
-        readFileSync(join(dir, 'latest-arm64-mac.yml'), 'utf8'),
-      );
+      expect(existsSync(join(dir, 'latest-arm64-mac.yml'))).toBe(false);
       await prepareMacChannelFeeds(dir, channel);
       expect(read(dir).version).toBe('2.220.0');
     },
@@ -151,23 +147,20 @@ describe('Mac channel migration', () => {
   });
 
   it.each([
-    'malformed ARM feed',
-    'Intel ARM feed',
+    'malformed feed',
+    'retired alpha feed',
     'missing archive',
     'corrupt archive',
     'invalid channel',
     'wrong selected version',
   ])('leaves published inputs intact on %s', async (failure) => {
     const dir = incoming();
-    const shared = readFileSync(join(dir, 'latest-mac.yml'), 'utf8');
-    const alias =
-      failure === 'malformed ARM feed'
-        ? 'files: bad'
-        : failure === 'Intel ARM feed'
-          ? dump(feed('2.220.0', ['x64', 'arm64']))
-          : shared;
-    writeFileSync(join(dir, 'latest-arm64-mac.yml'), alias);
     const zip = join(dir, read(dir).path);
+    if (failure === 'malformed feed') writeFileSync(join(dir, 'latest-mac.yml'), 'files: bad');
+    const shared = readFileSync(join(dir, 'latest-mac.yml'), 'utf8');
+    if (failure === 'retired alpha feed') {
+      writeFileSync(join(dir, 'latest-arm64-mac.yml'), shared);
+    }
     if (failure === 'missing archive') rmSync(zip);
     if (failure === 'corrupt archive') writeFileSync(zip, 'bad');
     await expect(
@@ -178,15 +171,15 @@ describe('Mac channel migration', () => {
       ),
     ).rejects.toThrow();
     expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(shared);
-    expect(readFileSync(join(dir, 'latest-arm64-mac.yml'), 'utf8')).toBe(alias);
+    if (failure === 'retired alpha feed') {
+      expect(readFileSync(join(dir, 'latest-arm64-mac.yml'), 'utf8')).toBe(shared);
+    }
   });
 
   for (const channel of ['alpha', 'beta', 'stable']) {
-    for (const generation of ['before', 'split'] as const) {
+    for (const generation of ['production', 'current'] as const) {
       it(`discovers and selects native ARM from ${generation} clients on ${channel}`, async () => {
         const dir = incoming();
-        writeFileSync(join(dir, 'latest-arm64-mac.yml'), readFileSync(join(dir, 'latest-mac.yml')));
-        writeFileSync(join(dir, 'latest-mac.yml'), dump(feed('2.216.5', ['x64', 'arm64'])));
         await prepareMacChannelFeeds(dir, channel, '2.220.0');
         const { value, requests, transfer, offered, errors } = client(
           dir,
@@ -197,9 +190,7 @@ describe('Mac channel migration', () => {
         const result = await value.doCheckForUpdates();
         expect(result.isUpdateAvailable).toBe(true);
         expect(result.updateInfo.version).toBe('2.220.0');
-        expect(requests).toEqual([
-          `/${channel}/${generation === 'before' ? 'latest-mac.yml' : 'latest-arm64-mac.yml'}`,
-        ]);
+        expect(requests).toEqual([`/${channel}/latest-mac.yml`]);
         expect(await result.downloadPromise).toEqual([
           `https://updates.example/${channel}/Intent-2.220.0-arm64-mac.zip`,
         ]);
@@ -214,7 +205,7 @@ describe('Mac channel migration', () => {
   it('pre-change Intel reports an update error before downloading an incompatible archive', async () => {
     const dir = incoming();
     await prepareMacChannelFeeds(dir, 'alpha');
-    const { value, transfer, offered, errors } = client(dir, 'alpha', 'before', 'intel');
+    const { value, transfer, offered, errors } = client(dir, 'alpha', 'production', 'intel');
     const result = await value.doCheckForUpdates();
     expect(result.isUpdateAvailable).toBe(true);
     await expect(result.downloadPromise).rejects.toMatchObject({
@@ -228,14 +219,24 @@ describe('Mac channel migration', () => {
   it('guarded Intel refuses before announcing an update', async () => {
     const dir = incoming();
     await prepareMacChannelFeeds(dir, 'alpha');
-    const { value, transfer, offered, errors } = client(dir, 'alpha', 'split', 'intel');
+    const { value, transfer, offered, errors } = client(dir, 'alpha', 'current', 'intel');
     expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
     expect(transfer).not.toHaveBeenCalled();
     expect(offered).not.toHaveBeenCalled();
     expect(errors).not.toHaveBeenCalled();
   });
 
-  it.each(['before', 'split'] as const)(
+  it('requires reinstalling alpha clients that request the retired filename', async () => {
+    const dir = incoming();
+    await prepareMacChannelFeeds(dir, 'alpha');
+    const { value, requests, transfer, offered } = client(dir, 'alpha', 'split-alpha', 'arm64');
+    await expect(value.doCheckForUpdates()).rejects.toThrow();
+    expect(requests).toEqual(['/alpha/latest-arm64-mac.yml']);
+    expect(transfer).not.toHaveBeenCalled();
+    expect(offered).not.toHaveBeenCalled();
+  });
+
+  it.each(['production', 'current'] as const)(
     'does not move a %s client backwards to an older promoted release',
     async (generation) => {
       const dir = incoming(['arm64'], '2.200.0');

@@ -173,15 +173,18 @@ each pointing the auto-updater at the latest build for that channel:
 
 Mac desktop builds support **Apple Silicon only**; new Intel Mac builds are no
 longer published. Each channel publishes the selected release's ARM64 metadata
-under both `latest-mac.yml` and `latest-arm64-mac.yml`, restoring automatic
-discovery for older native Apple Silicon installations. Beta and stable feeds
+under `latest-mac.yml`, restoring automatic discovery for older native Apple
+Silicon installations. Beta and stable feeds
 advance only when that version is promoted to the respective channel.
+
+Alpha builds using the retired `latest-arm64-mac.yml` feed need a one-time Apple
+Silicon reinstall to return to the standard feed. That feed never reached beta
+or stable.
 
 Intel Macs are unsupported and cannot use the Apple Silicon installer.
 
-The pinned prerelease cleanup command protects versions referenced by either
-Mac feed in both the source and release-mirror repositories. Both filenames
-must remain published and covered by retention.
+The pinned prerelease cleanup command protects versions referenced by the Mac
+feed in both the source and release-mirror repositories.
 
 ## Project layout
 

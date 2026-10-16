@@ -1,10 +1,5 @@
 import type { AppUpdater } from 'electron-updater';
 
-/** Keep the ARM filename for clients already using it; both filenames publish ARM. */
-export function macUpdateChannel(platform = process.platform, arch = process.arch) {
-  return platform === 'darwin' && arch === 'arm64' ? { channel: 'latest-arm64' } : {};
-}
-
 /** Reject an unavailable architecture before electron-updater emits update-available. */
 export function configureMacUpdateCompatibility(
   updater: Pick<AppUpdater, 'isUpdateSupported'>,
