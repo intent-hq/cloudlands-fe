@@ -9,7 +9,7 @@ test('ordinary open clears the visible recovery filter without disrupting typing
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(CommandPalettePreview, {
     props: { initialQuery: 'GitLab', withoutWorkspace: true },
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'gitlab-off' } },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'gitlab-off' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');
@@ -36,7 +36,7 @@ test('GitLab command supports keyboard activation and reopening at compact width
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(CommandPalettePreview, {
     props: { initialQuery: 'GitLab', withoutWorkspace: true },
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'gitlab-off' } },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'gitlab-off' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');
@@ -64,7 +64,7 @@ for (const width of [1280, 360]) {
     await page.setViewportSize({ width, height: 800 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(CommandPalettePreview, {
-      hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'grouped' } },
+      hooksConfig: { previewScene: { scene: 'command-palette', state: 'grouped' } },
     });
     const dialog = page.getByRole('dialog');
     const input = dialog.getByRole('textbox');
@@ -134,7 +134,7 @@ test('palette show-more filtering preserves keyboard focus and scrolls the curre
   await page.setViewportSize({ width: 360, height: 600 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(CommandPalettePreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'grouped' } },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'grouped' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');
@@ -164,7 +164,7 @@ test('category controls preserve the query, support keyboard cycling, and recove
 }, testInfo) => {
   await page.setViewportSize({ width: 720, height: 740 });
   await mount(CommandPalettePreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'grouped' } },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'grouped' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');

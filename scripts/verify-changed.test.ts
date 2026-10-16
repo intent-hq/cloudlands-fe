@@ -1467,7 +1467,6 @@ describe('verification planning', () => {
       'playwright-ct.config.ts',
       'playwright/index.ts',
       'src/lib/component-catalog/capture-stability.ts',
-      'src/lib/component-catalog/geometry-probe.ts',
       'src/lib/component-catalog/preview-definition.ts',
       'package.json',
       'pnpm-lock.yaml',
@@ -1479,6 +1478,7 @@ describe('verification planning', () => {
       'src/foo.test.ts',
       'src/lib/example.ts',
       'src/lib/component-catalog/catalog.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
       'scripts/verify-changed.mjs',
     ]) {
       expect(ids([file]), file).not.toContain('ct-full');
@@ -1486,19 +1486,16 @@ describe('verification planning', () => {
     }
   });
 
-  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
-    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
-    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+  it('keeps CT specs and their imported previews on the related lane, not the full suite', () => {
+    const spec = 'src/lib/components/ui/button/button.keyboard.ct.spec.ts';
+    const preview = 'src/lib/components/ui/button/button.preview.svelte';
     const root = fixtureRoot({
-      [geometryTest]: "import Preview from './button.preview.svelte';",
-      'src/lib/components/ui/button/button.preview.svelte': '<button />',
-      [golden]: '{}',
+      [spec]: "import Preview from './button.preview.svelte';",
+      [preview]: '<button />',
     });
     const ids = (files: string[]) =>
-      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
-        (check) => check.id,
-      );
-    for (const file of [geometryTest, golden]) {
+      createVerificationPlan(files, { root, ctTests: [spec] }).checks.map((check) => check.id);
+    for (const file of [spec, preview]) {
       expect(ids([file]), file).toContain('ct-related');
       expect(ids([file]), file).not.toContain('ct-full');
     }
@@ -1743,29 +1740,31 @@ describe('verification planning', () => {
     expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
   });
 
-  it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
-    const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
+  it('selects preview-based behavior tests through imports without inferring sibling files', () => {
+    const spec = 'src/lib/components/workspace/workspace-hover-card.keyboard.ct.spec.ts';
     const root = fixtureRoot({
-      [geometryTest]:
-        "import Preview, { preview } from './workspace-hover-card.preview.svelte';\ndefineGeometrySnapshotSuite({ scene: 'workspace-hover-card', component: Preview, definition: preview });",
+      [spec]: "import Preview from './workspace-hover-card.preview.svelte';",
       'src/lib/components/workspace/workspace-hover-card.preview.svelte':
         "import HoverCard from '$lib/components/ui/HoverCard.svelte';\nimport WorkspaceHoverCard from './WorkspaceHoverCard.svelte';",
       'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts': '',
       'src/lib/components/ui/HoverCard.svelte': '<aside />',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte': '<article />',
-      'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json': '{}',
     });
-    const options = { root, ctTests: [geometryTest] };
+    const options = { root, ctTests: [spec] };
 
     for (const file of [
       'src/lib/components/workspace/workspace-hover-card.preview.svelte',
-      'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts',
       'src/lib/components/ui/HoverCard.svelte',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte',
-      'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     ]) {
-      expect(findRelatedCtTests([file], options), file).toEqual([geometryTest]);
+      expect(findRelatedCtTests([file], options), file).toEqual([spec]);
     }
+    expect(
+      findRelatedCtTests(
+        ['src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts'],
+        options,
+      ),
+    ).toEqual([]);
   });
 
   it('keeps main and preload type checks scoped to their boundaries', () => {

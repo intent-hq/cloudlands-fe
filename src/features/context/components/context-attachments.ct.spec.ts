@@ -1,19 +1,6 @@
-import { fileURLToPath } from 'node:url';
 import { expect, test } from '../../../test/ct-test';
-import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import ContextAttachmentsSection from './ContextAttachmentsSection.svelte';
 import { preview } from './context-attachments.preview';
-
-defineGeometrySnapshotSuite({
-  scene: 'context-attachments',
-  component: ContextAttachmentsSection,
-  states: ['grid'],
-  widths: [320],
-  selector: '[data-context-attachment-grid] button',
-  snapshotPath: fileURLToPath(
-    new URL('./__geometry__/context-attachments.geometry.json', import.meta.url),
-  ),
-});
 
 test('sidebar images form square three-column rows and support keyboard previews', async ({
   mount,

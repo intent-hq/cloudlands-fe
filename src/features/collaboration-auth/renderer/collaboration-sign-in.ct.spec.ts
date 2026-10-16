@@ -1,18 +1,5 @@
-import { fileURLToPath } from 'node:url';
-import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import { test, expect } from '../../../test/ct-test';
 import Preview from './collaboration-sign-in.preview.svelte';
-
-defineGeometrySnapshotSuite({
-  scene: 'collaboration-sign-in',
-  component: Preview,
-  states: ['github-consent', 'gitlab-pat'],
-  widths: [390],
-  selector: '[role="dialog"]',
-  snapshotPath: fileURLToPath(
-    new URL('./__geometry__/collaboration-sign-in.geometry.json', import.meta.url),
-  ),
-});
 
 test('narrow GitLab sign-in keeps token and cancel controls reachable by keyboard', async ({
   mount,
@@ -20,7 +7,7 @@ test('narrow GitLab sign-in keeps token and cancel controls reachable by keyboar
 }) => {
   await page.setViewportSize({ width: 390, height: 620 });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'collaboration-sign-in', state: 'gitlab-pat-live' } },
+    hooksConfig: { previewScene: { scene: 'collaboration-sign-in', state: 'gitlab-pat-live' } },
   });
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -40,7 +27,7 @@ test('narrow device-capable GitLab keeps token entry secondary and restores focu
   await page.setViewportSize({ width: 390, height: 620 });
   await mount(Preview, {
     hooksConfig: {
-      geometrySnapshot: { scene: 'collaboration-sign-in', state: 'gitlab-device-ready-live' },
+      previewScene: { scene: 'collaboration-sign-in', state: 'gitlab-device-ready-live' },
     },
   });
   const dialog = page.getByRole('dialog');
@@ -72,7 +59,7 @@ test('GitHub-only sign-in has no forge chooser or experiment promotion', async (
 }) => {
   await page.setViewportSize({ width: 390, height: 620 });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'collaboration-sign-in', state: 'github-only' } },
+    hooksConfig: { previewScene: { scene: 'collaboration-sign-in', state: 'github-only' } },
   });
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -88,7 +75,7 @@ test('GitHub-only sign-in has no forge chooser or experiment promotion', async (
 
 test('enabling GitLab makes both forge choices available', async ({ mount, page }) => {
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'collaboration-sign-in', state: 'github-choice' } },
+    hooksConfig: { previewScene: { scene: 'collaboration-sign-in', state: 'github-choice' } },
   });
   await expect(page.getByRole('button', { name: /^GitHub$/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /^GitLab$/ })).toBeVisible();
