@@ -38,6 +38,9 @@ export interface PresenceTypingEntry {
   pulse: number;
 }
 
+/** Discussion pulses carry no agent target or draft text. */
+export type PresenceDiscussionTypingEntry = Omit<PresenceTypingEntry, 'agentId'>;
+
 /**
  * One ONLINE member of the workspace as `presence:changed` / `presence.snapshot`
  * report it. Profile fields are always present and `null` when the principal
@@ -54,6 +57,8 @@ export interface PresenceMember {
   avatarUrl: string | null;
   focus: PresenceFocusItem[];
   typing: PresenceTypingEntry[];
+  /** Omitted by older daemons and non-human projections. */
+  discussionTyping?: PresenceDiscussionTypingEntry[];
 }
 
 /**
@@ -64,6 +69,8 @@ export interface PresenceMember {
 export interface PresenceUpdateParams {
   focus: PresenceFocusItem[];
   typing?: { agentId: string } | null;
+  /** Omission/null clears this connection's discussion typing target. */
+  discussionTyping?: { workspaceId: string } | null;
 }
 
 /** `presence.update` result: the connection's own opaque typing handle. */
@@ -175,6 +182,18 @@ function isTypingEntry(value: unknown): value is PresenceTypingEntry {
   );
 }
 
+function isDiscussionTypingEntry(value: unknown): value is PresenceDiscussionTypingEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.source === 'string' &&
+    entry.source.length > 0 &&
+    typeof entry.since === 'string' &&
+    Number.isSafeInteger(entry.pulse) &&
+    (entry.pulse as number) >= 0
+  );
+}
+
 function isPresenceMember(value: unknown): value is PresenceMember {
   if (!value || typeof value !== 'object') return false;
   const member = value as Record<string, unknown>;
@@ -186,7 +205,10 @@ function isPresenceMember(value: unknown): value is PresenceMember {
     Array.isArray(member.focus) &&
     member.focus.every(isFocusItem) &&
     Array.isArray(member.typing) &&
-    member.typing.every(isTypingEntry)
+    member.typing.every(isTypingEntry) &&
+    (member.discussionTyping === undefined ||
+      (Array.isArray(member.discussionTyping) &&
+        member.discussionTyping.every(isDiscussionTypingEntry)))
   );
 }
 

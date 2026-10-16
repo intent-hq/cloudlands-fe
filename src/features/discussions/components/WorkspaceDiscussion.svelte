@@ -20,6 +20,13 @@
     discussionSendRequested,
     discussionRetryRequested,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+  import {
+    presenceDiscussionComposerFocused,
+    presenceDiscussionTypingPulse,
+    presenceDiscussionTypingStopped,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import { selectDiscussionTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { presenceTypingLabel } from '$features/presence/components/presence-person';
   import DiscussionThread from './DiscussionThread.svelte';
 
   let {
@@ -32,6 +39,7 @@
   const discussion$ = selectWorkspaceDiscussion(workspaceId$);
   const messages$ = selectDiscussionMessages(workspaceId$);
   const pending$ = selectDiscussionPending(workspaceId$);
+  const typing$ = selectDiscussionTypingPeople(workspaceId$);
   const context$ = selectDiscussionContext();
   const ready$ = selectDiscussionReady(workspaceId$);
   const multiplayer$ = selectLabsMultiplayerEnabled();
@@ -55,6 +63,15 @@
 {#if $multiplayer$}
   <DiscussionThread
     messages={$messages$}
+    typingLabel={presenceTypingLabel($typing$)}
+    onComposerFocusChange={(focused) =>
+      store.dispatch(presenceDiscussionComposerFocused(workspaceId, focused))}
+    onTypingInput={(typing) =>
+      store.dispatch(
+        typing
+          ? presenceDiscussionTypingPulse(workspaceId)
+          : presenceDiscussionTypingStopped(workspaceId),
+      )}
     draft={$discussion$.draft}
     initialized={$discussion$.initialized}
     loading={$discussion$.loading}

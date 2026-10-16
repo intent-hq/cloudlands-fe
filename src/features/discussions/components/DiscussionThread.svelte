@@ -14,6 +14,9 @@
   interface Props {
     messages: readonly DiscussionMessage[];
     draft: string;
+    typingLabel?: string | null;
+    onComposerFocusChange?: (focused: boolean) => void;
+    onTypingInput?: (typing: boolean) => void;
     initialized?: boolean;
     loading?: boolean;
     loadingOlder?: boolean;
@@ -35,6 +38,9 @@
   let {
     messages,
     draft,
+    typingLabel = null,
+    onComposerFocusChange,
+    onTypingInput,
     initialized = true,
     loading = false,
     loadingOlder = false,
@@ -107,6 +113,20 @@
     }
   });
 
+  // Report DOM focus loss on panel deactivation, access loss, and unmount.
+  $effect(() => {
+    if (!isActive || !isPanelFocused || !canSend) untrack(() => onComposerFocusChange?.(false));
+    return () => untrack(() => onComposerFocusChange?.(false));
+  });
+
+  function input(event: Event & { currentTarget: HTMLTextAreaElement }) {
+    onDraftChange(event.currentTarget.value);
+    if (isActive && isPanelFocused && canSend && document.activeElement === composer) {
+      onComposerFocusChange?.(true);
+      onTypingInput?.(!!event.currentTarget.value.trim());
+    }
+  }
+
   function send() {
     const body = composer?.value ?? draft;
     if (
@@ -117,6 +137,7 @@
       !body.trim()
     )
       return;
+    onTypingInput?.(false);
     onSend();
     composer?.focus({ preventScroll: true });
   }
@@ -224,6 +245,9 @@
     </div>
   </div>
   <div class="shrink-0 px-4 pb-4 pt-2" data-discussion-composer>
+    <div role="status" aria-live="polite" aria-atomic="true" data-discussion-typing>
+      {#if typingLabel}<p class="mb-2 type-caption text-muted-foreground">{typingLabel}</p>{/if}
+    </div>
     {#if sendError || tooLong}
       <p class="mb-2 type-caption text-muted-foreground" role="alert">
         {tooLong ? m.workspace_discussion_tooLong_error() : sendError}
@@ -241,7 +265,9 @@
         rows={3}
         readonly={!canSend}
         aria-invalid={tooLong || undefined}
-        oninput={(event) => onDraftChange(event.currentTarget.value)}
+        oninput={input}
+        onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
+        onblur={() => onComposerFocusChange?.(false)}
         onkeydown={onKeydown}
         oncompositionstart={() => {
           composing = true;

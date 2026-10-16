@@ -1,4 +1,7 @@
 import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
+import '$store/renderer/seeders/presence-bridge-seeder';
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import { presenceSaga } from '$store/renderer/slices/presence/sagas/presence-saga';
 import { store } from '$store/renderer/store';
 import { workspaceDiscussionSaga } from '$store/renderer/slices/workspace-discussion/sagas/workspace-discussion-saga';
 import type {
@@ -7,7 +10,14 @@ import type {
   DiscussionSendParams,
 } from '$shared/types/workspace-discussion';
 
-export const startDiscussionTestSaga = () => store.runSaga(workspaceDiscussionSaga);
+export const startDiscussionTestSaga = () => {
+  const stopDiscussion = store.runSaga(workspaceDiscussionSaga);
+  const stopPresence = store.runSaga(presenceSaga);
+  return () => {
+    stopDiscussion();
+    stopPresence();
+  };
+};
 
 export function installDiscussionTestBackend(
   workspaceId: string,
@@ -36,7 +46,49 @@ export function installDiscussionTestBackend(
     requests.push({ method, params });
     onRequests([...requests]);
   }
+  let peerPulse = 1;
+  function receiveTyping(advance = false) {
+    if (advance) peerPulse++;
+    const pulse = (source: string) => ({ source, pulse: peerPulse, since: '2099-01-01T00:00:00Z' });
+    const person = (principalId: string, displayName: string, sources: string[]) => ({
+      principalId,
+      displayName,
+      login: null,
+      avatarUrl: null,
+      focus: [],
+      typing: [],
+      discussionTyping: sources.map(pulse),
+    });
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'ct-presence',
+        event: {
+          id: `typing-${peerPulse}`,
+          type: 'presence:changed',
+          workspaceId,
+          data: {
+            workspaceId,
+            members: [
+              person(store.state.principal.snapshot?.principal.id ?? 'owner', 'Me', [
+                'self-device',
+              ]),
+              person('alex', 'Alex', ['alex-phone', 'alex-laptop']),
+              person('samira', 'Samira', ['samira']),
+            ],
+          },
+        },
+      },
+      ['ct-presence'],
+    );
+  }
   installMockElectronBridge({
+    'presence.snapshot': () => ({ workspaceId, members: [] }),
+    'workspace.members.list': () => ({ members: [] }),
+    'presence.update': (params) => {
+      record('presence.update', params);
+      return { ok: true, typingSource: 'own' };
+    },
     'discussion.list': async (value) => {
       const params = value as DiscussionListParams;
       record('discussion.list', params);
@@ -61,6 +113,7 @@ export function installDiscussionTestBackend(
   });
   return {
     message,
+    receiveTyping,
     finishOlder: () => finishOlder?.(),
     restore: () => {
       window.electronAPI = previousBridge;

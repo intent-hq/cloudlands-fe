@@ -46,6 +46,21 @@ describe('presence-bridge-seeder', () => {
     expect(mockedRequest).toHaveBeenCalledWith('presence.update', focusA);
   });
 
+  it('forwards discussion typing and its clear without changing the agent typing channel', async () => {
+    mockedRequest.mockResolvedValue({ typingSource: 'ts-1' });
+    const params = {
+      ...focusA,
+      typing: { agentId: 'agent' },
+      discussionTyping: { workspaceId: 'ws-a' },
+    };
+    await report(params);
+    await report({ ...focusA, typing: { agentId: 'agent' }, discussionTyping: null });
+    expect(mockedRequest.mock.calls).toEqual([
+      ['presence.update', params],
+      ['presence.update', { ...focusA, typing: { agentId: 'agent' }, discussionTyping: null }],
+    ]);
+  });
+
   it('answers a null typing source when the daemon has no presence method', async () => {
     mockedRequest.mockRejectedValueOnce({ code: 'METHOD_NOT_FOUND' });
 

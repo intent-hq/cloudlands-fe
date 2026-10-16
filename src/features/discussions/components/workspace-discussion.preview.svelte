@@ -2,7 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   interface Props {
     narrow?: boolean;
-    state?: 'ready' | 'empty' | 'loading' | 'error' | 'send-error' | 'history';
+    state?: 'ready' | 'empty' | 'loading' | 'error' | 'send-error' | 'history' | 'typing';
   }
   export const preview = definePreview<Props>({
     id: 'workspace-discussion',
@@ -11,6 +11,8 @@
     states: {
       workspace: { props: {} },
       narrow: { props: { narrow: true } },
+      typing: { props: { state: 'typing' } },
+      'typing-narrow': { props: { narrow: true, state: 'typing' } },
       empty: { props: { narrow: true, state: 'empty' } },
       loading: { props: { narrow: true, state: 'loading' } },
       error: { props: { narrow: true, state: 'error' } },
@@ -24,6 +26,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-regular-svg-icons';
   import { ContentHeader } from '$features/layout/components/content-header';
+  import { presenceTypingLabel } from '$features/presence/components/presence-person';
   import PeoplePreview from '$features/presence/components/workspace-people-tile.preview.svelte';
   import { store } from '$store/renderer/store';
   import {
@@ -150,6 +153,7 @@
       <DiscussionThread
         {messages}
         {draft}
+        typingLabel={previewState === 'typing' ? presenceTypingLabel(authors.slice(1)) : null}
         {initialized}
         loading={!initialized}
         {hasMore}

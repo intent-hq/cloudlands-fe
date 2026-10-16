@@ -30,7 +30,7 @@ test('composer preserves multiline drafts, ignores composition Enter, and sends 
   await expect(composer).toBeFocused();
   await expect(component.getByRole('log')).toContainText('First line\nx');
   const calls = await recorded(component);
-  expect(calls[0]).toEqual({
+  expect(calls.find((call) => call.method === 'discussion.list')).toEqual({
     method: 'discussion.list',
     params: { workspaceId: 'discussion-test', limit: 50 },
   });
@@ -146,7 +146,9 @@ test('retry resumes a partial reconnect page before requesting older history', a
   await expect(component.getByRole('alert')).toBeVisible();
   await component.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect
-    .poll(async () => (await recorded(component)).at(-1))
+    .poll(async () =>
+      (await recorded(component)).filter((call) => call.method === 'discussion.list').at(-1),
+    )
     .toEqual({
       method: 'discussion.list',
       params: { workspaceId: 'discussion-test', limit: 50, afterSequence: 100 },
@@ -206,4 +208,82 @@ test('disconnection keeps loaded history and the draft visible while disabling s
   await expect(component.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   await composer.press('Enter');
   expect((await recorded(component)).filter((r) => r.method === 'discussion.send')).toHaveLength(0);
+});
+
+test('discussion typing uses pooled presence reports and clears without reviving a retained draft', async ({
+  mount,
+}) => {
+  const component = await mount(DiscussionHost);
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeEditable();
+  const typingReports = async () =>
+    (await recorded(component)).filter(
+      (call) => call.method === 'presence.update' && call.params.discussionTyping,
+    );
+  expect(await typingReports()).toHaveLength(0);
+  await composer.fill('Working through this');
+  await expect.poll(async () => (await typingReports()).length).toBeGreaterThan(0);
+  const active = (await typingReports()).at(-1);
+  expect(active?.params).toEqual({
+    focus: [{ workspaceId: 'discussion-test' }],
+    typing: null,
+    discussionTyping: { workspaceId: 'discussion-test' },
+  });
+  await component.getByRole('button', { name: 'Toggle discussion' }).click();
+  await expect
+    .poll(
+      async () =>
+        (await recorded(component)).filter((call) => call.method === 'presence.update').at(-1)
+          ?.params.discussionTyping,
+    )
+    .toBeUndefined();
+  const sent = (await typingReports()).length;
+  await component.getByRole('button', { name: 'Toggle discussion' }).click();
+  await expect(composer).toHaveValue('Working through this');
+  expect(await typingReports()).toHaveLength(sent);
+  await composer.fill('A fresh edit');
+  await expect.poll(async () => (await typingReports()).length).toBeGreaterThan(sent);
+  await composer.press('Enter');
+  await expect(composer).toHaveValue('');
+  await expect
+    .poll(
+      async () =>
+        (await recorded(component)).filter((call) => call.method === 'presence.update').at(-1)
+          ?.params.discussionTyping,
+    )
+    .toBeUndefined();
+});
+
+test('discussion typing shows other people once, expires unchanged pulses, and renews on new input', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 760 });
+  const component = await mount(DiscussionHost);
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeEditable();
+  const indicator = component.locator('[data-discussion-typing]');
+  await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
+  await expect(indicator).toHaveAttribute('role', 'status');
+  await expect(indicator).toHaveText('Alex and Samira are typing…');
+  const line = await indicator.boundingBox();
+  const input = await component
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .boundingBox();
+  const pane = await component.locator('[data-discussion-test-pane]').boundingBox();
+  expect(line && input && pane).toBeTruthy();
+  expect(line!.x).toBeGreaterThanOrEqual(pane!.x);
+  expect(line!.x + line!.width).toBeLessThanOrEqual(pane!.x + pane!.width);
+  expect(line!.y + line!.height).toBeLessThanOrEqual(input!.y);
+  expect(input!.x + input!.width).toBeLessThanOrEqual(pane!.x + pane!.width);
+  expect(input!.y + input!.height).toBeLessThanOrEqual(pane!.y + pane!.height);
+  await component
+    .locator('[data-discussion-test-pane]')
+    .screenshot({ path: testInfo.outputPath('discussion-typing.png') });
+  await expect(indicator).toBeEmpty({ timeout: 5000 });
+  await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
+  await expect(indicator).toBeEmpty();
+  await component.getByRole('button', { name: 'Renew peer typing', exact: true }).click();
+  await expect(indicator).toHaveText('Alex and Samira are typing…');
+  await component.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect(indicator).toBeEmpty();
 });

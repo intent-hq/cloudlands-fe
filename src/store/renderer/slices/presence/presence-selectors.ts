@@ -4,9 +4,14 @@
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
+import type {
+  PresenceFocusItem,
+  PresenceMember,
+  PresenceReportParams,
+} from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import { store } from '../../store';
+import { selectDiscussionReady } from '../workspace-discussion/workspace-discussion-selectors';
 import { selectActiveWorkspaceIds } from '../tab-state/tab-state-selectors';
 import {
   selectCollaborationReady,
@@ -233,30 +238,76 @@ export const selectAgentTypingPeople = store.createSelector<
   return getItems(roster).filter((member) => typingPrincipals.has(member.principalId));
 });
 
+/** Only actual composer focus in the current admitted workspace can report discussion input. */
+export const selectDiscussionTypingWorkspace = store.createSelector((state): string | null => {
+  const id = state.presence.discussionComposerWorkspaceId;
+  return id &&
+    currentPresence(state) &&
+    state.presence.windowVisible &&
+    state.tabState.currentTabId === id &&
+    selectDiscussionReady.select(state, id)
+    ? id
+    : null;
+});
+
+export const selectDiscussionTypingPeople = store.createSelector<
+  [workspaceId: string],
+  PresenceIdentity[]
+>((state, workspaceId) => {
+  if (!sharedWorkspace(state, workspaceId) || state.presence.ownPrincipalId === null)
+    return NO_MEMBERS;
+  const live = state.presence.liveDiscussionTyping[workspaceId];
+  const roster = state.presence.rosters[workspaceId];
+  if (!live || !roster) return NO_MEMBERS;
+  const people = new Set(
+    Object.entries(live)
+      .filter(
+        ([source, entry]) =>
+          !entry.expired &&
+          source !== state.presence.ownTypingSource &&
+          entry.principalId !== state.presence.ownPrincipalId,
+      )
+      .map(([, entry]) => entry.principalId),
+  );
+  return people.size
+    ? getItems(roster).filter((member) => people.has(member.principalId))
+    : NO_MEMBERS;
+});
+
+export const selectPresenceLiveDiscussionTyping = store.createSelector(
+  (state) => state.presence.liveDiscussionTyping,
+);
+
 /**
  * This window's own `presence.update` contribution: the current workspace
  * tab plus the agent / note each of its panels shows, and the typing target.
  * A hidden window contributes nothing at all.
  */
-export const selectOwnPresenceReport = store.createSelector(
-  (state): { focus: PresenceFocusItem[]; typing: { agentId: string } | null } => {
-    if (!state.presence.windowVisible) return { focus: [], typing: null };
-    const workspaceId = state.tabState.currentTabId;
-    if (!workspaceId) return { focus: [], typing: null };
-    const focus: PresenceFocusItem[] = [{ workspaceId }];
-    const panels = state.panelLayout.byWorkspaceId[workspaceId]?.panels ?? {};
-    for (const panelId of Object.keys(panels).sort()) {
-      const panel = panels[panelId];
-      const tab = panel.activeTabId
-        ? panel.tabs.find((candidate) => candidate.id === panel.activeTabId)
-        : undefined;
-      if (!tab) continue;
-      if (tab.type === 'agent' && tab.agentId) focus.push({ workspaceId, agentId: tab.agentId });
-      else if (tab.type === 'note' && tab.noteId) focus.push({ workspaceId, noteId: tab.noteId });
-    }
-    return { focus, typing: state.presence.ownTyping };
-  },
-);
+export const selectOwnPresenceReport = store.createSelector((state): PresenceReportParams => {
+  if (!state.presence.windowVisible) return { focus: [], typing: null };
+  const workspaceId = state.tabState.currentTabId;
+  if (!workspaceId) return { focus: [], typing: null };
+  const focus: PresenceFocusItem[] = [{ workspaceId }];
+  const panels = state.panelLayout.byWorkspaceId[workspaceId]?.panels ?? {};
+  for (const panelId of Object.keys(panels).sort()) {
+    const panel = panels[panelId];
+    const tab = panel.activeTabId
+      ? panel.tabs.find((candidate) => candidate.id === panel.activeTabId)
+      : undefined;
+    if (!tab) continue;
+    if (tab.type === 'agent' && tab.agentId) focus.push({ workspaceId, agentId: tab.agentId });
+    else if (tab.type === 'note' && tab.noteId) focus.push({ workspaceId, noteId: tab.noteId });
+  }
+  const discussionTyping = state.presence.ownDiscussionTyping;
+  return {
+    focus,
+    typing: state.presence.ownTyping,
+    ...(discussionTyping &&
+    discussionTyping.workspaceId === selectDiscussionTypingWorkspace.select(state)
+      ? { discussionTyping }
+      : {}),
+  };
+});
 
 /** `selectOwnPresenceReport` serialized, so a selector channel fires only on real change. */
 export const selectOwnPresenceReportKey = store.createSelector((state) =>

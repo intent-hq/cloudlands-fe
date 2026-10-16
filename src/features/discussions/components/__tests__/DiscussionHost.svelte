@@ -6,6 +6,7 @@
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
   import { installDiscussionTestBackend, startDiscussionTestSaga } from './discussion-test-backend';
@@ -53,6 +54,7 @@
       updatedAt: '2026-10-14T12:00:00Z',
     }),
   );
+  store.dispatch(openWorkspaceTab(workspaceId));
   admitLegacyPrincipal();
   let cancel: (() => void) | undefined;
   onMount(() => {
@@ -97,6 +99,8 @@
 >
 <Button onclick={() => backend.finishOlder()}>Finish history</Button>
 <Button onclick={liveMessage}>Receive live message</Button>
+<Button onclick={() => backend.receiveTyping()}>Receive peer typing</Button>
+<Button onclick={() => backend.receiveTyping(true)}>Renew peer typing</Button>
 <Button onclick={() => store.dispatch(setLabsMultiplayerEnabled(false))}>Disable multiplayer</Button
 >
 <Button onclick={failCatchUp}>Fail reconnect catch-up</Button>
