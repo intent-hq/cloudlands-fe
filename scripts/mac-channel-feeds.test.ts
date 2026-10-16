@@ -1,176 +1,276 @@
 // @vitest-environment node
-// @verify-changed-triggers: scripts/mac-channel-feeds.mjs, .github/workflows/release-alpha.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml
-import { spawnSync } from 'node:child_process';
+// @verify-changed-triggers: scripts/mac-channel-feeds.mjs, scripts/mac-update-feed.mjs, .github/workflows/release-alpha.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, src/features/auto-update/main/mac-update-compatibility.ts
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareMacChannelFeeds } from './mac-channel-feeds.mjs';
-const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
+import {
+  configureMacUpdateCompatibility,
+  macUpdateChannel,
+} from '../src/features/auto-update/main/mac-update-compatibility';
+
+const updaterRequire = createRequire(
+  process.env.MAC_UPDATER_PACKAGE_ROOT
+    ? resolve(process.env.MAC_UPDATER_PACKAGE_ROOT, 'package.json')
+    : createRequire(import.meta.url).resolve('electron-updater/package.json'),
+);
 const { dump, load } = updaterRequire('js-yaml');
-const { MacUpdater } = updaterRequire('./MacUpdater');
-const { resolveFiles, findFile } = updaterRequire('./providers/Provider');
+const childProcess = updaterRequire('child_process');
+const { MacUpdater } = updaterRequire('./out/MacUpdater.js');
+const { GenericProvider } = updaterRequire('./out/providers/GenericProvider.js');
 const { SemVer } = updaterRequire('semver');
 const dirs: string[] = [];
-function feed(version: string, arches = ['x64', 'arm64']) {
-  const files = arches.map((arch) => {
-    const url = `Intent-${version}-${arch}-mac.zip`;
-    const data = Buffer.from(`archive ${url}`);
-    return { url, size: data.length, sha512: createHash('sha512').update(data).digest('base64') };
-  });
-  return { version, files, path: files[0].url, sha512: files[0].sha512 };
+const originalArch = Object.getOwnPropertyDescriptor(process, 'arch')!;
+
+function feed(version: string, arches = ['arm64']) {
+  const files = arches.flatMap((arch) =>
+    ['zip', 'dmg'].map((ext) => {
+      const url = `Intent-${version}-${arch}${ext === 'zip' ? '-mac' : ''}.${ext}`;
+      const data = Buffer.from(`archive ${url}`);
+      return { url, size: data.length, sha512: createHash('sha512').update(data).digest('base64') };
+    }),
+  );
+  return {
+    version,
+    files,
+    path: files[0].url,
+    sha512: files[0].sha512,
+    releaseNotes: 'Selected release',
+    minimumSystemVersion: '13.0.0',
+  };
 }
-function incoming(arches = ['arm64']) {
+function incoming(arches = ['arm64'], version = '2.220.0') {
   const dir = mkdtempSync(join(tmpdir(), 'mac-channels-'));
   dirs.push(dir);
-  const info = feed('3.0.0', arches);
-  for (const file of info.files) writeFileSync(join(dir, file.url), `archive ${file.url}`);
+  const info = feed(version, arches);
+  for (const file of info.files) {
+    writeFileSync(join(dir, file.url), `archive ${file.url}`);
+    writeFileSync(join(dir, file.url + '.blockmap'), 'blockmap');
+  }
   writeFileSync(join(dir, 'latest-mac.yml'), dump(info));
   return dir;
-}
-function source(info: ReturnType<typeof feed>) {
-  return {
-    feed: dump(info),
-    assets: info.files.map((file) => ({ name: file.url, size: file.size })),
-  };
 }
 function read(dir: string, name = 'latest-mac.yml') {
   return load(readFileSync(join(dir, name), 'utf8'));
 }
+
+function client(
+  dir: string,
+  channel: string,
+  generation: 'before' | 'split' | 'fixed',
+  hardware: 'arm64' | 'intel' | 'rosetta',
+) {
+  const arch = hardware === 'arm64' ? 'arm64' : 'x64';
+  Object.defineProperty(process, 'arch', { value: arch, configurable: true });
+  vi.spyOn(childProcess, 'execFileSync').mockImplementation(((command: string) =>
+    command === 'sysctl'
+      ? `sysctl.proc_translated: ${hardware === 'rosetta' ? 1 : 0}`
+      : hardware === 'arm64'
+        ? 'Darwin ARM64'
+        : 'Darwin x86_64') as any);
+  const value = Object.create(MacUpdater.prototype);
+  const transfer = vi.fn(async ({ fileInfo }) => [fileInfo.url.href]);
+  Object.assign(value, {
+    currentVersion: new SemVer(generation === 'before' ? '2.216.5' : '2.219.7'),
+    allowDowngrade: false,
+    autoDownload: true,
+    _logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+    isUpdateSupported: () => true,
+    isUserWithinRollout: () => true,
+    executeDownload: transfer,
+  });
+  if (generation !== 'before')
+    configureMacUpdateCompatibility(
+      value,
+      'darwin',
+      arch,
+      generation === 'fixed' && hardware === 'rosetta',
+    );
+  const requests: string[] = [];
+  const provider = new GenericProvider(
+    {
+      provider: 'generic',
+      url: `https://updates.example/${channel}/`,
+      ...(generation === 'before' ? {} : macUpdateChannel('darwin', arch)),
+    },
+    value,
+    { platform: 'darwin', executor: {} },
+  );
+  provider.httpRequest = async (url: URL) => {
+    requests.push(url.pathname);
+    return readFileSync(join(dir, basename(url.pathname)), 'utf8');
+  };
+  value.getUpdateInfoAndProvider = async () => ({
+    info: await provider.getLatestVersion(),
+    provider,
+  });
+  const offered = vi.fn(),
+    errors = vi.fn();
+  value.on('update-available', offered);
+  value.on('error', errors);
+  return { value, requests, transfer, offered, errors };
+}
 afterEach(() => {
+  vi.restoreAllMocks();
+  Object.defineProperty(process, 'arch', originalArch);
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('architecture-safe channel feeds', () => {
+describe('Mac channel migration', () => {
   it.each(['alpha', 'beta', 'stable'])(
-    'retains only %s’s own compatible legacy release with immutable URLs',
+    'advances both %s feeds using only the selected release, even with frozen history',
     async (channel) => {
       const dir = incoming();
-      const arm = read(dir);
-      writeFileSync(join(dir, 'latest-arm64-mac.yml'), dump(arm));
-      writeFileSync(join(dir, 'latest-mac.yml'), dump(feed('2.9.0')));
-      const old = feed('2.0.0');
-      const loadRelease = vi.fn(async (tag: string) => {
-        if (tag === channel || tag === 'v2.0.0') return source(old);
-        throw new Error(`Unexpected release ${tag}`);
+      writeFileSync(join(dir, 'latest-arm64-mac.yml'), readFileSync(join(dir, 'latest-mac.yml')));
+      writeFileSync(join(dir, 'latest-mac.yml'), dump(feed('2.216.5', ['x64', 'arm64'])));
+      await prepareMacChannelFeeds(dir, channel);
+      expect(read(dir)).toMatchObject({
+        version: '2.220.0',
+        path: 'Intent-2.220.0-arm64-mac.zip',
+        releaseNotes: 'Selected release',
+        minimumSystemVersion: '13.0.0',
       });
-      await prepareMacChannelFeeds(dir, channel, loadRelease);
-      const legacy = read(dir);
-      expect(legacy.version).toBe('2.0.0');
-      expect(legacy.files.map((file: { url: string }) => file.url)).toEqual(
-        old.files.map(
-          (file) =>
-            `https://github.com/intent-hq/cloudlands-releases/releases/download/v2.0.0/${file.url}`,
-        ),
+      expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(
+        readFileSync(join(dir, 'latest-arm64-mac.yml'), 'utf8'),
       );
-      expect(legacy.files.map((file: { sha512: string }) => file.sha512)).toEqual(
-        old.files.map((file) => file.sha512),
-      );
-      expect(legacy.path).toBe(legacy.files[0].url);
-      const intel = findFile(
-        MacUpdater.filterFilesForArch(
-          resolveFiles(
-            legacy,
-            new URL(
-              `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}/`,
-            ),
-          ),
-          false,
-        ),
-        'zip',
-        ['pkg', 'dmg'],
-      );
-      expect(intel.url.href).toBe(
-        `https://github.com/intent-hq/cloudlands-releases/releases/download/v2.0.0/Intent-2.0.0-x64-mac.zip`,
-      );
-      expect(read(dir, 'latest-arm64-mac.yml').version).toBe('3.0.0');
-      expect(loadRelease.mock.calls.map((call) => call[0])).toEqual([channel, 'v2.0.0']);
+      await prepareMacChannelFeeds(dir, channel);
+      expect(read(dir).version).toBe('2.220.0');
     },
   );
-  it('refreshes both feeds after a successful complete Mac release without consulting old releases', async () => {
-    const dir = incoming(['x64', 'arm64']);
-    const loadRelease = vi.fn();
-    await prepareMacChannelFeeds(dir, 'alpha', loadRelease);
-    expect(read(dir).files).toHaveLength(2);
-    expect(read(dir, 'latest-arm64-mac.yml').files).toHaveLength(1);
-    expect(loadRelease).not.toHaveBeenCalled();
+
+  it('promotes an older selected dual release without Intel assets or cross-channel lookup', async () => {
+    const dir = incoming(['x64', 'arm64'], '2.216.5');
+    writeFileSync(join(dir, 'Intent-2.216.5-x64.exe'), 'Windows installer');
+    await prepareMacChannelFeeds(dir, 'stable');
+    expect(read(dir).version).toBe('2.216.5');
+    expect(read(dir).files.map((file: any) => file.url)).toEqual([
+      'Intent-2.216.5-arm64-mac.zip',
+      'Intent-2.216.5-arm64.dmg',
+    ]);
+    expect(read(dir).path).toBe('Intent-2.216.5-arm64-mac.zip');
+    expect(existsSync(join(dir, 'Intent-2.216.5-x64-mac.zip'))).toBe(false);
+    expect(existsSync(join(dir, 'Intent-2.216.5-x64.dmg.blockmap'))).toBe(false);
+    expect(existsSync(join(dir, 'Intent-2.216.5-x64.exe'))).toBe(true);
   });
-  it.each(['alpha', 'beta', 'stable'])(
-    'does not offer or download the no-history sentinel on %s',
-    async (channel) => {
-      const dir = incoming();
-      await prepareMacChannelFeeds(dir, channel, async () => null);
-      const info = read(dir);
-      expect(info).toEqual({ version: '0.0.0', files: [] });
-      // Exercise the installed updater's real check state machine, not a model of it.
-      const updater = Object.create(MacUpdater.prototype);
-      Object.assign(updater, {
-        currentVersion: new SemVer('2.0.0'),
-        allowDowngrade: false,
-        autoDownload: true,
-        _logger: { info: vi.fn() },
-        isUpdateSupported: () => true,
-        isUserWithinRollout: () => true,
-        getUpdateInfoAndProvider: async () => ({ info, provider: {} }),
-        downloadUpdate: vi.fn(),
+
+  it.each([
+    'malformed ARM feed',
+    'Intel ARM feed',
+    'missing archive',
+    'corrupt archive',
+    'invalid channel',
+    'wrong selected version',
+  ])('leaves published inputs intact on %s', async (failure) => {
+    const dir = incoming();
+    const shared = readFileSync(join(dir, 'latest-mac.yml'), 'utf8');
+    const alias =
+      failure === 'malformed ARM feed'
+        ? 'files: bad'
+        : failure === 'Intel ARM feed'
+          ? dump(feed('2.220.0', ['x64', 'arm64']))
+          : shared;
+    writeFileSync(join(dir, 'latest-arm64-mac.yml'), alias);
+    const zip = join(dir, read(dir).path);
+    if (failure === 'missing archive') rmSync(zip);
+    if (failure === 'corrupt archive') writeFileSync(zip, 'bad');
+    await expect(
+      prepareMacChannelFeeds(
+        dir,
+        failure === 'invalid channel' ? 'other' : 'beta',
+        failure === 'wrong selected version' ? '2.219.7' : '2.220.0',
+      ),
+    ).rejects.toThrow();
+    expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(shared);
+    expect(readFileSync(join(dir, 'latest-arm64-mac.yml'), 'utf8')).toBe(alias);
+  });
+
+  for (const channel of ['alpha', 'beta', 'stable']) {
+    for (const generation of ['before', 'split'] as const) {
+      it(`discovers and selects native ARM from ${generation} clients on ${channel}`, async () => {
+        const dir = incoming();
+        await prepareMacChannelFeeds(dir, channel);
+        const { value, requests, transfer, offered, errors } = client(
+          dir,
+          channel,
+          generation,
+          'arm64',
+        );
+        const result = await value.doCheckForUpdates();
+        expect(result.isUpdateAvailable).toBe(true);
+        expect(requests).toEqual([
+          `/${channel}/${generation === 'before' ? 'latest-mac.yml' : 'latest-arm64-mac.yml'}`,
+        ]);
+        expect(await result.downloadPromise).toEqual([
+          `https://updates.example/${channel}/Intent-2.220.0-arm64-mac.zip`,
+        ]);
+        expect(transfer).toHaveBeenCalledOnce();
+        expect(offered).toHaveBeenCalledOnce();
+        expect(errors).not.toHaveBeenCalled();
+        expect(value.allowDowngrade).toBe(false);
       });
-      const offered = vi.fn(),
-        error = vi.fn(),
-        unavailable = vi.fn();
-      updater.on('update-available', offered);
-      updater.on('error', error);
-      updater.on('update-not-available', unavailable);
-      const result = await updater.doCheckForUpdates();
-      expect(result.isUpdateAvailable).toBe(false);
-      expect(unavailable).toHaveBeenCalledOnce();
+    }
+  }
+
+  it('pre-change Intel reports an update error before downloading an incompatible archive', async () => {
+    const dir = incoming();
+    await prepareMacChannelFeeds(dir, 'alpha');
+    const { value, transfer, offered, errors } = client(dir, 'alpha', 'before', 'intel');
+    const result = await value.doCheckForUpdates();
+    expect(result.isUpdateAvailable).toBe(true);
+    await expect(result.downloadPromise).rejects.toMatchObject({
+      code: 'ERR_UPDATER_NO_FILES_PROVIDED',
+    });
+    expect(offered).toHaveBeenCalledOnce();
+    expect(errors).toHaveBeenCalledOnce();
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
+  it.each(['split', 'fixed'] as const)(
+    'guarded %s Intel refuses before announcing an update',
+    async (generation) => {
+      const dir = incoming();
+      await prepareMacChannelFeeds(dir, 'alpha');
+      const { value, transfer, offered, errors } = client(dir, 'alpha', generation, 'intel');
+      expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
+      expect(transfer).not.toHaveBeenCalled();
       expect(offered).not.toHaveBeenCalled();
-      expect(error).not.toHaveBeenCalled();
-      expect(updater.downloadUpdate).not.toHaveBeenCalled();
+      expect(errors).not.toHaveBeenCalled();
     },
   );
-  it.each(['lookup failure', 'malformed feed', 'missing old asset', 'wrong size'])(
-    'fails safely on %s without replacing the legacy feed',
-    async (failure) => {
+
+  it.each(['before', 'fixed'] as const)(
+    '%s Rosetta selects native ARM on Apple Silicon',
+    async (generation) => {
       const dir = incoming();
-      const before = readFileSync(join(dir, 'latest-mac.yml'), 'utf8');
-      const old = source(feed('2.0.0'));
-      if (failure === 'malformed feed') old.feed = 'files: bad';
-      if (failure === 'missing old asset') old.assets.pop();
-      if (failure === 'wrong size') old.assets[0].size++;
-      await expect(
-        prepareMacChannelFeeds(dir, 'beta', async () => {
-          if (failure === 'lookup failure') throw new Error('HTTP 503');
-          return old;
-        }),
-      ).rejects.toThrow();
-      expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(before);
+      await prepareMacChannelFeeds(dir, 'alpha');
+      const { value } = client(dir, 'alpha', generation, 'rosetta');
+      const result = await value.doCheckForUpdates();
+      expect(result.isUpdateAvailable).toBe(true);
+      expect(await result.downloadPromise).toEqual([
+        'https://updates.example/alpha/Intent-2.220.0-arm64-mac.zip',
+      ]);
+    },
+  );
+
+  it('records the installed split-feed Rosetta guard limitation', async () => {
+    const dir = incoming();
+    await prepareMacChannelFeeds(dir, 'alpha');
+    const { value, transfer } = client(dir, 'alpha', 'split', 'rosetta');
+    expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
+  it.each(['before', 'split'] as const)(
+    'does not move a %s client backwards to an older promoted release',
+    async (generation) => {
+      const dir = incoming(['arm64'], '2.200.0');
+      await prepareMacChannelFeeds(dir, 'stable');
+      const { value, transfer } = client(dir, 'stable', generation, 'arm64');
+      expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
+      expect(transfer).not.toHaveBeenCalled();
     },
   );
 });
-
-it.each(['404', '401', '403', '500'])(
-  'treats only confirmed HTTP 404 as no previous release (HTTP %s)',
-  (status) => {
-    const dir = incoming();
-    const before = readFileSync(join(dir, 'latest-mac.yml'), 'utf8');
-    mkdirSync(join(dir, 'bin'));
-    writeFileSync(
-      join(dir, 'bin/gh'),
-      `#!/bin/sh\necho 'gh: failure (HTTP ${status})' >&2\nexit 1\n`,
-      { mode: 0o755 },
-    );
-    const result = spawnSync(process.execPath, ['scripts/mac-channel-feeds.mjs', dir, 'alpha'], {
-      encoding: 'utf8',
-      env: { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}` },
-    });
-    if (status === '404') {
-      expect(result.status, result.stderr).toBe(0);
-      expect(read(dir)).toEqual({ version: '0.0.0', files: [] });
-    } else {
-      expect(result.status).not.toBe(0);
-      expect(readFileSync(join(dir, 'latest-mac.yml'), 'utf8')).toBe(before);
-    }
-  },
-);
