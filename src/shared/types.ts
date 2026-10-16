@@ -419,8 +419,8 @@ export interface Workspace {
    *  `workspace.setBrowserClient { clientId: null }`. */
   browserClientId?: string;
   defaultModel?: string; // Default model for new agents in this workspace
-  /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
-  agentSummary?: WorkspaceAgentIdSummary;
+  /** Daemon card aggregate, preserved on list/get responses (PROTOCOL §5.1). */
+  agentSummary?: WorkspaceAgentSummary;
   /** Task progress rollup for list views (like flame graph); carried on WorkspaceMetadata payloads when the daemon provides it (PROTOCOL §5.1). */
   taskStats?: WorkspaceTaskStats;
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
@@ -451,27 +451,22 @@ export interface WorkspaceDiskUsage {
 }
 
 /**
- * Slim agent summary embedded in workspace metadata payloads.
- * Contains only agent IDs; derive counts from `agentIds.length` and fetch
- * detailed agent data from agent/session sources when needed.
+ * Daemon agent summary. Rich fields are absent from older IDs-only metadata.
  */
-export interface WorkspaceAgentIdSummary {
+export interface WorkspaceAgentSummary {
   agentIds: string[];
+  count?: number;
+  agents?: WorkspaceAgentInfo[];
 }
 
 /**
  * Metadata-only workspace payload for list/get/open responses.
  * High-frequency summary fields are structurally excluded (`never`) so a
  * metadata payload cannot carry diff/git summaries; fetch those on demand
- * via the dedicated WORKSPACE_CHANNELS endpoints. `taskStats` is the cheap
- * daemon-computed task progress rollup (PROTOCOL §5.1) and rides along when
- * the daemon provides it.
+ * via the dedicated WORKSPACE_CHANNELS endpoints. Daemon card aggregates
+ * (`agentSummary` and `taskStats`, PROTOCOL §5.1) pass through unchanged.
  */
-export type WorkspaceMetadata = Omit<
-  Workspace,
-  'diffSummary' | 'gitSummary' | 'agentSummary' | 'diffs'
-> & {
-  agentSummary?: WorkspaceAgentIdSummary;
+export type WorkspaceMetadata = Omit<Workspace, 'diffSummary' | 'gitSummary' | 'diffs'> & {
   diffs?: never;
   diffSummary?: never;
   gitSummary?: never;

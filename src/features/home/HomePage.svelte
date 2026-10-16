@@ -80,6 +80,7 @@
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
+  import HomeWorkspaceDashboard from './HomeWorkspaceDashboard.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -321,10 +322,12 @@
         return m.home_board_done_idle();
     }
   }
-  // Grouping is only meaningful on the unfiltered list; a status filter already
-  // names the group, and archived rows have no live triage state.
+  const effectiveGroupBy = $derived(
+    $view$.view !== 'list' && $view$.groupBy === 'workspace-status' ? 'status' : $view$.groupBy,
+  );
+  // Activity grouping applies only while all workspaces are shown.
   const triageGroups = $derived(
-    filter === 'all' && $view$.groupBy === 'status'
+    filter === 'all' && effectiveGroupBy === 'status'
       ? triageOrder.flatMap((id) => {
           const items = filteredWorkspaces.filter((workspace) => {
             const group = getHomeTriageGroup(workspace);
@@ -373,18 +376,12 @@
       collapsible: true,
     })),
   );
-  const listGroups: {
-    id: string;
-    label: string;
-    items: Workspace[];
-    expanded: boolean;
-    collapsible: boolean;
-  }[] = $derived.by(() => {
-    if ($view$.groupBy === 'none') return [];
+  const listGroups = $derived.by(() => {
+    if (effectiveGroupBy === 'none') return [];
     const groups = (
-      $view$.groupBy === 'repository'
+      effectiveGroupBy === 'repository'
         ? repositorySections
-        : $view$.groupBy === 'workspace-status'
+        : effectiveGroupBy === 'workspace-status'
           ? statusGroups
           : triageGroups
     )
@@ -393,7 +390,7 @@
         items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),
       }))
       .filter((group) => group.items.length);
-    if ($view$.groupBy === 'status' && filter !== 'all') return [];
+    if (effectiveGroupBy === 'status' && filter !== 'all') return [];
     const items = filteredWorkspaces.filter((workspace) => $pinnedIds$.includes(workspace.id));
     return items.length
       ? [
@@ -838,7 +835,9 @@
                         {#snippet workspaceSettings()}
                           <HomeWorkspaceSettings view={$view$} onchange={updateView} />
                         {/snippet}
-                        {#snippet workspaceControls()}
+                        <div
+                          class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
+                        >
                           <HomeWorkspaceControls
                             {query}
                             {filter}
@@ -849,11 +848,6 @@
                             onview={(view) => updateView({ view })}
                             settings={workspaceSettings}
                           />
-                        {/snippet}
-                        <div
-                          class="flex shrink-0 flex-nowrap items-center gap-3 overflow-x-auto px-6 py-4"
-                        >
-                          {@render workspaceControls()}
                         </div>
                         {#if $workspaceError$}<ErrorState
                             retryLabel={m.home_retry()}
@@ -894,6 +888,18 @@
                                 >{/if}
                             {/snippet}
                           </EmptyState>
+                        {:else if $view$.view === 'dashboard'}
+                          <HomeWorkspaceDashboard
+                            workspaces={filteredWorkspaces}
+                            groups={listGroups}
+                            showRepository={!selectedRepository && $view$.groupBy !== 'repository'}
+                            {selectedId}
+                            onselect={(id) =>
+                              updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
+                            oncontextmenu={showWorkspaceMenu}
+                            onexpand={setGroupExpanded}
+                          />
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}

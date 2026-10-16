@@ -15,7 +15,7 @@ export interface HomeConfiguration {
   tab: 'workspaces' | 'prs' | 'linear';
   query: string;
   updatedWithin: 'all' | 'day' | 'week' | 'month';
-  view: 'list' | 'board';
+  view: 'list' | 'board' | 'dashboard';
   groupBy: 'status' | 'workspace-status' | 'repository' | 'none';
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
@@ -89,7 +89,7 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
       ['all', 'day', 'week', 'month'],
       defaults.updatedWithin,
     ),
-    view: member(raw.view, ['list', 'board'], defaults.view),
+    view: member(raw.view, ['list', 'board', 'dashboard'], defaults.view),
     groupBy: member(
       raw.groupBy,
       ['status', 'workspace-status', 'repository', 'none'],
