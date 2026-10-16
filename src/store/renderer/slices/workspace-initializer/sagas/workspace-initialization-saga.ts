@@ -262,6 +262,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
         workspaceId,
         agentId,
         workspacePath,
+        ...(pullCompleted ? { pullCompleted: true } : {}),
       });
       yield* put(action.failure(new Error(delivery.error)));
       settled = true;

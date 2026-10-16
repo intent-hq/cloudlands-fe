@@ -22,7 +22,6 @@ import {
   workspaceInitializerDraftSaveScheduled,
 } from '../workspace-initializer-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
-import { store as appStore } from '../../../store';
 import type { WorkspaceInitializerDraftPayload } from '../workspace-initializer-types';
 
 const logger = createLogger('WorkspaceInitializerDraftSaga');
@@ -126,7 +125,7 @@ function* restoreDraft(
     // restores when migration loses that race or persistence fails.
     if (mutationEpoch.value === restoreEpoch) {
       yield* put(
-        workspaceInitializerDraftLegacyMigrationRequested(id, requestId, admission, {
+        workspaceInitializerDraftLegacyMigrationRequested(id, requestId, admission, restoreEpoch, {
           text: legacyPrompt,
         }),
       );
@@ -185,7 +184,6 @@ export function* workspaceInitializerDraftSaga() {
     {};
   const restoreTasks: Record<string, Task | undefined> = {};
   const activeRestoreRequestIds: Record<string, string | undefined> = {};
-  const ownerAdmissions: Record<string, string | undefined> = {};
   const stoppedOwners = new Set<string>();
   let version = 0;
   const mutationEpoch = { value: 0 };
@@ -201,7 +199,6 @@ export function* workspaceInitializerDraftSaga() {
         if (previousRestore) yield* cancel(previousRestore);
         stoppedOwners.delete(id);
         activeRestoreRequestIds[id] = requestId;
-        ownerAdmissions[id] = admission;
         restoreStatuses[id] = 'pending';
         restoreTasks[id] = yield* fork(
           restoreDraftInBackground,
@@ -218,14 +215,13 @@ export function* workspaceInitializerDraftSaga() {
       }
 
       if (action.type === workspaceInitializerDraftLegacyMigrationRequested.type) {
-        const [id, requestId, admission, payload] = (
+        const [id, requestId, admission, restoreEpoch, payload] = (
           action as ReturnType<typeof workspaceInitializerDraftLegacyMigrationRequested>
         ).payload;
         if (
           activeRestoreRequestIds[id] !== requestId ||
-          ownerAdmissions[id] !== admission ||
-          (admission !== undefined &&
-            selectPrincipalActionContext.select(appStore.state) !== admission)
+          mutationEpoch.value !== restoreEpoch ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
         )
           continue;
         mutationEpoch.value++;
@@ -239,9 +235,7 @@ export function* workspaceInitializerDraftSaga() {
         ).payload;
         if (
           (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined &&
-            (ownerAdmissions[id] !== admission ||
-              selectPrincipalActionContext.select(appStore.state) !== admission))
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
         )
           continue;
         if (stoppedOwners.has(id)) continue;
@@ -267,8 +261,7 @@ export function* workspaceInitializerDraftSaga() {
           (save.ownerRequestId !== undefined &&
             activeRestoreRequestIds[id] !== save.ownerRequestId) ||
           (save.admission !== undefined &&
-            (ownerAdmissions[id] !== save.admission ||
-              selectPrincipalActionContext.select(appStore.state) !== save.admission))
+            (yield* selectPrincipalActionContext.effect()) !== save.admission)
         ) {
           delete pending[id];
           continue;
@@ -292,9 +285,7 @@ export function* workspaceInitializerDraftSaga() {
         ).payload;
         if (
           (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined &&
-            (ownerAdmissions[id] !== admission ||
-              selectPrincipalActionContext.select(appStore.state) !== admission))
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
         )
           continue;
         const save = pending[id];
@@ -318,9 +309,7 @@ export function* workspaceInitializerDraftSaga() {
         ).payload;
         if (
           (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined &&
-            (ownerAdmissions[id] !== admission ||
-              selectPrincipalActionContext.select(appStore.state) !== admission))
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
         )
           continue;
         delete pending[id];
@@ -331,25 +320,21 @@ export function* workspaceInitializerDraftSaga() {
         const [id, requestId, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftClearRequested>
         ).payload;
-        if (
+        const rejected =
           (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined &&
-            (ownerAdmissions[id] !== admission ||
-              selectPrincipalActionContext.select(appStore.state) !== admission))
-        )
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission);
+        if (rejected) {
+          yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
           continue;
+        }
         stoppedOwners.add(id);
         mutationEpoch.value++;
         pending = {};
-        for (const task of Object.values(restoreTasks)) {
-          if (task) yield* cancel(task);
-        }
-        for (const ownerId of Object.keys(restoreTasks)) {
-          delete restoreTasks[ownerId];
-          delete activeRestoreRequestIds[ownerId];
-          delete restoreStatuses[ownerId];
-          delete ownerAdmissions[ownerId];
-        }
+        const restoreTask = restoreTasks[id];
+        if (restoreTask) yield* cancel(restoreTask);
+        delete restoreTasks[id];
+        delete activeRestoreRequestIds[id];
+        delete restoreStatuses[id];
         yield* call(removeAllLegacyPrompts);
         try {
           yield* call(
@@ -375,7 +360,6 @@ export function* workspaceInitializerDraftSaga() {
       delete restoreStatuses[id];
       delete restoreTasks[id];
       delete activeRestoreRequestIds[id];
-      delete ownerAdmissions[id];
       stoppedOwners.delete(id);
     }
   } finally {

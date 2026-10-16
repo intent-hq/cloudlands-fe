@@ -414,8 +414,8 @@
     const outcome = $initializationOutcome$;
     const active = activeInitialization;
     if (
-      !outcome ||
       !active ||
+      !outcome ||
       outcome.status === 'pending' ||
       outcome.seq !== active.seq ||
       outcome.resourceId !== active.resourceId ||
@@ -1214,7 +1214,7 @@
       setupScriptRecord,
     };
     void appStore.dispatch(action).catch(() => {
-      // Compatibility promise settlement is intentionally not the UI result channel.
+      // Correlated selector outcomes own UI settlement, including reset removal.
     });
   }
 
@@ -1481,7 +1481,12 @@
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
     } finally {
-      if (!activeInitialization && current()) isOnboardingCreating = false;
+      if (
+        !activeInitialization &&
+        onboardingMounted &&
+        generation === onboardingInitializationGeneration
+      )
+        isOnboardingCreating = false;
     }
   }
 </script>

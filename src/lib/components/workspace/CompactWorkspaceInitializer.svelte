@@ -1627,8 +1627,8 @@
     const outcome = $initializationOutcome$;
     const active = activeInitialization;
     if (
-      !outcome ||
       !active ||
+      !outcome ||
       outcome.status === 'pending' ||
       outcome.seq !== active.seq ||
       outcome.resourceId !== active.resourceId ||
@@ -2608,7 +2608,7 @@
       };
       handedOff = true;
       void dispatch(initialization).catch(() => {
-        // Compatibility promise settlement is intentionally not the UI result channel.
+        // Correlated selector outcomes own UI settlement, including reset removal.
       });
     } catch (err) {
       if (!current()) return;
@@ -3147,7 +3147,7 @@
       mode: 'resume',
     };
     void dispatch(initialization).catch(() => {
-      // Compatibility promise settlement is intentionally not the UI result channel.
+      // Correlated selector outcomes own UI settlement, including reset removal.
     });
   }
 

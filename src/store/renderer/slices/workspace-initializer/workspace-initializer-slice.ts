@@ -187,6 +187,7 @@ export const workspaceInitializerDraftLegacyMigrationRequested = createAction<
     id: string,
     requestId: string,
     admission: string | undefined,
+    restoreEpoch: number,
     payload: WorkspaceInitializerDraftPayload,
   ]
 >('workspaceInitializer/draftLegacyMigrationRequested');
@@ -586,4 +587,14 @@ workspaceInitializerReducer.with(
 workspaceInitializerReducer.with(hostExecutionConnectionChanged, (state) => ({
   ...initialState,
   gitCheckRequest: state.gitCheckRequest ? state.gitCheckRequest + 1 : 0,
+  initializationOutcomes: getItems(state.initializationOutcomes).reduce(
+    (outcomes, outcome) =>
+      upsertItem(
+        outcomes,
+        outcome.status === 'pending'
+          ? { ...outcome, status: 'cancelled', error: 'initialization-cancelled' }
+          : outcome,
+      ),
+    initialState.initializationOutcomes,
+  ),
 }));

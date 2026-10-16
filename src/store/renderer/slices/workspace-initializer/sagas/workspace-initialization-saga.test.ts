@@ -36,7 +36,7 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createMockWorkspace } from '../../../../../test/factories/workspace.factory';
-import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
+import { selectWorkspaceInitializationOutcomeForConsumer } from '../workspace-initializer-selectors';
 import {
   clearWorkspaceInitializationOutcome,
   workspaceInitializationRequested,
@@ -82,7 +82,7 @@ function request(overrides: Partial<WorkspaceInitializationRequest> = {}) {
 }
 
 const outcome = () =>
-  selectWorkspaceInitializationOutcome.select(appStore.state, consumer.id, consumer.resourceId);
+  selectWorkspaceInitializationOutcomeForConsumer.select(appStore.state, consumer.id);
 const types = () => recorded.map((action) => action.type);
 const installationActionTypes = [
   setWorkspaceEntity.type,
