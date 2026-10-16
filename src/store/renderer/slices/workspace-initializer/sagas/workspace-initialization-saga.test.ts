@@ -26,6 +26,7 @@ import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -283,6 +284,40 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       stage: 'create',
       pullCompleted: true,
     });
+  });
+
+  it('rejects stale admission before pull or create starts', async () => {
+    const action = workspaceInitializationRequested(
+      request({
+        admission: 'stale/backend/member',
+        pull: { repositoryPath: '/repo', branch: 'main' },
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(pull).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled' });
+  });
+
+  it('does not create when principal admission changes during pull', async () => {
+    const held = deferred<{ success: true }>();
+    pull.mockReturnValue(held.promise);
+    const action = workspaceInitializationRequested(
+      request({ pull: { repositoryPath: '/repo', branch: 'main' } }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(pull).toHaveBeenCalledOnce());
+
+    appStore.dispatch(principalContextChanged('replacement/backend/member'));
+    held.resolve({ success: true });
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled', stage: 'pull' });
   });
 
   it('publishes an unexpected post-create delivery failure as resumable', async () => {

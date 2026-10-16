@@ -12,7 +12,12 @@ import type {
 
 interface InitializationAction {
   asyncActionType?: string;
-  payload: { request: WorkspaceInitializationRequest; progressId: string };
+  seq: number;
+  payload: {
+    request: WorkspaceInitializationRequest;
+    consumer: { id: string; resourceId: string };
+    progressId: string;
+  };
   success: (result: WorkspaceInitializationResult) => unknown;
   failure: (error: Error) => unknown;
 }
@@ -51,13 +56,22 @@ export function createWorkspaceInitializationDispatchAdapter(options: AdapterOpt
 }
 
 async function settleInitialization(action: InitializationAction, options: AdapterOptions) {
-  const { request, progressId } = action.payload;
-  options.setOutcome?.(undefined);
+  const { request, consumer, progressId } = action.payload;
+  const publish = (outcome: Partial<WorkspaceInitializationOutcome>) =>
+    options.setOutcome?.({
+      ...consumer,
+      seq: action.seq,
+      entrypoint: request.entrypoint,
+      ...outcome,
+    });
+  publish({ status: 'pending' });
+  let failure: Partial<WorkspaceInitializationOutcome> | undefined;
   try {
     if (request.pull && !request.resume) {
       const result = await options.pull?.(request.pull.repositoryPath, request.pull.branch);
       if (result && !result.success) {
-        options.setOutcome?.({ stage: 'pull', error: result.error });
+        failure = { status: 'failure', stage: 'pull', error: result.error };
+        publish(failure);
         throw new Error(result.error || 'pull-failed');
       }
     }
@@ -79,13 +93,15 @@ async function settleInitialization(action: InitializationAction, options: Adapt
       const items = request.stagedItems as ContextItem[];
       const redemption = await redeemStagedAttachments(workspaceId, items);
       if (redemption.failedCount > 0) {
-        options.setOutcome?.({
+        failure = {
+          status: 'failure',
           stage: 'attachments',
           workspaceId,
           agentId,
           stagedItems: redemption.items,
           error: 'attachment-placement-failed',
-        });
+        };
+        publish(failure);
         throw new Error('attachment-placement-failed');
       }
       const sent = await sendHeldFirstMessage(
@@ -99,20 +115,30 @@ async function settleInitialization(action: InitializationAction, options: Adapt
         redemption.fileBlocks,
       );
       if (!sent.sent) {
-        options.setOutcome?.({
+        failure = {
+          status: 'failure',
           stage: 'first-message',
           workspaceId,
           agentId,
           stagedItems: retainImagePlacementIdentity(redemption.items, sent.imageBlocks),
           retryImageBlocks: sent.imageBlocks,
           error: sent.errorDetail || 'first-message-send-failed',
-        });
+        };
+        publish(failure);
         throw new Error(sent.errorDetail || 'first-message-send-failed');
       }
     }
 
+    publish({ status: 'success', workspaceId, agentId, workspacePath });
     action.success({ workspaceId, agentId, workspacePath });
   } catch (error) {
+    if (!failure) {
+      publish({
+        status: 'failure',
+        stage: 'create',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     action.failure(error instanceof Error ? error : new Error(String(error)));
   }
 }

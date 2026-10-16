@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   set: vi.fn(),
   clear: vi.fn(),
   warn: vi.fn(),
+  admission: undefined as string | undefined,
 }));
 
 vi.mock('$lib/client', () => ({
@@ -14,6 +15,10 @@ vi.mock('$lib/client', () => ({
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: mocks.warn }),
 }));
+vi.mock('../../principal/principal-selectors', () => ({
+  selectPrincipalActionContext: { select: () => mocks.admission },
+}));
+vi.mock('../../../store', () => ({ store: { state: {} } }));
 
 import {
   workspaceInitializerDraftClearFinished,
@@ -51,6 +56,7 @@ describe('workspaceInitializerDraftSaga', () => {
     mocks.get.mockResolvedValue(null);
     mocks.set.mockResolvedValue(undefined);
     mocks.clear.mockResolvedValue(undefined);
+    mocks.admission = undefined;
     channel = stdChannel();
     dispatched = [];
     task = runSaga(
@@ -113,6 +119,33 @@ describe('workspaceInitializerDraftSaga', () => {
     ]);
   });
 
+  it('drops a debounced save when its principal admission changes', async () => {
+    mocks.admission = 'host/member';
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'restore-1',
+        'legacy-key',
+        'host/member',
+      ),
+    );
+    await settle();
+    channel.put(
+      workspaceInitializerDraftSaveScheduled(
+        'compact',
+        { text: 'stale' },
+        'restore-1',
+        'host/member',
+      ),
+    );
+    await settle();
+
+    mocks.admission = 'replacement/member';
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
   it('flushes a newer save while restore is still pending', async () => {
     const held = deferred<null>();
     mocks.get.mockReturnValue(held.promise);
@@ -151,6 +184,40 @@ describe('workspaceInitializerDraftSaga', () => {
         [],
       ),
     );
+  });
+
+  it('holds clear behind an issued save write', async () => {
+    const held = deferred<void>();
+    mocks.set.mockReturnValueOnce(held.promise);
+    channel.put(workspaceInitializerDraftSaveScheduled('compact', { text: 'typed' }));
+    channel.put(workspaceInitializerDraftFlushRequested('compact'));
+    channel.put(workspaceInitializerDraftClearRequested('compact', 'clear-after-save'));
+    await settle();
+
+    expect(mocks.set).toHaveBeenCalledOnce();
+    expect(mocks.clear).not.toHaveBeenCalled();
+
+    held.resolve();
+    await settle();
+    expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+  });
+
+  it('holds clear behind an issued legacy migration write', async () => {
+    const held = deferred<void>();
+    mocks.get.mockResolvedValueOnce(null);
+    mocks.set.mockReturnValueOnce(held.promise);
+    sessionStorage.setItem('legacy-key', 'legacy prompt');
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-1', 'legacy-key'));
+    await settle();
+    expect(mocks.set).toHaveBeenCalledOnce();
+
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-migration'));
+    await settle();
+    expect(mocks.clear).not.toHaveBeenCalled();
+
+    held.resolve();
+    await settle();
+    expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
   });
 
   it('ignores a stale owner release after a newer restore starts', async () => {
