@@ -12,14 +12,12 @@
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
-  import { appClient } from '$lib/client';
   import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
-    clearNewWorkspaceDraft,
-    createNewWorkspaceDraftSaver,
+    buildNewWorkspaceDraftPayload,
     LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-    restoreNewWorkspaceDraft,
   } from '$lib/components/workspace/initializer/new-workspace-draft';
+  import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
@@ -127,6 +125,11 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
+    workspaceInitializerDraftFlushRequested,
+    workspaceInitializerDraftOwnerReleased,
+    workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
+    workspaceInitializerDraftSaveScheduled,
     workspaceInitializationRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
@@ -135,6 +138,7 @@
   } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerDraftRestore,
     selectWorkspaceInitializationOutcome,
     selectWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -402,61 +406,68 @@
   // daemon draft; if the restore failed, empty saves stay skipped so a draft
   // that was never read can't be cleared. All drafts.* failures are non-fatal.
   let onboardingDraftRestored = $state(false);
-  let onboardingDraftRestoreFailed = false;
   // Set after a successful create: the draft is cleared and must not be
   // re-saved by a late flush or effect re-run.
   let onboardingDraftCleared = false;
-  const onboardingDraftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
-    skipEmptySave: () => !onboardingDraftRestored || onboardingDraftRestoreFailed,
+  const onboardingDraftOwnerId = 'onboarding-workspace-initializer';
+  const onboardingDraftRestoreRequestId = crypto.randomUUID();
+  const onboardingDraftRestore$ = selectWorkspaceInitializerDraftRestore(
+    onboardingDraftOwnerId,
+    onboardingDraftRestoreRequestId,
+  );
+  let onboardingDraftRestoreApplied = false;
+  onMount(() => {
+    appStore.dispatch(
+      workspaceInitializerDraftRestoreRequested(
+        onboardingDraftOwnerId,
+        onboardingDraftRestoreRequestId,
+        LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+      ),
+    );
   });
-  (async () => {
-    try {
-      const restore = await restoreNewWorkspaceDraft(appClient.drafts, {
-        legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-      });
-      onboardingDraftRestoreFailed = restore.status === 'error';
-      if (restore.status === 'restored') {
-        // Never clobber a WORKSPACE_PREFILL_KEY prefill or text the user
-        // typed while the restore was pending. An UNTOUCHED legacy
-        // sessionStorage seed is the exception: the shared daemon draft is
-        // authoritative and supersedes that stale value.
-        const inputUntouched =
-          !onboardingInputValue ||
-          (!!legacySeededPrompt && onboardingInputValue === legacySeededPrompt);
-        if (restore.text && inputUntouched) {
-          onboardingInputValue = restore.text;
-          // If the prompt step is already mounted, its editor initialized from
-          // the empty value — push the restored text in; otherwise the editor
-          // picks up the bound value on mount.
-          void getOnboardingRichTextarea()?.setContent(restore.text);
+  $effect(() => {
+    const restore = $onboardingDraftRestore$;
+    if (!restore || restore.status === 'pending' || onboardingDraftRestoreApplied) return;
+    onboardingDraftRestoreApplied = true;
+    if (restore.status === 'restored') {
+      const restoredItems = deserializeDraftAttachments(restore.attachments);
+      // Never clobber a WORKSPACE_PREFILL_KEY prefill or text the user
+      // typed while the restore was pending. An UNTOUCHED legacy
+      // sessionStorage seed is the exception: the shared daemon draft is
+      // authoritative and supersedes that stale value.
+      const inputUntouched =
+        !onboardingInputValue ||
+        (!!legacySeededPrompt && onboardingInputValue === legacySeededPrompt);
+      if (restore.text && inputUntouched) {
+        onboardingInputValue = restore.text;
+        // If the prompt step is already mounted, its editor initialized from
+        // the empty value — push the restored text in; otherwise the editor
+        // picks up the bound value on mount.
+        void getOnboardingRichTextarea()?.setContent(restore.text);
+      }
+      // Same no-clobber guard for images: when the text restore is skipped
+      // (prefill / user typing), stale draft images must not sneak in.
+      if (inputUntouched && restoredItems.length > 0) {
+        // Image items (imageData/imageMimeType — including pre-migration
+        // drafts saved from the old inline-editor format, which serialized
+        // through the same context-item shape) rehydrate straight into the
+        // thumbnail row's context-item list.
+        const restoredImages = restoredItems.filter((item) => item.imageData && item.imageMimeType);
+        if (restoredImages.length > 0 && onboardingImageItems.length === 0) {
+          onboardingImageItems = restoredImages;
         }
-        // Same no-clobber guard for images: when the text restore is skipped
-        // (prefill / user typing), stale draft images must not sneak in.
-        if (inputUntouched && restore.contextItems.length > 0) {
-          // Image items (imageData/imageMimeType — including pre-migration
-          // drafts saved from the old inline-editor format, which serialized
-          // through the same context-item shape) rehydrate straight into the
-          // thumbnail row's context-item list.
-          const restoredImages = restore.contextItems.filter(
-            (item) => item.imageData && item.imageMimeType,
-          );
-          if (restoredImages.length > 0 && onboardingImageItems.length === 0) {
-            onboardingImageItems = restoredImages;
-          }
-          // Non-image items (path-only staged files from either surface)
-          // rehydrate into the staged list so they survive the round trip —
-          // they are placed at create-time redemption, and a failed pill
-          // stays blocking/retryable rather than silently dropped.
-          const restoredStaged = restore.contextItems.filter((item) => !item.imageData);
-          if (restoredStaged.length > 0 && onboardingStagedItems.length === 0) {
-            onboardingStagedItems = restoredStaged;
-          }
+        // Non-image items (path-only staged files from either surface)
+        // rehydrate into the staged list so they survive the round trip —
+        // they are placed at create-time redemption, and a failed pill
+        // stays blocking/retryable rather than silently dropped.
+        const restoredStaged = restoredItems.filter((item) => !item.imageData);
+        if (restoredStaged.length > 0 && onboardingStagedItems.length === 0) {
+          onboardingStagedItems = restoredStaged;
         }
       }
-    } finally {
-      onboardingDraftRestored = true;
     }
-  })();
+    onboardingDraftRestored = true;
+  });
 
   /** Debounced daemon draft save: prompt text + image context items +
    * staged non-image attachments (path-only; placed at create-time
@@ -468,10 +479,12 @@
     // The untouched initial value (prefill / legacy seed / empty) stays
     // unscheduled so it cannot clobber a newer shared daemon draft.
     if (!onboardingDraftRestored && onboardingInputValue === initialOnboardingPrompt) return;
-    onboardingDraftSaver.schedule(onboardingInputValue, [
+    const payload = buildNewWorkspaceDraftPayload(onboardingInputValue, [
       ...onboardingImageItems,
       ...onboardingStagedItems,
     ]);
+    if (payload)
+      appStore.dispatch(workspaceInitializerDraftSaveScheduled(onboardingDraftOwnerId, payload));
   }
 
   // Text changes flow through the bound value; attachment-only changes don't
@@ -488,7 +501,8 @@
   // A reload or window close inside the debounce window would drop the newest
   // keystrokes — flush the pending save on unload and destroy.
   const flushOnboardingDraftSave = () => {
-    if (!onboardingDraftCleared) onboardingDraftSaver.flush();
+    if (!onboardingDraftCleared)
+      appStore.dispatch(workspaceInitializerDraftFlushRequested(onboardingDraftOwnerId));
   };
   onMount(() => {
     window.addEventListener('beforeunload', flushOnboardingDraftSave);
@@ -743,6 +757,12 @@
   onDestroy(() => {
     appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
     flushOnboardingDraftSave();
+    appStore.dispatch(
+      workspaceInitializerDraftOwnerReleased(
+        onboardingDraftOwnerId,
+        onboardingDraftRestoreRequestId,
+      ),
+    );
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     setupScriptProbeScheduler.dispose();
   });
@@ -1167,8 +1187,7 @@
       await new Promise((resolve) => setTimeout(resolve, 300));
       setupAgentStatus = 'done';
       onboardingDraftCleared = true;
-      onboardingDraftSaver.cancel();
-      clearNewWorkspaceDraft(appClient.drafts);
+      appStore.dispatch(workspaceInitializerDraftSaveCancelled(onboardingDraftOwnerId));
       appStore.dispatch(resetOnboarding());
       appStore.dispatch(setHasCompletedProviderSetup(true));
       appStore.dispatch(setOnboardingWorkspaceId(workspaceId));

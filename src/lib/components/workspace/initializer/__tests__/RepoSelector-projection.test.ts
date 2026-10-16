@@ -97,6 +97,7 @@ import {
 import { selectWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+import { workspaceInitializerRepositorySaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
 import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import type { Workspace } from '$shared/types';
@@ -118,7 +119,7 @@ const row = {
   repositoryName: 'stale',
   githubUrl: 'https://github.com/octo/stale',
 } as Workspace;
-let dispose: () => void, task: Task | undefined;
+let dispose: () => void, cancelRepositorySaga: () => void, task: Task | undefined;
 const list = vi.fn();
 function admit(role: 'owner' | 'member' | 'guest', revision = 1) {
   const p = store.state.principal;
@@ -176,6 +177,7 @@ beforeEach(() => {
   list.mockReset();
   workspaceClient.clearCache();
   init();
+  cancelRepositorySaga = store.runSaga(workspaceInitializerRepositorySaga);
   mocks.registry.mockResolvedValue({ success: true, data: [] });
   registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, list);
   list.mockResolvedValue({ success: true, data: [] });
@@ -185,6 +187,7 @@ afterEach(async () => {
   task?.cancel();
   if (task) await task.toPromise();
   task = undefined;
+  cancelRepositorySaga();
   unregisterMockIpcHandler(WORKSPACE_CHANNELS.LIST);
   workspaceClient.clearCache();
   dispose();
@@ -301,8 +304,10 @@ describe('RepoSelector partial source settlement through the real store and clie
   const localSaved = { path: '/saved-repo', type: 'local' as const, name: 'saved-repo' };
   const paths = () => recents().map((repo) => repo.path);
   async function pendingSources() {
+    cancelRepositorySaga();
     dispose();
     dispose = store.init();
+    cancelRepositorySaga = store.runSaga(workspaceInitializerRepositorySaga);
     admitLegacyPrincipal();
     admit('owner');
     workspaceClient.clearCache();
@@ -339,7 +344,7 @@ describe('RepoSelector partial source settlement through the real store and clie
       expect(paths()).toEqual(expect.arrayContaining(['/saved-repo', `/${retained}`]));
       expect(paths()).not.toContain(`/${removed}`);
       await waitFor(() => expect(screen.getByText(retained)).toBeTruthy());
-      expect(screen.queryByText(removed)).toBeNull();
+      await waitFor(() => expect(screen.queryByText(removed)).toBeNull());
       expect(screen.getByText('saved-repo')).toBeTruthy();
       if (failed === 'workspace')
         expect(selectWorkspaceById.select(store.state, workspace.id)).toBeUndefined();
@@ -361,7 +366,7 @@ describe('RepoSelector partial source settlement through the real store and clie
     mocks.registry.mockResolvedValue({ success: true, data: [] });
     await settle();
     expect(paths()).toEqual(['/saved-repo']);
-    expect(screen.queryByText('registry-repo')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('registry-repo')).toBeNull());
     expect(screen.queryByText('workspace-repo')).toBeNull();
   });
   it.each(['before', 'during', 'after'] as const)(
@@ -438,8 +443,10 @@ describe('RepoSelector partial source settlement through the real store and clie
     },
   );
   it('retains known workspace-owned exclusions when only the workspace read fails', async () => {
+    cancelRepositorySaga();
     dispose();
     dispose = store.init();
+    cancelRepositorySaga = store.runSaga(workspaceInitializerRepositorySaga);
     admitLegacyPrincipal();
     admit('owner');
     list.mockResolvedValue({

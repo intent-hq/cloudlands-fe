@@ -1,4 +1,5 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import {
   workspaceInitializerGitCheckRequested,
@@ -19,6 +20,14 @@ import {
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
+  clearWorkspaceInitializationOutcome,
+  workspaceInitializationFinished,
+  workspaceInitializationRequested,
+  workspaceInitializerDraftClearFinished,
+  workspaceInitializerDraftClearRequested,
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreFinished,
+  workspaceInitializerDraftRestoreRequested,
   workspaceInitializerReducer,
 } from './workspace-initializer-slice';
 
@@ -368,6 +377,140 @@ describe('workspaceInitializerReducer', () => {
     );
     // Hydration leaves the transient prefill untouched (it is never part of the persisted bag)
     expect(state.pendingGitHubPrefill).toEqual(prefill);
+  });
+
+  it('correlates workspace initialization outcomes and rejects stale completion', () => {
+    const request = workspaceInitializationRequested(
+      {
+        entrypoint: 'compact',
+        admission: 'host/member',
+        agentTitle: 'General',
+        coordinator: false,
+        stagedItems: [],
+        lastSubmittedAgent: { selectedSpecialist: null },
+      },
+      { id: 'compact-form', resourceId: 'attempt-2' },
+    );
+    let state = workspaceInitializerReducer(initialState, request);
+    expect(getItem(state.initializationOutcomes, 'compact-form')).toEqual({
+      id: 'compact-form',
+      resourceId: 'attempt-2',
+      seq: request.seq,
+      entrypoint: 'compact',
+      status: 'pending',
+    });
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializationFinished({
+        id: 'compact-form',
+        resourceId: 'attempt-1',
+        seq: request.seq,
+        entrypoint: 'compact',
+        status: 'success',
+        workspaceId: 'stale',
+      }),
+    );
+    expect(getItem(state.initializationOutcomes, 'compact-form')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializationFinished({
+        id: 'compact-form',
+        resourceId: 'attempt-2',
+        seq: request.seq,
+        entrypoint: 'compact',
+        status: 'success',
+        workspaceId: 'workspace-1',
+      }),
+    );
+    expect(getItem(state.initializationOutcomes, 'compact-form')).toMatchObject({
+      status: 'success',
+      workspaceId: 'workspace-1',
+    });
+  });
+
+  it('clears only the requested workspace initialization sequence', () => {
+    const request = workspaceInitializationRequested(
+      {
+        entrypoint: 'onboarding',
+        admission: 'host/member',
+        agentTitle: 'General',
+        coordinator: false,
+        stagedItems: [],
+        lastSubmittedAgent: {},
+      },
+      { id: 'onboarding', resourceId: 'attempt' },
+    );
+    const pending = workspaceInitializerReducer(initialState, request);
+    expect(
+      workspaceInitializerReducer(
+        pending,
+        clearWorkspaceInitializationOutcome('onboarding', request.seq + 1),
+      ),
+    ).toBe(pending);
+    expect(
+      workspaceInitializerReducer(
+        pending,
+        clearWorkspaceInitializationOutcome('onboarding', request.seq),
+      ).initializationOutcomes.ids,
+    ).toEqual([]);
+  });
+
+  it('correlates draft restore completion and releases only the active request', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializerDraftRestoreRequested('compact', 'restore-2', 'legacy-key'),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftRestoreFinished('compact', 'restore-1', 'restored', 'stale', []),
+    );
+    expect(getItem(state.draftRestores, 'compact')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftRestoreFinished('compact', 'restore-2', 'restored', 'saved', []),
+    );
+    expect(getItem(state.draftRestores, 'compact')).toMatchObject({
+      requestId: 'restore-2',
+      status: 'restored',
+      text: 'saved',
+    });
+    expect(
+      workspaceInitializerReducer(
+        state,
+        workspaceInitializerDraftOwnerReleased('compact', 'restore-1'),
+      ).draftRestores,
+    ).toEqual(state.draftRestores);
+    expect(
+      workspaceInitializerReducer(
+        state,
+        workspaceInitializerDraftOwnerReleased('compact', 'restore-2'),
+      ).draftRestores.ids,
+    ).toEqual([]);
+  });
+
+  it('correlates draft clear completion and rejects stale results', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-2'),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-1', 'success'),
+    );
+    expect(getItem(state.draftClears, 'onboarding')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-2', 'failure'),
+    );
+    expect(getItem(state.draftClears, 'onboarding')).toEqual({
+      id: 'onboarding',
+      requestId: 'clear-2',
+      status: 'failure',
+    });
   });
 });
 

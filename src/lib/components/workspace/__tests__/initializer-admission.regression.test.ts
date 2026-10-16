@@ -270,6 +270,7 @@ import {
   setGitLabAuthStatus,
 } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import {
   urlSubmitted,
   branchQueryChanged,
@@ -278,6 +279,7 @@ import {
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopGit: () => void;
+let stopInitialization: () => void;
 let stopCheckout: (() => void) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -286,6 +288,7 @@ beforeEach(() => {
   mocks.gitCheck.mockResolvedValue({ success: true, data: { available: true } });
   dispose = store.init();
   stopGit = store.runSaga(workspaceInitializerGitSaga);
+  stopInitialization = store.runSaga(workspaceInitializationSaga);
   admitLegacyPrincipal();
   store.dispatch(setLabsMultiplayerEnabled(false));
   mocks.hydrated$.set(true);
@@ -315,6 +318,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  stopInitialization();
   stopGit();
   stopCheckout?.();
   stopCheckout = undefined;
@@ -910,7 +914,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       expect(mocks.create).toHaveBeenCalledOnce();
       expect(mocks.captureCheckout).toHaveBeenCalledOnce();
       expect(session.release).not.toHaveBeenCalled();
-      await waitFor(() => expect(button.disabled).toBe(false));
 
       const nextSha = 'd'.repeat(40);
       const refreshed: RepositoryCheckoutSession = {

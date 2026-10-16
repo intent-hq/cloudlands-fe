@@ -56,6 +56,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationOutcome: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -145,6 +147,7 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 }));
 
 vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
+  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
   restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
   createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
   clearNewWorkspaceDraft: vi.fn(),

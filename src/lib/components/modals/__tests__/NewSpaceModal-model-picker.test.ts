@@ -54,24 +54,31 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerGitAvailability: () => ({
-    subscribe(run: (value: boolean) => void) {
-      run(true);
-      return () => {};
-    },
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerGitAvailability: () => ({
+      subscribe(run: (value: boolean) => void) {
+        run(true);
+        return () => {};
+      },
+    }),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(true),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(mocks.compactFormState),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(mocks.lastSelectedRepo),
+    // A remembered orchestration choice: the modal opens in team mode so the
+    // team card's picker is live from the start.
+    selectWorkspaceInitializerLastSubmittedAgent: () =>
+      mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(mocks.recentRepos),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
+    selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
   }),
-  selectWorkspaceInitializerHydrated: () => mocks.readable(true),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(mocks.compactFormState),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(mocks.lastSelectedRepo),
-  // A remembered orchestration choice: the modal opens in team mode so the
-  // team card's picker is live from the start.
-  selectWorkspaceInitializerLastSubmittedAgent: () =>
-    mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(mocks.recentRepos),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
-}));
+);
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
@@ -227,6 +234,7 @@ vi.mock('$lib/electron-bridge', () => ({
   ),
 }));
 vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
+  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
   restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'empty' })),
   createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
   clearNewWorkspaceDraft: vi.fn(),
@@ -282,6 +290,7 @@ import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/p
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 function persistedStates() {
@@ -329,6 +338,7 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
 
 let disposeStore: () => void;
 let cancelCatalog: () => void;
+let cancelInitialization: () => void;
 
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
@@ -366,11 +376,13 @@ describe('NewSpaceModal model-picker composition', () => {
       return dispatch(action);
     });
     cancelCatalog = appStore.runSaga(modelReloadSaga);
+    cancelInitialization = appStore.runSaga(workspaceInitializationSaga);
   });
 
   afterEach(() => {
     cleanup();
     cancelCatalog();
+    cancelInitialization();
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();

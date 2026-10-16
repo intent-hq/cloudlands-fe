@@ -3,7 +3,7 @@ import {
   selectPrincipalActionContext,
 } from '../principal/principal-selectors';
 import { store } from '../../store';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectOrchestratorSpecialist,
   selectSpecialists,
@@ -38,6 +38,14 @@ export const selectWorkspaceInitializerRecentRepos = store.createSelector((state
   getItems(state.workspaceInitializer.recentRepos),
 );
 
+export const selectWorkspaceInitializerRecentRepoRefresh = store.createSelector(
+  (state, id: string) => getItem(state.workspaceInitializer.recentRepoRefreshes, id),
+);
+
+export const selectWorkspaceInitializerDirectoryStatusCheck = store.createSelector(
+  (state, id: string) => getItem(state.workspaceInitializer.directoryStatusChecks, id),
+);
+
 export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
   (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
 );
@@ -52,6 +60,20 @@ export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector
 
 export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelector(
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
+);
+
+export const selectWorkspaceInitializerDraftRestore = store.createSelector(
+  (state, id: string, requestId: string) => {
+    const restore = getItem(state.workspaceInitializer.draftRestores, id);
+    return restore?.requestId === requestId ? restore : undefined;
+  },
+);
+
+export const selectWorkspaceInitializationOutcome = store.createSelector(
+  (state, consumerId: string, resourceId: string) => {
+    const outcome = getItem(state.workspaceInitializer.initializationOutcomes, consumerId);
+    return outcome?.resourceId === resourceId ? outcome : undefined;
+  },
 );
 
 /**

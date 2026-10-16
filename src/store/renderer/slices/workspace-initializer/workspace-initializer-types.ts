@@ -2,6 +2,8 @@ import type { Collection } from '@themislib/themis/utils/collections/collection-
 import type { OnboardingStep } from '../onboarding/onboarding-types';
 import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-checkout-types';
 import type { RepositoryTarget } from '$shared/types/repository-context';
+import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
+import type { KnownRepo } from '$shared/types/known-repo';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -40,6 +42,36 @@ export interface WorkspaceInitializerRecentRepo {
   owner?: string;
   /** Display identity only; null explicitly marks unqualified legacy metadata. */
   repositoryIdentity?: RepositoryTarget | null;
+}
+
+export interface WorkspaceInitializerRecentRepoRefresh {
+  id: string;
+  requestId: string;
+  admission: string;
+  status: 'pending' | 'ready' | 'failed';
+  repos: WorkspaceInitializerRecentRepo[];
+  workspaces: Workspace[];
+  registryRepos: KnownRepo[];
+}
+
+export interface WorkspaceInitializerDirectoryStatus {
+  exists: boolean;
+  isDirectory: boolean;
+  isEmpty: boolean;
+  isGitRepo: boolean;
+  path: string;
+  parentGitRoot?: string;
+  relativePathFromGitRoot?: string;
+  isSubdirectoryOfGitRepo?: boolean;
+}
+
+export interface WorkspaceInitializerDirectoryStatusCheck {
+  id: string;
+  requestId: string;
+  admission: string;
+  path: string;
+  status: 'pending' | 'ready' | 'failed' | 'unsupported';
+  result: WorkspaceInitializerDirectoryStatus | null;
 }
 
 export interface WorkspaceInitializerAgentSettings {
@@ -117,6 +149,127 @@ export interface WorkspaceInitializerHydrationState {
   lastSubmittedAgent?: WorkspaceInitializerAgentSettings | null;
 }
 
+export interface WorkspaceInitializerDraftAttachment {
+  id: string;
+  type: string;
+  label: string;
+  description?: string;
+  content?: string;
+  path?: string;
+  imageData?: string;
+  imageMimeType?: string;
+  attachmentId?: string;
+  attachmentMimeType?: string;
+  attachmentSize?: number;
+  sourcePath?: string;
+  placementStatus?: 'failed';
+}
+
+export interface WorkspaceInitializerDraftPayload {
+  text: string;
+  attachments?: WorkspaceInitializerDraftAttachment[];
+}
+
+export interface WorkspaceInitializerDraftRestore {
+  id: string;
+  requestId: string;
+  status: 'pending' | 'restored' | 'empty' | 'error';
+  text: string;
+  attachments: WorkspaceInitializerDraftAttachment[];
+}
+
+export interface WorkspaceInitializerDraftClear {
+  id: string;
+  requestId: string;
+  status: 'pending' | 'success' | 'failure';
+}
+
+type WorkspaceInitializationJson =
+  | null
+  | boolean
+  | number
+  | string
+  | WorkspaceInitializationJson[]
+  | { [key: string]: WorkspaceInitializationJson };
+
+/** Serializable projection of a pre-workspace attachment/context item. */
+export interface WorkspaceInitializationStagedItem {
+  id: string;
+  type: 'file' | 'note' | 'selection' | 'workspace' | 'memory' | 'personality' | 'folder';
+  label: string;
+  description?: string;
+  content?: string;
+  path?: string;
+  metadata?: Record<string, WorkspaceInitializationJson>;
+  imageData?: string;
+  imageMimeType?: string;
+  attachmentId?: string;
+  attachmentMimeType?: string;
+  attachmentSize?: number;
+  placementStatus?: 'placing' | 'failed' | 'placed';
+  placementProgress?: number;
+  placementError?: string;
+  sourcePath?: string;
+  placementIdempotencyKey?: string;
+  placementFileName?: string;
+  placementAttachmentId?: string;
+}
+
+interface WorkspaceInitializationImageBlock {
+  type: 'image';
+  data?: string;
+  mimeType?: string;
+  attachmentId?: string;
+  placementIdempotencyKey?: string;
+  placementFileName?: string;
+}
+
+export interface WorkspaceInitializationConsumer {
+  id: string;
+  resourceId: string;
+}
+
+interface WorkspaceInitializationHeldMessage {
+  content: string;
+  imageBlocks: WorkspaceInitializationImageBlock[];
+  contextReferences: WorkspaceInitializationJson[];
+}
+
+export interface WorkspaceInitializationRequest {
+  entrypoint: 'compact' | 'onboarding';
+  admission: string;
+  createRequest?: CreateWorkspaceRequest;
+  resume?: { workspaceId: string; agentId?: string };
+  pull?: { repositoryPath: string; branch: string };
+  agentTitle: string;
+  coordinator: boolean;
+  stagedItems: WorkspaceInitializationStagedItem[];
+  heldMessage?: WorkspaceInitializationHeldMessage;
+  lastSubmittedAgent: WorkspaceInitializerAgentSettings;
+  selectedPrNumber?: number;
+  recentGitHubRepository?: { repository: string; name: string; owner: string; githubUrl: string };
+}
+
+export interface WorkspaceInitializationResult {
+  workspaceId: string;
+  agentId?: string;
+  workspacePath?: string;
+}
+
+export interface WorkspaceInitializationOutcome extends WorkspaceInitializationConsumer {
+  seq: number;
+  entrypoint: WorkspaceInitializationRequest['entrypoint'];
+  status: 'pending' | 'success' | 'failure' | 'cancelled';
+  stage?: 'pull' | 'create' | 'attachments' | 'first-message';
+  workspaceId?: string;
+  agentId?: string;
+  workspacePath?: string;
+  error?: string;
+  errorCode?: string;
+  stagedItems?: WorkspaceInitializationStagedItem[];
+  retryImageBlocks?: WorkspaceInitializationImageBlock[];
+}
+
 export interface WorkspaceInitializerState {
   /** Transient probe lifetime; never part of the persisted form bag. */
   gitCheckRequest: number;
@@ -135,4 +288,9 @@ export interface WorkspaceInitializerState {
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
   pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
+  recentRepoRefreshes: Collection<WorkspaceInitializerRecentRepoRefresh, 'id'>;
+  directoryStatusChecks: Collection<WorkspaceInitializerDirectoryStatusCheck, 'id'>;
+  initializationOutcomes: Collection<WorkspaceInitializationOutcome, 'id'>;
+  draftRestores: Collection<WorkspaceInitializerDraftRestore, 'id'>;
+  draftClears: Collection<WorkspaceInitializerDraftClear, 'id'>;
 }
