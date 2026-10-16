@@ -136,7 +136,7 @@ test('confirmed GitLab recovery opens focused command search without activating 
       },
     },
     hooksConfig: {
-      geometrySnapshot: { scene: 'invite-join-prompts', state: 'notice-gitlab-pin-mismatch' },
+      previewScene: { scene: 'invite-join-prompts', state: 'notice-gitlab-pin-mismatch' },
     },
   });
   const notice = page.getByRole('alertdialog');

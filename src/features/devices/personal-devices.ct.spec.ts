@@ -1,18 +1,5 @@
-import { fileURLToPath } from 'node:url';
-import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import { test, expect } from '../../test/ct-test';
 import Preview from './personal-devices.preview.svelte';
-
-defineGeometrySnapshotSuite({
-  scene: 'personal-devices',
-  component: Preview,
-  states: ['member', 'guest', 'owner-no-profile'],
-  widths: [390],
-  selector: '[data-slot="settings-form"]',
-  snapshotPath: fileURLToPath(
-    new URL('./__geometry__/personal-devices.geometry.json', import.meta.url),
-  ),
-});
 
 test('personal pairing stays usable at narrow width and Escape returns focus to the pairing control', async ({
   mount,
@@ -20,7 +7,7 @@ test('personal pairing stays usable at narrow width and Escape returns focus to 
 }) => {
   await page.setViewportSize({ width: 390, height: 700 });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'personal-devices', state: 'member' } },
+    hooksConfig: { previewScene: { scene: 'personal-devices', state: 'member' } },
   });
   const trigger = page.getByRole('button', { name: 'Show QR Code' });
   await expect(trigger).toBeEnabled();

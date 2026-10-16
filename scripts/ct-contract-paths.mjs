@@ -17,13 +17,10 @@ import { CT_TEST_DIR, isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pa
 // cloudlands-fe#2441 rewrote `tokens.css`, `app.css` and `run-ct-tests.mjs` with
 // no CT run and was ejected from the merge queue with 40 CT failures.
 //
-// The workflow's `ct_required` additionally covers the CT test artifacts
-// themselves — the specs `playwright-ct.config.ts` discovers and the geometry
-// goldens `src/**/__geometry__/*.geometry.json` (`isCtTestArtifact`) — so a PR that
-// edits specs or baselines gets CT signal on pull_request. Those are NOT contract
-// paths: `verify:changed` keeps selecting the narrower `ct-related` lane for
-// them locally. cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped
-// on the PR and was ejected from the merge queue three times.
+// The workflow's `ct_required` additionally covers the specs
+// `playwright-ct.config.ts` discovers via the shared `isCtSpec` classifier.
+// Those are NOT contract paths: `verify:changed` keeps selecting the narrower
+// `ct-related` lane for them locally.
 // Hosted selection also covers direct local imports from discovered CT specs
 // (see ctSpecDependencies below). Keep those out of the global contract list:
 // a fixture edit should still select only related tests in verify:changed.
@@ -36,8 +33,8 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'patches/playwright-core@1.58.2.patch',
   'src/test/ct-test.ts',
   'src/lib/component-catalog/capture-stability.ts',
-  'src/lib/component-catalog/geometry-probe.ts',
   'src/lib/component-catalog/preview-definition.ts',
+  // Every edit is a trigger, including script-only changes such as dist:all.
   'package.json',
   'pnpm-lock.yaml',
 ]);
@@ -46,13 +43,6 @@ export const CT_CONTRACT_PATHS = Object.freeze([
   ...CT_CONTRACT_FILES,
   ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
 ]);
-
-// The spec half is `isCtSpec` — exactly what `playwright-ct.config.ts` discovers,
-// since both read `playwright/ct-spec-pattern.mjs` (a broader pattern would
-// require CT for files the matrix never loads); the golden half is the path
-// `geometrySnapshotTargets` in `scripts/verify-changed.mjs` derives (matched
-// relative to `CT_TEST_DIR/`; dot-prefixed segments are accepted).
-const CT_GEOMETRY_GOLDEN_RE = /^(?:.*\/)?__geometry__\/[^/]+\.geometry\.json$/;
 
 const OUTPUT_KEY = 'ct_required';
 
@@ -64,20 +54,9 @@ export function isCtContractPath(file) {
   );
 }
 
-function isCtGeometryGolden(file) {
-  const path = normalizeCtPath(file);
-  const prefix = `${CT_TEST_DIR}/`;
-  return path.startsWith(prefix) && CT_GEOMETRY_GOLDEN_RE.test(path.slice(prefix.length));
-}
-
-export function isCtTestArtifact(file) {
-  return isCtSpec(file) || isCtGeometryGolden(file);
-}
-
 export function ctRequired(files, dependencies = new Set()) {
   return files.some(
-    (file) =>
-      isCtContractPath(file) || isCtTestArtifact(file) || dependencies.has(normalizeCtPath(file)),
+    (file) => isCtContractPath(file) || isCtSpec(file) || dependencies.has(normalizeCtPath(file)),
   );
 }
 

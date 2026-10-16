@@ -6,7 +6,6 @@ import {
   CT_SPEC_SUFFIX,
   CT_TEST_DIR,
   CT_TEST_MATCH,
-  ctGeometryScene,
   hasCtSpecSuffix,
   isCtSpec,
 } from './ct-spec-pattern.mjs';
@@ -43,7 +42,7 @@ describe('isCtSpec', () => {
     'src/a/b.ct.spec.ts',
     './src/a/b.ct.spec.ts',
     'src/top-level.ct.spec.ts',
-    'src/lib/components/ui/card/card.geometry.ct.spec.ts',
+    'src/lib/components/ui/card/card.keyboard.ct.spec.ts',
     'src/.fixtures/button.ct.spec.ts',
     'src/.hidden.ct.spec.ts',
     'src/button.CT.spec.ts',
@@ -87,33 +86,5 @@ describe('hasCtSpecSuffix', () => {
     expect(hasCtSpecSuffix('scripts/.probe.CT.spec.ts')).toBe(true);
     expect(hasCtSpecSuffix('src/a/b.ct.test.ts')).toBe(false);
     expect(hasCtSpecSuffix('src/a/b.ct.spec.tsx')).toBe(false);
-  });
-});
-
-describe('ctGeometryScene', () => {
-  it('extracts the directory and scene from a geometry spec path', () => {
-    expect(ctGeometryScene('src/lib/components/ui/card/card.geometry.ct.spec.ts')).toEqual({
-      directory: 'src/lib/components/ui/card/',
-      scene: 'card',
-    });
-    expect(ctGeometryScene('./src/x/workspace-hover-card.geometry.ct.spec.ts')).toEqual({
-      directory: 'src/x/',
-      scene: 'workspace-hover-card',
-    });
-    expect(ctGeometryScene('card.geometry.ct.spec.ts')).toEqual({ directory: '', scene: 'card' });
-    expect(ctGeometryScene('src/.fixtures/Card.Geometry.CT.Spec.TS')).toEqual({
-      directory: 'src/.fixtures/',
-      scene: 'Card',
-    });
-  });
-
-  it.each([
-    'src/x/card.ct.spec.ts',
-    'src/x/card.geometry.ct.test.ts',
-    'src/x/card.geometry.ct.spec.tsx',
-    'src/x/.geometry.ct.spec.ts',
-    'src/x/__geometry__/card.geometry.json',
-  ])('returns null for %s', (file) => {
-    expect(ctGeometryScene(file)).toBeNull();
   });
 });

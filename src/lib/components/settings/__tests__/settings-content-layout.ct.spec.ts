@@ -15,7 +15,7 @@ for (const scenario of [
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const root = await mount(SettingsContentLayout, {
       hooksConfig: {
-        geometrySnapshot: {
+        previewScene: {
           scene: 'settings-content-layout',
           state: scenario.narrowPane ? 'narrow-pane' : 'default',
         },
@@ -37,7 +37,7 @@ test('top-right custom controls preserve keyboard, conditional, and save behavio
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const root = await mount(SettingsContentLayout, {
-    hooksConfig: { geometrySnapshot: { scene: 'settings-content-layout', state: 'default' } },
+    hooksConfig: { previewScene: { scene: 'settings-content-layout', state: 'default' } },
   });
   try {
     await exerciseSettingsContent(page, root);

@@ -1,22 +1,10 @@
-import { fileURLToPath } from 'node:url';
-import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import { test, expect } from '../../../test/ct-test';
 import Preview from './collaboration-settings.preview.svelte';
-
-defineGeometrySnapshotSuite({
-  scene: 'collaboration-settings',
-  component: Preview,
-  states: ['owner-empty', 'owner-populated', 'member', 'unknown', 'mixed-sharing'],
-  widths: [390, 1100],
-  snapshotPath: fileURLToPath(
-    new URL('./__geometry__/collaboration-settings.geometry.json', import.meta.url),
-  ),
-});
 
 for (const state of ['member', 'unknown', 'disabled']) {
   test(`${state} cannot invite members from Collaboration settings`, async ({ mount, page }) => {
     await mount(Preview, {
-      hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state } },
+      hooksConfig: { previewScene: { scene: 'collaboration-settings', state } },
     });
     await expect(page.getByRole('button', { name: 'Invite user', exact: true })).toHaveCount(0);
     await expect(
@@ -34,7 +22,7 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
 }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
+    hooksConfig: { previewScene: { scene: 'collaboration-settings', state: 'owner-empty' } },
   });
   const invite = page.getByRole('button', { name: 'Invite user', exact: true });
   const account = page.getByRole('textbox', { name: 'Account username' });
@@ -58,7 +46,7 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
 test('host roster and joined host retain their own identities', async ({ mount, page }) => {
   await mount(Preview, {
     hooksConfig: {
-      geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-populated' },
+      previewScene: { scene: 'collaboration-settings', state: 'owner-populated' },
     },
   });
   await expect(page.getByTestId('hosted-workspace-roster')).toContainText('Design system');
@@ -75,7 +63,7 @@ for (const width of [390, 1100]) {
     await page.setViewportSize({ width, height: 900 });
     await mount(Preview, {
       hooksConfig: {
-        geometrySnapshot: { scene: 'collaboration-settings', state: 'mixed-sharing' },
+        previewScene: { scene: 'collaboration-settings', state: 'mixed-sharing' },
       },
     });
     const users = page.getByRole('list', { name: 'Instance Users', exact: true });
@@ -109,7 +97,7 @@ test('machine name can be saved and reset with the keyboard on a narrow settings
 }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
+    hooksConfig: { previewScene: { scene: 'collaboration-settings', state: 'owner-empty' } },
   });
   const input = page.getByRole('textbox', { name: 'Machine name', exact: true });
   await expect(input).toBeEnabled();
