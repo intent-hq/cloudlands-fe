@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.7...v2.219.8) (2026-10-16)
+
+
+### 🐛 Bug Fixes
+
+* **mac:** restore one Apple Silicon update feed and drop Intel ([#3434](https://github.com/intent-hq/cloudlands-fe/issues/3434)) ([5659032](https://github.com/intent-hq/cloudlands-fe/commit/565903253cda2c0f2c9b0c99174b9d7d8956f904))
+
 ## [2.219.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.6...v2.219.7) (2026-10-16)
 
 
