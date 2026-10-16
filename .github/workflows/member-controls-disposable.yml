@@ -14,11 +14,20 @@ on:
 permissions:
   contents: read
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   member-controls:
     # This preparation has ZERO hosted execution authorization. A separate
     # reviewed disposition must materialize the grant and enable this job.
     if: ${{ false }}
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

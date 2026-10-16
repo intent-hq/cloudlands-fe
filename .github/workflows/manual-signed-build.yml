@@ -91,10 +91,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
@@ -119,7 +128,8 @@ jobs:
 
   smoke-inputs:
     if: ${{ inputs.smoke_macos }}
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 2
     steps:
       - name: Require a signed macOS artifact
@@ -141,9 +151,15 @@ jobs:
         timeout-minutes: 1
         with:
           persist-credentials: false
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - uses: pnpm/action-setup@v6
         timeout-minutes: 1
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
       - uses: actions/setup-node@v7
         timeout-minutes: 1
@@ -176,12 +192,12 @@ jobs:
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
-    needs: [select-macos]
+    needs: [select-macos, runner-route]
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     # 120 min: 90 covered the packaging job alone; a from-source intentd
@@ -221,6 +237,11 @@ jobs:
           echo "Selected $xcode ($version)"
           DEVELOPER_DIR="$developer_dir" xcrun --find actool
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -588,7 +609,8 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: depot-windows-2022-16
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-windows-2022-16'] || fromJSON('["depot-windows-2022-16"]') }}
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -611,6 +633,11 @@ jobs:
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -916,7 +943,8 @@ jobs:
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    runs-on: ${{ matrix.runner }}
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90
@@ -925,6 +953,11 @@ jobs:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -1183,16 +1216,22 @@ jobs:
 
   verify-isolated-macos:
     if: ${{ inputs.isolated_test && inputs.build_macos }}
-    needs: [select-macos, build-macos]
+    needs: [select-macos, build-macos, runner-route]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - uses: pnpm/action-setup@v6
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
       - uses: actions/setup-node@v7
         with:

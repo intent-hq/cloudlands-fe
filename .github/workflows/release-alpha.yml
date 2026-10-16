@@ -29,11 +29,20 @@ concurrency:
   queue: max
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   # Tag resolution/validation, the package.json version check, and the
   # duplicate-release guard run once here; every build job depends on it and
   # the publish job consumes its tag/version outputs.
   resolve:
-    runs-on: depot-ubuntu-24.04
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -178,12 +187,12 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     continue-on-error: ${{ matrix.arch == 'x64' }}
-    needs: resolve
+    needs: [resolve, runner-route]
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.resolve.outputs.macos_matrix) }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     timeout-minutes: 90
@@ -211,6 +220,11 @@ jobs:
           echo "Selected $xcode ($version)"
           DEVELOPER_DIR="$developer_dir" xcrun --find actool
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -427,7 +441,7 @@ jobs:
   # (integrated DigiCert signing is a tracked follow-up). Modeled on
   # intent-manual-windows-build.yml.
   build-windows:
-    needs: resolve
+    needs: [resolve, runner-route]
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
@@ -435,7 +449,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: depot-windows-2022-16
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-windows-2022-16'] || fromJSON('["depot-windows-2022-16"]') }}
     # 120 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -458,6 +472,11 @@ jobs:
         shell: cmd
         run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -560,7 +579,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
-    needs: resolve
+    needs: [resolve, runner-route]
     strategy:
       # Let the other arch finish (and report) even when one fails; the
       # publish gate still fails the release if either arch is missing.
@@ -605,7 +624,7 @@ jobs:
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     timeout-minutes: 60
 
     steps:
@@ -614,6 +633,11 @@ jobs:
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -723,8 +747,8 @@ jobs:
   # Required platforms block publication. The Intel matrix leg is optional;
   # its artifacts are uploaded only after all build/sign/verification steps pass.
   publish:
-    needs: [resolve, build-macos, build-windows, build-linux]
-    runs-on: depot-ubuntu-24.04
+    needs: [resolve, build-macos, build-windows, build-linux, runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04'] || fromJSON('["depot-ubuntu-24.04"]') }}
     timeout-minutes: 30
 
     steps:
@@ -766,9 +790,15 @@ jobs:
 
       # Feed assembly uses the updater's locked YAML and semver dependencies.
       # Ignore install hooks: publishing never rebuilds native app dependencies.
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
 
       - name: Setup Node.js

@@ -1,8 +1,13 @@
 // @vitest-environment node
 // @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/run-ct-tests.mjs, scripts/ct-browser.mjs
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import { createServer } from 'node:net';
+import { promisify } from 'node:util';
+import { runInNewContext } from 'node:vm';
+import { ctLockKey } from './verification-lock.mjs';
+import { resolveCtPortConfig } from '../playwright/ct-port';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
@@ -33,20 +38,20 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
   const residue = source.replace(
-    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\s]/g,
+    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\[\]\s]/g,
     '',
   );
   if (residue !== '') throw new Error(`unsupported workflow expression: ${residue}`);
   return new Function('fromJSON', `return (${source});`)(JSON.parse);
 }
 
-describe('required CT hosted routing', () => {
+describe('required CT self-hosted-first routing', () => {
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
     ['schedule', 'false'],
     ['workflow_dispatch', 'true'],
-  ])('uses hosted provisioning on %s with global linux_burst=%s', (event, burst) => {
+  ])('uses the selected runner and provisioning on %s with linux_burst=%s', (event, burst) => {
     const context = {
       'github.event_name': event,
       'github.event.pull_request.head.repo.full_name': 'intent-hq/cloudlands-fe',
@@ -54,9 +59,11 @@ describe('required CT hosted routing', () => {
       'inputs.suite': 'ct',
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
-      'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'linux', 'tinybox'],
-      ),
+      'runner.environment': burst === 'true' ? 'github-hosted' : 'self-hosted',
+      'needs.runner-route.outputs.runners': JSON.stringify({
+        'depot-ubuntu-24.04-8':
+          burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64'],
+      }),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'pull_request' ? 'true' : '',
     };
@@ -64,23 +71,73 @@ describe('required CT hosted routing', () => {
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(true);
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['depot-ubuntu-24.04-8']);
-    expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
+    expect
+      .soft(Array.isArray(runner) ? runner : [runner])
+      .toEqual(burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'Linux', 'X64']);
+    expect
+      .soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1]))
+      .toBe(burst === 'true' ? 'pnpm' : '');
+
+    const timeout = ctJob.match(/^    timeout-minutes: (.*)$/m)![1];
+    expect(
+      runInNewContext(
+        timeout.replace(/^\$\{\{\s*|\s*\}\}$/g, '').replaceAll('needs.runner-route', 'needs.route'),
+        {
+          needs: { route: { outputs: { runners: context['needs.runner-route.outputs.runners'] } } },
+          fromJSON: JSON.parse,
+          contains: (values: string[], value: string) => values.includes(value),
+        },
+      ),
+    ).toBe(burst === 'true' ? 50 : 90);
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]
       .map((match) => match[1])
       .filter((name) => evaluate(step(name).match(/^        if: (.*)$/m)?.[1] ?? 'true', context));
-    for (const name of [
-      'Resolve CT browser identity and paths',
-      'Cache Playwright browsers',
-      'Harden apt against mirror stalls',
-      'Install Playwright browsers',
-    ]) {
+    for (const name of ['Resolve CT browser identity and paths', 'Install Playwright browsers']) {
       expect.soft(activeSteps).toContain(name);
     }
-    expect.soft(activeSteps).not.toContain('Point Playwright at per-slot paths (tinybox)');
+    expect(activeSteps.includes('Cache Playwright browsers')).toBe(burst === 'true');
+    expect(activeSteps.includes('Harden apt against mirror stalls')).toBe(burst === 'true');
+    expect(activeSteps).toContain('Isolate browser cache per runner');
     expect.soft(activeSteps).not.toContain('Install Playwright browsers (tinybox)');
+  });
+});
+
+describe('CT job port isolation', () => {
+  it('selects an available port and shares it across build and test steps', async () => {
+    const busy = createServer();
+    await new Promise<void>((resolve) => busy.listen(0, '127.0.0.1', resolve));
+    try {
+      const dir = mkdtempSync(join(os.tmpdir(), 'ct-ci-port-'));
+      dirs.push(dir);
+      const output = join(dir, 'env');
+      const busyPort = (busy.address() as { port: number }).port;
+      const result = await promisify(execFile)(
+        'bash',
+        ['-euo', 'pipefail', '-c', runBlock('Isolate component server port')],
+        {
+          cwd: root,
+          env: { ...process.env, GITHUB_ENV: output },
+        },
+      );
+      expect(result.stderr).not.toContain('Error');
+      const entry = readFileSync(output, 'utf8').trim();
+      expect(entry).toMatch(/^CT_PORT=\d+$/);
+      const env = { CT_PORT: entry.split('=')[1] };
+      const config = resolveCtPortConfig({ env });
+      expect(config.port).toBeGreaterThan(0);
+      expect(config.port).toBeLessThan(65536);
+      expect(config.port).not.toBe(busyPort);
+      expect(ctLockKey(env)).toBe(`ct-${config.port}`);
+      expect(config.cacheDir).toBe(`playwright/.cache-${config.port}`);
+      expect(ctJob.indexOf('name: Isolate component server port')).toBeLessThan(
+        ctJob.indexOf('name: Build CT bundle'),
+      );
+      expect(ctJob).not.toMatch(/^ +CT_PORT:/m);
+    } finally {
+      await new Promise<void>((resolve) => busy.close(() => resolve()));
+    }
   });
 });
 

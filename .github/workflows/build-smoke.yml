@@ -33,12 +33,21 @@ permissions:
   contents: read
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   build-smoke:
     name: Build Smoke (linux x64)
     # gh-linux-8x (GH-hosted, 8-core/32 GB X64): the renderer bundle OOMs
     # 16 GB runners (monorepo#1340) — same class release-alpha's Linux x64
     # leg uses. Never downgrade to ubuntu-latest.
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     timeout-minutes: 60
     env:
       CI: 'true'
@@ -50,6 +59,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup pnpm
         timeout-minutes: 1
         uses: pnpm/action-setup@v6

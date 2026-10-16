@@ -28,13 +28,22 @@ concurrency:
   queue: max
 
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   promote-to-beta:
     # GH-hosted larger runner (ephemeral): download/re-upload-heavy promotion
     # work. Scratch files still live under RUNNER_TEMP — harmless on an
     # ephemeral runner and it keeps the guarantee that a previous run's
     # assets can never leak into this promotion (#553) even if this ever
     # moves back to a persistent runner.
-    runs-on: depot-ubuntu-24.04-8
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['depot-ubuntu-24.04-8'] || fromJSON('["depot-ubuntu-24.04-8"]') }}
     timeout-minutes: 30
 
     steps:
@@ -277,9 +286,15 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .release-tools
 
+      - name: Prepare Node for pnpm installer
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - name: Setup publication pnpm
         uses: pnpm/action-setup@v6
         with:
+          dest: ~/setup-pnpm-${{ runner.name }}
           version: 10.30.3
 
       - name: Setup publication Node.js
