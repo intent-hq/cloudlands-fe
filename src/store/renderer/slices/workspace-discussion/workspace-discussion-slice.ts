@@ -518,7 +518,7 @@ workspaceDiscussionReducer.with(
   },
 );
 
-export type DiscussionStatus = 'idle' | 'loading' | 'ready' | 'error';
+type DiscussionStatus = 'idle' | 'loading' | 'ready' | 'error';
 export interface DiscussionDirectory {
   conversations: Collection<DiscussionConversation, 'id'>;
   status: DiscussionStatus;

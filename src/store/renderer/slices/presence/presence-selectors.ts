@@ -244,7 +244,7 @@ export const selectAgentTypingPeople = store.createSelector<
 });
 
 /** Only actual composer focus in the current admitted workspace can report discussion input. */
-export const selectDiscussionTypingWorkspace = store.createSelector((state): string | null => {
+const selectDiscussionTypingWorkspace = store.createSelector((state): string | null => {
   const id = state.presence.discussionComposerWorkspaceId;
   return id &&
     currentPresence(state) &&

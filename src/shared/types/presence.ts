@@ -39,7 +39,7 @@ export interface PresenceTypingEntry {
 }
 
 /** Discussion pulses carry no agent target or draft text. */
-export type PresenceDiscussionTypingEntry = Omit<PresenceTypingEntry, 'agentId'> & {
+type PresenceDiscussionTypingEntry = Omit<PresenceTypingEntry, 'agentId'> & {
   conversationId?: string;
 };
 
