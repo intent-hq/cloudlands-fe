@@ -5,12 +5,14 @@ import {
   backendReconnected,
   workspaceDeleted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { principalContextChanged } from '../principal/principal-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   type Collection,
   removeItem,
   replaceItem,
@@ -71,6 +73,8 @@ export type WorkspaceState = {
    * the store.
    */
   detailHydrated: Record<string, true>;
+  attentionReadGeneration: number;
+  attentionReadRevisions: Record<string, number>;
   pushedTaskStats: Record<string, NonNullable<Workspace['taskStats']>>;
   recency: WorkspaceRecencyState;
 };
@@ -92,6 +96,8 @@ export const initialState: WorkspaceState = {
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  attentionReadGeneration: 0,
+  attentionReadRevisions: {},
   pushedTaskStats: {},
   recency: defaultWorkspaceRecencyState,
 };
@@ -147,6 +153,10 @@ export const setPendingCreation = createAction<[workspace: Workspace]>(
 export const clearPendingCreation = createAction<[wsId: string]>('workspace/clearPendingCreation');
 
 export const resetWorkspaceState = createAction('workspace/resetWorkspaceState');
+
+export const workspaceReminderInvalidated = createAction<[wsId: string]>(
+  'workspace/workspaceReminderInvalidated',
+);
 
 export type WorkspaceEntityUpsertOptions = {
   /**
@@ -501,18 +511,55 @@ function getWorkspaceById(
   return wsId ? getItem(collection, wsId as Workspace['id']) : undefined;
 }
 
+function clearWorkspaceAttentionReminders(
+  state: WorkspaceState,
+  workspaceId?: string,
+): WorkspaceState {
+  const clear = (workspace: Workspace): Workspace =>
+    workspace.attentionReminder === undefined ||
+    (workspaceId !== undefined && workspace.id !== workspaceId)
+      ? workspace
+      : { ...workspace, attentionReminder: undefined };
+  const previous = getItems(state.workspaces);
+  const next = previous.map(clear);
+  const changed = next.some((workspace, index) => workspace !== previous[index]);
+  const pending = Object.entries(state.pendingCreations).map(
+    ([id, workspace]) => [id, clear(workspace)] as const,
+  );
+  const pendingChanged = pending.some(
+    ([id, workspace]) => workspace !== state.pendingCreations[id],
+  );
+  if (!changed && !pendingChanged) return state;
+  return {
+    ...state,
+    workspaces: changed ? createCollection('id', next) : state.workspaces,
+    pendingCreations: pendingChanged ? Object.fromEntries(pending) : state.pendingCreations,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+workspaceReducer.with(principalContextChanged, (state) => clearWorkspaceAttentionReminders(state));
+workspaceReducer.with(workspaceReminderInvalidated, (state, { payload: [wsId] }) => ({
+  ...clearWorkspaceAttentionReminders(state, wsId),
+  attentionReadRevisions: {
+    ...state.attentionReadRevisions,
+    [wsId]: (state.attentionReadRevisions[wsId] ?? 0) + 1,
+  },
+}));
 workspaceReducer.with(workspaceTaskStatsPushed, (state, { payload: [workspaceId, taskStats] }) => ({
   ...state,
   pushedTaskStats: { ...state.pushedTaskStats, [workspaceId]: taskStats },
   workspaces: updateItem(state.workspaces, { id: workspaceId as Workspace['id'], taskStats }),
 }));
 // Reconnect hydration re-establishes authoritative summaries after missed events.
-workspaceReducer.with(backendReconnected, (state) => ({ ...state, pushedTaskStats: {} }));
+workspaceReducer.with(backendReconnected, (state) => ({
+  ...clearWorkspaceAttentionReminders(state),
+  pushedTaskStats: {},
+}));
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };
@@ -859,6 +906,8 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  attentionReadGeneration: state.attentionReadGeneration + 1,
+  attentionReadRevisions: {},
   pushedTaskStats: {},
   recency: defaultWorkspaceRecencyState,
 }));

@@ -2,21 +2,17 @@
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
+  import { createHomeWorkspaceActions } from './home-workspace-actions.svelte';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
   import { goto } from '$app/navigation';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
-  import {
-    getSidebarContextPosition,
-    type SidebarContextPosition,
-    type SidebarMenuEntry,
-  } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
-  import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -65,12 +61,14 @@
     faFolder,
     faCircleExclamation,
     faPlay,
+    faCodePullRequest,
     faPlus,
     faChevronDown,
     faChevronRight,
   } from '@fortawesome/free-solid-svg-icons';
   import {
     getHomeTriageGroup,
+    groupHomeRepositoriesForSidebar,
     matchesHomeFilter,
     needsAttention,
     type HomeFilter,
@@ -101,36 +99,25 @@
   } = $props();
   const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
-  let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  const dismissalResult$ = selectAttentionDismissalResult();
+  const dismissalConsumerId = $props.id();
+  const workspaceActions = createHomeWorkspaceActions({
+    root: () => homeElement,
+    selectedId: () => selectedId,
+    pinnedIds: () => $pinnedIds$,
+    microConnected: () => $microConnected$,
+    expandPinned: () => updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
+    consumerId: dismissalConsumerId,
+    dismissalRequestId: () => $dismissalResult$?.requestId,
+    onOpen: openWorkspace,
+  });
   function openWorkspace(id: string) {
-    contextMenu = null;
+    workspaceActions.contextMenu = null;
     store.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
-  }
-  function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
-    const position = getSidebarContextPosition(event);
-    if (!position) return;
-    contextMenu = {
-      ...position,
-      returnFocus:
-        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-        position.returnFocus,
-      workspace,
-    };
-  }
-  function workspaceMenu(workspace: Workspace): SidebarMenuEntry[] {
-    return createHomeWorkspaceMenu(workspace, {
-      microConnected: $microConnected$,
-      pinned: $pinnedIds$.includes(workspace.id),
-      onOpen: openWorkspace,
-      onClose: () => (contextMenu = null),
-      expandPinned: () =>
-        updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
-      getHomeElement: () => homeElement,
-    });
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -197,37 +184,12 @@
   function countNeedsYou(items: readonly Workspace[]): number {
     return items.filter((workspace) => isActive(workspace) && needsAttention(workspace)).length;
   }
-  // Local repositories participate in the same grouping and ordering as orgs.
-  const sidebar = $derived.by(() => {
-    const groups: { key: string; owner?: string; label: string; items: typeof repositoryGroups }[] =
-      [];
-    const unassigned: typeof repositoryGroups = [];
-    for (const repo of repositoryGroups) {
-      if (repo.key === m.workspace_grouping_unknownRepository_label()) {
-        unassigned.push(repo);
-        continue;
-      }
-      const key = repo.owner ? `org:${repo.owner.toLowerCase()}` : 'local';
-      let group = groups.find((candidate) => candidate.key === key);
-      if (!group) {
-        group = {
-          key,
-          owner: repo.owner,
-          label: repo.owner || m.onboarding_projectPicker_localFolder_label(),
-          items: [],
-        };
-        groups.push(group);
-      }
-      group.items.push(repo);
-    }
-    const count = (items: typeof repositoryGroups) =>
-      items.reduce((total, repo) => total + repo.workspaces.filter(isActive).length, 0);
-    groups.sort((a, b) => count(b.items) - count(a.items) || a.label.localeCompare(b.label));
-    for (const group of groups) {
-      group.items.sort((a, b) => count([b]) - count([a]) || a.label.localeCompare(b.label));
-    }
-    return { groups, unassigned };
-  });
+  const sidebar = $derived(
+    groupHomeRepositoriesForSidebar(repositoryGroups, {
+      unknownRepository: m.workspace_grouping_unknownRepository_label(),
+      localFolder: m.onboarding_projectPicker_localFolder_label(),
+    }),
+  );
   const selectedOrg = $derived(sidebar.groups.find((group) => `sidebar:${group.key}` === repoKey));
   const scopedWorkspaces = $derived(
     selectedRepository?.workspaces ??
@@ -265,6 +227,7 @@
       [
         { id: 'all', label: m.home_integrations_all(), icon: faLayerGroup },
         { id: 'attention', label: m.home_filter_attention(), icon: faCircleExclamation },
+        { id: 'pr-ready', label: m.home_filter_pr_ready(), icon: faCodePullRequest },
         { id: 'running', label: m.home_filter_running(), icon: faPlay },
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
@@ -297,9 +260,14 @@
       ),
   );
   const selectedWorkspace = $derived(
-    filteredWorkspaces.find((workspace) => workspace.id === selectedId),
+    filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
+      (workspaceActions.retainedSelection === selectedId
+        ? dateScopedWorkspaces.find(
+            (workspace) => workspace.id === selectedId && matchesHomeFilter(workspace, 'all'),
+          )
+        : undefined),
   );
-  const triageOrder = ['needs-you', 'running', 'inactive'] as const;
+  const triageOrder = ['needs-you', 'pr-ready', 'running', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
   function setGroupExpanded(group: string, expanded: boolean, items: Workspace[]) {
@@ -313,6 +281,8 @@
     switch (group) {
       case 'needs-you':
         return m.home_filter_attention();
+      case 'pr-ready':
+        return m.home_filter_pr_ready();
       case 'running':
         return m.home_filter_running();
       case 'blocked':
@@ -461,6 +431,7 @@
   });
   let pendingFocusId = $state<string | null>(null);
   function closePreview() {
+    workspaceActions.clearRetainedSelection();
     pendingFocusId = selectedId;
     updateView({ selectedId: null });
   }
@@ -472,14 +443,21 @@
       const row = homeElement?.querySelector<HTMLElement>(
         `[data-home-workspace="${CSS.escape(id)}"]`,
       );
-      row?.closest<HTMLElement>('[role="option"], button')?.focus();
+      const fallback = Array.from(
+        homeElement?.querySelectorAll<HTMLElement>(
+          '[data-home-status-filters] button[aria-pressed="true"], [data-home-status-filter] [role="combobox"]',
+        ) ?? [],
+      ).find((element) => element.getClientRects().length > 0);
+      (row?.closest<HTMLElement>('[role="option"], button') ?? fallback)?.focus();
     });
   });
   function chooseFilter(next: HomeFilter) {
+    workspaceActions.clearRetainedSelection();
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
+    workspaceActions.clearRetainedSelection();
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -524,13 +502,16 @@
   }}
 />
 
-{#if contextMenu}
+{#if workspaceActions.contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    returnFocus={contextMenu.returnFocus}
-    items={workspaceMenu(contextMenu.workspace)}
-    onClickOutside={() => (contextMenu = null)}
+    x={workspaceActions.contextMenu.x}
+    y={workspaceActions.contextMenu.y}
+    returnFocus={workspaceActions.contextMenu.returnFocus}
+    items={workspaceActions.menu(
+      workspaceActions.contextMenu.workspace,
+      workspaceActions.contextMenu.reminder,
+    )}
+    onClickOutside={() => (workspaceActions.contextMenu = null)}
   />
 {/if}
 
@@ -844,7 +825,10 @@
                             {filter}
                             view={$view$.view}
                             {filters}
-                            onquery={(query) => updateView({ query })}
+                            onquery={(query) => {
+                              workspaceActions.clearRetainedSelection();
+                              updateView({ query });
+                            }}
                             onfilter={chooseFilter}
                             onview={(view) => updateView({ view })}
                             settings={workspaceSettings}
@@ -904,7 +888,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
-                            oncontextmenu={showWorkspaceMenu}
+                            oncontextmenu={workspaceActions.showMenu}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -918,7 +902,7 @@
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
                               onclick={(event) => openModifiedWorkspace(event, item.id)}
-                              oncontextmenu={(event) => showWorkspaceMenu(event, item)}
+                              oncontextmenu={(event) => workspaceActions.showMenu(event, item)}
                             >
                               {#snippet leading()}
                                 <span class="flex items-center gap-2">
@@ -1031,7 +1015,9 @@
                                     <HomeActivityTime workspace={item} />
                                   </span>
                                   <SidebarOverflowMenu
-                                    items={workspaceMenu(item)}
+                                    items={workspaceActions.overflowMenu(item)}
+                                    onOpenChange={(open) =>
+                                      workspaceActions.setOverflowOpen(item, open)}
                                     ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}
                                   />
                                 </span>{/snippet}
@@ -1063,16 +1049,16 @@
                                     ?.dataset.homeWorkspace;
                                 const workspace = items.find((item) => item.id === id);
                                 if (workspace) {
-                                  showWorkspaceMenu(event, workspace);
+                                  workspaceActions.showMenu(event, workspace);
                                   if (
-                                    contextMenu &&
+                                    workspaceActions.contextMenu &&
                                     option &&
                                     (event.key === 'ContextMenu' ||
                                       (event.shiftKey && event.key === 'F10'))
                                   ) {
                                     const bounds = option.getBoundingClientRect();
-                                    contextMenu = {
-                                      ...contextMenu,
+                                    workspaceActions.contextMenu = {
+                                      ...workspaceActions.contextMenu,
                                       x: bounds.left,
                                       y: bounds.bottom,
                                       returnFocus: option,

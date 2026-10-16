@@ -1,4 +1,6 @@
 import { store } from '../../../store';
+import { appClient } from '$lib/client';
+import { applyWorkspaceReminderAcknowledgement } from '$shared/utils/workspace-attention-reminder';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
   captureDeletionExpiry,
@@ -73,6 +75,8 @@ import {
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
+  requestDismissWorkspaceAttention,
+  workspaceAttentionDismissalSettled,
 } from '../workspace-operations-slice';
 import {
   selectBulkComputeToken,
@@ -851,8 +855,42 @@ function* applyProposal(action: ReturnType<typeof applyWorkspaceProposal>): Saga
   else yield* applyCreateProposal(payload);
 }
 
+function* dismissAttention(
+  action: ReturnType<typeof requestDismissWorkspaceAttention>,
+): SagaGenerator<void> {
+  const [workspaceId, reasons, principalContext, requestId] = action.payload;
+  const current = () => selectPrincipalActionContext.select(store.state) === principalContext;
+  if (!current()) return;
+  try {
+    const requestedReminder = (yield* selectWorkspaceById.effect(workspaceId))?.attentionReminder;
+    const workspace = yield* call(
+      [appClient.workspaces, appClient.workspaces.dismissAttention],
+      workspaceId,
+      reasons,
+    );
+    if (current()) {
+      const latest = yield* selectWorkspaceById.effect(workspaceId);
+      if (latest && latest.status !== WorkspaceStatusEnum.Deleted)
+        yield* put(
+          setWorkspaceEntity(
+            applyWorkspaceReminderAcknowledgement(latest, workspace, requestedReminder),
+          ),
+        );
+    }
+  } catch (error) {
+    if (!current()) return;
+    logger.error('workspace.dismissAttention failed', { workspaceId, error });
+    const notify = yield* call(getToast);
+    notify.error(m.workspace_ops_dismissFailed_error());
+  } finally {
+    if (current() && requestId)
+      yield* put(workspaceAttentionDismissalSettled(workspaceId, requestId));
+  }
+}
+
 export function* workspaceOperationsSaga(): SagaGenerator<void> {
   yield* all([
+    takeEvery(requestDismissWorkspaceAttention, dismissAttention),
     takeEvery(requestDeleteWorkspace, requestDelete),
     takeEvery(confirmDeleteWorkspace, confirmDelete),
     takeEvery(confirmArchiveWorkspace, confirmArchive),

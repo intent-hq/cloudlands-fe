@@ -10,6 +10,10 @@
  * the store has caught up (see `reconcileDisplayStatusOverride`).
  */
 
+import {
+  workspaceReminderStatus,
+  workspaceReminderDismissed,
+} from '$shared/utils/workspace-attention-reminder';
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
@@ -402,6 +406,12 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
     for (const agent of cardAgentsOf(workspace, state)) {
       const { bucket, attentionKind, hasQuestion } = agent;
       if (bucket !== 'needs-attention' && bucket !== 'failed') continue;
+      if (
+        workspaceReminderDismissed(workspace) &&
+        bucket !== 'failed' &&
+        attentionKind !== 'blocker'
+      )
+        continue;
       // Same per-agent gating as `selectHudAttnCount`: only a top-level
       // non-background, non-muted agent raises a row — sub-agent/background
       // signals are the coordinator's business, never the user's call to
@@ -433,7 +443,7 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
     const flag = flags[workspaceId];
     // Only urgent flags raise a row: the tracked non-urgent `unread` (blue
     // UNREAD card state) is never a call to action on the ATTENTION panel.
-    if (flag && isHudAttentionValue(flag.attention)) {
+    if (flag && isHudAttentionValue(flag.attention) && !workspaceReminderDismissed(workspace)) {
       items.push({
         workspaceId,
         workspaceTitle: workspace.title,
@@ -629,9 +639,9 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
  * absent wire values default to `not_started` so the card never vanishes.
  */
 function cardStateKey(workspace: Workspace): HudCardStateKey {
-  const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)
-    ? workspace.displayStatus
-    : 'not_started';
+  const projected = workspaceReminderStatus(workspace);
+  if (projected === 'waiting') return 'idle';
+  const displayStatus = isWorkspaceDisplayStatus(projected) ? projected : 'not_started';
   return displayStatusCardStateKey(displayStatus) ?? 'not_started';
 }
 
@@ -1116,7 +1126,11 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
     const workspaceId = String(workspace.id);
     const keySlotIndex = keySlots.indexOf(workspaceId);
     const attention =
-      flags[workspaceId]?.attention ??
+      (workspaceReminderDismissed(workspace)
+        ? workspace.attention === 'review_required'
+          ? 'none'
+          : workspace.attention
+        : flags[workspaceId]?.attention) ??
       (typeof workspace.attention === 'string' && isHudTrackedAttentionValue(workspace.attention)
         ? workspace.attention
         : null);
@@ -1137,7 +1151,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       stateKey,
       attention,
       isUnread: attention === HUD_UNREAD_ATTENTION_VALUE,
-      isWaiting: workspace.waiting === true,
+      isWaiting: workspace.waiting === true || workspaceReminderStatus(workspace) === 'waiting',
       statusMessage,
       attentionSnippet: cardAttentionSnippet(state, stateKey, agents),
       prNumber: typeof workspace.prNumber === 'number' ? workspace.prNumber : null,
@@ -1185,9 +1199,11 @@ export const selectWorkspaceTabStatuses = store.createSelector(
       for (const info of relevantInfos) {
         const signal = agentBucketOf(state, info);
         if (signal.bucket === 'failed') addAgent('failed', info.name);
-        else if (signal.hasQuestion) addAgent('question', info.name);
+        else if (signal.hasQuestion && !workspaceReminderDismissed(workspace))
+          addAgent('question', info.name);
         else if (signal.attentionKind === 'blocker') addAgent('blocker', info.name);
-        else if (signal.attentionKind === 'discussion') addAgent('discussion', info.name);
+        else if (signal.attentionKind === 'discussion' && !workspaceReminderDismissed(workspace))
+          addAgent('discussion', info.name);
         if (signal.isRunning) addAgent('running', info.name);
       }
 
@@ -1205,7 +1221,11 @@ export const selectWorkspaceTabStatuses = store.createSelector(
         namesByCategory.set('needs_input', []);
       }
       const attention =
-        flags[workspaceId]?.attention ??
+        (workspaceReminderDismissed(workspace)
+          ? workspace.attention === 'review_required'
+            ? 'none'
+            : workspace.attention
+          : flags[workspaceId]?.attention) ??
         (typeof workspace.attention === 'string' && isHudTrackedAttentionValue(workspace.attention)
           ? workspace.attention
           : null);
@@ -1275,7 +1295,10 @@ export const selectHudAttnCount = store.createSelector((state): number => {
         agent.topLevel &&
         !agent.isBackground &&
         !isMutedAgent(state, agent.id) &&
-        (agent.bucket === 'failed' || agent.attentionKind !== null || agent.hasQuestion)
+        (agent.bucket === 'failed' ||
+          agent.attentionKind === 'blocker' ||
+          (!workspaceReminderDismissed(workspace) &&
+            (agent.attentionKind !== null || agent.hasQuestion)))
       ) {
         count += 1;
         agentCounted = true;
@@ -1284,7 +1307,10 @@ export const selectHudAttnCount = store.createSelector((state): number => {
     // Only urgent flags count: the tracked non-urgent `unread` (blue UNREAD
     // card state) never inflates the blinking ATTN counter.
     const flag = flags[String(workspace.id)];
-    const flagged = flag !== undefined && isHudAttentionValue(flag.attention);
+    const flagged =
+      !workspaceReminderDismissed(workspace) &&
+      flag !== undefined &&
+      isHudAttentionValue(flag.attention);
     if (flagged) count += 1;
     if (ATTENTION_CARD_STATES.has(cardStateKey(workspace)) && !agentCounted && !flagged) count += 1;
   }
