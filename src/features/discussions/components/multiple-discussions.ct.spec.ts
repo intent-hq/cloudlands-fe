@@ -1,5 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import MultipleDiscussionHost from './__tests__/MultipleDiscussionHost.svelte';
+import NewDiscussionPreview from './new-discussion.preview.svelte';
 import type { Locator } from '@playwright/test';
 
 test.use({ contextOptions: { reducedMotion: 'reduce' } });
@@ -33,6 +34,10 @@ test('People plus retains a local composer, creates a group on first send, and r
   await expect(picker).toBeEditable();
   await picker.fill('Alex');
   await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(picker).toBeFocused();
+  await picker.click();
+  await expect(page.getByRole('option', { name: /^Alex(?:\s|$)/ })).toHaveCount(0);
   await picker.fill('Jordan');
   await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
   await picker.press('Escape');
@@ -79,6 +84,37 @@ test('People plus retains a local composer, creates a group on first send, and r
   await component.locator(`[data-workspace-discussion-open="${conversationId}"]`).click();
   await expect(component.getByRole('log')).toContainText('Let’s review the new flow together.');
   await expect(component.locator('[data-sidebar-card-tab="people"]')).toContainText('Activity');
+});
+
+test('narrow recipient entry supports keyboard additions and restores removed people to suggestions', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 850 });
+  const component = await mount(NewDiscussionPreview, { props: { narrow: true } });
+  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
+  await picker.fill('Alex');
+  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toBeVisible();
+  await picker.press('Enter');
+  await expect(component.getByRole('button', { name: 'Remove Alex' })).toBeVisible();
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(picker).toBeFocused();
+  await picker.click();
+  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toHaveCount(0);
+  await picker.fill('Jordan');
+  await picker.press('Enter');
+  await expect(component.getByRole('button', { name: 'Remove Jordan' })).toBeVisible();
+  await component.getByRole('button', { name: 'Remove Alex' }).click();
+  await picker.fill('Alex');
+  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toBeVisible();
+  await picker.press('Enter');
+  await expect(component.getByRole('button', { name: 'Remove Alex' })).toHaveCount(1);
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  expect(await component.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  await component.getByRole('button', { name: 'Remove Jordan' }).click();
+  await expect(component.getByRole('button', { name: 'Remove Jordan' })).toHaveCount(0);
 });
 
 test('switching between two saved discussions preserves independent drafts and send targets', async ({

@@ -42,14 +42,14 @@
   const name = (member: Member) =>
     member.displayName || member.login || m.workspace_discussion_unknownAuthor_label();
   const options = $derived(
-    members.map((member) => ({
-      value: member.principalId,
-      label: name(member),
-      description: [member.login, member.principalId].filter(Boolean).join(' '),
-      disabled:
-        selectedIds.length >= DISCUSSION_MAX_RECIPIENTS &&
-        !selectedIds.includes(member.principalId),
-    })),
+    members
+      .filter((member) => !selectedIds.includes(member.principalId))
+      .map((member) => ({
+        value: member.principalId,
+        label: name(member),
+        description: [member.login, member.principalId].filter(Boolean).join(' '),
+        disabled: selectedIds.length >= DISCUSSION_MAX_RECIPIENTS,
+      })),
   );
   $effect(() => {
     if (autofocus && !disabled && input) untrack(() => input?.focus({ preventScroll: true }));
@@ -99,19 +99,22 @@
       placeholder={selectedIds.length
         ? m.workspace_discussion_addRecipient_placeholder()
         : m.workspace_discussion_chooseRecipients_placeholder()}
-      searchPlaceholder={m.workspace_discussion_chooseRecipients_placeholder()}
+      searchPlaceholder={selectedIds.length
+        ? m.workspace_discussion_addRecipient_placeholder()
+        : m.workspace_discussion_chooseRecipients_placeholder()}
       emptyText={m.workspace_discussion_noMembers_label()}
-      class="min-w-20 flex-1"
-      inputClass="h-6 border-0 bg-transparent px-1 shadow-none"
-      contentClass="min-w-56"
+      class={selectedIds.length ? 'w-28 max-w-full' : 'w-56 max-w-full'}
+      inputClass="h-6 rounded-none border-0 bg-transparent px-1 shadow-none focus-visible:outline-none"
+      contentClass="w-72"
       onchange={(value) => onChange(Array.isArray(value) ? value : [])}
+      oncommit={() => (open = false)}
       onquerychange={onSearch}
       footer={hasMore ? moreMembers : undefined}
     >
       {#snippet optionDescription(option)}
         {@const login = members.find((member) => member.principalId === option.value)?.login}
-        {#if login}<span class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground"
-            >@{login}</span
+        {#if login && login.toLowerCase() !== option.label.replace(/^@/, '').toLowerCase()}<span
+            class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground">@{login}</span
           >{/if}
       {/snippet}
     </Combobox>
