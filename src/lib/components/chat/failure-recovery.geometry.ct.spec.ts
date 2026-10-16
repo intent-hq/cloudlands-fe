@@ -7,6 +7,8 @@ import Preview from './failure-recovery.preview.svelte';
 test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
 test.beforeEach(async ({ page }) => {
+  // Keep the fixture's relative timestamp independent of the day this runs.
+  await page.clock.setFixedTime(new Date('2026-10-15T12:00:00.000Z'));
   // The real panel measures its responsive inset and queue height after mount.
   // Extend this scene's capture readiness without changing snapshot tolerances.
   await page.evaluate(() => {
