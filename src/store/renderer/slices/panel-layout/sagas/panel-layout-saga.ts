@@ -146,6 +146,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabViewport,
 } from '../panel-layout-slice';
 import {
@@ -214,6 +215,7 @@ const PERSIST_ACTIONS = [
   reconcileStaleAgentTabs,
   seedContextLinkEmptyLayout,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabViewport,

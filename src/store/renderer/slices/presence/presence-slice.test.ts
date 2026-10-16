@@ -303,3 +303,40 @@ describe('discussion typing state', () => {
     expect(presenceReducer(state, presenceReset()).liveDiscussionTyping).toEqual({});
   });
 });
+
+describe('conversation typing isolation', () => {
+  it('switches the focused conversation and ignores old blur/stop/timer actions', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceDiscussionComposerFocused('ws-1', true, 'c1'),
+    );
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c1' });
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', true, 'c2'));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c2'));
+    state = presenceReducer(state, presenceDiscussionTypingStopped('ws-1', 'c1'));
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', false, 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c2' });
+    const update = (conversationId: string, pulse: number) =>
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            discussionTyping: [
+              { source: 's', since: '2099-01-01T00:00:00Z', pulse, conversationId },
+            ],
+          }),
+        ]),
+      );
+    state = presenceReducer(state, update('c1', 1));
+    state = presenceReducer(state, update('c2', 2));
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 1, 'c1'));
+    expect(state.liveDiscussionTyping['ws-1'].s).toMatchObject({
+      conversationId: 'c2',
+      expired: false,
+    });
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 2, 'c2'));
+    state = presenceReducer(state, update('c2', 2));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(true);
+  });
+});

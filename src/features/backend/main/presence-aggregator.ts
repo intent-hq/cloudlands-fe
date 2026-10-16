@@ -36,7 +36,7 @@ interface WindowReport {
   typing: { agentId: string } | null;
   /** Monotonic order of the window's last non-null typing report. */
   typingSeq: number;
-  discussionTyping: { workspaceId: string } | null;
+  discussionTyping: { workspaceId: string; conversationId?: string } | null;
   discussionTypingSeq: number;
 }
 
@@ -120,7 +120,7 @@ export class PresenceAggregator {
     const focus = new Map<string, PresenceFocusItem>();
     let typing: { agentId: string } | null = null;
     let typingSeq = -1;
-    let discussionTyping: { workspaceId: string } | null = null;
+    let discussionTyping: { workspaceId: string; conversationId?: string } | null = null;
     let discussionTypingSeq = -1;
     for (const window of backend?.windows.values() ?? []) {
       for (const item of window.focus) focus.set(focusKey(item), item);

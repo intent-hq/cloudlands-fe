@@ -32,7 +32,7 @@ function setup() {
   const target: DiscussionTarget = {
     context: 'connection-1',
     workspaceId: 'ws',
-    epoch: state.byWorkspaceId.ws.epoch,
+    epoch: state.byWorkspaceId.ws.default.epoch,
   };
   return { state, target };
 }
@@ -61,7 +61,9 @@ describe('workspace discussion reducer', () => {
       ),
     );
     state = reduce(state, discussionMessageReceived(target, message(2)));
-    expect(getItems(state.byWorkspaceId.ws.messages).map((m) => m.sequence)).toEqual([1, 2, 3]);
+    expect(getItems(state.byWorkspaceId.ws.default.messages).map((m) => m.sequence)).toEqual([
+      1, 2, 3,
+    ]);
   });
   it('settles a retry key separately from the server ID, including echo before acknowledgement', () => {
     const setupState = setup();
@@ -70,11 +72,11 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionDraftChanged('ws', 'hello'));
     state = reduce(state, discussionSendStarted(target, pending));
     state = reduce(state, discussionMessageReceived(target, message(1)));
-    expect(getItems(state.byWorkspaceId.ws.pending)).toHaveLength(1);
+    expect(getItems(state.byWorkspaceId.ws.default.pending)).toHaveLength(1);
     state = reduce(state, discussionSendSucceeded(target, pending.id, message(1)));
-    expect(getItems(state.byWorkspaceId.ws.pending)).toEqual([]);
-    expect(getItems(state.byWorkspaceId.ws.messages)).toEqual([message(1)]);
-    expect(state.byWorkspaceId.ws.draft).toBe('');
+    expect(getItems(state.byWorkspaceId.ws.default.pending)).toEqual([]);
+    expect(getItems(state.byWorkspaceId.ws.default.messages)).toEqual([message(1)]);
+    expect(state.byWorkspaceId.ws.default.draft).toBe('');
     expect(reduce(state, discussionSendFailed(target, pending.id, 'unknown'))).toBe(state);
   });
   it('keeps edits made after sending, even when changed back to the same body', () => {
@@ -86,7 +88,7 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionDraftChanged('ws', 'new draft'));
     state = reduce(state, discussionDraftChanged('ws', 'hello'));
     state = reduce(state, discussionSendSucceeded(target, pending.id, message(1)));
-    expect(state.byWorkspaceId.ws.draft).toBe('hello');
+    expect(state.byWorkspaceId.ws.default.draft).toBe('hello');
   });
   it('retains failed sends and drafts through a reconnect but clears them for a new owner', () => {
     const setupState = setup();
@@ -95,8 +97,8 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionDraftChanged('ws', 'hello'));
     state = reduce(state, discussionSendStarted(target, pending));
     state = reduce(state, discussionContextChanged(null, null));
-    expect(state.byWorkspaceId.ws.draft).toBe('hello');
-    expect(getItems(state.byWorkspaceId.ws.pending)[0]).toMatchObject({
+    expect(state.byWorkspaceId.ws.default.draft).toBe('hello');
+    expect(getItems(state.byWorkspaceId.ws.default.pending)[0]).toMatchObject({
       id: 'retry-key',
       status: 'failed',
     });
@@ -113,7 +115,7 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionWorkspacesChanged(['ws', 'other']));
     state = reduce(state, discussionRequested('ws'));
     expect(reduce(state, discussionMessageReceived(target, message(1)))).toBe(state);
-    const current = { ...target, epoch: state.byWorkspaceId.ws.epoch };
+    const current = { ...target, epoch: state.byWorkspaceId.ws.default.epoch };
     expect(
       reduce(state, discussionMessageReceived(current, { ...message(1), workspaceId: 'other' })),
     ).toBe(state);
@@ -142,12 +144,12 @@ describe('workspace discussion reducer', () => {
       discussionPageReceived(target, 'older', { messages: [message(1)], hasMore: false }, 'older'),
     );
     state = reduce(state, discussionMessageReceived(target, message(20)));
-    expect(state.byWorkspaceId.ws).toMatchObject({
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
       syncedSequence: 20,
       beforeSequence: 1,
       hasMore: false,
     });
-    expect(getItems(state.byWorkspaceId.ws.messages).map((m) => m.sequence)).toEqual([
+    expect(getItems(state.byWorkspaceId.ws.default.messages).map((m) => m.sequence)).toEqual([
       1, 10, 20, 100, 101,
     ]);
   });
@@ -162,15 +164,15 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionDraftChanged('ws', 'hello'));
     state = reduce(state, discussionSendStarted(target, pending));
     state = reduce(state, discussionSendSucceeded(target, pending.id, reply));
-    expect(state.byWorkspaceId.ws).toMatchObject({
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
       sending: false,
       sendError: 'unknown',
       draft: 'hello',
     });
-    expect(getItems(state.byWorkspaceId.ws.pending)).toEqual([
+    expect(getItems(state.byWorkspaceId.ws.default.pending)).toEqual([
       { ...pending, status: 'failed', error: 'unknown' },
     ]);
-    expect(getItems(state.byWorkspaceId.ws.messages)).toEqual([]);
+    expect(getItems(state.byWorkspaceId.ws.default.messages)).toEqual([]);
   });
   it('ignores history from an overtaken request', () => {
     const setupState = setup();

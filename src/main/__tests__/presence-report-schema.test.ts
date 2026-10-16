@@ -22,3 +22,15 @@ describe('presence report discussion typing IPC', () => {
     },
   );
 });
+
+it('retains the conversation target and rejects local or malformed IDs', () => {
+  const report = { focus: [], discussionTyping: { workspaceId: 'ws', conversationId: 'c1' } };
+  expect(PresenceReportSchema.parse(report)).toEqual(report);
+  for (const conversationId of ['', 'new', null, 1])
+    expect(
+      PresenceReportSchema.safeParse({
+        ...report,
+        discussionTyping: { workspaceId: 'ws', conversationId },
+      }).success,
+    ).toBe(false);
+});

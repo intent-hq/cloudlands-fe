@@ -39,7 +39,9 @@ export interface PresenceTypingEntry {
 }
 
 /** Discussion pulses carry no agent target or draft text. */
-export type PresenceDiscussionTypingEntry = Omit<PresenceTypingEntry, 'agentId'>;
+export type PresenceDiscussionTypingEntry = Omit<PresenceTypingEntry, 'agentId'> & {
+  conversationId?: string;
+};
 
 /**
  * One ONLINE member of the workspace as `presence:changed` / `presence.snapshot`
@@ -70,7 +72,7 @@ export interface PresenceUpdateParams {
   focus: PresenceFocusItem[];
   typing?: { agentId: string } | null;
   /** Omission/null clears this connection's discussion typing target. */
-  discussionTyping?: { workspaceId: string } | null;
+  discussionTyping?: { workspaceId: string; conversationId?: string } | null;
 }
 
 /** `presence.update` result: the connection's own opaque typing handle. */
@@ -189,6 +191,10 @@ function isDiscussionTypingEntry(value: unknown): value is PresenceDiscussionTyp
     typeof entry.source === 'string' &&
     entry.source.length > 0 &&
     typeof entry.since === 'string' &&
+    (entry.conversationId === undefined ||
+      (typeof entry.conversationId === 'string' &&
+        entry.conversationId.length > 0 &&
+        entry.conversationId !== 'new')) &&
     Number.isSafeInteger(entry.pulse) &&
     (entry.pulse as number) >= 0
   );

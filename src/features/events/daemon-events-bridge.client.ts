@@ -1,9 +1,19 @@
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
-import { isDiscussionMessageEvent } from '$shared/types/workspace-discussion';
-import { discussionMessageReceived } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
-import { selectDiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
+import {
+  isDiscussionMessageEvent,
+  DEFAULT_DISCUSSION_ID,
+} from '$shared/types/workspace-discussion';
+import {
+  discussionMessageReceived,
+  discussionConversationReceived,
+  discussionMembershipInvalidated,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+import {
+  selectDiscussionTarget,
+  selectDiscussionContext,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
 import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
 import type {
   AgentSessionUpdate,
@@ -2659,7 +2669,10 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
   // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
   // summary on the entity stays current without a refetch.
-  if (raw.members === true) appStore.dispatch(presenceMembershipChanged(workspaceId));
+  if (raw.members === true) {
+    appStore.dispatch(presenceMembershipChanged(workspaceId));
+    appStore.dispatch(discussionMembershipInvalidated(workspaceId));
+  }
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
   }
@@ -3744,7 +3757,24 @@ export function routeDaemonEventsNotification(
     if (isDiscussionMessageEvent(data)) {
       const envelopeWorkspaceId = workspaceIdOf(event);
       if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
-      const target = selectDiscussionTarget.select(appStore.state, data.workspaceId);
+      const conversationId = data.conversationId ?? DEFAULT_DISCUSSION_ID;
+      const context = selectDiscussionContext.select(appStore.state);
+      if (!context) return;
+      if (
+        conversationId !== DEFAULT_DISCUSSION_ID &&
+        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
+          !data.conversation?.participants.some(
+            (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
+          ))
+      )
+        return;
+      if (data.conversation)
+        appStore.dispatch(discussionConversationReceived(context, data.conversation));
+      const target = selectDiscussionTarget.select(
+        appStore.state,
+        data.workspaceId,
+        conversationId,
+      );
       if (target) appStore.dispatch(discussionMessageReceived(target, data.message));
     }
     return;

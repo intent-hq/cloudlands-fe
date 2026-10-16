@@ -36,7 +36,9 @@ export interface LiveTypingEntry {
   expired: boolean;
 }
 
-export type LiveDiscussionTypingEntry = Omit<LiveTypingEntry, 'agentId'>;
+export type LiveDiscussionTypingEntry = Omit<LiveTypingEntry, 'agentId'> & {
+  conversationId: string;
+};
 
 export interface PresenceState {
   /** Admission/presentation lifetime owning these ephemeral rows. */
@@ -58,8 +60,9 @@ export interface PresenceState {
   ownTypingSource: string | null;
   /** The agent this window is typing to right now. */
   ownTyping: { agentId: string } | null;
-  ownDiscussionTyping: { workspaceId: string } | null;
+  ownDiscussionTyping: { workspaceId: string; conversationId?: string } | null;
   discussionComposerWorkspaceId: string | null;
+  discussionComposerConversationId: string;
   liveDiscussionTyping: Record<string, Record<string, LiveDiscussionTypingEntry>>;
   /** `document.visibilityState === 'visible'`; a hidden window reports nothing. */
   windowVisible: boolean;

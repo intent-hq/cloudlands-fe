@@ -1,3 +1,8 @@
+import {
+  DEFAULT_DISCUSSION_ID,
+  NEW_DISCUSSION_ID,
+  discussionKey,
+} from '$shared/types/workspace-discussion';
 /** Current workspace-authorized presence projections. Online is host-connected;
  * viewing is workspace focus. Management membership remains unfiltered. */
 
@@ -243,18 +248,32 @@ export const selectDiscussionTypingWorkspace = store.createSelector((state): str
   const id = state.presence.discussionComposerWorkspaceId;
   return id &&
     currentPresence(state) &&
+    sharedWorkspace(state, id) &&
     state.presence.windowVisible &&
     state.tabState.currentTabId === id &&
-    selectDiscussionReady.select(state, id)
+    state.presence.discussionComposerConversationId !== NEW_DISCUSSION_ID &&
+    selectDiscussionReady.select(state, id, state.presence.discussionComposerConversationId)
     ? id
     : null;
 });
 
+export const selectDiscussionTypingTarget = store.createSelector((state) => {
+  const workspaceId = selectDiscussionTypingWorkspace.select(state);
+  return workspaceId
+    ? discussionKey(workspaceId, state.presence.discussionComposerConversationId)
+    : null;
+});
+
 export const selectDiscussionTypingPeople = store.createSelector<
-  [workspaceId: string],
+  [workspaceId: string, conversationId?: string],
   PresenceIdentity[]
->((state, workspaceId) => {
-  if (!sharedWorkspace(state, workspaceId) || state.presence.ownPrincipalId === null)
+>((state, workspaceId, conversationId = DEFAULT_DISCUSSION_ID) => {
+  if (
+    (conversationId !== DEFAULT_DISCUSSION_ID &&
+      !selectDiscussionReady.select(state, workspaceId, conversationId)) ||
+    !sharedWorkspace(state, workspaceId) ||
+    state.presence.ownPrincipalId === null
+  )
     return NO_MEMBERS;
   const live = state.presence.liveDiscussionTyping[workspaceId];
   const roster = state.presence.rosters[workspaceId];
@@ -264,6 +283,7 @@ export const selectDiscussionTypingPeople = store.createSelector<
       .filter(
         ([source, entry]) =>
           !entry.expired &&
+          entry.conversationId === conversationId &&
           source !== state.presence.ownTypingSource &&
           entry.principalId !== state.presence.ownPrincipalId,
       )
@@ -303,7 +323,8 @@ export const selectOwnPresenceReport = store.createSelector((state): PresenceRep
     focus,
     typing: state.presence.ownTyping,
     ...(discussionTyping &&
-    discussionTyping.workspaceId === selectDiscussionTypingWorkspace.select(state)
+    discussionKey(discussionTyping.workspaceId, discussionTyping.conversationId) ===
+      selectDiscussionTypingTarget.select(state)
       ? { discussionTyping }
       : {}),
   };

@@ -1,3 +1,4 @@
+import { DEFAULT_DISCUSSION_ID, discussionKey } from '$shared/types/workspace-discussion';
 /**
  * Presence Saga (multiplayer w5, PROTOCOL §5.46)
  *
@@ -110,7 +111,7 @@ import {
   selectOwnPresenceReportKey,
   selectPresenceLiveTyping,
   selectPresenceLiveDiscussionTyping,
-  selectDiscussionTypingWorkspace,
+  selectDiscussionTypingTarget,
   selectPresenceMembershipKeys,
   selectPresenceProfileRevision,
 } from '../presence-selectors';
@@ -292,16 +293,22 @@ function* watchDiscussionTypingPulses(sendReport: ReportSender): SagaGenerator<v
   let idle: Task | undefined;
   const pulses = yield* takeEvery(
     presenceDiscussionTypingPulse,
-    function* ({ payload: [workspaceId] }): SagaGenerator<void> {
-      if ((yield* select(selectDiscussionTypingWorkspace.select)) !== workspaceId) return;
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (
+        (yield* select(selectDiscussionTypingTarget.select)) !==
+        discussionKey(workspaceId, conversationId)
+      )
+        return;
       if (idle) yield* cancel(idle);
       idle = yield* fork(function* () {
         yield* delay(PRESENCE_TYPING_IDLE_MS);
-        yield* put(presenceDiscussionTypingStopped(workspaceId));
+        yield* put(presenceDiscussionTypingStopped(workspaceId, conversationId));
       });
       const now = Date.now();
-      if (episode !== workspaceId) {
-        episode = workspaceId;
+      if (episode !== discussionKey(workspaceId, conversationId)) {
+        episode = discussionKey(workspaceId, conversationId);
         lastPulseAt = now;
         return;
       }
@@ -312,8 +319,10 @@ function* watchDiscussionTypingPulses(sendReport: ReportSender): SagaGenerator<v
   );
   const stops = yield* takeEvery(
     presenceDiscussionTypingStopped,
-    function* ({ payload: [workspaceId] }): SagaGenerator<void> {
-      if (episode !== workspaceId) return;
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (episode !== discussionKey(workspaceId, conversationId)) return;
       episode = null;
       if (idle) yield* cancel(idle);
     },
@@ -327,8 +336,11 @@ function* watchDiscussionTypingPulses(sendReport: ReportSender): SagaGenerator<v
 }
 
 function* clearDiscussionWindowFocus(): SagaGenerator<void> {
-  const workspaceId = yield* select(selectDiscussionTypingWorkspace.select);
-  if (workspaceId) yield* put(presenceDiscussionComposerFocused(workspaceId, false));
+  const target = yield* select(selectDiscussionTypingTarget.select);
+  if (target) {
+    const [ws, id] = JSON.parse(target);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+  }
 }
 
 function* clearUnfocusedDiscussion({
@@ -336,8 +348,9 @@ function* clearUnfocusedDiscussion({
   prevPayload,
 }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
   if (prevPayload && prevPayload !== payload) {
-    yield* put(presenceDiscussionComposerFocused(prevPayload, false));
-    yield* put(presenceDiscussionTypingStopped(prevPayload));
+    const [ws, id] = JSON.parse(prevPayload);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+    yield* put(presenceDiscussionTypingStopped(ws, id));
   }
 }
 
@@ -352,7 +365,9 @@ function* armDiscussionTypingTimers({
       if (entry.expired || prevPayload?.[workspaceId]?.[source] === entry) continue;
       yield* fork(function* () {
         yield* delay(PRESENCE_TYPING_EXPIRY_MS);
-        yield* put(presenceDiscussionTypingExpired(workspaceId, source, entry.pulse));
+        yield* put(
+          presenceDiscussionTypingExpired(workspaceId, source, entry.pulse, entry.conversationId),
+        );
       });
     }
   }
@@ -582,7 +597,7 @@ function* runPresence({
     tasks.push(yield* fork(watchDiscussionTypingPulses, sendReport));
     tasks.push(yield* takeEveryFromWindowEvent('blur', clearDiscussionWindowFocus));
     tasks.push(
-      yield* takeEveryFromSelector(selectDiscussionTypingWorkspace, clearUnfocusedDiscussion),
+      yield* takeEveryFromSelector(selectDiscussionTypingTarget, clearUnfocusedDiscussion),
     );
     tasks.push(
       yield* takeEveryFromSelector(selectPresenceLiveDiscussionTyping, armDiscussionTypingTimers),

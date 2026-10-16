@@ -270,3 +270,27 @@ describe('discussion typing aggregation', () => {
     ]);
   });
 });
+
+it('merges conversation targets across windows independently of agent typing and clears on reconnect', async () => {
+  const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'pooled' });
+  const aggregator = new PresenceAggregator(request);
+  await aggregator.report('host', 1, {
+    focus: [{ workspaceId: 'ws' }],
+    typing: { agentId: 'agent' },
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c1' },
+  });
+  await aggregator.report('host', 2, {
+    focus: [{ workspaceId: 'ws' }],
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c2' },
+  });
+  expect(request).toHaveBeenLastCalledWith('host', {
+    focus: [{ workspaceId: 'ws' }],
+    typing: { agentId: 'agent' },
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c2' },
+  });
+  await aggregator.report('host', 2, { focus: [], discussionTyping: null });
+  expect(request.mock.calls.at(-1)?.[1].discussionTyping).toEqual({
+    workspaceId: 'ws',
+    conversationId: 'c1',
+  });
+});

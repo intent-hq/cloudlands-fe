@@ -1120,7 +1120,14 @@ export const PresenceReportSchema = z.object({
     .nullable()
     .optional(),
   discussionTyping: z
-    .object({ workspaceId: z.string().min(1, 'Workspace id is required') })
+    .object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      conversationId: z
+        .string()
+        .min(1)
+        .refine((id) => id !== 'new')
+        .optional(),
+    })
     .nullable()
     .optional(),
 });

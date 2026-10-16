@@ -1,3 +1,4 @@
+import { initializeLayout, closeTab, reopenClosedTab } from '../../panel-layout/panel-layout-slice';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
@@ -18,9 +19,18 @@ import {
   discussionSendRequested,
   discussionRetryRequested,
   discussionMessageReceived,
+  discussionDirectoryRequested,
+  discussionRecipientsRequested,
+  discussionRecipientsChanged,
+  discussionNewRequested,
+  discussionMembershipInvalidated,
 } from '../workspace-discussion-slice';
 import {
   selectDiscussionMessages,
+  selectDiscussionConversations,
+  selectDiscussionRecipients,
+  selectDiscussionCreatedId,
+  selectDiscussionCanCreate,
   selectDiscussionPending,
   selectDiscussionTarget,
   selectDiscussionReady,
@@ -657,4 +667,322 @@ describe('workspace discussion transport', () => {
       expect(row().draft).toBe('');
     },
   );
+  const author = (principalId: string) => ({
+    principalId,
+    login: null,
+    displayName: null,
+    avatarUrl: null,
+  });
+  const conversation = (id: string) => ({
+    id,
+    workspaceId: 'ws',
+    kind: 'direct' as const,
+    participants: [author('me'), author('other')],
+    createdAt: '2026-10-16T00:00:00Z',
+  });
+  const privateMessage = (id: string, sequence = 1) => ({
+    ...message(sequence),
+    id: `${id}-${sequence}`,
+    conversationId: id,
+  });
+  function multiWire() {
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'system.capabilities') return { discussionConversations: 1 };
+      if (method === 'discussion.conversations')
+        return { conversations: [conversation('c2'), conversation('c1')], hasMore: false };
+      if (method === 'discussion.recipients') return { members: [author('other')], hasMore: false };
+      if (method === 'discussion.list')
+        return params.conversationId
+          ? {
+              messages: [privateMessage(params.conversationId)],
+              hasMore: false,
+              conversation: conversation(params.conversationId),
+            }
+          : { messages: [], hasMore: false };
+      if (method === 'discussion.send')
+        return {
+          message: { ...privateMessage(params.conversationId ?? 'created'), body: params.body },
+          conversation: conversation(params.conversationId ?? 'created'),
+        };
+      throw new Error(`Unexpected ${method}`);
+    });
+  }
+  async function openNew() {
+    store.dispatch(discussionRequested('ws', 'new'));
+    await settle();
+    store.dispatch(discussionRecipientsChanged('ws', ['other']));
+    store.dispatch(discussionDraftChanged('ws', 'hello', 'new'));
+  }
+  it('isolates overlapping sequences, drafts and default legacy events across conversations', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    store.dispatch(discussionRequested('ws', 'c2'));
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'private one', 'c1'));
+    store.dispatch(discussionDraftChanged('ws', 'private two', 'c2'));
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'current',
+        event: {
+          id: 'e7',
+          type: 'discussion:message',
+          workspaceId: 'ws',
+          data: { workspaceId: 'ws', message: message(7) },
+        },
+      },
+      ['current'],
+    );
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1').map((m) => m.id)).toEqual([
+      'c1-1',
+    ]);
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c2').map((m) => m.id)).toEqual([
+      'c2-1',
+    ]);
+    expect(messages().map((m) => m.sequence)).toEqual([7]);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1').draft).toBe('private one');
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c2').draft).toBe('private two');
+  });
+  it('keeps an uncertain create immutable, then promotes its exact retry without losing new edits', async () => {
+    multiWire();
+    await openNew();
+    const normal = wire.request.getMockImplementation()!;
+    let fail = true;
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'discussion.send' && fail) throw new Error('lost acknowledgement');
+      return normal(method, params);
+    });
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    const failed = selectDiscussionPending.select(store.state, 'ws', 'new')[0];
+    expect(failed.recipientPrincipalIds).toEqual(['other']);
+    store.dispatch(discussionRecipientsChanged('ws', []));
+    store.dispatch(discussionDraftChanged('ws', 'next message', 'new'));
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    expect(wire.request.mock.calls.filter((c) => c[0] === 'discussion.send')).toHaveLength(1);
+    fail = false;
+    store.dispatch(discussionRetryRequested('ws', failed.id, 'new'));
+    await settle();
+    const sends = wire.request.mock.calls.filter((c) => c[0] === 'discussion.send');
+    expect(sends[1][1]).toEqual(sends[0][1]);
+    expect(selectDiscussionCreatedId.select(store.state, 'ws')).toBe('created');
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'created').draft).toBe(
+      'next message',
+    );
+    expect(selectDiscussionPending.select(store.state, 'ws', 'created')).toEqual([]);
+    store.dispatch(discussionNewRequested('ws'));
+    expect(selectDiscussionCreatedId.select(store.state, 'ws')).toBeNull();
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'created').draft).toBe(
+      'next message',
+    );
+  });
+  it('does not fall back to default when an old daemon ignores new parameters', async () => {
+    wire.request.mockResolvedValue({ messages: [], hasMore: false });
+    await openNew();
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    expect(selectDiscussionCanCreate.select(store.state, 'ws')).toBe(false);
+    expect(wire.request.mock.calls.every((c) => c[0] === 'system.capabilities')).toBe(true);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'new').draft).toBe('hello');
+  });
+  it('discovers a recipient conversation from its event and merges a late directory page', async () => {
+    multiWire();
+    await openNew();
+    const pendingDirectory = deferred<{
+      conversations: ReturnType<typeof conversation>[];
+      hasMore: boolean;
+    }>();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.conversations' ? pendingDirectory.promise : normal(method, params),
+    );
+    store.dispatch(discussionDirectoryRequested('ws'));
+    await settle();
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'current',
+        event: {
+          id: 'e3',
+          type: 'discussion:message',
+          workspaceId: 'ws',
+          data: {
+            workspaceId: 'ws',
+            conversationId: 'c3',
+            conversation: conversation('c3'),
+            message: privateMessage('c3'),
+          },
+        },
+      },
+      ['current'],
+    );
+    pendingDirectory.resolve({ conversations: [conversation('c2')], hasMore: false });
+    await settle();
+    expect(selectDiscussionConversations.select(store.state, 'ws').map((c) => c.id)).toEqual([
+      'c3',
+      'c2',
+    ]);
+  });
+  it('retains selected offline recipient profiles across searches and ignores late query replies', async () => {
+    multiWire();
+    await openNew();
+    const late = deferred<{ members: ReturnType<typeof author>[]; hasMore: boolean }>();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.recipients'
+        ? params.query === 'old'
+          ? late.promise
+          : Promise.resolve({ members: [author('new')], hasMore: false })
+        : normal(method, params),
+    );
+    store.dispatch(discussionRecipientsRequested('ws', 'old'));
+    store.dispatch(discussionRecipientsRequested('ws', 'new'));
+    await settle();
+    late.resolve({ members: [author('stale')], hasMore: false });
+    await settle();
+    const recipients = selectDiscussionRecipients.select(store.state, 'ws');
+    expect(recipients.query).toBe('new');
+    expect(recipients.members.map((m) => m.principalId)).toEqual(['new']);
+    expect(recipients.selectedMembers.map((m) => m.principalId)).toEqual(['other']);
+  });
+  it('hides private cached history during reauthorization and discards it after access denial', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    store.dispatch(discussionDraftChanged('ws', 'private draft', 'c1'));
+    const late = deferred<never>();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.list' ? late.promise : normal(method, params),
+    );
+    store.dispatch(discussionMembershipInvalidated('ws'));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1')).toEqual([]);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1').draft).toBe('');
+    late.reject({ rpcCode: -32602, data: { code: 'not-found' } });
+    await settle();
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1')).toMatchObject({
+      error: 'forbidden',
+      draft: '',
+      sending: false,
+    });
+    expect(store.state.workspaceDiscussion.byWorkspaceId.ws.c1.draft).toBe('');
+  });
+  it('promotes a closed composer before a fresh composer opens, so restore keeps the created thread', async () => {
+    multiWire();
+    await openNew();
+    store.dispatch(
+      initializeLayout('layout', {
+        root: { type: 'panel', panelId: 'p' },
+        panels: {
+          p: {
+            id: 'p',
+            activeTabId: 'new-tab',
+            tabs: [
+              {
+                id: 'new-tab',
+                type: 'discussion',
+                title: 'New',
+                workspaceId: 'ws',
+                data: { conversationId: 'new' },
+              },
+              { id: 'other', type: 'note', title: 'Note' },
+            ],
+          },
+        },
+        focusedPanelId: 'p',
+      }),
+    );
+    const reply = deferred<{
+      message: ReturnType<typeof privateMessage>;
+      conversation: ReturnType<typeof conversation>;
+    }>();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.send' ? reply.promise : normal(method, params),
+    );
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    store.dispatch(closeTab('layout', 'new-tab'));
+    reply.resolve({ message: privateMessage('created'), conversation: conversation('created') });
+    await settle();
+    expect(
+      store.state.panelLayout.byWorkspaceId.layout.recentlyClosed[0].tab.data?.conversationId,
+    ).toBe('created');
+    store.dispatch(discussionNewRequested('ws'));
+    store.dispatch(reopenClosedTab('layout'));
+    const restored = Object.values(store.state.panelLayout.byWorkspaceId.layout.panels)
+      .flatMap((p) => p.tabs)
+      .find((t) => t.type === 'discussion');
+    expect(restored?.data?.conversationId).toBe('created');
+  });
+  it('retains authorized history and drafts when the remaining member is alone', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    store.dispatch(discussionDraftChanged('ws', 'retained', 'c1'));
+    store.dispatch(replaceWorkspaceList([{ ...workspace(), memberCount: 1 }]));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1')).toHaveLength(1);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1').draft).toBe('retained');
+    expect(selectDiscussionReady.select(store.state, 'ws', 'c1')).toBe(true);
+  });
+  it('allows correcting a definitively rejected first message without reusing its key', async () => {
+    multiWire();
+    await openNew();
+    const normal = wire.request.getMockImplementation()!;
+    let fail = true;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.send' && fail
+        ? Promise.reject({ rpcCode: -32602, data: { code: 'invalid-params' } })
+        : normal(method, params),
+    );
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'new')).toMatchObject({
+      draft: 'hello',
+      recipientsLocked: false,
+      sending: false,
+      sendError: 'invalid',
+    });
+    fail = false;
+    store.dispatch(discussionDraftChanged('ws', 'corrected', 'new'));
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    const sends = wire.request.mock.calls.filter((c) => c[0] === 'discussion.send');
+    expect(sends[1][1].messageId).not.toBe(sends[0][1].messageId);
+    expect(selectDiscussionCreatedId.select(store.state, 'ws')).toBe('created');
+  });
+  it('cancels an in-flight private read on membership invalidation and admits only its replacement', async () => {
+    multiWire();
+    const late = deferred<{
+      messages: ReturnType<typeof privateMessage>[];
+      conversation: ReturnType<typeof conversation>;
+      hasMore: boolean;
+    }>();
+    const normal = wire.request.getMockImplementation()!;
+    let reads = 0;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.list' && ++reads === 1 ? late.promise : normal(method, params),
+    );
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    store.dispatch(discussionMembershipInvalidated('ws'));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1').map((m) => m.id)).toEqual([
+      'c1-1',
+    ]);
+    late.resolve({
+      messages: [privateMessage('c1', 999)],
+      conversation: conversation('c1'),
+      hasMore: false,
+    });
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1').map((m) => m.id)).toEqual([
+      'c1-1',
+    ]);
+  });
 });

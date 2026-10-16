@@ -1,3 +1,4 @@
+import { DEFAULT_DISCUSSION_ID } from '$shared/types/workspace-discussion';
 /**
  * Presence Slice (multiplayer w5)
  *
@@ -40,6 +41,7 @@ export const initialState: PresenceState = {
   ownTyping: null,
   ownDiscussionTyping: null,
   discussionComposerWorkspaceId: null,
+  discussionComposerConversationId: DEFAULT_DISCUSSION_ID,
   liveDiscussionTyping: {},
   windowVisible: true,
 };
@@ -88,16 +90,16 @@ export const presenceTypingPulse = createAction<[agentId: string]>('presence/typ
 export const presenceTypingStopped = createAction('presence/typingStopped');
 
 export const presenceDiscussionComposerFocused = createAction<
-  [workspaceId: string, focused: boolean]
+  [workspaceId: string, focused: boolean, conversationId?: string]
 >('presence/discussionComposerFocused');
-export const presenceDiscussionTypingPulse = createAction<[workspaceId: string]>(
-  'presence/discussionTypingPulse',
-);
-export const presenceDiscussionTypingStopped = createAction<[workspaceId: string]>(
-  'presence/discussionTypingStopped',
-);
+export const presenceDiscussionTypingPulse = createAction<
+  [workspaceId: string, conversationId?: string]
+>('presence/discussionTypingPulse');
+export const presenceDiscussionTypingStopped = createAction<
+  [workspaceId: string, conversationId?: string]
+>('presence/discussionTypingStopped');
 export const presenceDiscussionTypingExpired = createAction<
-  [workspaceId: string, source: string, pulse: number]
+  [workspaceId: string, source: string, pulse: number, conversationId?: string]
 >('presence/discussionTypingExpired');
 
 export const presenceWindowVisibilityChanged = createAction<[visible: boolean]>(
@@ -154,9 +156,17 @@ function foldDiscussionTyping(
     for (const entry of member.discussionTyping ?? []) {
       const seen = previous?.[entry.source];
       next[entry.source] =
-        seen && seen.pulse === entry.pulse && seen.principalId === member.principalId
+        seen &&
+        seen.pulse === entry.pulse &&
+        seen.principalId === member.principalId &&
+        seen.conversationId === (entry.conversationId ?? DEFAULT_DISCUSSION_ID)
           ? seen
-          : { principalId: member.principalId, pulse: entry.pulse, expired: false };
+          : {
+              principalId: member.principalId,
+              pulse: entry.pulse,
+              expired: false,
+              conversationId: entry.conversationId ?? DEFAULT_DISCUSSION_ID,
+            };
     }
   }
   return next;
@@ -287,42 +297,59 @@ presenceReducer.with(presenceTypingStopped, (state) =>
 
 presenceReducer.with(
   presenceDiscussionComposerFocused,
-  (state, { payload: [workspaceId, focused] }) => {
+  (state, { payload: [workspaceId, focused, conversationId = DEFAULT_DISCUSSION_ID] }) => {
     if (focused)
       return state.context && state.windowVisible && state.workspaceIds.includes(workspaceId)
         ? {
             ...state,
             discussionComposerWorkspaceId: workspaceId,
+            discussionComposerConversationId: conversationId,
             ownDiscussionTyping:
-              state.ownDiscussionTyping?.workspaceId === workspaceId
+              state.ownDiscussionTyping?.workspaceId === workspaceId &&
+              (state.ownDiscussionTyping.conversationId ?? DEFAULT_DISCUSSION_ID) === conversationId
                 ? state.ownDiscussionTyping
                 : null,
           }
         : state;
-    return state.discussionComposerWorkspaceId === workspaceId
+    return state.discussionComposerWorkspaceId === workspaceId &&
+      state.discussionComposerConversationId === conversationId
       ? { ...state, discussionComposerWorkspaceId: null, ownDiscussionTyping: null }
       : state;
   },
 );
-presenceReducer.with(presenceDiscussionTypingPulse, (state, { payload: [workspaceId] }) =>
-  state.context &&
-  state.windowVisible &&
-  state.discussionComposerWorkspaceId === workspaceId &&
-  state.workspaceIds.includes(workspaceId) &&
-  state.ownDiscussionTyping?.workspaceId !== workspaceId
-    ? { ...state, ownDiscussionTyping: { workspaceId } }
-    : state,
+presenceReducer.with(
+  presenceDiscussionTypingPulse,
+  (state, { payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID] }) =>
+    state.context &&
+    state.windowVisible &&
+    state.discussionComposerWorkspaceId === workspaceId &&
+    state.discussionComposerConversationId === conversationId &&
+    state.workspaceIds.includes(workspaceId) &&
+    (state.ownDiscussionTyping?.workspaceId !== workspaceId ||
+      (state.ownDiscussionTyping?.conversationId ?? DEFAULT_DISCUSSION_ID) !== conversationId)
+      ? {
+          ...state,
+          ownDiscussionTyping: {
+            workspaceId,
+            ...(conversationId !== DEFAULT_DISCUSSION_ID ? { conversationId } : {}),
+          },
+        }
+      : state,
 );
-presenceReducer.with(presenceDiscussionTypingStopped, (state, { payload: [workspaceId] }) =>
-  state.ownDiscussionTyping?.workspaceId === workspaceId
-    ? { ...state, ownDiscussionTyping: null }
-    : state,
+presenceReducer.with(
+  presenceDiscussionTypingStopped,
+  (state, { payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID] }) =>
+    state.ownDiscussionTyping?.workspaceId === workspaceId &&
+    (state.ownDiscussionTyping.conversationId ?? DEFAULT_DISCUSSION_ID) === conversationId
+      ? { ...state, ownDiscussionTyping: null }
+      : state,
 );
 presenceReducer.with(
   presenceDiscussionTypingExpired,
-  (state, { payload: [workspaceId, source, pulse] }) => {
+  (state, { payload: [workspaceId, source, pulse, conversationId = DEFAULT_DISCUSSION_ID] }) => {
     const entry = state.liveDiscussionTyping[workspaceId]?.[source];
-    if (!entry || entry.pulse !== pulse || entry.expired) return state;
+    if (!entry || entry.pulse !== pulse || entry.expired || entry.conversationId !== conversationId)
+      return state;
     return {
       ...state,
       liveDiscussionTyping: {
