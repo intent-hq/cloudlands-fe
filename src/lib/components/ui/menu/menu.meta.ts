@@ -67,6 +67,7 @@ export const menuMetadata = {
     'Keeping an unavailable command visible with CommandItem disabledReason; the localized reason disables activation and is linked with aria-describedby.',
   ],
   callers: [
+    'src/features/discussions/components/DiscussionHeader.svelte',
     'src/features/external-editors/components/FileActionsDropdown.svelte',
     'src/features/external-editors/components/OpenComboButton.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',

@@ -9,21 +9,21 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 142,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 16,
-          "paddingRight": 16,
+          "paddingLeft": 12,
+          "paddingRight": 12,
           "width": 388,
           "x": 26,
-          "y": 662
+          "y": 708
         },
         "data-discussion-message=discussion-0": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -31,13 +31,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 90
+          "y": 220
         },
         "data-discussion-message=discussion-1": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -45,13 +45,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 190.25
+          "y": 318
         },
         "data-discussion-message=discussion-2": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -59,13 +59,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 290.5
+          "y": 416
         },
         "data-discussion-message=discussion-3": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -73,13 +73,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 390.75
+          "y": 514
         },
         "data-discussion-message=discussion-4": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -87,7 +87,7 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 491
+          "y": 612
         },
         "data-discussion-preview": {
           "fontSize": 15,
@@ -107,7 +107,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 588,
+          "height": 634,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -131,21 +131,21 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 168,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 16,
-          "paddingRight": 16,
+          "paddingLeft": 12,
+          "paddingRight": 12,
           "width": 728,
           "x": 346,
-          "y": 636
+          "y": 708
         },
         "data-discussion-message=discussion-0": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -153,13 +153,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 90
+          "y": 270
         },
         "data-discussion-message=discussion-1": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -167,13 +167,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 169.13
+          "y": 348
         },
         "data-discussion-message=discussion-2": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -181,13 +181,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 248.25
+          "y": 426
         },
         "data-discussion-message=discussion-3": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -195,13 +195,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 327.38
+          "y": 504
         },
         "data-discussion-message=discussion-4": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -209,7 +209,7 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 406.5
+          "y": 582
         },
         "data-discussion-preview": {
           "fontSize": 15,
@@ -229,7 +229,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 562,
+          "height": 634,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -253,21 +253,21 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 168,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 16,
-          "paddingRight": 16,
+          "paddingLeft": 12,
+          "paddingRight": 12,
           "width": 388,
           "x": 26,
-          "y": 636
+          "y": 708
         },
         "data-discussion-message=discussion-0": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -275,13 +275,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 90
+          "y": 170
         },
         "data-discussion-message=discussion-1": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -289,13 +289,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 190.25
+          "y": 268
         },
         "data-discussion-message=discussion-2": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -303,13 +303,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 290.5
+          "y": 366
         },
         "data-discussion-message=discussion-3": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -317,13 +317,13 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 390.75
+          "y": 464
         },
         "data-discussion-message=discussion-4": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 80.25,
+          "gap": 12,
+          "height": 80,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -331,7 +331,7 @@
           "paddingRight": 0,
           "width": 356,
           "x": 42,
-          "y": 491
+          "y": 562
         },
         "data-discussion-preview": {
           "fontSize": 15,
@@ -351,7 +351,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 562,
+          "height": 634,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -375,21 +375,21 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 142,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
-          "paddingLeft": 16,
-          "paddingRight": 16,
+          "paddingLeft": 12,
+          "paddingRight": 12,
           "width": 728,
           "x": 346,
-          "y": 662
+          "y": 708
         },
         "data-discussion-message=discussion-0": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -397,13 +397,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 90
+          "y": 320
         },
         "data-discussion-message=discussion-1": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -411,13 +411,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 169.13
+          "y": 398
         },
         "data-discussion-message=discussion-2": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -425,13 +425,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 248.25
+          "y": 476
         },
         "data-discussion-message=discussion-3": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -439,13 +439,13 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 327.38
+          "y": 554
         },
         "data-discussion-message=discussion-4": {
           "fontSize": 15,
           "fontWeight": 400,
-          "gap": 10,
-          "height": 59.13,
+          "gap": 12,
+          "height": 60,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -453,7 +453,7 @@
           "paddingRight": 0,
           "width": 696,
           "x": 362,
-          "y": 406.5
+          "y": 632
         },
         "data-discussion-preview": {
           "fontSize": 15,
@@ -473,7 +473,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 588,
+          "height": 634,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,

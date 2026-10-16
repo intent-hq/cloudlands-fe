@@ -24,7 +24,10 @@
   import { selectDiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import WorkspaceDiscussion from '../WorkspaceDiscussion.svelte';
 
-  let { failSend = false }: { failSend?: boolean } = $props();
+  let {
+    failSend = false,
+    messageActions = true,
+  }: { failSend?: boolean; messageActions?: boolean } = $props();
   const workspaceId = 'discussion-test';
   let mounted = $state(true);
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
@@ -34,6 +37,7 @@
     (calls) => {
       requests = calls;
     },
+    { messageActions },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(setLabsMultiplayerEnabled(true));

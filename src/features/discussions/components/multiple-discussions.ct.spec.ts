@@ -132,6 +132,7 @@ test('failed first send locks recipients and retry creates the original group wh
   await composer.press('Enter');
   await expect(component.getByRole('alert')).toBeVisible();
   await expect(picker).toBeDisabled();
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await composer.fill('A follow-up thought');
   await expect(component.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   await component

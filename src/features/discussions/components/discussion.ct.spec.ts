@@ -29,6 +29,7 @@ test('composer preserves multiline drafts, ignores composition Enter, and sends 
   await expect(composer).toHaveValue('');
   await expect(composer).toBeFocused();
   await expect(component.getByRole('log')).toContainText('First line\nx');
+  await expect(component.locator('[data-discussion-unread]')).toHaveCount(0);
   const calls = await recorded(component);
   expect(calls.find((call) => call.method === 'discussion.list')).toEqual({
     method: 'discussion.list',
@@ -130,6 +131,12 @@ test('older messages preserve the reading anchor, draft and focus; live arrivals
     .getByRole('button', { name: 'Receive live message' })
     .evaluate((el: HTMLButtonElement) => el.click());
   await expect(component.locator('[data-discussion-message="message-100"]')).toHaveCount(1);
+  await expect(component.locator('[data-discussion-unread]')).toHaveCount(1);
+  expect(
+    await component
+      .locator('[data-discussion-message="message-100"]')
+      .evaluate((el) => el.previousElementSibling?.hasAttribute('data-discussion-unread')),
+  ).toBe(true);
   await expect
     .poll(async () =>
       Math.abs((await anchor.evaluate((el) => el.getBoundingClientRect().top)) - top),
@@ -146,8 +153,9 @@ test('retry resumes a partial reconnect page before requesting older history', a
   await expect(component.getByRole('alert')).toBeVisible();
   await component.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect
-    .poll(async () =>
-      (await recorded(component)).filter((call) => call.method === 'discussion.list').at(-1),
+    .poll(
+      async () =>
+        (await recorded(component)).filter((call) => call.method === 'discussion.list')[1],
     )
     .toEqual({
       method: 'discussion.list',
@@ -264,7 +272,7 @@ test('discussion typing shows other people once, expires unchanged pulses, and r
   const indicator = component.locator('[data-discussion-typing]');
   await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
   await expect(indicator).toHaveAttribute('role', 'status');
-  await expect(indicator).toHaveText('Alex and Samira are typing…');
+  await expect(indicator).toContainText('Alex and Samira are typing…');
   const line = await indicator.boundingBox();
   const input = await component
     .getByRole('textbox', { name: 'Message', exact: true })
@@ -279,11 +287,87 @@ test('discussion typing shows other people once, expires unchanged pulses, and r
   await component
     .locator('[data-discussion-test-pane]')
     .screenshot({ path: testInfo.outputPath('discussion-typing.png') });
-  await expect(indicator).toBeEmpty({ timeout: 5000 });
+  await expect(indicator).toHaveCount(0, { timeout: 5000 });
   await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
-  await expect(indicator).toBeEmpty();
+  await expect(indicator).toHaveCount(0);
   await component.getByRole('button', { name: 'Renew peer typing', exact: true }).click();
-  await expect(indicator).toHaveText('Alex and Samira are typing…');
+  await expect(indicator).toContainText('Alex and Samira are typing…');
   await component.getByRole('button', { name: 'Disconnect', exact: true }).click();
-  await expect(indicator).toBeEmpty();
+  await expect(indicator).toHaveCount(0);
+});
+
+test('reply and reaction controls use the real discussion saga and preserve message identity', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DiscussionHost);
+  const row = component.locator('[data-discussion-message="message-35"]');
+  await expect(row).toBeVisible();
+  await row.hover();
+  await row.getByRole('button', { name: 'Add reaction', exact: true }).click();
+  await page.getByRole('menuitem', { name: '👍', exact: true }).click();
+  const reaction = row.getByRole('button', { name: '👍, 1 reactions', exact: true });
+  await expect(reaction).toHaveAttribute('aria-pressed', 'true');
+  await reaction.click();
+  await expect(reaction).toHaveCount(0);
+  const calls = (await recorded(component)).filter((call) => call.method === 'discussion.react');
+  expect(calls.map((call) => call.params)).toEqual([
+    { workspaceId: 'discussion-test', messageId: 'message-35', reaction: '👍', active: true },
+    { workspaceId: 'discussion-test', messageId: 'message-35', reaction: '👍', active: false },
+  ]);
+  await row.hover();
+  await row.getByRole('button', { name: 'Add reaction', exact: true }).click();
+  await expect(page.getByRole('menuitem')).toHaveCount(2);
+  await page.getByRole('menuitem', { name: '🙂', exact: true }).click();
+  await expect(row.getByRole('button', { name: '🙂, 1 reactions', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(
+    (await recorded(component)).filter((call) => call.method === 'discussion.react').at(-1)?.params,
+  ).toEqual({
+    workspaceId: 'discussion-test',
+    messageId: 'message-35',
+    reaction: '🙂',
+    active: true,
+  });
+  await expect(component.locator('[data-discussion-unread]')).toHaveCount(0);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await row.hover();
+  await row.getByRole('button', { name: 'Message actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Copy message', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('Review note 35: keeping the discussion in view while the team works through the plan.');
+  await row.hover();
+  await row.getByRole('button', { name: 'Reply', exact: true }).click();
+  await expect(component.locator('[data-discussion-reply-preview]')).toContainText(
+    'Review note 35',
+  );
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeFocused();
+  await composer.fill('Agreed with this review note');
+  await composer.press('Enter');
+  await expect(composer).toHaveValue('');
+  await expect(component.locator('[data-discussion-reply-to="message-35"]')).toContainText(
+    'Review note 35',
+  );
+  expect(
+    (await recorded(component)).find((call) => call.method === 'discussion.send')?.params,
+  ).toEqual({
+    workspaceId: 'discussion-test',
+    messageId: expect.any(String),
+    body: 'Agreed with this review note',
+    replyToMessageId: 'message-35',
+  });
+});
+
+test('older daemons keep discussion text usable without unsupported reply or reaction controls', async ({
+  mount,
+}) => {
+  const component = await mount(DiscussionHost, { props: { messageActions: false } });
+  await expect(component.locator('[data-discussion-message="message-35"]')).toBeVisible();
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeEditable();
+  await expect(component.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'Add reaction', exact: true })).toHaveCount(0);
 });

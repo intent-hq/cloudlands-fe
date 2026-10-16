@@ -34,6 +34,10 @@
     hasMore?: boolean;
     onLoadMore?: () => void;
   } = $props();
+  let open = $state(false);
+  $effect(() => {
+    if (disabled) open = false;
+  });
   let input: HTMLInputElement | null = $state(null);
   const name = (member: Member) =>
     member.displayName || member.login || m.workspace_discussion_unknownAuthor_label();
@@ -48,15 +52,15 @@
     })),
   );
   $effect(() => {
-    if (autofocus && input) untrack(() => input?.focus({ preventScroll: true }));
+    if (autofocus && !disabled && input) untrack(() => input?.focus({ preventScroll: true }));
   });
 </script>
 
 <div
-  class="flex min-w-0 items-start gap-2 border-b border-border px-4 py-2"
+  class="flex min-w-0 items-center gap-2 border-y border-border px-4 py-[9px]"
   data-discussion-recipients
 >
-  <span class="shrink-0 pt-1.5 type-caption text-muted-foreground"
+  <span class="shrink-0 type-caption text-[12px] font-medium text-muted-foreground"
     >{m.workspace_discussion_to_label()}</span
   >
   <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
@@ -65,7 +69,7 @@
       {@const label = member ? name(member) : m.workspace_discussion_unknownAuthor_label()}
       <Badge
         color="gray"
-        class="max-w-full"
+        class="max-w-full rounded-full pl-[3px] pr-2"
         {...disabled
           ? { removable: false as const }
           : {
@@ -77,12 +81,13 @@
         {#snippet leadingIcon()}<PrincipalAvatar
             {label}
             avatarUrl={member?.avatarUrl}
-            size={16}
+            size={18}
           />{/snippet}
         <span class="block max-w-48 truncate">{label}</span>
       </Badge>
     {/each}
     <Combobox
+      bind:open
       bind:inputRef={input}
       multiple
       value={[...selectedIds]}
@@ -97,7 +102,7 @@
       searchPlaceholder={m.workspace_discussion_chooseRecipients_placeholder()}
       emptyText={m.workspace_discussion_noMembers_label()}
       class="min-w-20 flex-1"
-      inputClass="border-0 bg-transparent px-1 shadow-none"
+      inputClass="h-6 border-0 bg-transparent px-1 shadow-none"
       contentClass="min-w-56"
       onchange={(value) => onChange(Array.isArray(value) ? value : [])}
       onquerychange={onSearch}

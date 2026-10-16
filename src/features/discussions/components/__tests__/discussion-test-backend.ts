@@ -9,6 +9,7 @@ import type {
   DiscussionConversation,
   DiscussionListParams,
   DiscussionSendParams,
+  DiscussionReactParams,
 } from '$shared/types/workspace-discussion';
 
 export const startDiscussionTestSaga = () => {
@@ -24,7 +25,11 @@ export function installDiscussionTestBackend(
   workspaceId: string,
   failSend: () => boolean,
   onRequests: (requests: Array<{ method: string; params: unknown }>) => void,
-  options: { deferSend?: boolean; rejectSend?: 'invalid' | 'forbidden' } = {},
+  options: {
+    deferSend?: boolean;
+    rejectSend?: 'invalid' | 'forbidden';
+    messageActions?: boolean;
+  } = {},
 ) {
   const requests: Array<{ method: string; params: unknown }> = [];
   let sendAttempts = 0;
@@ -53,6 +58,10 @@ export function installDiscussionTestBackend(
     conversation('0199e991-0000-7000-8000-000000000001'),
     conversation('0199e991-0000-7000-8000-000000000002', [self, recipientMembers[1]]),
   ];
+  const reactions = new Map<
+    string,
+    { reactions: DiscussionMessage['reactions']; reactionVersion: number }
+  >();
   const histories = new Map<string, DiscussionMessage[]>();
   function message(
     sequence: number,
@@ -66,6 +75,9 @@ export function installDiscussionTestBackend(
       body,
       author,
       createdAt: '2026-10-14T12:00:00Z',
+      ...(options.messageActions !== false
+        ? { replyToMessageId: null, replyTo: null, reactions: [], reactionVersion: 0 }
+        : {}),
     };
   }
   function record(method: string, params: unknown) {
@@ -109,7 +121,22 @@ export function installDiscussionTestBackend(
     );
   }
   installMockElectronBridge({
-    'system.capabilities': () => ({ discussionConversations: 1 }),
+    'system.capabilities': () => ({
+      discussionConversations: 1,
+      ...(options.messageActions !== false ? { discussionMessageActions: 1 } : {}),
+    }),
+    'discussion.react': (value) => {
+      const params = value as DiscussionReactParams;
+      record('discussion.react', params);
+      const previous = reactions.get(params.messageId);
+      const result = {
+        messageId: params.messageId,
+        reactions: params.active ? [{ reaction: params.reaction, count: 1, reacted: true }] : [],
+        reactionVersion: (previous?.reactionVersion ?? 0) + 1,
+      };
+      reactions.set(params.messageId, result);
+      return result;
+    },
     'discussion.conversations': (params) => {
       record('discussion.conversations', params);
       return {
@@ -170,6 +197,16 @@ export function installDiscussionTestBackend(
         };
       if (params.afterSequence !== undefined)
         return { conversation: descriptor, messages: [], hasMore: false };
+      if (params.beforeSequence && params.beforeSequence > 11) {
+        const cached = Array.from({ length: 25 }, (_, i) => message(i + 11));
+        if (params.beforeSequence > 101)
+          cached.push(message(100), message(101, 'Recovered after reconnect.'));
+        return {
+          conversation: descriptor,
+          messages: cached.filter((item) => item.sequence < params.beforeSequence!),
+          hasMore: false,
+        };
+      }
       if (params.beforeSequence) {
         await new Promise<void>((resolve) => {
           finishOlder = resolve;
@@ -209,11 +246,20 @@ export function installDiscussionTestBackend(
         ]);
         conversations.push(descriptor);
       }
+      const quoted = params.replyToMessageId
+        ? message(Number(params.replyToMessageId.replace('message-', '')))
+        : undefined;
       const sent = {
         ...message(35 + sendAttempts, params.body),
         id: crypto.randomUUID(),
         author: self,
         conversationId: descriptor.id,
+        ...(quoted
+          ? {
+              replyToMessageId: quoted.id,
+              replyTo: { id: quoted.id, author: quoted.author, body: quoted.body },
+            }
+          : {}),
       };
       histories.set(descriptor.id, [...(histories.get(descriptor.id) ?? []), sent]);
       return { message: sent, conversation: descriptor };

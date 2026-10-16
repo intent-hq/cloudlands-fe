@@ -205,6 +205,7 @@
       <DiscussionThread
         {messages}
         {draft}
+        typingAuthors={previewState === 'typing' ? authors.slice(1) : []}
         typingLabel={previewState === 'typing' ? presenceTypingLabel(authors.slice(1)) : null}
         {initialized}
         loading={!initialized}
