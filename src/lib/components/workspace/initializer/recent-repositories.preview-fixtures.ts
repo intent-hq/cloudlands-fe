@@ -15,6 +15,7 @@ import {
   hydrateWorkspaceInitializer,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
+import { workspaceInitializerRepositorySaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
 import { invalidateCowIsolationSetting } from './cow-isolation-setting';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { createRecentRepositoriesClientFixture } from '../../../../test/fixtures/recent-repositories-client';
@@ -71,6 +72,7 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
     }),
   );
   let stopPersistence: (() => void) | undefined;
+  let stopRepository: (() => void) | undefined;
   if (persist) {
     const key = 'recent-repositories-preview-settings';
     appClient.settings.get = async (path) => {
@@ -97,9 +99,12 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
       return [];
     };
     stopPersistence = appStore.runSaga(workspaceInitializerSaga);
+  } else {
+    stopRepository = appStore.runSaga(workspaceInitializerRepositorySaga);
   }
   return () => {
     stopPersistence?.();
+    stopRepository?.();
     restoreRegistry();
     workspaceClient.list = previousList;
     appClient.git.originUrl = previousOriginUrl;

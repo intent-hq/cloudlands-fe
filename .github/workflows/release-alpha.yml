@@ -38,7 +38,7 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
-      dual_macos: ${{ steps.macos.outputs.dual_macos }}
+      native_macos: ${{ steps.macos.outputs.native_macos }}
       macos_matrix: ${{ steps.macos.outputs.matrix }}
 
     steps:
@@ -109,43 +109,31 @@ jobs:
           echo "Tag v${VERSION} matches package.json version"
 
       # workflow_dispatch uses the workflow from the selected ref, but builds
-      # the requested tag. Tags predating native Intel support retain their
-      # original ARM-only packaging; publication tools prepare safe channel feeds.
+      # the requested tag. Tags predating the native wrapper retain their
+      # original ARM packaging; publication tools prepare the standard Mac feed.
       - name: Select Mac release targets
         id: macos
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          # Rebuilding a retired alpha tag would embed its old updater URL even
+          # though current publication tools emit only the standard Mac feed.
+          COMPATIBILITY_SOURCE=src/features/auto-update/main/mac-update-compatibility.ts
+          if [ -f "$COMPATIBILITY_SOURCE" ] && grep -Fq 'latest-arm64' "$COMPATIBILITY_SOURCE"; then
+            echo "::error::This tag uses the retired alpha Mac feed. Publish a new build using latest-mac.yml."
+            exit 1
+          fi
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do
             if [ -f "$TOOL" ]; then FOUND=$((FOUND + 1)); fi
           done
           if [ "$FOUND" -eq 0 ]; then
-            echo "dual_macos=false" >> "$GITHUB_OUTPUT"
+            echo "native_macos=false" >> "$GITHUB_OUTPUT"
             echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
             echo "Historical ARM-only tag: retaining its packaging."
           elif [ "$FOUND" -eq "${#TOOLS[@]}" ]; then
-            echo "dual_macos=true" >> "$GITHUB_OUTPUT"
-            TARGETS="[$ARM]"
-            PIN=$(node --input-type=module -e "import {readFileSync} from 'node:fs'; import {parseVersionPin} from './scripts/fetch-sidecar-lib.mjs'; console.log(parseVersionPin(readFileSync('intentd.version','utf8')))")
-            # Probe the same immutable release used by fetch-sidecar.cjs.
-            # Lookup failure only disables optional Intel; required builds still
-            # fetch and checksum-verify their own pinned sidecars.
-            if gh release view "v$PIN" --repo intent-hq/intentd --json assets > "$RUNNER_TEMP/intel-sidecar-assets.json"; then
-              if node --input-type=module -e '
-                import {readFileSync} from "node:fs";
-                import {assetCandidates, checksumAssetName} from "./scripts/fetch-sidecar-lib.mjs";
-                const {assets} = JSON.parse(readFileSync(process.argv[1], "utf8"));
-                const available = new Set(assets.filter(a => a.size > 0).map(a => a.name));
-                process.exit(assetCandidates("x86_64-apple-darwin").some(name => available.has(name) && available.has(checksumAssetName(name))) ? 0 : 1);
-              ' "$RUNNER_TEMP/intel-sidecar-assets.json"; then
-                TARGETS="[$ARM,$INTEL]"
-              fi
-            fi
-            echo "matrix={\"include\":$TARGETS}" >> "$GITHUB_OUTPUT"
+            echo "native_macos=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Incomplete native Mac release tooling in the requested tag"
             exit 1
@@ -177,7 +165,6 @@ jobs:
   # sidecar, builds via the platform dist:* script, and uploads its
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
-    continue-on-error: ${{ matrix.arch == 'x64' }}
     needs: resolve
     name: macOS (${{ matrix.label }})
     strategy:
@@ -378,7 +365,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify packaged Mac build
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "true"
 
       - name: List built artifacts
@@ -720,8 +707,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Required platforms block publication. The Intel matrix leg is optional;
-  # its artifacts are uploaded only after all build/sign/verification steps pass.
+  # Every platform must finish building and verifying before publication.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
     runs-on: depot-ubuntu-24.04
@@ -792,7 +778,7 @@ jobs:
           echo "Pinned intentd version: ${INTENTD_VERSION}"
 
       - name: Download platform release assets
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -800,7 +786,7 @@ jobs:
           merge-multiple: false
 
       - name: Download legacy platform release assets
-        if: needs.resolve.outputs.dual_macos != 'true'
+        if: needs.resolve.outputs.native_macos != 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -808,15 +794,15 @@ jobs:
           merge-multiple: true
 
       - name: Assemble release assets
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
         run: node .release-tools/scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
 
       - name: Prepare architecture-safe Mac channel feeds
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-        run: node .release-tools/scripts/mac-channel-feeds.mjs dist-electron alpha
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "dist-electron" alpha "$VERSION"
 
       - name: Verify collected release assets
         run: |
@@ -824,7 +810,7 @@ jobs:
           ls -lh dist-electron/
           node scripts/validate-release-asset-names.mjs dist-electron
           MISSING=""
-          for FEED in latest-mac.yml latest-arm64-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
+          for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
             if [ ! -f "dist-electron/$FEED" ]; then
               MISSING="${MISSING:+$MISSING, }$FEED"
             fi
@@ -991,7 +977,6 @@ jobs:
             dist-electron/*.deb \
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml \
-            dist-electron/latest-arm64-mac.yml \
             dist-electron/latest.yml \
             dist-electron/latest-linux.yml \
             dist-electron/latest-linux-arm64.yml \
@@ -1013,7 +998,7 @@ jobs:
               --prerelease
           fi
 
-          # Upload versioned payloads before switching either Mac feed. If any
+          # Upload versioned payloads before switching the feeds. If any
           # upload fails, the previous feeds still refer to available archives.
           cd dist-electron
           PAYLOADS=()
@@ -1026,8 +1011,8 @@ jobs:
           done
           gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${PAYLOADS[@]}"
           gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${FEEDS[@]}"
-          # Retained legacy feeds use immutable URLs, so old rolling payloads
-          # can be removed only after every new feed was uploaded successfully.
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after every new feed was uploaded successfully.
           gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             if [ ! -f "$asset" ]; then
               gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes
@@ -1154,7 +1139,6 @@ jobs:
           # them (nsis installers contain "Setup"; portable exes do not)
           encode() { printf '%s' "$1" | jq -sRr @uri; }
           DMG_ARM64=$(find dist-electron -maxdepth 1 -name "*-arm64.dmg" -exec basename {} \; -quit)
-          DMG_X64=$(find dist-electron -maxdepth 1 -name "*-x64.dmg" -exec basename {} \; -quit)
           EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
           APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
           APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
@@ -1168,9 +1152,6 @@ jobs:
             echo ""
             echo "### Download URLs"
             echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_ARM64"))"
-            if [ -n "$DMG_X64" ]; then
-              echo "- [Intel Mac (DMG)]($ALPHA_URL/$(encode "$DMG_X64"))"
-            fi
             echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"

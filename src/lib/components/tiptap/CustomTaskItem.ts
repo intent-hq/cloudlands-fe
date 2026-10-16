@@ -53,7 +53,7 @@ declare module '@tiptap/core' {
  * Uses the new SvelteNodeViewRenderer for proper Svelte 5 reactivity.
  * Features:
  * - Custom node view with Svelte component (TaskItemNodeView)
- * - Three-state checkbox (todo → in-progress → done)
+ * - Checkbox toggling with in-progress Markdown support
  * - Agent delegation support with TaskAgentStatus integration
  * - Action buttons for task delegation and splitting
  */
@@ -288,6 +288,7 @@ export const CustomTaskItem = TaskItem.extend<CustomTaskItemOptions>({
           if (node.type.name === this.name) {
             return this.editor.commands.updateAttributes(this.name, {
               checked: !node.attrs.checked,
+              status: node.attrs.checked ? 'todo' : 'done',
             });
           }
         }

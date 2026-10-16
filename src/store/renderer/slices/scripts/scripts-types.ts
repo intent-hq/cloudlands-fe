@@ -99,6 +99,24 @@ export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
   snapshot: ScriptDefinitionSnapshot;
 };
 
+export type ScriptAgentDetectionOutcome =
+  | { source: 'agent'; presentation: 'changes' | 'legacy'; changes: ScriptDefinitionChangesOutcome }
+  | {
+      source: 'local';
+      detection: ScriptDetectionOutcome;
+      fallbackReason: 'agent-failed' | 'unexpected-format' | 'apply-failed';
+    };
+
+export type ScriptRemovalTarget = Pick<
+  WorkspaceScript,
+  'id' | 'workspaceId' | 'source' | 'updatedAt' | 'archivedAt'
+>;
+
+export type ScriptBulkRemovalOutcome = {
+  removed: string[];
+  failed: Array<{ scriptId: string; error: string }>;
+};
+
 /** Mount-scoped identity for a serializable script UI workflow. */
 export interface ScriptWorkflowConsumer {
   consumerId: string;
@@ -110,8 +128,10 @@ export type ScriptWorkflowResult =
   | WorkspaceScript
   | ScriptListEntry
   | ScriptListEntry[]
+  | ScriptBulkRemovalOutcome
   | ScriptDetectionOutcome
-  | ScriptDefinitionChangesOutcome;
+  | ScriptDefinitionChangesOutcome
+  | ScriptAgentDetectionOutcome;
 
 export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
   id: string;

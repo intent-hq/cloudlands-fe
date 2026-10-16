@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Native Mac command contract:
- *   pnpm run dist:mac [--x64 | --arm64] [--publish never | always | onTag]
- *   pnpm run dist:mac [--x64 | --arm64] --isolated-test --publish never
- * Omitted architecture uses the Node host architecture. Use one native macOS
- * runner per architecture; cross-building and universal artifacts are unsupported.
+ *   pnpm run dist:mac [--arm64] [--publish never | always | onTag]
+ *   pnpm run dist:mac [--arm64] --isolated-test --publish never
+ * Requires a native Apple Silicon macOS host. Intel, cross-building and
+ * universal artifacts are unsupported.
  * Other electron-builder options (including signing overrides) pass through.
  * Prepackaged app inputs are rejected because they skip native/signing hooks.
  * Arbitrary config files, inheritance and project-root overrides are unsupported: staging
@@ -78,7 +78,7 @@ export function resolveMacArguments(argv, platform = process.platform, hostArch 
     throw new Error('Select native Mac targets through CLI options, not config overrides.');
   }
   const { targets } = normalizeOptions(parsed);
-  const expectedArch = arch === 'x64' ? 1 : 3;
+  const expectedArch = 3; // electron-builder's ARM64 enum value
   if (
     targets.size !== 1 ||
     [...targets].some(
@@ -111,7 +111,7 @@ export function packageMac(
   ) {
     throw new Error('Isolated package identity is missing or invalid');
   }
-  const sidecarTarget = arch === 'x64' ? 'x86_64-apple-darwin' : 'aarch64-apple-darwin';
+  const sidecarTarget = 'aarch64-apple-darwin';
   if (env.INTENTD_TARGET?.trim() && env.INTENTD_TARGET.trim() !== sidecarTarget) {
     throw new Error(`INTENTD_TARGET must be ${sidecarTarget} for this native Mac build.`);
   }

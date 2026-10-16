@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { fireEvent, waitFor } from '@testing-library/svelte';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
 // CustomTaskItem renders TaskItemNodeView.svelte which calls these at init time
@@ -47,7 +48,7 @@ import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import { CustomTaskItem } from '../CustomTaskItem';
 import { TaskListShortcuts } from '$lib/utils/task-list-shortcuts';
-import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
 
 describe('TaskItem In-Progress State Spike', () => {
   let editor: Editor | null = null;
@@ -63,6 +64,51 @@ describe('TaskItem In-Progress State Spike', () => {
       editor = null;
     }
     document.body.innerHTML = '';
+  });
+
+  describe.each(['click', 'shortcut'] as const)('Markdown persistence after %s', (interaction) => {
+    it.each([' ', '/', 'x'])(
+      'persists both toggle directions starting from [%s]',
+      async (marker) => {
+        const onSave = vi.fn();
+        const load = async (markdown: string) => {
+          const content = await processMarkdownToHTML(markdown);
+          editor?.destroy();
+          const element = document.createElement('div');
+          document.body.replaceChildren(element);
+          editor = new Editor({
+            element,
+            extensions: [StarterKit, TaskList, CustomTaskItem],
+            content,
+            onUpdate: ({ editor: updated }) => onSave(processHTMLToMarkdown(updated.getHTML())),
+          });
+        };
+        const checkbox = () => document.querySelector<HTMLElement>('[role="checkbox"]')!;
+        await load(`- [${marker}] Review checklist\n- [ ] Keep this item`);
+
+        let checked = marker === 'x';
+        for (let toggle = 0; toggle < 2; toggle += 1) {
+          await waitFor(() =>
+            expect(checkbox()?.getAttribute('aria-checked')).toBe(String(checked)),
+          );
+          if (interaction === 'click') {
+            await fireEvent.click(checkbox());
+          } else {
+            editor!.commands.setTextSelection(3);
+            editor!.commands.keyboardShortcut('Mod-Enter');
+          }
+          checked = !checked;
+          const saved = `- [${checked ? 'x' : ' '}] Review checklist\n- [ ] Keep this item`;
+          await waitFor(() => expect(onSave).toHaveBeenLastCalledWith(saved));
+
+          await load(saved);
+          await waitFor(() =>
+            expect(checkbox()?.getAttribute('aria-checked')).toBe(String(checked)),
+          );
+          expect(editor!.state.doc.textContent).toBe('Review checklistKeep this item');
+        }
+      },
+    );
   });
 
   describe('Test 1: Input Rule Recognition', () => {

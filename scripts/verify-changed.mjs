@@ -5,12 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import ts from 'typescript';
-import {
-  CT_TEST_DIR,
-  ctGeometryScene,
-  hasCtSpecSuffix,
-  isCtSpec,
-} from '../playwright/ct-spec-pattern.mjs';
+import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
@@ -278,32 +273,9 @@ function importTargets(source, testPath, root) {
   return targets;
 }
 
-function geometrySnapshotTargets(testPath, root, readText) {
-  const geometry = ctGeometryScene(testPath);
-  if (!geometry) return new Set();
-  const { directory, scene } = geometry;
-  const targets = new Set([
-    `${directory}__geometry__/${scene}.geometry.json`,
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview.${extension}`,
-    ),
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview-fixtures.${extension}`,
-    ),
-  ]);
-
-  for (const previewPath of [...targets].filter((path) => /\.preview\.[^.]+$/.test(path))) {
-    if (!existsSync(resolve(root, previewPath))) continue;
-    for (const imported of importTargets(readText(previewPath), previewPath, root)) {
-      if (imported.endsWith('.svelte')) targets.add(imported);
-    }
-  }
-  return targets;
-}
-
 // A CT spec usually mounts a host/harness `.svelte` that composes the component
 // under test, so follow one hop through each directly imported `.svelte` file
-// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+// and add the `.svelte` files it imports.
 function hostComponentTargets(targets, root, readText) {
   const hosted = new Set();
   for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
@@ -329,9 +301,7 @@ export function findRelatedCtTests(files, options = {}) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
     for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
-    const geometryTargets = geometrySnapshotTargets(test, root, readText);
-    if (files.some((file) => geometryTargets.has(file))) selected.add(test);
-    else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
+    if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
   }
   return [...selected].sort();
 }

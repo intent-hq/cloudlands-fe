@@ -37,7 +37,9 @@ vi.mock(
     return {
       selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
+      selectWorkspaceInitializerDirectoryStatusCheck: store.createSelector(() => undefined),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => []),
+      selectWorkspaceInitializerRecentRepoRefresh: store.createSelector(() => undefined),
       selectWorkspaceInitializerDismissedRecentRepoKeys: store.createSelector(() => []),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
     };
@@ -64,6 +66,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerRemoteSetups: (setups: unknown) => ({
     type: 'workspaceInitializer/setRemoteSetups',
     payload: setups,
+  }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusReleased',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshReleased',
+    payload,
   }),
 }));
 

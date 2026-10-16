@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -27,14 +28,21 @@ const mocks = vi.hoisted(() => {
       owner?: string;
     }>,
   };
-  return { selector, state, listeners, appState: {} as Record<string, unknown>, dispatch: vi.fn() };
+  return {
+    selector,
+    state,
+    listeners,
+    appState: {} as Record<string, unknown>,
+    dispatch: vi.fn(),
+    channel: null as ReturnType<typeof stdChannel> | null,
+    originUrl: vi.fn(),
+  };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  const { workspaceInitializerReducer } =
-    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
+  const { select } = await import('redux-saga/effects');
   const module = createAppStoreMockModule({
     state: () => mocks.appState,
     dedupeEmits: true,
@@ -48,8 +56,19 @@ vi.mock('$store/renderer/store', async () => {
         ),
       };
       module.store.emitState();
+      mocks.channel?.put(action);
     },
   });
+  const createSelector = module.store.createSelector.bind(module.store);
+  module.store.createSelector = ((selectorFunc: (state: never, ...args: never[]) => unknown) => {
+    const selector = createSelector(selectorFunc);
+    selector.effect = function* (...args: never[]) {
+      return yield select(selectorFunc, ...args);
+    };
+    return selector;
+  }) as typeof module.store.createSelector;
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   return module;
 });
 
@@ -148,12 +167,17 @@ import {
   dismissWorkspaceInitializerRecentRepo,
   workspaceInitializerReducer,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-import { selectWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+import {
+  selectWorkspaceInitializerRecentRepoRefresh,
+  selectWorkspaceInitializerRecentRepos,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { tick } from 'svelte';
 import { performanceMonitor } from '$lib/utils/performance';
 import type { StoreState } from '$store/renderer/types';
+import { workspaceInitializerRepositorySaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
 
 const originalDispatch = store.dispatch;
+let repositoryTask: Task;
 const saved = {
   path: 'octo/saved',
   type: 'github' as const,
@@ -186,6 +210,7 @@ function setState(next: StoreState) {
 }
 function admit(over: Partial<StoreState> = {}) {
   return withLegacyPrincipal({
+    workspace: { deletionTokens: {} } as StoreState['workspace'],
     workspaceInitializer: workspaceInitializerReducer(
       initialState,
       hydrateWorkspaceInitializer({ recentRepos: [saved] }),
@@ -208,12 +233,26 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset();
   vi.mocked(workspaceClient.list).mockReset();
   vi.mocked(performanceMonitor.end).mockClear();
+  mocks.originUrl.mockReset();
+  mocks.originUrl.mockResolvedValue(null);
   setState(admit());
   vi.mocked(workspaceClient.list).mockResolvedValue({ ok: true, data: [] });
   vi.mocked(invoke).mockResolvedValue({ success: true, data: [] });
+  mocks.channel = stdChannel();
+  repositoryTask = runSaga(
+    {
+      channel: mocks.channel,
+      getState: () => mocks.appState,
+      dispatch: store.dispatch,
+    },
+    workspaceInitializerRepositorySaga,
+    { git: { originUrl: mocks.originUrl } } as never,
+  );
 });
 afterEach(() => {
   cleanup();
+  repositoryTask?.cancel();
+  mocks.channel = null;
   store.dispatch = originalDispatch;
 });
 
@@ -239,6 +278,28 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
     await tick();
     expect(recents()).toEqual([saved]);
     expect(writes()).toHaveLength(0);
+  });
+
+  it('settles the current refresh as failed when origin inspection throws', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: [{ path: '/repo/local', name: 'local', type: 'local' }],
+    });
+    mocks.originUrl.mockRejectedValue(new Error('origin unavailable'));
+    await openDropdown();
+    const refreshId = (
+      mocks.dispatch.mock.calls.find(
+        ([action]) => action.type === 'workspaceInitializer/recentReposRefreshRequested',
+      )?.[0] as { payload: [string] }
+    ).payload[0];
+
+    await waitFor(() =>
+      expect(
+        selectWorkspaceInitializerRecentRepoRefresh.select(mocks.appState as StoreState, refreshId)
+          ?.status,
+      ).toBe('failed'),
+    );
+    expect(recents()).toEqual([saved]);
   });
 
   it('waits for initial owner hydration instead of queuing an empty overwrite', async () => {

@@ -48,7 +48,9 @@ vi.mock(
       selectWorkspaceInitializerDismissedRecentRepoKeys: store.createSelector(() => ({})),
       selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
+      selectWorkspaceInitializerDirectoryStatusCheck: store.createSelector(() => undefined),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
+      selectWorkspaceInitializerRecentRepoRefresh: store.createSelector(() => undefined),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
     };
   },
@@ -70,6 +72,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerRemoteSetups: (setups: unknown) => ({
     type: 'workspaceInitializer/setRemoteSetups',
     payload: setups,
+  }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusReleased',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshReleased',
+    payload,
   }),
 }));
 
@@ -371,42 +389,6 @@ describe('RepoSelector mode tabs', () => {
       .map((tab) => tab.textContent?.trim())
       .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
     expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);
-  });
-});
-
-describe('RepoSelector Recent list daemon-owned exclusions', () => {
-  afterEach(() => {
-    mockRepos.recentRepos = [];
-    mockRepos.workspaces = [];
-    cleanup();
-  });
-
-  it('excludes persisted recents whose path is a workspace-owned standalone checkout', async () => {
-    // A GitHub-pick workspace: the checkout is its own worktree, so its path
-    // is not a copyable local repo even when a stale persisted recent has it.
-    mockRepos.workspaces = [
-      {
-        repositoryPath: '/ws/standalone',
-        worktreePath: '/ws/standalone',
-        repositoryName: 'standalone',
-      },
-    ];
-    mockRepos.recentRepos = [
-      { path: '/ws/standalone', type: 'local', name: 'standalone' },
-      { path: '/Users/dev/app', type: 'local', name: 'app' },
-    ];
-    const { container } = render(RepoSelector, { props: {} });
-    await openDropdown(container);
-    await waitFor(() => {
-      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
-    });
-
-    await fireEvent.click(screen.getByText('Copy local repo'));
-
-    await waitFor(() => {
-      expect(screen.getByText('app')).toBeTruthy();
-    });
-    expect(screen.queryByText('standalone')).toBeNull();
   });
 });
 

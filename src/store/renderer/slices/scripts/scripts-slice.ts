@@ -39,6 +39,9 @@ import type {
   ScriptDefinitionUpdate,
   ScriptDetectionOutcome,
   ScriptDefinitionChangesOutcome,
+  ScriptAgentDetectionOutcome,
+  ScriptBulkRemovalOutcome,
+  ScriptRemovalTarget,
   ScriptWorkflowConsumer,
   ScriptWorkflowOutcome,
   ScriptWorkflowResult,
@@ -124,6 +127,16 @@ export const deleteScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage: string]
 >('scripts/deleteScriptRequested');
 
+export const removeScriptDefinitionsRequested = createAsyncAction<
+  [
+    wsId: string,
+    targets: ScriptRemovalTarget[],
+    failureMessage: string,
+    consumer?: ScriptWorkflowConsumer,
+  ],
+  ScriptBulkRemovalOutcome
+>('scripts/removeScriptDefinitions', 'scripts/removeScriptDefinitionsRequested');
+
 export const createScriptDefinitionRequested = createAsyncAction<
   [wsId: string, input: ScriptDefinitionInput, consumer?: ScriptWorkflowConsumer],
   WorkspaceScript
@@ -154,6 +167,15 @@ export const detectScriptDefinitionsRequested = createAsyncAction<
   [wsId: string, consumer?: ScriptWorkflowConsumer],
   ScriptDetectionOutcome
 >('scripts/detectScriptDefinitions', 'scripts/detectScriptDefinitionsRequested');
+
+export const detectScriptsWithAgentRequested = createAsyncAction<
+  [wsId: string, consumer?: ScriptWorkflowConsumer],
+  ScriptAgentDetectionOutcome
+>('scripts/detectScriptsWithAgent', 'scripts/detectScriptsWithAgentRequested');
+
+export const createScriptFixAgentRequested = createAction<
+  [wsId: string, scriptId: string, retainedOutput?: string, consumerId?: string]
+>('scripts/createFixAgentRequested');
 
 type ApplyScriptDefinitionChangesArgs = [
   wsId: string,
@@ -365,7 +387,13 @@ scriptsReducer.with(removeScriptDefinitionRequested, (state, action) => {
     asyncRequestReservation(action),
   );
 });
+scriptsReducer.with(removeScriptDefinitionsRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[3]),
+);
 scriptsReducer.with(detectScriptDefinitionsRequested, (state, { payload }) =>
+  startWorkflow(state, payload[0], payload[1]),
+);
+scriptsReducer.with(detectScriptsWithAgentRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[1]),
 );
 scriptsReducer.with(applyScriptDefinitionChangesRequested, (state, { payload }) =>

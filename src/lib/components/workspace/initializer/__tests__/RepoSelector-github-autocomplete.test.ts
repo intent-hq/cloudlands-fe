@@ -98,7 +98,9 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDismissedRecentRepoKeys: mocks.selector(() => ({})),
   selectWorkspaceInitializerHydrated: mocks.selector(() => true),
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
+  selectWorkspaceInitializerDirectoryStatusCheck: mocks.selector(() => undefined),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
+  selectWorkspaceInitializerRecentRepoRefresh: mocks.selector(() => undefined),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
 }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
@@ -109,6 +111,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'wi/directoryStatusRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'wi/directoryStatusReleased',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'wi/recentReposRefreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'wi/recentReposRefreshReleased',
+    payload,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
