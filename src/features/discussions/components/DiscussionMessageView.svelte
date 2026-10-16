@@ -110,7 +110,7 @@
       <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
     {/if}
     <div
-      class="relative rounded-lg bg-muted/60 px-3 py-2 group-hover/message:bg-hover"
+      class="relative rounded-lg bg-muted/30 px-3 py-2 dark:bg-muted group-hover/message:bg-hover"
       class:border-danger={status === 'failed'}
       class:border={status === 'failed'}
     >

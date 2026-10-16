@@ -425,7 +425,7 @@
           {#if !pendingMessages.length}
             {#each failedMessages as message (message.id)}
               <div
-                class="min-w-0 rounded-lg border border-danger bg-muted p-3"
+                class="min-w-0 rounded-lg border border-danger bg-muted/30 p-3 dark:bg-muted"
                 data-discussion-failed={message.id}
               >
                 <p class="whitespace-pre-wrap type-caption [overflow-wrap:anywhere]">
