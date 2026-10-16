@@ -106,12 +106,8 @@ jobs:
             exit 0
           fi
 
-          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-arm64-mac.yml"
+          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
-          if [ "$HTTP_CODE" = "404" ]; then
-            BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
-            HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
-          fi
           if [ "$HTTP_CODE" = "200" ]; then
             BETA_VERSION=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/beta-latest-mac.yml" | tr -d '\r')
             if [ -z "$BETA_VERSION" ]; then
@@ -145,15 +141,11 @@ jobs:
       - name: Read current stable version
         id: stable_version
         run: |
-          # Read the advancing ARM feed (legacy fallback below) from stable; tolerate 404 (first promotion)
-          STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-arm64-mac.yml"
+          # Read the standard Mac feed from stable; tolerate 404 (first promotion)
+          STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
           PREV_STABLE=""
 
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/stable-latest-mac.yml" "$STABLE_YML_URL")
-          if [ "$HTTP_CODE" = "404" ]; then
-            STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
-            HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/stable-latest-mac.yml" "$STABLE_YML_URL")
-          fi
           if [ "$HTTP_CODE" = "200" ]; then
             PREV_STABLE=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/stable-latest-mac.yml" | tr -d '\r')
             if [ -z "$PREV_STABLE" ]; then
@@ -294,8 +286,8 @@ jobs:
 
       - name: Prepare architecture-safe Mac channel feeds
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: node .release-tools/scripts/mac-channel-feeds.mjs "$RUNNER_TEMP/release-assets" stable
+          VERSION: ${{ inputs.version }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "$RUNNER_TEMP/release-assets" stable "$VERSION"
 
       - name: Ensure stable release exists
         env:
@@ -322,13 +314,12 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/release-assets"
 
-          # Auto-updater feed files, one per platform. latest-mac.yml is
-          # required; the others are promoted when present so older mac-only
-          # releases can still be promoted.
-          FEED_FILES=(latest-mac.yml latest-arm64-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
+          # The Mac feed is required. Other platform feeds are promoted
+          # when present so older Mac-only releases can still be promoted.
+          FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
 
           if [ ! -f "latest-mac.yml" ]; then
-            echo "::error::Missing required latest-mac.yml"
+            echo "::error::Missing required Mac update feed"
             exit 1
           fi
 
@@ -363,8 +354,7 @@ jobs:
             gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
           fi
 
-          # Replace the feed files last with --clobber (atomic switch of all
-          # auto-updater feeds, after every referenced asset is in place)
+          # Replace feeds only after every referenced asset is in place.
           echo "Replacing auto-updater feeds: ${PROMOTED_FEEDS[*]}"
           gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${PROMOTED_FEEDS[@]}"
 
@@ -385,7 +375,8 @@ jobs:
             fi
           done
 
-          # Clean up old versioned assets from stable release
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after the new canonical feed and payloads were uploaded successfully.
           echo "Cleaning up old versioned assets (keeping newly promoted files)"
           gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             if [ -z "$asset" ]; then
@@ -431,9 +422,8 @@ jobs:
           for feed in "${FEEDS[@]}"; do
             echo "Verifying $feed"
 
-            # Verify the prepared publication feed digest
-            # The legacy Mac feed can retain this destination channel's older
-            # compatible release. Compare against the exact prepared feed.
+            # Compare the exact prepared feed from the selected versioned release.
+            # Both Mac aliases describe that release's Apple Silicon payload.
             if [ -f "$RUNNER_TEMP/release-assets/$feed" ]; then
               VERSIONED_SHA=$(cat "$RUNNER_TEMP/release-assets/$feed")
               VERSIONED_SHA=$(printf '%s' "$VERSIONED_SHA" | sha512sum | awk '{print $1}')
@@ -803,8 +793,7 @@ jobs:
         run: |
           feed_platform() {
             case "$1" in
-              latest-mac.yml) echo "macOS (compatible release)" ;;
-              latest-arm64-mac.yml) echo "Apple Silicon macOS" ;;
+              latest-mac.yml) echo "macOS (Apple Silicon)" ;;
               latest.yml) echo "Windows" ;;
               latest-linux.yml) echo "Linux x64" ;;
               latest-linux-arm64.yml) echo "Linux arm64" ;;
