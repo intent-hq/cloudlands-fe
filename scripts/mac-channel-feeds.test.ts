@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: scripts/mac-channel-feeds.mjs, scripts/mac-update-feed.mjs, .github/workflows/release-alpha.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: scripts/mac-channel-feeds.mjs, scripts/mac-update-feed.mjs, scripts/assemble-release-assets.mjs, scripts/package-mac.mjs, scripts/macos-native.cjs, electron-builder.yml, .github/workflows/release-alpha.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, src/features/auto-update/main/mac-update-compatibility.ts, src/features/auto-update/main/auto-update.service.ts
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -90,11 +90,14 @@ function client(
       generation === 'fixed' && hardware === 'rosetta',
     );
   const requests: string[] = [];
+  // Feed settings shipped in 2.216.5 and 2.219.7 must not follow future client changes.
+  const installedChannel =
+    generation === 'before' || arch !== 'arm64' ? {} : { channel: 'latest-arm64' };
   const provider = new GenericProvider(
     {
       provider: 'generic',
       url: `https://updates.example/${channel}/`,
-      ...(generation === 'before' ? {} : macUpdateChannel('darwin', arch)),
+      ...(generation === 'fixed' ? macUpdateChannel('darwin', arch) : installedChannel),
     },
     value,
     { platform: 'darwin', executor: {} },
@@ -191,7 +194,9 @@ describe('Mac channel migration', () => {
     for (const generation of ['before', 'split'] as const) {
       it(`discovers and selects native ARM from ${generation} clients on ${channel}`, async () => {
         const dir = incoming();
-        await prepareMacChannelFeeds(dir, channel);
+        writeFileSync(join(dir, 'latest-arm64-mac.yml'), readFileSync(join(dir, 'latest-mac.yml')));
+        writeFileSync(join(dir, 'latest-mac.yml'), dump(feed('2.216.5', ['x64', 'arm64'])));
+        await prepareMacChannelFeeds(dir, channel, '2.220.0');
         const { value, requests, transfer, offered, errors } = client(
           dir,
           channel,
@@ -200,6 +205,7 @@ describe('Mac channel migration', () => {
         );
         const result = await value.doCheckForUpdates();
         expect(result.isUpdateAvailable).toBe(true);
+        expect(result.updateInfo.version).toBe('2.220.0');
         expect(requests).toEqual([
           `/${channel}/${generation === 'before' ? 'latest-mac.yml' : 'latest-arm64-mac.yml'}`,
         ]);
