@@ -177,14 +177,7 @@ under both `latest-mac.yml` and `latest-arm64-mac.yml`, restoring automatic
 discovery for older native Apple Silicon installations. Beta and stable feeds
 advance only when that version is promoted to the respective channel.
 
-On Intel Macs, clients with the compatibility check reject an ARM-only update.
-Older clients can announce an update and then fail before downloading because
-there is no compatible Intel ZIP; they do not install the ARM build. Apple
-Silicon running an older Intel app under Rosetta can select the native ARM
-update. If an Intel build contains the older compatibility check that treats
-Rosetta as Intel, it blocks that transition and requires a manual Apple Silicon
-reinstall. This is conditional, not a general Rosetta requirement; an Intel Mac
-cannot use that installer.
+Intel Macs are unsupported and cannot use the Apple Silicon installer.
 
 The pinned prerelease cleanup command protects versions referenced by either
 Mac feed in both the source and release-mirror repositories. Both filenames

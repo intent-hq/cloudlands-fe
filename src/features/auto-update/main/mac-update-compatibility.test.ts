@@ -47,13 +47,6 @@ describe('Mac updater architecture safety', () => {
     configureMacUpdateCompatibility(value, 'darwin', 'arm64');
     expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
   });
-  it('allows native ARM updates for a translated process on Apple Silicon', async () => {
-    const value = updater(armRelease, 'arm64');
-    value.isUpdateSupported = () => true;
-    configureMacUpdateCompatibility(value, 'darwin', 'x64', true);
-    expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(true);
-    expect(value.downloadUpdate).toHaveBeenCalledOnce();
-  });
   it.each(['alpha', 'beta', 'stable'])(
     'uses native ARM and legacy Intel feed URLs on %s',
     async (channel) => {

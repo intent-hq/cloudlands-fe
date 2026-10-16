@@ -121,12 +121,7 @@ class AutoUpdateService {
     autoUpdater.autoDownload = true; // Auto-download updates in background
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
-    configureMacUpdateCompatibility(
-      autoUpdater,
-      process.platform,
-      process.arch,
-      app.runningUnderARM64Translation,
-    );
+    configureMacUpdateCompatibility(autoUpdater);
 
     // Load persisted channel setting from electron-store
     await this.loadChannelFromSettings();

@@ -7,10 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareMacChannelFeeds } from './mac-channel-feeds.mjs';
-import {
-  configureMacUpdateCompatibility,
-  macUpdateChannel,
-} from '../src/features/auto-update/main/mac-update-compatibility';
+import { configureMacUpdateCompatibility } from '../src/features/auto-update/main/mac-update-compatibility';
 
 const updaterRequire = createRequire(
   process.env.MAC_UPDATER_PACKAGE_ROOT
@@ -60,14 +57,14 @@ function read(dir: string, name = 'latest-mac.yml') {
 function client(
   dir: string,
   channel: string,
-  generation: 'before' | 'split' | 'fixed',
-  hardware: 'arm64' | 'intel' | 'rosetta',
+  generation: 'before' | 'split',
+  hardware: 'arm64' | 'intel',
 ) {
   const arch = hardware === 'arm64' ? 'arm64' : 'x64';
   Object.defineProperty(process, 'arch', { value: arch, configurable: true });
   vi.spyOn(childProcess, 'execFileSync').mockImplementation(((command: string) =>
     command === 'sysctl'
-      ? `sysctl.proc_translated: ${hardware === 'rosetta' ? 1 : 0}`
+      ? 'sysctl.proc_translated: 0'
       : hardware === 'arm64'
         ? 'Darwin ARM64'
         : 'Darwin x86_64') as any);
@@ -82,13 +79,7 @@ function client(
     isUserWithinRollout: () => true,
     executeDownload: transfer,
   });
-  if (generation !== 'before')
-    configureMacUpdateCompatibility(
-      value,
-      'darwin',
-      arch,
-      generation === 'fixed' && hardware === 'rosetta',
-    );
+  if (generation !== 'before') configureMacUpdateCompatibility(value, 'darwin', arch);
   const requests: string[] = [];
   // Feed settings shipped in 2.216.5 and 2.219.7 must not follow future client changes.
   const installedChannel =
@@ -97,7 +88,7 @@ function client(
     {
       provider: 'generic',
       url: `https://updates.example/${channel}/`,
-      ...(generation === 'fixed' ? macUpdateChannel('darwin', arch) : installedChannel),
+      ...installedChannel,
     },
     value,
     { platform: 'darwin', executor: {} },
@@ -234,39 +225,14 @@ describe('Mac channel migration', () => {
     expect(transfer).not.toHaveBeenCalled();
   });
 
-  it.each(['split', 'fixed'] as const)(
-    'guarded %s Intel refuses before announcing an update',
-    async (generation) => {
-      const dir = incoming();
-      await prepareMacChannelFeeds(dir, 'alpha');
-      const { value, transfer, offered, errors } = client(dir, 'alpha', generation, 'intel');
-      expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
-      expect(transfer).not.toHaveBeenCalled();
-      expect(offered).not.toHaveBeenCalled();
-      expect(errors).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each(['before', 'fixed'] as const)(
-    '%s Rosetta selects native ARM on Apple Silicon',
-    async (generation) => {
-      const dir = incoming();
-      await prepareMacChannelFeeds(dir, 'alpha');
-      const { value } = client(dir, 'alpha', generation, 'rosetta');
-      const result = await value.doCheckForUpdates();
-      expect(result.isUpdateAvailable).toBe(true);
-      expect(await result.downloadPromise).toEqual([
-        'https://updates.example/alpha/Intent-2.220.0-arm64-mac.zip',
-      ]);
-    },
-  );
-
-  it('records the installed split-feed Rosetta guard limitation', async () => {
+  it('guarded Intel refuses before announcing an update', async () => {
     const dir = incoming();
     await prepareMacChannelFeeds(dir, 'alpha');
-    const { value, transfer } = client(dir, 'alpha', 'split', 'rosetta');
+    const { value, transfer, offered, errors } = client(dir, 'alpha', 'split', 'intel');
     expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
     expect(transfer).not.toHaveBeenCalled();
+    expect(offered).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
   });
 
   it.each(['before', 'split'] as const)(
