@@ -340,7 +340,7 @@ jobs:
   # is exactly the entry's own change — the same shape as the pull_request
   # merge ref, so the script needs no event-specific handling (its
   # merge-base fallback covers the shallow checkout either way). ct_required
-  # is computed in the queue too, but browser suites deliberately skip there.
+  # is computed in the queue too, and browser suites execute there.
   # Root and Electron relevance use the same diff and fail-safe behavior.
   release-fast-path:
     name: Release PR Fast Path
@@ -404,7 +404,7 @@ jobs:
         run: |
           set -euo pipefail
           # The root suite (playwright.config.ts: test/**/*.spec.ts) is
-          # required on pull_request when the diff touches the specs, their
+          # required on merge_group when the diff touches the specs, their
           # fixtures / snapshots / harness helpers (all under test/), the
           # config itself, or the playwright/*-spec-pattern.mjs modules the
           # config reads its testDir/testMatch/testIgnore from (the same set
@@ -472,6 +472,19 @@ jobs:
   # checkout + pnpm install (and queue serially in the single-slot era).
   # One job on the 64-core box runs the shared setup once and all checks
   # back-to-back.
+  pr-static:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - name: Verify event routing and gate failures without application dependencies
+        run: python3 -I -B scripts/test-ci-event-policy.py
+
   checks:
     name: Type Check & Lint
     # Skipped at job level when the diff is release-PR-shaped (fast_path ==
@@ -483,7 +496,7 @@ jobs:
     # alone would run it without runner labels); the gate still fails on such
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -543,6 +556,11 @@ jobs:
       # part of this gate too, and the generated paths are Prettier-ignored
       # (.prettierignore plus Prettier's default .gitignore handling), so
       # running it before generation loses no coverage.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - run: python3 -I -B scripts/test-ci-event-policy.py
       - name: Cold-checkout gates
         run: pnpm run lint
       - name: Generate build config
@@ -627,7 +645,7 @@ jobs:
     # Skipped at job level on release-fast-path PRs — see the checks job's
     # comment for the full skip/fail-safe rationale.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -696,7 +714,7 @@ jobs:
     # exist — "CI Gate" is the only required check).
     name: Unit Tests (shard ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     strategy:
       # Let the sibling shard finish so one flaky leg doesn't hide the
@@ -793,7 +811,7 @@ jobs:
   test-portable-fixtures:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
     needs: [release-fast-path]
-    if: ${{ !cancelled() && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
     runs-on: depot-macos-latest
     timeout-minutes: 15
     permissions:
@@ -917,7 +935,7 @@ jobs:
   # Keep route as a direct guard so failed routing and fork PRs stay fail-safe.
   test-ct:
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.ct_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.ct_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
     uses: ./.github/workflows/browser-tests.yml
@@ -926,7 +944,7 @@ jobs:
 
   test-playwright:
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
     uses: ./.github/workflows/browser-tests.yml
@@ -935,7 +953,7 @@ jobs:
 
   test-electron:
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.electron_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.electron_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
     uses: ./.github/workflows/browser-tests.yml
@@ -957,56 +975,27 @@ jobs:
   # called workflow, and a failed monorepo checkout is fail-soft there
   # (warning, job green), so a monorepo outage never blocks this repo.
   # Runs on pull_request AND merge_group; the caller's own `if:` carries
-  # the same-repo guard (fork-PR hardening note). No secrets are passed and
-  # `contents: read` is all the called workflow needs. Not routed: it runs
-  # on GH-hosted ubuntu-latest inside the called workflow.
+  # the same-repo guard (fork-PR hardening note). Actions-read permission and
+  # the declared routing/cache secrets support the shared runner routing and
+  # queue-only connected runtime proof; PRs run static consumer checks.
   monorepo-consumer-checks:
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
+      actions: read
       contents: read
-    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@b0a3dc55179f7ff2b89fc22f6e576aa76d0cde14
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@0e12255c6207b474a218e633ec61e9b051d3e990
     with:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
 
-  # Single required status check for branch protection: fans in pr-title,
-  # conflict-markers, the heavy jobs (checks / build-web / test /
-  # test-integration / test-ct / test-playwright / test-electron), and
-  # monorepo-consumer-checks. pr-title /
-  # conflict-markers must succeed outright on every PR;
-  # on merge_group they are job-skipped (PR-metadata checks, already
-  # validated on the PR) and the gate accepts the skip — event-aware, so PR
-  # semantics stay unweakened. The every-event heavy jobs (checks /
-  # build-web / test) must succeed outright too, EXCEPT on
-  # release-shaped diffs (fast_path == 'true', on either event), where
-  # their job-level skip is the expected outcome (see release-fast-path).
-  # The acceptance keys on the fast-path OUTPUT — never on the skipped
-  # status itself — so a skip from any other cause (a route failure, or a
-  # failed release-fast-path job leaving the output empty) still fails the
-  # gate: fail-safe, not fail-open (mirrors intentd's event/shape-aware
-  # gate reasoning). The merge-queue-only job (test-integration) is
-  # event-aware the other way round: on pull_request its skip is BY DESIGN
-  # and accepted unconditionally (any other non-success result still
-  # fails); on merge_group it must succeed outright, except that a skip is
-  # accepted via fast_path == 'true' (release-shaped queue entry) — any
-  # other skip in the queue can only mean a route failure and fails.
-  # Browser suites skip by design in merge_group. On PRs each suite requires
-  # a valid relevance output, and skips only for an explicitly irrelevant diff
-  # or the release fast path. Required runs must succeed, including Electron.
-  # Each reusable workflow result aggregates all of its shards.
-  # monorepo-consumer-checks must succeed outright on BOTH events: it is
-  # not fast-path-gated (minutes-long, and a release-shaped diff still has
-  # to satisfy the monorepo consumers), so its only skip cause is the
-  # same-repo guard on a fork PR, where the gate must be red anyway. A
-  # monorepo outage is fail-soft inside the called workflow (green with a
-  # warning), so it never surfaces here as a failure.
-  # route is a DIRECT gate input, checked first: a route failure skips every
-  # heavy job, and when fast_path == 'true' those skips are exactly what the
-  # fast-path acceptance above expects — so without this check a broken
-  # probe on a release-shaped run was indistinguishable from a legitimate
-  # fast-path skip and passed the gate (cloudlands-fe#2573 review). The
-  # check is unconditional: route's only skip cause is a fork PR (its `if:`
-  # is merge_group-or-same-repo), where the gate must be red anyway.
+  # CI Gate is the required context on both events. PRs require metadata,
+  # static consumer contracts and routing policy. Queue entries require builds,
+  # tests and every relevant browser/native suite. Only validated release-only
+  # diffs or explicit irrelevant-path outputs can skip queued work. Route and
+  # classification failures never authorize skips. Forks get a red gate.
   gate:
     name: CI Gate
     # Lightweight job on a standard Depot Linux runner.
@@ -1026,6 +1015,7 @@ jobs:
       [
         route,
         release-fast-path,
+        pr-static,
         pr-title,
         conflict-markers,
         checks,
@@ -1079,7 +1069,23 @@ jobs:
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
-          # Every-event heavy jobs (checks / build-web / test): success, or
+          # Only the small Linux policy job and static consumer contracts run
+          # before queueing. Failed/missing results are never intentional skips.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            check_pr_meta "pr-static" "${{ needs.pr-static.result }}"
+            check_pr_meta "monorepo-consumer-checks" "${{ needs.monorepo-consumer-checks.result }}"
+            case "${{ needs.checks.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-electron.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-integration.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            exit 0
+          fi
+          case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
+          # Queued heavy jobs (checks / build-web / test): success, or
           # skipped ONLY via the release-PR fast path.
           check_heavy() {
             if [ "$2" = "success" ]; then
@@ -1095,7 +1101,7 @@ jobs:
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"
-          # Native fixture validation runs on relevant PRs and queue entries.
+          # Native fixture validation runs on relevant queue entries.
           # Missing classification or an unexpected skip must not certify portability.
           if [ "$PORTABLE_FIXTURES_REQUIRED" != "true" ] && [ "$PORTABLE_FIXTURES_REQUIRED" != "false" ]; then
             echo "portable fixture relevance is missing or invalid"
@@ -1108,50 +1114,17 @@ jobs:
               exit 1
             fi
           fi
-          # Merge-queue-only job (test-integration): skipped by design on
-          # pull_request (its `if:` is event-gated) — accepted unconditionally
-          # there; on merge_group it must succeed, or be skipped ONLY via the
-          # release-PR fast path (the output, never the skipped status).
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_queue_only() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (merge-queue-only job must run and pass; fast_path='$FAST_PATH')"
-              exit 1
-            }
-          else
-            check_queue_only() {
-              if [ "$2" = "skipped" ]; then
-                echo "$1 skipped on ${{ github.event_name }} — merge-queue-only job, accepted"
-                return 0
-              fi
-              if [ "$2" != "success" ]; then
-                echo "$1 result '$2' not acceptable"
-                exit 1
-              fi
-            }
-          fi
-          check_queue_only "test-integration" "${{ needs.test-integration.result }}"
-          # Every browser suite skips intentionally in the queue. On PRs,
-          # missing classifier output is an error even if another job succeeded.
+          check_heavy "test-integration" "${{ needs.test-integration.result }}"
+          # Queue classification must be present even when a job reports success.
           check_browser() {
-            if [ "${{ github.event_name }}" = "merge_group" ]; then
-              if [ "$2" = "success" ] || [ "$2" = "skipped" ]; then return 0; fi
-            else
-              if [ "$3" != "true" ] && [ "$3" != "false" ]; then
-                echo "$1 relevance output '$3' is missing or invalid"
-                exit 1
-              fi
-              if [ "$2" = "success" ]; then return 0; fi
-              if [ "$2" = "skipped" ] && { [ "$FAST_PATH" = "true" ] || [ "$3" = "false" ]; }; then
-                echo "$1 skipped via release fast path or irrelevant diff — accepted"
-                return 0
-              fi
+            if [ "$3" != "true" ] && [ "$3" != "false" ]; then
+              echo "$1 relevance output '$3' is missing or invalid"
+              exit 1
+            fi
+            if [ "$2" = "success" ]; then return 0; fi
+            if [ "$2" = "skipped" ] && { [ "$FAST_PATH" = "true" ] || [ "$3" = "false" ]; }; then
+              echo "$1 skipped via release fast path or irrelevant diff — accepted"
+              return 0
             fi
             echo "$1 result '$2' not acceptable (required='$3', fast_path='$FAST_PATH')"
             exit 1

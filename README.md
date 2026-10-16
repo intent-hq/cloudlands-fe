@@ -4,6 +4,14 @@ Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
+## CI
+
+PR updates run Linux metadata, static consumer contracts, and workflow policy checks.
+The merge queue runs type/lint checks, builds, unit/integration tests, and relevant
+browser/native fixture suites against the merged tree. Browser suites also retain
+complete nightly/manual runs. Release-only diffs keep their validated exemptions;
+the required CI Gate rejects unexpected queue skips or failed jobs.
+
 ## Architecture
 
 The renderer is a SvelteKit application running inside Electron. It never talks
