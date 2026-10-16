@@ -56,6 +56,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Setup native desktop helper SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

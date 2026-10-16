@@ -330,6 +330,24 @@ describe('multi-backend window sessions', () => {
       expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
     });
 
+    it('never restores a desktop-control indicator without an active native session', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      seedLiveWindow('app://workspaces/desktop-overlay?kind=glow', undefined, 'local');
+      seedLiveWindow('app://workspaces/desktop-overlay?kind=controls', undefined, 'local');
+      await saveAllWindowSessions();
+      expect(readMap().local).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [
+            { route: '/desktop-overlay', bounds: local.bounds },
+            { route: '/work/local', bounds: local.bounds },
+          ],
+        }),
+      );
+      expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+    });
+
     it('an aggregate save in flight during the sync prune cannot resurrect the bucket', async () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');

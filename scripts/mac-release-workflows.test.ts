@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,6 +37,7 @@ interface Matrix {
   arch: string;
   label: string;
   runner: string;
+  proof_runner?: string;
   intentd_target: string;
 }
 interface Job {
@@ -437,6 +439,36 @@ describe('packaged Mac verification invoked by native workflows', () => {
       shell(dir, 'bash scripts/verify-macos-build.sh x64 true', { FAIL_TOOL: tool }).status,
     ).toBe(42);
   });
+  it.each(['', 'codesign', 'spctl', 'xcrun'])(
+    'checks the isolated app and retains signing failures (%s)',
+    (tool) => {
+      const dir = temp();
+      const ordinary = appFixture(dir, 'arm64');
+      const app = join(dirname(ordinary), 'Intent GitLab Test.app');
+      renameSync(ordinary, app);
+      rmSync(join(app, 'Contents/Resources/keychain-helper'), { recursive: true });
+      writeFileSync(
+        join(app, 'Contents/Info.plist'),
+        JSON.stringify({
+          CFBundleIdentifier: 'app.cloudlands.intent.gitlab-test',
+          IntentIsolatedTestBuild: 'manual-123-1',
+          IntentIsolatedTestBackend: 'a'.repeat(40),
+        }),
+      );
+      stub(dir, 'plutil', 'cat "${@: -1}"');
+      const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+        FAIL_TOOL: tool,
+      });
+      expect(result.status, result.stderr).toBe(tool ? 42 : 0);
+      if (!tool)
+        expect(readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n')).toEqual([
+          'codesign',
+          'codesign',
+          'spctl',
+          'xcrun',
+        ]);
+    },
+  );
   it('verifies native payloads for unsigned manual builds without requiring signing tools', () => {
     const dir = temp();
     const app = appFixture(dir, 'x64');
@@ -603,7 +635,9 @@ describe('manual Mac architecture selection', () => {
           expect(
             JSON.parse(
               render(jobs[name].if!, {
-                'inputs.build_macos || inputs.isolated_test': String(enabled || isolated),
+                '!inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test)': String(
+                  enabled || isolated,
+                ),
               }),
             ),
           ).toBe(enabled || isolated);
@@ -622,11 +656,19 @@ describe('manual Mac architecture selection', () => {
       );
       const smoke = jobs['smoke-macos'];
       expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
-      expect(smoke.if).toBe('${{ inputs.smoke_macos }}');
+      expect(smoke.if).toBe('${{ !inputs.isolated_replay && inputs.smoke_macos }}');
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
-      expect(render(smoke['runs-on']!, context)).toBe(row.runner);
+      const proofRunner = row.arch === 'arm64' ? 'macos-15-xlarge' : 'macos-15-large';
+      expect(row.proof_runner).toBe(proofRunner);
+      expect(render(smoke['runs-on']!, context)).toBe(proofRunner);
+      expect(
+        render(jobs['verify-isolated-macos']['runs-on']!, {
+          'matrix.proof_runner': row.proof_runner!,
+        }),
+      ).toBe(proofRunner);
+      expect(jobs['replay-isolated-macos']['runs-on']).toBe('macos-15-xlarge');
       expect(render(String(download.with?.name), context)).toBe(
         render(String(upload.with?.name), { 'matrix.arch': row.arch }),
       );
@@ -640,7 +682,7 @@ describe('manual Mac architecture selection', () => {
     [false, false, false],
   ])('requires a built and signed smoke artifact: build=%s sign=%s', (build, sign, valid) => {
     const gate = workflow('manual-signed-build').jobs['smoke-inputs'];
-    expect(gate.if).toBe('${{ inputs.smoke_macos }}');
+    expect(gate.if).toBe('${{ !inputs.isolated_replay && inputs.smoke_macos }}');
     const check = step('manual-signed-build', 'smoke-inputs', 'Require a signed macOS artifact');
     const env = Object.fromEntries(
       Object.entries(check.env!).map(([key, value]) => [
@@ -866,6 +908,55 @@ describe('release tag capability routing', () => {
   });
 });
 
+it('rejects replay inputs that would build or select another backend', () => {
+  const code = step(
+    'manual-signed-build',
+    'replay-isolated-macos',
+    'Require proof-only inputs',
+  ).run!;
+  const env = {
+    BUILD_MACOS: 'false',
+    BUILD_WINDOWS: 'false',
+    BUILD_LINUX: 'false',
+    ISOLATED_TEST: 'false',
+    SMOKE_MACOS: 'false',
+    INTENTD_REF: '',
+    SIGN: 'true',
+  };
+  const dir = temp();
+  expect(shell(dir, code, env).status).toBe(0);
+  for (const key of ['BUILD_MACOS', 'BUILD_WINDOWS', 'BUILD_LINUX', 'ISOLATED_TEST', 'SMOKE_MACOS'])
+    expect(shell(dir, code, { ...env, [key]: 'true' }).status).not.toBe(0);
+  expect(shell(dir, code, { ...env, INTENTD_REF: 'main' }).status).not.toBe(0);
+  expect(shell(dir, code, { ...env, SIGN: 'false' }).status).not.toBe(0);
+});
+
+it('never allocates ordinary build or smoke jobs for a proof-only replay', () => {
+  const jobs = workflow('manual-signed-build').jobs;
+  for (const isolated_test of [false, true]) {
+    const inputs = {
+      isolated_replay: true,
+      isolated_test,
+      build_macos: true,
+      build_windows: true,
+      build_linux: true,
+      smoke_macos: true,
+    };
+    for (const name of [
+      'select-macos',
+      'build-macos',
+      'build-windows',
+      'build-linux',
+      'smoke-inputs',
+      'smoke-macos',
+      'verify-isolated-macos',
+    ]) {
+      const expression = jobs[name].if!.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+      expect(runInNewContext(expression, { inputs }), name).toBe(false);
+    }
+  }
+});
+
 it.each(['alpha', 'beta', 'stable'])(
   'does not switch %s feeds after a failed payload upload',
   (channel) => {
@@ -978,3 +1069,87 @@ it.each([
     else expect(existsSync(output)).toBe(false);
   },
 );
+
+it.each(['14.0', '14.1'])(
+  'passes the immutable source protocol %s through the isolated proof job',
+  (version) => {
+    const jobs = workflow('manual-signed-build').jobs;
+    const source = step(
+      'manual-signed-build',
+      'build-macos',
+      'Resolve isolated protocol from selected daemon source',
+    );
+    expect(source.if).toBe('${{ inputs.isolated_test }}');
+    expect(source.env).toEqual({
+      BACKEND_SHA: '${{ steps.intentd_sha.outputs.sha }}',
+      BACKEND_REF: '${{ inputs.intentd_ref }}',
+    });
+    expect(jobs['build-macos'].outputs?.isolated_protocol).toBe(
+      '${{ steps.isolated_protocol.outputs.version }}',
+    );
+    const dir = temp();
+    const backend = 'b'.repeat(40);
+    const frontend = 'a'.repeat(40);
+    stub(
+      dir,
+      'node',
+      `printf '%s\\n' "$@" > "$RUNNER_TEMP/node-args"; printf 'version=%s\\n' '${version}'`,
+    );
+    const output = join(dir, 'source-output');
+    expect(
+      shell(dir, source.run!, { BACKEND_SHA: backend, BACKEND_REF: backend, GITHUB_OUTPUT: output })
+        .status,
+    ).toBe(0);
+    expect(readFileSync(join(dir, 'node-args'), 'utf8').trim().split('\n')).toEqual([
+      'scripts/isolated-package-protocol.mjs',
+      'intentd-src',
+      backend,
+    ]);
+    const selected = readFileSync(output, 'utf8').trim().split('=')[1]!;
+    expect(selected).toBe(version);
+    const proof = step(
+      'manual-signed-build',
+      'verify-isolated-macos',
+      'Prove packaged isolation on disposable macOS',
+    );
+    const env = Object.fromEntries(
+      Object.entries(proof.env!).map(([key, value]) => [
+        key,
+        render(value, {
+          'inputs.intentd_ref': backend,
+          'github.sha': frontend,
+          'needs.build-macos.outputs.isolated_protocol': selected,
+        }),
+      ]),
+    );
+    mkdirSync(join(dir, 'isolated-package'));
+    writeFileSync(join(dir, 'isolated-package/package.dmg'), 'owned fixture');
+    expect(shell(dir, proof.run!, env).status).toBe(0);
+    expect(readFileSync(join(dir, 'node-args'), 'utf8').trim().split('\n')).toEqual([
+      'scripts/verify-isolated-macos-package.mjs',
+      'isolated-package/package.dmg',
+      'isolated-package-proof',
+      backend,
+      frontend,
+      version,
+    ]);
+  },
+);
+
+it('rejects a resolved daemon identity different from the selected immutable ref before extraction', () => {
+  const source = step(
+    'manual-signed-build',
+    'build-macos',
+    'Resolve isolated protocol from selected daemon source',
+  );
+  const dir = temp();
+  stub(dir, 'node', 'touch "$RUNNER_TEMP/extracted"');
+  expect(
+    shell(dir, source.run!, {
+      BACKEND_SHA: 'a'.repeat(40),
+      BACKEND_REF: 'b'.repeat(40),
+      GITHUB_OUTPUT: join(dir, 'output'),
+    }).status,
+  ).not.toBe(0);
+  expect(existsSync(join(dir, 'extracted'))).toBe(false);
+});

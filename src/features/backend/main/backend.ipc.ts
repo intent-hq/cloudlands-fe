@@ -128,6 +128,8 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import { requestDesktopPermissions } from '../../desktop/main/desktop-permissions';
+import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
@@ -2201,6 +2203,7 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
+  registerDesktopExecReverseHandler(instance, id);
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   poolLifecycle?.members.set(instance, { id });
@@ -4266,6 +4269,16 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  // Local-only user gesture. Never forward this channel or native operations to a daemon.
+  ipcMain.handle(BACKEND.DESKTOP_PERMISSIONS, async (event, params: unknown) => {
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      return { ok: true, result: await requestDesktopPermissions(client, params) };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+
   nativeReviewRoutes = registerNativeReviewHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     prepare: (client, connection, input) => {
@@ -4385,7 +4398,19 @@ export function registerBackendHandlers(): void {
         }
         const nameGuard =
           method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
-        const result = await client.request(method, payload?.params, { timeoutMs });
+        // Renderer capability/identity reads must not renegotiate the pooled
+        // connection: a real hello invalidates desktop consent and its event epoch.
+        // Main-owned identity refreshes and explicit renderer hellos still go on wire.
+        const params = payload?.params;
+        const helloRead =
+          method === 'client.hello' &&
+          (params == null ||
+            (typeof params === 'object' &&
+              !Array.isArray(params) &&
+              Object.keys(params).length === 0));
+        const result = helloRead
+          ? await client.readHelloSnapshot()
+          : await client.request(method, params, { timeoutMs });
         if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
         const expected = invitedClientCredentials.get(client);
         if (expected && method === 'principal.me') {

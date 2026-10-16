@@ -87,3 +87,18 @@ it('cancels pending reads and removes the reader before restoring the bridge', a
   expect(previousInvoke).not.toHaveBeenCalled();
   expect(invoke).toHaveBeenCalledOnce();
 });
+
+it('preserves a replacement bridge when its preview stops', () => {
+  stops.push(startRootStoreLifecycle(store, { startSagas: () => [] }));
+  const previousBridge = window.electronAPI;
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture()]);
+  stops.push(stop);
+  const replacementBridge = { ...previousBridge };
+  window.electronAPI = replacementBridge;
+  try {
+    stops.pop()?.();
+    expect(window.electronAPI).toBe(replacementBridge);
+  } finally {
+    window.electronAPI = previousBridge;
+  }
+});

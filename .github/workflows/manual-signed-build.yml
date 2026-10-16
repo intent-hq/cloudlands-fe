@@ -79,6 +79,11 @@ on:
         required: false
         type: boolean
         default: false
+      isolated_replay:
+        description: 'Verify the immutable Manual149 isolated ARM DMG without rebuilding (all build and smoke flags must be off).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -93,7 +98,7 @@ concurrency:
 jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
-    if: ${{ inputs.build_macos || inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test) }}
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     outputs:
@@ -106,19 +111,20 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","proof_runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
             *) echo "::error::Manual Mac builds support arm64 only; Intel is release-only"; exit 1 ;;
           esac
+          # Package inspection requires a GitHub-hosted disposable Mac; builds use Depot.
           {
             echo "matrix={\"include\":$TARGETS}"
-            echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
+            echo "smoke_runner=$(jq -r '.[0].proof_runner' <<< "$TARGETS")"
             echo "smoke_artifact=manual-macos-dmg-$(jq -r '.[0].arch' <<< "$TARGETS")"
           } >> "$GITHUB_OUTPUT"
 
   smoke-inputs:
-    if: ${{ inputs.smoke_macos }}
+    if: ${{ !inputs.isolated_replay && inputs.smoke_macos }}
     runs-on: depot-ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -129,7 +135,7 @@ jobs:
         run: test "$BUILD_MACOS" = true && test "$SIGN" = true
 
   smoke-macos:
-    if: ${{ inputs.smoke_macos }}
+    if: ${{ !inputs.isolated_replay && inputs.smoke_macos }}
     needs: [select-macos, build-macos, smoke-inputs]
     runs-on: ${{ needs.select-macos.outputs.smoke_runner }}
     timeout-minutes: 60
@@ -175,9 +181,11 @@ jobs:
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
-    if: ${{ inputs.build_macos || inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test) }}
     needs: [select-macos]
     name: macOS (${{ matrix.label }})
+    outputs:
+      isolated_protocol: ${{ steps.isolated_protocol.outputs.version }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
@@ -290,6 +298,16 @@ jobs:
           sha=$(git -C intentd-src rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      - name: Resolve isolated protocol from selected daemon source
+        if: ${{ inputs.isolated_test }}
+        id: isolated_protocol
+        env:
+          BACKEND_SHA: ${{ steps.intentd_sha.outputs.sha }}
+          BACKEND_REF: ${{ inputs.intentd_ref }}
+        run: |
+          test "$BACKEND_SHA" = "$BACKEND_REF"
+          node scripts/isolated-package-protocol.mjs intentd-src "$BACKEND_SHA" >> "$GITHUB_OUTPUT"
 
       # Bare `rustup toolchain install` inside intentd-src reads the channel
       # pinned by its rust-toolchain.toml, so the toolchain always matches the
@@ -580,7 +598,7 @@ jobs:
   # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
-    if: ${{ inputs.build_windows && !inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && inputs.build_windows && !inputs.isolated_test }}
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
@@ -632,6 +650,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Setup native desktop helper SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Install frontend dependencies
         shell: bash
@@ -872,7 +895,7 @@ jobs:
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
-    if: ${{ inputs.build_linux && !inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && inputs.build_linux && !inputs.isolated_test }}
     strategy:
       # Let the other arch finish (and report) even when one fails.
       fail-fast: false
@@ -1182,12 +1205,13 @@ jobs:
           INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
   verify-isolated-macos:
-    if: ${{ inputs.isolated_test && inputs.build_macos }}
+    if: ${{ !inputs.isolated_replay && inputs.isolated_test && inputs.build_macos }}
     needs: [select-macos, build-macos]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # The inspection admission requires a disposable GitHub-hosted Mac.
+    runs-on: ${{ matrix.proof_runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -1206,14 +1230,64 @@ jobs:
         env:
           BACKEND_SHA: ${{ inputs.intentd_ref }}
           FRONTEND_SHA: ${{ github.sha }}
+          EXPECTED_PROTOCOL: ${{ needs.build-macos.outputs.isolated_protocol }}
         run: |
           mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
           test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
-          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA" "$EXPECTED_PROTOCOL"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: isolated-macos-proof-${{ matrix.arch }}
           path: isolated-package-proof
+          if-no-files-found: error
+          retention-days: 7
+
+  replay-isolated-macos:
+    if: ${{ inputs.isolated_replay }}
+    runs-on: macos-15-xlarge
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require proof-only inputs
+        env:
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          BUILD_WINDOWS: ${{ inputs.build_windows }}
+          BUILD_LINUX: ${{ inputs.build_linux }}
+          ISOLATED_TEST: ${{ inputs.isolated_test }}
+          SMOKE_MACOS: ${{ inputs.smoke_macos }}
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+          SIGN: ${{ inputs.sign }}
+        run: |
+          test "$BUILD_MACOS" = false
+          test "$BUILD_WINDOWS" = false
+          test "$BUILD_LINUX" = false
+          test "$ISOLATED_TEST" = false
+          test "$SMOKE_MACOS" = false
+          test -z "$INTENTD_REF"
+          test "$SIGN" = true
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      - name: Verify immutable Manual149 package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/replay-isolated-macos.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: isolated-macos-replay-proof-arm64
+          path: |
+            isolated-package-proof
+            isolated-replay-provenance
           if-no-files-found: error
           retention-days: 7

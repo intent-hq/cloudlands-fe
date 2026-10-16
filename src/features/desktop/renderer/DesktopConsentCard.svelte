@@ -1,0 +1,67 @@
+<script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { m } from '$shared/paraglide/messages.js';
+  import type { DesktopPermissionRequest, DesktopPermissionDecision } from '$shared/types/desktop';
+  let {
+    request,
+    pending = false,
+    settingUp = false,
+    guidance,
+    onDecision,
+  }: {
+    request: DesktopPermissionRequest;
+    pending?: boolean;
+    settingUp?: boolean;
+    guidance?: string;
+    onDecision: (decision: DesktopPermissionDecision) => void;
+  } = $props();
+</script>
+
+<div
+  class="flex max-h-[min(calc(100dvh-8rem),calc(var(--toast-max-height,100dvh)-2rem))] min-w-0 flex-col gap-3"
+  role="group"
+  aria-label={m.desktop_consent_title()}
+>
+  <div
+    class="min-h-0 space-y-3 overflow-y-auto break-words"
+    role="region"
+    aria-label={m.desktop_consent_title()}
+    tabindex="0"
+  >
+    <p class="font-medium break-words">
+      {m.desktop_consent_request({ agent: request.agentName, computer: request.computerName })}
+    </p>
+    <p class="text-sm text-muted-foreground">{m.desktop_consent_description()}</p>
+    {#if request.claimsPrimary}
+      <p class="text-sm text-muted-foreground">
+        {m.desktop_consent_claimPrimary({ computer: request.computerName })}
+      </p>
+    {/if}
+    {#if guidance}
+      <p role="status" class="text-sm">{guidance}</p>
+    {/if}
+    {#if pending && !settingUp}
+      <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>
+    {/if}
+  </div>
+  <div class="flex shrink-0 flex-wrap gap-2">
+    <Button
+      size="compact"
+      variant="primary"
+      disabled={pending}
+      onclick={() => onDecision('allow_once')}>{m.desktop_consent_once()}</Button
+    >
+    <Button
+      size="compact"
+      variant="outline"
+      disabled={pending}
+      onclick={() => onDecision('allow_future')}>{m.desktop_consent_future()}</Button
+    >
+    <Button
+      size="compact"
+      variant="ghost"
+      disabled={pending && !settingUp}
+      onclick={() => onDecision('deny')}>{m.desktop_consent_deny()}</Button
+    >
+  </div>
+</div>

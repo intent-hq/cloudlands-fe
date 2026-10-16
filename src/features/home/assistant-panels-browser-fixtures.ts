@@ -304,12 +304,13 @@ export function setupAssistantPanelsFixture(
     'note.presence.unsubscribe': () => ({ ok: true }),
     'note.presence.update': () => ({ ok: true }),
   });
+  const fixtureBridge = window.electronAPI;
   const stopNotes = startWorkspaceNotesSagaFixture(store);
   return () => {
     for (const stop of stopNotes) stop();
     release();
     delete window.__assistantPanels;
-    window.electronAPI = previousBridge;
+    if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
     fixtureWindow.assistantNoteRequests = previousRequests;
   };
 }

@@ -1,4 +1,5 @@
 import { isDevConsoleRoute } from '../shared/dev-console-route';
+import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -396,7 +397,8 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
-      if (isDevConsoleRoute(new URL(url).pathname)) return false;
+      if (isDevConsoleRoute(new URL(url).pathname) || isDesktopOverlayRoute(new URL(url).pathname))
+        return false;
       return true;
     })
     .map((w: BrowserWindowType) => {
@@ -594,7 +596,7 @@ export function loadWindowSessions(backendId: string): WindowSession[] | null {
   try {
     if (closedBackendSessions.has(backendId)) return null;
     const valid = readSessionsMap()[backendId]?.filter(
-      (session) => !isDevConsoleRoute(session.route),
+      (session) => !isDevConsoleRoute(session.route) && !isDesktopOverlayRoute(session.route),
     );
     if (valid && valid.length > 0) {
       // Cap per backend to guard against a corrupted sessions file.

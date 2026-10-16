@@ -13,6 +13,11 @@ let baseUrl: string;
 const virtualPrefix = '\0workspace-tab-strip:';
 const virtualModules: Record<string, string> = {
   '$app/navigation': 'export const goto = async () => {};',
+  // These status/drag scenarios have no connected Micro; connected assignments use the Micro CT fixture.
+  '$features/hardware-console/device/connection-status': `
+    export const microConnectedReadable = () => ({
+      subscribe(run) { run(false); return () => {}; },
+    });`,
   '$features/agent/services/active-streams-tracker': `
     export const activeStreamsTracker = {
       startPolling() {}, subscribe() { return () => {}; },

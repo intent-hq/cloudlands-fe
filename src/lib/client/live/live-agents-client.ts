@@ -1,4 +1,5 @@
 import { CHAT_PAGE_SIZE } from '$shared/constants';
+import { m } from '$shared/paraglide/messages.js';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -650,6 +651,16 @@ export class LiveAgentsClient implements AgentsClient {
     messageIds: string[];
   }): Promise<MutationResult> {
     try {
+      const hello = await backendRequest<{ server?: { protocolVersion?: unknown } }>(
+        'client.hello',
+        {},
+      );
+      const version = hello?.server?.protocolVersion;
+      const match = typeof version === 'string' ? /^(\d+)\.(\d+)(?:\.\d+)?$/.exec(version) : null;
+      // protocol-version-ok: 13.1 adds atomic selected-queue batch delivery.
+      // Individual sends are not equivalent: they can interrupt one another.
+      if (!match || Number(match[1]) < 13 || (Number(match[1]) === 13 && Number(match[2]) < 1))
+        return { success: false, error: m.chat_queuedMessages_sendAllUnsupported_error() };
       const result = await backendRequest<{
         success: boolean;
         queued: boolean;

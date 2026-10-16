@@ -337,6 +337,7 @@ describe('daemonEventsSaga', () => {
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).not.toContain('file:*');
     expect(FILE_EVENTS_SUBSCRIBE_TYPES).toEqual(['file:*']);
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toEqual([
+      'desktop:*',
       'agent:*',
       'hub:checkpoint',
       'note:*',

@@ -136,6 +136,12 @@ resources/speech-helper/
 
 # Keychain helper staging directory (build-keychain-helper.cjs output)
 resources/keychain-helper/
+resources/desktop-helper/
+native/desktop/windows/bin/
+native/desktop/windows/obj/
+native/desktop/tests/windows/bin/
+native/desktop/tests/windows/obj/
+native/desktop/tests/windows/artifacts/
 
 # Generated production-only Paraglide bundle
 static/generated/

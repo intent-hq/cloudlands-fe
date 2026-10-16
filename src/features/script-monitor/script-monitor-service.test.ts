@@ -261,3 +261,56 @@ describe('script monitor wire and connection lifecycle', () => {
     expect(backendRequest).toHaveBeenCalledTimes(before);
   });
 });
+
+describe('active monitor receipt races', () => {
+  it.each([false, true])('retires from an identity receipt (cancelRun=%s)', async (cancelRun) => {
+    start();
+    await ready();
+    const receipt = {
+      ok: true,
+      monitorId: active.monitorId,
+      ...(cancelRun ? { runStopped: true } : {}),
+    };
+    vi.mocked(backendRequest).mockResolvedValueOnce(receipt);
+    expect(await off!.mutate(active.monitorId, cancelRun)).toEqual(receipt);
+    expect(rows.monitors).toEqual([]);
+    expect(backendRequest).toHaveBeenLastCalledWith(
+      cancelRun ? 'scriptMonitor.cancelRun' : 'scriptMonitor.cancel',
+      { workspaceId: ws, monitorId: active.monitorId },
+    );
+    event(active, 'scriptMonitor:registered');
+    expect(rows.monitors).toEqual([]);
+    expect(backendRequest).not.toHaveBeenCalledWith('script.stop', expect.anything());
+  });
+  it('ignores an old connection receipt after reconnect', async () => {
+    start();
+    await ready();
+    const pending = deferred<unknown>();
+    vi.mocked(backendRequest).mockReturnValueOnce(pending.promise);
+    const mutation = off!.mutate(active.monitorId, false);
+    reconnect();
+    await ready();
+    pending.resolve({ ok: true, monitorId: active.monitorId });
+    expect(await mutation).toBeUndefined();
+    expect(rows.monitors).toEqual([summary]);
+  });
+  it('does not revive a cancelled monitor from a delayed page or registration', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list'
+        ? Promise.resolve({ view: 'summary', monitors: [summary], nextCursor: 'next' })
+        : original(method, params),
+    );
+    start();
+    await ready();
+    const page = deferred<unknown>();
+    vi.mocked(backendRequest).mockReturnValueOnce(page.promise);
+    const pendingPage = off!.loadMore();
+    vi.mocked(backendRequest).mockResolvedValueOnce({ ok: true, monitorId: active.monitorId });
+    await off!.mutate(active.monitorId, false);
+    event(active, 'scriptMonitor:registered');
+    page.resolve({ view: 'summary', monitors: [summary] });
+    await pendingPage;
+    expect(rows.monitors).toEqual([]);
+  });
+});

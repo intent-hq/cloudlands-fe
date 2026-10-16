@@ -14,6 +14,8 @@
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { BackendErrorPayload } from '$lib/client/live/backend-transport-types';
+import { detectPlatform } from '$lib/utils/platform-capabilities';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -100,5 +102,29 @@ registerMockIpcHandler(BACKEND.GET_SIDECAR_RUN_LOG, async () => {
     signal: null,
     spawnError: null,
     lines: [],
+  };
+});
+
+// OS authorization belongs to this computer's Electron main process. Browser
+// previews must neither recurse into their mock bridge nor fabricate a grant.
+registerMockIpcHandler(BACKEND.DESKTOP_PERMISSIONS, async (payload?: unknown) => {
+  const win = typeof window !== 'undefined' ? window : undefined;
+  const bridge = win?.electronAPI;
+  if (win && detectPlatform(win) === 'electron' && typeof bridge?.invoke === 'function') {
+    return bridge.invoke(BACKEND.DESKTOP_PERMISSIONS, payload);
+  }
+  return {
+    ok: false,
+    error: {
+      code: 'desktop-unsupported',
+      // i18n-ignore (wire error detail, not UI copy)
+      message: 'Desktop permission setup requires the native Intent application.',
+      data: {
+        code: 'desktop-unsupported',
+        // i18n-ignore (wire error detail, not UI copy)
+        detail: 'Desktop permission setup requires the native Intent application.',
+        execution: 'not_started',
+      },
+    } satisfies BackendErrorPayload,
   };
 });

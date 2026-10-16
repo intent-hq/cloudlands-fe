@@ -31,8 +31,10 @@ export interface ResolvedBrowserClients {
 }
 
 export interface DrivingClientInput extends ResolvedBrowserClients {
-  /** Whether the workspace layout holds any browser tab (local or mirror, visible or hidden). */
+  /** Whether the workspace has an agent-owned browser tab, visible or hidden. */
   hasBrowserTabs: boolean;
+  /** Actual computer from an active desktop session, never a fallback name. */
+  activeComputerName?: string;
 }
 
 type DrivingClientMode = 'here' | 'elsewhere' | 'offline';
@@ -41,7 +43,7 @@ export interface DrivingClientView {
   mode: DrivingClientMode;
   /** Display name of the driving client (falls back to a shortened id). */
   hostName: string;
-  /** Whether "Set Current Client as Primary" applies: another client drives. */
+  /** Whether this connected client can become an explicit workspace selection. */
   canSwitchHere: boolean;
 }
 
@@ -55,41 +57,35 @@ export function browserClientDisplayName(client: BrowserClientSummary): string {
   return name || shortenClientId(client.clientId);
 }
 
-/**
- * Resolve the driving client. Returns null when there is no choice to make:
- * a single eligible client (this app or nothing) leaves nothing to switch to
- * (spec Model 8). A pinned client that is offline is always resolved, because
- * agent tabs for the workspace fail until the user switches or the pinned
- * client reconnects.
- */
-export function resolveDrivingClientSwitch(
-  clients: ResolvedBrowserClients,
-): DrivingClientView | null {
-  const { eligibleClients, ownClientId, driving } = clients;
-  if (!driving) return null;
-
-  const offline = !driving.connected;
-  const drivesHere = driving.clientId === ownClientId;
-  const switchPossible = eligibleClients.length >= 2;
-  if (!offline && !switchPossible) return null;
-
-  const mode: DrivingClientMode = offline ? 'offline' : drivesHere ? 'here' : 'elsewhere';
+/** Menu availability is independent of activity and the number of clients. */
+export function resolveDrivingClientSwitch(clients: ResolvedBrowserClients): DrivingClientView {
+  const { eligibleClients, ownClientId, driving, pinnedClientId } = clients;
+  const own = eligibleClients.find((client) => client.clientId === ownClientId && client.connected);
+  const offline = driving !== null && !driving.connected;
+  const drivesHere = !driving || driving.clientId === ownClientId;
   return {
-    mode,
-    hostName: browserClientDisplayName(driving),
-    canSwitchHere: !drivesHere,
+    mode: offline ? 'offline' : drivesHere ? 'here' : 'elsewhere',
+    hostName: driving
+      ? browserClientDisplayName(driving)
+      : own
+        ? browserClientDisplayName(own)
+        : '',
+    canSwitchHere: Boolean(own && pinnedClientId !== ownClientId),
   };
 }
 
-/**
- * Resolve what the sidebar indicator should show. On top of
- * `resolveDrivingClientSwitch`, the `here` / `elsewhere` modes render only
- * when the workspace has a browser tab to drive; a pinned client that is
- * offline is surfaced regardless, tabs or not.
- */
+/** Offline pins offer recovery; agent activity shows its computer even with one client. */
 export function resolveDrivingClientView(input: DrivingClientInput): DrivingClientView | null {
+  if (!input.activeComputerName && !input.hasBrowserTabs && input.driving?.connected !== false)
+    return null;
+  if (!input.activeComputerName && !input.driving) return null;
   const view = resolveDrivingClientSwitch(input);
-  if (!view) return null;
-  if (view.mode !== 'offline' && !input.hasBrowserTabs) return null;
+  if (input.activeComputerName) {
+    return {
+      ...view,
+      mode: view.mode === 'offline' ? 'elsewhere' : view.mode,
+      hostName: input.activeComputerName,
+    };
+  }
   return view;
 }

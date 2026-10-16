@@ -72,7 +72,7 @@ describe('Depot CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
-  it('uses Depot except for isolated retirement cleanup', () => {
+  it('uses Depot except for isolated retirement cleanup and immutable package replay', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
       for (const [id, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
@@ -80,6 +80,11 @@ describe('Depot CI runners', () => {
         // Retirement must stay available independently of the managed runner fleet.
         if (file === 'retire-obsolete-merge-runs.yml' && id === 'cleanup') {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
+          continue;
+        }
+        // Immutable package replay retains its strict GitHub-hosted admission.
+        if (file === 'manual-signed-build.yml' && id === 'replay-isolated-macos') {
+          expect(runner).toBe('macos-15-xlarge');
           continue;
         }
         if (runner && !runner.includes('${{')) expect(runner, file).toMatch(/^depot-/);

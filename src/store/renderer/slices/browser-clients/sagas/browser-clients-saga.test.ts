@@ -103,7 +103,7 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator's view for `wsId`, resolved from live state (with a browser tab open). */
+    /** The sidebar indicator with agent-owned browser activity in this workspace. */
     sidebar: (wsId: string) =>
       resolveDrivingClientView({
         ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
@@ -421,7 +421,12 @@ describe('browserClientsSaga', () => {
       task.cancel();
 
       expect(entry('ws-1').browserClient).toEqual({ source: 'default', resolved: desk });
-      expect(sidebar('ws-1')).toBeNull();
+      // Agent activity remains visible with one client; fallback is still unpinned.
+      expect(sidebar('ws-1')).toMatchObject({
+        mode: 'here',
+        hostName: 'Intent Desktop',
+        canSwitchHere: true,
+      });
     });
   });
 

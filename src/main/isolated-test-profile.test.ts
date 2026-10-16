@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import { spawnSync } from 'node:child_process';
 import { isolatedProfileHome } from '../test/fixtures/isolated-profile-home';
 import * as path from 'node:path';
 import { isolatedTestEnvironment, prepareIsolatedTestProfile } from './isolated-test-profile';
@@ -18,6 +19,86 @@ afterEach(() => {
 });
 
 describe('isolated manual package state', () => {
+  it('discovers a host-installed Claude executable with a GUI PATH while retaining private state', () => {
+    const original = home();
+    const bin = path.join(original, '.local', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nprintf "%s" "$HOME"\n', {
+      mode: 0o700,
+    });
+    const profile = prepareIsolatedTestProfile(original, 'manual-152-1', backend);
+    const env = isolatedTestEnvironment(profile, {
+      HOME: original,
+      PATH: '/usr/bin:/bin',
+      CLAUDE_CONFIG_DIR: path.join(original, '.claude'),
+      ANTHROPIC_API_KEY: 'normal-profile-sentinel',
+    });
+    const result = spawnSync('claude', ['--version'], { env, encoding: 'utf8' });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(profile.home);
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(fs.readdirSync(original)).toEqual(expect.arrayContaining(['.local', '.intent-tests']));
+    expect(fs.existsSync(path.join(original, '.claude'))).toBe(false);
+  });
+
+  it('resolves symlinked CLI and sibling node/npx from a concrete nvm installation', () => {
+    const original = home();
+    const native = path.join(original, '.local', 'bin');
+    const nodeBin = path.join(original, '.nvm', 'versions', 'node', 'v24.10.0', 'bin');
+    fs.mkdirSync(native, { recursive: true });
+    fs.mkdirSync(nodeBin, { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(nodeBin, 'node'));
+    const script = path.join(original, 'fixture-cli');
+    fs.writeFileSync(
+      script,
+      '#!/usr/bin/env node\nconsole.log(JSON.stringify({home:process.env.HOME,entry:process.argv[1]}));\n',
+      { mode: 0o700 },
+    );
+    fs.symlinkSync(script, path.join(native, 'claude'));
+    fs.symlinkSync(script, path.join(nodeBin, 'npx'));
+    const profile = prepareIsolatedTestProfile(original, 'manual-152-1', backend);
+    const env = isolatedTestEnvironment(profile, { PATH: '/nonexistent-gui-tools' });
+    for (const [command, entry] of [
+      ['claude', path.join(native, 'claude')],
+      ['npx', path.join(nodeBin, 'npx')],
+    ]) {
+      const result = spawnSync(command, ['--version'], { env, encoding: 'utf8' });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ home: profile.home, entry });
+    }
+    expect(fs.readlinkSync(path.join(native, 'claude'))).toBe(script);
+  });
+
+  it('keeps inherited PATH precedence, deduplicates and excludes HOME-dependent shims', () => {
+    const original = home();
+    const names = [
+      '.local/bin',
+      '.npm-global/bin',
+      '.npm-packages/bin',
+      '.nvm/versions/node/v9.0.0/bin',
+      '.nvm/versions/node/v24.10.0/bin',
+      '.nvm/versions/node/not-a-version/bin',
+      '.volta/bin',
+      '.asdf/shims',
+    ];
+    for (const name of names) fs.mkdirSync(path.join(original, name), { recursive: true });
+    const profile = prepareIsolatedTestProfile(original, 'manual-152-1', backend);
+    const inherited = `/usr/bin:${path.join(original, '.npm-global/bin')}`;
+    const env = isolatedTestEnvironment(profile, { PATH: inherited, HOME: '/untrusted-home' });
+    expect(env.PATH?.split(path.delimiter)).toEqual([
+      '/usr/bin',
+      path.join(original, '.npm-global/bin'),
+      path.join(original, '.local/bin'),
+      path.join(original, '.npm-packages/bin'),
+      path.join(original, '.nvm/versions/node/v24.10.0/bin'),
+      path.join(original, '.nvm/versions/node/v9.0.0/bin'),
+    ]);
+    expect(env.HOME).toBe(profile.home);
+  });
+
   it('uses unique private canonical homes and real sockets even below a long temp root', async () => {
     const parent = home();
     const longTemp = path.join(parent, 'long-temporary-directory-'.repeat(4));

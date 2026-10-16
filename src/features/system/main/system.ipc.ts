@@ -86,6 +86,7 @@ import {
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { isDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -107,6 +108,7 @@ type WindowOpenRequestEntry = {
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
   for (const window of BrowserWindow.getAllWindows()) {
+    if (isDesktopOverlayWindow(window)) continue;
     window.setBackgroundColor(backgroundColor);
   }
 }

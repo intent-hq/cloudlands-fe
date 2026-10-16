@@ -20,12 +20,33 @@ for (const scenario of [
       const group = details.getByRole('radiogroup', { name });
       const controls = group.getByRole('radio');
       await expect(controls).toHaveCount(4);
-      const boxes = await controls.evaluateAll((elements) =>
-        elements.map((element) => {
-          const box = element.getBoundingClientRect();
-          return { left: box.left, right: box.right, y: box.top + box.height / 2 };
-        }),
-      );
+      let boxes: { left: number; right: number; y: number }[] = [];
+      // Container-query padding can settle after the overlay is positioned.
+      // Observe stable segment bounds without changing the pointer or hover state.
+      await expect
+        .poll(async () => {
+          const measurement = await controls.evaluateAll(async (elements) => {
+            const measure = () =>
+              elements.map((element) => {
+                const box = element.getBoundingClientRect();
+                return { left: box.left, right: box.right, y: box.top + box.height / 2 };
+              });
+            const before = measure();
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            const middle = measure();
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            const after = measure();
+            return {
+              stable:
+                JSON.stringify(before) === JSON.stringify(middle) &&
+                JSON.stringify(middle) === JSON.stringify(after),
+              boxes: after,
+            };
+          });
+          boxes = measurement.boxes;
+          return measurement.stable;
+        })
+        .toBe(true);
       const samples = boxes.flatMap((box, index) => {
         const center = (box.left + box.right) / 2;
         if (index === 0) return [center];
