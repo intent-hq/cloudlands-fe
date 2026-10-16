@@ -181,9 +181,10 @@ On Intel Macs, clients with the compatibility check reject an ARM-only update.
 Older clients can announce an update and then fail before downloading because
 there is no compatible Intel ZIP; they do not install the ARM build. Apple
 Silicon running an older Intel app under Rosetta can select the native ARM
-update, except for installed versions whose compatibility check treats Rosetta
-as Intel. Those Rosetta installations need a manual Apple Silicon reinstall;
-an Intel Mac cannot use that installer.
+update. If an Intel build contains the older compatibility check that treats
+Rosetta as Intel, it blocks that transition and requires a manual Apple Silicon
+reinstall. This is conditional, not a general Rosetta requirement; an Intel Mac
+cannot use that installer.
 
 The pinned prerelease cleanup command protects versions referenced by either
 Mac feed in both the source and release-mirror repositories. Both filenames
