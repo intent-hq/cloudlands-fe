@@ -3,6 +3,7 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
 import { updateFileTabPath } from '../../panel-layout/panel-layout-slice';
@@ -100,6 +101,21 @@ describe('filesReadSaga', () => {
       await settle();
       expect(h.entry('ws-1', 'a.ts')).toBeUndefined();
       expect(h.entry('ws-1', 'b.ts')?.originalContent).toBe('retained');
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+  it('rejects a held read after the captured backend session retires', async () => {
+    const held = deferred<FileReadResult>();
+    vi.spyOn(appClient.files, 'read').mockReturnValueOnce(held.promise);
+    const h = startStatefulSaga();
+    try {
+      h.send(loadFileContentRequested('ws-1', 'a.ts', '/repo/a.ts'));
+      rendererEventRecovery.dispose();
+      held.resolve(fileResult('previous principal'));
+      await settle();
+      expect(h.entry('ws-1', 'a.ts')?.originalContent).not.toBe('previous principal');
     } finally {
       h.task.cancel();
       await h.task.toPromise();
@@ -239,8 +255,8 @@ describe('filesReadSaga', () => {
       limit: 50,
     });
     expect(actions).toEqual([
-      removeFileContentEntry('ws-1', 'crates/res/common.md'),
       updateFileTabPath('ws-1', 'crates/res/common.md', 'packages/intentd/crates/res/common.md'),
+      removeFileContentEntry('ws-1', 'crates/res/common.md'),
     ]);
     task.cancel();
     await task.toPromise();
@@ -282,8 +298,8 @@ describe('filesReadSaga', () => {
     await settle();
 
     expect(actions).toEqual([
-      removeFileContentEntry('ws-1', 'docs/guide.md'),
       updateFileTabPath('ws-1', 'docs/guide.md', 'packages/a/docs/guide.md'),
+      removeFileContentEntry('ws-1', 'docs/guide.md'),
     ]);
     task.cancel();
     await task.toPromise();
@@ -361,8 +377,8 @@ describe('filesReadSaga', () => {
     await settle();
 
     expect(actions).toEqual([
-      removeFileContentEntry('ws-1', 'preview.webm'),
       updateFileTabPath('ws-1', 'preview.webm', '.demo-artifacts/saved-run/preview.webm'),
+      removeFileContentEntry('ws-1', 'preview.webm'),
     ]);
     expect(backendRequest).not.toHaveBeenCalled();
     task.cancel();

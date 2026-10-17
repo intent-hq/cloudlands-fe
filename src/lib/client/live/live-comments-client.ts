@@ -29,6 +29,7 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import type { TypedChannelDescriptor } from './delta-subscription';
 import { newIdempotencyKey, resolveNoteWorkspaceId, runMutation } from './live-support';
@@ -68,7 +69,7 @@ function normalizeSuggestionDiff(raw: unknown): { original: string; proposed: st
  * for every subtype and `suggestionDiff` for suggestions — rather than a raw
  * spread/cast that would leave those fields unset (Wave 6.1 §8.7 nit).
  */
-function normalizeComment(
+export function normalizeComment(
   raw: Record<string, unknown>,
   noteId: string,
   workspaceId?: string,
@@ -164,7 +165,20 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
       }
     }
     return out;
-  } catch {
+  } catch (error) {
+    // Preserve deadlines and authority failures for the captured read owner.
+    if (
+      error instanceof BackendError &&
+      (error.completion !== undefined ||
+        error.code === 'TIMEOUT' ||
+        error.rpcCode === -32003 ||
+        error.rpcCode === -32001 ||
+        (error.rpcCode === -32602 &&
+          error.data !== null &&
+          typeof error.data === 'object' &&
+          (error.data as { code?: unknown }).code === 'not-found'))
+    )
+      throw error;
     return [];
   }
 }
@@ -300,6 +314,16 @@ export class LiveCommentsClient implements CommentsClient {
     // CommentWire rows. Reconcile by threadId before flattening: replacement
     // must drop replies absent from the new thread while retaining other threads.
     return createDeltaSubscription<CommentV2[]>({
+      recovery: {
+        eventTypes: ['comment:*', 'note:deleted'],
+        read: async ({ request }, params) => {
+          const result = await request<{ threads: unknown[] }>('comment.list', {
+            ...params,
+            includeComments: true,
+          });
+          return result.threads;
+        },
+      },
       channel,
       getId: (raw) => (typeof raw.threadId === 'string' ? raw.threadId : ''),
       normalize: (raw) => {

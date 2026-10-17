@@ -764,6 +764,7 @@ describe('actual main finalization fence and original pool', () => {
     expect(await invoke(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, event, undefined)).toEqual({
       ok: true,
       result: {
+        clientId: 'acknowledged-original',
         server: {
           capabilities: {
             agentNodes: 1,

@@ -83,6 +83,7 @@ describe('LiveProvidersClient', () => {
     await client.catalog();
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'providers.catalog',
       params: {},
     });
@@ -92,6 +93,7 @@ describe('LiveProvidersClient', () => {
     mockInvoke.mockResolvedValue({ ok: true, result: CATALOG });
     expect(await client.catalog('workspace-A')).toEqual(CATALOG);
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      observeCompletion: true,
       method: 'providers.catalog',
       params: { workspaceId: 'workspace-A' },
     });

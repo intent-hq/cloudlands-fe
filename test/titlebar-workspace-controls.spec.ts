@@ -443,6 +443,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
           {
             channel: 'backend:request',
             payload: {
+              observeCompletion: true,
               method: 'agent.markSeen',
               params: {
                 workspaceId: '__chief__',

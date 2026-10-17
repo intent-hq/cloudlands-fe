@@ -1,3 +1,4 @@
+import { getRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpServerConfig } from '../mcp-settings-types';
@@ -907,6 +908,7 @@ describe('mcpSettingsSaga', () => {
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/setWorkspaceMcpServerDisabled', payload: ['ws-1', 'srv-remote', true] },
     ]);
+    expect(getRecoveryLifetime(run.dispatched[0] as object)).toBeDefined();
     expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ 'srv-remote': true });
     expect(run.state().disabledServers).toEqual({});
     run.task.cancel();
@@ -949,9 +951,10 @@ describe('mcpSettingsSaga', () => {
       { 'ws-1': [remote] },
     );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
-    await settle();
+    await vi.waitFor(() => expect(run.dispatched).toHaveLength(1));
 
     expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
+    expect(getRecoveryLifetime(run.dispatched[0] as object)).toBeDefined();
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/setWorkspaceDisabledMcpServers', payload: ['ws-1', {}] },
     ]);
@@ -974,7 +977,7 @@ describe('mcpSettingsSaga', () => {
       { 'ws-1': [remote] },
     );
     run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
-    await settle();
+    await vi.waitFor(() => expect(run.dispatched).toHaveLength(1));
 
     expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(run.dispatched).toEqual([

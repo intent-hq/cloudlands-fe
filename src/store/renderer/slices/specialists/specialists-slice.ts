@@ -1,4 +1,8 @@
 import {
+  settingsAuthorityRetired,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
+import {
   emptySpecialistCreation,
   type SpecialistCreation,
   type SpecialistDraft,
@@ -274,10 +278,20 @@ specialistsReducer.with(setSpecialistCreation, (state, { payload: [context, crea
   creationByContext: { ...state.creationByContext, [context]: creation },
 }));
 
+specialistsReducer.with(settingsAuthorityRetired, (state) => ({
+  ...state,
+  defaultSpecialistId: '',
+}));
+specialistsReducer.with(settingsSnapshotReplacing, (state) => ({
+  ...state,
+  defaultSpecialistId: '',
+}));
+
 /** A different admission must not inherit definitions or creation drafts from this instance. */
 export const specialistSessionEnded = createAction('specialists/sessionEnded');
 specialistsReducer.with(specialistSessionEnded, (state) => ({
   ...state,
+  defaultSpecialistId: '',
   creationByContext: {},
   importDiagnostics: initialState.importDiagnostics,
   bundledSpecialists: [],

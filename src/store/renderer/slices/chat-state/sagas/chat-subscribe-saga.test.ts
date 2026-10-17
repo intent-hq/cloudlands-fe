@@ -2311,6 +2311,62 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
   }
   const flushConfirmation = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+  it.each([false, true])(
+    'idle confirmation: completion honors original metadata owner replaced=%s',
+    async (replaced) => {
+      const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+      const { agentMetadataRecoveryKey } = await import('$features/agent/agent-recovery-keys');
+      const reads = await import('$features/agent/agent-read-service');
+      const original = reads.readAgentSessionAfterCurrent;
+      const id = `confirm-completion-owner-${replaced}`;
+      const { sub, idle, reply } = confirmationScenario(id);
+      const scope = rendererEventRecovery.attach({
+        supported: false,
+        isCurrent: () => true,
+        request: vi.fn(),
+        onNotification: () => () => {},
+        onRetired: () => () => {},
+        dispose: () => {},
+      } as never);
+      const options = {
+        key: agentMetadataRecoveryKey(WS),
+        workspaceId: WS,
+        eventTypes: ['agent:*'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      };
+      const owner = scope.registerResource(options);
+      const spy = vi
+        .spyOn(reads, 'readAgentSessionAfterCurrent')
+        .mockImplementation(async (...args) => {
+          const result = await original(...args);
+          // Pause at the raw-reader / saga-completion boundary: the read itself
+          // was current, but its caller must still own the metadata write.
+          if (replaced) {
+            owner.dispose();
+            scope.registerResource(options);
+          }
+          return result;
+        });
+      vi.mocked(appClient.agents.get).mockResolvedValueOnce(reply);
+      try {
+        sub.handler(idle);
+        await flushConfirmation();
+        expect(appClient.agents.get).toHaveBeenCalledTimes(1);
+        expect(selectAgentIsResponding.select(appStore.state, id)).toBe(replaced);
+        expect(
+          selectAgentMessages.select(appStore.state, id).map((message) => message.contentBlocks),
+        ).toEqual(idle.messages.map((message) => message.contentBlocks));
+      } finally {
+        spy.mockRestore();
+        rendererEventRecovery.dispose();
+      }
+    },
+  );
+
   it('idle confirmation: duplicates and content-only snapshots share one read and retain text', async () => {
     const id = 'confirm-duplicates';
     const { sub, idle, reply } = confirmationScenario(id);

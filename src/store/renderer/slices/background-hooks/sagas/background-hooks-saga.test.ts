@@ -90,6 +90,7 @@ function createHarness() {
     return action;
   });
   const reduxStore = {
+    dispatch,
     getState: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -622,8 +623,8 @@ describe('backgroundHooksSaga', () => {
 
       // Seed ws-1; settle the seed after the subscribe ack. The
       // unconditional post-ack re-list runs as the seed's trailing run
-      // (call 1) and parks on the reseed promise until the switch-away
-      // cancels it.
+      // (call 1) parks on the reseed promise. Switching away cancels the
+      // saga, but the physical request still owns the read lane.
       dispatch(openWorkspaceTab('ws-1'));
       await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
       seed.resolve({ hooks: [makeHook()] });
@@ -639,7 +640,8 @@ describe('backgroundHooksSaga', () => {
       // Warm switch-back: the retained rows stay visible immediately while
       // the background re-seed is still in flight.
       dispatch(openWorkspaceTab('ws-1'));
-      await vi.waitFor(() => expect(listCalls.get('ws-1')).toBe(3));
+      await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(3));
+      expect(listCalls.get('ws-1')).toBe(2);
       expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
       expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
 

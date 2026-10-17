@@ -1,3 +1,9 @@
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import {
+  fileReadAuthorityDenied,
+  fileReadsCompleted,
+  observeFileReadFailure,
+} from '$features/file/file-read-completion';
 /**
  * Suffix-based file path resolution for not-found reads.
  *
@@ -6,7 +12,8 @@
  * search the workspace for files whose path ends with the requested path. The
  * normal source path uses `search.fileNames` (PROTOCOL §5.15). Media paths also
  * use bounded `file.list` calls below known artifact roots because filename
- * search honors ignore rules. Errors surface as empty results — never fabricated data.
+ * search honors ignore rules. Settled transient failures yield empty results;
+ * deadlines and authority failures retain their receipts for the read owner.
  */
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -66,18 +73,32 @@ async function listBeforeDeadline(
   workspaceId: string,
   path: string,
   deadline: number,
+  onFailure?: (error: unknown) => void,
 ): Promise<FileNode[] | null> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([
+    const read = observeFileReadFailure(
       appClient.files.listDirectory(workspaceId, path),
-      new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), remaining);
+      onFailure,
+    );
+    return await Promise.race([
+      read,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              Object.assign(new Error('File path search timed out'), {
+                completion: fileReadsCompleted([read]),
+              }),
+            ),
+          remaining,
+        );
       }),
     ]);
-  } catch {
+  } catch (error) {
+    if (getPhysicalRequestCompletion(error) || fileReadAuthorityDenied(error)) throw error;
     return null;
   } finally {
     if (timer) clearTimeout(timer);
@@ -87,6 +108,7 @@ async function listBeforeDeadline(
 async function resolveFromArtifactRoots(
   workspaceId: string,
   requestedPath: string,
+  onFailure?: (error: unknown) => void,
 ): Promise<SuffixResolution> {
   const requestSuffix = artifactRelativeRequest(requestedPath);
   const basenameOnly = !requestSuffix.includes('/');
@@ -107,7 +129,7 @@ async function resolveFromArtifactRoots(
     }
     const directory = queue.shift()!;
     calls += 1;
-    const children = await listBeforeDeadline(workspaceId, directory.path, deadline);
+    const children = await listBeforeDeadline(workspaceId, directory.path, deadline, onFailure);
     if (!children) {
       truncated = true;
       break;
@@ -164,6 +186,7 @@ async function resolveFromSearch(
       truncated: result?.truncated === true,
     };
   } catch (error) {
+    if (getPhysicalRequestCompletion(error) || fileReadAuthorityDenied(error)) throw error;
     logger.error('Failed to resolve file by suffix', error);
     return { candidates: [], truncated: false };
   }
@@ -186,16 +209,17 @@ async function resolveFromSearch(
 export async function resolveFileBySuffix(
   workspaceId: string,
   path: string,
+  onFailure?: (error: unknown) => void,
 ): Promise<SuffixResolution> {
   const normalized = normalizePath(path);
   if (!normalized) return { candidates: [], truncated: false };
 
   const isMedia = MEDIA_EXTENSION_PATTERN.test(normalized);
   if (isArtifactRooted(normalized) || (isMedia && !normalized.includes('/'))) {
-    return resolveFromArtifactRoots(workspaceId, normalized);
+    return resolveFromArtifactRoots(workspaceId, normalized, onFailure);
   }
 
   const search = await resolveFromSearch(workspaceId, normalized);
   if (search.candidates.length > 0 || search.truncated || !isMedia) return search;
-  return resolveFromArtifactRoots(workspaceId, normalized);
+  return resolveFromArtifactRoots(workspaceId, normalized, onFailure);
 }

@@ -7,6 +7,7 @@ import {
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from './constants';
 import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';
+import { createEventRecoveryMiddleware } from './middlewares/event-recovery';
 import { createBatchingMiddleware } from './middlewares/batch';
 import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';
 import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';
@@ -18,6 +19,7 @@ function buildMiddleware(): StoreMiddleware[] {
   const baseMiddleware: StoreMiddleware[] = [
     createStoreGuardMiddleware('renderer'),
     createBatchingMiddleware([]),
+    createEventRecoveryMiddleware(),
     createActionRingBufferMiddleware(),
   ];
   const debugMiddleware: StoreMiddleware[] = [];

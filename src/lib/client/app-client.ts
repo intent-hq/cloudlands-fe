@@ -1161,12 +1161,15 @@ export interface TerminalCreateParams {
 
 /** Decoded `terminal:data` payload — `chunk` is the UTF-8 string the daemon base64-encoded. */
 export interface TerminalDataEvent {
+  /** False disables command/history inference after loss; live cwd observations remain transient. */
+  metadataAllowed?: boolean;
   terminalId: string;
   chunk: string;
 }
 
 /** `terminal:exit` payload. */
 export interface TerminalExitEvent {
+  metadataAllowed?: boolean;
   terminalId: string;
   exitCode: number;
 }
@@ -1183,8 +1186,18 @@ export interface TerminalTitleEvent {
   title: string;
 }
 
+/** Current metadata replacement; never a synthetic output or exit event. */
+export interface TerminalMetadataEvent {
+  terminalId: string;
+  /** Absent during invalidation: connectivity awaits its authoritative read. */
+  isConnected?: boolean;
+  /** Loss/retirement clears transient indicators; later live observations may repopulate them. */
+  clearTransient?: boolean;
+}
+
 /** Per-terminal event sink registered via `TerminalsClient.subscribeEvents`. */
 export interface TerminalEventHandlers {
+  onMetadata?(event: TerminalMetadataEvent): void;
   onData?(event: TerminalDataEvent): void;
   onExit?(event: TerminalExitEvent): void;
   onCwd?(event: TerminalCwdEvent): void;

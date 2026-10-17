@@ -1,3 +1,4 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,6 +108,47 @@ describe('agentFailureToastSaga', () => {
     clearAgentFailureRegistry();
     vi.clearAllMocks();
   });
+
+  it.each([false, true])(
+    'retired toast props cannot show or dismiss, current workspace=%s',
+    async (currentWorkspace) => {
+      let currentTabId = 'ws-2';
+      const task = runSaga(
+        { dispatch: vi.fn(), getState: () => state({ tabState: { currentTabId } }) },
+        agentFailureToastSaga,
+      );
+      try {
+        recordAgentFailure({
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          error: 'first failure',
+          at: 1,
+        });
+        await settle();
+        expect(lastToast('agent-failure:agent-1')).toBeDefined();
+        mocks.agentFailure.mockClear();
+        mocks.dismiss.mockClear();
+        currentTabId = currentWorkspace ? 'ws-1' : 'ws-2';
+        mocks.resolveKeySlot.mockImplementationOnce(() => {
+          rendererEventRecovery.dispose();
+          return 3;
+        });
+        recordAgentFailure({
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          error: 'held failure',
+          at: 2,
+        });
+        await settle();
+        expect(mocks.agentFailure).not.toHaveBeenCalled();
+        expect(mocks.dismiss).not.toHaveBeenCalled();
+      } finally {
+        task.cancel();
+        await task.toPromise();
+        rendererEventRecovery.dispose();
+      }
+    },
+  );
 
   it('suppresses current-workspace failures while preserving the registry and auth refresh', async () => {
     const dispatch = vi.fn();

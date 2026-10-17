@@ -4,6 +4,7 @@ import { runSaga, stdChannel, type SagaMonitor } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { LiveFilesClient } from '$lib/client/live/live-files-client';
@@ -97,6 +98,35 @@ describe('filesWriteSaga', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.mocked(backendRequest).mockReset();
+  });
+
+  it('does not apply an old write completion after backend retirement', async () => {
+    const held = deferred<{ success: boolean }>();
+    vi.spyOn(appClient.files, 'write').mockReturnValueOnce(held.promise);
+    const h = startWrites();
+    try {
+      h.dispatch(
+        loadFileContentSucceeded('ws-1', 'a.ts', '/repo/a.ts', {
+          kind: 'editable-text',
+          content: 'base',
+        }),
+      );
+      h.dispatch(
+        saveFileContentRequested('ws-1', 'a.ts', '/repo/a.ts', {
+          kind: 'editable-text',
+          content: 'old save',
+        }),
+      );
+      await settle();
+      rendererEventRecovery.dispose();
+      held.resolve({ success: true });
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      expect(h.entry()?.originalContent).toBe('base');
+      expect(appClient.files.write).toHaveBeenCalledTimes(1);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
   });
 
   it.each([
@@ -1124,7 +1154,7 @@ describe('filesWriteSaga', () => {
 
     resolveFirst({ success: true });
     await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(3));
-    await vi.waitFor(() => expect(actions).toHaveLength(3));
+    await vi.waitFor(() => expect(actions).toHaveLength(2));
     expect(write.mock.calls).toEqual([
       ['ws-1', 'a.ts', { kind: 'editable-text', content: 'first' }],
       ['ws-2', 'b.ts', { kind: 'editable-text', content: 'other' }],
@@ -1132,7 +1162,6 @@ describe('filesWriteSaga', () => {
     ]);
     expect(actions).toEqual([
       saveFileContentSucceeded('ws-2', 'b.ts', { kind: 'editable-text', content: 'other' }),
-      saveFileContentSucceeded('ws-1', 'a.ts', { kind: 'editable-text', content: 'first' }),
       saveFileContentSucceeded('ws-1', 'a.ts', { kind: 'editable-text', content: 'latest' }),
     ]);
     expect(selectFileContentEntry.select({ files } as any, 'ws-1', 'a.ts')).toMatchObject({

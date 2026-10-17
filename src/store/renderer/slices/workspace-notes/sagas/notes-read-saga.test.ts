@@ -1,3 +1,5 @@
+import { commentsReducer } from '../../comments/comments-slice';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -97,6 +99,7 @@ function harness(seed: Note[] = []) {
   let palette = paletteReducer(undefined, { type: '@@init' });
   const state = () => ({
     workspaceNotes,
+    comments: commentsReducer(undefined, { type: '@@init' }),
     palette,
     connections: { hasReceivedList: true, windowBackendId },
     daemonHealth: { health: 'up', connectionGeneration: 1 },
@@ -118,7 +121,12 @@ function harness(seed: Note[] = []) {
     }
     return action;
   };
-  const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga);
+  const task = runSaga({ channel, dispatch, getState: state }, notesReadSaga, {
+    get state() {
+      return state() as never;
+    },
+    dispatch,
+  });
   return {
     actions,
     channel,
@@ -133,7 +141,10 @@ function harness(seed: Note[] = []) {
 }
 
 describe('notesReadSaga', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rendererEventRecovery.dispose();
+  });
 
   it('invalidates unmounted notes without fetching their bodies', async () => {
     const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('hidden'));
@@ -454,14 +465,20 @@ describe('notesReadSaga', () => {
     run.channel.put(workspaceMounted(WS));
     await settle();
 
+    // Remount changes write authority, not the transport holding the first read.
+    expect(list.mock.calls).toEqual([
+      [WS, { projection: 'slim' }],
+      [secondWorkspaceId, { projection: 'slim' }],
+    ]);
+    second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
+    firstAttempt.resolve([note('stale-note')]);
+    await settle();
     expect(list.mock.calls).toEqual([
       [WS, { projection: 'slim' }],
       [secondWorkspaceId, { projection: 'slim' }],
       [WS, { projection: 'slim' }],
     ]);
-    second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
     retry.resolve([note('retry-note')]);
-    firstAttempt.resolve([note('stale-note')]);
     await settle();
     expect(run.actions).toEqual([
       loadWorkspaceNotesSucceeded([secondWorkspaceId], {

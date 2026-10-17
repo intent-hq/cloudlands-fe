@@ -1,3 +1,4 @@
+import { browserTabSnapshotReceived } from '../browser-clients/browser-clients-slice';
 /**
  * Browser Tab Registry Slice (renderer)
  *
@@ -107,6 +108,19 @@ export const registryReset = createAction('browserTabRegistry/reset');
 // ---------------------------------------------------------------------------
 
 export const browserTabRegistryReducer = createReducer<BrowserTabRegistryState>(initialState);
+
+browserTabRegistryReducer.with(
+  browserTabSnapshotReceived,
+  (state, { payload: [wsId, , , , reported, , retired] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      generation: ws.generation + 1,
+      phase: retired ? 'unmounted' : 'applied',
+      reported,
+      unresolved: {},
+    });
+  },
+);
 
 // `unresolved` follows `reported`: a tab forgotten, removed or torn down has
 // nothing left to re-resolve.

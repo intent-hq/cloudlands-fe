@@ -5,6 +5,7 @@ import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-c
 
 const transport = vi.hoisted(() => ({
   request: vi.fn(),
+  observeIdentity: vi.fn(),
   reconnect: new Set<() => void>(),
 }));
 
@@ -12,6 +13,7 @@ const transport = vi.hoisted(() => ({
 // is replaced: these are protocol-shaped replies from one window's backend.
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: transport.request,
+  observeBackendNodeCapabilities: transport.observeIdentity,
   onBackendReconnected: (handler: () => void) => {
     transport.reconnect.add(handler);
     return () => transport.reconnect.delete(handler);
@@ -112,21 +114,11 @@ it('Home without mounted workspaces does not read an unscoped browser client ros
 beforeEach(() => {
   currentClient = { ...desktop };
   resolution = { source: 'default', resolved: { clientId: desktop.clientId } };
+  transport.observeIdentity
+    .mockReset()
+    .mockImplementation(async () => ({ clientId: currentClient.clientId }));
   transport.request.mockReset();
   transport.request.mockImplementation(async (method: string) => {
-    if (method === 'client.hello')
-      return {
-        clientId: currentClient.clientId,
-        protocolVersion: '10.4',
-        server: {
-          locality: 'remote',
-          hasDisplay: false,
-          osArch: 'linux/x86_64',
-          version: '0.10.33',
-          protocolVersion: '10.4',
-          capabilities: {},
-        },
-      };
     if (method === 'client.list') return { clients: [currentClient] };
     if (method === 'workspace.getBrowserClient') return { browserClient: resolution };
     throw new Error(`Unexpected backend mutation or request: ${method}`);
@@ -142,19 +134,11 @@ afterEach(async () => {
 });
 
 describe('browser recovery across a backend reconnect', () => {
-  it('retries a failed current hello on remount while retaining hosted identity', async () => {
+  it('retries an unconfirmed current identity on remount while retaining hosted identity', async () => {
     const run = start();
     run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
-    const normal = transport.request.getMockImplementation()!;
-    let failHello = true;
-    transport.request.mockImplementation((method, params) => {
-      if (method === 'client.hello' && failHello) {
-        failHello = false;
-        return Promise.reject(new Error('temporary hello failure'));
-      }
-      return normal(method, params);
-    });
+    transport.observeIdentity.mockRejectedValueOnce(new Error('identity unconfirmed'));
     reconnect();
     await settle();
     expect(run.view().ownClientId).toBe(desktop.clientId);
@@ -162,9 +146,7 @@ describe('browser recovery across a backend reconnect', () => {
     run.dispatch(workspaceUnmounted('ws-1'));
     run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
-    expect(
-      transport.request.mock.calls.filter(([method]) => method === 'client.hello'),
-    ).toHaveLength(3);
+    expect(transport.observeIdentity).toHaveBeenCalledTimes(3);
     expect(run.confirmed()).toBe(true);
     expect(run.view().ownClientId).toBe(desktop.clientId);
   });
@@ -180,7 +162,8 @@ describe('browser recovery across a backend reconnect', () => {
       driving: { clientId: desktop.clientId, connected: true },
       pinnedClientId: null,
     });
-    expect(transport.request).toHaveBeenCalledWith('client.hello', {});
+    expect(transport.observeIdentity).toHaveBeenCalledTimes(1);
+    expect(transport.request.mock.calls.some(([method]) => method === 'client.hello')).toBe(false);
     expect(transport.request).toHaveBeenCalledWith('client.list', { workspaceId: 'ws-1' });
     expect(transport.request).toHaveBeenCalledWith('workspace.getBrowserClient', {
       workspaceId: 'ws-1',
@@ -200,7 +183,7 @@ describe('browser recovery across a backend reconnect', () => {
     expect(run.view().ownClientId).toBe(desktop.clientId);
   });
 
-  it('learns the new authoritative hello identity after reconnect', async () => {
+  it('learns the new authoritative observed identity after reconnect', async () => {
     const run = start();
     run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
@@ -280,13 +263,9 @@ describe('connection lifetime races', () => {
     const oldHello = deferred<{ clientId: string }>();
     const oldResolution = deferred<{ browserClient: WorkspaceBrowserClient }>();
     const normal = transport.request.getMockImplementation()!;
-    let helloPending = true;
+    transport.observeIdentity.mockReturnValueOnce(oldHello.promise);
     let resolutionPending = true;
     transport.request.mockImplementation((method, params) => {
-      if (method === 'client.hello' && helloPending) {
-        helloPending = false;
-        return oldHello.promise;
-      }
       if (method === 'workspace.getBrowserClient' && resolutionPending) {
         resolutionPending = false;
         return oldResolution.promise;
@@ -327,18 +306,10 @@ describe('connection lifetime races', () => {
   });
 
   it.each(['resolve', 'reject'] as const)(
-    'ignores old hello %s after current hydration succeeds',
+    'ignores old identity observation %s after current hydration succeeds',
     async (outcome) => {
       const old = deferred<{ clientId: string }>();
-      const normal = transport.request.getMockImplementation()!;
-      let first = true;
-      transport.request.mockImplementation((method: string, ...args: unknown[]) => {
-        if (method === 'client.hello' && first) {
-          first = false;
-          return old.promise;
-        }
-        return normal(method, ...args);
-      });
+      transport.observeIdentity.mockReturnValueOnce(old.promise);
       const run = start();
       run.dispatch(mountBrowserConsumer('ws-1'));
       await settle();
@@ -351,9 +322,10 @@ describe('connection lifetime races', () => {
       run.dispatch(hydrateBrowserClientsRequested('ws-1'));
       await settle();
       expect(run.view().ownClientId).toBe(desktop.clientId);
-      expect(
-        transport.request.mock.calls.filter(([method]) => method === 'client.hello'),
-      ).toHaveLength(2);
+      expect(transport.observeIdentity).toHaveBeenCalledTimes(3);
+      expect(transport.request.mock.calls.some(([method]) => method === 'client.hello')).toBe(
+        false,
+      );
     },
   );
 
@@ -523,12 +495,8 @@ it('leaving the last consumer cancels slow reads and their trailing requests', a
 });
 
 it('releasing a consumer during identity hydration does not list clients after it returns', async () => {
-  const normal = transport.request.getMockImplementation()!;
-  let release!: (value: unknown) => void;
-  const held = new Promise((resolve) => (release = resolve));
-  transport.request.mockImplementation((method, params) =>
-    method === 'client.hello' ? held : normal(method, params),
-  );
+  let release!: (value: { clientId: string }) => void;
+  transport.observeIdentity.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
   const run = start();
   run.dispatch(mountBrowserConsumer('ws-1'));
   await settle();

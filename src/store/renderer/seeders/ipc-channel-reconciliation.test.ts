@@ -547,6 +547,8 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
  */
 const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
+  // One-shot physical completion receipts use the original live preload bridge.
+  'backend:request-completion',
   'backend:subscribe',
   'backend:unsubscribe',
   // Onboarding preparation invokes the real preload directly so main captures
@@ -560,6 +562,13 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:repository-resource:capture',
   'backend:repository-resource:detail',
   'backend:repository-resource:release',
+  // Recovery captures the real preload and rejects before IPC without it.
+  // A mock bridge would bypass sender ownership and ordered fence observation.
+  'backend:event-recovery:capture',
+  'backend:event-recovery:request',
+  'backend:event-recovery:release',
+  'backend:event-recovery:watch-ready',
+  'backend:event-recovery:unwatch-ready',
   // Checkout sessions bind the original real preload bridge and host connection.
   // Mock bridging would bypass capture/currentness; preview clients report unavailable.
   'backend:repository-checkout:capture',

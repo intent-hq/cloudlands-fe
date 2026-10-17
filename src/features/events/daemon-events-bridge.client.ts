@@ -1,3 +1,32 @@
+import { trackAgentRecoveryRead } from '$features/agent/agent-recovery-read-lane';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import {
+  dispatchNoteRecoveryEvent,
+  dispatchNoteAttributionRecoveryEvent,
+} from '$store/renderer/slices/workspace-notes/sagas/note-event-receipt';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { workspaceActivityRecoveryKey } from './workspace-activity-recovery';
+import { browserClientRecoveryKey } from '$store/renderer/slices/browser-clients/sagas/browser-client-recovery';
+import { dispatchBrowserClientEvent } from '$store/renderer/slices/browser-clients/sagas/browser-client-event-receipt';
+import { browserTabRecoveryKey } from '$store/renderer/slices/panel-layout/sagas/browser-tab-recovery';
+import { dispatchBrowserTabEvent } from '$store/renderer/slices/panel-layout/sagas/browser-tab-event-receipt';
+import {
+  agentMetadataRecoveryKey,
+  agentQueueRecoveryKey,
+  agentSubscriptionsRecoveryKey,
+  AGENT_PERMISSIONS_RECOVERY_KEY,
+  AGENT_ACTIVE_STREAMS_RECOVERY_KEY,
+  AGENT_FAILURES_RECOVERY_KEY,
+} from '$features/agent/agent-recovery-keys';
+import { WORKSPACE_LIST_RECOVERY_KEY, runWorkspaceProjectionRead } from './workspace-list-recovery';
+import { rendererEventRecovery } from './renderer-event-recovery';
+import { agentLocksRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
+import type { AdmittedEventLifetimes } from './event-recovery-coordinator';
+import {
+  withRecoveryAdmissions,
+  withRecoveryLifetime,
+} from '$store/renderer/middlewares/event-recovery';
+import type { EventRecoveryCoordinator } from './event-recovery-coordinator';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
@@ -578,7 +607,21 @@ function streamEndMetadataFields(end: StreamEndMetadata | undefined): StreamEndM
   };
 }
 
+const admittedEvents = new WeakMap<WorkspaceEvent, AdmittedEventLifetimes>();
+function dispatchEventAction(
+  event: WorkspaceEvent,
+  action: Parameters<typeof appStore.dispatch>[0],
+) {
+  const admissions = admittedEvents.get(event);
+  return appStore.dispatch(admissions ? withRecoveryAdmissions(action, admissions) : action);
+}
+function eventSnapshotReceipt(event: WorkspaceEvent, key: string) {
+  const admissions = admittedEvents.get(event);
+  return admissions ? (admissions.get(key) ?? null) : rendererEventRecovery.capture(key);
+}
+
 function dispatchStreamUpdate(
+  event: WorkspaceEvent,
   agentId: string,
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
@@ -590,7 +633,8 @@ function dispatchStreamUpdate(
   // stopReason/finishReason metadata, chat-state resets). The saga applies
   // those to the covered agent's target row and, for an agent without a
   // standing subscription, runs only the session-level resets (no row writes).
-  appStore.dispatch(
+  dispatchEventAction(
+    event,
     agentStreamUpdateReceived({
       workspaceId: state.workspaceId,
       agentId,
@@ -670,10 +714,13 @@ function applyStreamPreviewFields(
  * A failed fetch leaves no session to update.
  */
 function withHydratedSession(
+  event: WorkspaceEvent,
   agentId: string,
   workspaceId: string | undefined,
   apply: () => void,
 ): void {
+  const receipt = eventSnapshotReceipt(event, agentMetadataRecoveryKey(workspaceId));
+  if (!receipt?.commit(() => undefined)) return;
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (
     (workspaceId !== undefined && session && session.workspaceId !== workspaceId) ||
@@ -682,7 +729,9 @@ function withHydratedSession(
     return;
   }
   if (session) {
-    apply();
+    receipt.commit(() => {
+      apply();
+    });
     return;
   }
   const generation = agentRefreshGeneration;
@@ -695,7 +744,9 @@ function withHydratedSession(
       hydrated &&
       (workspaceId === undefined || hydrated.workspaceId === workspaceId)
     ) {
-      apply();
+      receipt.commit(() => {
+        apply();
+      });
     }
   });
 }
@@ -752,7 +803,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // drop in `applyStreamPreviewFields` so the bookkeeping never advances into
   // the text-streaming path without a preview actually applying.
   const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
-  appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
+  dispatchEventAction(event, streamActivityReceived(agentId, hasResponseText));
   // First ping of a new turn (fresh messageId): drop the previous turn's
   // digest so it can't masquerade as this turn's summary (monorepo#1327), and
   // the previous turn's `lastToolUse` for the same reason — the wire omits it
@@ -763,6 +814,8 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // the next turn starts. The map write itself is synchronous bookkeeping
   // (no store dependency) — only the resulting agent-session dispatches below
   // wait on hydration.
+  if (!eventSnapshotReceipt(event, agentMetadataRecoveryKey(workspaceId))?.commit(() => undefined))
+    return;
   const isNewTurn = previewTurnMessageIdByAgent.get(previewKey) !== messageId;
   if (isNewTurn) {
     previewTurnMessageIdByAgent.set(previewKey, messageId);
@@ -775,7 +828,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // live even while pings stream in. `updatedAt` is daemon-owned and left
   // untouched. (Ended-turn stragglers never reach here — dropped above.)
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
-  withHydratedSession(agentId, event.workspaceId, () => {
+  withHydratedSession(event, agentId, event.workspaceId, () => {
     // Re-check at execution time: `withHydratedSession` defers this callback
     // across an async hydration fetch when the session isn't known yet, and
     // the turn's terminal `agent:stream:end` may stamp the ended-turn map
@@ -786,10 +839,11 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
       return;
     }
     if (isNewTurn) {
-      appStore.dispatch(updateAgentDigest(workspaceId, agentId, null));
-      appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+      dispatchEventAction(event, updateAgentDigest(workspaceId, agentId, null));
+      dispatchEventAction(event, updateSession(agentId, { lastToolUse: undefined }));
     }
-    appStore.dispatch(
+    dispatchEventAction(
+      event,
       updateSession(agentId, {
         liveTurnOpen: true,
         ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
@@ -832,7 +886,7 @@ function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): voi
     return;
   }
 
-  dispatchStreamUpdate(agentId, state, 'chunk');
+  dispatchStreamUpdate(event, agentId, state, 'chunk');
 }
 
 function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -911,7 +965,7 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   } as ContentBlock;
   state.blocksByIndex.set(blockIndex, toolUseBlock);
 
-  dispatchStreamUpdate(agentId, state, 'content-blocks');
+  dispatchStreamUpdate(event, agentId, state, 'content-blocks');
 
   // Status hint: track the actual tool-execution window so the "Calling tool"
   // entry's duration in `computeCompletedEvents` ends at the tool's terminal
@@ -935,7 +989,8 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
     ? ((priorMetadata as { status?: unknown }).status as string | undefined)
     : undefined;
   if (status === 'started' && priorStatus !== 'started') {
-    appStore.dispatch(
+    dispatchEventAction(
+      event,
       streamStatusReceived(
         agentId,
         {
@@ -948,7 +1003,8 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
       ),
     );
   } else if ((status === 'completed' || status === 'error') && priorStatus === 'started') {
-    appStore.dispatch(
+    dispatchEventAction(
+      event,
       streamStatusReceived(
         agentId,
         {
@@ -1004,7 +1060,8 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
     typeof data.silentMs === 'number' && Number.isFinite(data.silentMs) && data.silentMs >= 0
       ? data.silentMs
       : undefined;
-  appStore.dispatch(
+  dispatchEventAction(
+    event,
     streamStatusReceived(
       agentId,
       silentMs !== undefined
@@ -1055,12 +1112,13 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
   const prior = streamsByAgent.get(agentId);
   if (prior && prior.messageId === messageId) return;
   if (prior) {
-    dispatchStreamUpdate(agentId, prior, 'complete');
+    dispatchStreamUpdate(event, agentId, prior, 'complete');
     streamsByAgent.delete(agentId);
   }
   ensureStream(agentId, messageId, workspaceId);
-  appStore.dispatch(chatSendStarted(agentId, workspaceId, undefined, messageId));
-  appStore.dispatch(
+  dispatchEventAction(event, chatSendStarted(agentId, workspaceId, undefined, messageId));
+  dispatchEventAction(
+    event,
     agentStreamUpdateReceived({
       workspaceId,
       agentId,
@@ -1141,7 +1199,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   const trackedMessageId = previewTurnMessageIdByAgent.get(previewKey);
   const isStaleTerminalForPreview =
     messageId !== undefined && trackedMessageId !== undefined && messageId < trackedMessageId;
-  if (!isStaleTerminalForPreview) {
+  if (
+    !isStaleTerminalForPreview &&
+    eventSnapshotReceipt(event, agentMetadataRecoveryKey(workspaceId))?.commit(() => undefined)
+  ) {
     if (messageId !== undefined) {
       previewTurnMessageIdByAgent.set(previewKey, messageId);
       // Record the ended turn so a straggler same-turn (or older-turn)
@@ -1149,13 +1210,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
       // terminal choreography closes — see handleStreamActivityEvent.
       previewTurnEndedMessageIdByAgent.set(previewKey, messageId);
     }
-    withHydratedSession(agentId, event.workspaceId, () => {
+    withHydratedSession(event, agentId, event.workspaceId, () => {
       applyStreamPreviewFields(
         agentId,
         typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
         typeof data?.digest === 'string' ? data.digest : undefined,
       );
-      appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
+      dispatchEventAction(event, updateSession(agentId, { lastToolUse: undefined }));
     });
   }
   const state = streamsByAgent.get(agentId);
@@ -1175,7 +1236,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     // the accumulated turn would flag a row the daemon never marked
     // (intent-hq/intent#5380: stale "Interrupted by a new message" under a
     // normally completed turn).
-    dispatchStreamUpdate(agentId, state, 'complete', messageId ? endMetadata : undefined);
+    dispatchStreamUpdate(event, agentId, state, 'complete', messageId ? endMetadata : undefined);
     streamsByAgent.delete(agentId);
     return;
   }
@@ -1185,7 +1246,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     // The stopReason/finishReason/interrupt attribution belong to THIS
     // event's messageId — do not stamp the Stopped badge / finish notice onto
     // the unrelated accumulated turn.
-    dispatchStreamUpdate(agentId, state, 'complete');
+    dispatchStreamUpdate(event, agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
   // No local stream state for this turn (pre-first-token): the daemon
@@ -1198,7 +1259,8 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // (including the drained question blocks) and replaces the placeholder by
   // message id. BOOKKEEPING-ONLY: no `contentBlocks` ride this dispatch.
   if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
-    appStore.dispatch(
+    dispatchEventAction(
+      event,
       agentStreamUpdateReceived({
         workspaceId,
         agentId,
@@ -1264,7 +1326,7 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
     callbackResult: 'received',
   });
   if (state) {
-    dispatchStreamUpdate(agentId, state, 'error');
+    dispatchStreamUpdate(event, agentId, state, 'error');
     streamsByAgent.delete(agentId);
   }
 
@@ -1283,7 +1345,9 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
     const parentAgentId = data?.parentAgentId;
     const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
     if (!hasParent) {
-      recordAgentFailure({ agentId, workspaceId, error });
+      eventSnapshotReceipt(event, AGENT_FAILURES_RECOVERY_KEY)?.commit(() => {
+        recordAgentFailure({ agentId, workspaceId, error });
+      });
     }
     // Structured quota classification (`errorCode: "quota-exceeded"`): the
     // daemon tells us the turn died on a provider usage limit rather than
@@ -1299,7 +1363,10 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
       quotaProviderId.length > 0
         ? { providerId: quotaProviderId }
         : undefined;
-    appStore.dispatch(chatSendFailed(agentId, error, turnId, failureCorrelation, quotaExceeded));
+    dispatchEventAction(
+      event,
+      chatSendFailed(agentId, error, turnId, failureCorrelation, quotaExceeded),
+    );
     reportStreamLifecycle({
       stage: 'bridge',
       event: 'agent-failed-dispatched',
@@ -1668,7 +1735,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
     updates.lastUserMessage =
       typeof data.lastUserMessage === 'string' ? data.lastUserMessage : undefined;
   }
-  withHydratedSession(agentId, event.workspaceId, () => {
+  withHydratedSession(event, agentId, event.workspaceId, () => {
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session) return;
     appStore.dispatch(
@@ -1748,8 +1815,11 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
     )
       return;
     observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
-    appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
-  } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+    dispatchEventAction(
+      event,
+      chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]),
+    );
+  } else dispatchEventAction(event, chatQueueProcessingReceived(agentId, turnId));
 }
 
 /**
@@ -1828,10 +1898,19 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
  * a full replacement, never a diff — so it is mirrored straight into the
  * presence slice; a payload off the documented shape is dropped.
  */
-function handlePresenceChangedEvent(event: WorkspaceEvent): void {
+function handlePresenceChangedEvent(
+  event: WorkspaceEvent,
+  lifetimes?: AdmittedEventLifetimes,
+): void | Promise<void> {
   const data = (event as { data?: unknown }).data;
   if (!isPresenceRoster(data)) return;
-  appStore.dispatch(presenceRosterReceived(data));
+  const key = `presence-roster:${JSON.stringify([data.workspaceId])}`;
+  const admitted = lifetimes ? (lifetimes.get(key) ?? null) : undefined;
+  if (admitted === null || (!admitted && !rendererEventRecovery.push(key))) return;
+  const receipt = admitted ?? rendererEventRecovery.capture(key);
+  receipt.commit(() => {
+    appStore.dispatch(presenceRosterReceived(data));
+  });
 }
 
 /**
@@ -2109,15 +2188,20 @@ function handleNoteEvent(
   event: WorkspaceEvent,
   workspaceId: string,
   type: 'note:created' | 'note:updated' | 'note:deleted',
-): void {
+  lifetimes: AdmittedEventLifetimes | undefined,
+  apply: (key: string, mutation: () => void) => boolean,
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
   const note = data?.note as Omit<Note, 'content'> | undefined;
   if (note && String(note.id) === noteId && String(note.workspaceId) === workspaceId) {
-    appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    apply(`notes:${JSON.stringify([workspaceId])}`, () => {
+      appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    });
   }
-  appStore.dispatch(noteEventReceived(workspaceId, noteId, type));
+  const action = noteEventReceived(workspaceId, noteId, type);
+  return lifetimes ? dispatchNoteRecoveryEvent(action, lifetimes) : void appStore.dispatch(action);
 }
 
 /**
@@ -2125,7 +2209,11 @@ function handleNoteEvent(
  * which may describe an earlier commit than the attached note projection.
  * Task rows converge through task:updated; older daemons use the status fallback.
  */
-function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleTaskStatusChangedEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  apply: (key: string, mutation: () => void) => boolean,
+): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const noteId = data.noteId;
@@ -2133,11 +2221,17 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
   const note = data.note as Omit<Note, 'content'> | undefined;
   if (note && String(note.id) === noteId && String(note.workspaceId) === workspaceId) {
-    appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    apply(`notes:${JSON.stringify([workspaceId])}`, () => {
+      appStore.dispatch(noteMetadataPushed(workspaceId, note));
+    });
     return;
   }
-  appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+  apply(`notes:${JSON.stringify([workspaceId])}`, () => {
+    appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+  });
+  apply(`tasks:${JSON.stringify([workspaceId])}`, () => {
+    appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+  });
 }
 
 /**
@@ -2152,11 +2246,14 @@ function handleCommentEvent(
   event: WorkspaceEvent,
   workspaceId: string,
   kind: 'added' | 'resolved',
-): void {
+  lifetimes?: AdmittedEventLifetimes,
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
-  appStore.dispatch(commentEventReceived(workspaceId, noteId, kind));
+  const action = commentEventReceived(workspaceId, noteId, kind);
+  if (lifetimes) return dispatchNoteRecoveryEvent(action, lifetimes);
+  appStore.dispatch(action);
 }
 
 /**
@@ -2219,7 +2316,11 @@ function handlePrEvent(
  * switch goes through the same-shaped `file-tracking.getAgentLocks` read
  * (§5.19, `hydrateAgentLocks` in file-tracking.client).
  */
-function handleAgentLocksEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+function handleAgentLocksEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string,
+  lifetimes?: AdmittedEventLifetimes,
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const dataWorkspaceId = data.workspaceId;
@@ -2228,13 +2329,20 @@ function handleAgentLocksEvent(event: WorkspaceEvent, envelopeWorkspaceId: strin
       ? dataWorkspaceId
       : envelopeWorkspaceId;
   if (!Array.isArray(data.lockedAgentIds) || !Array.isArray(data.lockedFilePaths)) return;
-  appStore.dispatch(
-    setAgentLockState(
-      workspaceId,
-      toLockRecord(data.lockedAgentIds),
-      toLockRecord(data.lockedFilePaths),
-    ),
-  );
+  const key = agentLocksRecoveryKey(workspaceId);
+  const admitted = lifetimes ? (lifetimes.get(key) ?? null) : undefined;
+  if (lifetimes && workspaceId !== envelopeWorkspaceId) return;
+  if (admitted === null || (!admitted && !rendererEventRecovery.push(key))) return;
+  const receipt = admitted ?? rendererEventRecovery.capture(key);
+  receipt.commit(() => {
+    appStore.dispatch(
+      setAgentLockState(
+        workspaceId,
+        toLockRecord(data.lockedAgentIds),
+        toLockRecord(data.lockedFilePaths),
+      ),
+    );
+  });
 }
 
 /**
@@ -2264,7 +2372,10 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
  * type exactly, so no mapping is needed. Like the tokenUsage/context handlers,
  * the payload's own `data.workspaceId` wins over the envelope id when present.
  */
-function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+function handleDisplayStatusChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string,
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const dataWorkspaceId = data.workspaceId;
@@ -2280,7 +2391,7 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
   // The partial merge is a silent no-op when the entity is not hydrated yet —
   // recover the dropped delta via a targeted workspace.get (see
   // {@link hydrateWorkspaceEntityIfMissing}).
-  void hydrateWorkspaceEntityIfMissing(workspaceId);
+  return hydrateWorkspaceEntityIfMissing(workspaceId, workspaceProjectionReceipt(event));
 }
 
 /**
@@ -2290,12 +2401,15 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
  * workspace entity without a follow-up `workspace.get`. The wire values are
  * snake_case and match the FE type exactly, so no mapping is needed. The
  * HUD consumes this same event through its own subscription
- * (`hud-subscription.ts`) with independent bucket semantics — this handler
+ * (`hud-saga.ts`) with independent bucket semantics — this handler
  * only feeds the workspace entity store. Like the tokenUsage/context/
  * displayStatus handlers, the payload's own `data.workspaceId` wins over the
  * envelope id when present.
  */
-function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+function handleAttentionChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string,
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const dataWorkspaceId = data.workspaceId;
@@ -2311,7 +2425,7 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
   // The partial merge is a silent no-op when the entity is not hydrated yet —
   // recover the dropped delta via a targeted workspace.get (see
   // {@link hydrateWorkspaceEntityIfMissing}).
-  void hydrateWorkspaceEntityIfMissing(workspaceId);
+  return hydrateWorkspaceEntityIfMissing(workspaceId, workspaceProjectionReceipt(event));
   // An unread raise is NOT auto-cleared for the workspace on screen: unread is
   // daemon-derived from per-agent seen markers (§5.1) and only reading each
   // agent's conversation clears it. When the raising agent's conversation is
@@ -2335,7 +2449,7 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
 function handleWaitingChangedEvent(
   event: WorkspaceEvent,
   envelopeWorkspaceId: string | null,
-): void {
+): void | Promise<void> {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const dataWorkspaceId = data.workspaceId;
@@ -2349,7 +2463,7 @@ function handleWaitingChangedEvent(
   // The partial merge is a silent no-op when the entity is not hydrated yet —
   // recover the dropped delta via a targeted workspace.get (see
   // {@link hydrateWorkspaceEntityIfMissing}).
-  void hydrateWorkspaceEntityIfMissing(workspaceId);
+  return hydrateWorkspaceEntityIfMissing(workspaceId, workspaceProjectionReceipt(event));
 }
 
 /**
@@ -2369,38 +2483,68 @@ function handleWaitingChangedEvent(
  * with a pending local deletion are skipped so a tombstoned row is not
  * resurrected.
  */
-const missingEntityFetchInFlightByWorkspace = new Set<string>();
-const missingEntityFetchFollowUpWantedByWorkspace = new Set<string>();
+type ProjectionFlight = { next?: RecoveryLifetime; done: Promise<void> };
+function coalesceWorkspaceProjection(
+  flights: Map<string, ProjectionFlight>,
+  workspaceId: string,
+  receipt: RecoveryLifetime | null,
+  read: (workspaceId: string, receipt: RecoveryLifetime) => Promise<void>,
+): Promise<void> {
+  if (!receipt?.commit(() => undefined)) return Promise.resolve();
+  const existing = flights.get(workspaceId);
+  if (existing) {
+    existing.next = receipt;
+    return existing.done;
+  }
+  const flight: ProjectionFlight = { next: receipt, done: Promise.resolve() };
+  flights.set(workspaceId, flight);
+  flight.done = (async () => {
+    while (flight.next) {
+      const original = flight.next;
+      flight.next = undefined;
+      if (original.commit(() => undefined)) await read(workspaceId, original);
+    }
+  })().finally(() => {
+    if (flights.get(workspaceId) === flight) flights.delete(workspaceId);
+  });
+  return flight.done;
+}
+function workspaceProjectionReceipt(event: WorkspaceEvent): RecoveryLifetime | null {
+  const admitted = admittedEvents.get(event);
+  return admitted
+    ? (admitted.get(WORKSPACE_LIST_RECOVERY_KEY) ?? null)
+    : rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+}
+const missingEntityFetchInFlightByWorkspace = new Map<string, ProjectionFlight>();
 
-async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promise<void> {
+async function runHydrateMissingWorkspaceEntityFetch(
+  workspaceId: string,
+  receipt: RecoveryLifetime,
+): Promise<void> {
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
-    const response = (await backendRequest('workspace.get', { workspaceId })) as
-      { workspace?: Workspace } | undefined;
+    if (!receipt.commit(() => undefined)) return;
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
+      backendRequest('workspace.get', { workspaceId }),
+    )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      receipt.commit(() => {
+        appStore.dispatch(setWorkspaceEntity(workspace));
+      });
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
-  } finally {
-    // Trailing coalesce: one or more triggers arrived while this fetch was in
-    // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up. The in-flight marker stays
-    // set across the trailing fetch so triggers arriving during it keep
-    // coalescing instead of starting a parallel fetch; it is only cleared
-    // when no follow-up is pending.
-    if (missingEntityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runHydrateMissingWorkspaceEntityFetch(workspaceId);
-    } else {
-      missingEntityFetchInFlightByWorkspace.delete(workspaceId);
-    }
   }
 }
 
-async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
+async function hydrateWorkspaceEntityIfMissing(
+  workspaceId: string,
+  receipt: RecoveryLifetime | null = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY),
+): Promise<void> {
+  if (!receipt?.commit(() => undefined)) return;
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
@@ -2413,12 +2557,20 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
   // merged flag with its stale projection — queuing a trailing fetch (whose
   // projection postdates this delta) guarantees convergence.
   if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
-    missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
-    return;
+    return coalesceWorkspaceProjection(
+      missingEntityFetchInFlightByWorkspace,
+      workspaceId,
+      receipt,
+      runHydrateMissingWorkspaceEntityFetch,
+    );
   }
   if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
-  missingEntityFetchInFlightByWorkspace.add(workspaceId);
-  await runHydrateMissingWorkspaceEntityFetch(workspaceId);
+  await coalesceWorkspaceProjection(
+    missingEntityFetchInFlightByWorkspace,
+    workspaceId,
+    receipt,
+    runHydrateMissingWorkspaceEntityFetch,
+  );
 }
 
 /**
@@ -2443,14 +2595,18 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
  * independent fetch per event, since unordered resolution could let a stale
  * response that resolves last overwrite a newer `activity` value.
  */
-const activityFetchInFlightByWorkspace = new Set<string>();
-const activityFetchFollowUpWantedByWorkspace = new Set<string>();
+const activityFetchInFlightByWorkspace = new Map<string, ProjectionFlight>();
 
-async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<void> {
+async function runReconcileWorkspaceActivityFetch(
+  workspaceId: string,
+  receipt: RecoveryLifetime,
+): Promise<void> {
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
-    const response = (await backendRequest('workspace.get', { workspaceId })) as
-      { workspace?: Workspace } | undefined;
+    if (!receipt.commit(() => undefined)) return;
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
+      backendRequest('workspace.get', { workspaceId }),
+    )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
     if (!workspace) return;
 
@@ -2468,35 +2624,29 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const current = getItem(state.workspace.workspaces as never, workspaceId as never);
     if (current) {
-      appStore.dispatch(
-        bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
-      );
+      receipt.commit(() => {
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
+        );
+      });
     } else {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      receipt.commit(() => {
+        appStore.dispatch(setWorkspaceEntity(workspace));
+      });
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
-  } finally {
-    // Trailing coalesce: one or more triggers arrived while this fetch was in
-    // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up. The in-flight marker stays
-    // set across the trailing fetch so triggers arriving during it keep
-    // coalescing instead of starting a parallel fetch; it is only cleared
-    // when no follow-up is pending.
-    if (activityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceActivityFetch(workspaceId);
-    } else {
-      activityFetchInFlightByWorkspace.delete(workspaceId);
-    }
   }
 }
 
 async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
+  receipt: RecoveryLifetime | null = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY),
 ): Promise<void> {
+  if (!receipt?.commit(() => undefined)) return;
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
@@ -2510,12 +2660,12 @@ async function reconcileWorkspaceActivity(
   // edge fetches immediately, and any triggers that arrive while that fetch
   // is in flight collapse into at most one trailing follow-up.
   if (!current || (impliesBusy && current.activity !== 'agent_running') || !impliesBusy) {
-    if (activityFetchInFlightByWorkspace.has(workspaceId)) {
-      activityFetchFollowUpWantedByWorkspace.add(workspaceId);
-      return;
-    }
-    activityFetchInFlightByWorkspace.add(workspaceId);
-    await runReconcileWorkspaceActivityFetch(workspaceId);
+    await coalesceWorkspaceProjection(
+      activityFetchInFlightByWorkspace,
+      workspaceId,
+      receipt,
+      runReconcileWorkspaceActivityFetch,
+    );
   }
 }
 
@@ -2529,32 +2679,28 @@ async function reconcileWorkspaceActivity(
  * unordered resolution could let a stale response that resolves last
  * restore an already-deleted agent into `agentSummary`.
  */
-const aggregateFetchInFlightByWorkspace = new Set<string>();
-const aggregateFetchFollowUpWantedByWorkspace = new Set<string>();
+const aggregateFetchInFlightByWorkspace = new Map<string, ProjectionFlight>();
 
-async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promise<void> {
+async function runReconcileWorkspaceAggregatesFetch(
+  workspaceId: string,
+  receipt: RecoveryLifetime,
+): Promise<void> {
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
-    const response = (await backendRequest('workspace.get', { workspaceId })) as
-      { workspace?: Workspace } | undefined;
+    if (!receipt.commit(() => undefined)) return;
+    const response = (await runWorkspaceProjectionRead(receipt, workspaceId, () =>
+      backendRequest('workspace.get', { workspaceId }),
+    )) as { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      receipt.commit(() => {
+        appStore.dispatch(setWorkspaceEntity(workspace));
+      });
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
-  } finally {
-    // Trailing coalesce: one or more triggers arrived while this fetch was in
-    // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up. Keep the in-flight marker
-    // through trailing reads so another burst cannot start a parallel fetch.
-    if (aggregateFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceAggregatesFetch(workspaceId);
-    } else {
-      aggregateFetchInFlightByWorkspace.delete(workspaceId);
-    }
   }
 }
 
@@ -2564,13 +2710,16 @@ async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promis
  * for unloaded or stale lists without hydrating their detailed rows.
  * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
-async function reconcileWorkspaceAggregates(workspaceId: string): Promise<void> {
-  if (aggregateFetchInFlightByWorkspace.has(workspaceId)) {
-    aggregateFetchFollowUpWantedByWorkspace.add(workspaceId);
-    return;
-  }
-  aggregateFetchInFlightByWorkspace.add(workspaceId);
-  await runReconcileWorkspaceAggregatesFetch(workspaceId);
+function reconcileWorkspaceAggregates(
+  workspaceId: string,
+  receipt: RecoveryLifetime | null = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY),
+): Promise<void> {
+  return coalesceWorkspaceProjection(
+    aggregateFetchInFlightByWorkspace,
+    workspaceId,
+    receipt,
+    runReconcileWorkspaceAggregatesFetch,
+  );
 }
 
 /**
@@ -2606,7 +2755,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // current server list (same pattern as `mcp.servers:status-changed`); when
   // the list has not loaded the id yet, drop the update — the sidebar's
   // hydrate on mount converges the state.
-  handleWorkspaceMcpServerToggled(raw, workspaceId);
+
   if (handleWorkspaceMembershipRemoved(raw, workspaceId)) return;
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
@@ -2689,8 +2838,10 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // moves the resolved driving client, so re-read `workspace.getBrowserClient` for
   // this one workspace (targeted, never a per-workspace fan-out).
   if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
-    changes.browserClientId = raw.browserClientId ?? undefined;
-    appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
+    if (!admittedEvents.has(event)) {
+      changes.browserClientId = raw.browserClientId ?? undefined;
+      appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
+    }
   }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
@@ -2778,6 +2929,7 @@ function handleWorkspaceMembershipRemoved(
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
+  rendererEventRecovery.retireWorkspace(workspaceId);
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'unshared'));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
@@ -2808,7 +2960,11 @@ function handleWorkspaceMembershipRemoved(
  * daemon id resolves via the current server list; an unresolvable id is
  * dropped (the sidebar's mount hydrate converges the state later).
  */
-function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspaceId: string): void {
+function handleWorkspaceMcpServerToggled(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+  event: WorkspaceEvent,
+): void {
   const toggled = raw.mcpServerToggled;
   if (!toggled || typeof toggled !== 'object') return;
   const { serverId, workspaceDisabled } = toggled as Record<string, unknown>;
@@ -2817,7 +2973,11 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
   }
   const name = selectWorkspaceMcpServerName.select(appStore.state, workspaceId, serverId);
   if (name === undefined) return;
-  appStore.dispatch(setWorkspaceMcpServerDisabled(workspaceId, serverId, workspaceDisabled));
+  const action = setWorkspaceMcpServerDisabled(workspaceId, serverId, workspaceDisabled);
+  const receipt = admittedEvents
+    .get(event)
+    ?.get(`workspace-catalog:${JSON.stringify([workspaceId])}`);
+  appStore.dispatch(receipt ? withRecoveryLifetime(action, receipt) : action);
 }
 
 /**
@@ -2832,7 +2992,14 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
  * workspace-list snapshot diff, which live-state suppresses post-boot
  * (intent-hq/monorepo#775; see the workspace-list saga).
  */
-function handleWorkspaceDeletedEvent(workspaceId: string): void {
+export function retireWorkspaceAfterRecovery(workspaceId: string): void {
+  handleWorkspaceDeletedEvent(workspaceId, 'unshared');
+}
+
+function handleWorkspaceDeletedEvent(
+  workspaceId: string,
+  cause: 'deleted' | 'unshared' = 'deleted',
+): void {
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
   };
@@ -2841,7 +3008,8 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
   // whole panel-layout entry (destroying the pinned webviews), so main's
   // CDP/ownership registrations must be collected first (monorepo#2857).
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
-  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], 'deleted'));
+  rendererEventRecovery.retireWorkspace(workspaceId);
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds], cause));
   for (const agentId of ownerAgentIds) {
     void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
       logger.warn('Failed to clear main-process registrations for deleted workspace tabs', {
@@ -3014,14 +3182,17 @@ function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId:
  * `setWorkspaceEntity` fetch. In the originating window the undo saga already
  * restored its snapshot; the refetch simply reconciles.
  */
-function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
+function handleWorkspaceDeleteCancelledEvent(
+  workspaceId: string,
+  receipt: RecoveryLifetime | null,
+): Promise<void> {
   const timer = workspaceDeleteTombstoneTimers.get(workspaceId);
   if (timer) {
     clearTimeout(timer);
     workspaceDeleteTombstoneTimers.delete(workspaceId);
   }
   appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
-  void reconcileWorkspaceAggregates(workspaceId);
+  return reconcileWorkspaceAggregates(workspaceId, receipt);
 }
 
 /**
@@ -3219,7 +3390,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   // Runtime events are complete snapshots too: omitted optionals clear the
   // prior run, including future additive fields the renderer passes through.
   const runtime = scriptRuntimeSnapshot(rest);
-  if (runtime) appStore.dispatch(updateRuntimeState(workspaceId, scriptId, runtime, true));
+  if (runtime)
+    eventSnapshotReceipt(event, `scripts:${JSON.stringify([workspaceId])}`)?.commit(() => {
+      appStore.dispatch(updateRuntimeState(workspaceId, scriptId, runtime, true));
+    });
 }
 
 /** Remove an exited PTY from the transient terminal strip and release any live adapter. */
@@ -3256,7 +3430,12 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * they are dispatched directly to the workspace slice via `handlePrEvent` in
  * `handleNotification`, replacing the legacy `workspace:updated` re-emit.
  */
-function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: string): void {
+function relayLegacyIpcEvent(
+  type: string,
+  event: WorkspaceEvent,
+  workspaceId: string,
+  lifetimes?: AdmittedEventLifetimes,
+): void | Promise<void> {
   const data = ((event as { data?: Record<string, unknown> }).data ?? {}) as Record<
     string,
     unknown
@@ -3265,13 +3444,15 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
       return;
-    case 'line-attribution:updated':
-      emitMockIpcEvent('line-attribution:updated', {
-        workspaceId,
-        noteId: data.noteId,
-        attributions: data.attributions,
-      });
+    case 'line-attribution:updated': {
+      const payload = { workspaceId, noteId: data.noteId, attributions: data.attributions };
+      if (lifetimes) return dispatchNoteAttributionRecoveryEvent(payload, lifetimes);
+      emitMockIpcEvent(
+        'line-attribution:updated',
+        lifetimes ? withRecoveryAdmissions(payload, lifetimes) : payload,
+      );
       return;
+    }
     case 'workspace:updated':
       emitMockIpcEvent('workspace:updated', { workspaceId, changes: data });
       return;
@@ -3589,6 +3770,10 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
 }
 
 export interface DaemonEventsRoutingOverrides {
+  /** Adopted leases route through the captured, ordered recovery ingress only. */
+  recovery?: Pick<EventRecoveryCoordinator, 'ownsSubscription'>;
+  /** Exact admitted ingress receipts, including explicit rejected-owner nulls. */
+  lifetimes?: AdmittedEventLifetimes;
   onSettingsChanges?: (changes: AppliedSettingChange[], revision?: number) => void;
 }
 
@@ -3597,14 +3782,17 @@ export function routeDaemonEventsNotification(
   params: unknown,
   expectedSubscriptionIds: string | readonly string[] | undefined = undefined,
   overrides?: DaemonEventsRoutingOverrides,
-): void {
+): void | Promise<void> {
   if (method !== 'events.event') return;
+  // Captured routing admits only exact lease envelopes through the coordinator.
+  // Raw callbacks (including flat legacy frames) cannot bypass that boundary.
+  if (overrides?.recovery) return;
   // Fan-out scope gate (see file header): drop notifications delivered through
   // a different subscription on the same socket so chunk-append/queue/idle
   // handlers never apply the same event twice. The saga owns two leases
   // (firehose + scoped file:*), so the gate accepts a set of expected ids; a
   // bare string is still accepted for back-compat with older call sites.
-  // Flat/legacy envelopes (no `subscriptionId` on params) always pass.
+  // Genuine legacy routing retains flat envelopes without subscriptionId.
   const envelopeSubscriptionId = extractSubscriptionId(params);
   if (envelopeSubscriptionId !== undefined) {
     const expected =
@@ -3618,6 +3806,38 @@ export function routeDaemonEventsNotification(
   const type = (event as { type?: unknown }).type;
   if (typeof type !== 'string') return;
 
+  // Cache each domain decision for this one admitted event. A rejected owner
+  // must not be admitted again by a second writer in the same bridge.
+  const pending: Promise<void>[] = [];
+  const eventLifetimes = new Map(overrides?.lifetimes);
+  if (overrides?.lifetimes) admittedEvents.set(event, eventLifetimes);
+  const apply = (key: string, mutation: () => void) => {
+    let receipt = eventLifetimes.get(key);
+    if (receipt === undefined) {
+      receipt = overrides?.lifetimes
+        ? null
+        : rendererEventRecovery.push(key)
+          ? rendererEventRecovery.capture(key)
+          : null;
+      eventLifetimes.set(key, receipt);
+    }
+    return (
+      receipt?.commit(() => {
+        mutation();
+      }) ?? false
+    );
+  };
+
+  const reconcileBrowserClients = (includeRoster: boolean) => {
+    const reads: Promise<void>[] = [];
+    for (const [key, receipt] of eventLifetimes) {
+      if (!key.startsWith('browser-clients:') || !receipt) continue;
+      const [workspaceId] = JSON.parse(key.slice('browser-clients:'.length)) as [string | null];
+      reads.push(dispatchBrowserClientEvent(workspaceId ?? undefined, receipt, includeRoster));
+    }
+    return Promise.all(reads).then(() => undefined);
+  };
+
   if (
     [
       'settings:changed',
@@ -3627,12 +3847,18 @@ export function routeDaemonEventsNotification(
       'workspace:updated',
     ].includes(type)
   ) {
-    appStore.dispatch(workspaceCatalogEventReceived(event));
+    const action = workspaceCatalogEventReceived(event);
+    appStore.dispatch(
+      overrides?.lifetimes ? withRecoveryAdmissions(action, eventLifetimes) : action,
+    );
   }
 
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
+    if (overrides?.lifetimes) {
+      return reconcileBrowserClients(false);
+    }
     handleSettingsChangedEvent(event, overrides?.onSettingsChanges);
     return;
   }
@@ -3657,14 +3883,18 @@ export function routeDaemonEventsNotification(
   // `workspace:tokenUsage-changed` (§5.23) carries its workspaceId inside
   // `data`, so it is routed before the envelope workspace-id gate too.
   if (type === 'workspace:tokenUsage-changed') {
-    handleTokenUsageChangedEvent(event);
+    apply(`token-usage:${JSON.stringify([event.data?.workspaceId])}`, () =>
+      handleTokenUsageChangedEvent(event),
+    );
     return;
   }
 
   // `workspace:context-changed` (§5.1) carries `data.workspaceId`, so it
   // also runs before the envelope workspace-id gate below.
   if (type === 'workspace:context-changed') {
-    handleContextChangedEvent(event);
+    apply(`context:${JSON.stringify([event.data?.workspaceId])}`, () =>
+      handleContextChangedEvent(event),
+    );
     return;
   }
 
@@ -3674,13 +3904,17 @@ export function routeDaemonEventsNotification(
   // side-effect route below (keeping the timeline fan-out); only the
   // envelope-less shape is handled here.
   if (type === 'workspace:waiting-changed' && !workspaceIdOf(event)) {
-    handleWaitingChangedEvent(event, null);
-    return;
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      const work = handleWaitingChangedEvent(event, null);
+      if (work) pending.push(work);
+    });
+    return Promise.all(pending).then(() => undefined);
   }
 
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
   if (type === 'mcp.servers:status-changed') {
+    if (overrides?.lifetimes) return;
     handleMcpServerStatusChangedEvent(event);
     return;
   }
@@ -3703,6 +3937,10 @@ export function routeDaemonEventsNotification(
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
   if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
+    if (overrides?.lifetimes) {
+      if (!isLiveClientTransition(event.data)) return;
+      return reconcileBrowserClients(true);
+    }
     handleClientTransitionEvent(event);
     return;
   }
@@ -3737,7 +3975,7 @@ export function routeDaemonEventsNotification(
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
   if (type === 'presence:changed') {
-    handlePresenceChangedEvent(event);
+    handlePresenceChangedEvent(event, overrides?.lifetimes);
     return;
   }
 
@@ -3755,6 +3993,8 @@ export function routeDaemonEventsNotification(
 
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
+  const metadataAdmitted =
+    !type.startsWith('agent:') || apply(agentMetadataRecoveryKey(workspaceId), () => {});
 
   if (
     (type.startsWith('note:') ||
@@ -3803,11 +4043,15 @@ export function routeDaemonEventsNotification(
   // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
   // recreated same-slug workspace does not surface ghost agents (§7).
   if (type === 'workspace:deleted') {
-    handleWorkspaceDeletedEvent(workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handleWorkspaceDeletedEvent(workspaceId);
+    });
     return;
   }
   if (type === 'workspace:created') {
-    handleWorkspaceCreatedEvent(workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handleWorkspaceCreatedEvent(workspaceId);
+    });
     // fall through so the activity timeline records the creation.
   }
   // Delete grace window (§5.1/§5.5 `pendingDeleteAt`): schedule events hide the pending
@@ -3815,20 +4059,26 @@ export function routeDaemonEventsNotification(
   // cancel events restore it promptly instead of waiting for the next
   // refetch (monorepo#1977).
   if (type === 'workspace:delete-scheduled') {
-    handleWorkspaceDeleteScheduledEvent(event, workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handleWorkspaceDeleteScheduledEvent(event, workspaceId);
+    });
     return;
   }
   if (type === 'workspace:delete-cancelled') {
-    handleWorkspaceDeleteCancelledEvent(workspaceId);
-    return;
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      pending.push(
+        handleWorkspaceDeleteCancelledEvent(workspaceId, workspaceProjectionReceipt(event)),
+      );
+    });
+    return Promise.all(pending).then(() => undefined);
   }
   if (type === 'agent:delete-scheduled') {
-    activeStreamsTracker.applyEvent(event);
-    handleAgentDeleteScheduledEvent(event, workspaceId);
+    apply(AGENT_ACTIVE_STREAMS_RECOVERY_KEY, () => activeStreamsTracker.applyEvent(event));
+    if (metadataAdmitted) handleAgentDeleteScheduledEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:delete-cancelled') {
-    handleAgentDeleteCancelledEvent(event, workspaceId);
+    if (metadataAdmitted) handleAgentDeleteCancelledEvent(event, workspaceId);
     return;
   }
   // `workspace:updated` (§6.5) — merge the applied delta onto the workspace
@@ -3838,32 +4088,68 @@ export function routeDaemonEventsNotification(
   // `WorkspaceProgressCard` listens on, and the timeline dispatch below still
   // records the update.
   if (type === 'workspace:updated') {
-    handleWorkspaceUpdatedEvent(event, workspaceId);
+    const pin = event.data?.changes?.browserClientId;
+    if (overrides?.lifetimes && (typeof pin === 'string' || pin === null)) {
+      const key = browserClientRecoveryKey(workspaceId);
+      apply(key, () => {
+        const receipt = eventLifetimes.get(key);
+        if (!receipt) return;
+        appStore.dispatch(
+          withRecoveryLifetime(workspaceBrowserClientPinReceived(workspaceId, pin), receipt),
+        );
+        appStore.dispatch(
+          withRecoveryLifetime(
+            bulkUpdateWorkspaceEntities([
+              updateWorkspaceEntity(workspaceId, { browserClientId: pin ?? undefined }),
+            ]),
+            receipt,
+          ),
+        );
+        pending.push(dispatchBrowserClientEvent(workspaceId, receipt, false));
+      });
+    }
+    apply(`workspace-catalog:${JSON.stringify([workspaceId])}`, () =>
+      handleWorkspaceMcpServerToggled(event.data?.changes ?? {}, workspaceId, event),
+    );
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handleWorkspaceUpdatedEvent(event, workspaceId);
+    });
   }
   // `workspace:activity-changed` (§6.5 / §10.1) — merge the new activity
   // value onto the workspace entity so the sidebar running indicator / grouping
   // updates live without a refetch. Side effect, never an early return.
   if (type === 'workspace:activity-changed') {
-    handleActivityChangedEvent(event, workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handleActivityChangedEvent(event, workspaceId);
+    });
   }
   // `workspace:displayStatus-changed` (intent-hq/intentd#600) — merge the
   // BE-owned current-cycle status onto the workspace entity so the sidebar
   // status grouping updates live without a refetch. Side effect, never an
   // early return.
   if (type === 'workspace:displayStatus-changed') {
-    handleDisplayStatusChangedEvent(event, workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      const work = handleDisplayStatusChangedEvent(event, workspaceId);
+      if (work) pending.push(work);
+    });
   }
   // `workspace:attention-changed` (§6.5 / §9.9) — merge the BE-owned
   // dismissible attention flag onto the workspace entity so unread indicators
   // update live without a refetch. Side effect, never an early return.
   if (type === 'workspace:attention-changed') {
-    handleAttentionChangedEvent(event, workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      const work = handleAttentionChangedEvent(event, workspaceId);
+      if (work) pending.push(work);
+    });
   }
   // `workspace:waiting-changed` (§5.1 / §6.5) — merge the BE-derived orthogonal
   // waiting flag onto the workspace entity so waiting indicators update live
   // without a refetch. Side effect, never an early return.
   if (type === 'workspace:waiting-changed') {
-    handleWaitingChangedEvent(event, workspaceId);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      const work = handleWaitingChangedEvent(event, workspaceId);
+      if (work) pending.push(work);
+    });
   }
   // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
   // workspace from the self-sufficient `{ tab, changes? }` payload. Side
@@ -3874,12 +4160,30 @@ export function routeDaemonEventsNotification(
     type === 'browser:tab-updated' ||
     type === 'browser:tab-closed'
   ) {
-    handleBrowserTabEvent(event, workspaceId, type);
+    if (overrides?.lifetimes) {
+      const tab = event.data?.tab;
+      const receipt = eventLifetimes.get(browserTabRecoveryKey(workspaceId));
+      if (receipt && isBrowserTab(tab))
+        pending.push(
+          dispatchBrowserTabEvent(
+            type === 'browser:tab-closed'
+              ? browserTabClosed(workspaceId, tab.tabId)
+              : browserTabUpserted(workspaceId, tab),
+            receipt,
+          ),
+        );
+    } else handleBrowserTabEvent(event, workspaceId, type);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
-  relayLegacyIpcEvent(type, event, workspaceId);
+  const relay = relayLegacyIpcEvent(
+    type,
+    event,
+    workspaceId,
+    overrides?.lifetimes ? eventLifetimes : undefined,
+  );
+  if (relay) pending.push(relay);
 
   // Completion-watch lifecycle subset (side effect, never an early return):
   // Read only parents affected by this watch change. Lifecycle child events
@@ -3887,16 +4191,20 @@ export function routeDaemonEventsNotification(
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
     const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
     if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
-      // This event names the parent whose watch set changed. Child lifecycle
-      // events are scoped by known watch/group membership in the saga.
-      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId));
+      apply(agentSubscriptionsRecoveryKey(workspaceId, agentId), () => {
+        const action = refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId);
+        appStore.dispatch(
+          overrides?.lifetimes ? withRecoveryAdmissions(action, eventLifetimes) : action,
+        );
+      });
     } else {
+      const action = refreshWorkspaceSubscriptionEntriesRequested(
+        workspaceId,
+        undefined,
+        typeof agentId === 'string' ? agentId : undefined,
+      );
       appStore.dispatch(
-        refreshWorkspaceSubscriptionEntriesRequested(
-          workspaceId,
-          undefined,
-          typeof agentId === 'string' ? agentId : undefined,
-        ),
+        overrides?.lifetimes ? withRecoveryAdmissions(action, eventLifetimes) : action,
       );
     }
   }
@@ -3904,7 +4212,7 @@ export function routeDaemonEventsNotification(
   // Known sessions fold lifecycle fields synchronously in eventReceived.
   // Only unknown entities need metadata hydration; gaps/reconnects retain
   // their separate authoritative recovery paths.
-  if (type === 'agent:status-changed' || type === 'agent:idle') {
+  if (metadataAdmitted && (type === 'agent:status-changed' || type === 'agent:idle')) {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     if (typeof agentId === 'string' && agentId.length > 0) {
@@ -3941,7 +4249,7 @@ export function routeDaemonEventsNotification(
   // so the grouped toast and the inline banner never diverge on it. Side
   // effects, never early returns — both events fall through to the timeline
   // dispatch below.
-  if (type === 'agent:status-changed') {
+  if (metadataAdmitted && type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     const status = data?.status;
@@ -3950,13 +4258,13 @@ export function routeDaemonEventsNotification(
         ? status !== 'error' && status !== 'failed'
         : data?.isActive === true;
     if (typeof agentId === 'string' && leavesError) {
-      removeAgentFailure(agentId);
+      apply(AGENT_FAILURES_RECOVERY_KEY, () => removeAgentFailure(agentId));
     }
   }
-  if (type === 'agent:deleted') {
+  if (metadataAdmitted && type === 'agent:deleted') {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
-      removeAgentFailure(data.agentId);
+      apply(AGENT_FAILURES_RECOVERY_KEY, () => removeAgentFailure(data.agentId as string));
       // Keep the lazy Retired bin's count (`retiredCount`) consistent with deletion:
       // a known retired row nudges the count down in lockstep with its
       // removal below; an id with no local session at all may be a retired
@@ -4016,7 +4324,7 @@ export function routeDaemonEventsNotification(
     // HUD card rows drop the deleted agent immediately — the `agent.list`
     // hydration above does not touch it. Fire-and-forget side effect, falls
     // through to the timeline dispatch below.
-    void reconcileWorkspaceAggregates(workspaceId);
+    pending.push(reconcileWorkspaceAggregates(workspaceId, workspaceProjectionReceipt(event)));
   }
 
   // monorepo#1106/#1989: a redrive that bypasses chat-send-service —
@@ -4044,7 +4352,7 @@ export function routeDaemonEventsNotification(
   // semantics preserved). Retry records stay parked: their promotion remains
   // turnId-exact via `agent:queue:processing` (monorepo#1057). Side effect
   // only — falls through to the timeline dispatch below.
-  if (type === 'agent:status-changed') {
+  if (metadataAdmitted && type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     const status = typeof data?.status === 'string' ? data.status : undefined;
@@ -4074,30 +4382,37 @@ export function routeDaemonEventsNotification(
   // isResponding/isStreaming, stream activity/status), reconcile activity to
   // agent_running if stale. On agent:idle, always refetch — the daemon knows
   // if other agents remain busy.
-  if (type === 'agent:status-changed') {
+  if (metadataAdmitted && type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const isBusy = data?.isResponding === true || data?.isStreaming === true;
     if (isBusy) {
-      void reconcileWorkspaceActivity(workspaceId, true);
+      pending.push(
+        reconcileWorkspaceActivity(workspaceId, true, workspaceProjectionReceipt(event)),
+      );
     }
   }
   if (type === 'agent:idle') {
-    void reconcileWorkspaceActivity(workspaceId, false);
+    pending.push(reconcileWorkspaceActivity(workspaceId, false, workspaceProjectionReceipt(event)));
   }
   if (
     type === 'agent:stream:start' ||
     type === 'agent:stream:activity' ||
     type === 'agent:stream:status'
   ) {
-    void reconcileWorkspaceActivity(workspaceId, true);
+    pending.push(reconcileWorkspaceActivity(workspaceId, true, workspaceProjectionReceipt(event)));
   }
 
   // Note domain events (§7 workspace-scoped) live-apply to the
   // workspace-notes slice so agent-side note writes (add_to_note etc.) show
   // up in the notes panel without a manual refresh.
   if (type === 'note:created' || type === 'note:updated' || type === 'note:deleted') {
-    handleNoteEvent(event, workspaceId, type);
-    return;
+    return handleNoteEvent(
+      event,
+      workspaceId,
+      type,
+      overrides?.lifetimes ? eventLifetimes : undefined,
+      apply,
+    );
   }
 
   // Task/comment/PR domain events converge into their owning slices so the
@@ -4106,44 +4421,75 @@ export function routeDaemonEventsNotification(
   if (type === 'task:created') {
     const note = event.data?.note as Omit<Note, 'content'> | undefined;
     if (note && String(note.workspaceId) === workspaceId) {
-      appStore.dispatch(noteMetadataPushed(workspaceId, note));
+      apply(`notes:${JSON.stringify([workspaceId])}`, () => {
+        appStore.dispatch(noteMetadataPushed(workspaceId, note));
+      });
     }
     // Retain the activity timeline entry below.
   }
   if (type === 'task:updated') {
     const data = event.data as { tasks?: WorkspaceTask[]; removedIds?: string[] };
     if (Array.isArray(data?.tasks) && Array.isArray(data?.removedIds)) {
-      appStore.dispatch(workspaceTasksPushed(workspaceId, data.tasks, data.removedIds));
+      apply(`tasks:${JSON.stringify([workspaceId])}`, () => {});
+      apply(`notes:${JSON.stringify([workspaceId])}`, () => {});
+      appStore.dispatch(
+        withRecoveryAdmissions(
+          workspaceTasksPushed(workspaceId, data.tasks, data.removedIds),
+          eventLifetimes,
+        ),
+      );
     }
     return;
   }
   if (type === 'workspace:task-stats-changed') {
     const data = event.data as { taskStats?: WorkspaceTaskStats };
-    if (data?.taskStats) appStore.dispatch(workspaceTaskStatsPushed(workspaceId, data.taskStats));
+    if (data?.taskStats) {
+      apply(`tasks:${JSON.stringify([workspaceId])}`, () => {});
+      apply(WORKSPACE_LIST_RECOVERY_KEY, () => {});
+      appStore.dispatch(
+        withRecoveryAdmissions(
+          workspaceTaskStatsPushed(workspaceId, data.taskStats),
+          eventLifetimes,
+        ),
+      );
+    }
     return;
   }
   if (type === 'task:status-changed') {
-    handleTaskStatusChangedEvent(event, workspaceId);
-    return;
+    return handleTaskStatusChangedEvent(event, workspaceId, apply);
   }
   if (type === 'task:agent-linked') {
-    handleTaskAgentLinkedEvent(event, workspaceId);
+    apply(`task-agent-links:${JSON.stringify([workspaceId])}`, () => {
+      handleTaskAgentLinkedEvent(event, workspaceId);
+    });
     return;
   }
   if (type === 'task:agent-unlinked') {
-    handleTaskAgentUnlinkedEvent(event, workspaceId);
+    apply(`task-agent-links:${JSON.stringify([workspaceId])}`, () => {
+      handleTaskAgentUnlinkedEvent(event, workspaceId);
+    });
     return;
   }
   if (type === 'comment:added') {
-    handleCommentEvent(event, workspaceId, 'added');
-    return;
+    return handleCommentEvent(
+      event,
+      workspaceId,
+      'added',
+      overrides?.lifetimes ? eventLifetimes : undefined,
+    );
   }
   if (type === 'comment:resolved') {
-    handleCommentEvent(event, workspaceId, 'resolved');
-    return;
+    return handleCommentEvent(
+      event,
+      workspaceId,
+      'resolved',
+      overrides?.lifetimes ? eventLifetimes : undefined,
+    );
   }
   if (type === 'pr:linked' || type === 'pr:updated' || type === 'pr:unlinked') {
-    handlePrEvent(event, workspaceId, type);
+    apply(WORKSPACE_LIST_RECOVERY_KEY, () => {
+      handlePrEvent(event, workspaceId, type);
+    });
     return;
   }
 
@@ -4151,7 +4497,7 @@ export function routeDaemonEventsNotification(
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
   // agent-lock slice; no timeline value, so no eventReceived dispatch.
   if (type === 'changes:agent-locks') {
-    handleAgentLocksEvent(event, workspaceId);
+    handleAgentLocksEvent(event, workspaceId, overrides?.lifetimes ? eventLifetimes : undefined);
     return;
   }
 
@@ -4166,7 +4512,10 @@ export function routeDaemonEventsNotification(
         Object.hasOwn(event.data?.changes ?? {}, key),
       ))
   ) {
-    appStore.dispatch(changesEventReceived(workspaceId, type, event.data ?? {}));
+    const action = changesEventReceived(workspaceId, type, event.data ?? {});
+    appStore.dispatch(
+      overrides?.lifetimes ? withRecoveryAdmissions(action, eventLifetimes) : action,
+    );
   }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
@@ -4209,7 +4558,10 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (type === 'agent:queue:updated') {
-    handleQueueUpdatedEvent(event);
+    if (typeof event.data?.agentId === 'string')
+      apply(agentQueueRecoveryKey(workspaceId, event.data.agentId), () =>
+        handleQueueUpdatedEvent(event),
+      );
     return;
   }
   if (type === 'agent:queue:processing') {
@@ -4217,12 +4569,12 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (type === 'agent:permission:request') {
-    handlePermissionRequestEvent(event);
+    apply(AGENT_PERMISSIONS_RECOVERY_KEY, () => handlePermissionRequestEvent(event));
     // fall through to the storage dispatch below so the activity timeline
     // records the prompt alongside the slice update.
   }
   if (type === 'agent:permission:resolved') {
-    handlePermissionResolvedEvent(event);
+    apply(AGENT_PERMISSIONS_RECOVERY_KEY, () => handlePermissionResolvedEvent(event));
     // fall through to the storage dispatch below so the activity timeline
     // records the outcome.
   }
@@ -4241,13 +4593,18 @@ export function routeDaemonEventsNotification(
   if (type === 'script:changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
-      appStore.dispatch(removeScript(workspaceId, data.scriptId));
+      apply(`scripts:${JSON.stringify([workspaceId])}`, () => {
+        appStore.dispatch(removeScript(workspaceId, data.scriptId as string));
+      });
     } else {
       const script =
         data?.action === 'created' || data?.action === 'updated'
           ? scriptChangeSnapshot(data.script, workspaceId, data.scriptId)
           : undefined;
-      if (script) appStore.dispatch(scriptSnapshotReceived(workspaceId, script));
+      if (script)
+        apply(`scripts:${JSON.stringify([workspaceId])}`, () => {
+          appStore.dispatch(scriptSnapshotReceived(workspaceId, script));
+        });
       else appStore.dispatch(refreshScripts(workspaceId));
     }
     // fall through so the activity timeline records the mutation
@@ -4263,7 +4620,9 @@ export function routeDaemonEventsNotification(
     // fall through to the lifecycle dispatch below
   }
   if (type === 'terminal:exit') {
-    handleTerminalExitEvent(event, workspaceId);
+    apply(`terminals:${JSON.stringify([workspaceId])}`, () =>
+      handleTerminalExitEvent(event, workspaceId),
+    );
     // fall through so the activity timeline records the exit
   }
   if (type === 'agent:failed') {
@@ -4275,13 +4634,13 @@ export function routeDaemonEventsNotification(
   // Each handler falls through so `eventReceived` still records the event in
   // the activity timeline.
   if (type === 'agent:created') {
-    handleAgentCreatedEvent(event, workspaceId);
+    if (metadataAdmitted) handleAgentCreatedEvent(event, workspaceId);
   }
   if (type === 'agent:renamed') {
-    handleAgentRenamedEvent(event);
+    if (metadataAdmitted) handleAgentRenamedEvent(event);
   }
   if (type === 'agent:updated') {
-    handleAgentUpdatedEvent(event);
+    if (metadataAdmitted) handleAgentUpdatedEvent(event);
   }
   // `agent:retired` / `agent:restored` (§6.5) — retire is a soft archive: the
   // row survives with `retiredAt` set, restore clears it. Both are pure
@@ -4295,7 +4654,7 @@ export function routeDaemonEventsNotification(
   // opposite way (retire leaves the bin, restore re-enters it).
   // Both nudges are applied once per transition (`claimRetireTransition`): a
   // re-delivered event refreshes the row's metadata but leaves the counts alone.
-  if (type === 'agent:retired' || type === 'agent:restored') {
+  if (metadataAdmitted && (type === 'agent:retired' || type === 'agent:restored')) {
     const retiring = type === 'agent:retired';
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId =
@@ -4305,7 +4664,7 @@ export function routeDaemonEventsNotification(
     if (countsOwed && agentId !== null) {
       adjustScopeCountForRetireTransition(workspaceId, agentId, retiring ? -1 : 1);
     }
-    handleAgentUpdatedEvent(event);
+    if (metadataAdmitted) handleAgentUpdatedEvent(event);
     if (countsOwed) appStore.dispatch(adjustRetiredCount(workspaceId, retiring ? 1 : -1));
   }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
@@ -4314,15 +4673,21 @@ export function routeDaemonEventsNotification(
   // indicator appears even if that companion event is missed. Same
   // metadata-only refresh as handleAgentUpdatedEvent (transcript preserved).
   if (type === 'agent:attention-requested') {
-    handleAgentUpdatedEvent(event);
+    if (metadataAdmitted) handleAgentUpdatedEvent(event);
   }
   // `agent:last-message` (§6.5, additive) — content-bearing companion of
   // every `agent:message`: applies the persisted preview projections straight
   // off the payload (ZERO follow-up RPCs). Retain the companion for People
   // previews; activity lists hide it as a separate action.
   if (type === 'agent:last-message') {
-    handleAgentLastMessageEvent(event);
-    if (event.data?.role === 'user') appStore.dispatch(bulkEventsReceived(workspaceId, [event]));
+    if (metadataAdmitted) handleAgentLastMessageEvent(event);
+    if (event.data?.role === 'user') {
+      const key = workspaceActivityRecoveryKey(workspaceId);
+      apply(key, () => {
+        const receipt = eventLifetimes.get(key)!;
+        appStore.dispatch(withRecoveryLifetime(bulkEventsReceived(workspaceId, [event]), receipt));
+      });
+    }
     return;
   }
   // The supported daemon emits agent:last-message for persisted previews,
@@ -4349,7 +4714,7 @@ export function routeDaemonEventsNotification(
     // busy flags that would otherwise render a phantom "Thinking" indicator,
     // and demote a stale RUNNING status to idle (monorepo#3040).
     const data = (event as { data?: Record<string, unknown> }).data;
-    if (data && typeof data.agentId === 'string') {
+    if (metadataAdmitted && data && typeof data.agentId === 'string') {
       appStore.dispatch(processEvicted(data.agentId));
     }
     return;
@@ -4362,7 +4727,12 @@ export function routeDaemonEventsNotification(
   // `agent:message`), through the `agentSession` reducer's
   // `canonicalFieldsFromWorkspaceEvent` path wired to the same `eventReceived`
   // action.
-  appStore.dispatch(eventReceived(workspaceId, event));
+  const activityAdmitted = apply(workspaceActivityRecoveryKey(workspaceId), () => {});
+  const action = overrides?.lifetimes
+    ? eventReceived(workspaceId, event, metadataAdmitted, activityAdmitted)
+    : eventReceived(workspaceId, event, metadataAdmitted);
+  appStore.dispatch(overrides?.lifetimes ? withRecoveryAdmissions(action, eventLifetimes) : action);
+  if (pending.length) return Promise.all(pending).then(() => undefined);
 }
 
 /**
@@ -4388,6 +4758,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // this bridge currently handles (handleTerminalExitEvent below).
   'terminal:exit',
   'settings:changed',
+  'skills:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
   // list migrated off FE localStorage; the daemon emits the full new items
@@ -4555,36 +4926,63 @@ function sharedWorkspaceIdsToRefresh(): string[] {
  * refresh can await it safely.
  */
 async function reconcileAgentFailureRegistry(): Promise<void> {
+  const receipt = rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY);
+  const authority = rendererEventRecovery.captureAuthority(AGENT_FAILURES_RECOVERY_KEY);
+  const deniedOrMissing = (error: unknown) => {
+    const code = (error as { rpcCode?: unknown } | null)?.rpcCode;
+    return code === -32003 || code === -32001 || isStructuredAgentNotFoundError(error);
+  };
   const entries = listAgentFailureEntries();
   if (entries.length === 0) return;
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
-  await Promise.all(
-    entries.map(async (entry) => {
-      const { agentId, workspaceId } = entry;
-      try {
-        await backendRequest('agent.get', { agentId, workspaceId });
-        return;
-      } catch (error) {
-        if (!isStructuredAgentNotFoundError(error)) {
-          logger.warn('agent.get failed during failure-registry reconciliation — keeping entry', {
+  await trackAgentRecoveryRead(
+    AGENT_FAILURES_RECOVERY_KEY,
+    async () => {
+      if (!receipt.commit(() => undefined)) return;
+      const { backendRequest } = await import('$lib/client/live/backend-transport');
+      await Promise.all(
+        entries.map(async (entry) => {
+          const { agentId, workspaceId } = entry;
+          try {
+            if (!receipt.commit(() => undefined)) return;
+            await backendRequest('agent.get', { agentId, workspaceId });
+            return;
+          } catch (error) {
+            if (deniedOrMissing(error))
+              authority.commit(() => {
+                if (getAgentFailureEntry(agentId) === entry) removeAgentFailure(agentId);
+              });
+            const completion = await getPhysicalRequestCompletion(error);
+            if (completion?.retired) return;
+            const missing = completion?.errors.find(deniedOrMissing);
+            if (missing) error = missing;
+            if (!deniedOrMissing(error)) {
+              logger.warn(
+                'agent.get failed during failure-registry reconciliation — keeping entry',
+                {
+                  agentId,
+                  workspaceId,
+                  error,
+                },
+              );
+              return;
+            }
+          }
+          // Identity guard: only drop the exact entry snapshotted before the
+          // read. Removed mid-flight (live agent:deleted) → already gone;
+          // replaced mid-flight (re-failure) → the fresh entry postdates the
+          // read result, which proves nothing about it — keep it.
+          if (getAgentFailureEntry(agentId) !== entry) return;
+          logger.warn('Dropping failure entry for agent no longer on the daemon', {
             agentId,
             workspaceId,
-            error,
           });
-          return;
-        }
-      }
-      // Identity guard: only drop the exact entry snapshotted before the
-      // read. Removed mid-flight (live agent:deleted) → already gone;
-      // replaced mid-flight (re-failure) → the fresh entry postdates the
-      // read result, which proves nothing about it — keep it.
-      if (getAgentFailureEntry(agentId) !== entry) return;
-      logger.warn('Dropping failure entry for agent no longer on the daemon', {
-        agentId,
-        workspaceId,
-      });
-      removeAgentFailure(agentId);
-    }),
+          authority.commit(() => {
+            if (getAgentFailureEntry(agentId) === entry) removeAgentFailure(agentId);
+          });
+        }),
+      );
+    },
+    receipt,
   );
 }
 
@@ -4613,11 +5011,8 @@ export function disposeDaemonEventsRoutingState(): void {
   agentDeleteTombstoneTimers.clear();
   scriptOutputDecoders.clear();
   aggregateFetchInFlightByWorkspace.clear();
-  aggregateFetchFollowUpWantedByWorkspace.clear();
   activityFetchInFlightByWorkspace.clear();
-  activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();
-  missingEntityFetchFollowUpWantedByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

@@ -24,6 +24,76 @@ const OTHER_PATH = 'src/other.ts';
 const OTHER_ABS_PATH = '/repo/src/other.ts';
 
 describe('filesReducer', () => {
+  it.each(['binary', 'failure'])(
+    'retains a draft through a %s read and restores it on the next text snapshot',
+    (kind) => {
+      let state = filesReducer(
+        initialState,
+        loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'disk' }),
+      );
+      state = filesReducer(
+        state,
+        updateFileContent(WS_ID, PATH, { kind: 'editable-text', content: 'draft' }),
+      );
+      state = filesReducer(
+        state,
+        kind === 'binary'
+          ? loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+              kind: 'preview-only',
+              isBinary: true,
+            })
+          : loadFileContentFailed(WS_ID, PATH, ABS_PATH, 'read failed'),
+      );
+      expect(state.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+        kind: 'preview-only',
+        preservedDraft: 'draft',
+        loading: false,
+      });
+      state = filesReducer(
+        state,
+        loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, {
+          kind: 'editable-text',
+          content: 'new disk',
+        }),
+      );
+      expect(state.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+        originalContent: 'new disk',
+        localContent: 'draft',
+      });
+      expect(state.byWorkspaceId[WS_ID].files.map[PATH].preservedDraft).toBeUndefined();
+    },
+  );
+
+  it('settles only the matching save generation and never creates an entry', () => {
+    let state = filesReducer(
+      initialState,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, { kind: 'editable-text', content: 'disk' }),
+    );
+    const request = saveFileContentRequested(WS_ID, PATH, ABS_PATH, {
+      kind: 'editable-text',
+      content: 'draft',
+    });
+    state = filesReducer(state, request);
+    state = filesReducer(state, request);
+    const before = state;
+    state = filesReducer(state, {
+      type: 'files/fileContentSaveSettled',
+      payload: [WS_ID, PATH, 1],
+    });
+    expect(state).toBe(before);
+    state = filesReducer(state, {
+      type: 'files/fileContentSaveSettled',
+      payload: [WS_ID, PATH, 2],
+    });
+    expect(state.byWorkspaceId[WS_ID].files.map[PATH].saving).toBe(false);
+    expect(
+      filesReducer(initialState, {
+        type: 'files/fileContentSaveSettled',
+        payload: [WS_ID, PATH, 2],
+      }),
+    ).toBe(initialState);
+  });
+
   it('restores a readable binary snapshot without admitting text edits', () => {
     const snapshot = { kind: 'restorable-snapshot', content: '\b\u0001', isBinary: true } as const;
     const restored = filesReducer(initialState, saveFileContentSucceeded(WS_ID, PATH, snapshot));

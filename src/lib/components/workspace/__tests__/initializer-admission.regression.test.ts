@@ -340,17 +340,34 @@ describe('actual initializer submission admission', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
   });
   it('does not persist the old branch after held validation crosses readmission', async () => {
-    // Keep the branch picker's independent autosave out of this submission check.
-    mocks.getBranches.mockReturnValue(new Promise(() => {}));
     let resolve!: (v: unknown) => void;
+    let resolveBranches!: (v: unknown) => void;
+    const branches = new Promise((r) => (resolveBranches = r));
+    // The selector owns connection-bound default persistence independently of
+    // submission admission. Hold its reply until the component is disposed.
+    mocks.getBranches.mockReturnValue(branches);
     mocks.validate.mockReturnValue(new Promise((r) => (resolve = r)));
-    await submit();
-    store.dispatch(backendReconnected());
-    resolve({ valid: true });
-    await new Promise((r) => setTimeout(r, 20));
+    try {
+      await submit();
+      await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
+      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+      store.dispatch(backendReconnected());
+      resolve({ valid: true });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+      expect(mocks.pull).not.toHaveBeenCalled();
+      expect(mocks.create).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      resolveBranches({
+        branches: ['main'],
+        remoteBranches: [],
+        defaultBranch: 'main',
+        currentBranch: 'main',
+      });
+      await branches;
+    }
     expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-    expect(mocks.pull).not.toHaveBeenCalled();
-    expect(mocks.create).not.toHaveBeenCalled();
   });
 });
 
@@ -422,19 +439,34 @@ it('drops an original submission held by setup-probe settlement after readmissio
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it('does not create after validation completes on an unmounted initializer', async () => {
-  // Keep the branch picker's independent autosave out of this submission check.
-  mocks.getBranches.mockReturnValue(new Promise(() => {}));
+  let resolveBranches!: (v: unknown) => void;
+  const branches = new Promise((r) => (resolveBranches = r));
+  // Isolate submission from the selector, then settle its read after disposal.
+  mocks.getBranches.mockReturnValue(branches);
   let release!: (v: unknown) => void;
   mocks.validate.mockReturnValue(
     new Promise((r) => {
       release = r;
     }),
   );
-  await submit();
-  cleanup();
-  release({ valid: true });
-  await new Promise((r) => setTimeout(r, 20));
-  expect(mocks.create).not.toHaveBeenCalled();
+  try {
+    await submit();
+    await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
+    cleanup();
+    release({ valid: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+  } finally {
+    cleanup();
+    resolveBranches({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    await branches;
+  }
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
 });
 

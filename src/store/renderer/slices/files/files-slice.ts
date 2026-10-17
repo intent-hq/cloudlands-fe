@@ -128,6 +128,16 @@ export const saveFileContentFailed = createAction<[wsId: string, path: string, e
   'files/saveFileContentFailed',
 );
 
+export const fileContentSaveSettled = createAction<
+  [wsId: string, path: string, generation: number]
+>('files/fileContentSaveSettled');
+
+function retainedDraft(entry: FileContentEntry): string | undefined {
+  return entry.kind === 'editable-text' && entry.localContent !== entry.originalContent
+    ? entry.localContent
+    : entry.preservedDraft;
+}
+
 export const filesReducer = createReducer<FilesState>(initialState);
 filesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
@@ -149,16 +159,16 @@ filesReducer.with(
   loadFileContentSucceeded,
   (state, { payload: [wsId, path, absolutePath, content, truncated] }) =>
     upsertFileEntry(state, wsId, path, (entry) => {
-      const hasPendingEdits =
-        entry.localContent !== null && entry.localContent !== entry.originalContent;
+      const draft = retainedDraft(entry);
       const data = fileContentData(content);
-      if (data.kind === 'editable-text' && entry.kind === 'editable-text' && hasPendingEdits) {
-        data.localContent = entry.localContent;
-      }
+      if (data.kind === 'editable-text' && draft !== undefined) data.localContent = draft;
+      const previous = { ...entry };
+      if (previous.preservedDraft !== undefined) previous.preservedDraft = undefined;
       return {
-        ...entry,
+        ...previous,
         absolutePath,
         ...data,
+        ...(data.kind !== 'editable-text' && draft !== undefined ? { preservedDraft: draft } : {}),
         loading: false,
         error: null,
         truncated: truncated ?? false,
@@ -173,6 +183,7 @@ filesReducer.with(
       ...entry,
       absolutePath,
       ...fileContentData({ kind: 'preview-only', isBinary: entry.isBinary }),
+      ...(retainedDraft(entry) !== undefined ? { preservedDraft: retainedDraft(entry) } : {}),
       loading: false,
       error,
       truncated: false,
@@ -190,6 +201,7 @@ filesReducer.with(saveFileContentRequested, (state, { payload: [wsId, path, abso
     ...entry,
     absolutePath,
     saving: true,
+    saveGeneration: (entry.saveGeneration ?? 0) + 1,
     error: null,
   })),
 );
@@ -230,3 +242,9 @@ filesReducer.with(saveFileContentFailed, (state, { payload: [wsId, path, error] 
     error,
   })),
 );
+
+filesReducer.with(fileContentSaveSettled, (state, { payload: [wsId, path, generation] }) => {
+  const entry = state.byWorkspaceId[wsId] && getItem(state.byWorkspaceId[wsId].files, path);
+  if (!entry || entry.saveGeneration !== generation || !entry.saving) return state;
+  return upsertFileEntry(state, wsId, path, (current) => ({ ...current, saving: false }));
+});

@@ -1,6 +1,10 @@
 import { buffers, channel, type Channel, type Task } from 'redux-saga';
 import { actionChannel, cancel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 
+import {
+  getLifecycleMetadataMutation,
+  type LifecycleMetadataMutation,
+} from '$features/events/lifecycle-metadata-recovery';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { store } from '../../../store';
@@ -37,17 +41,19 @@ type NoteSnapshotAction =
 type NoteRemovalAction =
   | ReturnType<typeof pruneTaskAgentAssociationsForNote>
   | ReturnType<typeof removeTaskAgentAssociation>;
-type AssociationMutation =
+type AssociationMutation = { lease?: LifecycleMetadataMutation; release?: () => void } & (
   | {
       kind: 'link';
       workspaceId: string;
       noteId: string;
       association: TaskAgentAssociation;
     }
-  | { kind: 'unlink'; workspaceId: string; noteId: string; taskKey: string };
+  | { kind: 'unlink'; workspaceId: string; noteId: string; taskKey: string }
+);
 type AssociationMutationQueue = {
   channel: Channel<AssociationMutation>;
   pending: number;
+  reservations: Set<() => void>;
   task?: Task;
 };
 type AssociationSnapshotTracker = {
@@ -121,10 +127,17 @@ function retireMutationQueue(
 }
 
 function* runAssociationMutation(mutation: AssociationMutation): SagaGenerator<void> {
+  const lease = mutation.lease;
   if (mutation.kind === 'link') {
     const { workspaceId, noteId, association } = mutation;
     try {
-      yield* call([appClient.tasks, appClient.tasks.linkAgent], workspaceId, noteId, association);
+      if (lease) {
+        yield* call(() =>
+          lease.run(() => appClient.tasks.linkAgent(workspaceId, noteId, association)),
+        );
+      } else {
+        yield* call([appClient.tasks, appClient.tasks.linkAgent], workspaceId, noteId, association);
+      }
     } catch (error) {
       logger.error('task.linkAgent failed', { workspaceId, noteId, association, error });
     }
@@ -133,7 +146,11 @@ function* runAssociationMutation(mutation: AssociationMutation): SagaGenerator<v
 
   const { workspaceId, noteId, taskKey } = mutation;
   try {
-    yield* call([appClient.tasks, appClient.tasks.unlinkAgent], workspaceId, noteId, taskKey);
+    if (lease) {
+      yield* call(() => lease.run(() => appClient.tasks.unlinkAgent(workspaceId, noteId, taskKey)));
+    } else {
+      yield* call([appClient.tasks, appClient.tasks.unlinkAgent], workspaceId, noteId, taskKey);
+    }
   } catch (error) {
     logger.error('task.unlinkAgent failed', { workspaceId, noteId, taskKey, error });
   }
@@ -147,12 +164,19 @@ function* consumeAssociationMutations(
   try {
     while (true) {
       const mutation = yield* take(queue.channel);
-      yield* call(runAssociationMutation, mutation);
+      try {
+        yield* call(runAssociationMutation, mutation);
+      } finally {
+        mutation.release?.();
+        if (mutation.release) queue.reservations.delete(mutation.release);
+      }
       queue.pending -= 1;
       if (queue.pending === 0 && retireMutationQueue(tracker, key, queue)) return;
     }
   } finally {
     queue.channel.close();
+    for (const release of queue.reservations) release();
+    queue.reservations.clear();
     retireMutationQueue(tracker, key, queue);
   }
 }
@@ -166,11 +190,16 @@ function* enqueueAssociationMutation(
   const key = mutationKey(mutation.workspaceId, mutation.noteId, taskKey);
   let queue = tracker.mutationQueues.get(key);
   if (!queue) {
-    queue = { channel: channel<AssociationMutation>(buffers.expanding()), pending: 0 };
+    queue = {
+      channel: channel<AssociationMutation>(buffers.expanding()),
+      pending: 0,
+      reservations: new Set(),
+    };
     tracker.mutationQueues.set(key, queue);
     tracker.onMutationQueueCountChange?.(tracker.mutationQueues.size);
     queue.task = yield* fork(consumeAssociationMutations, tracker, key, queue);
   }
+  if (mutation.release) queue.reservations.add(mutation.release);
   queue.pending += 1;
   yield* put(queue.channel, mutation);
 }
@@ -190,13 +219,20 @@ function* linkAssociation(
   action: ReturnType<typeof addTaskAgentAssociation>,
 ): SagaGenerator<void> {
   const [workspaceId, noteId, association] = action.payload;
-  yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
-  yield* enqueueAssociationMutation(tracker, {
-    kind: 'link',
-    workspaceId,
-    noteId,
-    association,
-  });
+  const lease = getLifecycleMetadataMutation(action);
+  try {
+    yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
+    yield* enqueueAssociationMutation(tracker, {
+      kind: 'link',
+      workspaceId,
+      noteId,
+      association,
+      lease,
+      release: lease?.retain(),
+    });
+  } finally {
+    lease?.finish();
+  }
 }
 
 function* unlinkRemovedAssociations(
@@ -204,16 +240,23 @@ function* unlinkRemovedAssociations(
   action: NoteRemovalAction,
 ): SagaGenerator<void> {
   const [workspaceId, noteId] = action.payload;
-  const before = tracker.snapshots.get(noteKey(workspaceId, noteId)) ?? {};
-  const after = yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
-  for (const taskKey of Object.keys(before)) {
-    if (taskKey in after) continue;
-    yield* enqueueAssociationMutation(tracker, {
-      kind: 'unlink',
-      workspaceId,
-      noteId,
-      taskKey,
-    });
+  const lease = getLifecycleMetadataMutation(action);
+  try {
+    const before = tracker.snapshots.get(noteKey(workspaceId, noteId)) ?? {};
+    const after = yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
+    for (const taskKey of Object.keys(before)) {
+      if (taskKey in after) continue;
+      yield* enqueueAssociationMutation(tracker, {
+        kind: 'unlink',
+        workspaceId,
+        noteId,
+        taskKey,
+        lease,
+        release: lease?.retain(),
+      });
+    }
+  } finally {
+    lease?.finish();
   }
 }
 
@@ -302,7 +345,15 @@ export function* taskAgentAssociationsSaga(
     yield* call(consumeAssociationActions, tracker, actions);
   } finally {
     actions.close();
-    for (const queue of tracker.mutationQueues.values()) queue.channel.close();
+    actions.flush((pending) => {
+      if (Array.isArray(pending))
+        for (const action of pending) getLifecycleMetadataMutation(action)?.finish();
+    });
+    for (const queue of tracker.mutationQueues.values()) {
+      queue.channel.close();
+      for (const release of queue.reservations) release();
+      queue.reservations.clear();
+    }
     const hadMutationQueues = tracker.mutationQueues.size > 0;
     tracker.mutationQueues.clear();
     if (hadMutationQueues) tracker.onMutationQueueCountChange?.(0);

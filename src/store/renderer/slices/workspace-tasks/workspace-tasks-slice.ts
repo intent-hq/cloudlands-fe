@@ -1,3 +1,4 @@
+import { getRecoveryAdmission } from '../../middlewares/event-recovery';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import type { TaskStatus, Workspace, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
@@ -67,6 +68,11 @@ export const loadWorkspaceTasksRequested = createAction<[workspaceId: string]>(
 export const workspaceTasksReadStarted = createAction<[workspaceId: string]>(
   'workspaceTasks/workspaceTasksReadStarted',
 );
+
+/** Settle an invalidated read without installing its stale result or error. */
+export const workspaceTasksReadAbandoned = createAction<
+  [workspaceId: string, readRevision: number]
+>('workspaceTasks/workspaceTasksReadAbandoned');
 
 /** Check missing/stale data for existing demand; this does not acquire demand. */
 export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
@@ -170,6 +176,14 @@ workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [worksp
   });
 });
 workspaceTasksReducer.with(
+  workspaceTasksReadAbandoned,
+  (state, { payload: [workspaceId, revision] }) => {
+    const ws = state.byWorkspaceId[workspaceId];
+    if (!ws?.loading || ws.readRevision !== revision) return state;
+    return setWorkspaceState(state, workspaceId, { ...ws, loading: false, stale: true });
+  },
+);
+workspaceTasksReducer.with(
   loadWorkspaceTasksSucceeded,
   (state, { payload: [workspaceId, tasks, stats] }) => {
     const ws = getWorkspaceState(state, workspaceId);
@@ -198,24 +212,31 @@ workspaceTasksReducer.with(
     });
   },
 );
-workspaceTasksReducer.with(
-  workspaceTasksPushed,
-  (state, { payload: [workspaceId, tasks, removedIds] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    let rows = ws.tasks;
-    const pendingPushes = { ...ws.pendingPushes };
-    for (const task of tasks) {
-      rows = getItem(rows, task.id) ? replaceItem(rows, task.id, task) : addItem(rows, task);
-      if (ws.loading) pendingPushes[task.id] = task;
-    }
-    for (const id of removedIds) {
-      rows = removeItem(rows, id);
-      if (ws.loading) pendingPushes[id] = null;
-    }
-    return setWorkspaceState(state, workspaceId, { ...ws, tasks: rows, pendingPushes });
-  },
-);
-workspaceTasksReducer.with(workspaceTaskStatsPushed, (state, { payload: [workspaceId, stats] }) => {
+workspaceTasksReducer.with(workspaceTasksPushed, (state, action) => {
+  const {
+    payload: [workspaceId, tasks, removedIds],
+  } = action;
+  const receipt = getRecoveryAdmission(action, `tasks:${JSON.stringify([workspaceId])}`);
+  if (receipt !== undefined && !receipt?.commit(() => undefined)) return state;
+  const ws = getWorkspaceState(state, workspaceId);
+  let rows = ws.tasks;
+  const pendingPushes = { ...ws.pendingPushes };
+  for (const task of tasks) {
+    rows = getItem(rows, task.id) ? replaceItem(rows, task.id, task) : addItem(rows, task);
+    if (ws.loading) pendingPushes[task.id] = task;
+  }
+  for (const id of removedIds) {
+    rows = removeItem(rows, id);
+    if (ws.loading) pendingPushes[id] = null;
+  }
+  return setWorkspaceState(state, workspaceId, { ...ws, tasks: rows, pendingPushes });
+});
+workspaceTasksReducer.with(workspaceTaskStatsPushed, (state, action) => {
+  const {
+    payload: [workspaceId, stats],
+  } = action;
+  const receipt = getRecoveryAdmission(action, `tasks:${JSON.stringify([workspaceId])}`);
+  if (receipt !== undefined && !receipt?.commit(() => undefined)) return state;
   const ws = getWorkspaceState(state, workspaceId);
   return setWorkspaceState(state, workspaceId, {
     ...ws,

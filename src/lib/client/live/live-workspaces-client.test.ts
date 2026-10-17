@@ -35,6 +35,7 @@ import {
 } from './backend-transport';
 import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
 import { appClient } from '$lib/client';
@@ -1419,4 +1420,23 @@ it('forwards a companion only through its original Live session without a second
   expect(parent.prepareCompanion).toHaveBeenCalledOnce();
   expect(mockedRequest).not.toHaveBeenCalled();
   await opened.release();
+});
+
+it('does not share a held workspace list across session lifetimes', async () => {
+  const client = new LiveWorkspacesClient();
+  let finish!: (value: any) => void;
+  vi.mocked(backendRequest).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finish = done;
+      }),
+  );
+  const old = client.list();
+  rendererEventRecovery.dispose();
+  vi.mocked(backendRequest).mockResolvedValueOnce({ workspaces: [{ id: 'ws-new' }] });
+  const next = client.list();
+  expect(next).not.toBe(old);
+  expect((await next)[0].id).toBe('ws-new');
+  finish({ workspaces: [{ id: 'ws-old' }] });
+  await old;
 });

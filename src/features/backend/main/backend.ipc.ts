@@ -1,3 +1,7 @@
+import { registerOrdinaryRequestCompletions } from './ordinary-request-completion';
+import { captureMainEventRecovery, onMainEventRecoveryReady } from './main-event-recovery';
+import { requiresRepositoryRoute, isRepositoryCheckoutCreate } from './repository-request-policy';
+import { registerEventRecoveryHandlers } from './event-recovery-ipc';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -411,6 +415,8 @@ const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createReposit
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
+let ordinaryRequestCompletions: ReturnType<typeof registerOrdinaryRequestCompletions> | undefined;
+let eventRecoveryRoutes: ReturnType<typeof registerEventRecoveryHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
   ReturnType<typeof createRepositorySelectionFeed>
@@ -815,6 +821,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    eventRecoveryRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
@@ -1000,6 +1007,8 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        eventRecoveryRoutes?.dispose();
+        ordinaryRequestCompletions?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -1630,9 +1639,13 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  eventRecoveryRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
+  guestRecoveryReadiness.get(instance)?.();
+  guestRecoveryReadiness.delete(instance);
+  guestWorkspaceRecoveries.get(instance)?.capture.coordinator.dispose();
   backendClients.delete(id);
   captureRegistrations.get(id)?.();
   captureRegistrations.delete(id);
@@ -1773,6 +1786,15 @@ const invitedClientCredentials = new WeakMap<
   guestSessionsStore.InvitedCredentialLease
 >();
 const invitedClientHellos = new WeakMap<JsonRpcClient, unknown>();
+const guestRecoveryReadiness = new WeakMap<JsonRpcClient, () => void>();
+type MainRecovery = NonNullable<ReturnType<typeof captureMainEventRecovery>>;
+const guestWorkspaceRecoveries = new WeakMap<
+  JsonRpcClient,
+  {
+    capture: MainRecovery;
+    resource: ReturnType<MainRecovery['coordinator']['registerResource']>;
+  }
+>();
 
 function createAdditionalBackendClient(
   id: string,
@@ -1806,6 +1828,114 @@ function createAdditionalBackendClient(
   let refreshPending = false;
   let refreshAgain = false;
   let hostMembership = false;
+  let principalRead: Promise<unknown> | undefined;
+  const retireGuestAuthority = () => {
+    identityRevision++;
+    invitedConnectionGuards.delete(id);
+    guestWorkspaceEvents.generation++;
+    guestWorkspaceEvents.subscriptionId = undefined;
+    guestWorkspaceEvents.subscribing = false;
+    if (!guestWorkspaceRecoveries.get(instance)?.capture.session.isCurrent())
+      guestWorkspaceRecoveries.delete(instance);
+    // Teardown clears live authority synchronously; the shutdown owner has
+    // already sealed persistence/broadcast admission and must not acquire work.
+    if (!invitedCredential || (poolLifecycle && poolLifecycle.phase !== 'active')) return;
+    const revision = identityRevision;
+    const guard = Object.assign(
+      () =>
+        (!backendClients.has(id) || backendClients.get(id) === instance) &&
+        (identityRevision === revision || !instance.getRepositoryConnection?.()),
+      { credential: invitedCredential },
+    );
+    void poolWork('guest-authority-retired', undefined, async (owner) => {
+      if (await guestSessionsStore.setWorkspaces(id, [], guard))
+        await broadcastGuestSessionsChangedOwned(owner);
+    }).catch(() => {});
+  };
+  const ensureGuestRecovery = () => {
+    if (!invitedCredential) return;
+    const previous = guestWorkspaceRecoveries.get(instance);
+    if (previous?.capture.session.isCurrent()) return previous;
+    const capture = captureMainEventRecovery(instance, retireGuestAuthority);
+    if (!capture) return;
+    const eventTypes = [
+      ...GUEST_WORKSPACE_EVENT_TYPES,
+      'workspace:created',
+      'host:members-changed',
+    ];
+    const resource = capture.coordinator.registerResource({
+      key: 'guest-workspaces',
+      workspaceId: null,
+      eventTypes,
+      read: async (reader) => {
+        const epoch = guestMembershipEpochs.get(id);
+        await principalRead?.catch(() => {});
+        await guestHydrationPending.get(instance)?.catch(() => {});
+        const principal = await reader.request('principal.me');
+        const snapshot = parsePrincipalSnapshot(latestHello, principal);
+        const role = snapshot && invitedRole(snapshot);
+        if (!snapshot || !role || snapshot.principal.id !== invitedCredential.principalId)
+          throw Object.assign(new Error('Invited principal retired'), { rpcCode: -32003 });
+        const refs = extractWorkspaceRefs(await reader.request('workspace.list'));
+        if (!refs) throw new Error('Invalid guest workspace list');
+        if (guestMembershipEpochs.get(id) !== epoch) throw new Error('Guest membership changed');
+        return { snapshot, role, refs, epoch };
+      },
+      apply: ({ snapshot, role, refs, epoch }) => {
+        const revision = identityRevision;
+        const current = Object.assign(
+          () =>
+            capture.session.isCurrent() &&
+            backendClients.get(id) === instance &&
+            identityRevision === revision &&
+            guestMembershipEpochs.get(id) === epoch,
+          { credential: invitedCredential },
+        );
+        invitedConnectionGuards.set(id, current);
+        hostMembership = snapshot.capabilities.hostMembership;
+        void poolWork('guest-recovery-commit', undefined, async (owner) => {
+          if (!current()) return;
+          await guestSessionsStore.setPrincipal(
+            id,
+            {
+              login: snapshot.principal.login,
+              identity: snapshot.principal.identity,
+              hostRole: role,
+            },
+            current,
+          );
+          if (current() && (await guestSessionsStore.setWorkspaces(id, refs, current)) && current())
+            await broadcastGuestSessionsChangedOwned(owner);
+        }).catch(() => {});
+      },
+      invalidate: () => {
+        identityRevision++;
+        invitedConnectionGuards.delete(id);
+      },
+      retire: () => {
+        retireGuestAuthority();
+      },
+      onEvent: (notification) => {
+        if (
+          !isGuestWorkspaceRefreshEvent(
+            notification,
+            (notification.params as { subscriptionId: string }).subscriptionId,
+            hostMembership,
+          )
+        )
+          return;
+        const type = (notification.params as { event?: { type?: string } })?.event?.type;
+        if (type === 'host:members-changed') {
+          identityRevision++;
+          invitedConnectionGuards.delete(id);
+          void refreshInvited();
+        } else requestGuestWorkspaceRefresh(id);
+      },
+    });
+    const recovery = { capture, resource };
+    guestWorkspaceRecoveries.set(instance, recovery);
+    return recovery;
+  };
   const refreshInvited = (parent?: PoolOwner) =>
     poolWork('invited-principal', parent, async (owner) => {
       if (!invitedCredential) return;
@@ -1820,15 +1950,38 @@ function createAdditionalBackendClient(
           refreshAgain = false;
           const generation = guestWorkspaceEvents.generation;
           const revision = identityRevision;
-          const current = Object.assign(
+          const recovery = ensureGuestRecovery();
+          if (
+            !recovery &&
+            (typeof instance.onRepositoryIdentityConfirmed === 'function' ||
+              instance.getRepositoryConnection?.())
+          )
+            continue;
+          if (recovery?.resource.status.stale) {
+            recovery.resource.refresh();
+            continue;
+          }
+          const connection = instance.getRepositoryConnection?.();
+          // Enduring admission follows principal/connection authority, not the
+          // mutation receipt invalidated by each accepted workspace event.
+          const admitted = Object.assign(
             () =>
               backendClients.get(id) === instance &&
               guestWorkspaceEvents.generation === generation &&
-              identityRevision === revision,
+              identityRevision === revision &&
+              (!connection || instance.getRepositoryConnection?.() === connection),
             { credential: invitedCredential },
           );
+          // A workspace title push cannot supersede principal authority. Loss,
+          // membership revision and identity changes still invalidate admission;
+          // the subsequent workspace read owns its own mutation receipt.
+          const current = admitted;
           invitedConnectionGuards.delete(id);
-          const principal = await poolRequest(owner, instance, 'principal.me');
+          principalRead = recovery
+            ? recovery.capture.session.request('principal.me')
+            : poolRequest(owner, instance, 'principal.me');
+          const principal = await principalRead;
+          principalRead = undefined;
           if (!current()) continue;
           const snapshot = parsePrincipalSnapshot(latestHello, principal);
           const role = snapshot && invitedRole(snapshot);
@@ -1847,11 +2000,13 @@ function createAdditionalBackendClient(
             !current()
           )
             continue;
-          invitedConnectionGuards.set(id, current);
+          invitedConnectionGuards.set(id, admitted);
           hostMembership = snapshot.capabilities.hostMembership;
           void captureRemoteHostnameOwned(id, owner);
           void captureRemoteUpdateSupportedOwned(id, owner);
-          void hydrateGuestWorkspacesOwned(id, owner);
+          const recoveryOwner = ensureGuestRecovery();
+          if (!recoveryOwner || guestWorkspaceEvents.subscriptionId !== undefined)
+            void hydrateGuestWorkspacesOwned(id, owner);
           if (
             guestWorkspaceEvents.subscriptionId === undefined &&
             !guestWorkspaceEvents.subscribing
@@ -1874,6 +2029,7 @@ function createAdditionalBackendClient(
                   return;
                 guestWorkspaceEvents.subscribing = false;
                 guestWorkspaceEvents.subscriptionId = subscriptionId;
+                if (recoveryOwner) void hydrateGuestWorkspacesOwned(id, child);
               }),
             );
           }
@@ -1883,6 +2039,7 @@ function createAdditionalBackendClient(
         logger.warn('Invited principal refresh failed', { code: revokeFailureCode(error) });
       } finally {
         refreshPending = false;
+        principalRead = undefined;
       }
     });
   let observedGeneration: number | undefined;
@@ -2039,6 +2196,7 @@ function createAdditionalBackendClient(
     if (poolLifecycle && poolLifecycle.phase !== 'active') return;
     if (backendClients.get(id) !== instance) return;
     if (
+      !guestWorkspaceRecoveries.get(instance)?.capture.session.isCurrent() &&
       isGuestWorkspaceRefreshEvent(
         notification,
         guestWorkspaceEvents.subscriptionId,
@@ -2201,7 +2359,23 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
-  if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
+  if (invitedCredential) {
+    invitedClientCredentials.set(instance, invitedCredential);
+    if (typeof instance.onRepositoryIdentityConfirmed === 'function')
+      guestRecoveryReadiness.set(
+        instance,
+        onMainEventRecoveryReady(instance, () => {
+          if (
+            backendClients.get(id) !== instance ||
+            !latestHello ||
+            (poolLifecycle && poolLifecycle.phase !== 'active') ||
+            guestWorkspaceRecoveries.get(instance)?.capture.session.isCurrent()
+          )
+            return;
+          void refreshInvited();
+        }),
+      );
+  }
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   poolLifecycle?.members.set(instance, { id });
   if (poolLifecycle)
@@ -2615,6 +2789,7 @@ function bumpGuestMembershipEpoch(id: string): void {
  * the newer membership.
  */
 const guestHydrationReads = new Map<string, number>();
+const guestHydrationPending = new WeakMap<JsonRpcClient, Promise<unknown>>();
 
 /**
  * Hydrate a guest session's joined-workspace list from the host once its
@@ -2647,6 +2822,10 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
     const client = original ?? poolClient(owner, getBackendClientForId(id));
     if (owner && backendClients.get(id) !== client) return;
     const epoch = guestMembershipEpochs.get(id);
+    const recovery = guestWorkspaceRecoveries.get(client);
+    if (recovery?.resource.status.stale) return;
+    if (!recovery && typeof client.onRepositoryIdentityConfirmed === 'function') return;
+    const receipt = recovery?.resource.captureLifetime();
     const read = (guestHydrationReads.get(id) ?? 0) + 1;
     guestHydrationReads.set(id, read);
     const stillValid = Object.assign(
@@ -2654,10 +2833,21 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
         guard() &&
         backendClients.get(id) === client &&
         guestHydrationReads.get(id) === read &&
-        guestMembershipEpochs.get(id) === epoch,
+        guestMembershipEpochs.get(id) === epoch &&
+        (!receipt || receipt.isCurrent()) &&
+        !recovery?.resource.status.stale,
       { credential: guard.credential },
     );
-    const result = await poolRequest(owner, client, 'workspace.list');
+    const pending = recovery
+      ? recovery.capture.session.request('workspace.list')
+      : poolRequest(owner, client, 'workspace.list');
+    guestHydrationPending.set(client, pending);
+    let result: unknown;
+    try {
+      result = await pending;
+    } finally {
+      if (guestHydrationPending.get(client) === pending) guestHydrationPending.delete(client);
+    }
     if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {
@@ -2748,11 +2938,19 @@ async function subscribeGuestWorkspaceEventsOriginal(
     poolClient(owner, client);
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
     if (!isCurrent()) return undefined;
-    const result = (await poolRequest(owner, client, 'events.subscribe', {
-      eventTypes: hostMembership
-        ? [...GUEST_WORKSPACE_EVENT_TYPES, 'workspace:created', 'host:members-changed']
-        : GUEST_WORKSPACE_EVENT_TYPES,
-    })) as { subscriptionId?: unknown } | undefined;
+    const recovery = guestWorkspaceRecoveries.get(client);
+    if (!recovery && typeof client.onRepositoryIdentityConfirmed === 'function') return undefined;
+    const eventTypes = hostMembership
+      ? [...GUEST_WORKSPACE_EVENT_TYPES, 'workspace:created', 'host:members-changed']
+      : GUEST_WORKSPACE_EVENT_TYPES;
+    const result = recovery
+      ? {
+          subscriptionId: (
+            await recovery.capture.coordinator.subscribe({ eventTypes }, { recover: true })
+          )?.id,
+        }
+      : ((await poolRequest(owner, client, 'events.subscribe', { eventTypes })) as
+          { subscriptionId?: unknown } | undefined);
     if (!isCurrent()) return undefined;
     if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
       logger.warn('events.subscribe for guest workspace events returned no subscriptionId', {
@@ -4291,6 +4489,14 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  ordinaryRequestCompletions?.dispose();
+  ordinaryRequestCompletions = registerOrdinaryRequestCompletions(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    errorPayload: toErrorPayload,
+  });
+  eventRecoveryRoutes = registerEventRecoveryHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4311,42 +4517,26 @@ export function registerBackendHandlers(): void {
     BACKEND.REQUEST,
     async (
       event,
-      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+      payload: {
+        method?: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+        observeCompletion?: boolean;
+      },
     ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
       }
-      if (
-        method.startsWith('sourceControl.read.') ||
-        method.startsWith('sourceControl.checkout.') ||
-        method === 'workspace.repositoryContext' ||
-        method === 'workspace.repositoryContext.capture' ||
-        method === 'workspace.repositoryContext.release' ||
-        method === 'workspace.repositorySelection.capture' ||
-        method === 'workspace.repositorySelection.save' ||
-        method === 'workspace.repositorySelection.reset' ||
-        method === 'workspace.repositorySelection.reconcile' ||
-        method === 'workspace.repositorySelection.release' ||
-        method === 'accept-changes.reconcile' ||
-        method === 'accept-changes.release' ||
-        ((method === 'accept-changes.prepare' || method === 'accept-changes.execute') &&
-          payload.params !== null &&
-          typeof payload.params === 'object' &&
-          Object.prototype.hasOwnProperty.call(payload.params, 'review'))
-      ) {
+      if (requiresRepositoryRoute(method, payload.params)) {
         return {
           ok: false,
           // i18n-ignore (internal route diagnostic; facade emits a typed unavailable state)
           error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Repository route required' },
         };
       }
-      if (
-        method === 'workspace.create' &&
-        payload.params !== null &&
-        typeof payload.params === 'object' &&
-        Object.prototype.hasOwnProperty.call(payload.params, 'repositoryCheckout')
-      ) {
+      if (isRepositoryCheckoutCreate(method, payload.params)) {
         if (payload.localMachine === true || !checkoutRoutes)
           return {
             ok: false,
@@ -4383,17 +4573,26 @@ export function registerBackendHandlers(): void {
           );
           return { ok: true, result };
         }
-        const nameGuard =
-          method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
-        const result = await client.request(method, payload?.params, { timeoutMs });
-        if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
-        const expected = invitedClientCredentials.get(client);
-        if (expected && method === 'principal.me') {
-          const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
-          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
-            throw new Error('Invited principal unavailable');
-        }
-        return { ok: true, result };
+        const operation = async () => {
+          const nameGuard =
+            method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
+          const result = await client.request(method, payload?.params, { timeoutMs });
+          if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
+          const expected = invitedClientCredentials.get(client);
+          if (expected && method === 'principal.me') {
+            const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
+            if (
+              !snapshot ||
+              snapshot.principal.id !== expected.principalId ||
+              !invitedRole(snapshot)
+            )
+              throw new Error('Invited principal unavailable');
+          }
+          return result;
+        };
+        if (payload.observeCompletion === true && ordinaryRequestCompletions)
+          return ordinaryRequestCompletions.run(event, backendId, client, operation);
+        return { ok: true, result: await operation() };
       } catch (error) {
         return { ok: false, error: toErrorPayload(error) };
       }
@@ -4430,7 +4629,15 @@ export function registerBackendHandlers(): void {
   ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
     try {
       const { client } = getBackendClientForIpcEvent(event);
-      return { ok: true, result: { server: { capabilities: client.getNodeCapabilities() } } };
+      const capabilities = client.getNodeCapabilities();
+      const clientId = client.getConfirmedClientId();
+      if (!capabilities || !clientId)
+        return {
+          ok: false,
+          // i18n-ignore (internal identity diagnostic; admission callers reject unconfirmed authority)
+          error: { code: 'UNAVAILABLE', message: 'Backend identity is not confirmed' },
+        };
+      return { ok: true, result: { clientId, server: { capabilities } } };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }
@@ -5409,6 +5616,8 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  eventRecoveryRoutes?.dispose();
+  ordinaryRequestCompletions?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();
@@ -5428,6 +5637,9 @@ export function disposeAllBackendClients(): void {
     checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
+    guestRecoveryReadiness.get(instance)?.();
+    guestRecoveryReadiness.delete(instance);
+    guestWorkspaceRecoveries.get(instance)?.capture.coordinator.dispose();
     instance.dispose();
   }
 }

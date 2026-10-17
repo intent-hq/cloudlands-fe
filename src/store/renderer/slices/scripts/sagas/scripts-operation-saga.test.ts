@@ -1,3 +1,5 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
@@ -74,13 +76,14 @@ function start() {
     bgExecutor: backgroundAgentExecutorReducer(undefined, { type: '@@init' }),
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
   });
-  const dispatch = (action: DispatchedAction) => {
+  const reduce = (action: DispatchedAction) => {
     state.scripts = scriptsReducer(state.scripts, action);
     state.bgExecutor = backgroundAgentExecutorReducer(state.bgExecutor, action);
     actions.push(action);
     channel.put(action);
     return action;
   };
+  const dispatch = createEventRecoveryMiddleware()({} as never)(reduce as never) as typeof reduce;
   const task = runSaga({ channel, dispatch, getState: () => state }, scriptsOperationSaga);
   return { actions, channel, dispatch, state, task };
 }
@@ -92,6 +95,7 @@ async function stop(task: Task) {
 
 afterEach(() => {
   store.dispose();
+  rendererEventRecovery.dispose();
   vi.clearAllMocks();
 });
 
@@ -100,6 +104,50 @@ beforeEach(() => {
 });
 
 describe('scriptsOperationSaga definition ownership', () => {
+  it('does not remove a recovered script from a held pre-loss delete response', async () => {
+    let resolve!: (value: { success: boolean }) => void;
+    const pending = {
+      promise: new Promise<{ success: boolean }>((done) => {
+        resolve = done;
+      }),
+    };
+    transport.remove.mockReturnValue(pending.promise);
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    const scope = rendererEventRecovery.attach({
+      supported: true,
+      isCurrent: () => true,
+      request: async <T>() => ({}) as T,
+      fence: async (_ids, observe) => {
+        observe();
+      },
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      dispose: () => {},
+    });
+    const owner = scope.registerResource({
+      key: 'scripts:' + JSON.stringify([WS]),
+      workspaceId: WS,
+      eventTypes: ['script:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    run.dispatch(deleteScriptRequested(WS, 'script-1', 'Delete failed'));
+    expect(transport.remove).toHaveBeenCalledOnce();
+    owner.invalidate();
+    run.dispatch(setScriptsData(WS, [definition]));
+    resolve({ success: true });
+    await vi.waitFor(() =>
+      expect(run.state.scripts.byWorkspaceId[WS].operations[definition.id]?.pending).not.toBe(true),
+    );
+    expect(run.state.scripts.byWorkspaceId[WS].scripts['script-1']).toBeDefined();
+    expect(run.state.scripts.byWorkspaceId[WS].operations['script-1']?.pending).not.toBe(true);
+    await stop(run.task);
+  });
+
   it('creates through the transport and settles the compatibility promise', async () => {
     transport.create.mockResolvedValueOnce({ success: true, script: definition });
     const run = start();
@@ -385,6 +433,67 @@ describe('scriptsOperationSaga definition ownership', () => {
     expect(run.state.scripts.byWorkspaceId[WS].scripts[running.id]).toBeUndefined();
     await stop(run.task);
   });
+
+  it.each(['current', 'invalidated', 'replaced'] as const)(
+    'settles bulk removal without crossing the %s recovery owner',
+    async (transition) => {
+      store.init();
+      let resolveRemoval!: (value: { success: true }) => void;
+      transport.get.mockResolvedValueOnce(definition);
+      transport.remove.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRemoval = resolve;
+        }),
+      );
+      const run = start();
+      run.dispatch(setScriptsData(WS, [definition]));
+      const scope = rendererEventRecovery.attach({
+        supported: true,
+        isCurrent: () => true,
+        request: async <T>() => ({}) as T,
+        fence: async (_ids, observe) => {
+          observe();
+        },
+        onNotification: () => () => {},
+        onRetired: () => () => {},
+        dispose: () => {},
+      });
+      const registration = {
+        key: 'scripts:' + JSON.stringify([WS]),
+        workspaceId: WS,
+        eventTypes: ['script:*'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      };
+      const owner = scope.registerResource(registration);
+      const request = removeScriptDefinitionsRequested(WS, [definition], 'Unable to remove script');
+      try {
+        run.channel.put(request);
+        await vi.waitFor(() => expect(transport.remove).toHaveBeenCalledOnce());
+        if (transition === 'invalidated') owner.invalidate();
+        if (transition === 'replaced') {
+          owner.dispose();
+          scope.registerResource(registration);
+        }
+        if (transition !== 'current') run.dispatch(setScriptsData(WS, [definition]));
+        resolveRemoval({ success: true });
+        await expect(request.promise).resolves.toEqual({ removed: [definition.id], failed: [] });
+        expect(transport.remove).toHaveBeenCalledTimes(1);
+        expect(run.state.scripts.byWorkspaceId[WS].operations[definition.id]?.pending).not.toBe(
+          true,
+        );
+        const row = run.state.scripts.byWorkspaceId[WS].scripts[definition.id];
+        if (transition === 'current') expect(row).toBeUndefined();
+        else expect(row).toEqual(definition);
+      } finally {
+        resolveRemoval({ success: true });
+        await stop(run.task);
+      }
+    },
+  );
 
   it('reports individual bulk-removal failures while preserving successful removals', async () => {
     const second = { ...definition, id: 'script-2', name: 'Second' };

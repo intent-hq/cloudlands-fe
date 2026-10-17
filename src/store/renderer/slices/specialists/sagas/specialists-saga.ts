@@ -1,3 +1,7 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { settleGlobalSpecialistReads } from '$lib/client/live/live-specialists-client';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import { store } from '../../../store';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import {
@@ -208,12 +212,19 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
   };
 }
 
-function* applySpecialistCatalog(catalog: SpecialistCatalog) {
-  yield* put(setSpecialistImportDiagnostics(catalog.importDiagnostics ?? []));
-  return yield* call(applySpecialistList, catalog.specialists, true);
+function* applySpecialistCatalog(catalog: SpecialistCatalog, receipt: RecoveryLifetime) {
+  yield* put(
+    withRecoveryLifetime(setSpecialistImportDiagnostics(catalog.importDiagnostics ?? []), receipt),
+  );
+  return yield* call(applySpecialistList, catalog.specialists, true, receipt);
 }
 
-function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
+function* applySpecialistList(
+  defs: SpecialistDef[],
+  authoritative = false,
+  receipt: RecoveryLifetime = rendererEventRecovery.capture('global-specialists'),
+) {
+  if (!receipt.commit(() => undefined)) return false;
   // The daemon always ships bundled specialists. The live client folds a
   // transport failure into [], so an empty result after initial load is a
   // failed read and must not replace the last-known-good roster or loaded flags.
@@ -233,12 +244,12 @@ function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
       ? bundledDefs.map(toBundledSpecialist)
       : SPECIALISTS.map(bundledFallback);
 
-  yield* put(setBundledSpecialists(bundled));
-  yield* put(setBundledSpecialistsLoaded(true));
-  yield* put(setOverridesLoaded(true));
-  yield* put(setCustomSpecialistsLoaded(true));
-  yield* put(setFileSpecialists(fileDefs.map(toFileSpecialist)));
-  yield* put(setFileSpecialistsLoaded(true));
+  yield* put(withRecoveryLifetime(setBundledSpecialists(bundled), receipt));
+  yield* put(withRecoveryLifetime(setBundledSpecialistsLoaded(true), receipt));
+  yield* put(withRecoveryLifetime(setOverridesLoaded(true), receipt));
+  yield* put(withRecoveryLifetime(setCustomSpecialistsLoaded(true), receipt));
+  yield* put(withRecoveryLifetime(setFileSpecialists(fileDefs.map(toFileSpecialist)), receipt));
+  yield* put(withRecoveryLifetime(setFileSpecialistsLoaded(true), receipt));
   return true;
 }
 
@@ -246,6 +257,8 @@ function* refetchSpecialists(context: ListContext) {
   const admission = yield* selectPrincipalActionContext.effect();
   if (!admission) return;
   const generation = ++context.generation;
+  const receipt = rendererEventRecovery.capture('global-specialists');
+  if (!receipt.commit(() => undefined)) return;
   try {
     let accepted: boolean;
     if (appClient.specialists.listCatalog) {
@@ -255,7 +268,7 @@ function* refetchSpecialists(context: ListContext) {
         admission !== (yield* selectPrincipalActionContext.effect())
       )
         return;
-      accepted = yield* call(applySpecialistCatalog, catalog);
+      accepted = yield* call(applySpecialistCatalog, catalog, receipt);
     } else {
       const defs = yield* call([appClient.specialists, appClient.specialists.list]);
       if (
@@ -263,7 +276,7 @@ function* refetchSpecialists(context: ListContext) {
         admission !== (yield* selectPrincipalActionContext.effect())
       )
         return;
-      accepted = yield* call(applySpecialistList, defs);
+      accepted = yield* call(applySpecialistList, defs, false, receipt);
     }
     yield* call(
       publishCatalogRead,
@@ -681,26 +694,29 @@ function* watchSpecialistRefetches(context: ListContext) {
   }
 }
 
-function createSpecialistsChannel(): EventChannel<SpecialistCatalog | SpecialistDef[]> {
-  return eventChannel<SpecialistCatalog | SpecialistDef[]>(
-    (emit) =>
-      appClient.specialists.subscribeCatalog
-        ? appClient.specialists.subscribeCatalog(emit)
-        : appClient.specialists.subscribe(emit),
-    buffers.expanding<SpecialistCatalog | SpecialistDef[]>(),
-  );
+type CatalogDelivery = { catalog: SpecialistCatalog | SpecialistDef[]; receipt: RecoveryLifetime };
+function createSpecialistsChannel(): EventChannel<CatalogDelivery> {
+  return eventChannel<CatalogDelivery>((emit) => {
+    const accept = (catalog: SpecialistCatalog | SpecialistDef[]) =>
+      emit({ catalog, receipt: rendererEventRecovery.capture('global-specialists') });
+    return appClient.specialists.subscribeCatalog
+      ? appClient.specialists.subscribeCatalog(accept)
+      : appClient.specialists.subscribe(accept);
+  }, buffers.expanding<CatalogDelivery>());
 }
 
 function* watchSpecialistsSubscription(context: ListContext) {
   const channel = createSpecialistsChannel();
   try {
     while (true) {
-      const catalog: SpecialistCatalog | SpecialistDef[] = yield* take(channel);
-      if (catalog === (END as unknown as SpecialistCatalog)) break;
+      const delivery = yield* take(channel);
+      if (delivery === (END as unknown as CatalogDelivery)) break;
+      const { catalog, receipt } = delivery;
+      if (!receipt.commit(() => undefined)) continue;
       ++context.generation;
       const accepted = Array.isArray(catalog)
-        ? yield* call(applySpecialistList, catalog)
-        : yield* call(applySpecialistCatalog, catalog);
+        ? yield* call(applySpecialistList, catalog, false, receipt)
+        : yield* call(applySpecialistCatalog, catalog, receipt);
       yield* call(
         publishCatalogRead,
         context,
@@ -769,12 +785,81 @@ function* watchFileMutations(context: ListContext) {
 
 function* specialistsSession(admission: string | null) {
   const context: ListContext = { generation: 0, confirmations: new Set() };
-  if (admission) yield* fork(watchSpecialistsSubscription, context);
-  yield* all([
-    takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
-    fork(watchFileMutations, context),
-    fork(watchSpecialistRefetches, context),
-  ]);
+  let active = true;
+  const offRecovery = admission
+    ? rendererEventRecovery.onSession((scope) => {
+        const owner = scope.registerResource({
+          key: 'global-specialists',
+          workspaceId: null,
+          eventTypes: ['specialists:changed', 'skills:changed', 'settings:changed'],
+          isCurrent: () => active && admission === selectPrincipalActionContext.select(store.state),
+          acceptsEvent: (notification) => {
+            const event = (
+              notification.params as { event?: { type?: string; data?: { changes?: unknown } } }
+            )?.event;
+            return (
+              event?.type !== 'settings:changed' ||
+              touchesModelResolutionSettings({
+                type: settingsChanged.type,
+                payload: [event.data?.changes],
+              })
+            );
+          },
+          onEvent: (_notification, lifetime) => {
+            lifetime.commit(() => {
+              store.dispatch(refetchSpecialistsRequested());
+            });
+          },
+          read: async ({ request }) => {
+            await settleGlobalSpecialistReads();
+            return request<SpecialistCatalog>('specialist.list');
+          },
+          apply: (catalog) => {
+            ++context.generation;
+            store.dispatch(setSpecialistImportDiagnostics(catalog.importDiagnostics ?? []));
+            store.dispatch(
+              setBundledSpecialists(
+                catalog.specialists
+                  .filter((def) => def.source === 'bundled')
+                  .map(toBundledSpecialist),
+              ),
+            );
+            store.dispatch(
+              setFileSpecialists(
+                catalog.specialists
+                  .filter((def) => def.source === 'user' || def.source === 'project')
+                  .map(toFileSpecialist),
+              ),
+            );
+            store.dispatch(setBundledSpecialistsLoaded(true));
+            store.dispatch(setOverridesLoaded(true));
+            store.dispatch(setCustomSpecialistsLoaded(true));
+            store.dispatch(setFileSpecialistsLoaded(true));
+            for (const updates of context.confirmations) updates.put('accepted');
+          },
+          invalidate: () => {
+            ++context.generation;
+          },
+          retire: () => {
+            ++context.generation;
+            store.dispatch(specialistSessionEnded());
+          },
+        });
+        return () => owner.dispose();
+      })
+    : () => {};
+  try {
+    if (admission) yield* fork(watchSpecialistsSubscription, context);
+    yield* all([
+      takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
+      fork(watchFileMutations, context),
+      fork(watchSpecialistRefetches, context),
+    ]);
+    yield* take(() => false);
+  } finally {
+    active = false;
+    offRecovery();
+  }
 }
 
 export function* specialistsSaga() {

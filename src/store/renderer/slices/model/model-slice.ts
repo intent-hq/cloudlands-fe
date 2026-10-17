@@ -1,3 +1,7 @@
+import {
+  settingsAuthorityRetired,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -204,4 +208,15 @@ modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
 modelReducer.with(hostExecutionConnectionChanged, (_state, { payload: [connection] }) => ({
   ...initialState,
   selectionConnection: connection,
+}));
+
+modelReducer.with(settingsAuthorityRetired, (state) => ({
+  ...initialState,
+  selectionConnection: state.selectionConnection,
+}));
+modelReducer.with(settingsSnapshotReplacing, (state) => ({
+  ...state,
+  defaultProviderId: '',
+  providerModels: {},
+  defaultReasoningEffort: '',
 }));

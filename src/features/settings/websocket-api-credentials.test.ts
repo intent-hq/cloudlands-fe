@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   beginWebsocketCredentialRequest,
   clearAllWebsocketCredentials,
+  resetWebsocketCredentials,
   readWebsocketToken,
   receiveWebsocketCredentials,
   registerWebsocketCredentials,
@@ -51,4 +52,18 @@ describe('mount-scoped API credential delivery', () => {
     expect(receive).toHaveBeenLastCalledWith({ token: '', qrDataUrl: '' });
     expect(readWebsocketToken(identity)).toBe('');
   });
+});
+
+it('retires old requests while keeping a mounted recipient available after recovery', () => {
+  const receive = vi.fn();
+  registerWebsocketCredentials('api', 'first', receive);
+  beginWebsocketCredentialRequest(identity);
+  receiveWebsocketCredentials(identity, { token: 'old' });
+  resetWebsocketCredentials();
+  receiveWebsocketCredentials(identity, { token: 'late' });
+  expect(readWebsocketToken(identity)).toBe('');
+  const next = { ...identity, requestId: 'fresh' };
+  beginWebsocketCredentialRequest(next);
+  receiveWebsocketCredentials(next, { token: 'fresh' });
+  expect(readWebsocketToken(next)).toBe('fresh');
 });

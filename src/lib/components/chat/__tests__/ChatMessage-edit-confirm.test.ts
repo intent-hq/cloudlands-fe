@@ -302,6 +302,7 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
       expect(payload).toEqual({
         method: 'file.getAttachmentInfo',
+        observeCompletion: true,
         params: { attachmentId: 'att-thumb-1', workspaceId: 'ws-thumb' },
       });
       return getAttachmentInfo();

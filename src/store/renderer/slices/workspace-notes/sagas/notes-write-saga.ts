@@ -1,6 +1,9 @@
+import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
+  getContext,
+  setContext,
   cancelled,
   delay,
   flush,
@@ -13,6 +16,16 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { store as appStore } from '../../../store';
+import type { RendererStoreBridge } from '../../../renderer-store-bridge';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import {
+  notesRecoveryKey,
+  commentsRecoveryKey,
+  commitNoteAction,
+  NOTE_RECOVERY_STORE,
+} from './notes-recovery';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { rebaseText } from '$lib/notes/text-rebase';
@@ -65,6 +78,27 @@ import {
 } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
 
+const NOTE_MUTATION_LIFETIME = 'noteMutationLifetime';
+function mutationAuthorityCurrent(workspaceId: string, lifetime: RecoveryLifetime) {
+  const current = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  return current.key === lifetime.key && current.isCurrent();
+}
+function* commitMutationAction(action: { type: string }) {
+  const lifetime = yield* getContext<RecoveryLifetime | undefined>(NOTE_MUTATION_LIFETIME);
+  if (lifetime) return yield* commitNoteAction(lifetime, action);
+  yield* put(action);
+  return true;
+}
+// Local pending flags are bookkeeping, not a server snapshot. A loss must not
+// strand them, but an old workspace/session must never clear a successor's edit.
+function* settleMutationPending(workspaceId: string, noteId: string) {
+  const lifetime = yield* getContext<RecoveryLifetime>(NOTE_MUTATION_LIFETIME);
+  const current = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  const store = yield* getContext<RendererStoreBridge>(NOTE_RECOVERY_STORE);
+  if (lifetime.key === current.key && current.isCurrent()) {
+    store.dispatch(setNoteContentPending(workspaceId, noteId, false));
+  }
+}
 const logger = createLogger('NotesWriteSaga');
 export { NOTE_CONTENT_SAVE_DEBOUNCE_MS };
 
@@ -125,11 +159,13 @@ type MutationCompletion = { value: unknown };
 type MutationEnvelope = {
   command: MutationCommand;
   generation: number;
+  lifetime: RecoveryLifetime;
   completion?: Channel<MutationCompletion>;
 };
 type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
+const commandLifetimes = new WeakMap<MutationCommand, RecoveryLifetime>();
 const pendingContent = new Map<string, PendingContent>();
 // Sequence number of the most recent local edit per key (mirrors
 // `notes-write-service.ts`): a save's echo is authoritative only when no later
@@ -208,13 +244,20 @@ function optimisticNote(
 }
 
 function* refetchWorkspaceNotes(workspaceId: string) {
+  const mutation = yield* getContext<RecoveryLifetime | undefined>(NOTE_MUTATION_LIFETIME);
+  if (mutation && !mutation.isCurrent()) return;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
-      workspaceId,
+    const response = yield* call(() =>
+      runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', 'list:full', () =>
+        appClient.notes.list(workspaceId),
+      ),
     );
     const notes = response.map(toRuntimeNote);
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* commitNoteAction(
+      lifetime,
+      loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }),
+    );
   } catch (error) {
     logger.error('Failed to refetch notes after a mutation error', error);
   }
@@ -233,7 +276,7 @@ function* reconcileConflict(
     // Mutation-response notes omit the transient `unmetDependsOn` projection
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
-    yield* put(
+    yield* commitMutationAction(
       applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
     );
   } else {
@@ -249,7 +292,7 @@ function* reconcileConflict(
 function* setRevisionIfNewer(workspaceId: string, noteId: string, nextRev: number) {
   const current = yield* selectNoteById.effect(workspaceId, noteId);
   if (current?.rev !== undefined && current.rev >= nextRev) return;
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
+  yield* commitMutationAction(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
 }
 
 function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) {
@@ -282,7 +325,9 @@ function* rebasePendingDrafts(
   if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   if (!storeIsNewer && stored?.content !== newest.content) {
-    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
+    yield* commitMutationAction(
+      applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }),
+    );
   }
   return newest.content;
 }
@@ -311,7 +356,7 @@ function* applyContentSaveResult(
   if (superseded) {
     rebased = yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
   } else if (!storeIsNewer && stored?.content !== echoed) {
-    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
+    yield* commitMutationAction(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
   if (storeIsNewer && rebased !== undefined) {
@@ -356,6 +401,11 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       yield* call(refetchWorkspaceNotes, workspaceId);
       return undefined;
     }
+    const lifetime = yield* getContext<RecoveryLifetime>(NOTE_MUTATION_LIFETIME);
+    if (!lifetime.commit(() => undefined)) {
+      rendererEventRecovery.invalidate(notesRecoveryKey(workspaceId));
+      return undefined;
+    }
     return yield* call(applyContentSaveResult, command, rev, result);
   } catch (error) {
     logger.error('Failed to save note content', error);
@@ -365,12 +415,18 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     forgetDraft(key, command);
     // This was the latest edit and nothing later can compare against it; the
     // next edit chain starts from the store's (now in-sync) rev.
-    if (latestEditSeq.get(key) === command.seq) {
+    const mutationLifetime = yield* getContext<RecoveryLifetime>(NOTE_MUTATION_LIFETIME);
+    const currentLifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+    if (
+      mutationLifetime.key === currentLifetime.key &&
+      currentLifetime.isCurrent() &&
+      latestEditSeq.get(key) === command.seq
+    ) {
       latestEditSeq.delete(key);
       draftBaseRev.delete(key);
     }
     if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
-      yield* put(setNoteContentPending(workspaceId, noteId, false));
+      yield* settleMutationPending(workspaceId, noteId);
     }
   }
 }
@@ -448,13 +504,13 @@ function* saveMetadata(command: MetadataCommand) {
           : m.notes_writeService_updateFailed_error(),
         { description: result.error ?? m.notes_writeService_unknown_error() },
       );
-      yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
+      yield* commitMutationAction(applyLocalNoteUpdate(workspaceId, noteId, rollback));
       return;
     }
     if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
   } catch (error) {
     logger.error('Failed to update note metadata', error);
-    yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
+    yield* commitMutationAction(applyLocalNoteUpdate(workspaceId, noteId, rollback));
   }
 }
 
@@ -473,10 +529,10 @@ function* removeNote(command: DeleteCommand) {
     notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot) yield* commitMutationAction(applyNoteCreated(workspaceId, snapshot));
   } catch (error) {
     logger.error('Failed to delete note', error);
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (snapshot) yield* commitMutationAction(applyNoteCreated(workspaceId, snapshot));
   }
 }
 
@@ -495,8 +551,17 @@ function* enqueueMutation(
   queue: Channel<MutationEnvelope>,
   command: MutationCommand,
   waitForCompletion = false,
+  originalLifetime?: RecoveryLifetime,
 ) {
-  const envelope = { command, generation: workspaceMutationGeneration(command.workspaceId) };
+  const lifetime =
+    originalLifetime ??
+    commandLifetimes.get(command) ??
+    rendererEventRecovery.capture(notesRecoveryKey(command.workspaceId));
+  const envelope = {
+    command,
+    generation: workspaceMutationGeneration(command.workspaceId),
+    lifetime,
+  };
   if (!waitForCompletion) {
     yield* put(queue, envelope);
     return;
@@ -549,6 +614,7 @@ function* handleContentAction(
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
   const pending: PendingContent = { kind: 'content', workspaceId, noteId, content, seq };
+  commandLifetimes.set(pending, rendererEventRecovery.capture(notesRecoveryKey(workspaceId)));
   // A still-debounced draft is replaced, never sent.
   const replaced = pendingContent.get(key);
   if (replaced) forgetDraft(key, replaced);
@@ -606,6 +672,7 @@ function* handleAddComment(
     yield* put(action.success(false));
     return;
   }
+  const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
   try {
     const command: AddCommentCommand = {
       kind: 'add-comment',
@@ -615,12 +682,12 @@ function* handleAddComment(
     };
     const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
     if (!success) {
-      yield* put(removeCommentAction(optimistic.id));
+      yield* commitNoteAction(lifetime, removeCommentAction(optimistic.id));
       notify.error(m.comments_writeService_addFailed_error());
     }
     yield* put(action.success(success));
   } catch (error) {
-    yield* put(removeCommentAction(optimistic.id));
+    yield* commitNoteAction(lifetime, removeCommentAction(optimistic.id));
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
@@ -637,6 +704,7 @@ function* handleRespondComment(
     yield* put(action.success(false));
     return;
   }
+  const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
   try {
     const command: RespondCommentCommand = {
       kind: 'respond-comment',
@@ -646,12 +714,12 @@ function* handleRespondComment(
     };
     const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
     if (!success) {
-      yield* put(removeCommentAction(optimistic.id));
+      yield* commitNoteAction(lifetime, removeCommentAction(optimistic.id));
       notify.error(m.comments_writeService_replyFailed_error());
     }
     yield* put(action.success(success));
   } catch (error) {
-    yield* put(removeCommentAction(optimistic.id));
+    yield* commitNoteAction(lifetime, removeCommentAction(optimistic.id));
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
@@ -669,6 +737,7 @@ function* handleDeleteComment(
     yield* put(action.success({ existed: !!snapshot, success: false }));
     return;
   }
+  const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
   try {
     const command: DeleteCommentCommand = {
       kind: 'delete-comment',
@@ -677,11 +746,11 @@ function* handleDeleteComment(
       commentId,
     };
     const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
-    if (!success && snapshot) yield* put(addCommentAction(snapshot));
+    if (!success && snapshot) yield* commitNoteAction(lifetime, addCommentAction(snapshot));
     if (!success) notify.error(m.comments_writeService_deleteFailed_error());
     yield* put(action.success({ existed: !!snapshot, success }));
   } catch (error) {
-    if (snapshot) yield* put(addCommentAction(snapshot));
+    if (snapshot) yield* commitNoteAction(lifetime, addCommentAction(snapshot));
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
@@ -697,6 +766,7 @@ function* handleResolveComment(
     return;
   }
   yield* put(updateCommentAction(commentId, { status: 'resolved' }));
+  const lifetime = rendererEventRecovery.capture(commentsRecoveryKey(workspaceId, noteId));
   try {
     const command: ResolveCommentCommand = {
       kind: 'resolve-comment',
@@ -705,10 +775,14 @@ function* handleResolveComment(
       commentId,
     };
     const success = (yield* call(enqueueMutation, queue, command, true)) as boolean;
-    if (!success) yield* put(updateCommentAction(commentId, { status: snapshot.status }));
+    if (!success)
+      yield* commitNoteAction(
+        lifetime,
+        updateCommentAction(commentId, { status: snapshot.status }),
+      );
     yield* put(action.success(success));
   } catch (error) {
-    yield* put(updateCommentAction(commentId, { status: snapshot.status }));
+    yield* commitNoteAction(lifetime, updateCommentAction(commentId, { status: snapshot.status }));
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
@@ -718,10 +792,12 @@ function* handleTitleAction(
   action: ReturnType<typeof updateNoteTitle>,
 ) {
   const [workspaceId, noteId, title] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId || typeof title !== 'string') return;
   const before = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   yield* enqueueMutation(
     queue,
     {
@@ -733,6 +809,7 @@ function* handleTitleAction(
       titleOnly: true,
     },
     true,
+    lifetime,
   );
 }
 
@@ -753,6 +830,7 @@ function* handleMetadataAction(
   action: ReturnType<typeof updateNote>,
 ) {
   const [workspaceId, noteId, updates] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId) return;
   const patch: NoteMetadataPatch = {
     ...(updates.title !== undefined ? { title: updates.title } : {}),
@@ -766,10 +844,12 @@ function* handleMetadataAction(
   };
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, patch));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   yield* enqueueMutation(
     queue,
     { kind: 'metadata', workspaceId, noteId, patch, rollback, titleOnly: false },
     true,
+    lifetime,
   );
 }
 
@@ -778,11 +858,13 @@ function* handleDeleteAction(
   action: ReturnType<typeof deleteNote>,
 ) {
   const [workspaceId, noteId] = action.payload;
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   if (!workspaceId || !noteId) return;
   yield* call(flushPendingNoteContent, workspaceId, noteId);
+  if (!mutationAuthorityCurrent(workspaceId, lifetime)) return;
   const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyNoteDeleted(workspaceId, noteId));
-  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
+  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true, lifetime);
 }
 
 function* handleDeleteRequested(
@@ -801,6 +883,7 @@ function* createNewNote(
   workspaceId: string,
   data: Omit<CreateNoteRequest, 'workspaceId'>,
 ): SagaGenerator<string | undefined> {
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
   const tempId = temporaryNoteId();
   const state = yield* selectWorkspaceNotesState.effect(workspaceId);
   const before = new Set(state.notes.ids.map(String));
@@ -820,13 +903,23 @@ function* createNewNote(
       return undefined;
     }
 
+    if (!lifetime.isCurrent()) return undefined;
     try {
-      const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-        [appClient.notes, appClient.notes.list],
-        workspaceId,
+      const response = yield* call(() =>
+        runRecoveryRead(notesRecoveryKey(workspaceId), lifetime, 'ordinary', 'list:full', () =>
+          appClient.notes.list(workspaceId),
+        ),
       );
       const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+      if (
+        !(yield* commitNoteAction(
+          lifetime,
+          loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }),
+        ))
+      ) {
+        rendererEventRecovery.invalidate(notesRecoveryKey(workspaceId));
+        return undefined;
+      }
       keepOptimistic = false;
       const created = notes.find((note) => !before.has(String(note.id)));
       if (!created) return undefined;
@@ -917,11 +1010,17 @@ function* settleDiscardedMutation(envelope: MutationEnvelope) {
 }
 
 function* consumeMutation(envelope: MutationEnvelope) {
-  const { command, completion, generation } = envelope;
-  if (generation !== workspaceMutationGeneration(command.workspaceId)) {
+  const { command, completion, generation, lifetime } = envelope;
+  const current = rendererEventRecovery.capture(notesRecoveryKey(command.workspaceId));
+  if (
+    generation !== workspaceMutationGeneration(command.workspaceId) ||
+    current.key !== lifetime.key ||
+    !current.isCurrent()
+  ) {
     yield* call(settleDiscardedMutation, envelope);
     return;
   }
+  yield* setContext({ [NOTE_MUTATION_LIFETIME]: lifetime });
   const { mutation } = yield* race({
     mutation: call(runMutation, command),
     cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
@@ -939,9 +1038,16 @@ function* consumeMutations(queue: Channel<MutationEnvelope>) {
   yield* join(task);
 }
 
-export function* notesWriteSaga() {
+export function* notesWriteSaga(store: RendererStoreBridge = appStore) {
+  yield* setContext({ [NOTE_RECOVERY_STORE]: store });
   const queue = channel<MutationEnvelope>(buffers.expanding());
   noteMutationQueue = queue;
+  const offSession = rendererEventRecovery.onSession(() => () => {
+    pendingContent.clear();
+    latestEditSeq.clear();
+    draftBaseRev.clear();
+    unackedDrafts.clear();
+  });
   try {
     // The worker owns keyed replacement. Keeping superseded workers alive until
     // they observe replacement preserves their draft as the next action's
@@ -964,6 +1070,7 @@ export function* notesWriteSaga() {
     yield* takeEvery(workspaceUnmounted, cleanupWorkspace);
     yield* call(consumeMutations, queue);
   } finally {
+    offSession();
     const queued = yield* flush(queue);
     for (const envelope of queued) {
       if (envelope.completion) yield* put(envelope.completion, { value: undefined });

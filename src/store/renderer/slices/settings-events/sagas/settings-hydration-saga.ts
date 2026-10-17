@@ -1,3 +1,16 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { GLOBAL_SETTINGS_RECOVERY_KEY } from '$features/settings/settings-recovery-lifetime';
+import {
+  captureSettingsWork,
+  isSettingsAuthorityError,
+} from '$features/settings/settings-recovery-lifetime';
+import {
+  installSettingsRecovery,
+  retireSettingsAuthority,
+  recordSettingsSnapshotRevision,
+  getSettingsSnapshotRevision,
+} from './settings-recovery';
+import { settingsWorkScope } from './settings-work-scope';
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, flush, put, take } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
@@ -14,7 +27,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived, settingsFieldsRefreshRequested } from '../settings-events-slice';
 import {
   selectCanAdministerHost,
-  selectHostAdministrationContext,
+  selectPrincipalActionContext,
 } from '../../principal/principal-selectors';
 import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
 import { selectModelSelectionState } from '../../model/model-selectors';
@@ -34,23 +47,32 @@ const logger = createLogger('SettingsHydrationSaga');
  * `enabledProviders: {}` — everything disabled) until a settings:changed
  * event happens to arrive (monorepo#1986).
  *
- * `LiveSettingsClient.list()` folds every transport failure into an EMPTY
+ * `LiveSettingsClient.list()` folds transient transport failures into an EMPTY
  * result, so in the live renderer the failure signal is an empty snapshot,
  * not a throw — the daemon always reports its setting catalog, making empty
  * unambiguous (the same convention the settings panels use). Both signals are
  * retried; a structured daemon error response (including the `-32003
  * Forbidden` capability refusal) is a rejection, not a transient failure, and
- * is not. The last delay repeats while this connection has confirmed owner
- * authority. Unresolved, revoked, member and guest callers never request the
+ * is not. Boot reads stop after three delayed retries while this connection
+ * has confirmed owner authority. Unresolved, revoked, member and guest callers never request the
  * catalog. Losing authority cancels the pending read and its retry timer.
  */
 export const SETTINGS_HYDRATION_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
 function* readSettingsSnapshotSaga() {
   let attempt = 0;
-  while (yield* selectCanAdministerHost.effect()) {
+  while (
+    attempt <= SETTINGS_HYDRATION_RETRY_DELAYS_MS.length &&
+    (yield* selectCanAdministerHost.effect())
+  ) {
+    const receipt = captureSettingsWork();
+    if (!receipt.isCurrent()) return;
     try {
       const snapshot = yield* call(readSettingsSnapshot);
+      if (!receipt.isCurrent()) {
+        rendererEventRecovery.invalidate(GLOBAL_SETTINGS_RECOVERY_KEY);
+        return;
+      }
       const settings = snapshot.settings;
       if (Array.isArray(settings) && settings.length > 0) {
         const changes: AppliedSettingChange[] = settings.map(({ path, value, origin }) => ({
@@ -70,12 +92,19 @@ function* readSettingsSnapshotSaga() {
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
     } catch (error) {
+      if (!receipt.isCurrent()) return;
+      if (isSettingsAuthorityError(error)) {
+        logger.error('settings hydration authority retired', error);
+        retireSettingsAuthority();
+        return;
+      }
       if (isDaemonErrorResponse(error)) {
         logger.error('settings hydration rejected by daemon', error);
         return;
       }
       logger.error('settings hydration failed, retrying', error);
     }
+    if (attempt >= SETTINGS_HYDRATION_RETRY_DELAYS_MS.length) return;
     yield* delay(
       SETTINGS_HYDRATION_RETRY_DELAYS_MS[
         Math.min(attempt, SETTINGS_HYDRATION_RETRY_DELAYS_MS.length - 1)
@@ -90,6 +119,7 @@ export function* hydrateSettingsOnceSaga() {
   yield* put(fastModeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
   if (snapshot) {
+    recordSettingsSnapshotRevision(snapshot.revision);
     yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
     yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
   }
@@ -103,6 +133,7 @@ function* settingsSnapshotLoop() {
     const snapshot = yield* call(readSettingsSnapshotSaga);
     const revisions = new Map<string, number>();
     if (snapshot) {
+      recordSettingsSnapshotRevision(snapshot.revision);
       yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
       for (const { path } of snapshot.changes) revisions.set(path, snapshot.revision);
       yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
@@ -115,7 +146,12 @@ function* settingsSnapshotLoop() {
         // A field-only recovery must not suppress unrelated event deltas.
         const current = changes.filter(
           ({ path }) =>
-            revision === undefined || revision >= (revisions.get(path) ?? snapshot?.revision ?? -1),
+            revision === undefined ||
+            revision >=
+              Math.max(
+                revisions.get(path) ?? snapshot?.revision ?? -1,
+                getSettingsSnapshotRevision(),
+              ),
         );
         if (!current.length) continue;
         yield* call(applySettingsChanges, current, revision);
@@ -141,7 +177,10 @@ function* refreshFailedFieldsLoop() {
       );
       if (!paths.size) continue;
       try {
+        const work = captureSettingsWork();
+        if (!work.isCurrent()) continue;
         const snapshot = yield* call(readSettingsSnapshot);
+        if (!work.isCurrent()) continue;
         if (connection !== (yield* selectModelSelectionState.effect()).selectionConnection)
           continue;
         yield* put(
@@ -161,17 +200,22 @@ function* refreshFailedFieldsLoop() {
 
 export function* settingsHydrationSaga() {
   yield* takeLatestFromSelector(
-    selectHostAdministrationContext,
+    selectPrincipalActionContext,
     function* ({ payload: context }: SelectorChannelPayload<string | null>) {
-      if (!context) return;
-      yield* all([
-        call(settingsMigrationsSaga),
-        call(settingsSnapshotLoop),
-        call(refreshFailedFieldsLoop),
-        call(settingsFormSaga),
-        call(websocketApiSaga),
-        call(rtkSettingsSaga),
-      ]);
+      if (!context || !(yield* selectCanAdministerHost.effect())) return;
+      const stop = installSettingsRecovery();
+      try {
+        yield* all([
+          call(settingsWorkScope, settingsMigrationsSaga),
+          call(settingsWorkScope, settingsSnapshotLoop),
+          call(settingsWorkScope, refreshFailedFieldsLoop),
+          call(settingsWorkScope, settingsFormSaga),
+          call(settingsWorkScope, websocketApiSaga),
+          call(settingsWorkScope, rtkSettingsSaga),
+        ]);
+      } finally {
+        stop();
+      }
     },
   );
 }

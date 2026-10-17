@@ -1,3 +1,6 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { agentQueueRecoveryKey, agentMetadataRecoveryKey } from './agent-recovery-keys';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { loadChatTranscript } from './chat-read-service';
 import {
   selectSubmissionIsCurrent,
@@ -409,6 +412,12 @@ export async function sendMessage(
                 // seq, and the queued-response queue seed below must then
                 // yield to it.
                 dispatchRedux(chatQueuedSendStarted(agentId));
+                const queueRecovery = rendererEventRecovery.capture(
+                  agentQueueRecoveryKey(workspace.id, agentId),
+                );
+                const metadataRecovery = rendererEventRecovery.capture(
+                  agentMetadataRecoveryKey(workspace.id),
+                );
                 const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
                 const attemptGenerationAtSend =
                   appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
@@ -497,7 +506,12 @@ export async function sendMessage(
                       !submission ||
                       !selectSubmissionObserved.select(appStore.state, submission)
                     )
-                      dispatchRedux(setAgentStreaming(session.id, false));
+                      dispatchRedux(
+                        withRecoveryLifetime(
+                          setAgentStreaming(session.id, false),
+                          metadataRecovery,
+                        ),
+                      );
                     if (!supported)
                       dispatchRedux(removeAgentSessionMessage(session.id, userMessage.id));
                     if (supported) {
@@ -511,16 +525,19 @@ export async function sendMessage(
                           .select(appStore.state, agentId, workspace.id)
                           .find((row) => row.id === queuedMessage.id || row.turnId === turnId);
                         dispatchRedux(
-                          chatQueuedRetryRecordParked(
-                            agentId,
-                            queuedMessage.id,
-                            attempt,
-                            turnId,
-                            buildQueuedRecordedAttempt(confirmed ?? queuedMessage, attempt),
-                            !confirmed &&
-                              !!submission &&
-                              selectSubmissionObserved.select(appStore.state, submission),
-                            attemptGenerationAtSend,
+                          withRecoveryLifetime(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              buildQueuedRecordedAttempt(confirmed ?? queuedMessage, attempt),
+                              !confirmed &&
+                                !!submission &&
+                                selectSubmissionObserved.select(appStore.state, submission),
+                              attemptGenerationAtSend,
+                            ),
+                            queueRecovery,
                           ),
                         );
                       }
@@ -553,7 +570,12 @@ export async function sendMessage(
                           workspace.id,
                         );
                         const next = reconcileQueuedMessage(existing, queuedMessage);
-                        dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
+                        dispatchRedux(
+                          withRecoveryLifetime(
+                            replaceAgentQueue(agentId, next, workspace.id),
+                            queueRecovery,
+                          ),
+                        );
                       } else if (isCurrent()) {
                         logger.debug(
                           'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
@@ -582,14 +604,17 @@ export async function sendMessage(
                         // A superseding snapshot may already have promoted this turn.
                         // Clear our optimistic attempt without re-parking a stale echo.
                         dispatchRedux(
-                          chatQueuedRetryRecordParked(
-                            agentId,
-                            queuedMessage.id,
-                            attempt,
-                            turnId,
-                            buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
-                            !retryMessage,
-                            attemptGenerationAtSend,
+                          withRecoveryLifetime(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
+                              !retryMessage,
+                              attemptGenerationAtSend,
+                            ),
+                            queueRecovery,
                           ),
                         );
                       } else if (isCurrent()) {

@@ -1,3 +1,4 @@
+import { getRecoveryAdmission } from '../../middlewares/event-recovery';
 import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
@@ -506,11 +507,18 @@ function getWorkspaceById(
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
-workspaceReducer.with(workspaceTaskStatsPushed, (state, { payload: [workspaceId, taskStats] }) => ({
-  ...state,
-  pushedTaskStats: { ...state.pushedTaskStats, [workspaceId]: taskStats },
-  workspaces: updateItem(state.workspaces, { id: workspaceId as Workspace['id'], taskStats }),
-}));
+workspaceReducer.with(workspaceTaskStatsPushed, (state, action) => {
+  const {
+    payload: [workspaceId, taskStats],
+  } = action;
+  const receipt = getRecoveryAdmission(action, 'workspace-list');
+  if (receipt !== undefined && !receipt?.commit(() => undefined)) return state;
+  return {
+    ...state,
+    pushedTaskStats: { ...state.pushedTaskStats, [workspaceId]: taskStats },
+    workspaces: updateItem(state.workspaces, { id: workspaceId as Workspace['id'], taskStats }),
+  };
+});
 // Reconnect hydration re-establishes authoritative summaries after missed events.
 workspaceReducer.with(backendReconnected, (state) => ({ ...state, pushedTaskStats: {} }));
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {

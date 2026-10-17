@@ -1,3 +1,4 @@
+import { clearAgentLineStats } from './changes-slice';
 import { describe, expect, it } from 'vitest';
 import { ChangeStage } from '$features/file-tracking/types';
 import type { TrackedChange, CommitInfo, MainPanelViewState } from './changes-types';
@@ -399,4 +400,21 @@ describe('changes selectors', () => {
       false,
     );
   });
+});
+
+it('clears only the selected agent line totals and request state', () => {
+  let state = fileTrackingReducer(
+    initialState,
+    updateAgentStats('a', { additions: 1, deletions: 2, timestamp: 'old' }),
+  );
+  state = fileTrackingReducer(state, agentLineStatsRequestStarted('a', 'old'));
+  state = fileTrackingReducer(
+    state,
+    updateAgentStats('b', { additions: 3, deletions: 4, timestamp: 'other' }),
+  );
+  const next = fileTrackingReducer(state, clearAgentLineStats('a'));
+  expect(next.agentStats.a).toBeUndefined();
+  expect(next.agentLineStatsRequests.a).toBeUndefined();
+  expect(next.agentStats.b).toBe(state.agentStats.b);
+  expect(fileTrackingReducer(next, clearAgentLineStats('a'))).toBe(next);
 });

@@ -135,22 +135,27 @@ describe('browser-mock DEV gate', () => {
       hasUntrackedFiles: false,
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(1, 'backend:request', {
+      observeCompletion: true,
       method: 'workspace.list',
       params: { includeArchived: true },
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(2, 'backend:request', {
+      observeCompletion: true,
       method: 'agent.list',
       params: { workspaceId: 'mock-ws-1' },
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(3, 'backend:request', {
+      observeCompletion: true,
       method: 'agent.listInterrupted',
       params: {},
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(4, 'backend:request', {
+      observeCompletion: true,
       method: 'search.fileNames',
       params: { workspaceId: 'mock-ws-1', pattern: '', limit: 50 },
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(5, 'backend:request', {
+      observeCompletion: true,
       method: 'comment.list',
       params: { workspaceId: 'mock-ws-1', noteId: 'mock-note', includeComments: true },
     });
@@ -159,6 +164,7 @@ describe('browser-mock DEV gate', () => {
       result: { threads: [] },
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(6, 'backend:request', {
+      observeCompletion: true,
       method: 'task.list',
       params: { workspaceId: 'mock-ws-1' },
     });
@@ -167,6 +173,7 @@ describe('browser-mock DEV gate', () => {
       result: { tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } },
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(7, 'backend:request', {
+      observeCompletion: true,
       method: 'git.status',
       params: { workspaceId: 'mock-ws-1' },
     });
@@ -534,19 +541,40 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(invokeSpy.mock.calls).toEqual([
       [
         'backend:request',
-        { method: 'terminal.create', params: { workspaceId: 'mock-ws-1', cols: 80, rows: 24 } },
+        {
+          observeCompletion: true,
+          method: 'terminal.create',
+          params: { workspaceId: 'mock-ws-1', cols: 80, rows: 24 },
+        },
       ],
-      ['backend:request', { method: 'terminal.write', params: { terminalId, data: 'bHMK' } }],
       [
         'backend:request',
-        { method: 'terminal.resize', params: { terminalId, cols: 100, rows: 30 } },
+        { observeCompletion: true, method: 'terminal.write', params: { terminalId, data: 'bHMK' } },
       ],
-      ['backend:request', { method: 'terminal.getBuffer', params: { terminalId } }],
       [
         'backend:request',
-        { method: 'terminal.readOutput', params: { workspaceId: 'mock-ws-1', terminalId } },
+        {
+          observeCompletion: true,
+          method: 'terminal.resize',
+          params: { terminalId, cols: 100, rows: 30 },
+        },
       ],
-      ['backend:request', { method: 'terminal.kill', params: { terminalId } }],
+      [
+        'backend:request',
+        { observeCompletion: true, method: 'terminal.getBuffer', params: { terminalId } },
+      ],
+      [
+        'backend:request',
+        {
+          observeCompletion: true,
+          method: 'terminal.readOutput',
+          params: { workspaceId: 'mock-ws-1', terminalId },
+        },
+      ],
+      [
+        'backend:request',
+        { observeCompletion: true, method: 'terminal.kill', params: { terminalId } },
+      ],
     ]);
   });
 
@@ -579,6 +607,7 @@ describe('browser-mock backend:* transport envelope', () => {
     const { LiveAppClient } = await import('./client');
     const page = await new LiveAppClient().events.queryPage('mock-ws-1', { limit: 100 });
     expect(invokeSpy).toHaveBeenCalledWith('backend:request', {
+      observeCompletion: true,
       method: 'event.query',
       params: { workspaceId: 'mock-ws-1', limit: 100, paginate: true },
     });

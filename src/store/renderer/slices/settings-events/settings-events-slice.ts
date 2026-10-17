@@ -1,3 +1,5 @@
+import type { SettingDefinitionWithValue } from '$lib/client/app-client';
+import { settingsFormPaths, isSettingsFormValue, catalogEntry } from './settings-form-catalog';
 /**
  * Settings events and mount-scoped, correlated settings-form outcomes.
  *
@@ -12,6 +14,7 @@ import type { AppliedSettingChange } from '$lib/client/app-client';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
+  getItems,
   getItem,
   upsertItem,
   removeItem,
@@ -36,7 +39,14 @@ import type {
  * hydration synthesizes the action from the full `settings.list()` snapshot so
  * panels see one consistent action regardless of source.
  */
-export const settingsChanged = createAction<[changes: AppliedSettingChange[]]>('settings/changed');
+/** Retire all queued settings work before authoritative reconciliation. */
+export const settingsRecoveryInvalidated = createAction('settings/recoveryInvalidated');
+export const mcpRecoveryInvalidated = createAction('settings/mcpRecoveryInvalidated');
+export const settingsAuthorityRetired = createAction('settings/authorityRetired');
+export const settingsSnapshotReplacing = createAction('settings/snapshotReplacing');
+
+export const settingsChanged =
+  createAction<[changes: AppliedSettingChange[], completeSnapshot?: boolean]>('settings/changed');
 
 /** Raw daemon notification routed by daemonEventsSaga and consumed in order. */
 export const settingsChangesReceived = createAction<
@@ -262,3 +272,72 @@ settingsEventsReducer.with(settingsFormRequestSettled, (state, { payload: [reque
     }),
   };
 });
+
+settingsEventsReducer.with(settingsAuthorityRetired, () => ({
+  forms: createCollection<SettingsForm, 'formId'>('formId'),
+}));
+settingsEventsReducer.with(settingsRecoveryInvalidated, (state) => ({
+  ...state,
+  forms: getItems(state.forms).reduce(
+    (forms, form) =>
+      upsertItem(forms, {
+        ...form,
+        drafts: {},
+        operations: createCollection<SettingsFormOperation, 'resource'>('resource'),
+        mutationVersion: form.mutationVersion + 1,
+        readVersion: form.readVersion + 1,
+      }),
+    createCollection<SettingsForm, 'formId'>('formId'),
+  ),
+}));
+
+// Pushes and recovered snapshots refresh loaded form entries without persisting them.
+settingsEventsReducer.with(settingsChanged, (state, { payload: [changes, completeSnapshot] }) => ({
+  ...state,
+  forms: getItems(state.forms).reduce((forms, form) => {
+    let entries = form.entries;
+    const values = { ...form.values };
+    const wanted = settingsFormPaths[form.kind as keyof typeof settingsFormPaths] ?? [];
+    for (const change of changes) {
+      const old = getItem(entries, change.path);
+      if ((old || wanted.includes(change.path)) && isSettingsFormValue(change.value))
+        entries = upsertItem(entries, {
+          ...old,
+          ...catalogEntry(change as SettingDefinitionWithValue),
+        });
+      if (
+        form.kind === 'rtk' &&
+        change.path === 'rtk.enabled' &&
+        typeof change.value === 'boolean'
+      ) {
+        values.enabled = change.value;
+        values.settingKnown = true;
+      }
+      if (form.kind === 'websocket-api' || form.kind === 'personal-devices') {
+        if (change.path === 'server.wsApi.enabled') values.enabled = change.value === true;
+        if (change.path === 'server.wsApi.port' && typeof change.value === 'number')
+          values.persistedPort = change.value;
+        if (change.path === 'server.bindAddress') {
+          values.bindAddressSupported = true;
+          values.bindIps =
+            typeof change.value === 'string'
+              ? [change.value]
+              : Array.isArray(change.value)
+                ? change.value.filter((v): v is string => typeof v === 'string')
+                : [];
+        }
+        if (change.path === 'server.tunnel.enabled') {
+          values.tunnelSupported = true;
+          values.tunnelEnabled = change.value === true;
+        }
+        if (change.path === 'server.tunnel.only') values.tunnelOnly = change.value === true;
+      }
+    }
+    return upsertItem(forms, {
+      ...form,
+      entries,
+      values,
+      loaded: form.loaded || (completeSnapshot === true && entries.ids.length > 0),
+    });
+  }, createCollection<SettingsForm, 'formId'>('formId')),
+}));

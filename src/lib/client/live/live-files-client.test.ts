@@ -322,3 +322,29 @@ describe('LiveFilesClient.read', () => {
     await expect(new LiveFilesClient().read('ws-1', 'report.xlsx')).rejects.toBe(error);
   });
 });
+
+describe('ordinary file read deadlines', () => {
+  afterEach(() => vi.resetAllMocks());
+
+  it.each(['read', 'explorerTree', 'listDirectory', 'gitStatusMap'] as const)(
+    'preserves the physical completion through %s',
+    async (method) => {
+      let finish!: (value: { errors: unknown[]; retired: boolean }) => void;
+      const completion = new Promise<{ errors: unknown[]; retired: boolean }>((resolve) => {
+        finish = resolve;
+      });
+      const error = new BackendError({ code: 'TIMEOUT', message: 'ordinary deadline' }, completion);
+      mockedRequest.mockRejectedValueOnce(error);
+      const client = new LiveFilesClient();
+      const call =
+        method === 'read' || method === 'listDirectory'
+          ? client[method]('ws', 'a.ts')
+          : client[method]('ws');
+      try {
+        await expect(call).rejects.toBe(error);
+      } finally {
+        finish({ errors: [], retired: false });
+      }
+    },
+  );
+});

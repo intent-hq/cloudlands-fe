@@ -1,3 +1,12 @@
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  captureSettingsWork,
+  trackSettingsRead,
+  GLOBAL_MCP_RECOVERY_KEY,
+} from '$features/settings/settings-recovery-lifetime';
+import { settingsWorkScope } from '../../settings-events/sagas/settings-work-scope';
+import { trackWorkspaceCatalogRead } from '../../provider-catalog/workspace-catalog-read-flight';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -139,16 +148,20 @@ function* persist(
   servers: McpServerConfig[],
   credentialInputs: CredentialInput[],
 ): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   try {
-    const current: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
-      appClient.settings,
-      appClient.settings.getMcpServers,
-    ]);
+    const current: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(() =>
+      trackSettingsRead(GLOBAL_MCP_RECOVERY_KEY, () => appClient.settings.getMcpServers()),
+    );
+    if (!work.isCurrent()) return;
     const result: Awaited<ReturnType<typeof appClient.settings.setMcpServers>> = yield* call(
       [appClient.settings, appClient.settings.setMcpServers],
       persistedServers(servers, disabled, current, credentialInputs),
     );
+    if (!work.isCurrent()) return;
     if (!result.success) {
       yield* put(
         setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())),
@@ -157,6 +170,7 @@ function* persist(
     }
     yield* fork(refreshDaemonIdsAndStatuses, servers);
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
   }
 }
@@ -176,11 +190,14 @@ function* persist(
  * save error.
  */
 function* refreshDaemonIdsAndStatuses(saved: McpServerConfig[]): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   try {
-    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
-      appClient.settings,
-      appClient.settings.getMcpServers,
-    ]);
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(() =>
+      trackSettingsRead(GLOBAL_MCP_RECOVERY_KEY, () => appClient.settings.getMcpServers()),
+    );
+    if (!work.isCurrent()) return;
     const canonical = response.map(copyServerForState);
     const current: McpServerConfig[] = yield* selectMcpServers.effect();
     let changed = false;
@@ -198,6 +215,7 @@ function* refreshDaemonIdsAndStatuses(saved: McpServerConfig[]): SagaGenerator<v
     if (changed) yield* put(setServers(merged));
     yield* fork(fetchDaemonStatuses, canonical);
   } catch (error) {
+    if (!work.isCurrent()) return;
     logger.warn('Failed to refresh daemon MCP server ids after save', { error });
   }
 }
@@ -213,6 +231,9 @@ function* refreshDaemonIdsAndStatuses(saved: McpServerConfig[]): SagaGenerator<v
  * only applied when the current list still contains the queried ID.
  */
 function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const keyById = new Map(
     servers.flatMap((server) =>
       server.id && !server.disabled ? [[server.id, getMcpServerKey(server)] as const] : [],
@@ -221,10 +242,12 @@ function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
   if (keyById.size === 0) return;
   try {
     const statuses: Awaited<ReturnType<typeof appClient.settings.getMcpServerStatuses>> =
-      yield* call(
-        [appClient.settings, appClient.settings.getMcpServerStatuses],
-        [...keyById.keys()],
+      yield* call(() =>
+        trackSettingsRead(GLOBAL_MCP_RECOVERY_KEY, () =>
+          appClient.settings.getMcpServerStatuses([...keyById.keys()]),
+        ),
       );
+    if (!work.isCurrent()) return;
     const current: McpServerConfig[] = yield* selectMcpServers.effect();
     const currentByKey = new Map(current.map((server) => [getMcpServerKey(server), server]));
     const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
@@ -243,19 +266,23 @@ function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
     }
     if (Object.keys(statusMap).length > 0) yield* put(bulkSetServerStatus(statusMap));
   } catch (error) {
+    if (!work.isCurrent()) return;
     logger.warn('Failed to fetch daemon MCP server statuses', { error });
   }
 }
 
 function* load(): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const current: McpServerConfig[] = yield* selectMcpServers.effect();
   if (current.length === 0) yield* put(setLoading(true));
   yield* put(setError(null));
   try {
-    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
-      appClient.settings,
-      appClient.settings.getMcpServers,
-    ]);
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(() =>
+      trackSettingsRead(GLOBAL_MCP_RECOVERY_KEY, () => appClient.settings.getMcpServers()),
+    );
+    if (!work.isCurrent()) return;
     const servers = response.map(copyServerForState);
     const disabled: Record<string, true> = {};
     const statuses: Record<string, McpServerStatus> = {};
@@ -273,6 +300,7 @@ function* load(): SagaGenerator<void> {
     // cancels it via takeLatest, so no stale overlay can apply.
     yield* fork(fetchDaemonStatuses, servers);
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_loadServersFailed_error())));
   } finally {
     yield* put(setLoading(false));
@@ -280,6 +308,9 @@ function* load(): SagaGenerator<void> {
 }
 
 function* add(configInput: McpServerConfig): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   yield* put(setError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   try {
@@ -287,6 +318,7 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
     if (!configInput.id) validateName(configInput.name, servers);
     else if (!configInput.name.trim()) throw new Error(m.mcp_management_serverNameRequired_error());
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_addServerFailed_error())));
     return;
   }
@@ -302,17 +334,25 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
   if (!enabled) yield* put(setEnabled(true));
   const credentialInputs: CredentialInput[] = [[configInput]];
   yield* call(persist, next, credentialInputs);
+  if (!work.isCurrent()) return;
 }
 
 function* remove(name: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   if (!servers.some((server) => getMcpServerKey(server) === name)) return;
   const next = servers.filter((server) => getMcpServerKey(server) !== name).map(copyServerForState);
   yield* put(removeServerFromState(name));
   yield* call(persist, next, []);
+  if (!work.isCurrent()) return;
 }
 
 function* update(name: string, configInput: McpServerConfig): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   yield* put(setError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const index = servers.findIndex((server) => getMcpServerKey(server) === name);
@@ -325,6 +365,7 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
         servers.filter((server) => getMcpServerKey(server) !== name),
       );
     } catch (error) {
+      if (!work.isCurrent()) return;
       yield* put(setError(toMcpErrorMessage(error, m.mcp_management_updateServerFailed_error())));
       return;
     }
@@ -350,14 +391,19 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   yield* put(setServerStatus(key, statusFor(wasDisabled)));
   const credentialInputs: CredentialInput[] = [[input, name]];
   yield* call(persist, next, credentialInputs);
+  if (!work.isCurrent()) return;
 }
 
 function* importJson(json: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   yield* put(setError(null));
   let configs: McpServerConfig[];
   try {
     configs = normalizeMcpServersPayload(JSON.parse(json));
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setError(toMcpErrorMessage(error, 'Failed to import servers')));
     return;
   }
@@ -369,6 +415,7 @@ function* importJson(json: string): SagaGenerator<void> {
       if (!config.id) validateName(config.name, seen);
       else if (!config.name.trim()) return false;
     } catch {
+      if (!work.isCurrent()) return;
       return false;
     }
     seen.push(config);
@@ -392,11 +439,15 @@ function* importJson(json: string): SagaGenerator<void> {
       next,
       added.map((config): [McpServerConfig] => [config]),
     );
+    if (!work.isCurrent()) return;
   }
   yield* put(importFromJsonCompleted(added.length));
 }
 
 function* toggle(name: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
@@ -404,6 +455,7 @@ function* toggle(name: string): SagaGenerator<void> {
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   yield* put(setServerStatus(name, statusFor(name in disabled)));
   yield* call(persist, servers, []);
+  if (!work.isCurrent()) return;
 }
 
 /**
@@ -420,6 +472,11 @@ function* toggleForWorkspace(
   enabled: boolean,
 ): SagaGenerator<void> {
   if (!workspaceId) return;
+  const receipt = rendererEventRecovery.capture(
+    `workspace-catalog:${JSON.stringify([workspaceId])}`,
+  );
+  const work = { isCurrent: () => receipt.commit(() => {}) };
+  if (!work.isCurrent()) return;
   const servers: McpServerConfig[] = yield* selectMcpServers.effect(workspaceId);
   const serverId = servers.find((server) => getMcpServerKey(server) === serverKey)?.id;
   if (!serverId) {
@@ -433,12 +490,23 @@ function* toggleForWorkspace(
       serverId,
       enabled,
     );
+  if (!work.isCurrent()) return;
   // Per §5.22 the scoped toggle result always carries `workspaceDisabled`;
   // a success without it (possible on the typed seam — the mock client
   // returns bare OK) is treated as unconfirmed rather than inferred from the
   // request, so state stays daemon-confirmed-only: re-hydrate instead.
   if (result.success && typeof result.workspaceDisabled === 'boolean') {
-    yield* put(setWorkspaceMcpServerDisabled(workspaceId, serverKey, result.workspaceDisabled));
+    const key = `workspace-catalog:${JSON.stringify([workspaceId])}`;
+    // Admit the unversioned command result before either mirror consumes it.
+    // After recovery it invalidates the catalog instead of replaying a delta.
+    if (!rendererEventRecovery.push(key)) return;
+    const admitted = rendererEventRecovery.capture(key);
+    yield* put(
+      withRecoveryLifetime(
+        setWorkspaceMcpServerDisabled(workspaceId, serverKey, result.workspaceDisabled),
+        admitted,
+      ),
+    );
     return;
   }
   if (!result.success) {
@@ -451,31 +519,49 @@ function* toggleForWorkspace(
  * Hydrate one workspace's disabled-server map from the daemon's scoped
  * `mcp.servers.list` (§5.22 — every entry carries `workspaceDisabled`). A
  * failed read keeps the current state rather than clearing it. The snapshot
- * is a point-in-time read: an `mcpServerToggled` delta landing between the
- * list request and the `put` below is overwritten by the older snapshot —
- * a narrow, self-correcting window (the next toggle/hydrate converges), so
- * no versioning is layered on top.
+ * shares the catalog lifetime so events, loss, and authority replacement
+ * between the request and dispatch reject an obsolete mirror update.
  */
 function* hydrateWorkspaceDisabled(workspaceId: string): SagaGenerator<void> {
   if (!workspaceId) return;
-  const keys: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerKeys>> =
-    yield* call(
-      [appClient.settings, appClient.settings.getWorkspaceDisabledMcpServerKeys],
-      workspaceId,
+  const receipt = rendererEventRecovery.capture(
+    `workspace-catalog:${JSON.stringify([workspaceId])}`,
+  );
+  const work = { isCurrent: () => receipt.commit(() => {}) };
+  if (!work.isCurrent()) return;
+  try {
+    const keys: Awaited<ReturnType<typeof appClient.settings.getWorkspaceDisabledMcpServerKeys>> =
+      yield* call(() =>
+        trackWorkspaceCatalogRead(workspaceId, () =>
+          appClient.settings.getWorkspaceDisabledMcpServerKeys(workspaceId),
+        ),
+      );
+    if (!work.isCurrent() || keys === null) return;
+    const disabled: Record<string, true> = {};
+    for (const key of keys) disabled[key] = true;
+    yield* put(
+      withRecoveryLifetime(setWorkspaceDisabledMcpServers(workspaceId, disabled), receipt),
     );
-  if (keys === null) return;
-  const disabled: Record<string, true> = {};
-  for (const key of keys) disabled[key] = true;
-  yield* put(setWorkspaceDisabledMcpServers(workspaceId, disabled));
+  } catch (error) {
+    if (work.isCurrent())
+      logger.warn('Workspace MCP disabled map read failed', { workspaceId, error });
+  }
 }
 
 function* toggleFeature(): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const enabled: boolean = yield* selectMcpEnabled.effect();
   yield* put(setEnabled(!enabled));
   if (!enabled) yield* call(load);
+  if (!work.isCurrent()) return;
 }
 
 function* restart(name: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
@@ -490,6 +576,7 @@ function* restart(name: string): SagaGenerator<void> {
       [appClient.settings, appClient.settings.restartMcpServer],
       server.id,
     );
+    if (!work.isCurrent()) return;
     const mapped = mapDaemonMcpState(status.state);
     if (mapped === null) throw new Error(m.mcp_management_restartFailed_error());
     yield* put(setServerStatus(name, mapped));
@@ -499,6 +586,7 @@ function* restart(name: string): SagaGenerator<void> {
       yield* put(clearServerErrorMessage(name));
     }
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setServerStatus(name, 'error'));
     yield* put(
       setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_restartFailed_error())),
@@ -513,6 +601,9 @@ interface McpAuthenticateIpcResponse {
 }
 
 function* authenticate(name: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
@@ -528,6 +619,7 @@ function* authenticate(name: string): SagaGenerator<void> {
       USER_MCP_CHANNELS.AUTHENTICATE,
       { serverId: server.id, url: server.url },
     );
+    if (!work.isCurrent()) return;
     if (!response.success || !response.data?.success) {
       throw new Error(
         toMcpErrorMessage(
@@ -537,7 +629,9 @@ function* authenticate(name: string): SagaGenerator<void> {
       );
     }
     yield* call(restart, name);
+    if (!work.isCurrent()) return;
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(setServerStatus(name, 'auth_required'));
     yield* put(
       setServerErrorMessage(name, toMcpErrorMessage(error, m.mcp_management_authFailed_error())),
@@ -546,11 +640,15 @@ function* authenticate(name: string): SagaGenerator<void> {
 }
 
 function* saveAdvanced(json: string): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   yield* put(setAdvancedSaveStatus('saving'));
   let configs: McpServerConfig[];
   try {
     configs = normalizeMcpServersPayload(JSON.parse(json));
   } catch {
+    if (!work.isCurrent()) return;
     yield* put(setAdvancedSaveStatus('error', m.mcp_management_invalidJson_error()));
     return;
   }
@@ -568,6 +666,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
     });
     validateMcpServerIdentities(configs);
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(
       setAdvancedSaveStatus(
         'error',
@@ -591,6 +690,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
       [appClient.settings, appClient.settings.setMcpServers],
       stateConfigs.map((config, index) => copyServerForWire(config, configs[index])),
     );
+    if (!work.isCurrent()) return;
     if (!result.success) {
       yield* put(
         setAdvancedSaveStatus(
@@ -601,6 +701,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
       return;
     }
   } catch (error) {
+    if (!work.isCurrent()) return;
     yield* put(
       setAdvancedSaveStatus('error', toMcpErrorMessage(error, m.mcp_management_saveFailed_error())),
     );
@@ -612,6 +713,9 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
 }
 
 function* resetAdvancedStatus(): SagaGenerator<void> {
+  const work = captureSettingsWork(GLOBAL_MCP_RECOVERY_KEY);
+  if (!work.isCurrent()) return;
+
   yield* delay(ADVANCED_SAVED_RESET_MS);
   const status = yield* selectMcpAdvancedSaveStatus.effect();
   if (status === 'saved') yield* put(setAdvancedSaveStatus('idle'));
@@ -667,7 +771,7 @@ function* saveAdvancedJsonWorker(action: ReturnType<typeof saveAdvancedJson>): S
   yield* call(saveAdvanced, action.payload[0]);
 }
 
-export function* mcpSettingsSaga(): SagaGenerator<void> {
+function* mcpSettingsSagaWork(): SagaGenerator<void> {
   yield* takeLatest(loadServers, load);
   yield* takeEvery(toggleEnabled, toggleEnabledWorker);
   yield* takeEvery(addServer, addServerWorker);
@@ -680,4 +784,8 @@ export function* mcpSettingsSaga(): SagaGenerator<void> {
   yield* takeEvery(restartServer, restartServerWorker);
   yield* takeEvery(authenticateServer, authenticateServerWorker);
   yield* takeEvery(saveAdvancedJson, saveAdvancedJsonWorker);
+}
+
+export function* mcpSettingsSaga() {
+  yield* settingsWorkScope(mcpSettingsSagaWork, 'mcp');
 }

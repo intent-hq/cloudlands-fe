@@ -2379,7 +2379,14 @@ describe('browserTabRegistrySaga boundary', () => {
   }
 
   function dispatched(call: ts.CallExpression): string {
-    const [action] = call.arguments;
+    let [action] = call.arguments;
+    // Lifetime metadata is outside Redux state; inspect the guarded action.
+    if (
+      action &&
+      ts.isCallExpression(action) &&
+      action.expression.getText() === 'withRecoveryLifetime'
+    )
+      action = action.arguments[0];
     if (action && ts.isCallExpression(action) && ts.isIdentifier(action.expression)) {
       return action.expression.text;
     }

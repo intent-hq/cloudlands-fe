@@ -161,10 +161,18 @@ describe('resolveFileBySuffix', () => {
       .spyOn(appClient.files, 'listDirectory')
       .mockReturnValue(new Promise<FileNode[]>(() => undefined));
 
-    const resolution = resolveFileBySuffix('ws-1', 'preview.webm');
+    const resolution = resolveFileBySuffix('ws-1', 'preview.webm').catch((error) => error);
     await vi.advanceTimersByTimeAsync(750);
 
-    await expect(resolution).resolves.toEqual({ candidates: [], truncated: true });
+    expect(await resolution).toBeInstanceOf(Error);
+    expect((await resolution).completion).toBeInstanceOf(Promise);
     expect(list).toHaveBeenCalledOnce();
   });
+});
+
+it('propagates a suffix search timeout with its physical receipt', async () => {
+  const completion = Promise.resolve({ errors: [], retired: false });
+  const timeout = Object.assign(new Error('ordinary deadline'), { completion });
+  vi.mocked(backendRequest).mockRejectedValueOnce(timeout);
+  await expect(resolveFileBySuffix('ws', 'src/a.ts')).rejects.toBe(timeout);
 });
