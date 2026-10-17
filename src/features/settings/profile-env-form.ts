@@ -59,11 +59,20 @@ export function keepsSavedValue(row: EnvRow): boolean {
 export type EnvBuildResult =
   { ok: true; env: EnvEntryWrite[] } | { ok: false; rowErrors: Record<string, string> };
 
-/** Build the complete `env` write list, one entry per row in row order. */
+/** A new row the user never filled in (the dialog's starter row); it writes nothing. */
+function isBlankNewRow(row: EnvRow): boolean {
+  return !row.saved && !row.key.trim() && row.mode === 'value' && !row.value;
+}
+
+/**
+ * Build the complete `env` write list in row order, skipping untouched blank
+ * new rows. Daemon `env[i]` errors index this list, so map them with
+ * {@link writtenRows}.
+ */
 export function buildEnvWrites(rows: EnvRow[]): EnvBuildResult {
   const env: EnvEntryWrite[] = [];
   const rowErrors: Record<string, string> = {};
-  for (const row of rows) {
+  for (const row of writtenRows(rows)) {
     const key = row.key.trim();
     if (isRowUnchanged(row)) env.push({ key, kind: 'keep' });
     else if (row.mode === 'unset') env.push({ key, kind: 'unset' });
@@ -75,11 +84,17 @@ export function buildEnvWrites(rows: EnvRow[]): EnvBuildResult {
   return Object.keys(rowErrors).length > 0 ? { ok: false, rowErrors } : { ok: true, env };
 }
 
+/** The rows that produce an `env` entry, in write order. */
+export function writtenRows(rows: EnvRow[]): EnvRow[] {
+  return rows.filter((row) => !isBlankNewRow(row));
+}
+
 /** True when an edit leaves every saved entry as it was (rename-only update). */
 export function isEnvUnchanged(rows: EnvRow[], saved: EnvEntryRead[]): boolean {
+  const written = writtenRows(rows);
   return (
-    rows.length === saved.length &&
-    rows.every((row, index) => isRowUnchanged(row) && row.saved?.key === saved[index]?.key)
+    written.length === saved.length &&
+    written.every((row, index) => isRowUnchanged(row) && row.saved?.key === saved[index]?.key)
   );
 }
 

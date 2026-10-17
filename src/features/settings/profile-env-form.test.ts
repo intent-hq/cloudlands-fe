@@ -138,4 +138,13 @@ describe('profile env form', () => {
     expect(lines[1]).toContain('reviewer');
     expect(lines[2]).toContain('planner');
   });
+
+  it('ignores an untouched blank starter row so a name-only create is not blocked', () => {
+    expect(buildEnvWrites([newRow(id)])).toEqual({ ok: true, env: [] });
+    const filled = { ...newRow(id), key: 'CODEX_HOME', value: '/accounts/work' };
+    expect(buildEnvWrites([filled, newRow(id)])).toEqual({
+      ok: true,
+      env: [{ key: 'CODEX_HOME', kind: 'set', value: '/accounts/work' }],
+    });
+  });
 });

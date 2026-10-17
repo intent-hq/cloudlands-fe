@@ -52,6 +52,22 @@ describe('LiveProvidersClient profiles', () => {
     ]);
   });
 
+  it('keeps additive env-entry fields from a newer daemon instead of failing the list', async () => {
+    const withExtra = {
+      ...PROFILE,
+      env: [
+        { key: 'CODEX_HOME', kind: 'set', value: '********', source: 'future' },
+        { key: 'OPENAI_API_KEY', kind: 'unset', note: 'future' },
+      ],
+    };
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [withExtra], revision: 1 } });
+    const result = await client.listProfiles();
+    expect(result.profiles[0].env.map((entry) => entry.key)).toEqual([
+      'CODEX_HOME',
+      'OPENAI_API_KEY',
+    ]);
+  });
+
   it('creates with literal set, empty and unset entries, and omits absent env', async () => {
     invoke.mockResolvedValue({ ok: true, result: { profile: PROFILE, revision: 4 } });
     const env = [

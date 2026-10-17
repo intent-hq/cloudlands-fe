@@ -295,6 +295,84 @@ describe('ProviderProfiles', () => {
   });
 });
 
+describe('ProviderProfiles dialog outcomes', () => {
+  it('creates a profile from its name alone, sending no env', async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Work' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    const action = lastOf('providerProfiles/createRequested') as
+      { payload: { name: string; envRef?: number } } | undefined;
+    expect(action?.payload).toMatchObject({ name: 'Work', envRef: undefined });
+    expect(
+      within(dialog).queryByText(m.settings_providerProfiles_valueRequired_error()),
+    ).toBeNull();
+  });
+
+  async function startEnvSaveThenCancel() {
+    await seed();
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    await openEdit();
+    const dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(
+        m.settings_providerProfiles_value_ariaLabel({ name: 'CODEX_HOME' }),
+      ),
+      { target: { value: '/accounts/new' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/updateRequested') as {
+      payload: { requestId: string };
+    };
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // Reopening must not forget the pending save.
+    await openEdit();
+    await screen.findByRole('dialog');
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    return { requestId: action.payload.requestId, slice, store };
+  }
+
+  it('still shows the restart warning when a cancelled env save commits', async () => {
+    const { requestId, slice, store } = await startEnvSaveThenCancel();
+    store.dispatch(
+      slice.providerProfileMutationSucceeded(requestId, {
+        revision: 4,
+        profile: { ...WORK, settingsFingerprint: 'fp2' },
+        activation: { envChanged: true, runningProcesses: 0 },
+      }),
+    );
+    await waitFor(() => expect(mocks.notify.warning).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.warning.mock.calls[0][1]).toEqual({
+      description: m.settings_providerProfiles_restartLocal_description(),
+    });
+  });
+
+  it('still reports a rejected save after the dialog was cancelled', async () => {
+    const { requestId, slice, store } = await startEnvSaveThenCancel();
+    store.dispatch(slice.providerProfileMutationFailed(requestId, { kind: 'other' }));
+    await waitFor(() => expect(mocks.notify.error).toHaveBeenCalledTimes(1));
+  });
+});
+
 async function chooseMenuItem(label: string) {
   await fireEvent.click(
     screen.getByRole('button', {
