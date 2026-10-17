@@ -4,8 +4,8 @@
  * Kept as a pure function (no `process` / `os` access) so vitest can cover
  * the resolution without launching a browser.
  *
- * - `CI` set → 1 (the CI shards pin a single worker; see
- *   .github/workflows/intent-pr.yml).
+ * - `CI` set → 1 by default. The hosted required CT lane explicitly uses
+ *   --workers=2 in .github/workflows/browser-tests.yml.
  * - `PW_WORKERS` parses to an integer ≥ 1 → that value.
  * - Otherwise `min(4, max(1, floor(cpus / 4)))`. Playwright's own default is
  *   50% of cores, which on the 32-logical-core shared daemon host launches 16

@@ -41,6 +41,42 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
 }
 
 describe('required CT hosted routing', () => {
+  it.each([1, 2, 3, 4])('runs shard %i with two workers and propagates test failures', (shard) => {
+    const dir = mkdtempSync(join(os.tmpdir(), 'ct-ci-workers-'));
+    dirs.push(dir);
+    const argsFile = join(dir, 'args');
+    const command = runBlock('Component tests').replaceAll('${{ matrix.shard }}', String(shard));
+    for (const exitCode of [0, 7]) {
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `pnpm() { printf '%s\\n' "$@" > "$CT_ARGS"; return "$CT_EXIT"; }
+sleep() { /bin/sleep 0.01; }
+${command}`,
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, CT_ARGS: argsFile, CT_EXIT: String(exitCode) },
+          encoding: 'utf8',
+          timeout: 5_000,
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(exitCode);
+      expect(readFileSync(argsFile, 'utf8').trim().split('\n')).toEqual([
+        'run',
+        'test:ct',
+        '--workers=2',
+        `--shard=${shard}/4`,
+        '--grep-invert',
+        '@quarantine\\b',
+        '--fail-on-flaky-tests',
+        '--reporter=list,html,json',
+      ]);
+    }
+  });
+
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
