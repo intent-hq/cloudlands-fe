@@ -25,7 +25,7 @@ const logger = createLogger('NotificationSoundGate');
  */
 export async function playNotificationSoundPerSettings(): Promise<void> {
   const state = appStore.state as StoreState;
-  const { soundEnabled, soundOnlyWhenUnfocused, volume } = state.userPreferences;
+  const { soundEnabled, soundOnlyWhenUnfocused } = state.userPreferences;
 
   if (!soundEnabled) {
     return;
@@ -36,7 +36,13 @@ export async function playNotificationSoundPerSettings(): Promise<void> {
 
   try {
     const { playNotificationSound } = await import('$lib/utils/notification-sound');
-    await playNotificationSound(volume);
+    // Re-read after the lazy import: a mute/focus/path change may have raced it.
+    const current = appStore.state.userPreferences;
+    if (!current.soundEnabled || (current.soundOnlyWhenUnfocused && document.hasFocus())) return;
+    await playNotificationSound(current.volume, current.soundPath, () => {
+      const latest = appStore.state.userPreferences;
+      return latest.soundEnabled && (!latest.soundOnlyWhenUnfocused || !document.hasFocus());
+    });
   } catch (error) {
     // Sound is best-effort — never let playback failures propagate.
     logger.warn('Failed to play notification sound', { error });

@@ -16,6 +16,7 @@ import {
   setLabsRemoteAgentsEnabled,
   setShellTransparencyEnabled,
   setVolume,
+  setSoundPath,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   initialState as mcpSettingsInitialState,
@@ -148,6 +149,20 @@ describe('settings-proposal-actions', () => {
         path: 'quickActions.defaultModel',
         value: 'old-model',
         apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
+      },
+    ]);
+  });
+
+  it('applies a custom notification path and records a clear operation for undo', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('notifications.soundPath', '/Users/me/sound.mp3')),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(setSoundPath('/Users/me/sound.mp3'));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'notifications.soundPath',
+        value: '',
+        apply: { kind: 'redux-action', action: 'notificationSettings/setSoundPath' },
       },
     ]);
   });

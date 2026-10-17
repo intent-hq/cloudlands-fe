@@ -41,12 +41,30 @@ import {
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
 import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
+import { hydrateNotificationSettings } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+
 export { BG_MODEL_MIGRATION_MARKER_KEY } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
 /** Apply a single applied-change to the slice that owns its dotted path. */
 function applyOne(change: AppliedSettingChange, revision?: number): void {
   const { path, value } = change;
   switch (path) {
+    case 'notifications.soundPath':
+      if (typeof value === 'string')
+        appStore.dispatch(hydrateNotificationSettings({ soundPath: value }, revision));
+      return;
+    case 'notifications.enabled':
+      if (typeof value === 'boolean')
+        appStore.dispatch(hydrateNotificationSettings({ enabled: value }, revision));
+      return;
+    case 'notifications.soundEnabled':
+      if (typeof value === 'boolean')
+        appStore.dispatch(hydrateNotificationSettings({ soundEnabled: value }, revision));
+      return;
+    case 'notifications.soundOnlyWhenUnfocused':
+      if (typeof value === 'boolean')
+        appStore.dispatch(hydrateNotificationSettings({ soundOnlyWhenUnfocused: value }, revision));
+      return;
     case 'model.defaultProvider': {
       if (typeof value === 'string') appStore.dispatch(hydrateDefaultProvider(value));
       else if (value === null) appStore.dispatch(hydrateDefaultProvider(''));
