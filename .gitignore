@@ -81,6 +81,7 @@ test-harness-report.json
 *.tmp
 *.temp
 .cache
+.test-quality/
 # Port-keyed Playwright CT bundle caches (playwright/.cache-<CT_PORT>, see
 # playwright/ct-port.ts). Must stay ignored: CI's "Build CT bundle" step
 # runs --only-changed=HEAD, which scans untracked non-ignored files.
