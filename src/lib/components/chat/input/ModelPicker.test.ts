@@ -5883,7 +5883,89 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     await fireEvent.click(screen.getByRole('button'));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toMatch(/Choose another model/);
-    expect(alert.textContent).toMatch(/Work/);
+    // Settings > Agents toggles the base provider, so the message names it.
+    expect(alert.textContent).toMatch(/OpenAI Codex is disabled/);
+    expect(alert.textContent).not.toMatch(/Work/);
+  });
+
+  it('drops a replacement prompt once the session runs another configuration', async () => {
+    mockCatalogProfiles.current = [WORK];
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5',
+      providerReplacementRequired: { providerRef: WORK.providerRef, reason: 'profile-missing' },
+    } as never);
+    render(ModelPicker, {
+      props: { selectedModel: 'gpt-5', agentId: 'agent-1', workspaceId: 'ws-1', portal: false },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByRole('listbox');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows the Codex default-list notice for a profile catalog, and not for a stale one', async () => {
+    mockCatalogProfiles.current = [WORK];
+    let stale = false;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === WORK.providerRef
+        ? {
+            models: [{ value: 'gpt-5-work', label: 'GPT-5 Work row', description: '' }],
+            warning: 'Codex not installed; using static model list',
+            ...(stale ? { stale: true } : {}),
+          }
+        : { models: [{ value: 'gpt-5', label: 'GPT-5', description: '' }] },
+    );
+    enabledProviderIds$.set(['codex']);
+    const view = render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        variant: 'default',
+        portal: false,
+      },
+    });
+    expect(await screen.findByText('Showing default model list.')).toBeTruthy();
+    view.unmount();
+
+    stale = true;
+    providerWarnings$.set({});
+    Object.assign(mockProviderModelsState, providerModelsInitialState);
+    mockProviderModelsState.byProviderId = {};
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        variant: 'default',
+        portal: false,
+      },
+    });
+    await waitFor(() => expect(get(providerStaleFlags$)[WORK.providerRef]).toBe(true));
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+  });
+
+  it('names the base provider when a selected profile is disabled through it', async () => {
+    mockCatalogProfiles.current = [WORK];
+    enabledProvidersMap$.set({ codex: false });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: WORK.providerRef,
+      model: 'gpt-5-work',
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/OpenAI Codex is disabled/);
+    expect(alert.textContent).not.toMatch(/Codex · Work is disabled/);
   });
 
   it.each([

@@ -246,6 +246,50 @@ describe('ProviderProfiles', () => {
     );
   });
 
+  // Coordinator decision: the notice follows the per-profile activation count
+  // (processes still on earlier settings) and clears by itself at zero.
+  it('shows Using earlier settings while processes remain and clears it at zero', async () => {
+    await seed();
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    const { providerProfilesLoaded } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    const withActivation = (runningProcesses: number) =>
+      ({ ...WORK, activation: { envChanged: true, runningProcesses } }) as ProviderProfile;
+
+    store.dispatch(providerProfilesLoaded([withActivation(2)], 5));
+    await waitFor(() =>
+      expect(screen.getByTestId('provider-profile-earlier-settings')).toBeTruthy(),
+    );
+
+    store.dispatch(providerProfilesLoaded([withActivation(0)], 6));
+    await waitFor(() =>
+      expect(screen.queryByTestId('provider-profile-earlier-settings')).toBeNull(),
+    );
+  });
+
+  it('keeps an earlier-settings notice when a read carries no activation count', async () => {
+    await seed();
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    const { providerProfilesLoaded } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      providerProfilesLoaded(
+        [{ ...WORK, activation: { envChanged: true, runningProcesses: 1 } } as ProviderProfile],
+        5,
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('provider-profile-earlier-settings')).toBeTruthy(),
+    );
+    store.dispatch(providerProfilesLoaded([WORK], 6));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('provider-profile-earlier-settings')).toBeTruthy();
+  });
+
   it('names intentd on the provider host when the daemon is not app-owned', async () => {
     await seed({ transportMode: 'external-uds' });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');

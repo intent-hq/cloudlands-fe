@@ -66,18 +66,42 @@ function pendingMutation(
   return { ...state, mutations: addItem(state.mutations, { ...mutation, status: 'pending' }) };
 }
 
-const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revision]) =>
-  revision < state.revision
-    ? state
-    : {
-        ...state,
-        items: createCollection<ProviderProfile, 'id'>('id', profiles),
-        revision,
-        loadStatus: 'success',
-        status: Object.fromEntries(
-          profiles.map((profile) => [profile.id, state.status[profile.id] ?? 'configured']),
-        ),
-      };
+/**
+ * Apply a read's per-profile activation count: the earlier-settings notice
+ * shows while processes remain and clears itself at zero. A read without the
+ * count leaves the last known state (dismiss still clears it).
+ */
+function readActivation(
+  activation: ProviderProfilesState['activation'],
+  profile: ProviderProfile,
+): ProviderProfilesState['activation'] {
+  const runningProcesses = profile.activation?.runningProcesses;
+  if (runningProcesses === undefined) return activation;
+  const next = { ...activation };
+  if (runningProcesses > 0)
+    next[profile.id] = { envChanged: next[profile.id]?.envChanged ?? true, runningProcesses };
+  else delete next[profile.id];
+  return next;
+}
+
+const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revision]) => {
+  if (revision < state.revision) return state;
+  const ids = new Set(profiles.map((profile) => profile.id));
+  let activation = Object.fromEntries(
+    Object.entries(state.activation).filter(([id]) => ids.has(id)),
+  );
+  for (const profile of profiles) activation = readActivation(activation, profile);
+  return {
+    ...state,
+    items: createCollection<ProviderProfile, 'id'>('id', profiles),
+    revision,
+    loadStatus: 'success',
+    status: Object.fromEntries(
+      profiles.map((profile) => [profile.id, state.status[profile.id] ?? 'configured']),
+    ),
+    activation,
+  };
+};
 
 export type ProfileMutationResult = {
   revision: number;
@@ -107,7 +131,14 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
       delete activations[deletedProfileId];
     }
   }
-  if (profile && activation?.envChanged) activations[profile.id] = activation;
+  if (profile && activation?.envChanged) {
+    if (activation.runningProcesses > 0) activations[profile.id] = activation;
+    else delete activations[profile.id];
+  } else if (profile && revision > state.revision) {
+    const next = readActivation(activations, profile);
+    if (!(profile.id in next)) delete activations[profile.id];
+    else activations[profile.id] = next[profile.id];
+  }
   return {
     ...state,
     items,

@@ -172,6 +172,10 @@
       baseId,
     );
   }
+  function baseProviderDisplayName(providerId: string): string {
+    const baseId = normalizeProviderId(providerRefBaseId(providerId));
+    return $providerCatalogEntries$.find((p) => p.id === baseId)?.displayName ?? baseId;
+  }
   function baseHasProfiles(providerId: string): boolean {
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
     return $providerProfiles$.some((profile) => profile.baseProviderId === baseId);
@@ -1260,20 +1264,24 @@
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
 
-  const hasCodexModels = $derived(
-    (allProviderModels['codex']?.length ?? 0) > 0 ||
-      (normalizeProviderId(effectiveProviderId) === 'codex' &&
-        (agentProviderModels?.length ?? 0) > 0),
-  );
-
   // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
   // last-known-good list after a transient probe failure: the models on screen
   // are real and usable, so the "install Codex CLI" notice would be wrong.
   // The notice stays for the degraded case (warning with no codex models).
+  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
+  function hasCatalogModels(providerId: string): boolean {
+    return (
+      (allProviderModels[providerId]?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === providerId &&
+        (agentProviderModels?.length ?? 0) > 0)
+    );
+  }
   const codexFallbackWarning = $derived(
-    $allProviderStaleFlags$['codex'] && hasCodexModels
-      ? null
-      : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
+    providerFallbackWarnings.find(
+      (warning) =>
+        providerRefBaseId(warning.providerId) === 'codex' &&
+        !($allProviderStaleFlags$[warning.providerId] && hasCatalogModels(warning.providerId)),
+    ) ?? null,
   );
 
   // D1(B): when no provider is available at all, never fall back to a
@@ -1447,7 +1455,11 @@
   const replacementRequired = $derived.by(() => {
     if (!boundSession) return null;
     const flagged = boundSession.providerReplacementRequired;
-    if (flagged && (!localPickedProviderId || localPickedProviderId === flagged.providerRef))
+    if (
+      flagged &&
+      boundSession.provider === flagged.providerRef &&
+      (!localPickedProviderId || localPickedProviderId === flagged.providerRef)
+    )
       return flagged;
     const gate = selectedModelGateProviderId;
     if (
@@ -1857,26 +1869,22 @@
 
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    // Settings > Agents toggles the base provider; messages name that toggle.
     if (replacementRequired) {
-      const baseId = normalizeProviderId(providerRefBaseId(replacementRequired.providerRef));
+      const provider = baseProviderDisplayName(replacementRequired.providerRef);
       return {
         title: m.chat_modelPicker_replacementRequired_title(),
         description:
           replacementRequired.reason === 'provider-disabled'
-            ? m.chat_modelPicker_replacementProviderDisabled_description({
-                provider: providerDisplayName(replacementRequired.providerRef),
-              })
-            : m.chat_modelPicker_replacementProfileMissing_description({
-                provider:
-                  $providerCatalogEntries$.find((p) => p.id === baseId)?.displayName ?? baseId,
-              }),
+            ? m.chat_modelPicker_replacementProviderDisabled_description({ provider })
+            : m.chat_modelPicker_replacementProfileMissing_description({ provider }),
       };
     }
     if (isSelectedModelProviderDisabled) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
         description: m.chat_modelPicker_providerDisabled_description({
-          provider: providerDisplayName(selectedModelGateProviderId),
+          provider: baseProviderDisplayName(selectedModelGateProviderId),
         }),
       };
     }

@@ -23,6 +23,15 @@ const EnvEntryReadSchema = z.discriminatedUnion('kind', [
   z.object({ key: z.string().min(1), kind: z.literal('unset') }).passthrough(),
 ]);
 
+/**
+ * Per-profile activation count on profile reads (coordinator decision, daemon
+ * activation work): live provider processes still on earlier settings.
+ * Optional and additive; absent on daemons that do not report it.
+ */
+const ProfileReadActivationSchema = z
+  .object({ runningProcesses: z.number().int().nonnegative() })
+  .passthrough();
+
 const ProviderProfileSchema = z
   .object({
     id: z.string().min(1),
@@ -33,6 +42,7 @@ const ProviderProfileSchema = z
     settingsFingerprint: z.string(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    activation: ProfileReadActivationSchema.optional(),
   })
   .passthrough();
 
@@ -244,4 +254,28 @@ export function modelsListProviderId(baseProviderId: string, providerRef: unknow
     providerRefBaseId(providerRef) === baseProviderId
     ? providerRef
     : baseProviderId;
+}
+
+/**
+ * The `provider-profile-replacement-required` refusal (§5.54, `-32602` with
+ * `data: { code, providerRef, reason }`) from a turn, resume or create, or
+ * `undefined` for any other error. Wrapped errors are followed via `cause`.
+ */
+export function providerReplacementFromError(
+  error: unknown,
+): { providerRef: string; reason: 'profile-missing' | 'provider-disabled' } | undefined {
+  for (let current = error, depth = 0; current && depth < 4; depth++) {
+    const data = (current as { data?: unknown }).data;
+    if (data && typeof data === 'object') {
+      const { code, providerRef, reason } = data as Record<string, unknown>;
+      if (
+        code === 'provider-profile-replacement-required' &&
+        typeof providerRef === 'string' &&
+        (reason === 'profile-missing' || reason === 'provider-disabled')
+      )
+        return { providerRef, reason };
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
 }

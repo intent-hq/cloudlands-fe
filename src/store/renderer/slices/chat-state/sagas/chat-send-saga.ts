@@ -43,6 +43,8 @@ import { getActiveStalledEvent } from '$lib/components/chat/streaming-status-uti
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
+import { providerRefBaseId, providerReplacementFromError } from '$shared/provider-profiles';
+import { selectProviderDisplayName } from '../../provider-catalog/provider-catalog-selectors';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { AgentSession, QueuedMessage } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -631,8 +633,30 @@ function* dispatchToLifecycle(
     if (!(yield* mutationIsCurrent(agentId, ownership))) return;
     if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;
     yield* settle('uncertain');
-    yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
+    yield* put(chatSendFailed(agentId, yield* sendFailureMessage(agentId, error)));
   }
+}
+
+/**
+ * A turn refused with `provider-profile-replacement-required` (§5.54) asks the
+ * user to pick a replacement and flags the session so the model picker shows
+ * the same prompt; it never retries on another account. Other failures keep
+ * their message.
+ */
+function* sendFailureMessage(agentId: string, error: unknown): SagaGenerator<string> {
+  const replacement = providerReplacementFromError(error);
+  if (!replacement) return error instanceof Error ? error.message : String(error);
+  yield* put(updateSession(agentId, { providerReplacementRequired: replacement }));
+  const provider = yield* selectProviderDisplayName.effect(
+    providerRefBaseId(replacement.providerRef),
+  );
+  return m.chat_modelPicker_warning_tooltip({
+    title: m.chat_modelPicker_replacementRequired_title(),
+    description:
+      replacement.reason === 'provider-disabled'
+        ? m.chat_modelPicker_replacementProviderDisabled_description({ provider })
+        : m.chat_modelPicker_replacementProfileMissing_description({ provider }),
+  });
 }
 
 function* handleSend(action: SendAction): SagaGenerator<void> {

@@ -133,6 +133,14 @@ describe('provider-settings selectors', () => {
       expect(selectEnabledProviderIds.select(state)).not.toContain('auggie');
     });
 
+    // §5.54: a default profile keeps its base provider listed; the reference
+    // itself is not a provider id in the enabled set.
+    it('keeps the base provider of a default profile reference', () => {
+      const ids = selectEnabledProviderIds.select(mockState({ auggie: true }, 'codex@pwork'));
+      expect(ids).toContain('codex');
+      expect(ids).not.toContain('codex@pwork');
+    });
+
     it('should re-include a provider when explicitly re-enabled', () => {
       const state = mockState({ auggie: true }, 'codex');
       expect(selectEnabledProviderIds.select(state)).toContain('auggie');
@@ -256,6 +264,20 @@ describe('provider-settings selectors', () => {
     it('should report the active provider as available when it is in the available set', () => {
       const state = mockState({}, 'auggie', { auggie: { available: true } });
       expect(selectIsActiveProviderAvailable.select(state)).toBe(true);
+    });
+
+    it('reports a default profile as available while its base provider is', () => {
+      const status = { available: true, authenticated: true };
+      expect(
+        selectIsActiveProviderAvailable.select(
+          mockState({ codex: true }, 'codex@pwork', { codex: status }),
+        ),
+      ).toBe(true);
+      expect(
+        selectIsActiveProviderAvailable.select(
+          mockState({ codex: true }, 'codex@pwork', { codex: { available: false } }),
+        ),
+      ).toBe(false);
     });
 
     it('should report the active provider as unavailable when it is not in the available set', () => {

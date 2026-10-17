@@ -3,7 +3,7 @@ import {
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import type { ProviderProfile } from '$shared/provider-profiles';
+import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
 import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
 import type {
   ProviderProfileMutation,
@@ -85,8 +85,9 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
   const enabled = new Set(
     catalogEntries.filter((p) => selectIsProviderEnabled.select(state, p.id)).map((p) => p.id),
   );
+  // A default profile reference (§5.54) keeps its base provider listed.
   const activeProviderId = selectActiveProviderId.select(state);
-  if (activeProviderId) enabled.add(activeProviderId);
+  if (activeProviderId) enabled.add(providerRefBaseId(activeProviderId));
 
   for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
     if (isEnabled) {
@@ -173,7 +174,8 @@ export const selectModelFetchProviderIds = store.createSelector((state): string[
 
 /** Whether the currently active provider is in the available+enabled set. */
 export const selectIsActiveProviderAvailable = store.createSelector((state): boolean => {
-  const activeProviderId = selectActiveProviderId.select(state);
+  // A default profile (§5.54) is available while its base provider is.
+  const activeProviderId = providerRefBaseId(selectActiveProviderId.select(state));
   return selectAvailableEnabledProviderIds.select(state).includes(activeProviderId);
 });
 
