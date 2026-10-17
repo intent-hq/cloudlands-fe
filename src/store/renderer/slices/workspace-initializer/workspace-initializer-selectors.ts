@@ -76,6 +76,11 @@ export const selectWorkspaceInitializationOutcome = store.createSelector(
   },
 );
 
+export const selectWorkspaceInitializationOutcomeForConsumer = store.createSelector(
+  (state, consumerId: string) =>
+    getItem(state.workspaceInitializer.initializationOutcomes, consumerId),
+);
+
 /**
  * The specialist id the New Workspace modal would currently start with
  * (`null` = General): its remembered selection, or the orchestrator when team

@@ -212,6 +212,8 @@ import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store as appStore } from '$store/renderer/store';
 import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -343,6 +345,65 @@ afterEach(async () => {
 });
 
 describe('onboarding repo-config setup script detection', () => {
+  it('restores the prompt when admission changes during submission preparation', async () => {
+    const resolution = Promise.withResolvers<{
+      provider: string;
+      model?: string;
+      behaviorPrompt?: string;
+      specialistId: string | null;
+      specialistName?: string;
+    }>();
+    mocks.resolveModel.mockReturnValue(resolution.promise);
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    const prompt = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    prompt.setInputValue('Build the thing');
+    prompt.onSubmit();
+    await waitFor(() => expect(mocks.resolveModel).toHaveBeenCalledOnce());
+
+    appStore.dispatch(backendReconnected());
+    resolution.resolve({
+      provider: 'auggie',
+      model: 'model',
+      specialistId: 'developer',
+      specialistName: 'Developer',
+    });
+
+    await waitFor(() => expect(result.queryByTestId('setup-script-name')).toBeTruthy());
+    expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+  });
+
+  it('restores the prompt when a connection reset removes the in-flight outcome', async () => {
+    const created = Promise.withResolvers<unknown>();
+    mocks.workspaceCreate.mockReturnValue(created.promise);
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    const prompt = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    prompt.setInputValue('Build the thing');
+    prompt.onSubmit();
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledOnce());
+
+    appStore.dispatch(hostExecutionConnectionChanged('replacement-connection'));
+    created.resolve({ ok: false, error: 'connection replaced' });
+
+    await waitFor(() => expect(result.queryByTestId('setup-script-name')).toBeTruthy());
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
   it('defaults to "From repo config" when the repo commits a setupScript', async () => {
     // A last-used script exists too — repo config must win the priority.
     mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });

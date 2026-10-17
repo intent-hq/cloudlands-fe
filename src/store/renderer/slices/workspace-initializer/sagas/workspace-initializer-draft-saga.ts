@@ -13,6 +13,7 @@ import {
   workspaceInitializerDraftClearFinished,
   workspaceInitializerDraftClearRequested,
   workspaceInitializerDraftFlushRequested,
+  workspaceInitializerDraftLegacyMigrationRequested,
   workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreFinished,
   workspaceInitializerDraftRestoreRequested,
@@ -20,6 +21,7 @@ import {
   workspaceInitializerDraftSaveDebounceElapsed,
   workspaceInitializerDraftSaveScheduled,
 } from '../workspace-initializer-slice';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import type { WorkspaceInitializerDraftPayload } from '../workspace-initializer-types';
 
 const logger = createLogger('WorkspaceInitializerDraftSaga');
@@ -28,6 +30,7 @@ const DRAFT_DEBOUNCE_MS = 300;
 type DraftAction =
   | ReturnType<typeof workspaceInitializerDraftRestoreRequested>
   | ReturnType<typeof workspaceInitializerDraftSaveScheduled>
+  | ReturnType<typeof workspaceInitializerDraftLegacyMigrationRequested>
   | ReturnType<typeof workspaceInitializerDraftSaveDebounceElapsed>
   | ReturnType<typeof workspaceInitializerDraftFlushRequested>
   | ReturnType<typeof workspaceInitializerDraftSaveCancelled>
@@ -37,6 +40,8 @@ type DraftAction =
 interface PendingSave {
   payload: WorkspaceInitializerDraftPayload;
   version: number;
+  ownerRequestId: string | undefined;
+  admission: string | undefined;
 }
 
 function removeLegacyKey(key: string): void {
@@ -87,6 +92,7 @@ function* restoreDraft(
   legacyKey: string,
   restoreEpoch: number,
   mutationEpoch: { value: number },
+  admission: string | undefined,
 ) {
   try {
     const draft = yield* call(
@@ -117,7 +123,13 @@ function* restoreDraft(
     // Persist the one-time migration only if no newer save/clear was admitted
     // while the daemon read was pending. The in-memory legacy prompt still
     // restores when migration loses that race or persistence fails.
-    if (mutationEpoch.value === restoreEpoch) yield* call(persistDraft, { text: legacyPrompt });
+    if (mutationEpoch.value === restoreEpoch) {
+      yield* put(
+        workspaceInitializerDraftLegacyMigrationRequested(id, requestId, admission, restoreEpoch, {
+          text: legacyPrompt,
+        }),
+      );
+    }
     yield* put(
       workspaceInitializerDraftRestoreFinished(id, requestId, 'restored', legacyPrompt, []),
     );
@@ -139,8 +151,17 @@ function* restoreDraftInBackground(
   restoreStatuses: Record<string, 'pending' | 'restored' | 'empty' | 'error' | undefined>,
   restoreEpoch: number,
   mutationEpoch: { value: number },
+  admission: string | undefined,
 ) {
-  const status = yield* call(restoreDraft, id, requestId, legacyKey, restoreEpoch, mutationEpoch);
+  const status = yield* call(
+    restoreDraft,
+    id,
+    requestId,
+    legacyKey,
+    restoreEpoch,
+    mutationEpoch,
+    admission,
+  );
   if (activeRestoreRequestIds[id] === requestId) restoreStatuses[id] = status;
 }
 
@@ -149,6 +170,7 @@ export function* workspaceInitializerDraftSaga() {
     [
       workspaceInitializerDraftRestoreRequested,
       workspaceInitializerDraftSaveScheduled,
+      workspaceInitializerDraftLegacyMigrationRequested,
       workspaceInitializerDraftSaveDebounceElapsed,
       workspaceInitializerDraftFlushRequested,
       workspaceInitializerDraftSaveCancelled,
@@ -170,7 +192,7 @@ export function* workspaceInitializerDraftSaga() {
     while (true) {
       const action = (yield* take(channel)) as DraftAction;
       if (action.type === workspaceInitializerDraftRestoreRequested.type) {
-        const [id, requestId, legacyKey] = (
+        const [id, requestId, legacyKey, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftRestoreRequested>
         ).payload;
         const previousRestore = restoreTasks[id];
@@ -187,19 +209,43 @@ export function* workspaceInitializerDraftSaga() {
           restoreStatuses,
           mutationEpoch.value,
           mutationEpoch,
+          admission,
         );
         continue;
       }
 
+      if (action.type === workspaceInitializerDraftLegacyMigrationRequested.type) {
+        const [id, requestId, admission, restoreEpoch, payload] = (
+          action as ReturnType<typeof workspaceInitializerDraftLegacyMigrationRequested>
+        ).payload;
+        if (
+          activeRestoreRequestIds[id] !== requestId ||
+          mutationEpoch.value !== restoreEpoch ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+        )
+          continue;
+        mutationEpoch.value++;
+        yield* call(persistDraft, payload);
+        continue;
+      }
+
       if (action.type === workspaceInitializerDraftSaveScheduled.type) {
-        const [id, payload] = (action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>)
-          .payload;
+        const [id, payload, ownerRequestId, admission] = (
+          action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>
+        ).payload;
+        if (
+          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+        )
+          continue;
         if (stoppedOwners.has(id)) continue;
         mutationEpoch.value++;
         const nextVersion = ++version;
         pending[id] = {
           payload,
           version: nextVersion,
+          ownerRequestId,
+          admission,
         };
         yield* fork(draftDebounceTimer, id, nextVersion);
         continue;
@@ -211,6 +257,15 @@ export function* workspaceInitializerDraftSaga() {
         ).payload;
         const save = pending[id];
         if (!save || save.version !== elapsedVersion || stoppedOwners.has(id)) continue;
+        if (
+          (save.ownerRequestId !== undefined &&
+            activeRestoreRequestIds[id] !== save.ownerRequestId) ||
+          (save.admission !== undefined &&
+            (yield* selectPrincipalActionContext.effect()) !== save.admission)
+        ) {
+          delete pending[id];
+          continue;
+        }
         delete pending[id];
         const status = restoreStatuses[id];
         if (
@@ -225,7 +280,14 @@ export function* workspaceInitializerDraftSaga() {
       }
 
       if (action.type === workspaceInitializerDraftFlushRequested.type) {
-        const [id] = (action as ReturnType<typeof workspaceInitializerDraftFlushRequested>).payload;
+        const [id, ownerRequestId, admission] = (
+          action as ReturnType<typeof workspaceInitializerDraftFlushRequested>
+        ).payload;
+        if (
+          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+        )
+          continue;
         const save = pending[id];
         if (!save || stoppedOwners.has(id)) continue;
         delete pending[id];
@@ -242,26 +304,37 @@ export function* workspaceInitializerDraftSaga() {
       }
 
       if (action.type === workspaceInitializerDraftSaveCancelled.type) {
-        const [id] = (action as ReturnType<typeof workspaceInitializerDraftSaveCancelled>).payload;
+        const [id, ownerRequestId, admission] = (
+          action as ReturnType<typeof workspaceInitializerDraftSaveCancelled>
+        ).payload;
+        if (
+          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+        )
+          continue;
         delete pending[id];
         continue;
       }
 
       if (action.type === workspaceInitializerDraftClearRequested.type) {
-        const [id, requestId] = (
+        const [id, requestId, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftClearRequested>
         ).payload;
+        const rejected =
+          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
+          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission);
+        if (rejected) {
+          yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
+          continue;
+        }
         stoppedOwners.add(id);
         mutationEpoch.value++;
         pending = {};
-        for (const task of Object.values(restoreTasks)) {
-          if (task) yield* cancel(task);
-        }
-        for (const ownerId of Object.keys(restoreTasks)) {
-          delete restoreTasks[ownerId];
-          delete activeRestoreRequestIds[ownerId];
-          delete restoreStatuses[ownerId];
-        }
+        const restoreTask = restoreTasks[id];
+        if (restoreTask) yield* cancel(restoreTask);
+        delete restoreTasks[id];
+        delete activeRestoreRequestIds[id];
+        delete restoreStatuses[id];
         yield* call(removeAllLegacyPrompts);
         try {
           yield* call(

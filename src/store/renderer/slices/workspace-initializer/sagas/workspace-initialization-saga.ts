@@ -210,10 +210,17 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
   let workspacePath = request.resume?.workspacePath;
   let pullCompleted = false;
   const dispatch = appStore.dispatch;
+  if (!current(action, dispatch)) {
+    const failure = new Error('initialization-cancelled');
+    yield* finish(action, { status: 'cancelled', stage, error: failure.message });
+    yield* put(action.failure(failure));
+    return;
+  }
   if (!request.resume) yield* put(beginWorkspaceCreateProgress(progressId));
   try {
     if (request.pull && !request.resume) {
       stage = 'pull';
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       const pull = yield* call(
         [appClient.git, appClient.git.pull],
         request.pull.repositoryPath,
@@ -226,6 +233,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     if (!request.resume) {
       stage = 'create';
       if (!request.createRequest) throw new Error('missing-create-request');
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       const result = yield* call([workspaceClient, workspaceClient.create], {
         ...request.createRequest,
         progressId,
@@ -254,6 +262,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
         workspaceId,
         agentId,
         workspacePath,
+        ...(pullCompleted ? { pullCompleted: true } : {}),
       });
       yield* put(action.failure(new Error(delivery.error)));
       settled = true;

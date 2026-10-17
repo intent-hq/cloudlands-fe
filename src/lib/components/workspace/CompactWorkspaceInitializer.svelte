@@ -65,10 +65,11 @@
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerDefaultParentPath,
     selectWorkspaceInitializerDraftRestore,
-    selectWorkspaceInitializationOutcome,
+    selectWorkspaceInitializationOutcomeForConsumer,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
+    WorkspaceInitializationOutcome,
     WorkspaceInitializationRequest,
     WorkspaceInitializationStagedItem,
     WorkspaceInitializerRepoSelection,
@@ -972,6 +973,7 @@
         draftOwnerId,
         draftRestoreRequestId,
         LEGACY_PROMPT_SESSION_KEY,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
       ),
     );
   });
@@ -1002,13 +1004,27 @@
   $effect(() => {
     if (!draftRestored) return;
     const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
-    if (payload) appStore.dispatch(workspaceInitializerDraftSaveScheduled(draftOwnerId, payload));
+    if (payload)
+      appStore.dispatch(
+        workspaceInitializerDraftSaveScheduled(
+          draftOwnerId,
+          payload,
+          draftRestoreRequestId,
+          selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        ),
+      );
   });
 
   // A reload (cmd+R) or window close inside the debounce window would drop
   // the newest keystrokes — flush the pending save on unload and destroy.
   const flushDraftSave = () =>
-    appStore.dispatch(workspaceInitializerDraftFlushRequested(draftOwnerId));
+    appStore.dispatch(
+      workspaceInitializerDraftFlushRequested(
+        draftOwnerId,
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
   onMount(() => {
     window.addEventListener('beforeunload', flushDraftSave);
     return () => window.removeEventListener('beforeunload', flushDraftSave);
@@ -1554,12 +1570,47 @@
   const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
   const initializationConsumerId = `compact-workspace-initializer:${uuidv4()}`;
+  const initializationOutcome$ =
+    selectWorkspaceInitializationOutcomeForConsumer(initializationConsumerId);
   let activeInitializationSeq: number | null = null;
+  let activeInitialization = $state.raw<{
+    seq: number;
+    resourceId: string;
+    generation: number;
+    request: WorkspaceInitializationRequest;
+    current: () => boolean;
+    mode: 'create' | 'resume';
+    setupScriptRecord?: {
+      repoPath: string;
+      githubUrl?: string;
+      name: string;
+      content: string;
+      nameSource: SetupScriptNameSource;
+    };
+  } | null>(null);
+  let consumedInitializationSeq: number | null = null;
 
   function releaseInitialization(seq: number) {
     appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
     if (activeInitializationSeq === seq) activeInitializationSeq = null;
+    if (activeInitialization?.seq === seq) activeInitialization = null;
   }
+
+  $effect(() => {
+    const outcome = $initializationOutcome$;
+    const active = activeInitialization;
+    if (
+      !active ||
+      !outcome ||
+      outcome.status === 'pending' ||
+      outcome.seq !== active.seq ||
+      outcome.resourceId !== active.resourceId ||
+      consumedInitializationSeq === outcome.seq
+    )
+      return;
+    consumedInitializationSeq = outcome.seq;
+    void consumeWorkspaceInitialization(active, outcome);
+  });
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
@@ -2031,6 +2082,7 @@
     const initializationResourceId = `${admission}:${generation}`;
     let initializationRequest: WorkspaceInitializationRequest | null = null;
     let initializationSeq: number | null = null;
+    let handedOff = false;
 
     try {
       // Validate
@@ -2504,66 +2556,102 @@
       activeInitializationSeq = initialization.seq;
       activeCreateProgressId = initialization.payload.progressId;
       isPulling = Boolean(initializationRequest.pull);
-      const result = await dispatch(initialization);
-      isPulling = false;
-      if (!current()) return;
-
-      // Record the script as this repo's last-used default (localStorage).
-      // Skip the unedited repo-config script — the committed .intent/config.json
-      // is its source of truth, and recording a copy would shadow future
-      // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
         setupScriptNameSource === 'repo-config' &&
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === setupScriptProbeKey &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
-      if (setupScriptRepoKey && setupScript.trim() && !isUneditedRepoConfigScript) {
-        recordLastUsedSetupScript(
-          setupScriptRepoKey,
-          {
-            name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
-            content: setupScript,
-            nameSource: setupScriptName ? setupScriptNameSource : 'named',
-          },
-          repoType === 'github' ? githubUrl : undefined,
-        );
-      }
-
-      // Clear before navigation can unmount the form and flush its draft.
-      clearForm(true);
-      if (!current()) return;
-      // Close the accepted form before the route loader can renegotiate the
-      // connection and retire its checkout. Admission still owns this callback.
-      const navigation = goto(`/workspace/${result.workspaceId}`);
-      if (current()) oncreate?.();
-      await navigation;
+      activeInitialization = {
+        seq: initialization.seq,
+        resourceId: initializationResourceId,
+        generation,
+        request: initializationRequest,
+        current,
+        mode: 'create',
+        setupScriptRecord:
+          setupScriptRepoKey && setupScript.trim() && !isUneditedRepoConfigScript
+            ? {
+                repoPath: setupScriptRepoKey,
+                githubUrl: repoType === 'github' ? githubUrl : undefined,
+                name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
+                content: setupScript,
+                nameSource: setupScriptName ? setupScriptNameSource : 'named',
+              }
+            : undefined,
+      };
+      handedOff = true;
+      void dispatch(initialization).catch(() => {
+        // Correlated selector outcomes own UI settlement, including reset removal.
+      });
     } catch (err) {
       if (!current()) return;
-      const outcome = selectWorkspaceInitializationOutcome.select(
-        appStore.state,
-        initializationConsumerId,
-        initializationResourceId,
-      );
-      if (outcome?.pullCompleted) branchBehind = 0;
+      const failureMessage = err instanceof Error ? err.message : '';
+      if (failureMessage.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+        appStore.dispatch(refetchSpecialistsRequested());
+        resetUnavailableSpecialist();
+        error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else {
+        error = failureMessage
+          ? getGitErrorMessage(failureMessage)
+          : m.workspace_compactInitializer_createFailed_error();
+      }
+    } finally {
+      if (!handedOff && initializationSeq !== null) releaseInitialization(initializationSeq);
+      if (!handedOff && mounted && generation === submissionGeneration) {
+        isCreating = false;
+        activeCreateProgressId = null;
+      }
+    }
+  }
+
+  async function consumeWorkspaceInitialization(
+    active: NonNullable<typeof activeInitialization>,
+    outcome: WorkspaceInitializationOutcome,
+  ) {
+    try {
+      if (!active.current()) return;
       isPulling = false;
-      if (outcome?.stage === 'pull') {
+      if (outcome.status === 'success' && outcome.workspaceId) {
+        const record = active.setupScriptRecord;
+        if (record) {
+          recordLastUsedSetupScript(
+            record.repoPath,
+            {
+              name: record.name,
+              content: record.content,
+              nameSource: record.nameSource,
+            },
+            record.githubUrl,
+          );
+        }
+        pendingFirstMessage = null;
+        // Clear before navigation can unmount the form and flush its draft.
+        clearForm(true);
+        if (!active.current()) return;
+        const navigation = goto(`/workspace/${outcome.workspaceId}`);
+        if (active.current()) oncreate?.();
+        await navigation;
+        return;
+      }
+      if (outcome.status === 'cancelled') return;
+      if (outcome.pullCompleted) branchBehind = 0;
+      if (outcome.stage === 'pull') {
         pullError = outcome.error || m.workspace_compactInitializer_pullFailed_error();
-        pullContinuation = current;
+        pullContinuation = active.current;
         showPullConflictDialog = true;
         return;
       }
       if (
-        initializationRequest &&
-        outcome?.workspaceId &&
+        outcome.workspaceId &&
         (outcome.stage === 'post-create' ||
           outcome.stage === 'attachments' ||
           outcome.stage === 'first-message')
       ) {
-        const stagedItems = outcome.stagedItems ?? initializationRequest.stagedItems;
+        const stagedItems = outcome.stagedItems ?? active.request.stagedItems;
         contextItems = stagedItems as ContextItem[];
         pendingFirstMessage = {
           request: {
-            ...initializationRequest,
+            ...active.request,
             createRequest: undefined,
             pull: undefined,
             resume: {
@@ -2572,11 +2660,10 @@
               workspacePath: outcome.workspacePath,
             },
             stagedItems,
-            heldMessage: initializationRequest.heldMessage
+            heldMessage: active.request.heldMessage
               ? {
-                  ...initializationRequest.heldMessage,
-                  imageBlocks:
-                    outcome.retryImageBlocks ?? initializationRequest.heldMessage.imageBlocks,
+                  ...active.request.heldMessage,
+                  imageBlocks: outcome.retryImageBlocks ?? active.request.heldMessage.imageBlocks,
                 }
               : undefined,
           },
@@ -2591,7 +2678,7 @@
               : m.workspace_compactInitializer_firstMessageSendFailed_error();
         return;
       }
-      const failureMessage = outcome?.error ?? (err instanceof Error ? err.message : '');
+      const failureMessage = outcome.error ?? '';
       if (failureMessage.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2602,8 +2689,8 @@
           : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
-      if (initializationSeq !== null) releaseInitialization(initializationSeq);
-      if (mounted && generation === submissionGeneration) {
+      releaseInitialization(active.seq);
+      if (mounted && active.generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
       }
@@ -2641,10 +2728,23 @@
     richTextarea?.clear(); // Clear the TipTap editor content
     // Cancel the queued save before clearing: an immediate close/unmount can
     // flush the submitted prompt before the empty-state effect runs (#5569).
-    appStore.dispatch(workspaceInitializerDraftSaveCancelled(draftOwnerId));
+    appStore.dispatch(
+      workspaceInitializerDraftSaveCancelled(
+        draftOwnerId,
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
-    appStore.dispatch(workspaceInitializerDraftClearRequested(draftOwnerId, crypto.randomUUID()));
+    appStore.dispatch(
+      workspaceInitializerDraftClearRequested(
+        draftOwnerId,
+        crypto.randomUUID(),
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
     // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
@@ -3006,55 +3106,22 @@
     };
     isCreating = true;
     error = null;
-    let initializationSeq: number | null = null;
-    try {
-      const initialization = workspaceInitializationRequested(request, {
-        id: initializationConsumerId,
-        resourceId,
-      });
-      initializationSeq = initialization.seq;
-      activeInitializationSeq = initialization.seq;
-      await dispatch(initialization);
-      if (!current()) return;
-      pendingFirstMessage = null;
-      clearForm(true);
-      await goto(`/workspace/${request.resume?.workspaceId}`);
-      if (current()) oncreate?.();
-    } catch (retryError) {
-      if (!current()) return;
-      const outcome = selectWorkspaceInitializationOutcome.select(
-        appStore.state,
-        initializationConsumerId,
-        resourceId,
-      );
-      const stagedItems = outcome?.stagedItems ?? request.stagedItems;
-      contextItems = stagedItems as ContextItem[];
-      pendingFirstMessage = {
-        request: {
-          ...request,
-          stagedItems,
-          heldMessage: request.heldMessage
-            ? {
-                ...request.heldMessage,
-                imageBlocks: outcome?.retryImageBlocks ?? request.heldMessage.imageBlocks,
-              }
-            : undefined,
-        },
-      };
-      error =
-        outcome?.stage === 'attachments'
-          ? m.workspace_compactInitializer_attachmentPlacementFailed_error()
-          : outcome?.error
-            ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
-                detail: outcome.error,
-              })
-            : retryError instanceof Error
-              ? retryError.message
-              : m.workspace_compactInitializer_firstMessageSendFailed_error();
-    } finally {
-      if (initializationSeq !== null) releaseInitialization(initializationSeq);
-      if (current()) isCreating = false;
-    }
+    const initialization = workspaceInitializationRequested(request, {
+      id: initializationConsumerId,
+      resourceId,
+    });
+    activeInitializationSeq = initialization.seq;
+    activeInitialization = {
+      seq: initialization.seq,
+      resourceId,
+      generation,
+      request,
+      current,
+      mode: 'resume',
+    };
+    void dispatch(initialization).catch(() => {
+      // Correlated selector outcomes own UI settlement, including reset removal.
+    });
   }
 
   /**
