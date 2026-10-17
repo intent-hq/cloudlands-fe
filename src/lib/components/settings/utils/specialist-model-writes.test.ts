@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FileSpecialist } from '$store/renderer/slices/specialists/specialists-slice';
-import { builtInExport, createPendingWrites, modelSelectionWrite } from './specialist-model-writes';
+import {
+  applyModelIntent,
+  builtInExport,
+  createPendingWrites,
+  intentMatches,
+  modelSelectionWrite,
+} from './specialist-model-writes';
 
 const stored: FileSpecialist = {
   id: 'ui-designer',
@@ -19,10 +25,14 @@ const stored: FileSpecialist = {
 const flush = () => new Promise((resolve) => setTimeout(resolve));
 
 describe('modelSelectionWrite', () => {
-  it('applies the pin and effort over the stored file, keeping every other field', () => {
+  it('applies the intent over the stored file, keeping every other field', () => {
     const owner = { workspaceId: 'ws-1', workspacePath: '/ws' };
     expect(
-      modelSelectionWrite(stored, { codingAgent: 'codex', model: 'gpt' }, 'high', false, owner),
+      modelSelectionWrite(
+        stored,
+        { codingAgent: 'codex', model: 'gpt', reasoningEffort: 'high' },
+        owner,
+      ),
     ).toEqual({
       kind: 'save',
       payload: {
@@ -42,29 +52,75 @@ describe('modelSelectionWrite', () => {
     });
   });
 
-  it('deletes a redundant override and tolerates it being absent', () => {
-    expect(modelSelectionWrite({ ...stored, source: 'user' }, {}, undefined, true, {})).toEqual({
+  it('deletes for a deleted intent and tolerates the file being absent', () => {
+    expect(
+      modelSelectionWrite({ ...stored, source: 'user' }, { codingAgent: 'x', deleted: true }, {}),
+    ).toEqual({
       kind: 'delete',
       ref: { id: 'ui-designer', scope: 'user', allowMissing: true },
     });
   });
 });
 
-describe('builtInExport', () => {
-  const specialist = {
+describe('applyModelIntent', () => {
+  const payload = {
     id: 'ui-designer',
     name: 'UI Designer',
     description: 'Designs',
-    defaultBehaviorPrompt: 'Bundled prompt',
+    codingAgent: 'claude',
+    model: 'old-model',
+    reasoningEffort: 'low',
+    behaviorPrompt: 'Edited prompt',
   };
 
-  it('describes the user override a pick creates, falling back to the bundled prompt', () => {
-    expect(builtInExport(specialist, '', { codingAgent: 'codex', model: 'gpt' }, 'high')).toEqual(
+  it('replaces only the model fields with the live pick', () => {
+    expect(applyModelIntent(payload, { codingAgent: 'codex', model: 'gpt' })).toEqual({
+      ...payload,
+      codingAgent: 'codex',
+      model: 'gpt',
+      reasoningEffort: undefined,
+    });
+  });
+
+  it('omits every model key while the override is being deleted', () => {
+    expect(applyModelIntent(payload, { reasoningEffort: 'high', deleted: true })).toEqual({
+      ...payload,
+      codingAgent: undefined,
+      model: undefined,
+      reasoningEffort: undefined,
+    });
+  });
+
+  it('leaves the payload alone without a pick', () => {
+    expect(applyModelIntent(payload, undefined)).toBe(payload);
+  });
+});
+
+describe('intentMatches', () => {
+  it('compares only the fields the pick sets (omitted keys inherit on read)', () => {
+    expect(intentMatches({ codingAgent: 'claude', model: 'old-model' }, stored)).toBe(true);
+    expect(intentMatches({ model: 'gpt' }, stored)).toBe(false);
+    expect(intentMatches({ reasoningEffort: 'high' }, stored)).toBe(false);
+    expect(intentMatches({ model: 'gpt' }, undefined)).toBe(false);
+  });
+
+  it('matches a deletion only once the file is gone', () => {
+    expect(intentMatches({ deleted: true }, stored)).toBe(false);
+    expect(intentMatches({ deleted: true }, undefined)).toBe(true);
+  });
+});
+
+describe('builtInExport', () => {
+  it('describes the user override an export creates, falling back to the bundled prompt', () => {
+    const specialist = {
+      id: 'ui-designer',
+      name: 'UI Designer',
+      description: 'Designs',
+      defaultBehaviorPrompt: 'Bundled prompt',
+    };
+    expect(builtInExport(specialist, '')).toEqual(
       expect.objectContaining({
         id: 'ui-designer',
-        codingAgent: 'codex',
-        model: 'gpt',
-        reasoningEffort: 'high',
         behaviorPrompt: 'Bundled prompt',
         source: 'user',
       }),
@@ -74,8 +130,8 @@ describe('builtInExport', () => {
 
 describe('createPendingWrites', () => {
   it('stays pending until every write for the id settles', async () => {
-    const onFailedSettle = vi.fn();
-    const pending = createPendingWrites(onFailedSettle);
+    const onSettled = vi.fn();
+    const pending = createPendingWrites(onSettled);
     let first!: () => void;
     let second!: () => void;
     pending.track('a', new Promise<void>((resolve) => (first = resolve)));
@@ -86,25 +142,29 @@ describe('createPendingWrites', () => {
     await flush();
     expect(pending.has('a')).toBe(true);
     expect(pending.has('b')).toBe(false);
+    expect(onSettled.mock.calls).toEqual([['b', false]]);
 
     second();
     await flush();
     expect(pending.has('a')).toBe(false);
-    expect(onFailedSettle).not.toHaveBeenCalled();
+    expect(onSettled.mock.calls).toEqual([
+      ['b', false],
+      ['a', false],
+    ]);
   });
 
   it('reports a failure once the last write for the id settles', async () => {
-    const onFailedSettle = vi.fn();
-    const pending = createPendingWrites(onFailedSettle);
+    const onSettled = vi.fn();
+    const pending = createPendingWrites(onSettled);
     let release!: () => void;
     pending.track('a', Promise.reject(new Error('write failed')));
     pending.track('a', new Promise<void>((resolve) => (release = resolve)));
 
     await flush();
-    expect(onFailedSettle).not.toHaveBeenCalled();
+    expect(onSettled).not.toHaveBeenCalled();
     release();
     await flush();
-    expect(onFailedSettle).toHaveBeenCalledExactlyOnceWith('a');
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('a', true);
   });
 
   it('treats a non-promise dispatch result as settled', async () => {

@@ -1259,12 +1259,82 @@ describe('AIBehaviorEditor specialist model reasoning', () => {
       expect(screen.getByTestId('picker-selected').textContent).toBe('bare-picked-model');
       expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
 
-      // Once every write settled, the refetch is authoritative again.
+      // Once the writes settled and the stored file reflects them, the store
+      // is authoritative again — including a later external change.
       writes[1].resolve();
       await new Promise((resolve) => setTimeout(resolve));
+      mocks.isFileBased.value = true;
+      mocks.fileSpecialist.value = {
+        ...specialist,
+        source: 'user',
+        codingAgent: 'codex',
+        model: 'bare-picked-model',
+        reasoningEffort: 'high',
+        behaviorPrompt: 'bundled prompt',
+      };
+      flushSync(() => mocks.fileSpecialists$.set([mocks.fileSpecialist.value]));
       mocks.explicitEffort.value = 'low';
-      flushSync(() => mocks.fileSpecialists$.set([{ id: 'implementor' }]));
+      flushSync(() => mocks.fileSpecialists$.set([{ ...mocks.fileSpecialist.value }]));
       expect(screen.getByTestId('picker-reasoning').textContent).toBe('low');
+    });
+
+    it('keeps the pick when only the global list refreshed (stale workspace catalog)', async () => {
+      renderSpecialist();
+      await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+      writes[0].resolve();
+      await new Promise((resolve) => setTimeout(resolve));
+      // The global refetch landed, but the file the editor writes from (the
+      // workspace catalog) does not list the new override yet.
+      flushSync(() => mocks.fileSpecialists$.set([{ id: 'implementor' }]));
+
+      await fireEvent.click(screen.getByTestId('pick-reasoning'));
+
+      expect(lastSave()).toMatchObject({
+        codingAgent: 'codex',
+        model: 'bare-picked-model',
+        reasoningEffort: 'high',
+      });
+    });
+
+    it('shows the pending pick again after switching specialists and back', async () => {
+      const other = { ...specialist, id: 'reviewer', name: 'Reviewer' };
+      mocks.specialists$.set([specialist, other]);
+      const view = render(AIBehaviorEditor, {
+        activeView: { type: 'specialist', id: 'implementor' },
+      });
+      await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+      await fireEvent.click(screen.getByTestId('pick-reasoning'));
+
+      await view.rerender({ activeView: { type: 'specialist', id: 'reviewer' } });
+      expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
+      await view.rerender({ activeView: { type: 'specialist', id: 'implementor' } });
+
+      expect(screen.getByTestId('picker-selected').textContent).toBe('codex:bare-picked-model');
+      expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+      await fireEvent.click(screen.getByTestId('clear-reasoning'));
+      expect(lastSave()).toMatchObject({
+        id: 'implementor',
+        codingAgent: 'codex',
+        model: 'bare-picked-model',
+        reasoningEffort: undefined,
+      });
+    });
+
+    it('carries the pending pick on a prompt saved before the refetch', async () => {
+      renderSpecialist();
+      await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+
+      const prompt = within(screen.getByTestId('specialist-prompt-column'))
+        .getAllByRole('textbox')
+        .find((textbox) => textbox.tagName === 'TEXTAREA')!;
+      await fireEvent.input(prompt, { target: { value: 'Edited prompt' } });
+      await fireEvent.blur(prompt);
+
+      expect(lastSave()).toMatchObject({
+        behaviorPrompt: 'Edited prompt',
+        codingAgent: 'codex',
+        model: 'bare-picked-model',
+      });
     });
 
     it('restores the persisted values when a write fails', async () => {

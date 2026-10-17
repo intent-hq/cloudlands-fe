@@ -361,7 +361,11 @@ describe('specialistsSaga', () => {
     release();
     await settle();
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    // The queued write edits the file the first write created.
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
     expect(mocks.list.mock.calls).toEqual([[], []]);
     expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
       successAction(action),
@@ -658,6 +662,11 @@ describe('specialistsSaga', () => {
   it.each([
     ['a not-found delete without allowMissing', { code: 'not-found' }, false],
     ['another daemon rejection with allowMissing', { code: 'INVALID_PARAMS' }, true],
+    [
+      'an unstructured not-found code with allowMissing',
+      { code: 'not-found', data: { code: 'not-found' } },
+      true,
+    ],
   ])('still reports %s', async (_name, details, allowMissing) => {
     mocks.remove.mockRejectedValue(Object.assign(new Error('rejected'), details));
     const channel = stdChannel();
@@ -674,30 +683,76 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
-  it('refreshes cached workspace catalogs after a user-tier delete', async () => {
+  it('creates after a queued delete even while the project catalog still lists the file', async () => {
+    // Clearing a redundant project override deletes it; a reasoning pick right
+    // after must recreate it instead of editing the file that is now gone.
+    const project = { ...mappedFileDef('builtin'), source: 'project' as const };
     const channel = stdChannel();
-    const dispatch = vi.fn();
     const task = runSaga(
       {
         channel,
-        dispatch,
+        dispatch: vi.fn(),
         getState: () => ({
           ...sagaState(),
-          providerCatalog: { byWorkspaceId: { 'ws-a': {}, 'ws-b': {} } },
+          providerCatalog: {
+            byWorkspaceId: {
+              'ws-1': { specialists: [{ ...fileDef('builtin'), source: 'project' }] },
+            },
+          },
         }),
       },
       specialistsSaga,
     );
-    const action = deleteFileSpecialist({ id: 'builtin', scope: 'user', allowMissing: true });
-    channel.put(action);
-    await settle();
+    const owner = { scope: 'project' as const, workspaceId: 'ws-1', workspacePath: '/ws' };
+    const remove = deleteFileSpecialist({ id: 'builtin', ...owner, allowMissing: true });
+    const save = saveFileSpecialist({
+      id: 'builtin',
+      name: project.name,
+      description: project.description,
+      behaviorPrompt: project.behaviorPrompt,
+      reasoningEffort: 'high',
+      ...owner,
+    });
+    channel.put(remove);
+    channel.put(save);
+    await expect(remove.promise).resolves.toBeUndefined();
+    await expect(save.promise).resolves.toBeUndefined();
 
-    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual(
-      expect.arrayContaining([
-        workspaceCatalogRequested('ws-a', ['specialists']),
-        workspaceCatalogRequested('ws-b', ['specialists']),
-      ]),
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('edits after a queued create even when its refetch failed', async () => {
+    mocks.list.mockRejectedValue(new Error('list failed'));
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => sagaState() },
+      specialistsSaga,
     );
+    const write = (reasoningEffort?: string) =>
+      saveFileSpecialist({
+        id: 'builtin',
+        name: 'Builtin',
+        description: 'Default',
+        behaviorPrompt: 'Default prompt',
+        codingAgent: 'codex',
+        model: 'gpt',
+        reasoningEffort,
+        scope: 'user',
+      });
+    const model = write();
+    const effort = write('high');
+    channel.put(model);
+    channel.put(effort);
+    await expect(model.promise).resolves.toBeUndefined();
+    await expect(effort.promise).resolves.toBeUndefined();
+
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls[0][1]).toMatchObject({ reasoningEffort: 'high' });
     task.cancel();
     await task.toPromise();
   });

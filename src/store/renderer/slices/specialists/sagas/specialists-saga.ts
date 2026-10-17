@@ -45,7 +45,7 @@ import {
   workspaceCatalogReceived,
   workspaceCatalogReadFailed,
 } from '../../provider-catalog/provider-catalog-slice';
-import { selectWorkspaceCatalogIds } from '../../provider-catalog/workspace-catalog-selectors';
+import { isStructuredAgentNotFoundError as isStructuredNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
@@ -297,26 +297,6 @@ function mutationError(error: unknown, fallback: string): Error {
   return error instanceof Error ? error : new Error(errorMessage(error, fallback));
 }
 
-/** The daemon's structured not-found rejection (`data.code: "not-found"`, PROTOCOL §5.11). */
-function isNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const { code, data } = error as { code?: unknown; data?: unknown };
-  return (
-    code === 'not-found' ||
-    (!!data && typeof data === 'object' && (data as { code?: unknown }).code === 'not-found')
-  );
-}
-
-/**
- * User-tier files appear in every workspace catalog. The daemon's watcher
- * eventually pushes `specialists:changed`, but workspace-scoped Settings
- * would otherwise show the old override (and its Reset) until it does.
- */
-function* refreshWorkspaceSpecialistCatalogs() {
-  for (const workspaceId of yield* selectWorkspaceCatalogIds.effect())
-    yield* put(workspaceCatalogRequested(workspaceId, ['specialists']));
-}
-
 function* showMutationError(error: unknown, fallback: string) {
   const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
   yield* call([notify, notify.error], errorMessage(error, fallback));
@@ -340,10 +320,20 @@ function* requireOwner(admission: string | null) {
   }
 }
 
-function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpecialist>) {
+/**
+ * `fileExists` is what an earlier write in the same per-specialist queue left
+ * on disk; it wins over the list, which may not have caught up (a failed or
+ * superseded refetch, or a workspace catalog that refreshes asynchronously).
+ */
+function* handleSave(
+  context: ListContext,
+  action: ReturnType<typeof saveFileSpecialist>,
+  fileExists?: boolean,
+) {
   const [payload] = action.payload;
   const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
+  let written = false;
   try {
     yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
@@ -371,7 +361,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
       teamAgents: existing?.teamAgents ?? bundled?.teamAgents,
       icon: existing?.icon ?? bundled?.icon,
     };
-    if (existing) {
+    if (fileExists ?? !!existing) {
       yield* call(
         [appClient.specialists, appClient.specialists.edit],
         payload.id,
@@ -395,12 +385,10 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
     yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
+    written = true;
     if (scope === 'project' && payload.workspaceId)
       yield* put(workspaceCatalogRequested(payload.workspaceId));
-    else {
-      yield* call(refreshWorkspaceSpecialistCatalogs);
-      yield* call(refetchSpecialists, context);
-    }
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
@@ -415,6 +403,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
       yield* call(rejectAction, action, new Error(m.specialists_mutation_saveFailed_error()));
     }
   }
+  return written;
 }
 
 function* isInSettingsSidebar(id: string, workspaceId?: string) {
@@ -625,6 +614,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
   const [ref] = action.payload;
   const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
+  let written = false;
   try {
     yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(ref.id, ref.workspaceId);
@@ -642,7 +632,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
     } catch (error) {
       // A reset whose override is already gone has reached its goal; the
       // refresh below reconciles the stale view instead of reporting failure.
-      if (!ref.allowMissing || !isNotFoundError(error)) throw error;
+      if (!ref.allowMissing || !isStructuredNotFoundError(error)) throw error;
       logger.warn('Specialist override was already absent; refreshing', {
         id: ref.id,
         scope: ref.scope ?? 'user',
@@ -651,12 +641,10 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
     yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
+    written = true;
     if (ref.scope === 'project' && ref.workspaceId)
       yield* put(workspaceCatalogRequested(ref.workspaceId));
-    else {
-      yield* call(refreshWorkspaceSpecialistCatalogs);
-      yield* call(refetchSpecialists, context);
-    }
+    else yield* call(refetchSpecialists, context);
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());
@@ -671,6 +659,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
       yield* call(rejectAction, action, new Error(m.specialists_mutation_deleteFailed_error()));
     }
   }
+  return written;
 }
 
 /**
@@ -727,9 +716,9 @@ type FileMutation = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof de
 
 /**
  * Writes for one specialist run in dispatch order, each after the previous
- * one's refetch; different specialists still proceed concurrently. Overlapping
- * writes could otherwise land out of order, and a follow-up save would pick
- * create/edit from a list that predates the previous write.
+ * one (and its refetch); different specialists still proceed concurrently.
+ * Overlapping writes could otherwise land out of order, and a follow-up save
+ * would pick create/edit from a list that predates the previous write.
  */
 function* watchFileMutations(context: ListContext) {
   const queues = new Map<string, FileMutation[]>();
@@ -745,10 +734,20 @@ function* watchFileMutations(context: ListContext) {
     queues.set(key, queue);
     yield* fork(function* () {
       try {
+        // What this queue's last successful write left on disk.
+        let fileExists: boolean | undefined;
         for (let next = queue.shift(); next; next = queue.shift()) {
-          if (next.type === saveFileSpecialist.type)
-            yield* call(handleSave, context, next as ReturnType<typeof saveFileSpecialist>);
-          else yield* call(handleDelete, context, next as ReturnType<typeof deleteFileSpecialist>);
+          const isSave = next.type === saveFileSpecialist.type;
+          const written = isSave
+            ? yield* call(
+                handleSave,
+                context,
+                next as ReturnType<typeof saveFileSpecialist>,
+                fileExists,
+              )
+            : yield* call(handleDelete, context, next as ReturnType<typeof deleteFileSpecialist>);
+          // A failure leaves the disk state unknown: fall back to the list.
+          fileExists = written ? isSave : undefined;
         }
       } finally {
         queues.delete(key);
