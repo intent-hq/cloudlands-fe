@@ -38,6 +38,8 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
 import {
+  browserClientsConsumerMounted,
+  browserClientsConsumerUnmounted,
   browserClientsReducer,
   hydrateBrowserClientsRequested,
   fetchWorkspaceBrowserClientRequested,
@@ -70,7 +72,7 @@ function start(mounted: string[] = []) {
     };
     channel.put(action);
   };
-  for (const wsId of mounted) dispatch(workspaceMounted(wsId));
+  for (const wsId of mounted) dispatch(mountBrowserConsumer(wsId));
   tasks.push(runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga));
   return {
     dispatch,
@@ -84,9 +86,30 @@ async function settle() {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
+const mountBrowserConsumer = (id: string) => browserClientsConsumerMounted(id, 'test-browser');
+
 function reconnect() {
   for (const handler of transport.reconnect) handler();
 }
+
+it('Home does not read browser routing for warm workspaces without browser consumers', async () => {
+  const run = start();
+  run.dispatch(workspaceMounted('warm-a'));
+  run.dispatch(workspaceMounted('warm-b'));
+  await settle();
+  run.dispatch(refreshLiveClientsRequested());
+  await settle();
+  reconnect();
+  await settle();
+  expect(transport.request).not.toHaveBeenCalled();
+});
+
+it('Home without mounted workspaces does not read an unscoped browser client roster', async () => {
+  const run = start();
+  run.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(transport.request).not.toHaveBeenCalled();
+});
 
 beforeEach(() => {
   currentClient = { ...desktop };
@@ -113,7 +136,7 @@ afterEach(async () => {
 describe('browser recovery across a backend reconnect', () => {
   it('retries an unconfirmed current identity on remount while retaining hosted identity', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     transport.observeIdentity.mockRejectedValueOnce(new Error('identity unconfirmed'));
     reconnect();
@@ -121,7 +144,7 @@ describe('browser recovery across a backend reconnect', () => {
     expect(run.view().ownClientId).toBe(desktop.clientId);
     expect(run.confirmed()).toBe(false);
     run.dispatch(workspaceUnmounted('ws-1'));
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     expect(transport.observeIdentity).toHaveBeenCalledTimes(3);
     expect(run.confirmed()).toBe(true);
@@ -130,7 +153,7 @@ describe('browser recovery across a backend reconnect', () => {
 
   it('hydrates exact identity and workspace routing from the same backend', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
 
     expect(run.view()).toMatchObject({
@@ -149,7 +172,7 @@ describe('browser recovery across a backend reconnect', () => {
 
   it('retains a matching identity when the daemon reconnects with the same client', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     reconnect();
     await settle();
@@ -162,7 +185,7 @@ describe('browser recovery across a backend reconnect', () => {
 
   it('learns the new authoritative observed identity after reconnect', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
 
     // Conditional contract: if main reports a different canonical ID, use it exactly.
@@ -179,7 +202,7 @@ describe('browser recovery across a backend reconnect', () => {
 
   it('does not reuse a successful old hello when hydration is explicitly retried after reconnect', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     currentClient = { ...desktop, clientId: 'new-authoritative-client' };
     reconnect();
@@ -197,7 +220,7 @@ describe('browser recovery across a backend reconnect', () => {
       resolved: { clientId: desktop.clientId },
     };
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     expect(run.view().pinnedClientId).toBe(desktop.clientId);
 
@@ -230,7 +253,7 @@ describe('connection lifetime races', () => {
     run.dispatch(connectionStatusChanged('connected'));
     await settle();
     expect(transport.request).not.toHaveBeenCalled();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     expect(run.confirmed()).toBe(true);
     expect(run.view().eligibleClients).toHaveLength(1);
@@ -250,7 +273,7 @@ describe('connection lifetime races', () => {
       return normal(method, params);
     });
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     run.dispatch(connectionStatusChanged('connecting'));
     await settle();
@@ -272,7 +295,7 @@ describe('connection lifetime races', () => {
 
   it('does not rehydrate an admitted connection on repeated connected metadata', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     transport.request.mockClear();
     run.dispatch(connectionStatusChanged('connected'));
@@ -288,7 +311,7 @@ describe('connection lifetime races', () => {
       const old = deferred<{ clientId: string }>();
       transport.observeIdentity.mockReturnValueOnce(old.promise);
       const run = start();
-      run.dispatch(workspaceMounted('ws-1'));
+      run.dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       reconnect();
       await settle();
@@ -310,7 +333,7 @@ describe('connection lifetime races', () => {
     'discards an old %s reply after reconnect',
     async (method) => {
       const run = start();
-      run.dispatch(workspaceMounted('ws-1'));
+      run.dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       const old = deferred<unknown>();
       const normal = transport.request.getMockImplementation()!;
@@ -342,7 +365,7 @@ describe('connection lifetime races', () => {
 
   it('retains tab-host identity while invalidating recovery eligibility on disconnect', async () => {
     const run = start();
-    run.dispatch(workspaceMounted('ws-1'));
+    run.dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     run.dispatch(connectionStatusChanged('disconnected'));
     await settle();
@@ -368,7 +391,7 @@ describe('mounted workspace lifetime across reconnect', () => {
     'does not reconnect a cleaned workspace until a real remount (%s)',
     async (cleanup) => {
       const run = start();
-      run.dispatch(workspaceMounted('ws-1'));
+      run.dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       run.dispatch(cleanup('ws-1'));
       transport.request.mockClear();
@@ -378,7 +401,7 @@ describe('mounted workspace lifetime across reconnect', () => {
       expect(
         transport.request.mock.calls.some(([, params]) => params?.workspaceId === 'ws-1'),
       ).toBe(false);
-      run.dispatch(workspaceMounted('ws-1'));
+      run.dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(run.view().eligibleClients).toHaveLength(1);
       expect(transport.request).toHaveBeenCalledWith('workspace.getBrowserClient', {
@@ -386,4 +409,99 @@ describe('mounted workspace lifetime across reconnect', () => {
       });
     },
   );
+});
+
+it('Home releases visible controls but keeps retained browser surfaces subscribed', async () => {
+  const run = start();
+  run.dispatch(browserClientsConsumerMounted('ws-1', 'sidebar'));
+  run.dispatch(browserClientsConsumerMounted('ws-1', 'retained-browser'));
+  await settle();
+  expect(transport.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([
+    ['client.list', { workspaceId: 'ws-1' }],
+  ]);
+  run.dispatch(browserClientsConsumerUnmounted('ws-1', 'sidebar'));
+  transport.request.mockClear();
+  run.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(transport.request.mock.calls).toEqual([
+    ['client.list', { workspaceId: 'ws-1' }],
+    ['workspace.getBrowserClient', { workspaceId: 'ws-1' }],
+  ]);
+  run.dispatch(browserClientsConsumerUnmounted('ws-1', 'retained-browser'));
+  transport.request.mockClear();
+  run.dispatch(refreshLiveClientsRequested());
+  reconnect();
+  await settle();
+  expect(transport.request).not.toHaveBeenCalled();
+  run.dispatch(browserClientsConsumerMounted('ws-1', 'sidebar'));
+  await settle();
+  expect(transport.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([
+    ['client.list', { workspaceId: 'ws-1' }],
+  ]);
+  expect(run.confirmed()).toBe(true);
+});
+
+it('global and scoped refresh bursts share one in-flight workspace list', async () => {
+  const run = start();
+  run.dispatch(mountBrowserConsumer('ws-1'));
+  await settle();
+  const normal = transport.request.getMockImplementation()!;
+  let resolve!: (value: unknown) => void;
+  const held = new Promise((done) => (resolve = done));
+  let lists = 0;
+  transport.request.mockClear();
+  transport.request.mockImplementation((method, params) => {
+    if (method === 'client.list' && ++lists === 1) return held;
+    return normal(method, params);
+  });
+  run.dispatch(refreshLiveClientsRequested());
+  run.dispatch(refreshLiveClientsRequested('ws-1'));
+  run.dispatch(refreshLiveClientsRequested());
+  await settle();
+  expect(lists).toBe(1);
+  resolve({ clients: [currentClient] });
+  await settle();
+  expect(lists).toBe(2);
+  expect(transport.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([
+    ['client.list', { workspaceId: 'ws-1' }],
+    ['client.list', { workspaceId: 'ws-1' }],
+  ]);
+});
+
+it('leaving the last consumer cancels slow reads and their trailing requests', async () => {
+  const run = start();
+  run.dispatch(mountBrowserConsumer('ws-1'));
+  await settle();
+  const normal = transport.request.getMockImplementation()!;
+  let resolve!: (value: unknown) => void;
+  const held = new Promise((done) => (resolve = done));
+  transport.request.mockClear();
+  transport.request.mockImplementation((method, params) =>
+    method === 'client.list' ? held : normal(method, params),
+  );
+  run.dispatch(refreshLiveClientsRequested());
+  run.dispatch(refreshLiveClientsRequested());
+  await settle();
+  run.dispatch(browserClientsConsumerUnmounted('ws-1', 'test-browser'));
+  resolve({ clients: [{ ...currentClient, clientId: 'obsolete' }] });
+  await settle();
+  expect(transport.request.mock.calls).toEqual([['client.list', { workspaceId: 'ws-1' }]]);
+  transport.request.mockImplementation(normal);
+  run.dispatch(mountBrowserConsumer('ws-1'));
+  await settle();
+  expect(run.view().eligibleClients.map((client) => client.clientId)).toEqual([
+    currentClient.clientId,
+  ]);
+});
+
+it('releasing a consumer during identity hydration does not list clients after it returns', async () => {
+  let release!: (value: { clientId: string }) => void;
+  transport.observeIdentity.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+  const run = start();
+  run.dispatch(mountBrowserConsumer('ws-1'));
+  await settle();
+  run.dispatch(browserClientsConsumerUnmounted('ws-1', 'test-browser'));
+  release({ clientId: currentClient.clientId });
+  await settle();
+  expect(transport.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([]);
 });

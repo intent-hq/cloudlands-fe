@@ -8,36 +8,10 @@ import {
   isBrowserClientEvent,
 } from './browser-client-event-receipt';
 /**
- * Browser Clients Saga (renderer)
- *
- * Wire I/O for the REV-2 browser-client mirror: the confirmed own-clientId observation
- * and `client.list` on hydrate, single-flight coalesced `client.list`
- * re-reads on `refreshLiveClientsRequested` (the bridge dispatches it for
- * every `client:connected` / `client:disconnected`, so a reconnect burst
- * collapses into one in-flight read plus at most one trailing read; each
- * such presence refresh also requests the mounted workspaces' daemon
- * browser-client resolution, since the pin or default may now resolve
- * differently), and the per-workspace `workspace.getBrowserClient` /
- * `setBrowserClient` calls keyed by workspace. Every
- * resolution read — mount, `workspace:updated`, presence — goes through one
- * single-flight lane per workspace (one in flight, at most one trailing), and
- * a read that overlapped a pin write in any way (started before it, or
- * during it and settled after) discards its reply and re-queues itself, so an
- * older read can never overwrite the write's echo or a newer read. Pin writes
- * are latest-wins per workspace, so a slow earlier pin write
- * cannot overwrite a later daemon echo. A viewer's `browser.navigateTab` /
- * `browser.closeTab` requests (REV-2 Model 3) are fire-and-forget commands to
- * the tab's host: nothing is stored from the reply — the mirror follows the
- * `browser:tab-updated` / `browser:tab-closed` echo — and a failure is
- * surfaced as a toast. A workspace mount reads its browser
- * client (the sidebar indicator's input) and, until the own clientId and
- * `client.list` are known, hydrates them once. Workspace teardown
- * (`workspaceUnmounted` / `workspaceDeleted` / `removeWorkspaceEntity`)
- * cancels the workspace's resolution lane — the in-flight read and its
- * trailing trigger — and every other per-workspace call races the teardown:
- * a reply that lands after the reducer cleared the entry is dropped, so it
- * can neither resurrect a deleted workspace nor leak into a later remount,
- * which starts a fresh lane.
+ * Browser routing reads belong to visible controls and retained browser surfaces,
+ * not warm workspace sessions. Presence invalidations join the same per-workspace
+ * single-flight lanes as explicit reads. Pin writes retain their independent
+ * lifetime; read replies are fenced across disconnect, teardown and pin changes.
  */
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
@@ -46,7 +20,7 @@ import {
   withRecoveryLifetime,
 } from '../../../middlewares/event-recovery';
 import { BrowserClientRecovery, browserClientRecoveryKey } from './browser-client-recovery';
-import { eventChannel, buffers } from 'redux-saga';
+import { eventChannel, buffers, channel as createChannel, type Channel } from 'redux-saga';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { invalidateOwnClientId } from '$lib/client/live/live-clients-client';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
@@ -60,14 +34,19 @@ import {
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
-import { selectMountedWorkspaceIds } from '../../workspace-lifecycle/workspace-lifecycle-selectors';
 import {
   workspaceDeleted,
-  workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectLiveClientsLoaded, selectOwnClientIdConfirmed } from '../browser-clients-selectors';
 import {
+  selectBrowserClientConsumerWorkspaceIds,
+  selectLiveClientsLoaded,
+  selectOwnClientIdConfirmed,
+} from '../browser-clients-selectors';
+import {
+  browserClientsConsumerMounted,
+  browserClientsConsumerUnmounted,
+  browserClientReadsReleased,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
@@ -86,8 +65,6 @@ const LIVE_CLIENTS_CONTEXT = 'live-clients';
 type BrowserConnection = {
   recovery: BrowserClientRecovery;
   epoch: number;
-  nextRead: number;
-  reads: Map<string, number>;
   mounted: Set<string>;
 };
 
@@ -104,6 +81,7 @@ type PinWriteEpochs = Record<string, number>;
 
 type BrowserClientReadAction =
   | ReturnType<typeof fetchWorkspaceBrowserClientRequested>
+  | ReturnType<typeof browserClientReadsReleased>
   | ReturnType<typeof workspaceUnmounted>
   | ReturnType<typeof workspaceDeleted>
   | ReturnType<typeof removeWorkspaceEntity>;
@@ -121,98 +99,47 @@ function browserClientReadContext(action: BrowserClientReadAction) {
     : { context: wsId, cancel: true as const };
 }
 
-/**
- * Re-reads `client.list`. A presence change (any read after the initial
- * load) can also change what the daemon resolves for a workspace — a pinned
- * client going offline, or the default falling through to another client —
- * so the mounted workspaces' `workspace.getBrowserClient` is requested too.
- * Only workspaces with an observed mount lifetime (not every
- * workspace the global `browser:tab-*` / `workspace:updated` events touched)
- * are requested, and each request joins that workspace's single-flight
- * resolution lane, so a presence burst cannot start overlapping resolution
- * calls: one read is in flight and at most one trailing read follows it.
- */
+/** All invalidation sources converge on one lane per workspace permission scope. */
 function* readLiveClients(
   connection: BrowserConnection,
   action:
     | ReturnType<typeof refreshLiveClientsRequested>
+    | ReturnType<typeof browserClientReadsReleased>
     | ReturnType<typeof workspaceUnmounted>
     | ReturnType<typeof workspaceDeleted>
     | ReturnType<typeof removeWorkspaceEntity>,
 ): SagaGenerator<void> {
   if (action.type !== refreshLiveClientsRequested.type) return;
   startBrowserClientEvent(action);
+  const wsId = action.payload[0];
   const epoch = connection.epoch;
   try {
-    // An admitted global event owns only the global roster. The bridge sends
-    // separate receipts to mounted workspaces; never reuse this token for them.
-    const mounted = action.payload[0]
-      ? [action.payload[0]]
-      : isBrowserClientEvent(action)
-        ? []
-        : [...connection.mounted];
-    if (mounted.length === 0) {
-      connection.recovery.ensure();
-      if (connection.recovery.stale()) return;
-      const admission = getRecoveryAdmission(action, browserClientRecoveryKey());
-      if (admission === null) return;
-      const receipt =
-        admission ??
-        getRecoveryLifetime(action) ??
-        rendererEventRecovery.capture(browserClientRecoveryKey());
-      const read = yield* race({
-        clients: call([appClient.clients, appClient.clients.list]),
-        invalidated: take(browserConnectionInvalidated),
-      });
-      if (
-        read.clients !== undefined &&
-        epoch === connection.epoch &&
-        receipt.commit(() => undefined)
-      )
-        yield* put(withRecoveryLifetime(liveClientsReceived(read.clients), receipt));
-    }
-    // Own every target before awaiting another workspace. Cleanup/remount must
-    // invalidate queued targets as well as requests already in flight.
-    const targets = mounted.map((wsId) => {
-      const version = ++connection.nextRead;
-      connection.reads.set(wsId, version);
-      return { wsId, version };
+    if (!wsId) return;
+    connection.recovery.ensure(wsId);
+    if (connection.recovery.stale(wsId)) return;
+    const admission = getRecoveryAdmission(action, browserClientRecoveryKey(wsId));
+    if (admission === null) return;
+    const receipt =
+      admission ??
+      getRecoveryLifetime(action) ??
+      rendererEventRecovery.capture(browserClientRecoveryKey(wsId));
+    const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
+    // The single-flight owner cancels teardown/release. Racing those actions
+    // here would finish the worker early and launch its queued trailing read
+    // before the owner processes cancellation.
+    const read = yield* race({
+      clients: call([appClient.clients, appClient.clients.list], wsId),
+      invalidated: take(browserConnectionInvalidated),
     });
-    for (const { wsId, version } of targets) {
-      if (epoch !== connection.epoch || connection.reads.get(wsId) !== version) continue;
-      connection.recovery.ensure(wsId);
-      if (connection.recovery.stale(wsId)) continue;
-      const admission = getRecoveryAdmission(action, browserClientRecoveryKey(wsId));
-      if (admission === null) continue;
-      const receipt =
-        admission ??
-        getRecoveryLifetime(action) ??
-        rendererEventRecovery.capture(browserClientRecoveryKey(wsId));
-      const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
-      // A workspace lane must process teardown before releasing its trailing
-      // trigger. Only a global refresh needs to abandon individual workspace
-      // reads here, since its lane survives those workspace removals.
-      const read = action.payload[0]
-        ? yield* race({
-            result: call([appClient.clients, appClient.clients.list], wsId),
-            cleanup: take(browserConnectionInvalidated),
-          })
-        : yield* untilWorkspaceCleanup(
-            wsId,
-            call([appClient.clients, appClient.clients.list], wsId),
-          );
-      if (
-        read.cleanup ||
-        read.result === undefined ||
-        epoch !== connection.epoch ||
-        connection.reads.get(wsId) !== version ||
-        !receipt.commit(() => undefined)
-      )
-        continue;
-      yield* put(withRecoveryLifetime(liveClientsReceived(read.result, wsId), receipt));
-      if (presenceChange && !isBrowserClientEvent(action))
-        yield* put(fetchWorkspaceBrowserClientRequested(wsId));
-    }
+    if (
+      read.clients === undefined ||
+      epoch !== connection.epoch ||
+      !receipt.commit(() => undefined)
+    )
+      return;
+    yield* put(withRecoveryLifetime(liveClientsReceived(read.clients, wsId), receipt));
+    if (presenceChange && !isBrowserClientEvent(action))
+      yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   } finally {
@@ -244,12 +171,19 @@ function* readOwnClientId(connection: { epoch: number }): SagaGenerator<void> {
 }
 
 function* hydrate(
-  connection: { epoch: number },
-  action: ReturnType<typeof hydrateBrowserClientsRequested>,
+  connection: BrowserConnection,
+  action:
+    | ReturnType<typeof hydrateBrowserClientsRequested>
+    | ReturnType<typeof browserClientReadsReleased>
+    | ReturnType<typeof workspaceUnmounted>
+    | ReturnType<typeof workspaceDeleted>
+    | ReturnType<typeof removeWorkspaceEntity>,
 ): SagaGenerator<void> {
+  if (action.type !== hydrateBrowserClientsRequested.type) return;
   const epoch = connection.epoch;
   yield* call(readOwnClientId, connection);
   if (epoch !== connection.epoch) return;
+  if (action.payload[0] && !connection.mounted.has(action.payload[0])) return;
   yield* put(
     action.payload[0]
       ? refreshLiveClientsRequested(action.payload[0])
@@ -295,6 +229,7 @@ function* untilWorkspaceCleanup<T>(
 function* readWorkspaceBrowserClient(
   recovery: BrowserClientRecovery,
   epochs: PinWriteEpochs,
+  reads: Channel<BrowserClientReadAction>,
   action: BrowserClientReadAction,
 ): SagaGenerator<void> {
   if (action.type !== fetchWorkspaceBrowserClientRequested.type) return;
@@ -320,7 +255,10 @@ function* readWorkspaceBrowserClient(
       if (read.result === undefined) return;
       const result = read.result;
       if ((epochs[wsId] ?? 0) !== epoch) {
-        yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+        // Join the lane before this worker completes. Routing the retry through
+        // Redux would let an already queued trailing read start first, then
+        // enqueue an unnecessary third read behind it.
+        yield* put(reads, fetchWorkspaceBrowserClientRequested(wsId));
         return;
       }
       if (receipt.commit(() => undefined))
@@ -435,8 +373,7 @@ function* closeRemoteBrowserTab(
   }
 }
 
-function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaGenerator<void> {
-  const [wsId] = action.payload;
+function* hydrateWorkspace(wsId: string): SagaGenerator<void> {
   if (!wsId) return;
   const ownClientIdConfirmed = yield* selectOwnClientIdConfirmed.effect();
   if (!ownClientIdConfirmed) yield* put(hydrateBrowserClientsRequested(wsId));
@@ -458,7 +395,7 @@ function* watchClientConnection(connection: BrowserConnection) {
     while (true) {
       yield* take(channel);
       yield* put(browserConnectionInvalidated());
-      yield* put(hydrateBrowserClientsRequested());
+      if (connection.mounted.size > 0) yield* put(hydrateBrowserClientsRequested());
       for (const wsId of connection.mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     }
   } finally {
@@ -470,20 +407,23 @@ export function* browserClientsSaga(): SagaGenerator<void> {
   const recovery = new BrowserClientRecovery();
   try {
     const pinWriteEpochs: PinWriteEpochs = {};
+    const hydration = createChannel<Parameters<typeof hydrate>[1]>(buffers.expanding());
+    const clientReads = createChannel<Parameters<typeof readLiveClients>[1]>(buffers.expanding());
+    const resolutionReads = createChannel<BrowserClientReadAction>(buffers.expanding());
+    const connection: BrowserConnection = {
+      recovery,
+      epoch: 0,
+      mounted: new Set(yield* selectBrowserClientConsumerWorkspaceIds.effect()),
+    };
+    for (const wsId of connection.mounted) recovery.ensure(wsId);
     // A committed server event wins over reads and write echoes already in flight.
     yield* takeEvery(workspaceBrowserClientPinReceived, function* (action) {
       const [wsId] = action.payload;
       pinWriteEpochs[wsId] = (pinWriteEpochs[wsId] ?? 0) + 1;
+      // A recovered pin carries its receipt; the bridge requests that read itself.
+      if (connection.mounted.has(wsId) && !getRecoveryLifetime(action))
+        yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     });
-    // Warm phases are cleared on reconnect even while a workspace stays mounted.
-    // Keep the mount lifetime independently; never infer it from cached tab rows.
-    const connection: BrowserConnection = {
-      recovery,
-      epoch: 0,
-      nextRead: 0,
-      reads: new Map(),
-      mounted: new Set(yield* selectMountedWorkspaceIds.effect()),
-    };
     let admittedAuthority = yield* selectPrincipalActionContext.effect();
     yield* takeEvery(principalReceived, function* () {
       const authority = yield* selectPrincipalActionContext.effect();
@@ -499,17 +439,44 @@ export function* browserClientsSaga(): SagaGenerator<void> {
       yield* put(hydrateBrowserClientsRequested());
       for (const wsId of connection.mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
     });
-    yield* takeEvery(workspaceMounted, function* (action) {
-      connection.mounted.add(action.payload[0]);
-      recovery.ensure(action.payload[0]);
+    yield* takeEvery(browserClientsConsumerMounted, function* ({ payload: [wsId] }) {
+      if (connection.mounted.has(wsId)) return;
+      connection.mounted.add(wsId);
+      recovery.ensure(wsId);
+      yield* call(hydrateWorkspace, wsId);
     });
+    yield* takeEvery(browserClientsConsumerUnmounted, function* ({ payload: [wsId] }) {
+      if ((yield* selectBrowserClientConsumerWorkspaceIds.effect()).includes(wsId)) return;
+      if (!connection.mounted.delete(wsId)) return;
+      yield* put(browserClientReadsReleased(wsId));
+    });
+    yield* takeEvery(hydrateBrowserClientsRequested, function* (action) {
+      yield* put(hydration, action);
+    });
+    yield* takeEvery(refreshLiveClientsRequested, function* (action) {
+      const [wsId] = action.payload;
+      if (wsId) yield* put(clientReads, action);
+      // Consumer workspaces carry their own event receipts. A global receipt has
+      // no unscoped roster reader left, so it settles instead of fanning out.
+      else if (isBrowserClientEvent(action)) completeBrowserClientEvent(action);
+      else {
+        for (const id of connection.mounted)
+          yield* put(clientReads, refreshLiveClientsRequested(id));
+      }
+    });
+    yield* takeEvery(fetchWorkspaceBrowserClientRequested, function* (action) {
+      yield* put(resolutionReads, action);
+    });
+    // One lifecycle owner cancels all three read lanes, including queued work.
     yield* takeEvery(
-      [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+      [browserClientReadsReleased, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
       function* (action) {
         recovery.remove(action.payload[0]);
         cancelBrowserClientEvents(action.payload[0]);
-        connection.reads.delete(action.payload[0]);
         connection.mounted.delete(action.payload[0]);
+        yield* put(hydration, action);
+        yield* put(clientReads, action);
+        yield* put(resolutionReads, action);
       },
     );
     yield* takeEvery(connectionStatusChanged, function* (action) {
@@ -528,15 +495,17 @@ export function* browserClientsSaga(): SagaGenerator<void> {
       yield* put(browserConnectionInvalidated());
     });
     yield* fork(watchClientConnection, connection);
-    yield* takeEvery(workspaceMounted, onWorkspaceMounted);
     yield* takeSingleFlightInContext(
-      hydrateBrowserClientsRequested,
-      (action) => action.payload[0] ?? LIVE_CLIENTS_CONTEXT,
+      hydration,
+      (action) =>
+        action.type === hydrateBrowserClientsRequested.type
+          ? (action.payload[0] ?? LIVE_CLIENTS_CONTEXT)
+          : { context: action.payload[0] ?? LIVE_CLIENTS_CONTEXT, cancel: true as const },
       hydrate,
       connection,
     );
     yield* takeSingleFlightInContext(
-      [refreshLiveClientsRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+      clientReads,
       (action) => {
         // Account for every arrival before this lane coalesces its trailing read.
         if (action.type === refreshLiveClientsRequested.type) queueBrowserClientEvent(action);
@@ -548,16 +517,12 @@ export function* browserClientsSaga(): SagaGenerator<void> {
       connection,
     );
     yield* takeSingleFlightInContext(
-      [
-        fetchWorkspaceBrowserClientRequested,
-        workspaceUnmounted,
-        workspaceDeleted,
-        removeWorkspaceEntity,
-      ],
+      resolutionReads,
       browserClientReadContext,
       readWorkspaceBrowserClient,
       recovery,
       pinWriteEpochs,
+      resolutionReads,
     );
     yield* takeLatestByWorkspace(
       setWorkspaceBrowserClientRequested,

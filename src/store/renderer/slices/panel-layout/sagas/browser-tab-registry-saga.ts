@@ -112,6 +112,7 @@ import {
   browserTabClosed,
   browserTabUpserted,
   ownClientIdReceived,
+  hydrateBrowserClientsRequested,
 } from '../../browser-clients/browser-clients-slice';
 import {
   selectBrowserTabRegistryWorkspace,
@@ -498,10 +499,13 @@ function claimFromRow(tab: PanelTab, row: BrowserTab): BrowserTab | null {
   };
 }
 
-function* waitForOwnClientId(): SagaGenerator<string> {
+function* waitForOwnClientId(fences: Fences, requestIdentity = true): SagaGenerator<string> {
+  yield* check(fences);
   const known = yield* selectOwnClientId.effect();
   if (known) return known;
+  if (requestIdentity) yield* effect(fences, hydrateBrowserClientsRequested());
   const action = yield* take(ownClientIdReceived);
+  yield* check(fences);
   return action.payload[0];
 }
 
@@ -791,7 +795,9 @@ function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   recovery.ensure(wsId);
   if (recovery.stale(wsId)) return;
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
-  const ownClientId = yield* waitForOwnClientId();
+  const { generation } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
+  const ownClientId = yield* fenced(waitForOwnClientId(workspaceFence(wsId, generation)));
+  if (ownClientId === null) return;
   yield* call(loadWorkspace, wsId, ownClientId);
 }
 
@@ -1276,7 +1282,16 @@ function* syncOnConnect(): SagaGenerator<void> {
   syncedConnectionGeneration = generation;
   registryForbidden = false;
 
-  const ownClientId = yield* waitForOwnClientId();
+  // An empty Home session has no registry work that needs an identity probe.
+  // A restored workspace or an actual browser consumer will request it.
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  const ownClientId = yield* fenced(
+    waitForOwnClientId(
+      { kind: 'connection', backendId, connectionGeneration: generation },
+      Object.keys(layouts).length > 0,
+    ),
+  );
+  if (ownClientId === null) return;
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
     if (attempt > 0) {
       yield* delay(SYNC_RETRY_MS);

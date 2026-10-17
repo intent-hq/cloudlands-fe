@@ -355,7 +355,6 @@ import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/w
 import {
   browserTabClosed,
   browserTabUpserted,
-  fetchWorkspaceBrowserClientRequested,
   workspaceBrowserClientPinReceived,
   refreshLiveClientsRequested,
 } from '$store/renderer/slices/browser-clients/browser-clients-slice';
@@ -2842,7 +2841,6 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     if (!admittedEvents.has(event)) {
       changes.browserClientId = raw.browserClientId ?? undefined;
       appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
-      appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
     }
   }
   if (Object.keys(changes).length === 0) return;

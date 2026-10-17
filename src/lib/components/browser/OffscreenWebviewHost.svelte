@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
   /**
    * OffscreenWebviewHost — keeps browser-tab webviews of background (hosted
    * but not displayed) workspaces alive offscreen, so content-level browser
@@ -239,6 +241,7 @@
           partition={BROWSER_PANEL_PARTITION}
           allowpopups
           data-offscreen-webview-tab={entry.tabId}
+          use:browserClientConsumer={entry.workspaceId}
           use:offscreenWebview={entry}
         ></webview>
       {/key}

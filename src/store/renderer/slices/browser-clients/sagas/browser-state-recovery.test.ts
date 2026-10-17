@@ -35,11 +35,9 @@ import type { BrowserTabListing } from '$shared/types/browser-clients';
 import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
 import { browserClientsSaga } from './browser-clients-saga';
 import { selectLiveClients, selectWorkspaceDrivingClient } from '../browser-clients-selectors';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  workspaceMounted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
+  browserClientsConsumerMounted,
   fetchWorkspaceBrowserClientRequested,
   setWorkspaceBrowserClientRequested,
 } from '../browser-clients-slice';
@@ -138,7 +136,7 @@ afterEach(() => {
 describe('browser clients generic-loss recovery', () => {
   it('restores a lost final roster and pin with one snapshot and no browser commands', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     expect(view().eligibleClients).toHaveLength(1);
     rpc.request.mockClear();
@@ -160,7 +158,7 @@ describe('browser clients generic-loss recovery', () => {
   });
   it('rejects an ordinary read started before loss after the recovery snapshot commits', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const old = deferred<unknown>();
     const normal = rpc.request.getMockImplementation()!;
@@ -177,7 +175,7 @@ describe('browser clients generic-loss recovery', () => {
   });
   it('does not resurrect a removed workspace from held recovery, including remount ABA', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const held = deferred<unknown>();
     const normal = rpc.request.getMockImplementation()!;
@@ -189,7 +187,7 @@ describe('browser clients generic-loss recovery', () => {
     store.dispatch(workspaceUnmounted(WS));
     rpc.request.mockImplementation(normal);
     pin = 'new-mount';
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     held.resolve({ browserClient: { source: 'workspace', clientId: 'old-mount', resolved: null } });
     await settle();
@@ -197,7 +195,7 @@ describe('browser clients generic-loss recovery', () => {
   });
   it('reconciles a pin mutation settling after loss without applying its stale echo', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const held = deferred<unknown>();
     const normal = rpc.request.getMockImplementation()!;
@@ -220,7 +218,7 @@ describe('browser clients generic-loss recovery', () => {
   });
   it('does not add ordinary reads or fences for a legacy lease', async () => {
     await attach(false);
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     expect(calls('client.list')).toHaveLength(1);
     expect(calls('workspace.getBrowserClient')).toHaveLength(1);
@@ -307,7 +305,7 @@ describe('browser tab snapshot recovery', () => {
 describe('browser recovery authority and bounded reads', () => {
   it('reads no inactive workspace and rehydrates it only after remount', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     store.dispatch(workspaceUnmounted(WS));
     rpc.request.mockClear();
@@ -316,14 +314,14 @@ describe('browser recovery authority and bounded reads', () => {
     expect(calls('client.list')).toHaveLength(0);
     expect(calls('workspace.getBrowserClient')).toHaveLength(0);
     pin = 'remounted';
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     expect(view().pinnedClientId).toBe('remounted');
     expect(calls('workspace.getBrowserClient')).toHaveLength(1);
   });
   it('coalesces a loss storm during a held read to one bounded trailing snapshot', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     rpc.request.mockClear();
     const held = deferred<unknown>();
@@ -355,7 +353,7 @@ describe('browser recovery authority and bounded reads', () => {
   it('rejects unversioned old pushes after recovery and refreshes from authority', async () => {
     const { browserClientRecoveryKey } = await import('./browser-client-recovery');
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     pin = 'current';
     lose();
@@ -370,7 +368,7 @@ describe('browser recovery authority and bounded reads', () => {
   });
   it('retires old session reads across backend/principal replacement and restores current state', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const held = deferred<unknown>();
     const normal = rpc.request.getMockImplementation()!;
@@ -393,7 +391,7 @@ describe('browser recovery authority and bounded reads', () => {
   });
   it('does not let an old lease complete recovery after subscription replacement', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const held = deferred<unknown>();
     const normal = rpc.request.getMockImplementation()!;
@@ -421,7 +419,7 @@ describe('browser recovery authority and bounded reads', () => {
   });
   it('bounds repeated read failures and clears state on an authorization denial', async () => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     rpc.request.mockClear();
     const normal = rpc.request.getMockImplementation()!;
@@ -553,7 +551,7 @@ it('client event receipts cover both async reads and settle superseded burst tri
   const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
   const { browserClientRecoveryKey } = await import('./browser-client-recovery');
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   rpc.request.mockClear();
   const roster = deferred<unknown>(),
@@ -659,7 +657,7 @@ it('rejects a read across principal invalidation even when the same principal is
     await import('../../principal/principal-slice');
   admitLegacyPrincipal();
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   const before = store.state.principal;
   if (!before.snapshot || !before.context || !before.boundPrincipalId)
@@ -705,7 +703,7 @@ it('rejects a read across principal invalidation even when the same principal is
 
 it('a failed selection waits for a held sibling roster before retrying', async () => {
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   const roster = deferred<unknown>();
   const normal = rpc.request.getMockImplementation()!;
@@ -793,7 +791,7 @@ it.each([false, true])(
 
 it('prefers a denied selection over a transient roster failure after both settle', async () => {
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   const normal = rpc.request.getMockImplementation()!;
   rpc.request.mockClear();
@@ -930,40 +928,25 @@ it.each<BrowserTabViewport>([
   },
 );
 
-it('global client event receipt reads only its roster even with mounted workspace owners', async () => {
+it('global client event receipt settles without an unscoped roster read', async () => {
   const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
   const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
   const { browserClientRecoveryKey } = await import('./browser-client-recovery');
   await attach();
   store.dispatch(hydrateBrowserClientsRequested());
   await settle();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
-  const held = deferred<unknown>();
-  const normal = rpc.request.getMockImplementation()!;
-  rpc.request.mockImplementation((method, params) =>
-    method === 'client.list' ? held.promise : normal(method, params),
-  );
   rpc.request.mockClear();
-  const done = vi.fn();
+  // Consumer workspaces receive their own receipts; the global one owns no read.
   rendererEventRecovery.push(browserClientRecoveryKey());
-  const receipt = dispatchBrowserClientEvent(
+  await dispatchBrowserClientEvent(
     undefined,
     rendererEventRecovery.capture(browserClientRecoveryKey()),
-  ).then(done);
+  );
   await settle();
-  expect(done).not.toHaveBeenCalled();
-  const requestsBeforeSettlement = [...rpc.request.mock.calls];
-  held.resolve({ clients: [] });
-  await receipt;
-  expect(requestsBeforeSettlement.map(([method, params]) => [method, params])).toEqual([
-    ['client.list', undefined],
-  ]);
-  expect(store.state.browserClients.liveClientsLoaded).toBe(true);
-  expect(selectLiveClients.select(store.state)).toEqual([]);
+  expect(rpc.request.mock.calls).toEqual([]);
   expect(view().eligibleClients).toHaveLength(1);
-  expect(calls('client.list')).toHaveLength(1);
-  expect(calls('workspace.getBrowserClient')).toHaveLength(0);
 });
 
 it('admits client updated once and waits for both browser client read lanes', async () => {
@@ -978,7 +961,7 @@ it('admits client updated once and waits for both browser client read lanes', as
     await dispatchBrowserClientEvent(WS, token);
     complete = true;
   });
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   clients = [];
   pin = 'updated-host';
@@ -1016,15 +999,14 @@ it('rejects a superseded global client admission without starting any read', asy
   await dispatchBrowserClientEvent(undefined, old);
   await settle();
   expect(rpc.request.mock.calls).toEqual([]);
-  expect(selectLiveClients.select(store.state)).toEqual([client]);
 });
 
-it('client updated loss recovers both registered global and workspace client owners', async () => {
+it('client updated loss recovers the registered workspace client owner', async () => {
   const { hydrateBrowserClientsRequested } = await import('../browser-clients-slice');
   await attach();
   store.dispatch(hydrateBrowserClientsRequested());
   await settle();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   await scope.subscribe({ eventTypes: ['client:updated'] }, { recover: true });
   clients = [];
@@ -1032,20 +1014,17 @@ it('client updated loss recovers both registered global and workspace client own
   rpc.request.mockClear();
   lose('1', 'browser-2');
   await settle();
-  expect(selectLiveClients.select(store.state)).toEqual([]);
   expect(view().eligibleClients).toEqual([]);
   expect(view().pinnedClientId).toBe('recovered-from-update');
-  expect(calls('client.list').map(([, params]) => params)).toEqual(
-    expect.arrayContaining([undefined, { workspaceId: WS }]),
-  );
-  expect(calls('client.list')).toHaveLength(2);
+  // No consumer reads the unscoped roster, so only the workspace owner recovers.
+  expect(calls('client.list').map(([, params]) => params)).toEqual([{ workspaceId: WS }]);
   expect(calls('workspace.getBrowserClient')).toHaveLength(1);
 });
 
 it('legacy broad refresh still fans out into mounted workspace reads', async () => {
   const { refreshLiveClientsRequested } = await import('../browser-clients-slice');
   await attach(false);
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   clients = [];
   pin = 'legacy-refresh';
@@ -1073,7 +1052,7 @@ it.each([
   'keeps a held browser read current across unrelated event $type $workspaceId $data',
   async (event) => {
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const held = deferred<unknown>();
     rpc.request.mockClear();
@@ -1114,8 +1093,8 @@ it.each(['new-pin', null])(
     pin = 'original';
     store.dispatch(hydrateBrowserClientsRequested());
     await settle();
-    store.dispatch(workspaceMounted(WS));
-    store.dispatch(workspaceMounted('other'));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
+    store.dispatch(browserClientsConsumerMounted('other', 'test-browser'));
     await settle();
     pin = browserClientId;
     rpc.request.mockClear();
@@ -1142,9 +1121,33 @@ it.each(['new-pin', null])(
   },
 );
 
+it('a recovered pin leaves its resolution read to the original receipt', async () => {
+  const { workspaceBrowserClientPinReceived } = await import('../browser-clients-slice');
+  const { withRecoveryLifetime } = await import('../../../middlewares/event-recovery');
+  const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
+  const { browserClientRecoveryKey } = await import('./browser-client-recovery');
+  await attach();
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
+  await settle();
+  pin = 'recovered-pin';
+  rpc.request.mockClear();
+  const key = browserClientRecoveryKey(WS);
+  rendererEventRecovery.push(key);
+  const receipt = rendererEventRecovery.capture(key);
+  // The bridge applies an admitted pin with its receipt, then requests the read.
+  store.dispatch(
+    withRecoveryLifetime(workspaceBrowserClientPinReceived(WS, 'recovered-pin'), receipt),
+  );
+  await dispatchBrowserClientEvent(WS, receipt, false);
+  await settle();
+  expect(view().pinnedClientId).toBe('recovered-pin');
+  expect(calls('workspace.getBrowserClient')).toHaveLength(1);
+  expect(receipt.commit(() => undefined)).toBe(true);
+});
+
 it('does not recover browser state for a settings-only loss', async () => {
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   await scope.subscribe({ eventTypes: ['settings:changed'] }, { recover: true });
   const previous = view();
@@ -1155,20 +1158,20 @@ it('does not recover browser state for a settings-only loss', async () => {
   expect(rpc.request.mock.calls).toEqual([]);
 });
 
-it('refreshes the unmounted global roster on its next demand after principal readmission', async () => {
+it('an unconsumed global refresh reads nothing before or after principal readmission', async () => {
   const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
   const { principalIdentityChanged, principalReceived } =
     await import('../../principal/principal-slice');
   const { refreshLiveClientsRequested } = await import('../browser-clients-slice');
   admitLegacyPrincipal();
   await attach();
+  rpc.request.mockClear();
   store.dispatch(refreshLiveClientsRequested());
   await settle();
-  expect(selectLiveClients.select(store.state).map((row) => row.clientId)).toEqual(['desktop']);
+  expect(rpc.request.mock.calls).toEqual([]);
   const before = store.state.principal;
   if (!before.snapshot || !before.context || !before.boundPrincipalId)
     throw new Error('Fixture not admitted');
-  rpc.request.mockClear();
   store.dispatch(principalIdentityChanged(before.boundPrincipalId));
   store.dispatch(
     principalReceived(
@@ -1181,19 +1184,13 @@ it('refreshes the unmounted global roster on its next demand after principal rea
     ),
   );
   await settle();
-  expect(rpc.request.mock.calls).toEqual([]);
-  clients = [{ ...client, clientId: 'current-global-client' }];
-  rpc.request.mockClear();
   store.dispatch(refreshLiveClientsRequested());
   await settle();
-  expect(calls('client.list')).toHaveLength(1);
-  expect(calls('workspace.getBrowserClient')).toHaveLength(0);
-  expect(selectLiveClients.select(store.state).map((row) => row.clientId)).toEqual([
-    'current-global-client',
-  ]);
+  expect(rpc.request.mock.calls).toEqual([]);
+  expect(selectLiveClients.select(store.state)).toEqual([]);
 });
 
-it.each([undefined, WS])(
+it.each([WS])(
   'settles an event receipt displaced by an ordinary read for %s',
   async (workspaceId) => {
     const { hydrateBrowserClientsRequested, refreshLiveClientsRequested } =
@@ -1201,7 +1198,7 @@ it.each([undefined, WS])(
     const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
     const { browserClientRecoveryKey } = await import('./browser-client-recovery');
     await attach();
-    if (workspaceId) store.dispatch(workspaceMounted(workspaceId));
+    if (workspaceId) store.dispatch(browserClientsConsumerMounted(workspaceId, 'test-browser'));
     else store.dispatch(hydrateBrowserClientsRequested());
     await settle();
     const roster = deferred<unknown>(),
@@ -1262,7 +1259,7 @@ it.each(['unmount', 'dispose'])(
     const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
     const { browserClientRecoveryKey } = await import('./browser-client-recovery');
     await attach();
-    store.dispatch(workspaceMounted(WS));
+    store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
     await settle();
     const roster = deferred<unknown>(),
       selection = deferred<unknown>();
@@ -1314,7 +1311,7 @@ it('keeps a removed workspace inactive after queued reads and a later loss', asy
   const { dispatchBrowserClientEvent } = await import('./browser-client-event-receipt');
   const { browserClientRecoveryKey } = await import('./browser-client-recovery');
   await attach();
-  store.dispatch(workspaceMounted(WS));
+  store.dispatch(browserClientsConsumerMounted(WS, 'test-browser'));
   await settle();
   const roster = deferred<unknown>(),
     selection = deferred<unknown>();

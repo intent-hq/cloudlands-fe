@@ -41,6 +41,18 @@ export { initialState } from './browser-clients-types';
 // Actions — saga triggers
 // ---------------------------------------------------------------------------
 
+/** Visible browser controls and retained browser surfaces own independent leases. */
+export const browserClientsConsumerMounted = createAction<[wsId: string, consumerId: string]>(
+  'browserClients/consumerMounted',
+);
+export const browserClientsConsumerUnmounted = createAction<[wsId: string, consumerId: string]>(
+  'browserClients/consumerUnmounted',
+);
+/** Last consumer left: cancel reads without tearing down the workspace or pin writes. */
+export const browserClientReadsReleased = createAction<[wsId: string]>(
+  'browserClients/readsReleased',
+);
+
 /** Learn this connection's own clientId and read the live client list. */
 export const hydrateBrowserClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/hydrateBrowserClientsRequested',
@@ -165,6 +177,30 @@ browserClientsReducer.with(browserClientsRetired, (state, { payload: [workspaceI
       },
 );
 
+browserClientsReducer.with(browserClientsConsumerMounted, (state, { payload: [wsId, id] }) => {
+  const entry = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...entry,
+    consumers: { ...entry.consumers, [id]: true },
+  });
+});
+browserClientsReducer.with(browserClientsConsumerUnmounted, (state, { payload: [wsId, id] }) => {
+  const entry = state.byWorkspaceId[wsId];
+  if (!entry?.consumers?.[id]) return state;
+  const consumers = { ...entry.consumers };
+  delete consumers[id];
+  return setWorkspaceState(state, wsId, { ...entry, consumers });
+});
+browserClientsReducer.with(browserClientReadsReleased, (state, { payload: [wsId] }) => {
+  const entry = state.byWorkspaceId[wsId];
+  if (!entry) return state;
+  return setWorkspaceState(state, wsId, {
+    ...entry,
+    liveClients: createLiveClientCollection(),
+    liveClientsLoaded: false,
+    browserClient: null,
+  });
+});
 browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [context] }) =>
   state.authenticatedContext !== context
     ? state

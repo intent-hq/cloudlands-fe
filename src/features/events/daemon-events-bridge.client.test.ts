@@ -14023,35 +14023,21 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(revision);
   });
 
-  it('integrated browser ingress awaits its original global roster receipt', async () => {
+  it('integrated browser ingress settles its original global receipt without an unscoped read', async () => {
     const { rendererEventRecovery } = await import('./renderer-event-recovery');
     const { browserClientRecoveryKey } =
       await import('$store/renderer/slices/browser-clients/sagas/browser-client-recovery');
-    let finish!: (value: unknown) => void;
-    backendRequestSpy.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
     const notification = globalNotification('client:updated', {
       clientId: 'cli-desk',
       capabilities: {},
     });
     const receipt = rendererEventRecovery.capture(browserClientRecoveryKey());
-    let settled = false;
-    const completion = Promise.resolve(
-      routeDaemonEventsNotification(notification.method, notification.params, undefined, {
-        lifetimes: new Map([[browserClientRecoveryKey(), receipt]]),
-      }),
-    ).then(() => {
-      settled = true;
+    // Roster reads belong to consumer workspaces, which carry their own receipts.
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([[browserClientRecoveryKey(), receipt]]),
     });
     await flush();
-    expect(settled).toBe(false);
-    expect(backendRequestSpy.mock.calls).toEqual([['client.list', undefined]]);
-    finish({ clients: [DESK_ROW] });
-    await completion;
+    expect(backendRequestSpy).not.toHaveBeenCalled();
     expect(receipt.commit(() => undefined)).toBe(true);
   });
 
@@ -14101,14 +14087,18 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
   });
 
   it.each(['client:connected', 'client:updated'])(
-    '%s (global, no workspaceId) re-reads client.list and stores the rows',
+    '%s refreshes only the demanded workspace roster',
     async (eventType) => {
       backendRequestSpy.mockImplementation((method: string) =>
         method === 'client.list' ? Promise.resolve({ clients: [DESK_ROW] }) : undefined,
       );
-      const { selectLiveClients } =
-        await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+      const { browserClientsConsumerMounted, browserClientsConsumerUnmounted } =
+        await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+      const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
       await primeBridge();
+      appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-roster'));
+      await flush();
+      backendRequestSpy.mockClear();
       const handler = capturedHandlers[0]!;
 
       handler(
@@ -14121,29 +14111,50 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
       await flush();
 
       expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
-        ['client.list', undefined],
+        ['client.list', { workspaceId: WS_BC }],
       ]);
-      expect(selectLiveClients.select(appStore.state)).toEqual([DESK_ROW]);
+      expect(getItems(appStore.state.browserClients.byWorkspaceId[WS_BC]!.liveClients)).toEqual([
+        DESK_ROW,
+      ]);
+      appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-roster'));
     },
   );
 
-  it('client:disconnected re-reads client.list so the departed client drops out', async () => {
-    const { liveClientsReceived } =
+  it('client:disconnected refreshes a demanded roster so the departed client drops out', async () => {
+    const { browserClientsConsumerMounted, browserClientsConsumerUnmounted, liveClientsReceived } =
       await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectLiveClients } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    appStore.dispatch(liveClientsReceived([DESK_ROW as never]));
+    const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
     backendRequestSpy.mockImplementation((method: string) =>
       method === 'client.list' ? Promise.resolve({ clients: [] }) : undefined,
     );
     await primeBridge();
+    appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-roster'));
+    await flush();
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never], WS_BC));
+    backendRequestSpy.mockClear();
     const handler = capturedHandlers[0]!;
 
     handler(globalNotification('client:disconnected', { clientId: 'cli-desk', capabilities: {} }));
     await flush();
 
-    expect(selectLiveClients.select(appStore.state)).toEqual([]);
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
+      ['client.list', { workspaceId: WS_BC }],
+    ]);
+    expect(getItems(appStore.state.browserClients.byWorkspaceId[WS_BC]!.liveClients)).toEqual([]);
+    appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-roster'));
   });
+
+  it.each(['client:connected', 'client:updated', 'client:disconnected'])(
+    '%s does not read browser rosters without a consumer',
+    async (eventType) => {
+      await primeBridge();
+      capturedHandlers[0]!(
+        globalNotification(eventType, { clientId: 'cli-desk', capabilities: {} }),
+      );
+      await flush();
+      expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
+    },
+  );
 
   it('drops a malformed client:* payload without touching the wire', async () => {
     await primeBridge();
@@ -14217,6 +14228,11 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
         updatedAt: '2026-01-01T00:00:00.000Z',
       } as never),
     );
+    const { browserClientsConsumerMounted, browserClientsConsumerUnmounted } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-test'));
+    await flush();
+    backendRequestSpy.mockClear();
     const pinned = {
       clientId: 'cli-desk',
       source: 'workspace',
@@ -14260,6 +14276,7 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     await flush();
     expect(readWorkspace().browserClientId).toBeUndefined();
     expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
+    appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-test'));
   });
 });
 

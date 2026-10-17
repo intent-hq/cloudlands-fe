@@ -121,8 +121,7 @@ describe('mounted browser identity observation', () => {
       const { browserClientsSaga } = await import('./browser-clients-saga');
       const { resolveBackendTransport } =
         await import('$lib/client/live/backend-transport-factory');
-      const { workspaceMounted } =
-        await import('../../workspace-lifecycle/workspace-lifecycle-slice');
+      const { browserClientsConsumerMounted } = await import('../browser-clients-slice');
       dispose = store.init();
       cancel.push(
         store.runSaga(connectionsSaga),
@@ -136,7 +135,7 @@ describe('mounted browser identity observation', () => {
       await vi.waitFor(() => expect(store.state.workspaceEvents.subscriptionPending).toBe(false));
       const session = await transport.captureEventRecovery();
       const subscriptions = frames.filter((frame) => frame.method === 'events.subscribe').length;
-      store.dispatch(workspaceMounted('mounted-workspace'));
+      store.dispatch(browserClientsConsumerMounted('mounted-workspace', 'test-browser'));
       await vi.waitFor(() =>
         expect(frames.some((frame) => frame.method === 'workspace.getBrowserClient')).toBe(true),
       );

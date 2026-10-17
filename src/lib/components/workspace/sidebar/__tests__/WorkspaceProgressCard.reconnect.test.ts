@@ -532,3 +532,31 @@ describe('actual browser lifecycle to primary menu', () => {
     expect(writes()).toEqual([]);
   });
 });
+
+it('stops browser RPCs when a retained sidebar becomes inactive and refreshes on return', async () => {
+  await capabilities();
+  store.dispatch(workspaceMounted('ws-1'));
+  const view = render(WorkspaceProgressCard, { workspaceId: workspace.id, active: true });
+  await waitFor(() =>
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
+  );
+  await view.rerender({ workspaceId: workspace.id, active: false });
+  await tick();
+  wire.request.mockClear();
+  store.dispatch(refreshLiveClientsRequested());
+  await tick();
+  expect(
+    wire.request.mock.calls.filter(
+      ([method]) => method === 'client.list' || method === 'workspace.getBrowserClient',
+    ),
+  ).toEqual([]);
+  await view.rerender({ workspaceId: workspace.id, active: true });
+  await waitFor(() =>
+    expect(wire.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([
+      ['client.list', { workspaceId: 'ws-1' }],
+    ]),
+  );
+  await waitFor(() =>
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
+  );
+});
