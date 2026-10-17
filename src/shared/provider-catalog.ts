@@ -46,6 +46,8 @@ const ProviderCatalogEntrySchema = z
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
     supportsFastMode: z.boolean().optional(),
+    // Named profiles (§5.54): absence means unsupported, including older daemons.
+    supportsProfiles: z.boolean().optional(),
   })
   .passthrough();
 
