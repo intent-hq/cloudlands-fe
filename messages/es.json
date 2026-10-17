@@ -5360,6 +5360,7 @@
   "agent_chatSend_retryProviderNoModels_toast": "No hay modelos disponibles en {provider}, así que el turno no se puede reintentar ahí.",
   "agent_chatSend_retryProviderSwitchRejected_error": "Se rechazó el cambio de proveedor.",
   "agent_chatSend_retryProviderSwitchFailed_toast": "No se pudo cambiar a {provider}: {error}",
+  "agent_chatSend_retryProviderRedriveFailed_toast": "Se cambió a {provider}, pero el reintento falló: {error}",
   "agent_ipc_activeStreamsFailed_error": "Error al obtener las transmisiones activas",
   "agent_ipc_circuitBreakerResetFailed_error": "Error al restablecer el interruptor de circuito",
   "agent_ipc_unknown_error": "Error desconocido",

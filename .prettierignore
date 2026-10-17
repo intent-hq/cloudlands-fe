@@ -32,6 +32,7 @@ src/lib/utils/__tests__/message-render-corpus/manifest.json
 
 # Exact canonical bytes; hashes and source provenance are required by unit CI.
 tests/fixtures/backend-keychain/v1/
+src/shared/event-recovery/__fixtures__/contract.json
 
 # Documentation archives
 docs-archive-*/

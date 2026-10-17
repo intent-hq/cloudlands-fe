@@ -2,6 +2,8 @@ import { call, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
 import { isMissingWorkingTreeFile } from '$features/file-tracking/components/diff/is-missing-working-tree-file';
+import { toDiffChunks } from '$lib/client/live/live-git-client';
+import type { GitReadTransport } from '$features/file-tracking/components/diff/diff-ipc-batcher';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   batchedGitBranchBaseDiff,
@@ -24,6 +26,7 @@ export function* readTrackedDiff(
   request: TrackedDiffReadRequest,
   signal: AbortSignal,
   canRead: () => boolean,
+  transport?: GitReadTransport,
 ): SagaGenerator<Extract<GitReadResult, { kind: 'trackedDiff' }>> {
   const { filePath, gitRootId, gitRootPath } = request;
   const result: Extract<GitReadResult, { kind: 'trackedDiff' }> = {
@@ -56,20 +59,30 @@ export function* readTrackedDiff(
     request.stage === 'committed' &&
     (request.baseRef || request.baseCommitSha)
   ) {
+    if (gitRootId) throw new Error('Secondary-root branch-base diff is unavailable');
     const chunk = yield* call(
       batchedGitBranchBaseDiff,
       workspaceId,
-      { baseRef: request.baseRef, baseCommitSha: request.baseCommitSha, signal, canRead: allowed },
+      {
+        baseRef: request.baseRef,
+        baseCommitSha: request.baseCommitSha,
+        signal,
+        canRead: allowed,
+        transport,
+      },
       filePath,
     );
     return { ...result, oldContent: chunk?.oldContent ?? '', newContent: chunk?.newContent ?? '' };
   }
   if (request.stage === 'committed' && request.commitHash) {
-    const chunks = yield* call([appClient.git, appClient.git.diffs], workspaceId, {
+    const options = {
       commitHash: request.commitHash,
       path: filePath,
       ...(gitRootId ? { gitRootId } : {}),
-    });
+    };
+    const chunks = transport
+      ? toDiffChunks(yield* call(transport.request, 'git.diffs', { workspaceId, ...options }))
+      : yield* call([appClient.git, appClient.git.diffs], workspaceId, options);
     return { ...result, chunk: chunks.find((chunk) => chunk.file === filePath) ?? chunks[0] };
   }
   for (const staged of [request.stage === 'staged', request.stage !== 'staged']) {
@@ -80,6 +93,7 @@ export function* readTrackedDiff(
       gitlink: request.gitlink,
       gitRootId,
       gitRootPath,
+      transport,
     });
     if (!allowed()) return result;
     if (!chunk) continue;
@@ -88,7 +102,7 @@ export function* readTrackedDiff(
     if (request.gitlink) return { ...result, ...gitlinkSidesFromShas(request.gitlink) };
     if (chunk.oldContent && chunk.newContent)
       return { ...result, oldContent: chunk.oldContent, newContent: chunk.newContent };
-    const options = gitRootId ? { gitRootId } : undefined;
+    const options = { gitRootId, transport };
     const before = yield* call(
       dedupedShowFile,
       workspaceId,
@@ -104,12 +118,16 @@ export function* readTrackedDiff(
       result.newContent = after.success ? (after.data ?? '') : '';
     } else if (gitRootId || request.workspacePath || filePath.startsWith('/')) {
       try {
-        if (gitRootId) {
-          const content = yield* call(backendRequest<string | { content?: string }>, 'file.read', {
-            workspaceId,
-            path: filePath,
-            gitRootId,
-          });
+        if (gitRootId || transport) {
+          const content = yield* call(
+            transport?.request ?? backendRequest<string | { content?: string }>,
+            'file.read',
+            {
+              workspaceId,
+              path: filePath,
+              ...(gitRootId ? { gitRootId } : {}),
+            },
+          );
           if (!allowed()) return result;
           result.newContent = typeof content === 'string' ? content : (content?.content ?? '');
           return result;
@@ -123,12 +141,14 @@ export function* readTrackedDiff(
           result.newContent =
             typeof response.data === 'string' ? response.data : (response.data?.content ?? '');
       } catch (error) {
-        if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
+        if ((transport || gitRootId) && !isMissingWorkingTreeFile(error)) throw error;
         // Scoped missing files and legacy unscoped reads keep an empty new side.
       }
     }
     return result;
   }
   if (request.gitlink) return { ...result, ...gitlinkSidesFromShas(request.gitlink) };
-  return validProvided ? { ...result, oldContent: old, newContent: next } : result;
+  return !request.forceRefresh && validProvided
+    ? { ...result, oldContent: old, newContent: next }
+    : result;
 }

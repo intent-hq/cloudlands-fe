@@ -12,7 +12,20 @@ const wire = vi.hoisted(() => ({
   reconnect: undefined as (() => void) | undefined,
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
+  onEventRecoveryReady: () => () => {},
+  captureBackendEventRecovery: async () => {
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    return createEventRecoverySession({
+      supported: false,
+      isCurrent: () => true,
+      request: wire.request,
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      dispose: () => {},
+    });
+  },
   backendRequest: wire.request,
+  observeBackendNodeCapabilities: () => wire.request('capabilities.observe', {}),
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: wire.unsubscribe,
   onBackendNotification: (handler: typeof wire.notification) => {
@@ -119,7 +132,7 @@ describe('permission recovery subscription boundary', () => {
     wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-old' });
     wire.unsubscribe.mockResolvedValue(undefined);
     wire.request.mockImplementation(async (method) => {
-      if (method === 'client.hello') return { server: { capabilities: {} } };
+      if (method === 'capabilities.observe') return { server: { capabilities: {} } };
       if (method === 'principal.me')
         return {
           id: 'person',
@@ -175,7 +188,7 @@ describe('permission recovery subscription boundary', () => {
     wire.subscribe.mockReturnValueOnce(ack.promise);
     wire.request.mockClear();
     wire.request.mockImplementation(async (method) => {
-      if (method === 'client.hello') return { server: { capabilities: {} } };
+      if (method === 'capabilities.observe') return { server: { capabilities: {} } };
       if (method === 'principal.me')
         return {
           id: 'person',
@@ -219,10 +232,12 @@ describe('permission recovery subscription boundary', () => {
     'keeps reconnect acknowledgment current while a %s is held',
     async (held) => {
       boot();
-      await settle();
+      // Hydration must capture the admitted principal, including an async subscribe ack.
+      await vi.waitFor(() =>
+        expect(selectPrincipalActionContext.select(store.state)).not.toBeNull(),
+      );
       hydrateWorkspace();
-      await settle();
-      expect(reads()).toHaveLength(1);
+      await vi.waitFor(() => expect(reads()).toHaveLength(1));
       const snapshot = deferred<{ status: string }>();
       const notification = deferred<{ notify: { warning: ReturnType<typeof vi.fn> } }>();
       const importNotification = vi.fn(() => notification.promise);
@@ -289,7 +304,8 @@ describe('permission recovery subscription boundary', () => {
     store.dispatch(setLabsMultiplayerEnabled(true));
     wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-new' });
     wire.request.mockImplementation(async (method) => {
-      if (method === 'client.hello') return { server: { capabilities: { hostMembership: 1 } } };
+      if (method === 'capabilities.observe')
+        return { server: { capabilities: { hostMembership: 1 } } };
       if (method === 'principal.me')
         return {
           id: 'guest',
@@ -313,7 +329,7 @@ describe('permission recovery subscription boundary', () => {
       throw new Error(`Unexpected method ${method}`);
     });
     boot();
-    await settle();
+    await vi.waitFor(() => expect(selectPrincipalActionContext.select(store.state)).not.toBeNull());
     hydrateWorkspace(false);
     await settle();
     cancel.push(store.runSaga(lifecycleReadSaga));

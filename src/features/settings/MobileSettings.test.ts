@@ -188,8 +188,11 @@ it('copies and encodes the connected device’s exact pairing URI without readin
   render(MobileSettings);
   await waitFor(() => expect(copyButton().disabled).toBe(false));
   expect(invoke.mock.calls).toEqual([
-    ['backend:request', { method: 'settings.list', params: undefined }],
-    ['backend:request', { method: 'pairing.getSelfInfo', params: undefined }],
+    ['backend:request', { observeCompletion: true, method: 'settings.list', params: undefined }],
+    [
+      'backend:request',
+      { observeCompletion: true, method: 'pairing.getSelfInfo', params: undefined },
+    ],
   ]);
   await fireEvent.click(copyButton());
   await waitFor(() => expect(clipboard).toHaveBeenCalledWith(remoteUri));
@@ -260,6 +263,7 @@ it('enables and disables remote access on the connected machine and refreshes it
   await fireEvent.click(toggle);
   await waitFor(() => expect(copyButton().disabled).toBe(false));
   expect(invoke).toHaveBeenCalledWith('backend:request', {
+    observeCompletion: true,
     method: 'settings.update',
     params: { changes: [{ path: 'server.wsApi.enabled', value: true }] },
   });
@@ -268,6 +272,7 @@ it('enables and disables remote access on the connected machine and refreshes it
   await fireEvent.click(toggle);
   await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   expect(invoke).toHaveBeenCalledWith('backend:request', {
+    observeCompletion: true,
     method: 'settings.update',
     params: { changes: [{ path: 'server.wsApi.enabled', value: false }] },
   });
@@ -294,6 +299,7 @@ it('keeps acknowledged remote access enabled when refreshing settings fails', as
   await waitFor(() => expect(toggle.disabled).toBe(false));
   await tick();
   expect(invoke).toHaveBeenCalledWith('backend:request', {
+    observeCompletion: true,
     method: 'settings.update',
     params: { changes: [{ path: 'server.wsApi.enabled', value: true }] },
   });
@@ -305,6 +311,7 @@ it('keeps acknowledged remote access enabled when refreshing settings fails', as
   await fireEvent.click(toggle);
   await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   expect(invoke).toHaveBeenCalledWith('backend:request', {
+    observeCompletion: true,
     method: 'settings.update',
     params: { changes: [{ path: 'server.wsApi.enabled', value: false }] },
   });

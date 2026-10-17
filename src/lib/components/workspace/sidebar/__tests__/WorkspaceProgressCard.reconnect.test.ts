@@ -9,12 +9,26 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
+  observeIdentity: vi.fn(),
   subscribe: vi.fn(),
   reconnect: new Set<() => void>(),
   notifications: new Set<(event: BackendNotification) => void>(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
+  observeBackendNodeCapabilities: wire.observeIdentity,
+  onEventRecoveryReady: () => () => {},
+  captureBackendEventRecovery: async () => {
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    return createEventRecoverySession({
+      supported: false,
+      isCurrent: () => true,
+      request: wire.request,
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      dispose: () => {},
+    });
+  },
   onBackendReconnected: (handler: () => void) => {
     wire.reconnect.add(handler);
     return () => wire.reconnect.delete(handler);
@@ -87,14 +101,15 @@ async function capabilities() {
 }
 
 beforeEach(() => {
+  wire.observeIdentity
+    .mockReset()
+    .mockResolvedValue({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
   wire.subscribe.mockReset().mockResolvedValue({ subscriptionId: 'fixture-subscription' });
   role = 'owner';
   resolution = { source: 'workspace', clientId: own, resolved: { clientId: own } };
   wire.request
     .mockReset()
     .mockImplementation(async (method: string, params: { clientId?: string }) => {
-      if (method === 'client.hello')
-        return { clientId: own, server: { capabilities: { hostMembership: 1 } } };
       if (method === 'principal.me')
         return {
           id: 'person',
@@ -214,14 +229,9 @@ describe('actual browser lifecycle to primary menu', () => {
     expect(writes()).toEqual([]);
   });
 
-  it('does not check remembered identity when the reconnect hello fails', async () => {
+  it('does not check remembered identity when reconnect observation fails', async () => {
     await mount();
-    const normal = wire.request.getMockImplementation()!;
-    wire.request.mockImplementation((method, params) =>
-      method === 'client.hello'
-        ? Promise.reject(new Error('diagnostic hello failure'))
-        : normal(method, params),
-    );
+    wire.observeIdentity.mockRejectedValue(new Error('identity unconfirmed'));
     resolution = { source: 'workspace', clientId: own, resolved: null };
     store.dispatch(connectionStatusChanged('disconnected'));
     expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toBeNull();
@@ -337,10 +347,10 @@ describe('actual browser lifecycle to primary menu', () => {
     expect(writes()).toHaveLength(1);
   });
 
-  it('enables recovery after delayed startup status cancels the first hello', async () => {
+  it('enables recovery after delayed startup status cancels the first identity observation', async () => {
     cancels.forEach((cancel) => cancel());
     dispose();
-    // Model first startup: subscription and browser hello are still pending,
+    // Model first startup: subscription and browser identity observation are pending,
     // and no connected status has been observed yet.
     let subscribe!: (value: unknown) => void;
     wire.subscribe.mockReturnValue(
@@ -355,26 +365,18 @@ describe('actual browser lifecycle to primary menu', () => {
     cancels = [principalSaga, workspaceReconnectSaga, browserClientsSaga, daemonEventsSaga].map(
       (saga) => store.runSaga(saga),
     );
-    const normal = wire.request.getMockImplementation()!;
-    let release!: (value: unknown) => void;
-    const pending = new Promise((resolve) => {
-      release = resolve;
-    });
-    let first = true;
-    wire.request.mockImplementation((method, params) => {
-      if (method === 'client.hello' && first) {
-        first = false;
-        return pending;
-      }
-      return normal(method, params);
-    });
+    const pending = deferred<unknown>();
+    const previousObservations = wire.observeIdentity.mock.calls.length;
+    wire.observeIdentity.mockReturnValueOnce(pending.promise);
     resolution = { source: 'default', resolved: null };
     store.dispatch(workspaceMounted('ws-1'));
     const view = render(WorkspaceProgressCard, { workspaceId: workspace.id });
-    await waitFor(() => expect(first).toBe(false));
+    await waitFor(() =>
+      expect(wire.observeIdentity.mock.calls.length).toBeGreaterThan(previousObservations),
+    );
     store.dispatch(connectionStatusChanged('connecting'));
     store.dispatch(connectionStatusChanged('connected'));
-    release({ clientId: own });
+    pending.resolve({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
     subscribe({ subscriptionId: 'first-subscription' });
     await capabilities();
     await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
@@ -392,14 +394,7 @@ describe('actual browser lifecycle to primary menu', () => {
 
   it('recovers on remount after current browser admission fails during reconnect', async () => {
     const view = await mount();
-    const normal = wire.request.getMockImplementation()!;
-    let failBrowserHello = true;
-    wire.request.mockImplementation((method, params) => {
-      if (method === 'client.hello' && failBrowserHello) {
-        return Promise.reject(new Error('temporary browser hello failure'));
-      }
-      return normal(method, params);
-    });
+    wire.observeIdentity.mockRejectedValue(new Error('identity unconfirmed'));
     resolution = { source: 'default', resolved: null };
     store.dispatch(connectionStatusChanged('disconnected'));
     store.dispatch(connectionStatusChanged('connected'));
@@ -411,7 +406,10 @@ describe('actual browser lifecycle to primary menu', () => {
     expect(writes()).toEqual([]);
     view.unmount();
     store.dispatch(workspaceUnmounted('ws-1'));
-    failBrowserHello = false;
+    wire.observeIdentity.mockResolvedValue({
+      clientId: own,
+      server: { capabilities: { hostMembership: 1 } },
+    });
     store.dispatch(workspaceMounted('ws-1'));
     await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
     await mount();
@@ -493,27 +491,19 @@ describe('actual browser lifecycle to primary menu', () => {
 
   it('requires a fresh exact identity even when roster and resolution refresh first', async () => {
     await mount();
-    const normal = wire.request.getMockImplementation()!;
-    let release!: (value: unknown) => void;
-    const pending = new Promise((resolve) => {
-      release = resolve;
-    });
-    let holdBrowserHello = true;
-    wire.request.mockImplementation((method, params) => {
-      if (method === 'client.hello' && holdBrowserHello) {
-        holdBrowserHello = false;
-        return pending;
-      }
-      return normal(method, params);
-    });
+    const pending = deferred<unknown>();
+    wire.observeIdentity.mockReturnValue(pending.promise);
     resolution = { source: 'default', resolved: null };
-    await reconnect();
+    store.dispatch(connectionStatusChanged('disconnected'));
+    store.dispatch(connectionStatusChanged('connected'));
+    for (const handler of wire.reconnect) handler();
     store.dispatch(refreshLiveClientsRequested('ws-1'));
     await waitFor(() =>
       expect(store.state.browserClients.byWorkspaceId['ws-1'].liveClientsLoaded).toBe(true),
     );
     expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
-    release({ clientId: own });
+    pending.resolve({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
+    await capabilities();
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );
@@ -541,4 +531,32 @@ describe('actual browser lifecycle to primary menu', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
     expect(writes()).toEqual([]);
   });
+});
+
+it('stops browser RPCs when a retained sidebar becomes inactive and refreshes on return', async () => {
+  await capabilities();
+  store.dispatch(workspaceMounted('ws-1'));
+  const view = render(WorkspaceProgressCard, { workspaceId: workspace.id, active: true });
+  await waitFor(() =>
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
+  );
+  await view.rerender({ workspaceId: workspace.id, active: false });
+  await tick();
+  wire.request.mockClear();
+  store.dispatch(refreshLiveClientsRequested());
+  await tick();
+  expect(
+    wire.request.mock.calls.filter(
+      ([method]) => method === 'client.list' || method === 'workspace.getBrowserClient',
+    ),
+  ).toEqual([]);
+  await view.rerender({ workspaceId: workspace.id, active: true });
+  await waitFor(() =>
+    expect(wire.request.mock.calls.filter(([method]) => method === 'client.list')).toEqual([
+      ['client.list', { workspaceId: 'ws-1' }],
+    ]),
+  );
+  await waitFor(() =>
+    expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
+  );
 });

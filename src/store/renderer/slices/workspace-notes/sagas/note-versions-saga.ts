@@ -1,6 +1,8 @@
+import { runRecoveryRead } from '$lib/client/live/recovery-read-queue';
 import { buffers, type Channel } from 'redux-saga';
 import {
   actionChannel,
+  setContext,
   call,
   flush,
   put,
@@ -10,6 +12,11 @@ import {
   takeLatest,
 } from 'typed-redux-saga';
 
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { store as appStore } from '../../../store';
+import type { RendererStoreBridge } from '../../../renderer-store-bridge';
+import { commitNoteAction, notesRecoveryKey, NOTE_RECOVERY_STORE } from './notes-recovery';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -39,29 +46,44 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
 }
 
 function* fetchVersions(workspaceId: string, noteId: string) {
+  const lifetime = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  if (!lifetime.commit(() => {})) return;
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.listVersions>> = yield* call(
-      [appClient.notes, appClient.notes.listVersions],
-      workspaceId,
-      noteId,
+    const response = yield* call(() =>
+      runRecoveryRead(
+        notesRecoveryKey(workspaceId),
+        lifetime,
+        'ordinary',
+        `versions:${noteId}`,
+        () => appClient.notes.listVersions(workspaceId, noteId),
+        { retireOnNotFound: false },
+      ),
     );
     const versions = response.map(toRuntimeNoteVersion);
-    yield* put(applyNoteVersions(workspaceId, noteId, versions));
+    yield* commitNoteAction(lifetime, applyNoteVersions(workspaceId, noteId, versions));
   } catch (error) {
     logger.error('Failed to fetch note versions', error);
-    yield* put(
+    yield* commitNoteAction(
+      lifetime,
       applyNoteVersionsError(workspaceId, error instanceof Error ? error.message : String(error)),
     );
   }
 }
 
-function* restoreVersion(workspaceId: string, noteId: string, versionId: string) {
+function* restoreVersion(
+  workspaceId: string,
+  noteId: string,
+  versionId: string,
+  lifetime: RecoveryLifetime,
+) {
   // The daemon dispatches requests concurrently, so the restore must not be
   // issued until every debounced, queued, or in-flight content save has been
   // acknowledged by the unified mutation owner.
   const settle = settleNoteContentRequested(workspaceId, noteId);
   yield* put(settle);
   yield* call(() => settle.promise);
+  const current = rendererEventRecovery.capture(notesRecoveryKey(workspaceId));
+  if (lifetime.key !== current.key || !current.isCurrent()) return;
   try {
     const result: Awaited<ReturnType<typeof appClient.notes.restoreVersion>> = yield* call(
       [appClient.notes, appClient.notes.restoreVersion],
@@ -82,13 +104,18 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
       // Mutation-response notes omit the transient `unmetDependsOn` projection
       // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
       const cached = yield* selectNoteById.effect(workspaceId, noteId);
-      yield* put(
+      yield* commitNoteAction(
+        lifetime,
         applyNoteUpdated(
           workspaceId,
           noteId,
           withPreservedUnmetDependsOn(toRuntimeNote(result.note), cached),
         ),
       );
+    }
+    if (!lifetime.commit(() => {})) {
+      rendererEventRecovery.invalidate(notesRecoveryKey(workspaceId));
+      return;
     }
     yield* call(fetchVersions, workspaceId, noteId);
   } catch (error) {
@@ -106,11 +133,16 @@ function* fetchVersionsWorker(action: ReturnType<typeof fetchNoteVersions>) {
   });
 }
 
-function* restoreVersionWorker(action: RestoreAction) {
+function* restoreVersionWorker(
+  receipts: WeakMap<RestoreAction, RecoveryLifetime>,
+  action: RestoreAction,
+) {
   const [workspaceId, noteId, versionId] = action.payload;
   if (!workspaceId || !noteId || !versionId) return;
+  const lifetime = receipts.get(action);
+  if (!lifetime?.isCurrent()) return;
   yield* race({
-    restore: call(restoreVersion, workspaceId, noteId, versionId),
+    restore: call(restoreVersion, workspaceId, noteId, versionId, lifetime),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
@@ -126,19 +158,27 @@ function* clearQueuedWorkspaceRestores(
   }
 }
 
-function* consumeRestores(restores: Channel<RestoreAction>) {
+function* consumeRestores(
+  restores: Channel<RestoreAction>,
+  receipts: WeakMap<RestoreAction, RecoveryLifetime>,
+) {
   while (true) {
     const action = yield* take(restores);
-    yield* call(restoreVersionWorker, action);
+    yield* call(restoreVersionWorker, receipts, action);
   }
 }
 
-export function* noteVersionsSaga() {
+export function* noteVersionsSaga(store: RendererStoreBridge = appStore) {
+  yield* setContext({ [NOTE_RECOVERY_STORE]: store });
+  const receipts = new WeakMap<RestoreAction, RecoveryLifetime>();
+  yield* takeEvery(restoreNoteVersion, function* (action: RestoreAction) {
+    receipts.set(action, rendererEventRecovery.capture(notesRecoveryKey(action.payload[0])));
+  });
   const restores = yield* actionChannel(restoreNoteVersion, buffers.expanding());
   try {
     yield* takeLatest(fetchNoteVersions, fetchVersionsWorker);
     yield* takeEvery(workspaceUnmounted, clearQueuedWorkspaceRestores, restores);
-    yield* call(consumeRestores, restores);
+    yield* call(consumeRestores, restores, receipts);
   } finally {
     restores.close();
   }

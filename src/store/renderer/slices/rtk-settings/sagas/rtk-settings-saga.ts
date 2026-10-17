@@ -1,3 +1,4 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { buffers, channel as createChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -54,9 +55,10 @@ function* availability(): SagaGenerator<boolean> {
 }
 
 function* installFollowup(request: SettingsFormRequest, terminalId: string): SagaGenerator<void> {
+  const work = captureSettingsWork();
   yield* fork(function* (): SagaGenerator<void> {
     yield* delay(1000);
-    if (!(yield* selectSettingsForm.effect(request))) return;
+    if (!work.isCurrent() || !(yield* selectSettingsForm.effect(request))) return;
     try {
       yield* call(
         [appClient.terminals, appClient.terminals.write],
@@ -69,7 +71,7 @@ function* installFollowup(request: SettingsFormRequest, terminalId: string): Sag
   });
   for (const wait of [10000, 10000, 10000]) {
     yield* delay(wait);
-    if (!(yield* selectSettingsForm.effect(request))) return;
+    if (!work.isCurrent() || !(yield* selectSettingsForm.effect(request))) return;
     const probe = { ...request, resource: 'probe', requestId: crypto.randomUUID() };
     yield* put(rtkSettingsRequested(probe, { kind: 'probe' }));
   }
@@ -77,10 +79,17 @@ function* installFollowup(request: SettingsFormRequest, terminalId: string): Sag
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
+  const work = captureSettingsWork();
+  const current = intent.kind === 'load' ? work.isSameScope : work.isCurrent;
+  const initialForm = yield* selectSettingsForm.effect(request);
+  if (!current()) {
+    yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
+    return;
+  }
   let error: string | undefined;
   const values: Record<string, SettingsFormValue> = {};
   try {
-    if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+    if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
     if (intent.kind === 'load') {
       try {
         const entry = yield* call([appClient.settings, appClient.settings.get], 'rtk.enabled');
@@ -92,7 +101,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       } catch {
         error = m.settings_rtk_loadError();
       }
-      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       try {
         values.available = yield* call(availability);
       } catch {
@@ -117,13 +126,19 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
         cols: 80,
         rows: 24,
       });
-      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      if (!current() || !(yield* selectSettingsFormRequestCurrent.effect(request))) return;
       if (!result.success || !result.id) throw new Error('Terminal creation failed');
       yield* put(addTerminal(ROOT_WORKSPACE_ID, result.id, m.settings_rtk_installTerminalTitle()));
       yield* put(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
       yield* put(rtkInstallStarted(request, result.id));
     }
-    if (yield* selectSettingsFormRequestCurrent.effect(request)) {
+    if (current() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
+      if (intent.kind === 'load') {
+        const form = yield* selectSettingsForm.effect(request);
+        for (const [key, value] of Object.entries(form?.values ?? {})) {
+          if (value !== initialForm?.values[key]) values[key] = value;
+        }
+      }
       yield* put(
         settingsFormRequestSettled(request, {
           status: error ? 'failed' : 'succeeded',
@@ -133,7 +148,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } catch {
-    if (yield* selectSettingsFormRequestCurrent.effect(request)) {
+    if (current() && (yield* selectSettingsFormRequestCurrent.effect(request))) {
       error =
         intent.kind === 'install'
           ? m.terminal_adapter_openFailed_error()
@@ -142,7 +157,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       yield* put(settingsFormRequestSettled(request, { status: 'failed', error }));
     }
   } finally {
-    if (yield* cancelled())
+    if ((yield* cancelled()) || !current())
       yield* put(settingsFormRequestSettled(request, { status: 'cancelled' }));
   }
 }

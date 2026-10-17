@@ -29,6 +29,12 @@ vi.mock('$lib/components/patterns/notify', () => ({
 import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 
+// IPC completion observation is transport metadata, separate from daemon protocol params.
+const observedRequest = (request: unknown) => ({
+  ...(request as Record<string, unknown>),
+  observeCompletion: true,
+});
+
 type BackendStep = { request: unknown; response: unknown };
 
 describe('Settings deterministic mock-BE contracts', () => {
@@ -81,7 +87,7 @@ describe('Settings deterministic mock-BE contracts', () => {
 
   function mockBackend(expected: unknown, result: unknown) {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
-      expect(payload).toEqual(expected);
+      expect(payload).toEqual(observedRequest(expected));
       return { ok: true, result };
     });
   }
@@ -91,7 +97,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
       const step = steps[index++];
       expect(step, `unexpected backend request ${JSON.stringify(payload)}`).toBeDefined();
-      expect(payload).toEqual(step.request);
+      expect(payload).toEqual(observedRequest(step.request));
       return { ok: true, result: step.response };
     });
     return () => expect(index).toBe(steps.length);
@@ -106,7 +112,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     expect(settings).toEqual(fixture.response.settings);
     expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.BACKEND.REQUEST,
-      fixture.request,
+      observedRequest(fixture.request),
     );
   });
 
@@ -122,7 +128,10 @@ describe('Settings deterministic mock-BE contracts', () => {
     ).resolves.toEqual({
       success: true,
     });
-    expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, request);
+    expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.BACKEND.REQUEST,
+      observedRequest(request),
+    );
   });
 
   it('pins the Setup blur/Enter setting read and protocol-shaped definition', async () => {
@@ -135,7 +144,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     });
     expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.BACKEND.REQUEST,
-      fixture.request,
+      observedRequest(fixture.request),
     );
   });
 
@@ -146,7 +155,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     await expect(client.settings.reset('agents.maxConcurrent')).resolves.toEqual(fixture.response);
     expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.BACKEND.REQUEST,
-      fixture.request,
+      observedRequest(fixture.request),
     );
   });
 
@@ -176,7 +185,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         nth,
         IPC_CHANNELS.BACKEND.REQUEST,
-        fixture.request,
+        observedRequest(fixture.request),
       );
     }
     // The budget's ceiling is whatever bound the catalog carried on the wire.
@@ -224,17 +233,17 @@ describe('Settings deterministic mock-BE contracts', () => {
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         1,
         IPC_CHANNELS.BACKEND.REQUEST,
-        get.request,
+        observedRequest(get.request),
       );
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         2,
         IPC_CHANNELS.BACKEND.REQUEST,
-        getBudget.request,
+        observedRequest(getBudget.request),
       );
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         5,
         IPC_CHANNELS.BACKEND.REQUEST,
-        update.request,
+        observedRequest(update.request),
       );
     },
   );
@@ -272,12 +281,12 @@ describe('Settings deterministic mock-BE contracts', () => {
     expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
       1,
       IPC_CHANNELS.BACKEND.REQUEST,
-      list.request,
+      observedRequest(list.request),
     );
     expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
       2,
       IPC_CHANNELS.BACKEND.REQUEST,
-      update.request,
+      observedRequest(update.request),
     );
     await waitFor(() => {
       expect(input.disabled).toBe(false);
@@ -294,7 +303,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
       const request = payload as { method: string; params?: unknown };
       if (request.method === 'settings.list') {
-        expect(request).toEqual({ method: 'settings.list', params: undefined });
+        expect(request).toEqual(observedRequest({ method: 'settings.list', params: undefined }));
         return {
           ok: true,
           result: {
@@ -317,10 +326,12 @@ describe('Settings deterministic mock-BE contracts', () => {
         };
       }
       if (request.method === 'server.pairingInfo') {
-        expect(request).toEqual(UNDOCUMENTED_SERVER_FIXTURES.pairingInfo.request);
+        expect(request).toEqual(observedRequest(UNDOCUMENTED_SERVER_FIXTURES.pairingInfo.request));
         return { ok: true, result: UNDOCUMENTED_SERVER_FIXTURES.pairingInfo.response };
       }
-      expect(request).toEqual({ method: 'settings.update', params: { changes: expectedChanges } });
+      expect(request).toEqual(
+        observedRequest({ method: 'settings.update', params: { changes: expectedChanges } }),
+      );
       bound = ['192.0.2.10', '127.0.0.1', '198.51.100.7'];
       return { ok: true, result: { applied: expectedChanges } };
     });
@@ -338,6 +349,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     });
     await waitFor(() =>
       expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        observeCompletion: true,
         method: 'settings.update',
         params: { changes: expectedChanges },
       }),
@@ -376,7 +388,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     await expect(client.server.pairingInfo()).resolves.toEqual(fixture.response);
     expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.BACKEND.REQUEST,
-      fixture.request,
+      observedRequest(fixture.request),
     );
   });
 

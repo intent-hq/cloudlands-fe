@@ -1,3 +1,6 @@
+import { trackAgentRecoveryRead } from '../agent-recovery-read-lane';
+import { agentRecoveryWorkspaceCurrent } from '../agent-recovery-workspace-scope';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 /**
  * Active Streams Tracker
  *
@@ -154,13 +157,23 @@ class ActiveStreamsTracker {
   }
 
   private async fetchActiveStreamsOnce(): Promise<void> {
+    const recovery = rendererEventRecovery.capture('agent-active-streams');
+    if (!recovery.commit(() => undefined)) return;
     const generation = this.refreshGeneration;
     const updates = new Map<string, ActiveStream | null>();
     this.scanUpdates = updates;
     try {
-      const result = await backendRequest<{ streams: ActiveStream[] }>('agent.listActive', {});
+      const result = await trackAgentRecoveryRead(
+        'agent-active-streams',
+        () => {
+          if (generation !== this.refreshGeneration || !recovery.commit(() => undefined))
+            throw new Error('Active stream read authority retired');
+          return backendRequest<{ streams: ActiveStream[] }>('agent.listActive', {});
+        },
+        rendererEventRecovery.hasOwner('agent-active-streams') ? recovery : undefined,
+      );
 
-      if (generation !== this.refreshGeneration) return;
+      if (generation !== this.refreshGeneration || !recovery.commit(() => undefined)) return;
 
       if (Array.isArray(result.streams)) {
         const streams = new Map(result.streams.map((stream) => [stream.agentId, stream]));
@@ -180,11 +193,16 @@ class ActiveStreamsTracker {
   /**
    * Update the tracked streams
    */
+  replaceSnapshot(streams: ActiveStream[]): void {
+    this.updateStreams(streams);
+  }
+
   private updateStreams(streams: ActiveStream[]): void {
     const newStreamsByWorkspace = new Map<string, Set<string>>();
     const newAllStreams = new Map<string, ActiveStream>();
 
     for (const stream of streams) {
+      if (!agentRecoveryWorkspaceCurrent(stream.workspaceId)) continue;
       // Add to all streams
       newAllStreams.set(stream.agentId, stream);
 
@@ -200,7 +218,15 @@ class ActiveStreamsTracker {
     // Check if anything changed
     const changed =
       this.allStreams.size !== newAllStreams.size ||
-      [...newAllStreams.keys()].some((id) => !this.allStreams.has(id)) ||
+      [...newAllStreams].some(([id, stream]) => {
+        const old = this.allStreams.get(id);
+        return (
+          !old ||
+          old.workspaceId !== stream.workspaceId ||
+          old.sessionId !== stream.sessionId ||
+          old.startTime !== stream.startTime
+        );
+      }) ||
       [...this.allStreams.keys()].some((id) => !newAllStreams.has(id));
 
     if (changed) {
@@ -214,6 +240,18 @@ class ActiveStreamsTracker {
         workspaces: Array.from(newStreamsByWorkspace.keys()),
       });
     }
+  }
+
+  getWorkspaceIds(): string[] {
+    return [...this.streamsByWorkspace.keys()];
+  }
+
+  retireWorkspace(workspaceId: string): void {
+    for (const [agentId, stream] of this.allStreams)
+      if (stream.workspaceId === workspaceId) this.scanUpdates?.set(agentId, null);
+    this.updateStreams(
+      [...this.allStreams.values()].filter((stream) => stream.workspaceId !== workspaceId),
+    );
   }
 
   /**

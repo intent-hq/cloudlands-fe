@@ -148,6 +148,7 @@
 
   interface Props {
     workspaceId: string;
+    active?: boolean;
     panelLayoutId?: string;
     onCreateNote?: () => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
@@ -161,6 +162,7 @@
 
   let {
     workspaceId,
+    active = true,
     panelLayoutId = workspaceId,
     onCreateNote,
     onCreateFile,
@@ -968,7 +970,7 @@
 >
   <!-- Fixed Top Section: Progress Card -->
   <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
-    <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
+    <WorkspaceProgressCard {workspaceId} {active} onOpenNote={handleOpenNoteInPanel} />
   </div>
 
   {#if !isNewWorkspaceSession || isTabSelected('people')}
@@ -1225,6 +1227,7 @@
                           <div class="w-full flex-1">
                             <SidebarChangesPanel
                               {workspaceId}
+                              {active}
                               onRefreshActionChange={(action) => (changesRefreshAction = action)}
                               activeFilePath={effectiveActiveFilePath}
                               activeFileStaged={effectiveActiveFileStaged}

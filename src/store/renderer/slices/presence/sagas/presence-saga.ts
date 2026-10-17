@@ -1,4 +1,7 @@
 import { DEFAULT_DISCUSSION_ID, discussionKey } from '$shared/types/workspace-discussion';
+import { collaborationKey, readCollaboration } from '$features/presence/collaboration-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 /**
  * Presence Saga (multiplayer w5, PROTOCOL §5.46)
  *
@@ -143,7 +146,9 @@ type RosterReads = Map<string, number>;
 /** `null` for a non-member / unknown workspace or an older daemon; both leave the roster empty. */
 async function readRosterSnapshot(workspaceId: string): Promise<PresenceRoster | null> {
   try {
-    const result = await backendRequest<unknown>('presence.snapshot', { workspaceId });
+    const result = await readCollaboration(collaborationKey('presence-roster', workspaceId), () =>
+      backendRequest<unknown>('presence.snapshot', { workspaceId }),
+    );
     return isPresenceRoster(result) && result.workspaceId === workspaceId ? result : null;
   } catch (error) {
     logger.debug('presence.snapshot failed', { workspaceId, error: String(error) });
@@ -154,10 +159,13 @@ async function readRosterSnapshot(workspaceId: string): Promise<PresenceRoster |
 /** `null` for a non-member / unknown workspace or an older daemon; the membership stays unread. */
 async function readMembership(workspaceId: string): Promise<WorkspaceMembersListResult | null> {
   try {
-    const result = await backendRequest<WorkspaceMembersListResult>('workspace.members.list', {
-      workspaceId,
-    });
-    return Array.isArray(result?.members) &&
+    const result = await readCollaboration(collaborationKey('presence-members', workspaceId), () =>
+      backendRequest<WorkspaceMembersListResult>('workspace.members.list', {
+        workspaceId,
+      }),
+    );
+    return result &&
+      Array.isArray(result.members) &&
       result.members.every(
         (member) =>
           isPresenceIdentity(member) &&
@@ -413,11 +421,13 @@ function* armTypingTimers({
 function* hydrateRoster(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
   const ordinal = (reads.get(workspaceId) ?? 0) + 1;
   reads.set(workspaceId, ordinal);
+  const receipt = rendererEventRecovery.capture(collaborationKey('presence-roster', workspaceId));
   const { roster } = yield* race({
     roster: call(readRosterSnapshot, workspaceId),
     superseded: take((action: ObservedAction) => supersedesSnapshot(action, workspaceId)),
   });
-  if (roster && reads.get(workspaceId) === ordinal) yield* put(presenceSnapshotReceived(roster));
+  if (roster && reads.get(workspaceId) === ordinal)
+    yield* put(withRecoveryLifetime(presenceSnapshotReceived(roster), receipt));
 }
 
 function* hydrateRosters(reads: RosterReads, workspaceIds: string[]): SagaGenerator<void> {
@@ -460,12 +470,18 @@ function* hydrateMembership(reads: RosterReads, workspaceId: string): SagaGenera
   const ordinal = (reads.get(workspaceId) ?? 0) + 1;
   reads.set(workspaceId, ordinal);
   const startedProfileRevision = yield* select(selectPresenceProfileRevision.select);
+  const receipt = rendererEventRecovery.capture(collaborationKey('presence-members', workspaceId));
   const { membership } = yield* race({
     membership: call(readMembership, workspaceId),
     superseded: take((action: ObservedAction) => supersedesMembership(action, workspaceId)),
   });
   if (membership && reads.get(workspaceId) === ordinal)
-    yield* put(presenceMembersReceived(workspaceId, membership.members, startedProfileRevision));
+    yield* put(
+      withRecoveryLifetime(
+        presenceMembersReceived(workspaceId, membership.members, startedProfileRevision),
+        receipt,
+      ),
+    );
 }
 
 /** A membership key is `${workspaceId}:${memberCount}`; the count only makes the key change. */

@@ -174,3 +174,301 @@ describe('tasksWriteService (fake seam, real store)', () => {
     expect(notify.warning).toHaveBeenCalledTimes(1);
   });
 });
+
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  createEventRecoverySession,
+  type RecoveryNotification,
+} from '$shared/event-recovery/session';
+const flushRecovery = async () => {
+  for (let i = 0; i < 100; i++) await Promise.resolve();
+};
+describe('task status continuation after notes recovery', () => {
+  beforeAll(() => appStore.init());
+  afterEach(() => {
+    rendererEventRecovery.dispose();
+    vi.clearAllMocks();
+  });
+  it.each(['failure', 'conflict'] as const)(
+    'rejects old %s response after authoritative recovery',
+    async (kind) => {
+      let receive!: (n: RecoveryNotification) => void;
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: (fn) => {
+            receive = fn;
+            return () => {};
+          },
+          request: async (method, params, observe) => {
+            const result =
+              method === 'events.subscribe'
+                ? { subscriptionId: 'tasks-loss', lossRecovery: 1 }
+                : params;
+            observe?.(result);
+            return result;
+          },
+          dispose: () => {},
+        }),
+      );
+      const handle = scope.registerResource({
+        key: `notes:${JSON.stringify([WS])}`,
+        workspaceId: WS,
+        eventTypes: ['note:*', 'task:*'],
+        isCurrent: () => true,
+        read: async () => 'complete' as const,
+        apply: (status) => {
+          seed(status);
+        },
+        invalidate: () => {},
+        retire: () => {},
+      });
+      await scope.subscribe(
+        { workspaceId: WS, eventTypes: ['note:*', 'task:*'] },
+        { recover: true },
+      );
+      seed('not_started');
+      let finish!: (value: import('$lib/client').MutationResult) => void;
+      tasksApi.updateNoteStatus.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            finish = done;
+          }),
+      );
+      const pending = updateTaskNoteStatus(WS, 't1', 'in_progress');
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'tasks-loss', generation: '1', scope: { workspaceId: WS } },
+      });
+      await flushRecovery();
+      expect(noteStatus()).toBe('complete');
+      finish(
+        kind === 'conflict'
+          ? { success: false, conflict: { current: { id: 't1', status: 'not_started', rev: 2 } } }
+          : { success: false, error: 'old failure' },
+      );
+      await pending;
+      expect(noteStatus()).toBe('complete');
+      expect(taskStatus()).toBe('complete');
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
+      expect(tasksApi.updateNoteStatus).toHaveBeenCalledTimes(1);
+      handle.dispose();
+    },
+  );
+});
+
+describe('task status command ownership', () => {
+  beforeAll(() => appStore.init());
+  afterEach(() => {
+    rendererEventRecovery.dispose();
+    vi.clearAllMocks();
+  });
+  it('does not roll back a newer command on the same note', async () => {
+    seed('not_started');
+    let finish!: (value: import('$lib/client').MutationResult) => void;
+    tasksApi.updateNoteStatus.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    const old = updateTaskNoteStatus(WS, 't1', 'in_progress');
+    await updateTaskNoteStatus(WS, 't1', 'complete');
+    finish({ success: false, error: 'old failure' });
+    await old;
+    expect(noteStatus()).toBe('complete');
+    expect(taskStatus()).toBe('complete');
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(tasksApi.updateNoteStatus).toHaveBeenCalledTimes(2);
+  });
+  it.each(['notes', 'tasks'])('rejects a same-ID %s owner replacement', async (domain) => {
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        request: async () => ({}),
+        dispose: () => {},
+      }),
+    );
+    const owner = {
+      key: `${domain}:${JSON.stringify([WS])}`,
+      workspaceId: WS,
+      eventTypes: ['task:*'],
+      isCurrent: () => true,
+      read: async () => null,
+      apply: () => undefined,
+      invalidate: () => undefined,
+      retire: () => undefined,
+    };
+    const handle = scope.registerResource(owner);
+    seed('not_started');
+    let finish!: (value: import('$lib/client').MutationResult) => void;
+    tasksApi.updateNoteStatus.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    const old = updateTaskNoteStatus(WS, 't1', 'in_progress');
+    handle.dispose();
+    scope.registerResource(owner);
+    seed('complete');
+    finish({
+      success: false,
+      conflict: { current: { id: 't1', status: 'not_started', rev: 2 } },
+    } as import('$lib/client').MutationResult);
+    await old;
+    expect(noteStatus()).toBe('complete');
+    expect(taskStatus()).toBe('complete');
+    expect(selectNoteById.select(appStore.state, WS, 't1')?.rev).toBeUndefined();
+    expect(notify.warning).not.toHaveBeenCalled();
+    expect(tasksApi.updateNoteStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { applyTaskStatusChanged } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+describe('task status settlement after sibling task pushes', () => {
+  beforeAll(() => appStore.init());
+  afterEach(() => {
+    rendererEventRecovery.dispose();
+    vi.clearAllMocks();
+  });
+  it.each(['t1', 't2'])(
+    'settles the failed t1 command without changing the newer %s push',
+    async (pushedId) => {
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: () => () => {},
+          request: async () => ({}),
+          dispose: () => {},
+        }),
+      );
+      const handles = ['notes', 'tasks'].map((domain) =>
+        scope.registerResource({
+          key: `${domain}:${JSON.stringify([WS])}`,
+          workspaceId: WS,
+          eventTypes: ['note:*', 'task:*'],
+          isCurrent: () => true,
+          read: async () => null,
+          apply: () => {},
+          invalidate: () => {},
+          retire: () => {},
+        }),
+      );
+      appStore.dispatch(
+        loadWorkspaceNotesSucceeded([WS], {
+          [WS]: [makeTaskNote('t1', 'not_started'), makeTaskNote('t2', 'not_started')],
+        }),
+      );
+      appStore.dispatch(
+        loadWorkspaceTasksSucceeded(
+          WS,
+          [makeTask('t1', 'not_started'), makeTask('t2', 'not_started')],
+          ZERO_STATS,
+        ),
+      );
+      let finish!: (v: import('$lib/client').MutationResult) => void;
+      tasksApi.updateNoteStatus.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            finish = done;
+          }),
+      );
+      const pending = updateTaskNoteStatus(WS, 't1', 'in_progress');
+      for (const domain of ['notes', 'tasks'])
+        expect(rendererEventRecovery.push(`${domain}:${JSON.stringify([WS])}`)).toBe(true);
+      appStore.dispatch(applyNoteTaskStatusChanged(WS, pushedId, 'complete'));
+      appStore.dispatch(applyTaskStatusChanged(WS, pushedId, 'complete'));
+      finish({ success: false, error: 'the original command was rejected' });
+      await pending;
+      expect.soft(noteStatus()).toBe(pushedId === 't1' ? 'complete' : 'not_started');
+      expect.soft(taskStatus()).toBe(pushedId === 't1' ? 'complete' : 'not_started');
+      expect(selectNoteById.select(appStore.state, WS, pushedId)?.metadata?.task?.status).toBe(
+        'complete',
+      );
+      expect(tasksApi.updateNoteStatus).toHaveBeenCalledTimes(1);
+      for (const h of handles) h.dispose();
+    },
+  );
+});
+
+describe('task status reconciliation without a note projection', () => {
+  beforeAll(() => appStore.init());
+  afterEach(() => {
+    rendererEventRecovery.dispose();
+    vi.clearAllMocks();
+  });
+  it('uses one authoritative read after a sibling push when direct rollback is ambiguous', async () => {
+    const request = vi.fn(async (method: string, params?: unknown) =>
+      method === 'events.subscribe'
+        ? { subscriptionId: 'task-reconcile', lossRecovery: 1 }
+        : params,
+    );
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        request: async (method, params, observe) => {
+          const result = await request(method, params);
+          observe?.(result);
+          return result;
+        },
+        dispose: () => {},
+      }),
+    );
+    const read = vi.fn(async () => [makeTask('t1', 'not_started'), makeTask('t2', 'complete')]);
+    scope.registerResource({
+      key: `tasks:${JSON.stringify([WS])}`,
+      workspaceId: WS,
+      eventTypes: ['task:*'],
+      isCurrent: () => true,
+      read,
+      apply: (tasks) => {
+        appStore.dispatch(loadWorkspaceTasksSucceeded(WS, tasks, ZERO_STATS));
+      },
+      invalidate: () => {},
+      retire: () => {},
+    });
+    await scope.subscribe({ workspaceId: WS, eventTypes: ['task:*'] }, { recover: true });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [] }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        WS,
+        [makeTask('t1', 'not_started'), makeTask('t2', 'not_started')],
+        ZERO_STATS,
+      ),
+    );
+    let finish!: (value: import('$lib/client').MutationResult) => void;
+    tasksApi.updateNoteStatus.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    const pending = updateTaskNoteStatus(WS, 't1', 'in_progress');
+    expect(rendererEventRecovery.push(`tasks:${JSON.stringify([WS])}`)).toBe(true);
+    appStore.dispatch(applyTaskStatusChanged(WS, 't2', 'complete'));
+    finish({ success: false, error: 'rejected' });
+    await pending;
+    await flushRecovery();
+    expect(taskStatus()).toBe('not_started');
+    expect(
+      selectWorkspaceTasks.select(appStore.state, WS).find((task) => task.id === 't2')?.status,
+    ).toBe('complete');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(2);
+    expect(tasksApi.updateNoteStatus).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+});

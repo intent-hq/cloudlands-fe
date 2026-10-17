@@ -5360,6 +5360,7 @@
   "agent_chatSend_retryProviderNoModels_toast": "{provider} で利用できるモデルがないため、そこでターンを再試行できません。",
   "agent_chatSend_retryProviderSwitchRejected_error": "プロバイダーの切り替えが拒否されました。",
   "agent_chatSend_retryProviderSwitchFailed_toast": "{provider} に切り替えられませんでした: {error}",
+  "agent_chatSend_retryProviderRedriveFailed_toast": "{provider} に切り替えましたが、再試行に失敗しました: {error}",
   "agent_ipc_activeStreamsFailed_error": "アクティブなストリームを取得できませんでした",
   "agent_ipc_circuitBreakerResetFailed_error": "サーキットブレーカーをリセットできませんでした",
   "agent_ipc_unknown_error": "不明なエラー",

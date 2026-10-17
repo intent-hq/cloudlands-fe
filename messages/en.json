@@ -5360,6 +5360,7 @@
   "agent_chatSend_retryProviderNoModels_toast": "No models are available on {provider}, so the turn cannot be retried there.",
   "agent_chatSend_retryProviderSwitchRejected_error": "The provider switch was rejected.",
   "agent_chatSend_retryProviderSwitchFailed_toast": "Could not switch to {provider}: {error}",
+  "agent_chatSend_retryProviderRedriveFailed_toast": "Switched to {provider}, but the retry failed: {error}",
   "agent_ipc_activeStreamsFailed_error": "Failed to get active streams",
   "agent_ipc_circuitBreakerResetFailed_error": "Failed to reset circuit breaker",
   "agent_ipc_unknown_error": "Unknown error",

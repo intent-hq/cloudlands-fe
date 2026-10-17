@@ -1,3 +1,7 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { fileContentRecoveryKey, fileExplorerRecoveryKey } from '$features/file/file-recovery-keys';
+import { putFileRecovery, readFileSnapshot } from '$features/file/file-recovery-effects';
 import { editableText, fileSnapshot } from '$features/file/utils/file-content';
 import type { EditableText, RestorableSnapshot } from '../files-types';
 import {
@@ -41,6 +45,7 @@ import {
   restoreFileContentRequested,
   removeFileContentEntry,
   saveFileContentFailed,
+  fileContentSaveSettled,
   saveFileContentRequested,
   saveFileContentSucceeded,
   updateFileContent,
@@ -53,14 +58,23 @@ function* serializeFileMutation<T>(
   path: string,
   run: (relativePath: string) => Promise<T>,
   observeRead?: (action: ReturnType<typeof loadFileContentSucceeded>) => void,
+  capturedAuthority?: RecoveryLifetime,
 ): SagaGenerator<T> {
+  const authority =
+    capturedAuthority ??
+    rendererEventRecovery.captureAuthority(fileExplorerRecoveryKey(workspaceId));
   // Tabs/cache entries retain their caller-facing paths. Only the transport and
   // queue identity use the workspace-relative resource, for every mutation kind.
   const workspacePath = isAbsolutePath(path)
     ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
     : '';
   const relativePath = stripWorkspacePrefix(path, workspacePath);
-  const execute = () => queueFileMutation(workspaceId, relativePath, () => run(relativePath));
+  const execute = () =>
+    queueFileMutation(workspaceId, relativePath, () => {
+      if (!authority.commit(() => undefined))
+        throw new Error(m.ui_reversibleActions_cancelled_message());
+      return run(relativePath);
+    });
   if (!observeRead) return yield* call(execute);
 
   // The transport queue outlives UI cancellation. Its task owns the observer,
@@ -127,6 +141,21 @@ function isSaveFor(
 
 function* saveFileContentWorker(request: SaveRequest) {
   const { workspaceId, path, absolutePath, content } = request;
+  const key = fileContentRecoveryKey(workspaceId, path);
+  const receipt = rendererEventRecovery.capture(key);
+  const authority = rendererEventRecovery.captureAuthority(key);
+  const generation = selectFileContentEntry.select(
+    appStore.state,
+    workspaceId,
+    path,
+  )?.saveGeneration;
+  const ownsSave = () =>
+    selectFileContentEntry.select(appStore.state, workspaceId, path)?.saveGeneration === generation;
+  const snapshotReceipt: RecoveryLifetime = {
+    key: receipt.key,
+    isCurrent: () => ownsSave() && receipt.isCurrent(),
+    commit: (mutation) => ownsSave() && receipt.commit(mutation),
+  };
   // The queue survives unmount, which clears the cache. Remember an observed
   // binary read until this write settles so teardown cannot admit a stale save.
   let becameBinary = selectAllFileContentEntries
@@ -144,9 +173,10 @@ function* saveFileContentWorker(request: SaveRequest) {
         // A queued text save must not overwrite a file now known to be binary.
         if (
           becameBinary ||
-          [path, absolutePath, relativePath].some(
-            (alias) => selectFileContentEntry.select(appStore.state, workspaceId, alias)?.isBinary,
-          )
+          [path, absolutePath, relativePath].some((alias) => {
+            const current = selectFileContentEntry.select(appStore.state, workspaceId, alias);
+            return current && (current.isBinary || current.preservedDraft !== undefined);
+          })
         )
           throw new Error(m.editor_fileViewer_binary_label());
         return appClient.files.write(workspaceId, relativePath, content);
@@ -160,26 +190,44 @@ function* saveFileContentWorker(request: SaveRequest) {
         )
           becameBinary = true;
       },
+      authority,
     );
     if (result.success) {
-      yield* put(saveFileContentSucceeded(workspaceId, path, content));
+      if (ownsSave())
+        yield* putFileRecovery(
+          snapshotReceipt,
+          saveFileContentSucceeded(workspaceId, path, content),
+        );
+      if (!receipt.isCurrent() && authority.isCurrent()) rendererEventRecovery.invalidate(key);
       return;
     }
-    yield* put(
-      saveFileContentFailed(
-        workspaceId,
-        path,
-        result.error ?? m.fileExplorer_layout_saveFailed_error(),
-      ),
-    );
+    if (ownsSave())
+      yield* putFileRecovery(
+        snapshotReceipt,
+        saveFileContentFailed(
+          workspaceId,
+          path,
+          result.error ?? m.fileExplorer_layout_saveFailed_error(),
+        ),
+      );
   } catch (error) {
     logger.error('Failed to save file content', error);
     const message = error instanceof Error ? error.message : String(error);
-    yield* put(saveFileContentFailed(workspaceId, path, message));
+    if (ownsSave())
+      yield* putFileRecovery(snapshotReceipt, saveFileContentFailed(workspaceId, path, message));
+  } finally {
+    if (
+      generation !== undefined &&
+      ownsSave() &&
+      !(yield* cancelled()) &&
+      selectFileContentEntry.select(appStore.state, workspaceId, path)?.saving
+    )
+      yield* putFileRecovery(authority, fileContentSaveSettled(workspaceId, path, generation));
   }
 }
 
 function* createFileWorker(workspaceId: string, folderPath: string, fileName: string) {
+  const receipt = rendererEventRecovery.captureAuthority(fileExplorerRecoveryKey(workspaceId));
   const absoluteFilePath = `${folderPath}/${fileName}`;
   const explorer = yield* selectFileExplorerState.effect(workspaceId);
   const relativePath = stripWorkspacePrefix(absoluteFilePath, explorer.workspacePath);
@@ -194,8 +242,8 @@ function* createFileWorker(workspaceId: string, folderPath: string, fileName: st
       (mutationPath: string) => appClient.files.write(workspaceId, mutationPath, editableText('')),
     );
     if (!result.success) return;
-    yield* put(refreshDirectoryRequested(workspaceId, absoluteFilePath));
-    yield* put(openWorkspaceFile(workspaceId, absoluteFilePath));
+    yield* putFileRecovery(receipt, refreshDirectoryRequested(workspaceId, absoluteFilePath));
+    yield* putFileRecovery(receipt, openWorkspaceFile(workspaceId, absoluteFilePath));
   } catch (error) {
     logger.error('Failed to create file', error);
   }
@@ -225,6 +273,7 @@ function* waitForManualFileEdit(workspaceId: string, path: string) {
 function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
   if (action.payload[3]?.autoSave === false) return;
   const [workspaceId, path] = action.payload;
+  const receipt = rendererEventRecovery.capture(fileContentRecoveryKey(workspaceId, path));
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (!entry?.absolutePath || entry.kind !== 'editable-text') return;
   const absolutePath = entry.absolutePath;
@@ -234,7 +283,7 @@ function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) 
     manualEdit: call(waitForManualFileEdit, workspaceId, path),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-  if (!elapsed) return;
+  if (!elapsed || !receipt.commit(() => undefined)) return;
   const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (
     !latestEntry?.absolutePath ||
@@ -262,6 +311,7 @@ function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentR
 
 function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
   const [workspaceId, path, options] = action.payload;
+  const receipt = rendererEventRecovery.captureAuthority(fileExplorerRecoveryKey(workspaceId));
   const cannotRestore = (snapshot: RestorableSnapshot | undefined) =>
     !snapshot || (options.snapshot !== undefined && options.snapshot.content !== snapshot.content);
   // Like a queued save, a queued deletion outlives cache cleanup. Retain any
@@ -276,7 +326,8 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
     );
   let requestCancelled = false;
   const assertActive = () => {
-    if (requestCancelled) throw new Error(m.ui_reversibleActions_cancelled_message());
+    if (requestCancelled || !receipt.commit(() => undefined))
+      throw new Error(m.ui_reversibleActions_cancelled_message());
   };
   try {
     const { snapshot, relativePath } = yield* call(
@@ -294,7 +345,9 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
         // a zero-byte file; an omitted panel draft means read the disk first.
         const entry =
           options.snapshot === undefined
-            ? await appClient.files.read(workspaceId, relativePath)
+            ? await readFileSnapshot(fileContentRecoveryKey(workspaceId, path), receipt, () =>
+                appClient.files.read(workspaceId, relativePath),
+              )
             : null;
         assertActive();
         const snapshot = options.snapshot ?? fileSnapshot(entry ?? undefined);
@@ -318,16 +371,20 @@ function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
           unsafeSnapshot = true;
       },
     );
+    assertActive();
     // Clear both tree and panel aliases before closing tabs: an absolute-path
     // draft must not survive a relative delete and flush from tab teardown.
     for (const alias of new Set([path, relativePath, options.absolutePath])) {
-      yield* put(removeFileContentEntry(workspaceId, alias));
+      yield* putFileRecovery(receipt, removeFileContentEntry(workspaceId, alias));
     }
-    if (options.tabId) yield* put(closeTab(workspaceId, options.tabId));
+    if (options.tabId) yield* putFileRecovery(receipt, closeTab(workspaceId, options.tabId));
     else {
-      yield* put(closeTabsByType(workspaceId, 'file', 'filePath', path));
+      yield* putFileRecovery(receipt, closeTabsByType(workspaceId, 'file', 'filePath', path));
       if (options.absolutePath !== path)
-        yield* put(closeTabsByType(workspaceId, 'file', 'filePath', options.absolutePath));
+        yield* putFileRecovery(
+          receipt,
+          closeTabsByType(workspaceId, 'file', 'filePath', options.absolutePath),
+        );
     }
     yield* call(() =>
       dispatchWindowEvent('file:changed', {
@@ -356,6 +413,8 @@ function* deleteFileActionWorker(action: ReturnType<typeof deleteFileRequested>)
 
 function* restoreFileWorker(action: ReturnType<typeof restoreFileContentRequested>) {
   const [workspaceId, path, absolutePath, snapshot] = action.payload;
+  const receipt = rendererEventRecovery.capture(fileContentRecoveryKey(workspaceId, path));
+  const authority = rendererEventRecovery.captureAuthority(fileExplorerRecoveryKey(workspaceId));
   try {
     const result = yield* call(
       serializeFileMutation<MutationResult>,
@@ -364,7 +423,11 @@ function* restoreFileWorker(action: ReturnType<typeof restoreFileContentRequeste
       (relativePath: string) => appClient.files.write(workspaceId, relativePath, snapshot),
     );
     if (!result.success) throw new Error(result.error ?? m.fileExplorer_layout_saveFailed_error());
-    yield* put(saveFileContentSucceeded(workspaceId, path, snapshot));
+    yield* putFileRecovery(receipt, saveFileContentSucceeded(workspaceId, path, snapshot));
+    if (!receipt.isCurrent() && authority.isCurrent())
+      rendererEventRecovery.invalidate(fileContentRecoveryKey(workspaceId, path));
+    if (!authority.commit(() => undefined))
+      throw new Error(m.ui_reversibleActions_cancelled_message());
     yield* call(() =>
       dispatchWindowEvent('file:changed', {
         workspaceId,

@@ -792,6 +792,7 @@
         : ''}
     >
       <MultiSelectTabbedSidebar
+        {active}
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
         onCreateNote={handleCreateNote}

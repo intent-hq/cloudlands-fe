@@ -1,43 +1,15 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import type { Task } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { call, cancel, delay, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, getContext, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { gitRootsUpdated } from '../git-roots-slice';
-import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
-import { subscribeGitRoots, type GitRootRow } from '$features/git-roots/git-roots-service';
+import { selectGitRootConsumerWorkspaceIds } from '../git-roots-selectors';
+import { subscribeGitRoots } from '$features/git-roots/git-roots-service';
 
 const logger = createLogger('GitRootsSaga');
 
-type SubscriptionEntry = {
-  channel: EventChannel<GitRootRow[]>;
-  task: Task;
-};
-
+type SubscriptionEntry = { dispose(): void };
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
-
-function createGitRootsChannel(workspaceId: string): EventChannel<GitRootRow[]> {
-  return eventChannel<GitRootRow[]>((emit) => {
-    const subscription = subscribeGitRoots(workspaceId, emit);
-    return () => subscription.dispose();
-  }, buffers.expanding<GitRootRow[]>());
-}
-
-function* forwardGitRootUpdates(
-  workspaceId: string,
-  channel: EventChannel<GitRootRow[]>,
-): SagaGenerator<void> {
-  try {
-    while (true) {
-      const gitRoots: GitRootRow[] = yield* take(channel);
-      if (gitRoots === (END as unknown as GitRootRow[])) return;
-      yield* put(gitRootsUpdated(workspaceId, gitRoots));
-    }
-  } finally {
-    channel.close();
-  }
-}
 
 function* reconcileGitRootsSubscriptions(
   active: Map<string, SubscriptionEntry>,
@@ -48,15 +20,22 @@ function* reconcileGitRootsSubscriptions(
   for (const [workspaceId, entry] of active) {
     if (desiredWorkspaceIds.has(workspaceId)) continue;
     active.delete(workspaceId);
-    yield* cancel(entry.task);
+    entry.dispose();
   }
 
   for (const workspaceId of activeWorkspaceIds) {
     if (active.has(workspaceId)) continue;
     try {
-      const channel = createGitRootsChannel(workspaceId);
-      const task = yield* spawn(forwardGitRootUpdates, workspaceId, channel);
-      active.set(workspaceId, { channel, task });
+      const reduxStore = yield* getContext<{
+        dispatch(action: ReturnType<typeof gitRootsUpdated>): unknown;
+      }>('reduxStore');
+      const entry: SubscriptionEntry = { dispose() {} };
+      active.set(workspaceId, entry);
+      const subscription = subscribeGitRoots(workspaceId, (rows) => {
+        if (active.get(workspaceId) === entry)
+          reduxStore.dispatch(gitRootsUpdated(workspaceId, rows));
+      });
+      entry.dispose = subscription.dispose;
     } catch (error) {
       logger.error('Failed to subscribe to gitRoot events', {
         workspaceId,
@@ -67,7 +46,7 @@ function* reconcileGitRootsSubscriptions(
 }
 
 function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
-  const initialWorkspaceIds = yield* selectActiveWorkspaceIds.effect();
+  const initialWorkspaceIds = yield* selectGitRootConsumerWorkspaceIds.effect();
   // Init to now (not 0, unlike the pr-monitor/background-hooks watchers):
   // the inline reconcile below already covers the leading edge, so a change
   // arriving within the window of saga start is trailing-debounced.
@@ -75,7 +54,7 @@ function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGen
   yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
 
   yield* takeLatestFromSelector(
-    selectActiveWorkspaceIds,
+    selectGitRootConsumerWorkspaceIds,
     function* ({ payload }: SelectorChannelPayload<string[]>) {
       // Leading edge is immediate: only a change arriving within the window
       // of the previous one is trailing-debounced (takeLatest cancels the
@@ -98,7 +77,7 @@ export function* gitRootsSaga(): SagaGenerator<void> {
     // `active` map.
     yield* call(watchActiveWorkspaces, active);
   } finally {
-    for (const entry of active.values()) yield* cancel(entry.task);
+    for (const entry of active.values()) entry.dispose();
     active.clear();
   }
 }

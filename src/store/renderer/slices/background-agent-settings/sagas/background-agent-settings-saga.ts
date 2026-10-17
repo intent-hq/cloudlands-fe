@@ -1,3 +1,5 @@
+import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
+import { settingsWorkScope } from '../../settings-events/sagas/settings-work-scope';
 import { settleBackgroundSettings } from './settle-background-settings';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { readSettingsSnapshot } from '../../settings-events/sagas/read-settings-snapshot';
@@ -35,10 +37,14 @@ import {
 const logger = createLogger('BackgroundAgentSettingsSaga');
 
 function* persistBackgroundAgentSettingsWorker() {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
+
   yield* take(backgroundSettingsWriteLock);
   const settings = yield* selectBgSettings.effect();
   try {
     const snapshot = yield* call(readSettingsSnapshot);
+    if (!work.isCurrent()) return;
     const rebased = rebaseBackgroundSettings(snapshot.settings, settings);
     const changes = backgroundSettingsChanges(rebased);
     if (rebased.providerId)
@@ -49,6 +55,7 @@ function* persistBackgroundAgentSettingsWorker() {
           applied: yield* call([appClient.settings, appClient.settings.update], changes),
           revision: 0,
         };
+    if (!work.isCurrent()) return;
     yield* call(
       settleBackgroundSettings,
       {
@@ -59,6 +66,7 @@ function* persistBackgroundAgentSettingsWorker() {
       rebased,
       result.applied,
     );
+    if (!work.isCurrent()) return;
     if (appClient.settings.updateSnapshot)
       yield* put(
         settingsChangesReceived(
@@ -70,11 +78,13 @@ function* persistBackgroundAgentSettingsWorker() {
         ),
       );
   } catch (error) {
+    if (!work.isCurrent()) return;
     logger.error('Failed to persist background agent settings:', error);
     yield* call(settleBackgroundSettings, {
       generation: settings.persistenceGeneration ?? 0,
       providerId: settings.providerId,
     });
+    if (!work.isCurrent()) return;
   } finally {
     yield* put(backgroundSettingsWriteLock, true);
   }
@@ -94,6 +104,9 @@ async function showProviderSwitchBlocked(
 function* hydrateBackgroundSettings(
   action: ReturnType<typeof backgroundSettingsHydrationRequested>,
 ) {
+  const work = captureSettingsWork();
+  if (!work.isCurrent()) return;
+
   const [settings] = action.payload;
   // Only the daemon snapshot is authoritative; the migration is local intent
   // until the ordered persistence owner accepts it.
@@ -102,6 +115,7 @@ function* hydrateBackgroundSettings(
     [safeLocalStorage, safeLocalStorage.getItemWithStatus],
     BG_MODEL_MIGRATION_MARKER_KEY,
   );
+  if (!work.isCurrent()) return;
   const needsMigration = !marker.hadError && marker.value !== '1';
   if (!needsMigration) return;
   const strip = (value: string) => (value === 'haiku4.5' ? '' : value);
@@ -125,6 +139,7 @@ function* hydrateBackgroundSettings(
     // pending. They must not bypass that write's acknowledgement.
     if (!(yield* selectBgSettings.effect()).persistencePending)
       yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+    if (!work.isCurrent()) return;
     return;
   }
   // The existing ordered owner reads the live snapshot, not this potentially
@@ -142,6 +157,7 @@ function* hydrateBackgroundSettings(
       // buffer, but its full snapshot still covers this migration generation.
       if (ack.generation < persistenceGeneration) continue;
       if (ack.savedValues) yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+      if (!work.isCurrent()) return;
       return;
     }
   } finally {
@@ -174,10 +190,14 @@ function* persistLoop() {
   }
 }
 
-export function* backgroundAgentSettingsSaga() {
+function* backgroundAgentSettingsSagaWork() {
   yield* all([
     call(persistLoop),
     takeEvery(backgroundProviderSwitchBlocked, showProviderSwitchBlocked),
     takeEvery(backgroundSettingsHydrationRequested, hydrateBackgroundSettings),
   ]);
+}
+
+export function* backgroundAgentSettingsSaga() {
+  yield* settingsWorkScope(backgroundAgentSettingsSagaWork);
 }

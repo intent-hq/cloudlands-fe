@@ -127,6 +127,11 @@ import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { readAgentSessionAfterCurrent } from '$features/agent/agent-read-service';
+import { acquireAgentMetadataDemand } from '$features/agent/agent-metadata-demand';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import {
@@ -694,10 +699,13 @@ function* confirmSnapshotIdleWorker(
   confirmation: IdleConfirmation,
   workspaceId: string,
 ): SagaGenerator<void> {
+  const release = acquireAgentMetadataDemand(workspaceId, { agentId });
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   const ownership = claimAgentReadOwnership(agentId, workspaceId);
   let retired = false;
   const isCurrent = () =>
     !retired &&
+    recovery.commit(() => undefined) &&
     ownership.isCurrent() &&
     isCurrentSubscription(coordinator, agentId, entry) &&
     entry.idleConfirmation === confirmation &&
@@ -724,12 +732,15 @@ function* confirmSnapshotIdleWorker(
     if (!session || session.workspaceId !== workspaceId || !isCurrent()) return;
     coordinator.locallyStartedTurns.delete(agentId);
     entry.wasStreaming = false;
-    yield* put(updateSession(agentId, completedActivityFields(session)));
-    yield* clearStaleStreamingMessageFlags(agentId);
+    yield* put(
+      withRecoveryLifetime(updateSession(agentId, completedActivityFields(session)), recovery),
+    );
+    yield* clearStaleStreamingMessageFlags(agentId, recovery);
   } catch (error) {
     logger.warn('Could not confirm idle chat snapshot', { agentId, error });
   } finally {
     retired = true;
+    release();
   }
 }
 
@@ -752,7 +763,11 @@ function settleStreaming(message: AgentMessage): AgentMessage {
  * subscription closes mid-turn. Message content is untouched; a re-view's
  * seq-0 snapshot re-canonicalizes the same message id.
  */
-function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> {
+function* clearStaleStreamingMessageFlags(
+  agentId: string,
+  recovery?: RecoveryLifetime,
+): SagaGenerator<void> {
+  if (recovery && !recovery.commit(() => undefined)) return;
   const session = yield* selectAgentSession.effect(agentId);
   const messages = session?.messages;
   if (!messages?.length) return;
@@ -760,7 +775,8 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
   const normalized = messages.map((message) =>
     claimsLiveness(message) ? settleStreaming(message) : message,
   );
-  yield* put(replaceMessages(agentId, normalized));
+  const action = replaceMessages(agentId, normalized);
+  yield* put(recovery ? withRecoveryLifetime(action, recovery) : action);
 }
 
 /**

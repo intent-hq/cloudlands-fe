@@ -1,3 +1,4 @@
+import { getRecoveryAdmission } from '../../middlewares/event-recovery';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import type { Note, NoteVersion, TaskStatus } from '$shared/types';
 import { isNoteContentStale } from '$shared/utils/note-content';
@@ -455,44 +456,46 @@ workspaceNotesReducer.with(
     });
   },
 );
-workspaceNotesReducer.with(
-  workspaceTasksPushed,
-  (state, { payload: [workspaceId, tasks, removedIds] }) => {
-    const ws = state.byWorkspaceId[workspaceId];
-    if (!ws) return state;
-    let notes = ws.notes;
-    for (const task of tasks) {
-      const note = getItem(notes, task.id as Note['id']);
-      if (!note) continue;
-      if (note.rev !== undefined && task.rev !== undefined && task.rev < note.rev) continue;
-      const metadata = {
-        ...note.metadata,
-        task: {
-          ...note.metadata?.task,
-          status: task.status,
-          dependsOn: task.dependsOn,
-          conflictsWith: task.conflictsWith,
-          unmetDependsOn: task.unmetDependsOn,
-        },
-      };
-      notes = updateItem(notes, {
-        id: note.id,
-        title: task.title,
-        metadata,
-        ...(task.rev !== undefined ? { rev: task.rev } : {}),
-      });
-    }
-    for (const id of removedIds) {
-      const note = getItem(notes, id as Note['id']);
-      if (!note?.metadata?.task) continue;
-      const { task: _task, ...metadata } = note.metadata;
-      notes = updateItem(notes, { id: note.id, metadata });
-    }
-    return notes === ws.notes
-      ? state
-      : setWorkspaceState(state, workspaceId, { ...ws, notes, notesVersion: ws.notesVersion + 1 });
-  },
-);
+workspaceNotesReducer.with(workspaceTasksPushed, (state, action) => {
+  const {
+    payload: [workspaceId, tasks, removedIds],
+  } = action;
+  const receipt = getRecoveryAdmission(action, `notes:${JSON.stringify([workspaceId])}`);
+  if (receipt !== undefined && !receipt?.commit(() => undefined)) return state;
+  const ws = state.byWorkspaceId[workspaceId];
+  if (!ws) return state;
+  let notes = ws.notes;
+  for (const task of tasks) {
+    const note = getItem(notes, task.id as Note['id']);
+    if (!note) continue;
+    if (note.rev !== undefined && task.rev !== undefined && task.rev < note.rev) continue;
+    const metadata = {
+      ...note.metadata,
+      task: {
+        ...note.metadata?.task,
+        status: task.status,
+        dependsOn: task.dependsOn,
+        conflictsWith: task.conflictsWith,
+        unmetDependsOn: task.unmetDependsOn,
+      },
+    };
+    notes = updateItem(notes, {
+      id: note.id,
+      title: task.title,
+      metadata,
+      ...(task.rev !== undefined ? { rev: task.rev } : {}),
+    });
+  }
+  for (const id of removedIds) {
+    const note = getItem(notes, id as Note['id']);
+    if (!note?.metadata?.task) continue;
+    const { task: _task, ...metadata } = note.metadata;
+    notes = updateItem(notes, { id: note.id, metadata });
+  }
+  return notes === ws.notes
+    ? state
+    : setWorkspaceState(state, workspaceId, { ...ws, notes, notesVersion: ws.notesVersion + 1 });
+});
 workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, note] }) => {
   if (note.workspaceId !== workspaceId) return state;
   const ws = getWorkspaceState(state, workspaceId);

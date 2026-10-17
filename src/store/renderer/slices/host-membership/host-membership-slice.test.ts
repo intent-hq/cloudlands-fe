@@ -10,6 +10,7 @@ import {
   hostMembershipFailed,
   hostMembershipFinished,
   hostMembershipDenied,
+  hostMembershipRecoveryCleared,
 } from './host-membership-slice';
 const target = { session: 'one', context: 'owner-a' };
 const other = { session: 'two', context: 'owner-b' };
@@ -75,4 +76,16 @@ it('rejects presence snapshots overtaken by a client event or a different presen
   state = reduce(state, hostUserPresenceSettled('next-session', state.presence.epoch, null));
   expect(state.presence.status).toBe('error');
   expect(state.presence.onlinePrincipalIds).toEqual([]);
+});
+
+it('keeps command ownership through snapshots and rejects another command settlement', () => {
+  let state = reduce(initialState, hostMembershipOpened(target));
+  state = reduce(state, hostMembershipStarted(target, true, 1));
+  state = reduce(state, hostMembershipLoaded(target, [owner], [], 4));
+  expect(state).toMatchObject({ busy: true, creating: true, operationId: 1 });
+  state = reduce(state, hostMembershipRecoveryCleared(target));
+  expect(state).toMatchObject({ busy: true, creating: true, operationId: 1 });
+  expect(reduce(state, hostMembershipFinished(target, 2))).toBe(state);
+  state = reduce(state, hostMembershipFinished(target, 1));
+  expect(state).toMatchObject({ busy: false, creating: false, operationId: null });
 });

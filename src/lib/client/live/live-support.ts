@@ -1,3 +1,5 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { runRecoveryRead } from './recovery-read-queue';
 /**
  * Shared helpers for the live domain clients.
  *
@@ -14,6 +16,10 @@
 import { isProjectionRejected } from '$shared/utils/note-content';
 import type { MutationResult, Unsubscribe } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+} from '$features/events/renderer-event-recovery';
 
 /**
  * Generate an idempotency key for create/commit/merge mutations (§5.6): a UUID
@@ -190,6 +196,19 @@ export async function runMutationWithId(
  */
 const WORKSPACE_LIST_TTL_MS = 2_000;
 
+const WORKSPACE_IDS_RECOVERY_KEY = 'typed-workspace-ids';
+let workspaceIdRecovery: RendererRecoveryHandle | undefined;
+let offWorkspaceIdRecovery: Unsubscribe | undefined;
+let workspaceIdAuthorityRetired = false;
+let workspaceIdOwnerEpoch: object = {};
+function workspaceScopeLifetime(lifetime: RecoveryLifetime): RecoveryLifetime {
+  const epoch = workspaceIdOwnerEpoch;
+  return {
+    key: epoch,
+    isCurrent: () => epoch === workspaceIdOwnerEpoch && lifetime.isCurrent(),
+    commit: (write) => epoch === workspaceIdOwnerEpoch && lifetime.commit(write),
+  };
+}
 let workspaceListCache: { ids: readonly string[]; fetchedAt: number } | null = null;
 let workspaceListRpcInFlight: Promise<string[]> | null = null;
 
@@ -214,9 +233,18 @@ function logWorkspaceListRpc(tag: string, detail?: string): void {
  * retryable after the transport recovers.
  */
 function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
+  const cacheLifetime = captureNoteWorkspaceCacheLifetime();
   if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
+  const lifetime = rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY);
+  const ownerEpoch = workspaceIdOwnerEpoch;
   logWorkspaceListRpc(tag, detail);
-  const fetch = backendRequest<{ workspaces?: unknown[] }>('workspace.list').then((result) => {
+  const fetch = runRecoveryRead(
+    WORKSPACE_IDS_RECOVERY_KEY,
+    workspaceScopeLifetime(lifetime),
+    'ordinary',
+    'list',
+    () => backendRequest<{ workspaces?: unknown[] }>('workspace.list'),
+  ).then((result) => {
     const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
     const ids = workspaces
       .map((w) =>
@@ -227,7 +255,14 @@ function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
         ),
       )
       .filter((id) => id.length > 0);
-    workspaceListCache = { ids, fetchedAt: Date.now() };
+    if (
+      ownerEpoch !== workspaceIdOwnerEpoch ||
+      !cacheLifetime.commit(() => {}) ||
+      !lifetime.commit(() => {
+        workspaceListCache = { ids, fetchedAt: Date.now() };
+      })
+    )
+      throw new Error('Workspace scope read retired');
     return ids;
   });
   workspaceListRpcInFlight = fetch;
@@ -249,6 +284,8 @@ function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
  *     callers coalesce onto the same promise).
  */
 async function listWorkspaceIdsOrThrow(tag: string): Promise<string[]> {
+  if (workspaceIdAuthorityRetired || workspaceIdRecovery?.status.stale)
+    throw new Error('Workspace scope reconciliation pending');
   if (sharedWorkspaceIds !== null) return [...sharedWorkspaceIds];
   if (
     workspaceListCache !== null &&
@@ -272,8 +309,11 @@ export async function listWorkspaceIds(tag = 'explicit'): Promise<string[]> {
 
 /** Test-only: clear the module-level workspace.list / note-resolution caches. */
 export function __resetLiveSupportCachesForTests(): void {
-  workspaceListCache = null;
+  offNoteWorkspaceCacheRecovery?.();
+  offNoteWorkspaceCacheRecovery = undefined;
+  invalidateNoteWorkspaceCache();
   workspaceListRpcInFlight = null;
+  workspaceIdAuthorityRetired = false;
   noteResolveNegativeCache.clear();
   noteResolveScansInFlight.clear();
 }
@@ -348,6 +388,8 @@ function notifyWorkspaceIdListeners(): void {
 function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
   workspaceIdFetchInFlight = true;
   const startGeneration = workspaceIdMutationGeneration;
+  const ownerEpoch = workspaceIdOwnerEpoch;
+  const lifetime = rendererEventRecovery.capture(WORKSPACE_IDS_RECOVERY_KEY);
   // Raw single-flighted RPC on purpose: `listWorkspaceIds()` would serve the
   // (possibly stale) shared set / TTL cache right back, defeating the resync.
   // Joining an ALREADY-in-flight RPC (e.g. an earlier resolver fetch) means
@@ -357,6 +399,7 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
   if (workspaceListRpcInFlight !== null) workspaceIdFetchFollowUpWanted = true;
   void fetchWorkspaceIdsRpc(tag, detail)
     .then((ids) => {
+      if (ownerEpoch !== workspaceIdOwnerEpoch) return;
       // An incremental update raced this fetch, so its result may already be
       // stale (it was computed before that update landed). Arm the trailing
       // coalesced follow-up (below) so we reconcile with one more fetch
@@ -371,11 +414,14 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
         workspaceIdFetchFollowUpWanted = true;
         if (sharedWorkspaceIds !== null) return;
       }
-      sharedWorkspaceIds = new Set(ids);
-      workspaceIdMutationGeneration += 1;
-      notifyWorkspaceIdListeners();
+      lifetime.commit(() => {
+        sharedWorkspaceIds = new Set(ids);
+        workspaceIdMutationGeneration += 1;
+        notifyWorkspaceIdListeners();
+      });
     })
     .catch(() => {
+      if (ownerEpoch !== workspaceIdOwnerEpoch) return;
       // Transport failure: deliver a best-effort empty list to listeners so
       // they are not left waiting, but do NOT install an empty set — the set
       // stays unseeded (`null`) so `listWorkspaceIds()` keeps falling through
@@ -387,6 +433,7 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
       }
     })
     .finally(() => {
+      if (ownerEpoch !== workspaceIdOwnerEpoch) return;
       workspaceIdFetchInFlight = false;
       if (!workspaceIdFetchFollowUpWanted) return;
       workspaceIdFetchFollowUpWanted = false;
@@ -406,6 +453,7 @@ function runWorkspaceIdResyncFetch(tag: string, detail?: string): void {
  * `tag`/`detail` name the trigger in the RPC debug log.
  */
 function resyncWorkspaceIds(tag: string, detail?: string): void {
+  if (workspaceIdAuthorityRetired || workspaceIdRecovery?.status.stale) return;
   if (workspaceIdFetchFollowUpTimer !== undefined) return;
   if (workspaceIdFetchInFlight) {
     workspaceIdFetchFollowUpWanted = true;
@@ -496,6 +544,7 @@ function isCreatedWorkspaceArchived(data: unknown): boolean {
  */
 function applyWorkspaceIdEvent(method: string, params: unknown): void {
   if (!isEventOneOf(method, params, WORKSPACE_ID_SET_EVENTS)) return;
+  if (!rendererEventRecovery.push(WORKSPACE_IDS_RECOVERY_KEY)) return;
   const type = resolveEventType(params);
   if (type === undefined) {
     resyncWorkspaceIds('defensive-resync', 'typeless event payload');
@@ -554,7 +603,75 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
   workspaceIdListeners.set(listenerId, listener);
 
   if (workspaceIdRefCount === 1) {
-    offWorkspaceIdNotify = onBackendNotification((n) => applyWorkspaceIdEvent(n.method, n.params));
+    workspaceIdAuthorityRetired = false;
+    let installed = false;
+    offWorkspaceIdRecovery = rendererEventRecovery.onSession((scope) => {
+      workspaceIdOwnerEpoch = {};
+      workspaceIdAuthorityRetired = false;
+      workspaceIdRecovery = scope.registerResource({
+        key: WORKSPACE_IDS_RECOVERY_KEY,
+        workspaceId: null,
+        eventTypes: WORKSPACE_ID_SET_EVENTS,
+        isCurrent: () => workspaceIdRefCount > 0,
+        read: ({ request, lifetime }) =>
+          runRecoveryRead(
+            WORKSPACE_IDS_RECOVERY_KEY,
+            workspaceScopeLifetime(lifetime),
+            'recovery',
+            'list',
+            async () => {
+              const result = await request<{ workspaces: { id?: string; workspaceId?: string }[] }>(
+                'workspace.list',
+              );
+              return result.workspaces
+                .map((row) => row.id ?? row.workspaceId ?? '')
+                .filter(Boolean);
+            },
+          ),
+        apply: (ids) => {
+          sharedWorkspaceIds = new Set(ids);
+          workspaceListCache = { ids, fetchedAt: Date.now() };
+          workspaceIdMutationGeneration++;
+          notifyWorkspaceIdListeners();
+        },
+        invalidate: () => {
+          workspaceListCache = null;
+          noteWorkspaceIndex.clear();
+          noteResolveNegativeCache.clear();
+          noteResolveScansInFlight.clear();
+        },
+        retire: () => {
+          workspaceIdAuthorityRetired = true;
+          workspaceIdOwnerEpoch = {};
+          workspaceIdFetchInFlight = false;
+          workspaceIdFetchFollowUpWanted = false;
+          if (workspaceIdFetchFollowUpTimer !== undefined)
+            clearTimeout(workspaceIdFetchFollowUpTimer);
+          workspaceIdFetchFollowUpTimer = undefined;
+          sharedWorkspaceIds = null;
+          workspaceListCache = null;
+          workspaceListRpcInFlight = null;
+          workspaceIdMutationGeneration++;
+          noteWorkspaceIndex.clear();
+          noteResolveNegativeCache.clear();
+          noteResolveScansInFlight.clear();
+          notifyWorkspaceIdListeners();
+        },
+      });
+      offWorkspaceIdNotify?.();
+      offWorkspaceIdNotify = onBackendNotification((n) => {
+        if (scope.isCurrent()) applyWorkspaceIdEvent(n.method, n.params);
+      });
+      if (installed) resyncWorkspaceIds('recovery-session');
+      installed = true;
+      return () => {
+        workspaceIdRecovery?.dispose();
+        workspaceIdRecovery = undefined;
+      };
+    });
+    offWorkspaceIdNotify ??= onBackendNotification((n) =>
+      applyWorkspaceIdEvent(n.method, n.params),
+    );
     offWorkspaceIdReconnect = onBackendReconnected(() => resyncWorkspaceIds('reconnect'));
     resyncWorkspaceIds('seed');
   } else if (sharedWorkspaceIds !== null) {
@@ -568,6 +685,11 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
     workspaceIdListeners.delete(listenerId);
     workspaceIdRefCount -= 1;
     if (workspaceIdRefCount > 0) return;
+    workspaceIdOwnerEpoch = {};
+    workspaceIdFetchInFlight = false;
+    workspaceListRpcInFlight = null;
+    offWorkspaceIdRecovery?.();
+    offWorkspaceIdRecovery = undefined;
     offWorkspaceIdNotify?.();
     offWorkspaceIdNotify = null;
     offWorkspaceIdReconnect?.();
@@ -586,14 +708,79 @@ export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void
 
 /** noteId → workspaceId, populated as notes are listed so note-scoped reads resolve. */
 const noteWorkspaceIndex = new Map<string, string>();
+const NOTE_WORKSPACE_CACHE_KEY = 'note-workspace-cache';
+let noteWorkspaceCacheEpoch: object = {};
+let offNoteWorkspaceCacheRecovery: Unsubscribe | undefined;
+function invalidateNoteWorkspaceCache(): void {
+  noteWorkspaceCacheEpoch = {};
+  workspaceListCache = null;
+  noteWorkspaceIndex.clear();
+  noteResolveNegativeCache.clear();
+  noteResolveScansInFlight.clear();
+}
+function ensureNoteWorkspaceCacheRecovery(): void {
+  offNoteWorkspaceCacheRecovery ??= rendererEventRecovery.onSession((scope) => {
+    invalidateNoteWorkspaceCache();
+    const owner = scope.registerResource({
+      key: NOTE_WORKSPACE_CACHE_KEY,
+      workspaceId: null,
+      eventTypes: ['workspace:*', 'note:*', 'task:*'],
+      active: false,
+      isCurrent: () => scope.isCurrent(),
+      read: async () => undefined,
+      apply: () => {},
+      invalidate: invalidateNoteWorkspaceCache,
+      retire: () => {
+        invalidateNoteWorkspaceCache();
+      },
+    });
+    return () => owner.dispose();
+  });
+}
 
 /**
  * Record the workspace a note belongs to (called from `LiveNotesClient.list`).
  * Discovering a note also clears any negative-cache entry for it so a note
  * that appears within the negative TTL resolves immediately.
  */
-export function rememberNoteWorkspace(noteId: string, workspaceId: string): void {
-  if (noteId && workspaceId) {
+export function captureNoteWorkspaceCacheLifetime(): RecoveryLifetime {
+  ensureNoteWorkspaceCacheRecovery();
+  const epoch = noteWorkspaceCacheEpoch;
+  const authority = workspaceScopeLifetime(
+    rendererEventRecovery.captureAuthority(NOTE_WORKSPACE_CACHE_KEY),
+  );
+  return {
+    key: epoch,
+    isCurrent: () => epoch === noteWorkspaceCacheEpoch && authority.isCurrent(),
+    commit: (write) => epoch === noteWorkspaceCacheEpoch && authority.commit(write),
+  };
+}
+
+/** Capture all original owners before a resolver can discover the target workspace. */
+export function captureNoteMutationAuthority(): (workspaceId: string) => boolean {
+  const cache = captureNoteWorkspaceCacheLifetime();
+  const selectAuthority = rendererEventRecovery.captureAuthoritySelector();
+  return (workspaceId) =>
+    cache.isCurrent() &&
+    ['notes', 'tasks'].every((domain) =>
+      selectAuthority(`${domain}:${JSON.stringify([workspaceId])}`).isCurrent(),
+    );
+}
+
+export function rememberNoteWorkspace(
+  noteId: string,
+  workspaceId: string,
+  lifetime?: RecoveryLifetime,
+): void {
+  ensureNoteWorkspaceCacheRecovery();
+  if (lifetime && !lifetime.commit(() => {})) return;
+  if (
+    noteId &&
+    workspaceId &&
+    !workspaceIdAuthorityRetired &&
+    !workspaceIdRecovery?.status.stale &&
+    (sharedWorkspaceIds === null || sharedWorkspaceIds.has(workspaceId))
+  ) {
     noteWorkspaceIndex.set(noteId, workspaceId);
     noteResolveNegativeCache.delete(noteId);
   }
@@ -623,6 +810,7 @@ const noteResolveScansInFlight = new Map<string, Promise<string | null>>();
  * so the next resolution retries instead of serving a stale `null`.
  */
 async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
+  const lifetime = captureNoteWorkspaceCacheLifetime();
   let workspaceIds: string[];
   try {
     workspaceIds = await listWorkspaceIdsOrThrow('resolver');
@@ -631,6 +819,7 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
   }
   let scanComplete = true;
   for (const workspaceId of workspaceIds) {
+    if (!lifetime.commit(() => undefined)) return null;
     try {
       // Only ids are needed — request the slim projection (§5.2), falling back
       // to a plain full list on daemons that reject the unknown param (-32602).
@@ -642,8 +831,10 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
         });
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
+        if (!lifetime.commit(() => {})) return null;
         result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       }
+      if (!lifetime.commit(() => undefined)) return null;
       const notes = Array.isArray(result?.notes) ? result.notes : [];
       let found = false;
       for (const note of notes) {
@@ -658,7 +849,8 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
       scanComplete = false;
     }
   }
-  if (scanComplete && workspaceIds.length > 0) noteResolveNegativeCache.set(noteId, Date.now());
+  if (scanComplete && lifetime.commit(() => {}) && workspaceIds.length > 0)
+    noteResolveNegativeCache.set(noteId, Date.now());
   return null;
 }
 
@@ -672,8 +864,11 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
  * unknown note performs one scan, not many.
  */
 export async function resolveNoteWorkspaceId(noteId: string): Promise<string | null> {
+  ensureNoteWorkspaceCacheRecovery();
+  if (workspaceIdAuthorityRetired || workspaceIdRecovery?.status.stale) return null;
   const cached = noteWorkspaceIndex.get(noteId);
-  if (cached) return cached;
+  if (cached && (sharedWorkspaceIds === null || sharedWorkspaceIds.has(cached))) return cached;
+  if (cached) noteWorkspaceIndex.delete(noteId);
 
   const missedAt = noteResolveNegativeCache.get(noteId);
   if (missedAt !== undefined) {
@@ -685,7 +880,7 @@ export async function resolveNoteWorkspaceId(noteId: string): Promise<string | n
   if (inFlight) return inFlight;
 
   const scan = scanForNoteWorkspace(noteId).finally(() => {
-    noteResolveScansInFlight.delete(noteId);
+    if (noteResolveScansInFlight.get(noteId) === scan) noteResolveScansInFlight.delete(noteId);
   });
   noteResolveScansInFlight.set(noteId, scan);
   return scan;

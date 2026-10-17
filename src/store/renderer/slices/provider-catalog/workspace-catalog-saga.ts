@@ -1,9 +1,34 @@
+import {
+  retireWorkspaceCatalogReads,
+  trackWorkspaceCatalogRead,
+} from './workspace-catalog-read-flight';
+import {
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+  withRecoveryLifetime,
+} from '../../middlewares/event-recovery';
+import { invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+} from '$features/events/renderer-event-recovery';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { store } from '../../store';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import {
+  readRecoveryCatalog,
+  settleCatalogReads,
+  workspaceCatalogRecoveryKey,
+} from './workspace-catalog-recovery';
 import { eventChannel, buffers } from 'redux-saga';
 import { createChannelFromSelector } from '@themislib/themis/saga';
 import { call, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { backendRequest, onBackendReconnected } from '$lib/client/live/backend-transport';
-import { getProviderAuthVerdicts } from '$features/providers/provider-auth-status.client';
+import {
+  getProviderAuthVerdicts,
+  invalidateProviderAuthStatus,
+} from '$features/providers/provider-auth-status.client';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeSingleFlightInContext } from '../../utils/context-saga-effects';
 import { selectMountedWorkspaceIds } from '../workspace-lifecycle/workspace-lifecycle-selectors';
@@ -14,6 +39,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   workspaceCatalogRequested,
+  workspaceCatalogRetired,
   workspaceCatalogReadStarted,
   workspaceCatalogReadFailed,
   ensureWorkspaceCatalogRequested,
@@ -57,6 +83,9 @@ const ALL_RESOURCES: WorkspaceCatalogResource[] = [
 type Reads = {
   queued: Map<string, Set<WorkspaceCatalogResource>>;
   pending: Map<string, WorkspaceCatalogUpdate[]>;
+  receipts: Map<string, RecoveryLifetime>;
+  recovery: Map<string, () => void>;
+  handles: Map<string, RendererRecoveryHandle>;
 };
 type CatalogAction =
   | ReturnType<typeof workspaceCatalogRequested>
@@ -64,22 +93,91 @@ type CatalogAction =
   | ReturnType<typeof workspaceDeleted>
   | ReturnType<typeof removeWorkspaceEntity>;
 
-function* publishDisabled(workspaceId: string, snapshot: WorkspaceCatalogSnapshot) {
-  yield* put(
-    setWorkspaceDisabledMcpServers(
-      workspaceId,
-      Object.fromEntries(
-        (snapshot.mcpServers ?? []).flatMap((server) =>
-          server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
-        ),
+function* publishDisabled(
+  workspaceId: string,
+  snapshot: WorkspaceCatalogSnapshot,
+  receipt?: RecoveryLifetime,
+) {
+  const action = setWorkspaceDisabledMcpServers(
+    workspaceId,
+    Object.fromEntries(
+      (snapshot.mcpServers ?? []).flatMap((server) =>
+        server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
       ),
     ),
   );
+  yield* put(receipt ? withRecoveryLifetime(action, receipt) : action);
+}
+
+function ensureRecovery(reads: Reads, workspaceId: string) {
+  if (reads.recovery.has(workspaceId)) return;
+  const stop = rendererEventRecovery.onSession((scope) => {
+    const authority = selectPrincipalActionContext.select(store.state);
+    const owner = scope.registerResource({
+      key: workspaceCatalogRecoveryKey(workspaceId),
+      workspaceId,
+      eventTypes: [
+        'settings:changed',
+        'specialists:changed',
+        'skills:changed',
+        'mcp.servers:status-changed',
+        'workspace:updated',
+        'provider:auth-changed',
+      ],
+      isCurrent: () =>
+        reads.recovery.has(workspaceId) &&
+        authority === selectPrincipalActionContext.select(store.state),
+      read: (reader) =>
+        trackWorkspaceCatalogRead(workspaceId, () => readRecoveryCatalog(workspaceId, reader)),
+      apply: (snapshot) => {
+        store.dispatch(
+          workspaceCatalogReceived(
+            workspaceId,
+            snapshot,
+            selectWorkspaceCatalogEpoch.select(store.state),
+          ),
+        );
+        store.dispatch(
+          setWorkspaceDisabledMcpServers(
+            workspaceId,
+            Object.fromEntries(
+              (snapshot.mcpServers ?? []).flatMap((server) =>
+                server.workspaceDisabled ? [[getMcpServerKey(server), true as const]] : [],
+              ),
+            ),
+          ),
+        );
+      },
+      invalidate: () => {
+        invalidateSettingsReadCache();
+        invalidateProviderAuthStatus();
+        reads.pending.get(workspaceId)?.splice(0);
+        store.dispatch(workspaceCatalogReadStarted(workspaceId));
+      },
+      retire: () => {
+        invalidateSettingsReadCache();
+        invalidateProviderAuthStatus();
+        reads.pending.get(workspaceId)?.splice(0);
+        store.dispatch(workspaceCatalogRetired(workspaceId));
+        store.dispatch(setWorkspaceDisabledMcpServers(workspaceId, {}));
+      },
+    });
+    reads.handles.set(workspaceId, owner);
+    return () => {
+      reads.handles.delete(workspaceId);
+      owner.dispose();
+    };
+  });
+  reads.recovery.set(workspaceId, stop);
 }
 
 function* readCatalog(reads: Reads, action: CatalogAction) {
   if (action.type !== workspaceCatalogRequested.type) return;
   const [workspaceId] = action.payload;
+  ensureRecovery(reads, workspaceId);
+  if (reads.handles.get(workspaceId)?.status.stale) return;
+  const receipt = rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
+  reads.receipts.set(workspaceId, receipt);
   const epoch = yield* selectWorkspaceCatalogEpoch.effect();
   const previous = yield* selectWorkspaceCatalog.effect(workspaceId);
   const resources = previous
@@ -94,89 +192,98 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
     const { patch } = yield* race({
       invalidated: take([workspaceCatalogInvalidated, hostExecutionConnectionChanged]),
       patch: call(async (): Promise<Partial<WorkspaceCatalogSnapshot>> => {
-        const result: Partial<WorkspaceCatalogSnapshot> = {};
-        await Promise.all([
-          resources.has('catalog') &&
-            appClient.providers.catalog(workspaceId).then((catalog) => {
-              result.catalog = catalog;
-            }),
-          resources.has('settings') &&
-            appClient.settings.list(workspaceId).then((settings) => {
-              result.settings = settings;
-            }),
-          resources.has('specialists') &&
-            (appClient.specialists.listCatalog
-              ? appClient.specialists.listCatalog(undefined, workspaceId, { includeProject: true })
-              : appClient.specialists
-                  .list(undefined, workspaceId)
-                  .then((specialists) => ({ specialists, importDiagnostics: undefined }))
-            ).then(({ specialists, importDiagnostics }) => {
-              result.specialists = specialists;
-              result.importDiagnostics = importDiagnostics;
-            }),
-          resources.has('readiness') &&
-            Promise.all([
-              backendRequest<{
-                providers: Array<{
-                  id: string;
-                  installed: boolean;
-                  gatedOff?: string | null;
-                  hasNpxFallback?: boolean;
-                }>;
-              }>('host.providerDiscovery', { workspaceId }),
-              getProviderAuthVerdicts({ workspaceId }),
-            ]).then(([discovery, auth]) => {
-              result.readiness = Object.fromEntries(
-                discovery.providers.map((p) => [
-                  p.id,
-                  {
-                    available: p.installed && !p.gatedOff,
-                    ...auth[p.id],
-                    hasNpxFallback: p.hasNpxFallback,
-                  },
-                ]),
-              );
-            }),
-          resources.has('mcp') &&
-            appClient.settings.getMcpServers(workspaceId).then(async (servers) => {
-              if (!active) return;
-              result.mcpServers = servers.map(copyServerForState);
-              const known = new Set([
-                ...(resources.has('catalog') ? [] : (previous?.mcpStatuses ?? [])).map(
-                  (status) => status.serverId,
-                ),
-                ...updates.flatMap((update) =>
-                  update.kind === 'status' ? [update.status.serverId] : [],
-                ),
-              ]);
-              const ids = servers.flatMap((server) =>
-                server.id && !known.has(server.id) ? [server.id] : [],
-              );
-              const statuses = ids.length
-                ? await appClient.settings.getMcpServerStatuses(ids, workspaceId)
-                : [];
-              result.mcpStatuses = [
-                ...(previous?.mcpStatuses ?? []).filter(
-                  (status) =>
-                    servers.some((server) => server.id === status.serverId) &&
-                    !statuses.some((fresh) => fresh.serverId === status.serverId),
-                ),
-                ...statuses,
-              ];
-            }),
-        ]);
-        return result;
+        return trackWorkspaceCatalogRead(workspaceId, async () => {
+          if (!active) throw new Error('Workspace catalog demand retired');
+          const result: Partial<WorkspaceCatalogSnapshot> = {};
+          await settleCatalogReads([
+            resources.has('catalog') &&
+              appClient.providers.catalog(workspaceId).then((catalog) => {
+                result.catalog = catalog;
+              }),
+            resources.has('settings') &&
+              appClient.settings.list(workspaceId).then((settings) => {
+                result.settings = settings;
+              }),
+            resources.has('specialists') &&
+              (appClient.specialists.listCatalog
+                ? appClient.specialists.listCatalog(undefined, workspaceId, {
+                    includeProject: true,
+                  })
+                : appClient.specialists
+                    .list(undefined, workspaceId)
+                    .then((specialists) => ({ specialists, importDiagnostics: undefined }))
+              ).then(({ specialists, importDiagnostics }) => {
+                result.specialists = specialists;
+                result.importDiagnostics = importDiagnostics;
+              }),
+            resources.has('readiness') &&
+              settleCatalogReads([
+                backendRequest<{
+                  providers: Array<{
+                    id: string;
+                    installed: boolean;
+                    gatedOff?: string | null;
+                    hasNpxFallback?: boolean;
+                  }>;
+                }>('host.providerDiscovery', { workspaceId }),
+                getProviderAuthVerdicts({ workspaceId }),
+              ]).then(([discovery, auth]) => {
+                result.readiness = Object.fromEntries(
+                  discovery.providers.map((p) => [
+                    p.id,
+                    {
+                      available: p.installed && !p.gatedOff,
+                      ...auth[p.id],
+                      hasNpxFallback: p.hasNpxFallback,
+                    },
+                  ]),
+                );
+              }),
+            resources.has('mcp') &&
+              appClient.settings.getMcpServers(workspaceId).then(async (servers) => {
+                if (!active || !receipt.isCurrent()) return;
+                result.mcpServers = servers.map(copyServerForState);
+                const known = new Set([
+                  ...(resources.has('catalog') ? [] : (previous?.mcpStatuses ?? [])).map(
+                    (status) => status.serverId,
+                  ),
+                  ...updates.flatMap((update) =>
+                    update.kind === 'status' ? [update.status.serverId] : [],
+                  ),
+                ]);
+                const ids = servers.flatMap((server) =>
+                  server.id && !known.has(server.id) ? [server.id] : [],
+                );
+                const statuses = ids.length
+                  ? await appClient.settings.getMcpServerStatuses(ids, workspaceId)
+                  : [];
+                result.mcpStatuses = [
+                  ...(previous?.mcpStatuses ?? []).filter(
+                    (status) =>
+                      servers.some((server) => server.id === status.serverId) &&
+                      !statuses.some((fresh) => fresh.serverId === status.serverId),
+                  ),
+                  ...statuses,
+                ];
+              }),
+          ]);
+          return result;
+        });
       }),
     });
     if (!patch) return;
-    // A push is newer than every point read already in flight. Replay it even on
-    // first hydration, where there was no cached snapshot to update immediately.
+    // Preserve the ordinary pre-loss journal during hydration. Loss invalidation
+    // clears it and retires this read receipt; recovery never replays this journal.
     const current = yield* selectWorkspaceCatalog.effect(workspaceId);
     let snapshot = { ...current, ...patch } as WorkspaceCatalogSnapshot;
     for (const update of updates) snapshot = applyWorkspaceCatalogUpdate(snapshot, update);
-    yield* put(workspaceCatalogReceived(workspaceId, snapshot, epoch));
+    const commitReceipt = reads.receipts.get(workspaceId);
+    if (!commitReceipt?.commit(() => undefined)) return;
+    yield* put(
+      withRecoveryLifetime(workspaceCatalogReceived(workspaceId, snapshot, epoch), commitReceipt),
+    );
     if (epoch === (yield* selectWorkspaceCatalogEpoch.effect()) && resources.has('mcp')) {
-      yield* publishDisabled(workspaceId, snapshot);
+      yield* publishDisabled(workspaceId, snapshot, reads.receipts.get(workspaceId));
     }
   } catch (error) {
     const queued = reads.queued.get(workspaceId) ?? new Set<WorkspaceCatalogResource>();
@@ -187,6 +294,7 @@ function* readCatalog(reads: Reads, action: CatalogAction) {
   } finally {
     active = false;
     reads.pending.delete(workspaceId);
+    reads.receipts.delete(workspaceId);
   }
 }
 
@@ -225,12 +333,21 @@ function* watchProviderReadiness() {
   }
 }
 
-function* applyPush(reads: Reads, workspaceId: string, update: WorkspaceCatalogUpdate) {
+function* applyPush(
+  reads: Reads,
+  workspaceId: string,
+  update: WorkspaceCatalogUpdate,
+  admitted?: RecoveryLifetime,
+) {
+  if (!admitted && !rendererEventRecovery.push(workspaceCatalogRecoveryKey(workspaceId))) return;
+  const token = admitted ?? rendererEventRecovery.capture(workspaceCatalogRecoveryKey(workspaceId));
+  if (!token.commit(() => undefined)) return;
+  if (reads.pending.has(workspaceId)) reads.receipts.set(workspaceId, token);
   reads.pending.get(workspaceId)?.push(update);
-  yield* put(workspaceCatalogUpdated(workspaceId, update));
+  yield* put(withRecoveryLifetime(workspaceCatalogUpdated(workspaceId, update), token));
   if (update.kind === 'toggle') {
     const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
-    if (snapshot) yield* publishDisabled(workspaceId, snapshot);
+    if (snapshot) yield* publishDisabled(workspaceId, snapshot, token);
   }
 }
 
@@ -260,6 +377,12 @@ function* onEvent(
     event.workspaceId || (typeof data?.workspaceId === 'string' ? data.workspaceId : undefined);
   const targets = scope ? mounted.filter((id) => id === scope) : mounted;
   for (const workspaceId of targets) {
+    const admission = getRecoveryAdmission(action, workspaceCatalogRecoveryKey(workspaceId));
+    if (admission === null || (admission && !admission.commit(() => undefined))) continue;
+    const request = (resources: WorkspaceCatalogResource[]) => {
+      const refresh = workspaceCatalogRequested(workspaceId, resources);
+      return admission ? withRecoveryLifetime(refresh, admission) : refresh;
+    };
     // WorkspaceEventType covers timeline events; daemon catalog events have additional names.
     switch (event.type as string) {
       case 'settings:changed': {
@@ -274,11 +397,11 @@ function* onEvent(
           : [];
         if (!changes.length) {
           // Missing deltas cannot update definitions, but do not invalidate unrelated resources.
-          yield* put(workspaceCatalogRequested(workspaceId, ['settings']));
+          yield* put(request(['settings']));
           break;
         }
         const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
-        yield* applyPush(reads, workspaceId, { kind: 'settings', changes });
+        yield* applyPush(reads, workspaceId, { kind: 'settings', changes }, admission);
         const resources = new Set<WorkspaceCatalogResource>();
         if (
           snapshot &&
@@ -293,13 +416,13 @@ function* onEvent(
           resources.add('readiness');
         if (changes.some((change) => change.path === 'specialists.dir'))
           resources.add('specialists');
-        if (resources.size) yield* put(workspaceCatalogRequested(workspaceId, [...resources]));
+        if (resources.size) yield* put(request([...resources]));
         break;
       }
       case 'specialists:changed':
       case 'skills:changed':
         // Both supported events name the affected workspace, including user-tier changes.
-        if (scope) yield* put(workspaceCatalogRequested(workspaceId, ['specialists']));
+        if (scope) yield* put(request(['specialists']));
         break;
       case 'mcp.servers:status-changed': {
         const status = data?.status as { state?: unknown; lastError?: unknown } | undefined;
@@ -309,16 +432,21 @@ function* onEvent(
           mapDaemonMcpState(status.state) === null
         )
           break;
-        yield* applyPush(reads, workspaceId, {
-          kind: 'status',
-          status: {
-            serverId: data.serverId,
-            state: status.state as NonNullable<
-              WorkspaceCatalogSnapshot['mcpStatuses']
-            >[number]['state'],
-            ...(typeof status.lastError === 'string' ? { lastError: status.lastError } : {}),
+        yield* applyPush(
+          reads,
+          workspaceId,
+          {
+            kind: 'status',
+            status: {
+              serverId: data.serverId,
+              state: status.state as NonNullable<
+                WorkspaceCatalogSnapshot['mcpStatuses']
+              >[number]['state'],
+              ...(typeof status.lastError === 'string' ? { lastError: status.lastError } : {}),
+            },
           },
-        });
+          admission,
+        );
         break;
       }
       case 'workspace:updated': {
@@ -330,11 +458,16 @@ function* onEvent(
           typeof toggle?.serverId === 'string' &&
           typeof toggle.workspaceDisabled === 'boolean'
         ) {
-          yield* applyPush(reads, workspaceId, {
-            kind: 'toggle',
-            serverId: toggle.serverId,
-            workspaceDisabled: toggle.workspaceDisabled,
-          });
+          yield* applyPush(
+            reads,
+            workspaceId,
+            {
+              kind: 'toggle',
+              serverId: toggle.serverId,
+              workspaceDisabled: toggle.workspaceDisabled,
+            },
+            admission,
+          );
         }
         break;
       }
@@ -350,11 +483,16 @@ function* onConfirmedToggle(
   const snapshot = yield* selectWorkspaceCatalog.effect(workspaceId);
   const server = snapshot?.mcpServers?.find((entry) => getMcpServerKey(entry) === key);
   if (server?.id)
-    yield* applyPush(reads, workspaceId, {
-      kind: 'toggle',
-      serverId: server.id,
-      workspaceDisabled,
-    });
+    yield* applyPush(
+      reads,
+      workspaceId,
+      {
+        kind: 'toggle',
+        serverId: server.id,
+        workspaceDisabled,
+      },
+      getRecoveryLifetime(action),
+    );
 }
 
 function* watchReconnects(seen: Set<string>) {
@@ -365,6 +503,7 @@ function* watchReconnects(seen: Set<string>) {
   try {
     while (true) {
       yield* take(channel);
+      retireWorkspaceCatalogReads();
       seen.clear();
       yield* put(workspaceCatalogInvalidated(true));
       yield* refreshMountedCatalogs();
@@ -375,7 +514,13 @@ function* watchReconnects(seen: Set<string>) {
 }
 
 export function* workspaceCatalogSaga() {
-  const reads: Reads = { queued: new Map(), pending: new Map() };
+  const reads: Reads = {
+    queued: new Map(),
+    pending: new Map(),
+    receipts: new Map(),
+    recovery: new Map(),
+    handles: new Map(),
+  };
   const seen = new Set<string>();
   yield* takeSingleFlightInContext(
     [workspaceCatalogRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
@@ -383,6 +528,9 @@ export function* workspaceCatalogSaga() {
       const [workspaceId] = action.payload;
       if (action.type !== workspaceCatalogRequested.type) {
         reads.queued.delete(workspaceId);
+        const stop = reads.recovery.get(workspaceId);
+        reads.recovery.delete(workspaceId);
+        stop?.();
         return { context: workspaceId, cancel: true as const };
       }
       const resources = reads.queued.get(workspaceId) ?? new Set<WorkspaceCatalogResource>();
@@ -397,6 +545,7 @@ export function* workspaceCatalogSaga() {
   yield* takeEvery(ensureWorkspaceCatalogRequested, ensureCatalog, reads);
   yield* takeEvery(workspaceMounted, onMount);
   yield* takeEvery(hostExecutionConnectionChanged, function* () {
+    retireWorkspaceCatalogReads();
     const mounted = yield* selectMountedWorkspaceIds.effect();
     for (const workspaceId of mounted) yield* put(workspaceCatalogRequested(workspaceId));
   });
@@ -404,4 +553,11 @@ export function* workspaceCatalogSaga() {
   yield* takeEvery(setWorkspaceMcpServerDisabled, onConfirmedToggle, reads);
   yield* fork(watchReconnects, seen);
   yield* fork(watchProviderReadiness);
+  try {
+    yield* take(() => false);
+  } finally {
+    retireWorkspaceCatalogReads();
+    for (const stop of reads.recovery.values()) stop();
+    reads.recovery.clear();
+  }
 }

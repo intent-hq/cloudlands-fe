@@ -1,3 +1,9 @@
+import { trackAgentMetadataRead } from './agent-metadata-read-lane';
+import { acquireAgentMetadataDemand } from './agent-metadata-demand';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { agentMetadataRecoveryKey } from './agent-recovery-keys';
 import { claimAgentReadOwnership, getAgentReadContext } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
@@ -63,6 +69,13 @@ function readKey(agentId: string, workspaceId?: string): string {
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
 const inFlight = new Map<string, Promise<AgentSession | null>>();
+
+/** Logical deadlines release callers, but confirmation must await the actual wire replies. */
+const physicalReads = new WeakMap<object, Map<string, Set<Promise<void>>>>();
+
+function physicalReadKey(agentId: string, workspaceId?: string): string {
+  return JSON.stringify([workspaceId ?? null, agentId]);
+}
 
 /** In-flight guarded hydrations keyed by agent id; prevents duplicate store writes. */
 const hydrationInFlight = new Map<string, Promise<AgentSession | null>>();
@@ -165,11 +178,13 @@ function preserveLocalUpdates(
  * If a read is already in flight, one trailing read is scheduled after it;
  * further events during that read share the same trailing promise.
  */
-export async function refreshAgentSessionAfterEvent(
+async function refreshAgentSessionAfterEventWithDemand(
   agentId: string,
   workspaceId?: string,
 ): Promise<void> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  if (!recovery.commit(() => undefined)) return;
   const key = readKey(agentId, workspaceId);
   const ownership = claimAgentReadOwnership(agentId, workspaceId);
   const pending = inFlight.get(key);
@@ -184,14 +199,22 @@ export async function refreshAgentSessionAfterEvent(
   const rerun = pending.then(
     () => {
       pendingEventRerun.delete(key);
-      if (connection === connectionGeneration && ownership.isCurrent())
+      if (
+        connection === connectionGeneration &&
+        ownership.isCurrent() &&
+        recovery.commit(() => undefined)
+      )
         return ensureAgentSession(agentId, workspaceId);
     },
     () => {
       // A rejected leading read is not cached and must not suppress the event's
       // authoritative trailing retry.
       pendingEventRerun.delete(key);
-      if (connection === connectionGeneration && ownership.isCurrent())
+      if (
+        connection === connectionGeneration &&
+        ownership.isCurrent() &&
+        recovery.commit(() => undefined)
+      )
         return ensureAgentSession(agentId, workspaceId);
     },
   );
@@ -211,9 +234,18 @@ export function readAgentSession(
   workspaceId?: string,
 ): Promise<AgentSession | null> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const release = workspaceId ? acquireAgentMetadataDemand(workspaceId, { agentId }) : () => {};
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  if (!recovery.commit(() => undefined)) {
+    release();
+    return Promise.resolve(null);
+  }
   const key = readKey(agentId, workspaceId);
   const pending = inFlight.get(key);
-  if (pending) return pending;
+  if (pending) {
+    release();
+    return pending;
+  }
 
   // Explicit-workspace raw readers also run outside the initialized renderer
   // (for example isolated saga stores). Only renderer reads have local pushes
@@ -229,10 +261,18 @@ export function readAgentSession(
   const context = getAgentReadContext();
   const generation = ++readGeneration;
   const connection = connectionGeneration;
-  const run = appClient.agents
-    .get(agentId, workspaceId)
+  const physicalSession = rendererEventRecovery.capturePhysicalSessionIdentity();
+  const request = () =>
+    connection === connectionGeneration &&
+    context === getAgentReadContext() &&
+    recovery.commit(() => undefined)
+      ? appClient.agents.get(agentId, workspaceId)
+      : Promise.resolve(null);
+  const run = (workspaceId ? trackAgentMetadataRead(workspaceId, request) : request())
     .then((session) =>
-      connection === connectionGeneration && context === getAgentReadContext()
+      connection === connectionGeneration &&
+      context === getAgentReadContext() &&
+      recovery.commit(() => undefined)
         ? preserveLocalUpdates(
             beforeRead,
             preserveProjectedQuestionMarkers(agentId, generation, session),
@@ -241,9 +281,26 @@ export function readAgentSession(
         : null,
     )
     .finally(() => {
+      release();
       if (inFlight.get(key) === run) inFlight.delete(key);
     });
   inFlight.set(key, run);
+  const reads = physicalReads.get(physicalSession) ?? new Map<string, Set<Promise<void>>>();
+  physicalReads.set(physicalSession, reads);
+  const physicalKey = physicalReadKey(agentId, workspaceId);
+  const active = reads.get(physicalKey) ?? new Set<Promise<void>>();
+  reads.set(physicalKey, active);
+  const completed = run.then(
+    () => {},
+    async (error: unknown) => {
+      await getPhysicalRequestCompletion(error);
+    },
+  );
+  active.add(completed);
+  void completed.then(() => {
+    active.delete(completed);
+    if (!active.size && reads.get(physicalKey) === active) reads.delete(physicalKey);
+  });
   return run;
 }
 
@@ -258,16 +315,28 @@ export async function readAgentSessionAfterCurrent(
   workspaceId: string,
   isCurrent: () => boolean,
 ): Promise<AgentSession | null> {
-  const key = readKey(agentId, workspaceId);
+  const release = acquireAgentMetadataDemand(workspaceId, { agentId });
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  readKey(agentId, workspaceId);
   const connection = connectionGeneration;
   const ownership = claimAgentReadOwnership(agentId, workspaceId);
-  const pending = inFlight.get(key);
-  if (pending) await pending.catch(() => null);
-  if (connection !== connectionGeneration || !ownership.isCurrent() || !isCurrent()) return null;
-  const session = await readAgentSession(agentId, workspaceId);
-  return connection === connectionGeneration && ownership.isCurrent() && isCurrent()
-    ? session
-    : null;
+  const current = () =>
+    connection === connectionGeneration &&
+    ownership.isCurrent() &&
+    recovery.commit(() => undefined) &&
+    isCurrent();
+  try {
+    if (!current()) return null;
+    const pending = physicalReads
+      .get(rendererEventRecovery.capturePhysicalSessionIdentity())
+      ?.get(physicalReadKey(agentId, workspaceId));
+    if (pending?.size) await Promise.all([...pending]);
+    if (!current()) return null;
+    const session = await readAgentSession(agentId, workspaceId);
+    return current() ? session : null;
+  } finally {
+    release();
+  }
 }
 
 async function hydrateAgentSession(
@@ -276,6 +345,8 @@ async function hydrateAgentSession(
   workspaceId?: string,
 ): Promise<AgentSession | null> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const recovery = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  if (!recovery.commit(() => undefined)) return null;
   try {
     const prior = appStore.state.agentSessions?.byAgentId[agentId];
     const storedBefore = prior?.workspaceId === workspaceId ? prior : undefined;
@@ -291,6 +362,7 @@ async function hydrateAgentSession(
     // restart) is not in this window's local registry.
     if (
       ownership.isCurrent() &&
+      recovery.commit(() => undefined) &&
       session &&
       !session.pendingDeleteAt &&
       !isAgentDeletionPending(agentId)
@@ -308,13 +380,16 @@ async function hydrateAgentSession(
           ? { ...session, messages: existing.messages }
           : session;
       appStore.dispatch(
-        bulkUpsertSessions(
-          [merged],
-          staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+        withRecoveryLifetime(
+          bulkUpsertSessions(
+            [merged],
+            staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+          ),
+          recovery,
         ),
       );
-      appStore.dispatch(upsertSession(merged));
-      appStore.dispatch(markAgentDetailHydrated(agentId));
+      appStore.dispatch(withRecoveryLifetime(upsertSession(merged), recovery));
+      appStore.dispatch(withRecoveryLifetime(markAgentDetailHydrated(agentId), recovery));
       return merged;
     }
     return null;
@@ -339,7 +414,7 @@ async function hydrateAgentSession(
  * intact rather than clearing it. Concurrent calls for the same agent share one
  * fetch.
  */
-export async function ensureAgentSession(agentId: string, workspaceId?: string): Promise<void> {
+async function ensureAgentSessionWithDemand(agentId: string, workspaceId?: string): Promise<void> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   const ownership = claimAgentReadOwnership(agentId, workspaceId);
   const key = ownership.key;
@@ -355,4 +430,27 @@ export async function ensureAgentSession(agentId: string, workspaceId?: string):
   const run = hydrateAgentSession(agentId, ownership, workspaceId);
   hydrationInFlight.set(key, run);
   await run;
+}
+
+export async function ensureAgentSession(agentId: string, workspaceId?: string): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const release = workspaceId ? acquireAgentMetadataDemand(workspaceId, { agentId }) : () => {};
+  try {
+    return await ensureAgentSessionWithDemand(agentId, workspaceId);
+  } finally {
+    release();
+  }
+}
+
+export async function refreshAgentSessionAfterEvent(
+  agentId: string,
+  workspaceId?: string,
+): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const release = workspaceId ? acquireAgentMetadataDemand(workspaceId, { agentId }) : () => {};
+  try {
+    return await refreshAgentSessionAfterEventWithDemand(agentId, workspaceId);
+  } finally {
+    release();
+  }
 }

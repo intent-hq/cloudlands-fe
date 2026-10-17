@@ -148,7 +148,10 @@ beforeEach(() => {
   );
   settingsCatalogResponse = [...SETTINGS_PROTOCOL_FIXTURES.list.response.settings];
   registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
-    if (JSON.stringify(payload) === JSON.stringify(SETTINGS_PROTOCOL_FIXTURES.list.request)) {
+    if (
+      JSON.stringify(payload) ===
+      JSON.stringify({ ...SETTINGS_PROTOCOL_FIXTURES.list.request, observeCompletion: true })
+    ) {
       return { ok: true, result: { settings: settingsCatalogResponse } };
     }
     const update = payload as ReturnType<typeof createSettingsFixtureUpdate>['request'];
@@ -475,17 +478,17 @@ describe('settings state and save-mode fixtures', () => {
       expect(renderedState.dataset.ownerValue).toBe('success');
 
       if (stateOwner === 'daemon settings') {
-        expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
-          IPC_CHANNELS.BACKEND.REQUEST,
-          createSettingsFixtureUpdate('success').request,
-        );
+        expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+          ...createSettingsFixtureUpdate('success').request,
+          observeCompletion: true,
+        });
       }
 
       await waitFor(() =>
-        expect(window.electronAPI!.invoke).toHaveBeenCalledWith(
-          IPC_CHANNELS.BACKEND.REQUEST,
-          SETTINGS_PROTOCOL_FIXTURES.list.request,
-        ),
+        expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+          ...SETTINGS_PROTOCOL_FIXTURES.list.request,
+          observeCompletion: true,
+        }),
       );
     },
   );

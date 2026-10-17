@@ -27,10 +27,13 @@ import type {
   TaskAgentAssociationsByTaskKey,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
 import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
+  captureNoteWorkspaceCacheLifetime,
+  captureNoteMutationAuthority,
   resolveNoteWorkspaceId,
   runMutationWithId,
   subscribeWorkspaceIds,
@@ -200,6 +203,23 @@ function normalizeStats(raw: unknown): WorkspaceTaskStats {
   };
 }
 
+export function normalizeTaskListResult(raw: unknown): {
+  tasks: WorkspaceTask[];
+  stats: WorkspaceTaskStats;
+} {
+  const result =
+    raw && typeof raw === 'object' ? (raw as { tasks?: unknown[]; stats?: unknown }) : {};
+  const tasks: WorkspaceTask[] = [];
+  for (const entry of Array.isArray(result.tasks) ? result.tasks : []) {
+    const task =
+      entry && typeof entry === 'object'
+        ? normalizeTaskEntity(entry as Record<string, unknown>)
+        : null;
+    if (task) tasks.push(task);
+  }
+  return { tasks, stats: normalizeStats(result.stats) };
+}
+
 export class LiveTasksClient implements TasksClient {
   /**
    * `task.list` (PROTOCOL §5.4) → `{ tasks, stats }`. The BE owns the
@@ -207,18 +227,15 @@ export class LiveTasksClient implements TasksClient {
    * by workspace so note-scoped mutations can resolve their owning workspace.
    */
   async list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
+    const cacheLifetime = captureNoteWorkspaceCacheLifetime();
     const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>('task.list', {
       workspaceId,
     });
-    const rawTasks = Array.isArray(result?.tasks) ? result.tasks : [];
-    const tasks: WorkspaceTask[] = [];
-    for (const entry of rawTasks) {
-      const task = normalizeTaskEntity(entry as Record<string, unknown>);
-      if (!task) continue;
-      if (task.id) rememberNoteWorkspace(task.id, workspaceId);
-      tasks.push(task);
+    const snapshot = normalizeTaskListResult(result);
+    for (const task of snapshot.tasks) {
+      if (task.id) rememberNoteWorkspace(task.id, workspaceId, cacheLifetime);
     }
-    return { tasks, stats: normalizeStats(result?.stats) };
+    return snapshot;
   }
 
   async get(taskId: string): Promise<WorkspaceTask | null> {
@@ -235,7 +252,16 @@ export class LiveTasksClient implements TasksClient {
           : result;
       if (!raw || typeof raw !== 'object') return null;
       return noteToTask(raw as Record<string, unknown>);
-    } catch {
+    } catch (error) {
+      // Preserve deadlines and authority failures for the captured read owner.
+      if (
+        error instanceof BackendError &&
+        (error.completion !== undefined ||
+          error.code === 'TIMEOUT' ||
+          error.rpcCode === -32003 ||
+          error.rpcCode === -32001)
+      )
+        throw error;
       return null;
     }
   }
@@ -334,10 +360,12 @@ export class LiveTasksClient implements TasksClient {
     title: string,
     options?: CreatePrerequisiteOptions,
   ): Promise<MutationResult> {
+    const authority = captureNoteMutationAuthority();
     const workspaceId = await resolveNoteWorkspaceId(dependentNoteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${dependentNoteId}` };
     }
+    if (!authority(workspaceId)) return { success: false, error: 'Task command authority expired' };
     return runMutationWithId('task.createPrerequisite', {
       workspaceId,
       dependentNoteId,
@@ -429,10 +457,12 @@ export class LiveTasksClient implements TasksClient {
     params: Record<string, unknown>,
     expectedVersion?: number,
   ): Promise<MutationResult> {
+    const authority = captureNoteMutationAuthority();
     const workspaceId = await resolveNoteWorkspaceId(noteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
+    if (!authority(workspaceId)) return { success: false, error: 'Task command authority expired' };
     const result = await runMutationWithId(method, {
       workspaceId,
       noteId,
@@ -464,6 +494,13 @@ export class LiveTasksClient implements TasksClient {
    */
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
     return createDeltaSubscription<WorkspaceTask>({
+      recovery: {
+        eventTypes: ['note:*', 'task:*'],
+        read: async ({ request }, params) => {
+          const result = await request<{ tasks: unknown[] }>('task.list', params);
+          return result.tasks;
+        },
+      },
       channel: {
         subscribeMethod: 'task.subscribe',
         unsubscribeMethod: 'task.unsubscribe',

@@ -1,3 +1,8 @@
+import type { RecoveryRequestCompletion } from '$shared/event-recovery/session';
+import {
+  createEventRecoveryTransport,
+  onElectronEventRecoveryReady,
+} from './event-recovery-transport';
 import {
   NativeReviewInputSchema,
   NativeReviewPreparedViewSchema,
@@ -52,6 +57,7 @@ interface BackendResult<T> {
   ok: boolean;
   result?: T;
   error?: BackendErrorPayload;
+  completionId?: string;
 }
 
 export function electronAPI(): Window['electronAPI'] | undefined {
@@ -192,6 +198,8 @@ export function createElectronIpcBackendTransport(): BackendTransport {
 
   return {
     captureRepositorySelection,
+    captureEventRecovery: createEventRecoveryTransport(electronAPI),
+    onEventRecoveryReady: (handler) => onElectronEventRecoveryReady(electronAPI, handler),
     async observeNodeCapabilities() {
       const api = electronAPI();
       if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
@@ -332,13 +340,34 @@ export function createElectronIpcBackendTransport(): BackendTransport {
         params?: unknown;
         timeoutMs?: number;
         localMachine?: boolean;
+        observeCompletion: boolean;
       } = {
         method,
         params: toPlainJson(params),
+        observeCompletion: true,
       };
       if (options?.timeoutMs !== undefined) invokePayload.timeoutMs = options.timeoutMs;
       if (options?.localMachine) invokePayload.localMachine = true;
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
+      if (response && !response.ok && typeof response.completionId === 'string') {
+        const completion: Promise<RecoveryRequestCompletion> = Promise.resolve()
+          .then(() => api.invoke(BACKEND.REQUEST_COMPLETION, { id: response.completionId }))
+          .then(
+            (reply: BackendResult<{ retired: boolean; errors: BackendErrorPayload[] }>) => {
+              if (electronAPI() !== api || !reply.ok || !reply.result || reply.result.retired)
+                return { retired: true, errors: [] };
+              return {
+                retired: false,
+                errors: reply.result.errors.map((error) => new BackendError(error)),
+              };
+            },
+            () => ({ retired: true, errors: [] }),
+          );
+        throw new BackendError(
+          response.error ?? { code: 'TRANSPORT_ERROR', message: 'Backend request failed' },
+          completion,
+        );
+      }
       return unwrap(response);
     },
 

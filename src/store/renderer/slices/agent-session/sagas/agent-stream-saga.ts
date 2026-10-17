@@ -1,3 +1,5 @@
+import { getRecoveryAdmission, withRecoveryAdmissions } from '../../../middlewares/event-recovery';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
 import { buffers } from 'redux-saga';
 import { actionChannel, call, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
 
@@ -93,21 +95,35 @@ function finalizedMetadata(payload: AgentStreamUpdatePayload): Record<string, un
   return { ...interrupted, ...finishReason };
 }
 
+type StreamUpdateAction = ReturnType<typeof agentStreamUpdateReceived>;
+
+// Preserve ingress ownership through the channel and cancellation flush. Only
+// session metadata consumes this receipt; live chat and transcript duties continue.
+function inheritAgentMetadataAdmission<T extends object>(source: StreamUpdateAction, action: T): T {
+  const key = agentMetadataRecoveryKey(source.payload[0].workspaceId);
+  const receipt = getRecoveryAdmission(source, key);
+  return receipt === undefined ? action : withRecoveryAdmissions(action, new Map([[key, receipt]]));
+}
+
 function* clearSessionStreaming(
   agentId: string,
   eventType: AgentStreamUpdatePayload['eventType'],
+  source: StreamUpdateAction,
 ): SagaGenerator<void> {
   if (eventType === 'timeout') {
-    yield* put(streamTimedOut(agentId));
+    yield* put(inheritAgentMetadataAdmission(source, streamTimedOut(agentId)));
     return;
   }
   if (eventType === 'complete' || eventType === 'error') {
     const chatState = yield* selectChatAgentState.effect(agentId);
     yield* put(
-      streamCompleted(agentId, {
-        lastAttemptedMessage: chatState.lastAttemptedMessage,
-        modelUnavailable: chatState.modelUnavailable,
-      }),
+      inheritAgentMetadataAdmission(
+        source,
+        streamCompleted(agentId, {
+          lastAttemptedMessage: chatState.lastAttemptedMessage,
+          modelUnavailable: chatState.modelUnavailable,
+        }),
+      ),
     );
   }
 }
@@ -142,7 +158,10 @@ function* reportAppliedStoreState(
   });
 }
 
-function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<void> {
+function* applyStreamPayload(
+  payload: AgentStreamUpdatePayload,
+  source: StreamUpdateAction,
+): SagaGenerator<void> {
   const { agentId, eventType, assistantMessageId, assistantAppMessageId } = payload;
   if (!agentId) return;
   const isFinalize = eventType === 'complete' || eventType === 'error' || eventType === 'timeout';
@@ -150,7 +169,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   // the module contract above). Session-level bookkeeping still runs so
   // out-of-view agents' chat state resets on a terminal payload.
   if (!hasStandingChatSubscription(agentId)) {
-    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType, source);
     yield* reportAppliedStoreState(payload, 'update-ignored');
     return;
   }
@@ -182,19 +201,19 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
         }),
       );
     }
-    yield* call(clearSessionStreaming, agentId, eventType);
+    yield* call(clearSessionStreaming, agentId, eventType, source);
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }
 
   if (!existing) {
     if (isStaleFinalizedAssistantStream(session, assistantAppMessageId)) {
-      if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+      if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType, source);
       yield* reportAppliedStoreState(payload, 'update-ignored');
       return;
     }
     if (!assistantMessageId) {
-      if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+      if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType, source);
       yield* reportAppliedStoreState(payload, 'update-ignored');
       return;
     }
@@ -216,7 +235,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       ...(metadata ? { metadata } : {}),
     };
     yield* put(addMessage(agentId, placeholder));
-    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType, source);
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }
@@ -232,7 +251,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
     const metadata = finalizedMetadata(payload);
     if (metadata) updates.metadata = { ...existing.metadata, ...metadata };
     yield* put(updateMessage(agentId, existing.id, updates));
-    yield* call(clearSessionStreaming, agentId, eventType);
+    yield* call(clearSessionStreaming, agentId, eventType, source);
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }
@@ -247,9 +266,10 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   yield* reportAppliedStoreState(payload, 'update-ignored');
 }
 
-function* safelyApply(payload: AgentStreamUpdatePayload): SagaGenerator<void> {
+function* safelyApply(source: StreamUpdateAction): SagaGenerator<void> {
+  const payload = source.payload[0];
   try {
-    yield* call(applyStreamPayload, payload);
+    yield* call(applyStreamPayload, payload, source);
   } catch (error) {
     logger.error('Failed to apply agent stream update', error);
     reportStreamLifecycle({
@@ -269,7 +289,7 @@ export function* agentStreamSaga(): SagaGenerator<void> {
   try {
     while (true) {
       const action: ReturnType<typeof agentStreamUpdateReceived> = yield* take(channel);
-      yield* call(safelyApply, action.payload[0]);
+      yield* call(safelyApply, action);
     }
   } finally {
     const buffered: ReturnType<typeof agentStreamUpdateReceived>[] = yield* flush(channel);
@@ -280,7 +300,7 @@ export function* agentStreamSaga(): SagaGenerator<void> {
         payload.eventType === 'error' ||
         payload.eventType === 'timeout'
       ) {
-        yield* safelyApply(payload);
+        yield* safelyApply(action);
       }
     }
     channel.close();

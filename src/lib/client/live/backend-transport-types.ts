@@ -1,3 +1,4 @@
+import type { RecoveryRequestCompletion } from '$shared/event-recovery/session';
 import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
 import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
@@ -33,12 +34,17 @@ export class BackendError extends Error {
   readonly code: string;
   readonly data: unknown;
   readonly rpcCode?: number;
-  constructor(payload: BackendErrorPayload) {
+  readonly drained?: Promise<void>;
+  constructor(
+    payload: BackendErrorPayload,
+    readonly completion?: Promise<RecoveryRequestCompletion>,
+  ) {
     super(payload.message);
     this.name = 'BackendError';
     this.code = payload.code;
     this.data = payload.data;
     this.rpcCode = payload.rpcCode;
+    this.drained = completion?.then(() => {});
   }
 }
 
@@ -124,6 +130,8 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  onEventRecoveryReady?(handler: () => void): () => void;
+  captureEventRecovery?(): Promise<import('$shared/event-recovery/session').EventRecoverySession>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
   observeNodeCapabilities?(): Promise<unknown>;
   captureRepositoryCheckout?(

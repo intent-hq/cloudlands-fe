@@ -1,3 +1,12 @@
+import { observeGitReadFailure } from '$features/file-tracking/git-recovery-read-lane';
+import {
+  captureSecondaryRootRead,
+  readSecondaryRootSnapshot,
+} from '$features/file-tracking/git-secondary-root-recovery';
+import { normalizeCommitDetails } from '$lib/client/live/live-git-client';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { gitStatusRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
+import { getRecoveryAdmission, withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import type { SagaGenerator } from 'typed-redux-saga';
 import { call, fork, join, put, select, takeEvery } from 'typed-redux-saga';
 import type { StoreState } from '../../../types';
@@ -45,6 +54,7 @@ function* loadGitStatusWorker(
   workspaceId: string,
   forceRefresh?: boolean,
 ): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspaceId));
   const version = versions.get(workspaceId);
   const context = yield* currentStatusReadContext();
   for (;;) {
@@ -56,10 +66,15 @@ function* loadGitStatusWorker(
         workspaceId,
         ...(forceRefresh ? [{ forceRefresh: true }] : []),
       );
-      if (versions.get(workspaceId) !== version || (yield* currentStatusReadContext()) !== context)
+      if (
+        !receipt.commit(() => undefined) ||
+        versions.get(workspaceId) !== version ||
+        (yield* currentStatusReadContext()) !== context
+      )
         return;
       if (epoch !== getGitMutationVersion(workspaceId)) continue;
-      if (status) yield* put(setGitStatus(workspaceId, toGitStatus(status)));
+      if (status)
+        yield* put(withRecoveryLifetime(setGitStatus(workspaceId, toGitStatus(status)), receipt));
     } catch (error) {
       if (epoch !== getGitMutationVersion(workspaceId)) continue;
       logger.error('Failed to load git status', error);
@@ -168,33 +183,50 @@ function* loadSecondaryRootWorker(
   action: ReturnType<typeof loadSecondaryRootGit>,
 ): SagaGenerator<void> {
   const [workspaceId, gitRootId, registeredCommitSha, limit = 30] = action.payload;
+  const captured = captureSecondaryRootRead(workspaceId, gitRootId);
+  if (!captured.receipt.commit(() => undefined)) return;
   const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
-  yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
+  yield* put(
+    withRecoveryLifetime(setSecondaryRootGitLoading(workspaceId, gitRootId), captured.receipt),
+  );
   for (;;) {
     if (isGitMutationPending(workspaceId, gitRootId))
       yield* call(waitForGitMutations, workspaceId, gitRootId);
     if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
     const epoch = getGitMutationVersion(workspaceId, gitRootId);
     try {
-      const data = yield* call(
-        readSecondaryRoot,
-        workspaceId,
-        gitRootId,
-        registeredCommitSha,
-        limit,
+      const data = yield* call(() =>
+        captured.run(() =>
+          captured.transport
+            ? readSecondaryRootSnapshot(
+                workspaceId,
+                gitRootId,
+                registeredCommitSha,
+                limit,
+                captured.transport,
+              )
+            : readSecondaryRoot(workspaceId, gitRootId, registeredCommitSha, limit),
+        ),
       );
+      if (!captured.receipt.commit(() => undefined)) return;
       if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
       if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
-      yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
+      yield* put(
+        withRecoveryLifetime(setSecondaryRootGit(workspaceId, gitRootId, data), captured.receipt),
+      );
     } catch (error) {
+      if (!captured.receipt.commit(() => undefined)) return;
       if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
       if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
       logger.error('Failed to load secondary Git root', error);
       yield* put(
-        setSecondaryRootGitError(
-          workspaceId,
-          gitRootId,
-          error instanceof Error ? error.message : String(error),
+        withRecoveryLifetime(
+          setSecondaryRootGitError(
+            workspaceId,
+            gitRootId,
+            error instanceof Error ? error.message : String(error),
+          ),
+          captured.receipt,
         ),
       );
     }
@@ -207,6 +239,8 @@ function* loadSecondaryRootCommitFilesWorker(
   action: ReturnType<typeof loadSecondaryRootCommitFiles>,
 ): SagaGenerator<void> {
   const [workspaceId, gitRootId, commitHash] = action.payload;
+  const captured = captureSecondaryRootRead(workspaceId, gitRootId);
+  if (!captured.receipt.commit(() => undefined)) return;
   const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
   const rootKey = secondaryRootContext(action);
   const rootVersion = versions.roots.get(rootKey) ?? 0;
@@ -220,12 +254,24 @@ function* loadSecondaryRootCommitFilesWorker(
       return;
     const epoch = getGitMutationVersion(workspaceId, gitRootId);
     try {
-      const detail = yield* call(
-        [appClient.git, appClient.git.commitDetails],
-        workspaceId,
-        commitHash,
-        { gitRootId },
+      const detail = yield* call(() =>
+        captured.run(async () =>
+          captured.transport
+            ? normalizeCommitDetails(
+                await observeGitReadFailure(
+                  captured.transport.request<Record<string, unknown>>('git.commitDetails', {
+                    workspaceId,
+                    gitRootId,
+                    commitHash,
+                  }),
+                  captured.transport.onFailure,
+                ),
+                commitHash,
+              )
+            : appClient.git.commitDetails(workspaceId, commitHash, { gitRootId }),
+        ),
       );
+      if (!captured.receipt.commit(() => undefined)) return;
       if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
       if (!detail) return;
       if (
@@ -237,8 +283,14 @@ function* loadSecondaryRootCommitFilesWorker(
         detail.fileDetails.length > 0
           ? detail.fileDetails
           : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }));
-      yield* put(setSecondaryRootCommitFiles(workspaceId, gitRootId, commitHash, files));
+      yield* put(
+        withRecoveryLifetime(
+          setSecondaryRootCommitFiles(workspaceId, gitRootId, commitHash, files),
+          captured.receipt,
+        ),
+      );
     } catch (error) {
+      if (!captured.receipt.commit(() => undefined)) return;
       if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
       logger.error('Failed to load secondary-root commit details', error);
     }
@@ -294,11 +346,20 @@ function* pushedGitStatus(
 ): SagaGenerator<void> {
   const [workspaceId, type, data] = action.payload;
   if (type !== 'changes:git-status' || data.gitRootId) return;
+  const admitted = getRecoveryAdmission(action, gitStatusRecoveryKey(workspaceId));
+  if (
+    admitted === null ||
+    (admitted
+      ? !admitted.commit(() => undefined)
+      : !rendererEventRecovery.push(gitStatusRecoveryKey(workspaceId)))
+  )
+    return;
+  const receipt = admitted ?? rendererEventRecovery.capture(gitStatusRecoveryKey(workspaceId));
   const status = data.status as { gitStatus?: Record<string, unknown> } | undefined;
   const pushed = parsePushedGitStatus(status?.gitStatus);
   if (!pushed) return;
   versions.set(workspaceId, (versions.get(workspaceId) ?? 0) + 1);
-  yield* put(setGitStatus(workspaceId, pushed));
+  yield* put(withRecoveryLifetime(setGitStatus(workspaceId, pushed), receipt));
 }
 
 export function* gitReadSaga() {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { stageFiles } from '$features/git/git-write-service';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -34,6 +34,13 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   backendUnsubscribe: vi.fn(async () => {}),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
+  onEventRecoveryReady: vi.fn(() => () => {}),
+  // This ordinary workflow fixture models a confirmed legacy backend.
+  captureBackendEventRecovery: vi.fn(() => ({
+    supported: false,
+    isCurrent: () => true,
+    dispose: () => {},
+  })),
 }));
 vi.mock('$lib/electron-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
@@ -112,7 +119,8 @@ beforeEach(async () => {
   await vi.waitFor(() => expect(selectHostRole.select(appStore.state)).toBe('owner'));
   // Principal admission reads authority once; presence reuses the admitted snapshot.
   expect(calls('principal.me')).toEqual([['principal.me', {}]]);
-  expect(calls('client.hello')).toEqual([['client.hello', {}]]);
+  expect(observeBackendNodeCapabilities).toHaveBeenCalledOnce();
+  expect(calls('client.hello')).toEqual([]);
 });
 
 afterEach(() => {

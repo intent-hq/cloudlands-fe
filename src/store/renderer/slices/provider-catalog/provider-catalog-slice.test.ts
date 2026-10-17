@@ -298,7 +298,7 @@ describe('authoritative provider alias identity', () => {
 });
 
 it('retains workspace snapshots during refresh and clears them across connection and workspace lifetimes', async () => {
-  const { workspaceCatalogReceived, workspaceCatalogInvalidated } =
+  const { workspaceCatalogReceived, workspaceCatalogInvalidated, workspaceCatalogRetired } =
     await import('./provider-catalog-slice');
   const { selectWorkspaceMcpServerName } = await import('../mcp-settings/mcp-settings-selectors');
   const { workspaceUnmounted, workspaceDeleted } =
@@ -331,7 +331,12 @@ it('retains workspace snapshots during refresh and clears them across connection
   expect(
     selectWorkspaceMcpServerName.select(storeWith(reconnected), 'A', 'shared-id'),
   ).toBeUndefined();
-  for (const cleanup of [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity]) {
+  for (const cleanup of [
+    workspaceUnmounted,
+    workspaceDeleted,
+    removeWorkspaceEntity,
+    workspaceCatalogRetired,
+  ]) {
     const cleared = providerCatalogReducer(refreshing, cleanup('A'));
     expect(
       selectWorkspaceMcpServerName.select(storeWith(cleared), 'A', 'shared-id'),

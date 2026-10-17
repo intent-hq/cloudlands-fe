@@ -31,6 +31,7 @@ it.each([false, true])(
 
       await vi.waitFor(() =>
         expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
+          observeCompletion: true,
           method: 'note.get',
           params: { workspaceId: CHIEF_WORKSPACE_ID, noteId: 'plan' },
         }),

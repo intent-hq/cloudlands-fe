@@ -1,3 +1,12 @@
+import { installHudRecovery, type HudRecoveryMessage } from '$features/hud/hud-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { captureRuntimeReadAuthority } from '$features/events/runtime-read-authority';
+import { runtimeReadDrained, trackRuntimeRead } from '$features/events/runtime-read-lane';
+import { trackAgentMetadataRead } from '$features/agent/agent-metadata-recovery';
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
+import { normalizeAgent } from '$lib/client/live/live-agents-client';
+import type { StoreState } from '$store/renderer/types';
 import {
   END,
   buffers,
@@ -14,6 +23,7 @@ import {
   cancel,
   delay,
   fork,
+  getContext,
   join,
   put,
   take,
@@ -135,7 +145,9 @@ const HUD_GRID_FILTER_CHANGE_ACTIONS = [
 ];
 
 type HudTransportMessage =
-  { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
+  | HudRecoveryMessage
+  | { kind: 'notification'; notification: BackendNotification; isCurrent?: () => boolean }
+  | { kind: 'reconnected' };
 type HudRefreshKind = 'subscribe' | 'usage' | 'rate-history' | 'agents';
 type BusyAgentIdsByWorkspaceId = ReadonlyMap<string, ReadonlySet<string>>;
 
@@ -149,6 +161,10 @@ interface HudSubscriptionLease {
 }
 
 interface HudRuntime {
+  recovery: ReturnType<typeof installHudRecovery>;
+  refreshes: Channel<HudRefreshKind>;
+  pendingStats: Set<HudRefreshKind>;
+  queuedStats: Set<HudRefreshKind>;
   lease: HudSubscriptionLease;
   hydratedAgentWorkspaceIds: Set<string>;
   pendingAgentHydrationByWorkspaceId: Map<string, Task>;
@@ -157,20 +173,39 @@ interface HudRuntime {
   delegatedRowEmittedAgentIds: Set<string>;
 }
 
-function createHudTransportChannel(): EventChannel<HudTransportMessage> {
+function createHudTransportChannel(
+  runtime: HudRuntime,
+  store: { getState(): StoreState; dispatch(action: { type: string }): unknown },
+): EventChannel<HudTransportMessage> {
   return eventChannel<HudTransportMessage>((emit) => {
+    runtime.recovery = installHudRecovery(
+      store,
+      {
+        eventTypes: HUD_SUBSCRIBE_EVENT_TYPES,
+        replaceGroup: HUD_REPLACE_GROUP,
+        rateLimit: HUD_RATE_HISTORY_LIMIT,
+      },
+      emit,
+    );
     const offNotification = onBackendNotification((notification) => {
-      emit({ kind: 'notification', notification });
+      if (!runtime.recovery.adopted)
+        emit({ kind: 'notification', notification, isCurrent: runtime.recovery.capture() });
     });
-    const offReconnect = onBackendReconnected(() => emit({ kind: 'reconnected' }));
+    const offReconnect = onBackendReconnected(() => {
+      if (!runtime.recovery.adopted) emit({ kind: 'reconnected' });
+    });
     return () => {
+      runtime.recovery.dispose();
       offNotification();
       offReconnect();
     };
   }, buffers.expanding<HudTransportMessage>());
 }
 
-async function subscribeHudLease(lease: HudSubscriptionLease): Promise<void> {
+async function subscribeHudLease(runtime: HudRuntime): Promise<void> {
+  if (runtime.recovery.adopted) return;
+  const lease = runtime.lease;
+  const live = runtime.recovery.capture();
   lease.subscriptionId = undefined;
   try {
     const result = await backendSubscribe<{ subscriptionId?: string }>({
@@ -182,7 +217,7 @@ async function subscribeHudLease(lease: HudSubscriptionLease): Promise<void> {
       logger.warn('events.subscribe returned no subscriptionId', result);
       return;
     }
-    if (lease.cancelled) {
+    if (lease.cancelled || !live()) {
       await backendUnsubscribe(subscriptionId).catch(() => {});
       return;
     }
@@ -210,10 +245,18 @@ function sumTotals(totals: HudUsageTotals): number {
   );
 }
 
-function* loadUsage(): SagaGenerator<void> {
+function* loadUsage(runtime: HudRuntime): SagaGenerator<void> {
+  const token = rendererEventRecovery.capture('hud-stats');
+  const live = runtime.recovery.capture();
+  const scope = runtime.recovery.scope;
+  const request: typeof backendRequest = (method, params) =>
+    trackRuntimeRead('hud-stats', () => {
+      if (!live() || !token.commit(() => {})) throw new Error('HUD read superseded');
+      return (scope?.request ?? backendRequest)(method, params);
+    });
   try {
     const result = yield* call(
-      backendRequest<{
+      request<{
         totals?: HudUsageTotals;
         runs?: number;
         byHourOfDay?: Array<{ hour: number } & HudUsageTotals>;
@@ -224,6 +267,7 @@ function* loadUsage(): SagaGenerator<void> {
         tzOffsetMinutes: -new Date().getTimezoneOffset(),
       },
     );
+    if (!live()) return;
     const totals = result?.totals;
     const byHourOfDay = result?.byHourOfDay;
     if (!totals || !Array.isArray(byHourOfDay)) {
@@ -236,33 +280,62 @@ function* loadUsage(): SagaGenerator<void> {
       tokens: sumTotals(bucket),
     }));
     yield* put(
-      hudUsageLoaded({
-        totals,
-        runs: typeof result.runs === 'number' ? result.runs : 0,
-        rateSamples,
-        fetchedAtMs: Date.now(),
-      }),
+      withRecoveryLifetime(
+        hudUsageLoaded({
+          totals,
+          runs: typeof result.runs === 'number' ? result.runs : 0,
+          rateSamples,
+          fetchedAtMs: Date.now(),
+        }),
+        token,
+      ),
     );
   } catch (error) {
-    yield* put(hudUsageFailed(error instanceof Error ? error.message : String(error)));
+    if (live())
+      yield* put(
+        withRecoveryLifetime(
+          hudUsageFailed(error instanceof Error ? error.message : String(error)),
+          token,
+        ),
+      );
   }
 }
 
-function* loadRateHistory(): SagaGenerator<void> {
+function* loadRateHistory(runtime: HudRuntime): SagaGenerator<void> {
+  const token = rendererEventRecovery.capture('hud-stats');
+  const live = runtime.recovery.capture();
+  const scope = runtime.recovery.scope;
+  const request: typeof backendRequest = (method, params) =>
+    trackRuntimeRead('hud-stats', () => {
+      if (!live() || !token.commit(() => {})) throw new Error('HUD read superseded');
+      return (scope?.request ?? backendRequest)(method, params);
+    });
   try {
     const result = yield* call(
-      backendRequest<{ samples?: Array<{ bucketUtc: string } & HudUsageTotals> }>,
+      request<{ samples?: Array<{ bucketUtc: string } & HudUsageTotals> }>,
       'stats.getRateHistory',
       { limit: HUD_RATE_HISTORY_LIMIT },
     );
+    if (!live()) return;
     const samples = result?.samples;
     if (!Array.isArray(samples)) {
       throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
     }
     const mapped: HudRateHistorySample[] = samples.map((sample) => ({ ...sample }));
-    yield* put(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
+    yield* put(
+      withRecoveryLifetime(
+        hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }),
+        token,
+      ),
+    );
   } catch (error) {
-    yield* put(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
+    if (live())
+      yield* put(
+        withRecoveryLifetime(
+          hudRateHistoryFailed(error instanceof Error ? error.message : String(error)),
+          token,
+        ),
+      );
   }
 }
 
@@ -284,99 +357,157 @@ function failedSummaryAgentIds(workspace: { agentSummary?: unknown }): string[] 
     .map((row) => row.id);
 }
 
-function* readBusyAgentIds(): SagaGenerator<BusyAgentIdsByWorkspaceId> {
+async function readBusyAgentIds(
+  runtime: HudRuntime,
+  authorities: ReturnType<typeof captureRuntimeReadAuthority>[],
+): Promise<BusyAgentIdsByWorkspaceId> {
   const byWorkspaceId = new Map<string, Set<string>>();
   try {
-    const result = yield* call(backendRequest<AgentListActiveResult>, 'agent.listActive', {});
+    const result = await (runtime.recovery.scope?.request ?? backendRequest)<AgentListActiveResult>(
+      'agent.listActive',
+      {},
+    );
     for (const stream of result?.streams ?? []) {
-      if (typeof stream?.agentId !== 'string' || typeof stream.workspaceId !== 'string') continue;
-      let ids = byWorkspaceId.get(stream.workspaceId);
-      if (!ids) {
-        ids = new Set<string>();
-        byWorkspaceId.set(stream.workspaceId, ids);
-      }
+      if (typeof stream.agentId !== 'string' || typeof stream.workspaceId !== 'string') continue;
+      const ids = byWorkspaceId.get(stream.workspaceId) ?? new Set<string>();
       ids.add(stream.agentId);
+      byWorkspaceId.set(stream.workspaceId, ids);
     }
   } catch (error) {
+    authorities.forEach((owner) => owner.failed(error));
+    const outcome = await getPhysicalRequestCompletion(error);
+    if (outcome) authorities.forEach((owner) => owner.completed(outcome));
     logger.warn('agent.listActive failed for HUD hydration; top-level rows only', { error });
   }
   return byWorkspaceId;
 }
 
-async function readHudAgent(agentId: string, workspaceId: string) {
-  try {
-    return await appClient.agents.get(agentId, workspaceId);
-  } catch (error) {
-    logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
-      workspaceId,
-      agentId,
-      error,
-    });
-    return null;
-  }
+async function readHudAgent(runtime: HudRuntime, agentId: string, workspaceId: string) {
+  const scope = runtime.recovery.scope;
+  if (!scope) return appClient.agents.get(agentId, workspaceId || undefined);
+  const result = await scope.request<{ agent?: unknown } | unknown>('agent.get', {
+    agentId,
+    ...(workspaceId ? { workspaceId } : {}),
+  });
+  const raw = result && typeof result === 'object' && 'agent' in result ? result.agent : result;
+  return raw && typeof raw === 'object' ? normalizeAgent(raw as Record<string, unknown>) : null;
 }
 
 function* hydrateHudWorkspaceAgents(
+  runtime: HudRuntime,
   workspaceId: string,
-  busyTask: Task,
+  readBusy: () => Promise<BusyAgentIdsByWorkspaceId>,
   failedSummaryIds: readonly string[],
+  enter: () => Promise<void>,
 ): SagaGenerator<void> {
+  const key = 'agents:' + JSON.stringify([workspaceId]);
+  const token = rendererEventRecovery.capture(key),
+    live = runtime.recovery.capture();
+  const authority = captureRuntimeReadAuthority(key),
+    listAuthority = captureRuntimeReadAuthority(key, true);
+  const scope = runtime.recovery.scope;
   try {
-    const { agents: topLevel } = yield* call(
-      { context: appClient.agents, fn: appClient.agents.listWithMeta },
-      workspaceId,
-      { scope: 'topLevel' as const },
+    const agents = yield* call(() =>
+      trackAgentMetadataRead(workspaceId, async () => {
+        const physical: Promise<void>[] = [];
+        const tracked = <T>(read: Promise<T>, observer = authority): Promise<T> => {
+          const observed = read.catch((error: unknown) => {
+            observer.failed(error);
+            throw error;
+          });
+          physical.push(runtimeReadDrained(observed, observer.completed));
+          return observed;
+        };
+        try {
+          await enter();
+          if (!live() || !token.commit(() => {})) return [];
+          const busy = tracked(readBusy());
+          const list = tracked(
+            scope
+              ? scope
+                  .request<{ agents: Record<string, unknown>[] }>('agent.list', {
+                    workspaceId,
+                    scope: 'topLevel',
+                  })
+                  .then((result) => ({ agents: result.agents.map(normalizeAgent) }))
+              : appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' }),
+            listAuthority,
+          );
+          const [{ agents: topLevel }, busyByWorkspace] = await Promise.all([list, busy]);
+          if (!live() || !token.commit(() => {})) return [];
+          const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
+          const ids = [
+            ...new Set([...(busyByWorkspace.get(workspaceId) ?? []), ...failedSummaryIds]),
+          ].filter((id) => !listedIds.has(id));
+          const points = await Promise.all(
+            ids.map(async (id) => {
+              if (!live() || !token.commit(() => {})) return null;
+              try {
+                return await tracked(readHudAgent(runtime, id, workspaceId));
+              } catch (error) {
+                logger.debug('HUD point read failed', { workspaceId, id, error });
+                return null;
+              }
+            }),
+          );
+          return [...topLevel, ...points.filter((row) => row !== null)]
+            .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
+            .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
+        } finally {
+          await Promise.all(physical);
+        }
+      }),
     );
-    const busy = (yield* join(busyTask)) as BusyAgentIdsByWorkspaceId;
-    const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
-    const pointReadIds = [
-      ...new Set([...(busy.get(workspaceId) ?? []), ...failedSummaryIds]),
-    ].filter((agentId) => !listedIds.has(agentId));
-    const pointReadRows = yield* all(
-      pointReadIds.map((agentId) => call(readHudAgent, agentId, workspaceId)),
-    );
-    const listed = [...topLevel, ...pointReadRows.filter((row) => row !== null)];
-    const agents = listed
-      .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
-      .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
-    yield* put(setAgentsLoaded(workspaceId, true));
-    if (agents.length === 0) return;
-    yield* put(setAgents(workspaceId, agents));
-    yield* put(bulkUpsertSessions(agents, { listProjection: true }));
-    for (const agent of agents) yield* put(upsertSession(agent));
+    if (!live()) return;
+    yield* put(withRecoveryLifetime(setAgentsLoaded(workspaceId, true), token));
+    if (!agents.length) return;
+    yield* put(withRecoveryLifetime(setAgents(workspaceId, agents), token));
+    yield* put(withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), token));
+    for (const agent of agents) yield* put(withRecoveryLifetime(upsertSession(agent), token));
   } catch (error) {
     logger.warn('agent hydration failed for HUD workspace', { workspaceId, error });
   }
 }
 
 function* hydrateVisibleWorkspaceAgents(runtime: HudRuntime): SagaGenerator<void> {
+  runtime.recovery.reconcile();
   const workspaces = yield* selectHudWorkspaceEntities.effect();
   const pending: Array<{ workspaceId: string; failedSummaryIds: string[] }> = [];
   for (const workspace of workspaces) {
     if (
       workspace.status === WorkspaceStatus.Archived ||
       workspace.status === WorkspaceStatus.Deleted
-    ) {
+    )
       continue;
-    }
     const workspaceId = String(workspace.id);
     if (runtime.hydratedAgentWorkspaceIds.has(workspaceId)) continue;
     runtime.hydratedAgentWorkspaceIds.add(workspaceId);
     pending.push({ workspaceId, failedSummaryIds: failedSummaryAgentIds(workspace) });
   }
-  if (pending.length === 0) return;
-
-  const busyTask = yield* fork(readBusyAgentIds);
+  if (!pending.length) return;
+  const authorities = pending.map(({ workspaceId }) =>
+    captureRuntimeReadAuthority('agents:' + JSON.stringify([workspaceId])),
+  );
+  let busy: Promise<BusyAgentIdsByWorkspaceId> | undefined;
+  const readBusy = () => (busy ??= readBusyAgentIds(runtime, authorities));
+  let admitted = 0,
+    start!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    start = resolve;
+  });
+  const enter = () => {
+    if (++admitted === pending.length) start();
+    return ready;
+  };
   const tasks: Task[] = [];
   for (const { workspaceId, failedSummaryIds } of pending) {
     yield* put(hydrateAgentsRequested(workspaceId));
-    const task: Task = yield* fork(function* hydrateWorkspace() {
+    const task: Task = yield* fork(function* () {
       try {
-        yield* hydrateHudWorkspaceAgents(workspaceId, busyTask, failedSummaryIds);
+        yield* hydrateHudWorkspaceAgents(runtime, workspaceId, readBusy, failedSummaryIds, enter);
       } finally {
-        if (runtime.pendingAgentHydrationByWorkspaceId.get(workspaceId) === task) {
+        if (runtime.pendingAgentHydrationByWorkspaceId.get(workspaceId) === task)
           runtime.pendingAgentHydrationByWorkspaceId.delete(workspaceId);
-        }
       }
     });
     runtime.pendingAgentHydrationByWorkspaceId.set(workspaceId, task);
@@ -430,19 +561,32 @@ function resolveAgentDisplayName(
   return undefined;
 }
 
-function* hydrateUnknownAgent(runtime: HudRuntime, agentId: string): SagaGenerator<void> {
+function* hydrateUnknownAgent(
+  runtime: HudRuntime,
+  agentId: string,
+  workspaceId: string,
+): SagaGenerator<void> {
   const existing = runtime.pendingUnknownAgentReadByAgentId.get(agentId);
   if (existing) {
     yield* join(existing);
     return;
   }
+  const token = rendererEventRecovery.capture('agents:' + JSON.stringify([workspaceId]));
+  const live = runtime.recovery.capture();
   const task: Task = yield* fork(function* readUnknownAgent() {
     try {
-      const agent = yield* call([appClient.agents, appClient.agents.get], agentId);
-      if (!agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
+      const agent = yield* call(() =>
+        trackAgentMetadataRead(workspaceId, () => {
+          if (!live() || !token.commit(() => {})) return Promise.resolve(null);
+          return readHudAgent(runtime, agentId, workspaceId);
+        }),
+      );
+      if (!live() || !agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
       const session = { ...agent, messages: agent.messages ?? [] };
-      yield* put(bulkUpsertSessions([session], { listProjection: true }));
-      yield* put(upsertSession(session));
+      yield* put(
+        withRecoveryLifetime(bulkUpsertSessions([session], { listProjection: true }), token),
+      );
+      yield* put(withRecoveryLifetime(upsertSession(session), token));
     } catch (error) {
       logger.debug('agent.get failed for unknown HUD agent; gated as unmuted', {
         agentId,
@@ -475,6 +619,8 @@ function* emitTakeoverForEvent(runtime: HudRuntime, event: WorkspaceEvent): Saga
 }
 
 function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator<void> {
+  const live = runtime.recovery.capture();
+  const project = !runtime.recovery.adopted;
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
     event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {};
@@ -484,7 +630,7 @@ function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator
       yield* put(hudQuestionCaptured(question));
     }
   }
-  if (type === 'workspace:attention-changed') {
+  if (project && type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
       const raisedAtTs =
@@ -493,7 +639,7 @@ function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator
           : new Date().toISOString();
       yield* put(hudAttentionChanged(workspaceId, attention, raisedAtTs));
     }
-  } else if (type === 'workspace:displayStatus-changed') {
+  } else if (project && type === 'workspace:displayStatus-changed') {
     const displayStatus = data.displayStatus;
     if (workspaceId && isWorkspaceDisplayStatus(displayStatus)) {
       yield* put(hudDisplayStatusChanged(workspaceId, displayStatus));
@@ -516,10 +662,10 @@ function* handleEvent(runtime: HudRuntime, event: WorkspaceEvent): SagaGenerator
       : undefined;
     if (pendingHydration) yield* join(pendingHydration);
     if ((yield* selectAgentSession.effect(agentId)) === undefined) {
-      yield* hydrateUnknownAgent(runtime, agentId);
+      yield* hydrateUnknownAgent(runtime, agentId, workspaceId);
     }
   }
-  yield* emitTakeoverForEvent(runtime, event);
+  if (live()) yield* emitTakeoverForEvent(runtime, event);
 }
 
 function extractEvent(params: unknown): WorkspaceEvent | null {
@@ -570,10 +716,23 @@ function* hudGridFilterPersistenceSaga(): SagaGenerator<void> {
 }
 
 function* refreshHudData(runtime: HudRuntime, kind: HudRefreshKind): SagaGenerator<void> {
-  if (kind === 'subscribe') yield* call(subscribeHudLease, runtime.lease);
-  else if (kind === 'usage') yield* loadUsage();
-  else if (kind === 'rate-history') yield* loadRateHistory();
-  else yield* hydrateVisibleWorkspaceAgents(runtime);
+  if (kind === 'subscribe') {
+    yield* call(subscribeHudLease, runtime);
+    return;
+  }
+  if (kind === 'agents') {
+    yield* hydrateVisibleWorkspaceAgents(runtime);
+    return;
+  }
+  if (runtime.recovery.statsStale) return;
+  runtime.pendingStats.add(kind);
+  try {
+    if (kind === 'usage') yield* loadUsage(runtime);
+    else yield* loadRateHistory(runtime);
+  } finally {
+    runtime.pendingStats.delete(kind);
+    if (runtime.queuedStats.delete(kind)) runtime.refreshes.put(kind);
+  }
 }
 
 function* pollRateHistory(refreshes: Channel<HudRefreshKind>): SagaGenerator<never> {
@@ -583,11 +742,15 @@ function* pollRateHistory(refreshes: Channel<HudRefreshKind>): SagaGenerator<nev
   }
 }
 
-function* watchWorkspaceChanges(refreshes: Channel<HudRefreshKind>): SagaGenerator<never> {
+function* watchWorkspaceChanges(
+  runtime: HudRuntime,
+  refreshes: Channel<HudRefreshKind>,
+): SagaGenerator<never> {
   const changes = yield* actionChannel(HUD_WORKSPACE_CHANGE_ACTIONS, buffers.sliding(1));
   try {
     while (true) {
       yield* take(changes);
+      runtime.recovery.reconcile();
       const workspaces = yield* selectHudWorkspaceEntities.effect();
       for (const workspace of workspaces) {
         if (typeof workspace.displayStatus === 'string') {
@@ -602,9 +765,16 @@ function* watchWorkspaceChanges(refreshes: Channel<HudRefreshKind>): SagaGenerat
 }
 
 function* hudActiveLifetime(): SagaGenerator<void> {
-  const transport = createHudTransportChannel();
+  const reduxStore = yield* getContext<{
+    getState(): StoreState;
+    dispatch(action: { type: string }): unknown;
+  }>('reduxStore');
   const refreshes = sagaChannel<HudRefreshKind>();
   const runtime: HudRuntime = {
+    recovery: undefined as unknown as ReturnType<typeof installHudRecovery>,
+    refreshes,
+    pendingStats: new Set(),
+    queuedStats: new Set(),
     lease: { cancelled: false },
     hydratedAgentWorkspaceIds: new Set(),
     pendingAgentHydrationByWorkspaceId: new Map(),
@@ -612,26 +782,58 @@ function* hudActiveLifetime(): SagaGenerator<void> {
     lastStatusUpdateTextByWorkspaceId: new Map(),
     delegatedRowEmittedAgentIds: new Set(),
   };
-  const refreshTask = yield* takeSingleFlightInContext(
+  const transport = createHudTransportChannel(runtime, reduxStore);
+  let refreshTask = yield* takeSingleFlightInContext(
     refreshes,
     (kind) => kind,
     refreshHudData,
     runtime,
   );
   const pollTask = yield* fork(pollRateHistory, refreshes);
-  const workspaceTask = yield* fork(watchWorkspaceChanges, refreshes);
+  const workspaceTask = yield* fork(watchWorkspaceChanges, runtime, refreshes);
   const persistenceTask = yield* fork(hudGridFilterPersistenceSaga);
 
   try {
-    yield* put(refreshes, 'subscribe');
-    yield* put(refreshes, 'usage');
-    yield* put(refreshes, 'rate-history');
-    yield* put(refreshes, 'agents');
+    if (!runtime.recovery.adopted) {
+      yield* put(refreshes, 'subscribe');
+      yield* put(refreshes, 'usage');
+      yield* put(refreshes, 'rate-history');
+      yield* put(refreshes, 'agents');
+    }
 
     while (true) {
       const message: HudTransportMessage = yield* take(transport);
       if (message === (END as unknown as HudTransportMessage)) return;
+      if ('isCurrent' in message && message.isCurrent && !message.isCurrent()) continue;
+      if (message.kind === 'refresh-stats') {
+        for (const kind of runtime.pendingStats) runtime.queuedStats.add(kind);
+        continue;
+      }
+      if (message.kind === 'session') {
+        // Cancel scheduling from the previous authority. Its physical reads remain
+        // accounted for by their lanes, while a new transport can read independently.
+        yield* cancel(refreshTask);
+        runtime.pendingStats.clear();
+        runtime.queuedStats.clear();
+        refreshTask = yield* takeSingleFlightInContext(
+          refreshes,
+          (kind) => kind,
+          refreshHudData,
+          runtime,
+        );
+        if (runtime.lease.subscriptionId)
+          void backendUnsubscribe(runtime.lease.subscriptionId).catch(() => {});
+        runtime.lease.subscriptionId = undefined;
+        runtime.hydratedAgentWorkspaceIds.clear();
+        runtime.pendingAgentHydrationByWorkspaceId.clear();
+        runtime.pendingUnknownAgentReadByAgentId.clear();
+        yield* put(refreshes, 'usage');
+        yield* put(refreshes, 'rate-history');
+        yield* put(refreshes, 'agents');
+        continue;
+      }
       if (message.kind === 'reconnected') {
+        runtime.recovery.reconnect();
         runtime.lease.subscriptionId = undefined;
         runtime.hydratedAgentWorkspaceIds.clear();
         yield* put(refreshes, 'subscribe');
@@ -642,7 +844,12 @@ function* hudActiveLifetime(): SagaGenerator<void> {
       }
       if (message.notification.method !== 'events.event') continue;
       const envelopeId = extractSubscriptionId(message.notification.params);
-      if (envelopeId !== undefined && envelopeId !== runtime.lease.subscriptionId) continue;
+      if (
+        !runtime.recovery.adopted &&
+        envelopeId !== undefined &&
+        envelopeId !== runtime.lease.subscriptionId
+      )
+        continue;
       const event = extractEvent(message.notification.params);
       if (event) yield* fork(handleEvent, runtime, event);
     }

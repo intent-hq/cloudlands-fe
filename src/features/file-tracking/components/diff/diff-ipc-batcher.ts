@@ -1,3 +1,9 @@
+import { getPhysicalRequestCompletion } from '$shared/event-recovery/session';
+import {
+  gitReadDrained,
+  gitReadFailureDrained,
+  observeGitReadFailure,
+} from '../../git-recovery-read-lane';
 /**
  * Request coalescer / deduper for the diff viewers' git reads.
  *
@@ -52,6 +58,8 @@ interface BranchBaseDiffOptions {
 }
 
 interface NumstatOptions extends BranchBaseDiffOptions {
+  gitRootId?: string;
+  transport?: GitReadTransport;
   staged?: boolean;
   targetRef?: string;
 }
@@ -100,13 +108,33 @@ interface GitlinkMeta {
   newSha?: string;
 }
 
+export interface GitReadTransport {
+  key: object;
+  onFailure?(error: unknown): void;
+  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+}
+const transportIds = new WeakMap<object, number>();
+let nextTransportId = 0;
+function transportId(transport?: GitReadTransport): number {
+  if (!transport) return 0;
+  let id = transportIds.get(transport.key);
+  if (id === undefined) {
+    id = ++nextTransportId;
+    transportIds.set(transport.key, id);
+  }
+  return id;
+}
+
 interface DiffReadPolicy {
+  transport?: GitReadTransport;
   signal?: AbortSignal;
   canRead?: () => boolean;
 }
 
 interface PendingDiff {
+  transport?: GitReadTransport;
   callers: Map<string, Array<() => boolean>>;
+  transports: Map<string, Array<{ transport: GitReadTransport; canRead: () => boolean }>>;
   paths: Set<string>;
   resolvers: Map<string, Array<(chunk: DiffChunk | undefined) => void>>;
   rejecters: Array<(err: unknown) => void>;
@@ -123,6 +151,30 @@ interface PendingDiff {
 /** A shared read remains authorized while at least one caller still needs this path. */
 function hasActiveCaller(pending: PendingDiff, path: string): boolean {
   return pending.callers.get(path)?.some((canRead) => canRead()) ?? false;
+}
+
+/** Capture each participating owner's observer before dispatch, without changing batching identity. */
+function batchTransport(
+  pending: PendingDiff,
+  paths = [...pending.callers.keys()],
+): GitReadTransport | undefined {
+  const transports = paths.flatMap((path) =>
+    (pending.transports.get(path) ?? [])
+      .filter((caller) => caller.canRead())
+      .map((caller) => caller.transport),
+  );
+  const first = transports[0];
+  if (!first) return pending.transport;
+  const observers = new Set(transports.map((transport) => transport.onFailure));
+  const onFailure = (error: unknown) => {
+    for (const observer of observers) observer?.(error);
+  };
+  return {
+    key: first.key,
+    onFailure,
+    request: <T>(method: string, params?: unknown) =>
+      observeGitReadFailure(first.request<T>(method, params), onFailure),
+  };
 }
 
 function resolveAbortedGroup(pending: PendingDiff): void {
@@ -234,9 +286,10 @@ async function readWorkingTreeContent(
   workspaceId: string,
   filePath: string,
   gitRootId?: string,
+  transport?: GitReadTransport,
 ): Promise<ShowFileResponse> {
   try {
-    const result = await backendRequest<unknown>('file.read', {
+    const result = await (transport?.request ?? backendRequest)<unknown>('file.read', {
       workspaceId,
       path: filePath,
       ...(gitRootId ? { gitRootId } : {}),
@@ -249,7 +302,11 @@ async function readWorkingTreeContent(
           : '';
     return { success: true, data: content };
   } catch (error) {
-    if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
+    if (
+      getPhysicalRequestCompletion(error) ||
+      ((transport || gitRootId) && !isMissingWorkingTreeFile(error))
+    )
+      throw error;
     logger.debug('file.read failed for working-tree diff side (file deleted?)', {
       workspaceId,
       filePath,
@@ -283,6 +340,7 @@ async function enrichChunkContents(
   gitlink?: GitlinkMeta,
   gitRootId?: string,
   gitRootPath?: string,
+  transport?: GitReadTransport,
 ): Promise<void> {
   if (isGitlinkDiffChunk(chunk)) {
     const sides = gitlinkSidesFromHunks(chunk.chunks ?? []);
@@ -296,8 +354,8 @@ async function enrichChunkContents(
     chunk.newContent = sides.newContent;
     return;
   }
-  const showOptions = gitRootId ? { gitRootId } : undefined;
-  const [oldRes, newRes] = await Promise.all([
+  const showOptions = { gitRootId, transport };
+  const sides = await Promise.allSettled([
     dedupedShowFile(workspaceId, staged ? 'HEAD' : ':0', chunk.file, showOptions),
     staged
       ? dedupedShowFile(workspaceId, ':0', chunk.file, showOptions)
@@ -307,8 +365,18 @@ async function enrichChunkContents(
             ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}`
             : chunk.file,
           gitRootId,
+          transport,
         ),
   ]);
+  await Promise.all(
+    sides.map((side) =>
+      side.status === 'rejected' ? gitReadFailureDrained(side.reason) : undefined,
+    ),
+  );
+  for (const side of sides) if (side.status === 'rejected') throw side.reason;
+  const [oldRes, newRes] = sides.map(
+    (side) => (side as PromiseFulfilledResult<ShowFileResponse>).value,
+  );
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';
   else if (oldRes.notAFile) {
     // Typed not-a-file rejection (#1739): a gitlink/directory entry whose
@@ -350,22 +418,27 @@ function sharedFullTreeDiffRead(
   workspaceId: string,
   staged: boolean,
   gitRootId?: string,
+  transport?: GitReadTransport,
 ): Promise<DiffChunk[]> {
-  const key = diffGroupKey(workspaceId, staged, gitRootId);
+  const key = JSON.stringify([
+    diffGroupKey(workspaceId, staged, gitRootId),
+    transportId(transport),
+  ]);
   const existing = pendingFullTreeReads.get(key);
-  if (existing) return existing;
+  if (existing) return observeGitReadFailure(existing, transport?.onFailure);
 
-  const promise = backendRequest<unknown>(
+  const promise = (transport?.request ?? backendRequest)<unknown>(
     'git.diffs',
     staged
       ? { workspaceId, staged: true, ...(gitRootId ? { gitRootId } : {}) }
       : { workspaceId, ...(gitRootId ? { gitRootId } : {}) },
-  )
-    .then(toDaemonDiffChunks)
-    .finally(() => pendingFullTreeReads.delete(key));
+  ).then(toDaemonDiffChunks);
+  void gitReadDrained(promise, () => {
+    pendingFullTreeReads.delete(key);
+  });
 
   pendingFullTreeReads.set(key, promise);
-  return promise;
+  return observeGitReadFailure(promise, transport?.onFailure);
 }
 
 async function flushDiffGroup(key: string) {
@@ -374,7 +447,8 @@ async function flushDiffGroup(key: string) {
   pendingDiffs.delete(key);
   if (pending.timer) clearTimeout(pending.timer);
 
-  const [wsId, staged, gitRootId] = JSON.parse(key) as [string, boolean, string];
+  const [group] = JSON.parse(key) as [string, number];
+  const [wsId, staged, gitRootId] = JSON.parse(group) as [string, boolean, string];
 
   try {
     // One hunk read serves the whole group: the batch's collected file set is
@@ -395,7 +469,8 @@ async function flushDiffGroup(key: string) {
       resolveAbortedGroup(pending);
       return;
     }
-    const result = await backendRequest<unknown>(
+    const transport = batchTransport(pending);
+    const result = await (transport?.request ?? backendRequest)<unknown>(
       'git.diffs',
       staged
         ? { workspaceId: wsId, staged: true, paths, ...(gitRootId ? { gitRootId } : {}) }
@@ -438,11 +513,12 @@ async function flushDiffGroup(key: string) {
         { workspaceId: wsId, staged, paths: suspiciousUnmatched },
       );
       try {
-        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged, gitRootId);
+        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged, gitRootId, transport);
         for (const path of suspiciousUnmatched) {
           matches.set(path, findChunkForPath(recoveryChunks, path));
         }
       } catch (recoveryErr) {
+        if (pending.transport || getPhysicalRequestCompletion(recoveryErr)) throw recoveryErr;
         logger.warn('git.diffs full-tree recovery read failed; resolving undefined', {
           workspaceId: wsId,
           staged,
@@ -467,7 +543,7 @@ async function flushDiffGroup(key: string) {
       const gitlink = pending.gitlinks?.get(path);
       if (chunk && gitlink && !gitlinkByChunk.has(chunk)) gitlinkByChunk.set(chunk, gitlink);
     }
-    await Promise.all(
+    const enriched = await Promise.allSettled(
       [...matchedChunks].map((chunk) =>
         enrichChunkContents(
           wsId,
@@ -476,10 +552,20 @@ async function flushDiffGroup(key: string) {
           gitlinkByChunk.get(chunk),
           gitRootId,
           pending.gitRootPath,
+          batchTransport(
+            pending,
+            [...matches].filter(([, match]) => match === chunk).map(([path]) => path),
+          ),
         ),
       ),
     );
 
+    await Promise.all(
+      enriched.map((result) =>
+        result.status === 'rejected' ? gitReadFailureDrained(result.reason) : undefined,
+      ),
+    );
+    for (const result of enriched) if (result.status === 'rejected') throw result.reason;
     for (const [path, resolvers] of pending.resolvers) {
       const chunk = matches.get(path);
       for (const resolve of resolvers) resolve(chunk);
@@ -498,7 +584,7 @@ function branchBaseDiffGroupKey(
   baseRef: string | undefined,
   baseCommitSha: string | undefined,
 ): string {
-  return `${workspaceId}::${baseRef ?? ''}::${baseCommitSha ?? ''}`;
+  return JSON.stringify([workspaceId, baseRef ?? '', baseCommitSha ?? '']);
 }
 
 async function flushBranchBaseDiffGroup(key: string) {
@@ -507,7 +593,8 @@ async function flushBranchBaseDiffGroup(key: string) {
   pendingBranchBaseDiffs.delete(key);
   if (pending.timer) clearTimeout(pending.timer);
 
-  const [wsId, baseRef, baseCommitSha] = key.split('::');
+  const [group] = JSON.parse(key) as [string, number];
+  const [wsId, baseRef, baseCommitSha] = JSON.parse(group) as string[];
   const paths = [...pending.resolvers.keys()].filter((path) => hasActiveCaller(pending, path));
   if (paths.length === 0) {
     resolveAbortedGroup(pending);
@@ -515,13 +602,17 @@ async function flushBranchBaseDiffGroup(key: string) {
   }
 
   try {
-    const result = (await invoke('git:diff', {
+    const params = {
       workspaceId: wsId,
       paths,
       baseRef: baseRef || undefined,
       baseCommitSha: baseCommitSha || undefined,
       targetRef: 'HEAD',
-    })) as GitDiffResponse;
+    };
+    const transport = batchTransport(pending);
+    const result: GitDiffResponse = transport
+      ? { success: true, data: await transport.request('git.branchDiff', params) }
+      : ((await invoke('git:diff', params)) as GitDiffResponse);
 
     const chunks = result?.success && Array.isArray(result.data) ? result.data : [];
     for (const [path, resolvers] of pending.resolvers) {
@@ -561,17 +652,22 @@ export function batchedGitDiff(
     gitRootPath?: string;
   } & DiffReadPolicy,
 ): Promise<DiffChunk | undefined> {
-  const key = diffGroupKey(workspaceId, staged, options?.gitRootId);
+  const key = JSON.stringify([
+    diffGroupKey(workspaceId, staged, options?.gitRootId),
+    transportId(options?.transport),
+  ]);
   const existing = pendingDiffs.get(key);
   const pending: PendingDiff = existing ?? {
     paths: new Set(),
     resolvers: new Map(),
     callers: new Map(),
+    transports: new Map(),
     rejecters: [],
     timer: null,
     wirePaths: new Map(),
     gitlinks: new Map(),
     gitRootPath: options?.gitRootPath,
+    transport: options?.transport,
   };
   if (!existing) {
     pendingDiffs.set(key, pending);
@@ -595,6 +691,11 @@ export function batchedGitDiff(
     }
     const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
     const callers = pending.callers.get(filePath) ?? [];
+    if (options?.transport) {
+      const transports = pending.transports.get(filePath) ?? [];
+      transports.push({ transport: options.transport, canRead });
+      pending.transports.set(filePath, transports);
+    }
     callers.push(canRead);
     pending.callers.set(filePath, callers);
     resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
@@ -612,14 +713,19 @@ export function batchedGitBranchBaseDiff(
   options: BranchBaseDiffOptions & DiffReadPolicy,
   filePath: string,
 ): Promise<DiffChunk | undefined> {
-  const key = branchBaseDiffGroupKey(workspaceId, options.baseRef, options.baseCommitSha);
+  const key = JSON.stringify([
+    branchBaseDiffGroupKey(workspaceId, options.baseRef, options.baseCommitSha),
+    transportId(options.transport),
+  ]);
   const existing = pendingBranchBaseDiffs.get(key);
   const pending: PendingDiff = existing ?? {
     paths: new Set(),
     resolvers: new Map(),
     callers: new Map(),
+    transports: new Map(),
     rejecters: [],
     timer: null,
+    transport: options.transport,
   };
   if (!existing) {
     pendingBranchBaseDiffs.set(key, pending);
@@ -635,6 +741,11 @@ export function batchedGitBranchBaseDiff(
     }
     const canRead = () => !options?.signal?.aborted && (options?.canRead?.() ?? true);
     const callers = pending.callers.get(filePath) ?? [];
+    if (options?.transport) {
+      const transports = pending.transports.get(filePath) ?? [];
+      transports.push({ transport: options.transport, canRead });
+      pending.transports.set(filePath, transports);
+    }
     callers.push(canRead);
     pending.callers.set(filePath, callers);
     resolvers.push((chunk) => resolve(canRead() ? chunk : undefined));
@@ -652,7 +763,7 @@ const pendingShows = new Map<string, PendingShow>();
 const pendingNumstats = new Map<string, Promise<NumstatEntry[]>>();
 
 function showKey(workspaceId: string, ref: string, filePath: string, gitRootId?: string): string {
-  return `${workspaceId}::${ref}::${filePath}::${gitRootId ?? ''}`;
+  return JSON.stringify([workspaceId, ref, filePath, gitRootId ?? '']);
 }
 
 /**
@@ -662,8 +773,9 @@ function showKey(workspaceId: string, ref: string, filePath: string, gitRootId?:
  * path, gitRootId)` share a single in-flight request; `opts.gitRootId`
  * scopes the read to a registered secondary git root and is omitted
  * from the wire call when unset, keeping the primary-root request
- * byte-identical. Daemon/transport errors fold into
- * `{ success: false, error }`, preserving the legacy handler's envelope; the
+ * byte-identical. Deadline failures carrying physical completion propagate so
+ * callers retain outstanding work. Other unscoped daemon/transport errors fold
+ * into `{ success: false, error }`, preserving the legacy handler's envelope; the
  * typed `not-a-file` rejection (gitlink/directory entry, #1739) additionally
  * sets `notAFile: true` so callers can route it instead of treating it as a
  * failure.
@@ -672,62 +784,78 @@ export function dedupedShowFile(
   workspaceId: string,
   ref: string,
   filePath: string,
-  opts?: { gitRootId?: string },
+  opts?: { gitRootId?: string; transport?: GitReadTransport },
 ): Promise<ShowFileResponse> {
-  const key = showKey(workspaceId, ref, filePath, opts?.gitRootId);
+  const key = JSON.stringify([
+    showKey(workspaceId, ref, filePath, opts?.gitRootId),
+    transportId(opts?.transport),
+  ]);
   const existing = pendingShows.get(key);
-  if (existing) return existing.promise;
+  if (existing) return observeGitReadFailure(existing.promise, opts?.transport?.onFailure);
 
-  const promise = backendRequest<{ content?: unknown }>('git.showFile', {
-    workspaceId,
-    filePath,
-    ref,
-    ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
-  })
+  const promise = (opts?.transport?.request ?? backendRequest)<{ content?: unknown }>(
+    'git.showFile',
+    {
+      workspaceId,
+      filePath,
+      ref,
+      ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
+    },
+  )
     .then((result): ShowFileResponse => ({
       success: true,
       data: typeof result?.content === 'string' ? result.content : '',
     }))
-    .catch((error): ShowFileResponse => ({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      ...(isNotAFileError(error) ? { notAFile: true } : {}),
-    }))
-    .finally(() => {
-      pendingShows.delete(key);
+    .catch((error): ShowFileResponse => {
+      if (getPhysicalRequestCompletion(error) || (opts?.transport && !isNotAFileError(error)))
+        throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        ...(isNotAFileError(error) ? { notAFile: true } : {}),
+      };
     });
+  void gitReadDrained(promise, () => {
+    pendingShows.delete(key);
+  });
 
   pendingShows.set(key, { promise });
-  return promise;
+  return observeGitReadFailure(promise, opts?.transport?.onFailure);
 }
 
 function numstatKey(workspaceId: string, options: NumstatOptions): string {
-  return [
+  return JSON.stringify([
     workspaceId,
     options.staged === undefined ? '' : options.staged ? '1' : '0',
     options.baseRef ?? '',
     options.baseCommitSha ?? '',
     options.targetRef ?? '',
-  ].join('::');
+    options.gitRootId ?? '',
+    transportId(options.transport),
+  ]);
 }
 
 export function dedupedGitNumstat(
   workspaceId: string,
   options: NumstatOptions = {},
 ): Promise<NumstatEntry[]> {
+  if (options.gitRootId) return Promise.reject(new Error('Secondary-root numstat is unavailable'));
   const key = numstatKey(workspaceId, options);
   const existing = pendingNumstats.get(key);
-  if (existing) return existing;
+  if (existing) return observeGitReadFailure(existing, options.transport?.onFailure);
 
+  const { transport, ...params } = options;
   const promise = (
-    invoke('git:numstat', {
-      workspaceId,
-      ...options,
-    }) as Promise<GitNumstatResponse>
-  )
-    .then((result) => (result?.success && Array.isArray(result.data) ? result.data : []))
-    .finally(() => pendingNumstats.delete(key));
+    transport
+      ? transport
+          .request<NumstatEntry[]>('git.numstat', { workspaceId, ...params })
+          .then((data) => ({ success: true, data }))
+      : (invoke('git:numstat', { workspaceId, ...params }) as Promise<GitNumstatResponse>)
+  ).then((result) => (result?.success && Array.isArray(result.data) ? result.data : []));
+  void gitReadDrained(promise, () => {
+    pendingNumstats.delete(key);
+  });
 
   pendingNumstats.set(key, promise);
-  return promise;
+  return observeGitReadFailure(promise, options.transport?.onFailure);
 }

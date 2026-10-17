@@ -29,6 +29,10 @@
  * most one follow-up `workspace.list`.
  */
 
+import {
+  captureMainEventRecovery,
+  onMainEventRecoveryReady,
+} from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import {
   getLocalBackendClient,
@@ -56,18 +60,34 @@ export interface WorkspaceForwardCleanupDeps {
 
 class WorkspaceForwardCleanupState {
   readonly providers = new Set<TunnelProvider>();
+  private recovery: ReturnType<typeof captureMainEventRecovery>;
+  private recoveryResource:
+    | ReturnType<
+        NonNullable<ReturnType<typeof captureMainEventRecovery>>['coordinator']['registerResource']
+      >
+    | undefined;
   private subscriptionId: string | undefined;
   private subscribeEpoch = 0;
   private subscribeInFlight = false;
   private reconcileInFlight = false;
+  private ordinaryRead: Promise<unknown> | undefined;
   private reconcileQueued = false;
   private reconcileFailed = false;
   private disposed = false;
   private readonly disposeNotification: () => void;
   private readonly disposeReconnect: () => void;
+  private readonly disposeIdentity: (() => void) | undefined;
+  private readonly onStatus = (status: string) => {
+    if (status === 'connected') this.ensure();
+  };
 
   constructor(private readonly deps: WorkspaceForwardCleanupDeps & { client: JsonRpcClient }) {
     if (deps.provider) this.providers.add(deps.provider);
+    deps.client.on?.('status', this.onStatus);
+    this.disposeIdentity =
+      typeof deps.client.getRepositoryConnection === 'function'
+        ? onMainEventRecoveryReady(deps.client, () => this.ensure())
+        : undefined;
     const backendId = deps.backendId ?? LOCAL_CONNECTION_ID;
     this.disposeNotification = onBackendNotification(
       (notification) => this.handleBackendNotification(notification),
@@ -87,11 +107,15 @@ class WorkspaceForwardCleanupState {
   dispose(): void {
     this.disposed = true;
     this.subscribeEpoch += 1;
+    this.recovery?.coordinator.dispose();
     this.disposeNotification();
     this.disposeReconnect();
+    this.disposeIdentity?.();
+    this.deps.client.off?.('status', this.onStatus);
   }
 
   reconcile(): void {
+    if (this.recoveryResource && !this.recoveryResource.push()) return;
     void this.reconcileOwnedForwards();
   }
 
@@ -116,11 +140,12 @@ class WorkspaceForwardCleanupState {
     }
   }
 
-  private handleBackendNotification(n: JsonRpcNotification): void {
+  private handleBackendNotification(n: JsonRpcNotification, ordered = false): void {
+    if (this.recovery && !ordered) return;
     if (n.method !== 'events.event') return;
     const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
     const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
-    if (!this.subscriptionId || subId !== this.subscriptionId) return;
+    if (!ordered && (!this.subscriptionId || subId !== this.subscriptionId)) return;
     const event = params?.event as { type?: unknown; data?: unknown } | undefined;
     if (!event) return;
     const data = event.data as { workspaceId?: unknown; changes?: unknown } | undefined;
@@ -138,7 +163,17 @@ class WorkspaceForwardCleanupState {
   }
 
   private async runReconcilePass(): Promise<void> {
-    if (this.disposed) return;
+    if (
+      this.disposed ||
+      (typeof this.deps.client.getRepositoryConnection === 'function' &&
+        !this.deps.client.getRepositoryConnection())
+    )
+      return;
+    if (
+      typeof this.deps.client.getRepositoryConnection === 'function' &&
+      !this.recovery?.session.isCurrent()
+    )
+      return;
     const providers = this.providers.size > 0 ? this.providers : undefined;
     const ownedIds = this.deps.registry.ownedWorkspaceIds(providers);
     if (ownedIds.length === 0) {
@@ -146,11 +181,14 @@ class WorkspaceForwardCleanupState {
       return;
     }
     const epoch = this.subscribeEpoch;
+    const receipt = this.recoveryResource?.captureLifetime();
     let workspaces: unknown[];
     try {
-      const result = (await this.deps.client.request('workspace.list', {
+      const pending = (this.recovery?.session ?? this.deps.client).request('workspace.list', {
         includeArchived: true,
-      })) as { workspaces?: unknown[] } | undefined;
+      });
+      this.ordinaryRead = pending;
+      const result = (await pending) as { workspaces?: unknown[] } | undefined;
       if (!Array.isArray(result?.workspaces)) {
         logger.warn('workspace.list for forward reconciliation returned no workspaces array');
         this.reconcileFailed = true;
@@ -163,6 +201,8 @@ class WorkspaceForwardCleanupState {
       });
       this.reconcileFailed = true;
       return;
+    } finally {
+      this.ordinaryRead = undefined;
     }
     if (this.disposed || epoch !== this.subscribeEpoch) return;
     const archivedById = new Map<string, boolean>();
@@ -176,11 +216,15 @@ class WorkspaceForwardCleanupState {
       archivedById.set(row.id, row.archived === true || row.status === 'Archived');
     }
     this.reconcileFailed = false;
-    for (const workspaceId of ownedIds) {
-      const archived = archivedById.get(workspaceId);
-      if (archived === undefined) this.cleanupWorkspace(workspaceId, 'deleted');
-      else if (archived) this.cleanupWorkspace(workspaceId, 'archived');
-    }
+    const apply = (): undefined => {
+      for (const workspaceId of ownedIds) {
+        const archived = archivedById.get(workspaceId);
+        if (archived === undefined) this.cleanupWorkspace(workspaceId, 'deleted');
+        else if (archived) this.cleanupWorkspace(workspaceId, 'archived');
+      }
+    };
+    if (receipt) receipt.commit(apply);
+    else apply();
   }
 
   private async reconcileOwnedForwards(): Promise<void> {
@@ -194,24 +238,85 @@ class WorkspaceForwardCleanupState {
       do {
         this.reconcileQueued = false;
         await this.runReconcilePass();
-      } while (this.reconcileQueued && !this.disposed);
+      } while (this.reconcileQueued && !this.disposed && !this.recoveryResource?.status.stale);
     } finally {
       this.reconcileInFlight = false;
     }
   }
 
+  private captureRecovery(): void {
+    if (this.recovery?.session.isCurrent()) return;
+    this.recovery = captureMainEventRecovery(this.deps.client, () => {
+      this.subscribeEpoch++;
+      this.subscriptionId = undefined;
+      this.subscribeInFlight = false;
+      const providers = this.providers.size ? this.providers : undefined;
+      for (const id of this.deps.registry.ownedWorkspaceIds(providers))
+        this.cleanupWorkspace(id, 'deleted');
+    });
+    if (!this.recovery) return;
+    this.recoveryResource = this.recovery.coordinator.registerResource({
+      key: 'workspace-forward-cleanup',
+      workspaceId: null,
+      eventTypes: ['workspace:updated', 'workspace:deleted'],
+      read: async (reader) => {
+        await this.ordinaryRead?.catch(() => {});
+        const providers = this.providers.size ? this.providers : undefined;
+        const ownedIds = this.deps.registry.ownedWorkspaceIds(providers);
+        if (!ownedIds.length) return { ownedIds, workspaces: [] };
+        const result = await reader.request<{
+          workspaces?: Array<{ id: string; archived?: boolean; status?: string }>;
+        }>('workspace.list', { includeArchived: true });
+        if (
+          !Array.isArray(result?.workspaces) ||
+          result.workspaces.some((row) => typeof row?.id !== 'string')
+        )
+          throw new Error('Invalid workspace list');
+        return { ownedIds, workspaces: result.workspaces };
+      },
+      apply: ({ ownedIds, workspaces }) => {
+        const rows = new Map(workspaces.map((row) => [row.id, row]));
+        for (const id of ownedIds) {
+          const row = rows.get(id);
+          if (!row) this.cleanupWorkspace(id, 'deleted');
+          else if (row.archived || row.status === 'Archived') this.cleanupWorkspace(id, 'archived');
+        }
+      },
+      invalidate: () => {},
+      retire: () => {
+        const providers = this.providers.size ? this.providers : undefined;
+        for (const id of this.deps.registry.ownedWorkspaceIds(providers))
+          this.cleanupWorkspace(id, 'deleted');
+      },
+      onEvent: (n) => this.handleBackendNotification(n, true),
+    });
+  }
+
   private async subscribeToWorkspaceEvents(): Promise<void> {
-    if (this.disposed) return;
+    if (
+      this.disposed ||
+      (typeof this.deps.client.getRepositoryConnection === 'function' &&
+        !this.deps.client.getRepositoryConnection())
+    )
+      return;
     if (this.subscriptionId !== undefined || this.subscribeInFlight) {
       if (this.subscriptionId !== undefined && this.reconcileFailed) this.reconcile();
       return;
     }
+    this.captureRecovery();
+    if (typeof this.deps.client.getRepositoryConnection === 'function' && !this.recovery) return;
     this.subscribeInFlight = true;
     const epoch = this.subscribeEpoch;
     try {
-      const result = (await this.deps.client.request('events.subscribe', {
-        eventTypes: ['workspace:updated', 'workspace:deleted'],
-      })) as { subscriptionId?: string } | undefined;
+      const eventTypes = ['workspace:updated', 'workspace:deleted'];
+      const result = this.recovery
+        ? {
+            subscriptionId: (
+              await this.recovery.coordinator.subscribe({ eventTypes }, { recover: true })
+            )?.id,
+          }
+        : ((await this.deps.client.request('events.subscribe', { eventTypes })) as
+            { subscriptionId?: string } | undefined);
       if (this.disposed || epoch !== this.subscribeEpoch) return;
       this.subscriptionId = result?.subscriptionId;
       if (!this.subscriptionId) {
@@ -228,6 +333,14 @@ class WorkspaceForwardCleanupState {
   }
 
   private handleReconnect(): void {
+    // The connected status may already have captured this replacement socket.
+    if (this.recovery?.session.isCurrent()) {
+      this.ensure();
+      return;
+    }
+    this.recovery?.coordinator.dispose();
+    this.recovery = undefined;
+    this.recoveryResource = undefined;
     this.subscribeEpoch += 1;
     this.subscriptionId = undefined;
     this.subscribeInFlight = false;

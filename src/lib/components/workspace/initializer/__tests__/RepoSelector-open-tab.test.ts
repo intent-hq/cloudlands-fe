@@ -126,7 +126,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
     payload,
   }),
 }));
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   replaceWorkspaceList: (workspaces: unknown) => ({
     type: 'workspace/replace',
     payload: workspaces,

@@ -1,3 +1,6 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -47,32 +50,35 @@ function* finishOverlayCreation(
   status: TerminalCreationOutcome['status'],
   terminalId?: string,
   error?: Error,
+  authority?: RecoveryLifetime,
 ): SagaGenerator<void> {
   const [workspaceId, consumer] = action.payload;
   if (!consumer) return;
-  yield* put(
-    terminalCreationFinished({
-      ...consumer,
-      workspaceId,
-      seq: action.seq,
-      status,
-      ...(terminalId ? { terminalId } : {}),
-      ...(error?.message ? { error: error.message } : {}),
-    }),
-  );
+  const outcome = terminalCreationFinished({
+    ...consumer,
+    workspaceId,
+    seq: action.seq,
+    status,
+    ...(terminalId ? { terminalId } : {}),
+    ...(error?.message ? { error: error.message } : {}),
+  });
+  yield* put(authority ? withRecoveryLifetime(outcome, authority) : outcome);
 }
 
 function* createOverlayTerminalWorker(
   action: ReturnType<typeof createOverlayTerminalRequested>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  const authority = rendererEventRecovery.captureAuthority(
+    'terminals:' + JSON.stringify([workspaceId]),
+  );
   let settled = false;
   try {
     const context =
       workspaceId === ROOT_WORKSPACE_ID
         ? ROOT_WORKSPACE_ID
         : yield* selectWorkspaceActionContext.effect(workspaceId);
-    if (!context) {
+    if (!context || !authority.isCurrent()) {
       const error = new Error(m.terminal_adapter_openFailed_error());
       settled = true;
       yield* finishOverlayCreation(action, 'failure', undefined, error);
@@ -88,7 +94,7 @@ function* createOverlayTerminalWorker(
       workspaceId === ROOT_WORKSPACE_ID
         ? ROOT_WORKSPACE_ID
         : yield* selectWorkspaceActionContext.effect(workspaceId);
-    if (context !== currentContext || !result.success || !result.id) {
+    if (!authority.isCurrent() || context !== currentContext || !result.success || !result.id) {
       const error = new Error(result.error ?? m.terminal_adapter_openFailed_error());
       settled = true;
       yield* finishOverlayCreation(action, 'failure', undefined, error);
@@ -99,17 +105,22 @@ function* createOverlayTerminalWorker(
     const consumerCurrent = yield* isOverlayConsumerCurrent(action);
     const terminals = yield* selectTerminalsForWorkspace.effect(workspaceId);
     yield* put(
-      addTerminal(
-        workspaceId,
-        result.id,
-        m.terminal_quakeOverlay_terminalNumber_label({ number: terminals.length + 1 }),
+      withRecoveryLifetime(
+        addTerminal(
+          workspaceId,
+          result.id,
+          m.terminal_quakeOverlay_terminalNumber_label({ number: terminals.length + 1 }),
+        ),
+        authority,
       ),
     );
     if (consumerCurrent) {
       if (!(yield* selectIsTerminalOverlayOpenForWorkspace.effect(workspaceId)))
-        yield* put(openTerminalOverlay(workspaceId, result.id));
-      yield* finishOverlayCreation(action, 'success', result.id);
+        yield* put(withRecoveryLifetime(openTerminalOverlay(workspaceId, result.id), authority));
+      if (!authority.isCurrent()) throw new Error(m.terminal_adapter_openFailed_error());
+      yield* finishOverlayCreation(action, 'success', result.id, undefined, authority);
     }
+    if (!authority.isCurrent()) throw new Error(m.terminal_adapter_openFailed_error());
     settled = true;
     yield* put(action.success(result.id));
   } catch (error) {

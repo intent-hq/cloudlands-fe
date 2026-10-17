@@ -1,3 +1,4 @@
+import { getRecoveryAdmission } from '$store/renderer/middlewares/event-recovery';
 import { presenceMembershipChanged } from '$store/renderer/slices/presence/presence-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
@@ -834,6 +835,66 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('uses independent activity admission while rejecting missing agent metadata', async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const envelope = notification('agent:idle', { agentId: AGENT, status: 'idle' });
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { workspaceActivityRecoveryKey } = await import('./workspace-activity-recovery');
+    const key = workspaceActivityRecoveryKey(WS);
+    routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+      lifetimes: new Map([[key, rendererEventRecovery.capture(key)]]),
+    });
+    expect(readSession()?.status).toBe(AgentStatus.Active);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    expect(appStore.state.workspaceEvents.byWorkspaceId[WS]?.events.map((row) => row.id)).toContain(
+      envelope.params.event.id,
+    );
+    routeDaemonEventsNotification(envelope.method, envelope.params);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it.each([false, true])(
+    'admits People previews independently of metadata, activity=%s',
+    async (activity) => {
+      seedSession({ isStreaming: true, status: AgentStatus.Active });
+      await primeBridge();
+      const envelope = notification('agent:last-message', {
+        agentId: AGENT,
+        role: 'user',
+        text: 'People preview',
+      });
+      const { rendererEventRecovery } = await import('./renderer-event-recovery');
+      const { workspaceActivityRecoveryKey } = await import('./workspace-activity-recovery');
+      const key = workspaceActivityRecoveryKey(WS);
+      routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+        lifetimes: new Map(activity ? [[key, rendererEventRecovery.capture(key)]] : []),
+      });
+      expect(readSession()?.status).toBe(AgentStatus.Active);
+      expect(
+        appStore.state.workspaceEvents.byWorkspaceId[WS]?.events.some(
+          (row) => row.id === envelope.params.event.id,
+        ) ?? false,
+      ).toBe(activity);
+    },
+  );
+
+  it('never restores the legacy settings writer for an empty integrated admission map', async () => {
+    await primeBridge();
+    const envelope = {
+      event: {
+        id: 'retired-settings',
+        type: 'settings:changed',
+        data: { changes: [{ path: 'mcp.enableUserServers', value: true }] },
+      },
+    };
+    const initial = appStore.state.mcpSettings.enabled;
+    routeDaemonEventsNotification('events.event', envelope, undefined, { lifetimes: new Map() });
+    expect(appStore.state.mcpSettings.enabled).toBe(initial);
+    routeDaemonEventsNotification('events.event', envelope);
+    expect(appStore.state.mcpSettings.enabled).toBe(true);
   });
 
   it('routes settings:changed (workspace-less) through applySettingsChanges into the mcp-settings slice', async () => {
@@ -1976,8 +2037,17 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const handler = capturedHandlers[0]!;
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    const dispatch = vi.fn(appStore.dispatch);
+    Object.defineProperty(appStore, 'dispatch', { get: () => dispatch, configurable: true });
 
     streamStart(handler);
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: chatSendStarted.type,
+        payload: expect.objectContaining({ assistantMessageId: WAKE_MESSAGE_ID }),
+      }),
+    );
 
     // Busy state opens exactly like a user-initiated turn…
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
@@ -1997,6 +2067,22 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(assistantMessages[0].isStreaming).toBe(true);
     expect(assistantMessages[0].contentBlocks).toEqual([]);
     expectNoContentOnStreamDispatches();
+  });
+
+  it('rejects wake-start metadata without its original admission', async () => {
+    await primeBridge();
+    const envelope = notification('agent:stream:start', {
+      agentId: AGENT,
+      messageId: WAKE_MESSAGE_ID,
+      reason: 'harness-wake',
+    });
+    await routeDaemonEventsNotification(envelope.method, envelope.params, undefined, {
+      lifetimes: new Map(),
+    });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readSession()?.isProcessing).toBe(false);
   });
 
   it('chunks after the wake start never write content — the subscription fills the wake row; stream:end + idle finalize it', async () => {
@@ -4342,6 +4428,74 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       dispatch.mock.calls.filter(([action]) => action.type === workspaceCatalogEventReceived.type),
     ).toHaveLength(1);
     dispatch.mockRestore();
+  });
+
+  it('carries rejected recovery admission to note and comment workers', async () => {
+    const { installNoteRecoveryDispatcher } =
+      await import('$store/renderer/slices/workspace-notes/sagas/note-event-receipt');
+    await primeBridge();
+    const jobs: import('$store/renderer/slices/workspace-notes/sagas/note-event-receipt').NoteRecoveryEventJob[] =
+      [];
+    const stop = installNoteRecoveryDispatcher((job) => jobs.push(job));
+    try {
+      for (const type of ['note:updated', 'comment:added']) {
+        const key = type.startsWith('note:')
+          ? `notes:${JSON.stringify([WS])}`
+          : `comments:${JSON.stringify([WS, 'n'])}`;
+        const envelope = notificationWithSub(type, { noteId: 'n' }, 'sub-1');
+        let finished = false;
+        const pending = Promise.resolve(
+          routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
+            lifetimes: new Map([[key, null]]),
+          }),
+        ).then(() => {
+          finished = true;
+        });
+        await Promise.resolve();
+        const job = jobs.at(-1)!;
+        expect(job.kind).toBe('note');
+        if (job.kind !== 'note') throw new Error('Expected note worker');
+        expect(getRecoveryAdmission(job.action, key)).toBeNull();
+        expect(finished).toBe(false);
+        job.complete();
+        await pending;
+        expect(finished).toBe(true);
+      }
+    } finally {
+      stop();
+    }
+  });
+
+  it('leaves adopted leases to ordered recovery ingress and never routes a loss as activity', async () => {
+    await primeBridge();
+    const envelope = notificationWithSub(
+      'agent:stream:chunk',
+      {
+        agentId: AGENT,
+        content: 'once',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      },
+      'sub-1',
+    );
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1'], {
+      recovery: { ownsSubscription: (id) => id === 'sub-1' },
+    });
+    const { subscriptionId: _id, ...flat } = envelope.params;
+    routeDaemonEventsNotification(envelope.method, flat, ['sub-1'], {
+      recovery: { ownsSubscription: () => false },
+    });
+    routeDaemonEventsNotification(
+      'events.lost',
+      { subscriptionId: 'sub-1', generation: '1', scope: { workspaceId: null } },
+      ['sub-1'],
+    );
+    expect(capturedStreamUpdates).toHaveLength(0);
+    routeDaemonEventsNotification(envelope.method, envelope.params, ['sub-1']);
+    expect(capturedStreamUpdates).toHaveLength(1);
   });
 
   it('still applies legacy/flat envelopes with no subscriptionId (back-compat)', async () => {
@@ -11598,6 +11752,101 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     const agentGetCalls = () =>
       backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.get');
 
+    it.each(['pending', 'timeout', 'ordinary-timeout'] as const)(
+      'holds the whole reconnect failure batch through %s physical completion',
+      async (mode) => {
+        const { rendererEventRecovery } = await import('./renderer-event-recovery');
+        const { trackAgentRecoveryRead } = await import('$features/agent/agent-recovery-read-lane');
+        const { AGENT_FAILURES_RECOVERY_KEY } = await import('$features/agent/agent-recovery-keys');
+        const { RecoveryRequestTimeoutError } = await import('$shared/event-recovery/session');
+        let release!: () => void;
+        const held = new Promise<void>((done) => {
+          release = done;
+        });
+        recordAgentFailure({ agentId: 'first', workspaceId: WS, error: 'failed' });
+        recordAgentFailure({ agentId: 'held', workspaceId: WS, error: 'failed' });
+        backendRequestSpy.mockImplementation((method, params) => {
+          if (method !== 'agent.get') return Promise.resolve({});
+          if ((params as { agentId: string }).agentId !== 'held') return Promise.resolve({});
+          return mode === 'pending'
+            ? held
+            : Promise.reject(
+                mode === 'timeout'
+                  ? new RecoveryRequestTimeoutError(
+                      held.then(() => ({ retired: false, errors: [] })),
+                    )
+                  : Object.assign(new Error('ordinary timeout'), {
+                      code: 'TIMEOUT',
+                      completion: held.then(() => ({ retired: false, errors: [] })),
+                    }),
+              );
+        });
+        const pending = refreshDaemonEventsAfterReconnect(null);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const read = vi.fn(async () => undefined);
+        const next = trackAgentRecoveryRead(
+          AGENT_FAILURES_RECOVERY_KEY,
+          read,
+          rendererEventRecovery.capture(AGENT_FAILURES_RECOVERY_KEY),
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(agentGetCalls()).toHaveLength(2);
+          expect(read).not.toHaveBeenCalled();
+        } finally {
+          release();
+          await pending;
+          await next;
+        }
+        expect(read).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([false, true])(
+      'handles late not-found completion only for the original connection (retired=%s)',
+      async (retired) => {
+        recordAgentFailure({ agentId: 'late-missing', workspaceId: WS, error: 'failed' });
+        backendRequestSpy.mockImplementation((method) =>
+          method === 'agent.get'
+            ? Promise.reject(
+                Object.assign(new Error('ordinary timeout'), {
+                  code: 'TIMEOUT',
+                  completion: Promise.resolve({ retired, errors: [agentNotFound()] }),
+                }),
+              )
+            : Promise.resolve({}),
+        );
+        await refreshDaemonEventsAfterReconnect(null);
+        expect(listAgentFailureEntries().map((row) => row.agentId)).toEqual(
+          retired ? ['late-missing'] : [],
+        );
+        expect(agentGetCalls()).toHaveLength(1);
+      },
+    );
+
+    it.each([-32003, -32001])(
+      'clears only a late denied failure entry (code=%s)',
+      async (rpcCode) => {
+        recordAgentFailure({ agentId: 'private', workspaceId: 'private-ws', error: 'failed' });
+        recordAgentFailure({ agentId: 'other', workspaceId: 'other-ws', error: 'failed' });
+        backendRequestSpy.mockImplementation((method, params) =>
+          method === 'agent.get' && (params as { agentId: string }).agentId === 'private'
+            ? Promise.reject(
+                Object.assign(new Error('ordinary timeout'), {
+                  completion: Promise.resolve({
+                    retired: false,
+                    errors: [Object.assign(new Error('denied'), { rpcCode })],
+                  }),
+                }),
+              )
+            : Promise.resolve({}),
+        );
+        await refreshDaemonEventsAfterReconnect(null);
+        expect(listAgentFailureEntries().map((row) => row.agentId)).toEqual(['other']);
+        expect(agentGetCalls()).toHaveLength(2);
+      },
+    );
+
     it('drops registry entries whose agent no longer exists on the daemon', async () => {
       // agent:deleted fired while the connection was down — the registry
       // still holds the stale entry. The reconnect refresh must verify each
@@ -13756,15 +14005,100 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     }
   });
 
+  it('integrated browser ingress rejects missing owners without legacy reads or tab writes', async () => {
+    const { selectWorkspaceBrowserTabsRevision } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    const revision = selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC);
+    backendRequestSpy.mockResolvedValue({ clients: [DESK_ROW] });
+    for (const notification of [
+      globalNotification('client:connected', { clientId: 'cli-desk', capabilities: {} }),
+      tabNotification('browser:tab-opened', { tab: TAB }),
+    ]) {
+      await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+        lifetimes: new Map(),
+      });
+    }
+    await flush();
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(revision);
+  });
+
+  it('integrated browser ingress settles its original global receipt without an unscoped read', async () => {
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { browserClientRecoveryKey } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-client-recovery');
+    const notification = globalNotification('client:updated', {
+      clientId: 'cli-desk',
+      capabilities: {},
+    });
+    const receipt = rendererEventRecovery.capture(browserClientRecoveryKey());
+    // Roster reads belong to consumer workspaces, which carry their own receipts.
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([[browserClientRecoveryKey(), receipt]]),
+    });
+    await flush();
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    expect(receipt.commit(() => undefined)).toBe(true);
+  });
+
+  it('integrated browser pin uses its own admission independently of workspace-list', async () => {
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { browserClientRecoveryKey } =
+      await import('$store/renderer/slices/browser-clients/sagas/browser-client-recovery');
+    const { selectWorkspaceBrowserClient } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BC,
+        title: 'Browser pin',
+        status: 'active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as never),
+    );
+    const notification = tabNotification('workspace:updated', {
+      workspaceId: WS_BC,
+      changes: { browserClientId: 'cli-desk' },
+    });
+    const before = selectWorkspaceBrowserClient.select(appStore.state, WS_BC);
+    const pinned = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    backendRequestSpy.mockResolvedValue({ browserClient: pinned });
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([['workspace-list', rendererEventRecovery.capture('workspace-list')]]),
+    });
+    await flush();
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(before);
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    const receipt = rendererEventRecovery.capture(browserClientRecoveryKey(WS_BC));
+    await routeDaemonEventsNotification(notification.method, notification.params, undefined, {
+      lifetimes: new Map([[browserClientRecoveryKey(WS_BC), receipt]]),
+    });
+    expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(pinned);
+    expect(backendRequestSpy.mock.calls).toEqual([
+      ['workspace.getBrowserClient', { workspaceId: WS_BC }],
+    ]);
+    expect(receipt.commit(() => undefined)).toBe(true);
+  });
+
   it.each(['client:connected', 'client:updated'])(
-    '%s (global, no workspaceId) re-reads client.list and stores the rows',
+    '%s refreshes only the demanded workspace roster',
     async (eventType) => {
       backendRequestSpy.mockImplementation((method: string) =>
         method === 'client.list' ? Promise.resolve({ clients: [DESK_ROW] }) : undefined,
       );
-      const { selectLiveClients } =
-        await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
+      const { browserClientsConsumerMounted, browserClientsConsumerUnmounted } =
+        await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+      const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
       await primeBridge();
+      appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-roster'));
+      await flush();
+      backendRequestSpy.mockClear();
       const handler = capturedHandlers[0]!;
 
       handler(
@@ -13777,29 +14111,50 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
       await flush();
 
       expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
-        ['client.list', undefined],
+        ['client.list', { workspaceId: WS_BC }],
       ]);
-      expect(selectLiveClients.select(appStore.state)).toEqual([DESK_ROW]);
+      expect(getItems(appStore.state.browserClients.byWorkspaceId[WS_BC]!.liveClients)).toEqual([
+        DESK_ROW,
+      ]);
+      appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-roster'));
     },
   );
 
-  it('client:disconnected re-reads client.list so the departed client drops out', async () => {
-    const { liveClientsReceived } =
+  it('client:disconnected refreshes a demanded roster so the departed client drops out', async () => {
+    const { browserClientsConsumerMounted, browserClientsConsumerUnmounted, liveClientsReceived } =
       await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectLiveClients } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    appStore.dispatch(liveClientsReceived([DESK_ROW as never]));
+    const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
     backendRequestSpy.mockImplementation((method: string) =>
       method === 'client.list' ? Promise.resolve({ clients: [] }) : undefined,
     );
     await primeBridge();
+    appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-roster'));
+    await flush();
+    appStore.dispatch(liveClientsReceived([DESK_ROW as never], WS_BC));
+    backendRequestSpy.mockClear();
     const handler = capturedHandlers[0]!;
 
     handler(globalNotification('client:disconnected', { clientId: 'cli-desk', capabilities: {} }));
     await flush();
 
-    expect(selectLiveClients.select(appStore.state)).toEqual([]);
+    expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([
+      ['client.list', { workspaceId: WS_BC }],
+    ]);
+    expect(getItems(appStore.state.browserClients.byWorkspaceId[WS_BC]!.liveClients)).toEqual([]);
+    appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-roster'));
   });
+
+  it.each(['client:connected', 'client:updated', 'client:disconnected'])(
+    '%s does not read browser rosters without a consumer',
+    async (eventType) => {
+      await primeBridge();
+      capturedHandlers[0]!(
+        globalNotification(eventType, { clientId: 'cli-desk', capabilities: {} }),
+      );
+      await flush();
+      expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
+    },
+  );
 
   it('drops a malformed client:* payload without touching the wire', async () => {
     await primeBridge();
@@ -13873,6 +14228,11 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
         updatedAt: '2026-01-01T00:00:00.000Z',
       } as never),
     );
+    const { browserClientsConsumerMounted, browserClientsConsumerUnmounted } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    appStore.dispatch(browserClientsConsumerMounted(WS_BC, 'bridge-test'));
+    await flush();
+    backendRequestSpy.mockClear();
     const pinned = {
       clientId: 'cli-desk',
       source: 'workspace',
@@ -13916,6 +14276,7 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     await flush();
     expect(readWorkspace().browserClientId).toBeUndefined();
     expect(selectWorkspaceBrowserClient.select(appStore.state, WS_BC)).toEqual(cleared);
+    appStore.dispatch(browserClientsConsumerUnmounted(WS_BC, 'bridge-test'));
   });
 });
 
@@ -14084,3 +14445,676 @@ it.each([
     }
   },
 );
+
+describe('production recovery owner installation', () => {
+  it('recovers final locks and Git state through the full installer with exact reads', async () => {
+    const { installRendererRecoveryOwners } = await import('./renderer-recovery-owners');
+    const { rendererEventRecovery } = await import('./renderer-event-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { admitLegacyPrincipal } = await import('../../test/fixtures/principal-state');
+    const { selectPrincipalActionContext } =
+      await import('$store/renderer/slices/principal/principal-selectors');
+    const { setWorkspaceEntity, setWorkspaceHasLoaded } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    const { setAgentLockState } =
+      await import('$store/renderer/slices/agent-lock/agent-lock-slice');
+    appStore.init();
+    admitLegacyPrincipal();
+    const ws = 'integrated-final-loss';
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: ws,
+        title: 'Integration',
+        status: 'active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as never),
+    );
+    appStore.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        appStore.state.connections.windowBackendId,
+        selectPrincipalActionContext.select(appStore.state),
+      ),
+    );
+    appStore.dispatch(openWorkspaceTab(ws));
+    appStore.dispatch(setAgentLockState(ws, { old: true }, { 'old.ts': true }));
+    let receive!: (notification: any) => void;
+    const request = vi.fn(async (method: string, params?: unknown): Promise<unknown> => {
+      if (method === 'events.subscribe') return { subscriptionId: 'integrated', lossRecovery: 1 };
+      if (method === 'events.fence') return params;
+      if (method === 'events.unsubscribe') return {};
+      if (method === 'file-tracking.getAgentLocks')
+        return { lockedAgentIds: ['new'], lockedFilePaths: ['new.ts'] };
+      if (method === 'git.status')
+        return {
+          branch: 'current',
+          ahead: 0,
+          behind: 0,
+          files: [{ path: 'new.ts', status: 'modified', staged: true }],
+        };
+      throw new Error(method);
+    });
+    const stopOwners = rendererEventRecovery.onSession((scope) =>
+      installRendererRecoveryOwners(scope, {
+        getState: () => appStore.state,
+        dispatch: (action) => appStore.dispatch(action),
+        subscribe: (listener) => appStore.getReadableState().subscribe(() => listener()),
+      }),
+    );
+    try {
+      const scope = rendererEventRecovery.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: (fn) => {
+            receive = fn;
+            return () => {};
+          },
+          dispose: () => {},
+          request: async (method, params, observe) => {
+            const result = await request(method, params);
+            observe?.(result);
+            return result;
+          },
+        }),
+        (notification, lifetimes) =>
+          routeDaemonEventsNotification(notification.method, notification.params, ['integrated'], {
+            lifetimes,
+          }),
+      );
+      await scope.subscribe(
+        { workspaceId: ws, eventTypes: ['changes:agent-locks', 'changes:git-status'] },
+        { recover: true },
+      );
+      receive({
+        method: 'events.lost',
+        params: { subscriptionId: 'integrated', generation: '1', scope: { workspaceId: ws } },
+      });
+      for (let i = 0; i < 200; i++) await Promise.resolve();
+      expect(appStore.state.agentLock.byWorkspaceId[ws].lockedAgentIds).toEqual({ new: true });
+      expect(appStore.state.git.byWorkspaceId[ws].status?.branch).toBe('current');
+      expect(
+        request.mock.calls.filter(([method]) => method === 'file-tracking.getAgentLocks'),
+      ).toHaveLength(1);
+      expect(request.mock.calls.filter(([method]) => method === 'git.status')).toHaveLength(1);
+      expect(request.mock.calls.filter(([method]) => method === 'events.fence')).toHaveLength(4);
+    } finally {
+      stopOwners();
+      rendererEventRecovery.dispose();
+    }
+  });
+});
+
+describe('workspace projection ingress ownership', () => {
+  it('does not invalidate tasks or fetch aggregates for a rejected note event', async () => {
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    const ws = 'rejected-note-aggregate';
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(ws, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    const original = appStore.state.workspaceTasks.byWorkspaceId[ws];
+    backendRequestSpy.mockClear();
+    await routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'projection',
+        event: {
+          id: 'rejected-note',
+          workspaceId: ws,
+          type: 'note:updated',
+          data: { noteId: 'spec' },
+          timestamp: '2026-10-13T00:00:00Z',
+          actor: { type: 'system' },
+        },
+      },
+      'projection',
+      { lifetimes: new Map() },
+    );
+    await flush();
+    expect(appStore.state.workspaceTasks.byWorkspaceId[ws]).toBe(original);
+    expect(
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get'),
+    ).toHaveLength(0);
+  });
+
+  it.each(['missing', 'retired'])(
+    'does not start activity reads with %s original projection admission',
+    async (kind) => {
+      let current = true;
+      const receipt = {
+        key: {},
+        isCurrent: () => current,
+        commit: (fn: () => undefined) => {
+          if (!current) return false;
+          fn();
+          return true;
+        },
+      };
+      backendRequestSpy.mockClear();
+      const pending = routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'projection',
+          event: {
+            id: `activity-${kind}`,
+            workspaceId: `activity-${kind}`,
+            type: 'agent:idle',
+            data: { agentId: 'unknown' },
+            timestamp: '2026-10-13T00:00:00Z',
+            actor: { type: 'system' },
+          },
+        },
+        'projection',
+        { lifetimes: new Map(kind === 'missing' ? [] : [['workspace-list', receipt]]) },
+      );
+      current = false;
+      await pending;
+      await flush();
+      expect(
+        backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get'),
+      ).toHaveLength(0);
+    },
+  );
+});
+
+describe('admitted task and note metadata completion', () => {
+  it.each(['task:created', 'task:status-changed', 'note:updated'] as const)(
+    'settles %s metadata without reviving task-list reads',
+    async (type) => {
+      const { loadWorkspaceNotesSucceeded } =
+        await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+      const ws = `metadata-completion-${type}`;
+      const note = {
+        id: 'n',
+        workspaceId: ws,
+        title: 'Old',
+        content: 'keep',
+        rev: 1,
+        metadata: { task: { status: 'not_started' } },
+      };
+      appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [note as never] }));
+      let current = true;
+      const receipt = {
+        key: {},
+        isCurrent: () => current,
+        commit: (fn: () => void) => {
+          if (!current) return false;
+          fn();
+          return true;
+        },
+      };
+      const lifetimes = new Map([[`notes:${JSON.stringify([ws])}`, receipt]]);
+      backendRequestSpy.mockClear();
+      const send = (id: string, title: string, rev: number) =>
+        routeDaemonEventsNotification(
+          'events.event',
+          {
+            event: {
+              id,
+              workspaceId: ws,
+              type,
+              data: {
+                noteId: 'n',
+                newStatus: 'not_started',
+                note: { ...note, title, rev, metadata: { task: { status: 'complete' } } },
+              },
+            },
+          },
+          undefined,
+          { lifetimes },
+        );
+      await send('current', 'Current', 2);
+      expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map.n).toMatchObject({
+        title: 'Current',
+        content: 'keep',
+        metadata: { task: { status: 'complete' } },
+      });
+      current = false;
+      await send('retired', 'Stale', 3);
+      expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map.n.title).toBe('Current');
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method]) => method === 'task.list' || method === 'workspace.get',
+        ),
+      ).toHaveLength(0);
+    },
+  );
+});
+
+describe('workspace point denial actual callers', () => {
+  async function setupPoint(kind: string, code: number, late = false) {
+    const { rendererEventRecovery: registry } = await import('./renderer-event-recovery');
+    const { installWorkspaceListRecovery, WORKSPACE_LIST_RECOVERY_KEY: key } =
+      await import('./workspace-list-recovery');
+    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
+    const { normalizeWorkspace } = await import('$lib/client/live/live-workspaces-client');
+    const {
+      replaceWorkspaceList,
+      bulkUpdateWorkspaceEntities,
+      updateWorkspaceEntity,
+      refreshWorkspaceMembershipRequested,
+    } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { retireWorkspaceAfterRecovery } = await import('./daemon-events-bridge.client');
+    registry.dispose();
+    __resetDaemonEventsBridgeForTests();
+    backendRequestSpy.mockReset();
+    appStore.dispatch(clearAllSessions());
+    admitLegacyPrincipal();
+    const ws = 'one-space';
+    const sibling = 'two-space';
+    const seed = () => {
+      appStore.dispatch(
+        replaceWorkspaceList(
+          [ws, sibling].map((id) =>
+            normalizeWorkspace({
+              id,
+              title: id,
+              myRole: 'owner',
+              canManage: true,
+              activity: 'idle',
+            }),
+          ),
+          { complete: true, deletionTokens: {} },
+        ),
+      );
+    };
+    seed();
+    if (kind === 'missing') {
+      const { removeWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(removeWorkspaceEntity(ws));
+    }
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'point-review-agent',
+          workspaceId: ws,
+          backendSessionId: null,
+          name: 'original',
+          status: 'idle',
+          createdAt: '2026-10-13T10:00:00Z',
+          updatedAt: '2026-10-13T10:00:00Z',
+          messages: [],
+        },
+        {
+          id: 'point-review-sibling-agent',
+          workspaceId: sibling,
+          backendSessionId: null,
+          name: 'sibling',
+          status: 'idle',
+          createdAt: '2026-10-13T10:00:00Z',
+          updatedAt: '2026-10-13T10:00:00Z',
+          messages: [],
+        },
+      ] as never),
+    );
+    expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeDefined();
+    expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+    const newScope = () =>
+      registry.attach(
+        createEventRecoverySession({
+          supported: true,
+          isCurrent: () => true,
+          onRetired: () => () => {},
+          onNotification: () => () => {},
+          dispose: () => {},
+          request: async () => ({}),
+        }),
+      );
+    let scope = newScope();
+    const install = () =>
+      installWorkspaceListRecovery(
+        scope,
+        {
+          getState: () => appStore.state,
+          dispatch: (action) => appStore.dispatch(action),
+          subscribe: (listener) => appStore.getReadableState().subscribe(() => listener()),
+        },
+        retireWorkspaceAfterRecovery,
+      );
+    let stopOwner = install();
+    let finish!: (outcome: { errors: unknown[]; retired: boolean }) => void;
+    const completion = new Promise<{ errors: unknown[]; retired: boolean }>((resolve) => {
+      finish = resolve;
+    });
+    const denial = Object.assign(new Error('workspace denied'), {
+      rpcCode: code,
+      data: { code: code === -32602 ? 'not-found' : 'forbidden' },
+    });
+    const error = late ? Object.assign(new Error('logical timeout'), { completion }) : denial;
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.get' ? Promise.reject(error) : Promise.resolve({}),
+    );
+    const trigger = (which = kind) => {
+      if (which === 'normalized') {
+        appStore.dispatch(refreshWorkspaceMembershipRequested(ws));
+        return;
+      }
+      const type =
+        which === 'missing'
+          ? 'workspace:waiting-changed'
+          : which === 'activity'
+            ? 'agent:idle'
+            : 'agent:deleted';
+      const data =
+        which === 'missing'
+          ? { workspaceId: ws, waiting: true }
+          : { agentId: 'point-review-trigger-agent', status: 'idle', isActive: false };
+      return routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'point-review',
+          event: {
+            id: 'point-review-event',
+            type,
+            workspaceId: ws,
+            timestamp: '2026-10-13T10:00:00Z',
+            data,
+          },
+        },
+        'point-review',
+      );
+    };
+    const reads = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+    const flushPoint = async () => {
+      await flush();
+      await flush();
+      await settle();
+    };
+    return {
+      registry,
+      key,
+      ws,
+      sibling,
+      seed,
+      trigger,
+      reads,
+      flushPoint,
+      finish,
+      denial,
+      push: () => {
+        registry.push(key);
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([updateWorkspaceEntity(ws, { title: 'newer title' })]),
+        );
+      },
+      authorityABA: () => {
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([
+            updateWorkspaceEntity(ws, { myRole: 'collaborator', canManage: false }),
+          ]),
+        );
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([
+            updateWorkspaceEntity(ws, { myRole: 'owner', canManage: true }),
+          ]),
+        );
+      },
+      principalABA: async () => {
+        appStore.dispatch(principalContextChanged(null));
+        admitLegacyPrincipal();
+      },
+      replaceSession: () => {
+        stopOwner();
+        scope = newScope();
+        seed();
+        stopOwner = install();
+      },
+      close: () => {
+        finish({ errors: [], retired: true });
+        stopOwner();
+        registry.dispose();
+        backendRequestSpy.mockReset();
+      },
+    };
+  }
+  it.each(
+    ['missing', 'activity', 'aggregate', 'normalized'].flatMap((kind) =>
+      [-32003, -32001, -32602].map((code) => ({ kind, code })),
+    ),
+  )(
+    'point denial: $kind canonical $code preserves sibling and global authority',
+    async ({ kind, code }) => {
+      const h = await setupPoint(kind, code);
+      try {
+        await h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toEqual([['workspace.get', { workspaceId: h.ws }]]);
+        expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+        expect(appStore.state.workspace.workspaces.map[h.ws]).toBeUndefined();
+        expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+        expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeUndefined();
+        expect(h.registry.captureAuthority(h.key).isCurrent()).toBe(true);
+      } finally {
+        h.close();
+      }
+    },
+  );
+  it.each(['push', 'authorityABA', 'principalABA', 'replaceSession'])(
+    'point denial: normalized late denial respects %s',
+    async (change) => {
+      const h = await setupPoint('normalized', -32003, true);
+      try {
+        h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toHaveLength(1);
+        expect(appStore.state.workspace.workspaces.map[h.ws]).toBeDefined();
+        await h[change]();
+        h.finish({ errors: [h.denial], retired: false });
+        await h.flushPoint();
+        expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+        if (change === 'push')
+          expect(appStore.state.workspace.workspaces.map[h.ws]).toBeUndefined();
+        else expect(appStore.state.workspace.workspaces.map[h.ws]).toBeDefined();
+        expect(h.reads()).toHaveLength(1);
+      } finally {
+        h.close();
+      }
+    },
+  );
+  it('point denial: normalized and raw callers retain separate response keys', async () => {
+    const h = await setupPoint('aggregate', -32003);
+    const releases: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'workspace.get'
+        ? new Promise((resolve) => releases.push(resolve))
+        : Promise.resolve({}),
+    );
+    try {
+      const raw = h.trigger();
+      h.trigger('normalized');
+      await h.flushPoint();
+      const count = h.reads().length;
+      for (const resolve of releases)
+        resolve({
+          workspace: {
+            id: h.ws,
+            title: 'fresh',
+            myRole: 'owner',
+            canManage: true,
+            memberCount: 3,
+            openInviteCount: 2,
+          },
+        });
+      await raw;
+      await h.flushPoint();
+      expect(count).toBe(2);
+      expect(appStore.state.workspace.workspaces.map[h.ws].memberCount).toBe(3);
+      expect(appStore.state.workspace.workspaces.map[h.sibling]).toBeDefined();
+      expect(h.reads()).toHaveLength(2);
+    } finally {
+      for (const resolve of releases) resolve({});
+      h.close();
+    }
+  });
+  it.each(['late', 'push', 'readd', 'readdRemoved', 'replaceSession'])(
+    'point denial: absent workspace retains only original authority after %s',
+    async (change) => {
+      const h = await setupPoint('missing', -32003, true);
+      try {
+        await h.trigger();
+        await h.flushPoint();
+        expect(h.reads()).toHaveLength(1);
+        if (change === 'push') h.push();
+        if (change === 'readd' || change === 'readdRemoved') h.seed();
+        if (change === 'readdRemoved') {
+          const { removeWorkspaceEntity } =
+            await import('$store/renderer/slices/workspace/workspace-slice');
+          appStore.dispatch(removeWorkspaceEntity(h.ws));
+        }
+        if (change === 'replaceSession') h.replaceSession();
+        h.finish({ errors: [h.denial], retired: false });
+        await h.flushPoint();
+        expect(appStore.state.agentSessions.byAgentId['point-review-sibling-agent']).toBeDefined();
+        if (change === 'late' || change === 'push')
+          expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeUndefined();
+        else expect(appStore.state.agentSessions.byAgentId['point-review-agent']).toBeDefined();
+        expect(h.reads()).toHaveLength(1);
+      } finally {
+        h.close();
+      }
+    },
+  );
+});
+
+describe('incoming task push independent recovery admissions', () => {
+  it.each(['tasks', 'notes'] as const)(
+    'applies task rows only to the admitted %s owner',
+    async (allowed) => {
+      const { loadWorkspaceTasksSucceeded } =
+        await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+      const { loadWorkspaceNotesSucceeded } =
+        await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+      const ws = `independent-task-push-${allowed}`;
+      appStore.dispatch(
+        loadWorkspaceTasksSucceeded(ws, [{ id: 'n', title: 'Old', status: 'not_started' }], {
+          total: 1,
+          completed: 0,
+          inProgress: 0,
+        }),
+      );
+      appStore.dispatch(
+        loadWorkspaceNotesSucceeded([ws], {
+          [ws]: [
+            {
+              id: 'n',
+              workspaceId: ws,
+              title: 'Old',
+              content: 'keep',
+              metadata: { task: { status: 'not_started' } },
+            } as never,
+          ],
+        }),
+      );
+      let current = true;
+      const receipt = {
+        key: {},
+        isCurrent: () => current,
+        commit: (fn: () => void) => {
+          if (!current) return false;
+          fn();
+          return true;
+        },
+      };
+      const lifetimes = new Map([[`${allowed}:${JSON.stringify([ws])}`, receipt]]);
+      const send = (id: string, title: string) =>
+        routeDaemonEventsNotification(
+          'events.event',
+          {
+            event: {
+              id,
+              workspaceId: ws,
+              type: 'task:updated',
+              data: { tasks: [{ id: 'n', title, status: 'complete' }], removedIds: [] },
+            },
+          },
+          undefined,
+          { lifetimes },
+        );
+      backendRequestSpy.mockClear();
+      await send('current', 'Current');
+      expect(appStore.state.workspaceTasks.byWorkspaceId[ws].tasks.map.n.title).toBe(
+        allowed === 'tasks' ? 'Current' : 'Old',
+      );
+      expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map.n.title).toBe(
+        allowed === 'notes' ? 'Current' : 'Old',
+      );
+      current = false;
+      await send('retired', 'Stale');
+      expect(appStore.state.workspaceTasks.byWorkspaceId[ws].tasks.map.n.title).toBe(
+        allowed === 'tasks' ? 'Current' : 'Old',
+      );
+      expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map.n.title).toBe(
+        allowed === 'notes' ? 'Current' : 'Old',
+      );
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method]) => method === 'task.list' || method === 'workspace.get',
+        ),
+      ).toHaveLength(0);
+    },
+  );
+  it.each(['tasks', 'workspace-list'] as const)(
+    'applies task stats only to the admitted %s owner',
+    async (allowed) => {
+      const { loadWorkspaceTasksSucceeded } =
+        await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+      const ws = `independent-stats-push-${allowed}`;
+      const original = { total: 1, completed: 0, inProgress: 0 };
+      appStore.dispatch(loadWorkspaceTasksSucceeded(ws, [], original));
+      let current = true;
+      const receipt = {
+        key: {},
+        isCurrent: () => current,
+        commit: (fn: () => void) => {
+          if (!current) return false;
+          fn();
+          return true;
+        },
+      };
+      const key = allowed === 'tasks' ? `tasks:${JSON.stringify([ws])}` : 'workspace-list';
+      const lifetimes = new Map([[key, receipt]]);
+      const send = (id: string, completed: number) =>
+        routeDaemonEventsNotification(
+          'events.event',
+          {
+            event: {
+              id,
+              workspaceId: ws,
+              type: 'workspace:task-stats-changed',
+              data: { taskStats: { ...original, completed } },
+            },
+          },
+          undefined,
+          { lifetimes },
+        );
+      backendRequestSpy.mockClear();
+      await send('current', 1);
+      expect(appStore.state.workspaceTasks.byWorkspaceId[ws].stats.completed).toBe(
+        allowed === 'tasks' ? 1 : 0,
+      );
+      expect(appStore.state.workspace.pushedTaskStats[ws]?.completed ?? 0).toBe(
+        allowed === 'workspace-list' ? 1 : 0,
+      );
+      current = false;
+      await send('retired', 2);
+      expect(appStore.state.workspaceTasks.byWorkspaceId[ws].stats.completed).toBe(
+        allowed === 'tasks' ? 1 : 0,
+      );
+      expect(appStore.state.workspace.pushedTaskStats[ws]?.completed ?? 0).toBe(
+        allowed === 'workspace-list' ? 1 : 0,
+      );
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method]) => method === 'task.list' || method === 'workspace.get',
+        ),
+      ).toHaveLength(0);
+    },
+  );
+});

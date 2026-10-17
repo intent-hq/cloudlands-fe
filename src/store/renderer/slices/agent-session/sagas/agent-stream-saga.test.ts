@@ -1,3 +1,6 @@
+import { withRecoveryAdmissions } from '../../../middlewares/event-recovery';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
+import { chatSendStarted } from '../../chat-state/chat-state-slice';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { channel as createChannel, runSaga, stdChannel } from 'redux-saga';
 
@@ -57,7 +60,14 @@ function session(messages: AgentMessage[] = []): AgentSession {
 function harness({
   covered = true,
   messages = [],
-}: { covered?: boolean; messages?: AgentMessage[] } = {}) {
+  pauseFirstApply = false,
+  beforeDispatch,
+}: {
+  covered?: boolean;
+  messages?: AgentMessage[];
+  pauseFirstApply?: boolean;
+  beforeDispatch?: (action: { type: string }) => void;
+} = {}) {
   if (covered) markStandingChatSubscription(AGENT);
   const channel = stdChannel();
   let agentSessions = agentSessionReducer(
@@ -66,17 +76,33 @@ function harness({
   );
   let chatState = chatInitialState;
   const dispatch = vi.fn((action) => {
+    beforeDispatch?.(action);
     agentSessions = agentSessionReducer(agentSessions, action);
     chatState = chatStateReducer(chatState, action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ agentSessions, chatState }) },
+    {
+      channel,
+      dispatch,
+      getState: () => ({ agentSessions, chatState }),
+      effectMiddlewares: [
+        (next) => (effect) => {
+          if (pauseFirstApply && effect.type === 'CALL') {
+            pauseFirstApply = false;
+            return;
+          }
+          return next(effect);
+        },
+      ],
+    },
     agentStreamSaga,
   );
   return {
     channel,
     dispatch,
     task,
+    session: () => agentSessions.byAgentId[AGENT],
+    chat: () => chatState.byAgentId[AGENT],
     messages: () => agentSessions.byAgentId[AGENT]?.messages ?? [],
     rowWrites: () =>
       dispatch.mock.calls
@@ -708,7 +734,92 @@ describe('agentStreamSaga', () => {
     const drained = generator.next(buffered as never);
     expect(drained.value).toMatchObject({
       type: 'CALL',
-      payload: { args: [terminal.payload[0]] },
+      payload: { args: [terminal.payload[0], terminal] },
     });
   });
+});
+
+it.each(
+  ['rejected', 'expires-before-write', 'cancelled-buffer'].flatMap((mode) =>
+    (['complete', 'timeout'] as const).map((eventType) => ({ mode, eventType })),
+  ),
+)('preserves metadata admission through $eventType: $mode', async ({ mode, eventType }) => {
+  clearAllStandingChatSubscriptions();
+  let current = true;
+  const receipt = {
+    key: {},
+    isCurrent: () => current,
+    commit: (write: () => undefined) => {
+      if (!current) return false;
+      write();
+      return true;
+    },
+  };
+  const terminal = withRecoveryAdmissions(
+    agentStreamUpdateReceived({
+      agentId: AGENT,
+      workspaceId: WS,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType,
+      assistantMessageId: 'terminal',
+      stopReason: 'interrupted',
+    }),
+    new Map([[agentMetadataRecoveryKey(WS), mode === 'rejected' ? null : receipt]]),
+  );
+  const run = harness({
+    pauseFirstApply: mode === 'cancelled-buffer',
+    messages: [
+      {
+        id: 'terminal',
+        role: 'assistant',
+        contentBlocks: [],
+        timestamp: '2026-01-01',
+        isStreaming: true,
+      },
+    ],
+    beforeDispatch: (action) => {
+      if (
+        mode === 'expires-before-write' &&
+        (action.type === streamCompleted.type || action.type === streamTimedOut.type)
+      )
+        current = false;
+    },
+  });
+  run.dispatch(chatSendStarted(AGENT, WS));
+  try {
+    if (mode === 'cancelled-buffer') {
+      run.channel.put(
+        agentStreamUpdateReceived({
+          agentId: AGENT,
+          workspaceId: WS,
+          handlerSessionId: AGENT,
+          source: 'sendMessage',
+          eventType: 'started',
+          assistantMessageId: 'first',
+        }),
+      );
+      run.channel.put(terminal);
+      current = false;
+      run.task.cancel();
+      await run.task.toPromise();
+    } else {
+      run.channel.put(terminal);
+      await settle();
+    }
+    expect(run.session()?.isStreaming).toBe(true);
+    expect(run.session()?.isProcessing).toBe(true);
+    expect(run.chat()?.streamingStartTime).toBeNull();
+    expect(run.messages()).toMatchObject([
+      {
+        id: 'terminal',
+        streamingComplete: true,
+        ...(eventType === 'complete' ? { metadata: { interrupted: true } } : {}),
+      },
+    ]);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+    clearAllStandingChatSubscriptions();
+  }
 });

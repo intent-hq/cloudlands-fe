@@ -920,7 +920,7 @@ it('drops a prior connection response and its scheduled trailing read', async ()
   appStore.init();
   const agentId = 'connection-agent';
   let finish!: (session: AgentSession) => void;
-  agentsApi.get.mockClear();
+  agentsApi.get.mockReset();
   agentsApi.get.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
@@ -1039,6 +1039,138 @@ it('preserves a pushed idle transition over an older metadata read without a tra
   expect(agentsApi.get).toHaveBeenCalledTimes(1);
 });
 
+it('keeps one-off metadata demand alive through detail hydration in an unmounted workspace', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { installAgentMetadataRecovery } = await import('./agent-metadata-recovery');
+  const { setAgents } =
+    await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
+  const id = 'unmounted-demand-detail';
+  const session = makeSession({ id, workspaceId: 'unmounted-demand', name: 'Fresh detail' });
+  appStore.dispatch(setAgents(session.workspaceId, []));
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    fence: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  });
+  const stop = installAgentMetadataRecovery(scope, {
+    getState: () => appStore.state,
+    dispatch: (action) => appStore.dispatch(action),
+    subscribe: () => () => {},
+  });
+  agentsApi.get.mockResolvedValueOnce(session);
+  try {
+    await ensureAgentSession(id, session.workspaceId);
+    expect(selectAgentSession.select(appStore.state, id)?.name).toBe('Fresh detail');
+    expect(appStore.state.agentSessions.detailHydrated?.[id]).toBe(true);
+  } finally {
+    stop();
+    rendererEventRecovery.dispose();
+  }
+});
+
+it('drops held and queued detail hydration after the recovery session retires', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const id = 'recovery-retired-detail';
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockReset();
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise<AgentSession>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const leading = ensureAgentSession(id, WS);
+  const trailing = refreshAgentSessionAfterEvent(id, WS);
+  rendererEventRecovery.dispose();
+  finish(makeSession({ id, name: 'Retired secret' }));
+  await Promise.all([leading, trailing]);
+  expect(selectAgentSession.select(appStore.state, id)).toBeUndefined();
+  expect(agentsApi.get).toHaveBeenCalledTimes(1);
+});
+
+it('does not reject a mutation merely because its first queue resource is registered', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { captureAgentMutationOwnership } = await import('./agent-read-ownership');
+  const { agentQueueRecoveryKey } = await import('./agent-recovery-keys');
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    fence: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  });
+  const ownership = captureAgentMutationOwnership('first-queue', WS);
+  scope.registerResource({
+    key: agentQueueRecoveryKey(WS, 'first-queue'),
+    workspaceId: WS,
+    eventTypes: ['agent:queue:*'],
+    isCurrent: () => true,
+    read: async () => [],
+    apply: () => {},
+    invalidate: () => {},
+    retire: () => {},
+  });
+  try {
+    expect(ownership.isCurrent(WS)).toBe(true);
+  } finally {
+    rendererEventRecovery.dispose();
+  }
+});
+
+it('keeps a valid user mutation after unrelated metadata pushes, but rejects a replaced recovery session', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { agentMetadataRecoveryKey } = await import('./agent-recovery-keys');
+  const { captureAgentMutationOwnership } = await import('./agent-read-ownership');
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    fence: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  });
+  scope.registerResource({
+    key: agentMetadataRecoveryKey(WS),
+    workspaceId: WS,
+    eventTypes: ['agent:*'],
+    isCurrent: () => true,
+    read: async () => [],
+    apply: () => {},
+    invalidate: () => {},
+    retire: () => {},
+  });
+  const ownership = captureAgentMutationOwnership('valid-send', WS);
+  rendererEventRecovery.push(agentMetadataRecoveryKey(WS));
+  try {
+    expect(ownership.isCurrent(WS)).toBe(true);
+  } finally {
+    rendererEventRecovery.dispose();
+  }
+  expect(ownership.isCurrent(WS)).toBe(false);
+});
+
+it('does not issue an agent get queued behind hydration after session retirement', async () => {
+  const { trackAgentMetadataRead } = await import('./agent-metadata-read-lane');
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const held = Promise.withResolvers<void>();
+  const leading = trackAgentMetadataRead(WS, () => held.promise, 'recovery');
+  agentsApi.get.mockClear();
+  const read = ensureAgentSession('queued-lane-retired', WS);
+  expect(agentsApi.get).not.toHaveBeenCalled();
+  rendererEventRecovery.dispose();
+  held.resolve();
+  await Promise.all([leading, read]);
+  expect(agentsApi.get).not.toHaveBeenCalled();
+  expect(selectAgentSession.select(appStore.state, 'queued-lane-retired')).toBeUndefined();
+});
+
 it.each(['__proto__', 'constructor', 'toString'])(
   'preserves explicit set and clear of extension key %s through stale reads',
   async (key) => {
@@ -1092,5 +1224,87 @@ it.each(['__proto__', 'constructor', 'toString'])(
       [agentId, WS],
       [agentId, WS],
     ]);
+  },
+);
+
+it('confirmation retains the original metadata owner while an older read drains', async () => {
+  const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+  const { agentMetadataRecoveryKey } = await import('./agent-recovery-keys');
+  appStore.init();
+  agentsApi.get.mockReset();
+  const id = 'confirmation-owner-replacement';
+  appStore.dispatch(bulkUpsertSessions([makeSession({ id, name: 'current metadata' })]));
+  const scope = rendererEventRecovery.attach({
+    supported: false,
+    isCurrent: () => true,
+    request: vi.fn(),
+    onNotification: () => () => {},
+    onRetired: () => () => {},
+    dispose: () => {},
+  } as never);
+  const options = {
+    key: agentMetadataRecoveryKey(WS),
+    workspaceId: WS,
+    eventTypes: ['agent:*'],
+    isCurrent: () => true,
+    read: async () => [],
+    apply: () => {},
+    invalidate: () => {},
+    retire: () => {},
+  };
+  const owner = scope.registerResource(options);
+  const old = Promise.withResolvers<AgentSession>();
+  agentsApi.get.mockReturnValueOnce(old.promise).mockResolvedValue(makeSession({ id }));
+  try {
+    const leading = readAgentSession(id, WS);
+    const confirmation = readAgentSessionAfterCurrent(id, WS, () => true);
+    owner.dispose();
+    scope.registerResource(options);
+    old.resolve(makeSession({ id, name: 'old owner' }));
+    await leading;
+    expect(await confirmation).toBeNull();
+    expect(agentsApi.get).toHaveBeenCalledTimes(1);
+    expect(selectAgentSession.select(appStore.state, id)?.name).toBe('current metadata');
+  } finally {
+    rendererEventRecovery.dispose();
+    agentsApi.get.mockReset();
+  }
+});
+
+it.each(['before', 'after', 'after principal change'] as const)(
+  'confirmation started %s timeout waits for the actual wire completion',
+  async (timing) => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    const { rendererEventRecovery } = await import('$features/events/renderer-event-recovery');
+    rendererEventRecovery.dispose();
+    appStore.init();
+    agentsApi.get.mockReset();
+    const id = `confirmation-physical-timeout-${timing}`;
+    const completion = Promise.withResolvers<{ errors: unknown[]; retired: boolean }>();
+    const old = Promise.withResolvers<AgentSession>();
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion.promise);
+    agentsApi.get.mockReturnValueOnce(old.promise).mockResolvedValue(makeSession({ id }));
+    const leading = readAgentSession(id, WS).catch(() => null);
+    let confirmation =
+      timing === 'before' ? readAgentSessionAfterCurrent(id, WS, () => true) : undefined;
+    try {
+      old.reject(timeout);
+      await leading;
+      if (timing === 'after principal change') {
+        const { principalIdentityChanged } =
+          await import('$store/renderer/slices/principal/principal-slice');
+        appStore.dispatch(principalIdentityChanged(appStore.state.principal.boundPrincipalId!));
+      }
+      confirmation ??= readAgentSessionAfterCurrent(id, WS, () => true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(agentsApi.get).toHaveBeenCalledTimes(1);
+      completion.resolve({ errors: [], retired: false });
+      expect((await confirmation)?.id).toBe(id);
+      expect(agentsApi.get).toHaveBeenCalledTimes(2);
+    } finally {
+      completion.resolve({ errors: [], retired: false });
+      await confirmation;
+      agentsApi.get.mockReset();
+    }
   },
 );

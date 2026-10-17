@@ -1,8 +1,10 @@
+import { createEventRecoveryMiddleware } from '$store/renderer/middlewares/event-recovery';
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -40,16 +42,25 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
+function startSaga(
+  myRole: 'owner' | 'collaborator' = 'owner',
+  beforeDispatch?: (action: { type: string }) => void,
+) {
   const channel = stdChannel();
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   let terminals = terminalsReducer(undefined, { type: '@@INIT' });
+  const dispatch = createEventRecoveryMiddleware()({} as never)(
+    (action: { type: string; payload?: unknown }) => {
+      dispatched.push(action);
+      terminals = terminalsReducer(terminals, action);
+    },
+  );
   const task = runSaga(
     {
       channel,
-      dispatch: (action: { type: string; payload?: unknown }) => {
-        dispatched.push(action);
-        terminals = terminalsReducer(terminals, action);
+      dispatch: (action) => {
+        beforeDispatch?.(action);
+        return dispatch(action);
       },
       getState: () =>
         withLegacyPrincipal({
@@ -81,6 +92,7 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
 beforeEach(() => {
   vi.clearAllMocks();
 });
+afterEach(() => rendererEventRecovery.dispose());
 
 describe('terminalCreationSaga', () => {
   it('returns the daemon-assigned id for an authorized overlay create', async () => {
@@ -157,6 +169,110 @@ describe('terminalCreationSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it('fences saga-owned insertion and its correlated outcome at reducer dispatch', async () => {
+    mocks.create.mockResolvedValue({ success: true, id: 'retired-at-dispatch' });
+    const run = startSaga('owner', (action) => {
+      if (action.type === 'terminals/addTerminal') rendererEventRecovery.dispose();
+    });
+    const request = createOverlayTerminalRequested('ws-1', { id: 'mount', resourceId: 'overlay' });
+    run.put(request);
+    await expect(request.promise).rejects.toThrow();
+    expect(
+      run.getTerminalsState().workspaces['ws-1']?.terminals.map['retired-at-dispatch'],
+    ).toBeUndefined();
+    expect(run.getTerminalsState().creationOutcomes.map.mount).not.toMatchObject({
+      status: 'success',
+    });
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects an old-session overlay create reply before it can restore a terminal', async () => {
+    let finish!: (value: { success: boolean; id: string }) => void;
+    mocks.create.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { channel, dispatched, task, getTerminalsState } = startSaga();
+    const request = createOverlayTerminalRequested('ws-1');
+    const result = request.promise.then(
+      () => 'accepted',
+      () => 'rejected',
+    );
+    channel.put(request);
+    await settle();
+    rendererEventRecovery.dispose();
+    finish({ success: true, id: 'obsolete-terminal' });
+    expect(await result).toBe('rejected');
+    expect(
+      getTerminalsState().workspaces['ws-1']?.terminals.map['obsolete-terminal'],
+    ).toBeUndefined();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(
+      dispatched.some((action) => action.type === createOverlayTerminalRequested.success.type),
+    ).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it.each(['push', 'retire', 'replacement'])(
+    'keeps original command authority across %s',
+    async (change) => {
+      const key = 'terminals:' + JSON.stringify(['ws-1']);
+      const scope = rendererEventRecovery.attach({
+        supported: true,
+        isCurrent: () => true,
+        request: async <T>() => ({}) as T,
+        fence: async (_ids, observe) => {
+          observe();
+        },
+        dispose: () => {},
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+      })!;
+      const owner = {
+        key,
+        workspaceId: 'ws-1',
+        eventTypes: ['terminal:exit'],
+        isCurrent: () => true,
+        read: async () => [],
+        apply: () => {},
+        invalidate: () => {},
+        retire: () => {},
+      };
+      scope.registerResource(owner);
+      let finish!: (value: { success: boolean; id: string }) => void;
+      mocks.create.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const { channel, task, getTerminalsState } = startSaga();
+      const request = createOverlayTerminalRequested('ws-1');
+      const result = request.promise.then(
+        () => 'accepted',
+        () => 'rejected',
+      );
+      channel.put(request);
+      await settle();
+      rendererEventRecovery.push(key);
+      if (change !== 'push') rendererEventRecovery.captureRetirement(key)(new Error('Denied'));
+      if (change === 'replacement') scope.registerResource(owner);
+      finish({ success: true, id: 'created-terminal' });
+      expect(await result).toBe(change !== 'push' ? 'rejected' : 'accepted');
+      expect(!!getTerminalsState().workspaces['ws-1']?.terminals.map['created-terminal']).toBe(
+        change === 'push',
+      );
+      expect(mocks.create).toHaveBeenCalledTimes(1);
+      task.cancel();
+      await task.toPromise();
+    },
+  );
 
   it('allows the root overlay to create without a workspace membership row', async () => {
     mocks.create.mockResolvedValue({ success: true, id: 'daemon-root-pty' });

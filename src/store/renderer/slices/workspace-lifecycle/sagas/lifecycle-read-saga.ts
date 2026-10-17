@@ -1,3 +1,53 @@
+import { installTaskEventCompletionOwner } from '$features/events/task-event-completion';
+import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
+import {
+  acquireWorkspaceActivityDemand,
+  runWorkspaceActivityRead,
+  workspaceActivityRecoveryKey,
+} from '$features/events/workspace-activity-recovery';
+import { runWorkspaceProjectionRead } from '$features/events/workspace-list-recovery';
+import { tasksRecoveryKey, runTaskListRead } from '$features/events/task-list-recovery';
+import { terminalsRecoveryKey } from '$features/events/terminal-list-recovery';
+import {
+  acquireSkillsRecoveryDemand,
+  readSkillsWithRecovery,
+  skillsRecoveryKey,
+} from '$features/events/skills-recovery';
+import {
+  acquireLifecycleMetadataDemand,
+  runLifecycleMetadataRead,
+  tokenUsageRecoveryKey,
+  contextRecoveryKey,
+  taskAgentLinksRecoveryKey,
+} from '$features/events/lifecycle-metadata-recovery';
+import {
+  acquireAgentMetadataDemand,
+  trackAgentMetadataRead,
+} from '$features/agent/agent-metadata-recovery';
+import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import {
+  WORKSPACE_LIST_RECOVERY_KEY,
+  runWorkspaceListRead,
+} from '$features/events/workspace-list-recovery';
+import {
+  scriptsRecoveryKey,
+  trackScriptsRecoveryRead,
+  recordScriptsRecoveryPage,
+} from '$features/scripts/scripts-event-recovery';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryHandle,
+} from '$features/events/renderer-event-recovery';
+import {
+  changesRecoveryKey,
+  registerChangesRecovery,
+} from '$features/file-tracking/changes-event-recovery';
+import {
+  getRecoveryAdmission,
+  getRecoveryLifetime,
+  withRecoveryLifetime,
+} from '../../../middlewares/event-recovery';
 import {
   selectAllWorkspaceScriptEntries,
   selectScriptListPageState,
@@ -17,6 +67,7 @@ import {
   actionChannel,
   all,
   call,
+  getContext,
   cancelled,
   delay,
   flush,
@@ -64,6 +115,7 @@ import {
   selectAgentSessionsById,
 } from '../../agent-session/agent-session-selectors';
 import {
+  clearAgentLineStats,
   agentLineStatsRequestFailed,
   agentLineStatsRequestStarted,
   agentLineStatsRequestSucceeded,
@@ -188,6 +240,7 @@ import {
   clearWorkspaceTasks,
   ensureWorkspaceTasksLoaded,
   workspaceTasksReadStarted,
+  workspaceTasksReadAbandoned,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
@@ -195,6 +248,7 @@ import {
 import {
   selectDemandedTaskWorkspaceIds,
   selectWorkspaceTasksShouldLoad,
+  selectWorkspaceTasksState,
 } from '../../workspace-tasks/workspace-tasks-selectors';
 import {
   bulkUpdateWorkspaceEntities,
@@ -281,6 +335,10 @@ type WorkspaceProjectionAction = ReturnType<
 >;
 
 function* refreshWorkspaces(): SagaGenerator<void> {
+  const authority = rendererEventRecovery.captureAuthority(WORKSPACE_LIST_RECOVERY_KEY);
+  let published = false;
+  const receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+  if (!receipt.commit(() => undefined)) return;
   const dispatch = store.dispatch;
   const backendId = yield* selectActiveBackendId();
   const context = yield* selectPrincipalActionContext.effect();
@@ -296,8 +354,11 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   );
   try {
     const deletionTokens = store.state.workspace.deletionTokens;
-    const result = yield* call([workspaceClient, workspaceClient.list], { lite: true });
+    const result = yield* call(() =>
+      runWorkspaceListRead(receipt, () => workspaceClient.list({ lite: true })),
+    );
     if (
+      !receipt.commit(() => undefined) ||
       store.dispatch !== dispatch ||
       backendId !== (yield* selectActiveBackendId()) ||
       context !== (yield* selectPrincipalActionContext.effect())
@@ -322,50 +383,100 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     };
     for (const action of yield* flush(changes)) record(action);
     yield* put(
-      replaceWorkspaceList([...rows.values()], {
-        complete: result.complete === true,
-        deletionTokens,
-      }),
+      withRecoveryLifetime(
+        replaceWorkspaceList([...rows.values()], {
+          complete: result.complete === true,
+          deletionTokens,
+        }),
+        receipt,
+      ),
     );
-    yield* put(setWorkspaceHasLoaded(true, backendId, context));
+    published = receipt.commit(() => undefined);
+    yield* put(withRecoveryLifetime(setWorkspaceHasLoaded(true, backendId, context), receipt));
     const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
     if (
+      !receipt.commit(() => undefined) ||
       store.dispatch !== dispatch ||
       backendId !== (yield* selectActiveBackendId()) ||
       context !== (yield* selectPrincipalActionContext.effect())
     )
       return;
-    yield* put(loadRecencyData({ lastViewedAt: recentViews }));
+    yield* put(withRecoveryLifetime(loadRecencyData({ lastViewedAt: recentViews }), receipt));
   } finally {
     changes.close();
+    if (!published && !receipt.isCurrent() && authority.isCurrent()) {
+      yield* put(withRecoveryLifetime(loadWorkspacesRequested(), authority));
+    }
   }
 }
 
-function* refreshTasks(workspaceId: string): SagaGenerator<void> {
+function* refreshTasks(workspaceId: string, original?: RecoveryLifetime): SagaGenerator<void> {
   if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
-  yield* put(workspaceTasksReadStarted(workspaceId));
+  const authority = rendererEventRecovery.captureAuthority(tasksRecoveryKey(workspaceId));
+  const receipt = original ?? rendererEventRecovery.capture(tasksRecoveryKey(workspaceId));
+  if (!receipt.commit(() => undefined)) return;
+  yield* put(withRecoveryLifetime(workspaceTasksReadStarted(workspaceId), receipt));
+  const { readRevision } = yield* selectWorkspaceTasksState.effect(workspaceId);
   try {
-    const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
-      [appClient.tasks, appClient.tasks.list],
-      workspaceId,
+    const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(() =>
+      rendererEventRecovery.hasOwner(tasksRecoveryKey(workspaceId))
+        ? runTaskListRead(workspaceId, receipt, () => appClient.tasks.list(workspaceId))
+        : appClient.tasks.list(workspaceId),
     );
-    yield* put(loadWorkspaceTasksSucceeded(workspaceId, result.tasks, result.stats));
+    yield* put(
+      withRecoveryLifetime(
+        loadWorkspaceTasksSucceeded(workspaceId, result.tasks, result.stats),
+        receipt,
+      ),
+    );
   } catch (error) {
-    yield* put(loadWorkspaceTasksFailed(workspaceId, String(error)));
+    yield* put(withRecoveryLifetime(loadWorkspaceTasksFailed(workspaceId, String(error)), receipt));
     throw error;
+  } finally {
+    if (!receipt.isCurrent() && authority.isCurrent()) {
+      yield* put(
+        withRecoveryLifetime(workspaceTasksReadAbandoned(workspaceId, readRevision), authority),
+      );
+      yield* put(withRecoveryLifetime(ensureWorkspaceTasksLoaded(workspaceId), authority));
+    }
   }
+}
+
+function readLifecycleMetadata<T>(
+  key: string,
+  receipt: RecoveryLifetime,
+  read: () => Promise<T>,
+): Promise<T> {
+  return rendererEventRecovery.hasOwner(key)
+    ? runLifecycleMetadataRead(key, receipt, read)
+    : read();
 }
 
 function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
+  const release = acquireLifecycleMetadataDemand(workspaceId, 'tokenUsage');
+  const key = tokenUsageRecoveryKey(workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
   try {
-    const usage: Awaited<ReturnType<typeof appClient.workspaces.getTokenUsage>> = yield* call(
-      [appClient.workspaces, appClient.workspaces.getTokenUsage],
-      workspaceId,
-    );
-    yield* put(usage ? tokenUsageReceived(workspaceId, usage) : tokenUsageFetchFailed(workspaceId));
-  } catch (error) {
-    yield* put(tokenUsageFetchFailed(workspaceId));
-    throw error;
+    if (!receipt.commit(() => undefined)) return;
+    try {
+      const usage: Awaited<ReturnType<typeof appClient.workspaces.getTokenUsage>> = yield* call(
+        () =>
+          readLifecycleMetadata(key, receipt, () =>
+            appClient.workspaces.getTokenUsage(workspaceId),
+          ),
+      );
+      yield* put(
+        withRecoveryLifetime(
+          usage ? tokenUsageReceived(workspaceId, usage) : tokenUsageFetchFailed(workspaceId),
+          receipt,
+        ),
+      );
+    } catch (error) {
+      yield* put(withRecoveryLifetime(tokenUsageFetchFailed(workspaceId), receipt));
+      throw error;
+    }
+  } finally {
+    release();
   }
 }
 
@@ -381,13 +492,24 @@ function* refreshMembershipSummary(
   workspaceId: string,
   isLatest: () => boolean,
 ): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+  if (!receipt.commit(() => undefined)) return;
   const context = yield* selectPrincipalActionContext.effect();
   const previous = yield* selectWorkspaceById.effect(workspaceId);
-  const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.get],
-    workspaceId,
+  const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(() =>
+    runWorkspaceProjectionRead(
+      receipt,
+      workspaceId,
+      () => appClient.workspaces.get(workspaceId),
+      `normalized-get:${workspaceId}`,
+    ),
   );
-  if (!workspace || !isLatest() || context !== (yield* selectPrincipalActionContext.effect()))
+  if (
+    !receipt.commit(() => undefined) ||
+    !workspace ||
+    !isLatest() ||
+    context !== (yield* selectPrincipalActionContext.effect())
+  )
     return;
   const current = yield* selectWorkspaceById.effect(workspaceId);
   // Another authoritative hydration must not be overwritten by an older read.
@@ -406,7 +528,12 @@ function* refreshMembershipSummary(
     changes.openInviteCount = workspace.openInviteCount;
   }
   if (Object.keys(changes).length === 0) return;
-  yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  yield* put(
+    withRecoveryLifetime(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]),
+      receipt,
+    ),
+  );
 }
 
 function* refreshPrStatus(
@@ -414,13 +541,15 @@ function* refreshPrStatus(
   force: boolean,
   isManual: boolean,
 ): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+  if (!receipt.commit(() => undefined)) return;
   if (!force) {
     const lastRefreshTime = yield* selectPRStatusLastRefreshTime.effect(workspaceId);
     if (lastRefreshTime != null && Date.now() - lastRefreshTime < PR_STATUS_REFRESH_TTL_MS) {
       return;
     }
   }
-  yield* put(prStatusRefreshStarted(workspaceId));
+  yield* put(withRecoveryLifetime(prStatusRefreshStarted(workspaceId), receipt));
   try {
     const refresh: Awaited<ReturnType<typeof appClient.git.prRefresh>> = yield* call(
       [appClient.git, appClient.git.prRefresh],
@@ -429,10 +558,15 @@ function* refreshPrStatus(
       { automatic: !isManual },
     );
     if (refresh === null) {
-      yield* put(prStatusRefreshCompleted(workspaceId, false, 'pr.refresh failed'));
+      yield* put(
+        withRecoveryLifetime(
+          prStatusRefreshCompleted(workspaceId, false, 'pr.refresh failed'),
+          receipt,
+        ),
+      );
       return;
     }
-    yield* put(prStatusRefreshCompleted(workspaceId, true));
+    yield* put(withRecoveryLifetime(prStatusRefreshCompleted(workspaceId, true), receipt));
     const workspace: Workspace | undefined = yield* selectWorkspaceById.effect(workspaceId);
     if (refresh.prNumber != null && workspace?.repositoryOwner && workspace.repositoryName) {
       const payload: PrBranchLookupPayload = {
@@ -441,14 +575,17 @@ function* refreshPrStatus(
         prNumber: refresh.prNumber,
         key: `${workspace.repositoryOwner}/${workspace.repositoryName}#${refresh.prNumber}`,
       };
-      yield* put(prBranchLookupSucceeded(payload, workspace.branch));
+      yield* put(withRecoveryLifetime(prBranchLookupSucceeded(payload, workspace.branch), receipt));
     }
   } catch (error) {
     yield* put(
-      prStatusRefreshCompleted(
-        workspaceId,
-        false,
-        error instanceof Error ? error.message : String(error),
+      withRecoveryLifetime(
+        prStatusRefreshCompleted(
+          workspaceId,
+          false,
+          error instanceof Error ? error.message : String(error),
+        ),
+        receipt,
       ),
     );
   }
@@ -475,6 +612,9 @@ function* admittedWorkspaceRead(workspaceId: string): SagaGenerator<string | nul
 }
 
 type ChangesEntry = {
+  recovery?: RendererRecoveryHandle;
+  stopRecovery?: () => void;
+  explicitReads?: number;
   context: string;
   filesRevision: number;
   historyRevision: number;
@@ -505,6 +645,7 @@ function* hasChangesDemand(
 function changesEntry(reads: ChangesReads, workspaceId: string, context: string): ChangesEntry {
   let entry = reads.get(workspaceId);
   if (!entry || entry.context !== context) {
+    entry?.stopRecovery?.();
     entry = {
       context,
       filesRevision: 0,
@@ -517,6 +658,78 @@ function changesEntry(reads: ChangesReads, workspaceId: string, context: string)
   return entry;
 }
 
+function ensureChangesRecovery(
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  workspaceId: string,
+  entry: ChangesEntry,
+) {
+  if (reads.get(workspaceId) !== entry) return;
+  const desired = () => {
+    const visible = selectCurrentWorkspaceTabId.select(store.state) === workspaceId;
+    return {
+      files: !!entry.explicitReads || (visible && (demand.get(workspaceId)?.files ?? 0) > 0),
+      history: !!entry.explicitReads || (visible && (demand.get(workspaceId)?.history ?? 0) > 0),
+    };
+  };
+  if (!entry.stopRecovery) {
+    entry.stopRecovery = rendererEventRecovery.onSession((scope) => {
+      const deletion = store.state.workspace.deletionTokens[workspaceId];
+      const handle = registerChangesRecovery(scope, workspaceId, {
+        isCurrent: () =>
+          reads.get(workspaceId) === entry &&
+          selectPrincipalActionContext.select(store.state) === entry.context &&
+          !!selectWorkspaceById.select(store.state, workspaceId) &&
+          store.state.workspace.capabilityContext === entry.context &&
+          store.state.workspace.deletionTokens[workspaceId] === deletion,
+        demand: desired,
+        loadedHistoryIdentity: () => entry.loadedHistoryIdentity,
+        retired: () => {
+          entry.loadedHistoryIdentity = undefined;
+          entry.historyIdentity = undefined;
+          entry.status = undefined;
+          entry.tracked = undefined;
+          entry.filesDirty = true;
+          entry.historyDirty = true;
+          entry.filesRevision++;
+          entry.historyRevision++;
+          entry.historyRecoveryAttempted = false;
+        },
+        invalidate: () => {
+          entry.filesRevision++;
+          entry.historyRevision++;
+          entry.filesDirty = true;
+          entry.historyDirty = true;
+          entry.status = undefined;
+          entry.tracked = undefined;
+          entry.historyIdentity = undefined;
+          entry.historyRecoveryAttempted = false;
+        },
+        applied: (snapshot) => {
+          if (snapshot.status && snapshot.tracked) {
+            entry.status = snapshot.status;
+            entry.tracked = snapshot.tracked;
+            entry.filesDirty = false;
+          }
+          if (snapshot.history || snapshot.historyIdentity) {
+            entry.loadedHistoryIdentity =
+              snapshot.history?.historyIdentity ?? snapshot.historyIdentity;
+            entry.historyIdentity = entry.loadedHistoryIdentity;
+            entry.historyDirty = false;
+          }
+        },
+        dispatch: (action) => store.dispatch(action),
+      });
+      entry.recovery = handle;
+      return () => {
+        if (entry.recovery === handle) entry.recovery = undefined;
+        handle.dispose();
+      };
+    });
+  }
+  entry.recovery?.setActive(desired().files || desired().history);
+}
+
 function* refreshChanges(
   reads: ChangesReads,
   demand: ChangesDemand,
@@ -526,6 +739,39 @@ function* refreshChanges(
   const context = yield* admittedWorkspaceRead(workspaceId);
   if (!context) return;
   const entry = changesEntry(reads, workspaceId, context);
+  if (explicit) entry.explicitReads = (entry.explicitReads ?? 0) + 1;
+  ensureChangesRecovery(reads, demand, workspaceId, entry);
+  try {
+    if (!entry.recovery?.status.stale)
+      yield* refreshChangesSnapshot(reads, demand, workspaceId, explicit);
+  } finally {
+    if (explicit) entry.explicitReads = Math.max(0, (entry.explicitReads ?? 0) - 1);
+    ensureChangesRecovery(reads, demand, workspaceId, entry);
+  }
+}
+
+function readChangesSnapshotValue<T>(
+  workspaceId: string,
+  receipt: RecoveryLifetime,
+  read: () => Promise<T>,
+): Promise<T> {
+  return trackWorktreeSnapshotRead(changesRecoveryKey(workspaceId), () => {
+    if (!receipt.commit(() => undefined)) throw new Error('Changes read superseded');
+    return read();
+  });
+}
+
+function* refreshChangesSnapshot(
+  reads: ChangesReads,
+  demand: ChangesDemand,
+  workspaceId: string,
+  explicit: boolean,
+): SagaGenerator<void> {
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (!context) return;
+  const entry = changesEntry(reads, workspaceId, context);
+  const receipt = rendererEventRecovery.capture(changesRecoveryKey(workspaceId));
+  if (!receipt.commit(() => undefined)) return;
   if (explicit) {
     entry.historyRevision++;
     // A manual/initial read establishes fresh correspondence, including when
@@ -558,20 +804,35 @@ function* refreshChanges(
       return yield* all({
         status: call(function* (): SagaGenerator<GitStatus | null> {
           if (!filesDirty) return null;
-          return entry.status ?? (yield* call([appClient.git, appClient.git.status], workspaceId));
+          return (
+            entry.status ??
+            (yield* call(() =>
+              readChangesSnapshotValue(workspaceId, receipt, () =>
+                appClient.git.status(workspaceId),
+              ),
+            ))
+          );
         }),
         trackedChanges: call(function* (): SagaGenerator<TrackedChange[] | null> {
           if (!filesDirty) return null;
           return (
             entry.tracked ??
-            (yield* call([appClient.git, appClient.git.trackedChanges], workspaceId))
+            (yield* call(() =>
+              readChangesSnapshotValue(workspaceId, receipt, () =>
+                appClient.git.trackedChanges(workspaceId),
+              ),
+            ))
           );
         }),
         commitsEnvelope: call(function* (): SagaGenerator<Awaited<
           ReturnType<typeof appClient.git.commitsWithBoundary>
         > | null> {
           return historyDirty
-            ? yield* call([appClient.git, appClient.git.commitsWithBoundary], workspaceId)
+            ? yield* call(() =>
+                readChangesSnapshotValue(workspaceId, receipt, () =>
+                  appClient.git.commitsWithBoundary(workspaceId),
+                ),
+              )
             : null;
         }),
       });
@@ -581,7 +842,11 @@ function* refreshChanges(
       throw error;
     }
   });
-  if ((yield* admittedWorkspaceRead(workspaceId)) !== context || reads.get(workspaceId) !== entry)
+  if (
+    !receipt.commit(() => undefined) ||
+    (yield* admittedWorkspaceRead(workspaceId)) !== context ||
+    reads.get(workspaceId) !== entry
+  )
     return;
   if (filesDirty && filesRevision === entry.filesRevision) {
     if (!status || trackedChanges === null) {
@@ -592,7 +857,9 @@ function* refreshChanges(
     entry.status = status;
     entry.tracked = trackedChanges;
     const changes = reconcileGitStatusChanges(status.files, trackedChanges);
-    yield* put(setChangesData(workspaceId, changes, false, changes.length));
+    yield* put(
+      withRecoveryLifetime(setChangesData(workspaceId, changes, false, changes.length), receipt),
+    );
   }
   if (commitsEnvelope && historyRevision === entry.historyRevision) {
     const responseIdentity = commitsEnvelope.historyIdentity;
@@ -607,14 +874,20 @@ function* refreshChanges(
         yield* put(reconcileChangesRequested(workspaceId));
       }
     } else {
-      yield* put(setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
+      yield* put(
+        withRecoveryLifetime(
+          setCommitsData(workspaceId, commitsEnvelope.commits, commitsEnvelope.boundarySha),
+          receipt,
+        ),
+      );
       entry.loadedHistoryIdentity = responseIdentity;
       entry.historyIdentity = responseIdentity;
       entry.historyDirty = false;
       entry.historyRecoveryAttempted = false;
     }
   }
-  if (explicit) yield* put(setHasLoadedInitialData(workspaceId, true));
+  if (explicit)
+    yield* put(withRecoveryLifetime(setHasLoadedInitialData(workspaceId, true), receipt));
 }
 
 function* receiveChangesEvent(
@@ -624,6 +897,14 @@ function* receiveChangesEvent(
 ): SagaGenerator<void> {
   const [workspaceId, type, data] = action.payload;
   if (typeof data.gitRootId === 'string' && data.gitRootId) return;
+  const admitted = getRecoveryAdmission(action, changesRecoveryKey(workspaceId));
+  if (admitted === null) return;
+  if (
+    admitted
+      ? !admitted.commit(() => undefined)
+      : !rendererEventRecovery.push(changesRecoveryKey(workspaceId))
+  )
+    return;
   const context = yield* admittedWorkspaceRead(workspaceId);
   if (!context) return;
   const entry = changesEntry(reads, workspaceId, context);
@@ -677,6 +958,7 @@ function* receiveChangesEvent(
 }
 
 function* reconcileVisibleChanges(reads: ChangesReads, demand: ChangesDemand): SagaGenerator<void> {
+  for (const [id, entry] of reads) ensureChangesRecovery(reads, demand, id, entry);
   const workspaceId = yield* selectCurrentWorkspaceTabId.effect();
   if (!workspaceId || !(yield* hasChangesDemand(demand, workspaceId))) return;
   const entry = reads.get(workspaceId);
@@ -694,6 +976,9 @@ function* changeChangesDemand(
   if (scope !== 'history') counts.files = Math.max(0, counts.files + delta);
   if (scope !== 'files') counts.history = Math.max(0, counts.history + delta);
   demand.set(workspaceId, counts);
+  const context = yield* admittedWorkspaceRead(workspaceId);
+  if (context)
+    ensureChangesRecovery(reads, demand, workspaceId, changesEntry(reads, workspaceId, context));
   yield* reconcileVisibleChanges(reads, demand);
 }
 
@@ -715,16 +1000,19 @@ function* reconnectChanges(reads: ChangesReads, demand: ChangesDemand): SagaGene
 function* refreshOlderCommits(reads: ChangesReads, workspaceId: string): SagaGenerator<void> {
   const context = yield* admittedWorkspaceRead(workspaceId);
   if (!context) return;
+  const receipt = rendererEventRecovery.capture(changesRecoveryKey(workspaceId));
   const entry = reads.get(workspaceId);
   const revision = entry?.historyRevision;
-  yield* put(setLoadingOlderCommits(workspaceId, true));
+  yield* put(withRecoveryLifetime(setLoadingOlderCommits(workspaceId, true), receipt));
   try {
     const envelope: Awaited<ReturnType<typeof appClient.git.commitsWithBoundary>> = yield* call(
-      [appClient.git, appClient.git.commitsWithBoundary],
-      workspaceId,
-      true,
+      () =>
+        readChangesSnapshotValue(workspaceId, receipt, () =>
+          appClient.git.commitsWithBoundary(workspaceId, true),
+        ),
     );
     if (
+      receipt.isCurrent() &&
       (yield* admittedWorkspaceRead(workspaceId)) === context &&
       reads.get(workspaceId) === entry &&
       entry?.historyRevision === revision
@@ -737,42 +1025,65 @@ function* refreshOlderCommits(reads: ChangesReads, workspaceId: string): SagaGen
         entry.loadedHistoryIdentity = undefined;
         yield* put(reconcileChangesRequested(workspaceId));
       } else {
-        yield* put(appendOlderCommits(workspaceId, envelope.commits));
+        yield* put(
+          withRecoveryLifetime(appendOlderCommits(workspaceId, envelope.commits), receipt),
+        );
       }
     }
   } finally {
     if ((yield* admittedWorkspaceRead(workspaceId)) === context)
-      yield* put(setLoadingOlderCommits(workspaceId, false));
+      yield* put(withRecoveryLifetime(setLoadingOlderCommits(workspaceId, false), receipt));
   }
 }
 
 function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerator<void> {
   if (!(yield* selectShouldRequestAgentLineStats.effect(agentId, forceRefresh))) return;
-  yield* put(agentLineStatsRequestStarted(agentId, new Date().toISOString()));
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+  if (!workspaceId) return;
+  const release = acquireAgentMetadataDemand(workspaceId, { agentId, lineStats: true });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   try {
-    const metrics: Awaited<ReturnType<typeof getAgentLineStats>> = yield* call(
-      getAgentLineStats,
-      agentId,
-      yield* selectAgentSessionWorkspaceId.effect(agentId),
+    if (!receipt.commit(() => undefined)) return;
+    yield* put(
+      withRecoveryLifetime(
+        agentLineStatsRequestStarted(agentId, new Date().toISOString()),
+        receipt,
+      ),
+    );
+    const metrics: Awaited<ReturnType<typeof getAgentLineStats>> = yield* call(() =>
+      readAgentMetadata(receipt, workspaceId, () => getAgentLineStats(agentId, workspaceId)),
     );
     if (metrics) {
       yield* put(
-        updateAgentStats(agentId, {
-          additions: metrics.additions,
-          deletions: metrics.deletions,
-          timestamp: new Date().toISOString(),
-        }),
+        withRecoveryLifetime(
+          updateAgentStats(agentId, {
+            additions: metrics.additions,
+            deletions: metrics.deletions,
+            timestamp: new Date().toISOString(),
+          }),
+          receipt,
+        ),
       );
-    }
-    yield* put(agentLineStatsRequestSucceeded(agentId, new Date().toISOString()));
+      yield* put(
+        withRecoveryLifetime(
+          agentLineStatsRequestSucceeded(agentId, new Date().toISOString()),
+          receipt,
+        ),
+      );
+    } else yield* put(withRecoveryLifetime(clearAgentLineStats(agentId), receipt));
   } catch (error) {
     yield* put(
-      agentLineStatsRequestFailed(
-        agentId,
-        error instanceof Error ? error.message : String(error),
-        new Date().toISOString(),
+      withRecoveryLifetime(
+        agentLineStatsRequestFailed(
+          agentId,
+          error instanceof Error ? error.message : String(error),
+          new Date().toISOString(),
+        ),
+        receipt,
       ),
     );
+  } finally {
+    release();
   }
 }
 
@@ -801,218 +1112,268 @@ function mergeListedRows(
   return [...earlier.filter((row) => !laterIds.has(String(row.id))), ...later];
 }
 
-function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
-  // Crash-leftover runtime-flag convergence (monorepo#4135): snapshot which
-  // stored sessions hold the both-true isStreaming/isProcessing pair BEFORE
-  // any daemon read starts. A pair set while the reads below are in flight
-  // (chatSendStarted racing this hydration — the designed #1250 race case)
-  // must NOT count as pre-existing, or an older idle list row would clear a
-  // genuinely live turn. Mirrors the per-agent fetch path's storedBefore read
-  // in agent-read-service.
-  const sessionsBeforeFetch = yield* selectAgentSessionsById.effect();
-  const inFlightPairIdsBeforeFetch = new Set<string>();
-  for (const [id, session] of Object.entries(sessionsBeforeFetch)) {
-    if (session.isStreaming === true && session.isProcessing === true) {
-      inFlightPairIdsBeforeFetch.add(id);
-    }
-  }
-  // Default read: `scope: "topLevel"` (§5.5 row scope) — only the parentless
-  // foreground rows the sidebar lists by default ride the hydration frame;
-  // the Delegated and Background bins render their collapsed toggles from
-  // the daemon-served `scopeCounts` and load their rows on demand via the
-  // scoped reads, the same way the Retired bin (§5.5 soft retire) renders
-  // from `retiredCount` and loads via the retired-only read. An older daemon
-  // ignores `scope`, serves every non-retired row and omits `scopeCounts` —
-  // that absence is the signal to run the pre-scope all-rows path (no bins).
-  const {
-    agents: defaultRows,
-    retiredCount,
-    scopeCounts,
-    delegatedCounts,
-  }: Awaited<ReturnType<typeof appClient.agents.listWithMeta>> = yield* call(
-    [appClient.agents, appClient.agents.listWithMeta],
-    workspaceId,
-    { scope: 'topLevel' as const },
-  );
-  let listed = defaultRows;
-  // `setAgents` replaces the workspace snapshot, so once a lazy bin's rows
-  // have been loaded a rehydrate must re-read that bin too — otherwise the
-  // reconcile would evict every one of its ids from the workspace list.
-  // Each extra read is a separate daemon round trip, so a row that moved
-  // bins between them can appear in two lists — dedupe by id, preferring
-  // the later (fresher) read; the retired-only row is read last since it
-  // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
-  // by-parent read) are re-read the same way when the whole bin is not
-  // loaded, and the orphan-only subset while the delegated parents are not
-  // covered (`selectDelegatedParentsCovered`, against the FRESH background
-  // count) — the whole-bin rows alone cannot tell an orphan from the child of
-  // an unloaded live background parent, so its membership stays authoritative
-  // until then. The orphan re-read is gated on the FRESH
-  // `delegatedCounts.orphaned`, not the stored flag alone: a reconnect to a
-  // daemon predating it would otherwise send `orphanedOnly` to a daemon that
-  // ignores the flag and answers with the whole bin.
-  const delegatedLoadedAtRead = scopeCounts
-    ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
-    : false;
-  const backgroundLoadedAtRead = scopeCounts
-    ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
-    : false;
-  const delegatedParentsCoveredAtRead = scopeCounts
-    ? yield* selectDelegatedParentsCovered(workspaceId, scopeCounts.background)
-    : false;
-  const loadedParentIdsAtRead =
-    scopeCounts && !delegatedLoadedAtRead
-      ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
-      : [];
-  const orphanedServed = Boolean(scopeCounts && delegatedCounts?.orphaned);
-  const orphanedLoadedAtRead =
-    orphanedServed && !delegatedParentsCoveredAtRead
-      ? yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)
-      : false;
-  const retiredLoadedAtRead = yield* selectRetiredAgentsLoaded.effect(workspaceId);
-  if (delegatedLoadedAtRead) {
-    const delegatedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'delegated' as const },
-    );
-    listed = mergeListedRows(listed, delegatedRows);
-  }
-  for (const parentAgentId of loadedParentIdsAtRead) {
-    const childRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'delegated' as const, parentAgentId },
-    );
-    listed = mergeListedRows(listed, childRows);
-  }
-  if (orphanedLoadedAtRead) {
-    const orphanedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'delegated' as const, orphanedOnly: true },
-    );
-    listed = mergeListedRows(listed, orphanedRows);
-    // The bin's membership re-baselines with the rows: a parent deleted or
-    // retired since the last read turned its children into orphans.
-    yield* put(
-      setOrphanedDelegatedAgentIds(
-        workspaceId,
-        orphanedRows.map((row) => String(row.id)),
-      ),
-    );
-  }
-  if (backgroundLoadedAtRead) {
-    const backgroundRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'background' as const },
-    );
-    listed = mergeListedRows(listed, backgroundRows);
-  }
-  if (retiredLoadedAtRead) {
-    const retiredRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { retiredOnly: true },
-    );
-    listed = mergeListedRows(listed, retiredRows);
-  }
-  // Everything from the loaded-checks above through the `setAgents` put below
-  // is synchronous saga work (sync calls, selects, puts — no promise yields),
-  // so a concurrent lazy-bin completion cannot interleave here. The mid-flight
-  // case — a lazy load finishing while the reads above were awaiting — is
-  // caught by the re-checks just after `setAgents`.
-  const fetched = yield* filterPendingDeletions(listed);
-  yield* put(setAgentsLoaded(workspaceId, true));
-  yield* put(setRetiredCount(workspaceId, retiredCount));
-  yield* put(setScopeCounts(workspaceId, scopeCounts ?? null));
-  yield* put(setDelegatedCounts(workspaceId, delegatedCounts ?? null));
+function readAgentMetadata<T>(
+  receipt: RecoveryLifetime,
+  workspaceId: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!rendererEventRecovery.hasOwner(agentMetadataRecoveryKey(workspaceId))) return read();
+  return trackAgentMetadataRead(workspaceId, () => {
+    if (!receipt.commit(() => undefined)) throw new Error('Agent metadata read superseded');
+    return read();
+  });
+}
 
-  const agents = [] as typeof fetched;
-  // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
-  // whose both-true isStreaming/isProcessing pair predates this read (the
-  // pre-fetch snapshot above) and whose fresh list row reports the turn idle
-  // is a crash leftover no event will ever clear — tag that row for stale
-  // clearing in the single batch so list refresh converges it, matching the
-  // per-agent fetch path (agent-read-service). Genuinely live rows retain the
-  // default pair-guard semantics (monorepo#1250). The per-agent `existing`
-  // read stays post-fetch on purpose: the message merge wants the latest
-  // stored transcript.
-  const staleRuntimeFlagClearAgentIds: string[] = [];
-  for (const agent of fetched) {
-    const existing = yield* selectAgentSession.effect(String(agent.id));
-    const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
-    const merged =
-      agent.messages.length === 0 && existing && existing.messages.length > 0
-        ? { ...agent, messages: existing.messages }
-        : agent;
-    agents.push(merged);
-    const clearOptions = staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, agent);
-    if (clearOptions) {
-      staleRuntimeFlagClearAgentIds.push(String(agent.id));
-    }
-  }
-  yield* put(setAgents(workspaceId, agents));
-  // A lazy load that completed while this hydration's daemon reads were in
-  // flight: the snapshot above just evicted its rows while the loaded flag
-  // reads true (bin would render empty and never refetch). Reset the flag and
-  // re-request so the bin's worker re-adds the rows.
-  if (!retiredLoadedAtRead && (yield* selectRetiredAgentsLoaded.effect(workspaceId))) {
-    yield* put(setRetiredAgentsLoaded(workspaceId, false));
-    yield* put(fetchRetiredAgentsRequested(workspaceId));
-  }
-  if (scopeCounts) {
-    if (!delegatedLoadedAtRead && (yield* selectDelegatedAgentsLoaded.effect(workspaceId))) {
-      yield* put(setLazyBinLoaded(workspaceId, 'delegated', false));
-      yield* put(fetchDelegatedAgentsRequested(workspaceId));
-    } else if (!delegatedLoadedAtRead) {
-      // Same guard per parent: a by-parent load that landed mid-hydration.
-      const loadedParentIds = yield* selectLoadedDelegatedParentIds.effect(workspaceId);
-      for (const parentAgentId of Object.keys(loadedParentIds)) {
-        if (loadedParentIdsAtRead.includes(parentAgentId)) continue;
-        yield* put(setDelegatedParentLoaded(workspaceId, parentAgentId, false));
-        yield* put(fetchDelegatedAgentsRequested(workspaceId, parentAgentId));
+function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
+  const release = acquireAgentMetadataDemand(workspaceId, { bin: 'topLevel' });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
+  try {
+    if (!receipt.commit(() => undefined)) return;
+    // Crash-leftover runtime-flag convergence (monorepo#4135): snapshot which
+    // stored sessions hold the both-true isStreaming/isProcessing pair BEFORE
+    // any daemon read starts. A pair set while the reads below are in flight
+    // (chatSendStarted racing this hydration — the designed #1250 race case)
+    // must NOT count as pre-existing, or an older idle list row would clear a
+    // genuinely live turn. Mirrors the per-agent fetch path's storedBefore read
+    // in agent-read-service.
+    const sessionsBeforeFetch = yield* selectAgentSessionsById.effect();
+    const inFlightPairIdsBeforeFetch = new Set<string>();
+    for (const [id, session] of Object.entries(sessionsBeforeFetch)) {
+      if (session.isStreaming === true && session.isProcessing === true) {
+        inFlightPairIdsBeforeFetch.add(id);
       }
     }
-    // Same guard for the orphan subset — and the capability-loss path: the
-    // daemon stopped serving `delegatedCounts.orphaned`, so a loaded flag
-    // is stale (the bin falls back to the whole-bin read) and must not
-    // suppress a later orphan-only load once the capability returns.
-    if (
-      !delegatedParentsCoveredAtRead &&
-      !orphanedLoadedAtRead &&
-      (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
-    ) {
-      yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, false));
-      if (orphanedServed) yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
-    }
-    if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {
-      yield* put(setLazyBinLoaded(workspaceId, 'background', false));
-      yield* put(fetchBackgroundAgentsRequested(workspaceId));
-    }
-  }
-  if (agents.length > 0) {
-    // `agent.list` rows are the slim §5.5 list projection: detail-only fields
-    // an earlier `agent.get` stored must survive this refresh.
-    if (staleRuntimeFlagClearAgentIds.length > 0) {
-      yield* put(
-        bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds, listProjection: true }),
+    // Default read: `scope: "topLevel"` (§5.5 row scope) — only the parentless
+    // foreground rows the sidebar lists by default ride the hydration frame;
+    // the Delegated and Background bins render their collapsed toggles from
+    // the daemon-served `scopeCounts` and load their rows on demand via the
+    // scoped reads, the same way the Retired bin (§5.5 soft retire) renders
+    // from `retiredCount` and loads via the retired-only read. An older daemon
+    // ignores `scope`, serves every non-retired row and omits `scopeCounts` —
+    // that absence is the signal to run the pre-scope all-rows path (no bins).
+    const {
+      agents: defaultRows,
+      retiredCount,
+      scopeCounts,
+      delegatedCounts,
+    }: Awaited<ReturnType<typeof appClient.agents.listWithMeta>> = yield* call(() =>
+      readAgentMetadata(receipt, workspaceId, () =>
+        appClient.agents.listWithMeta(workspaceId, { scope: 'topLevel' as const }),
+      ),
+    );
+    let listed = defaultRows;
+    // `setAgents` replaces the workspace snapshot, so once a lazy bin's rows
+    // have been loaded a rehydrate must re-read that bin too — otherwise the
+    // reconcile would evict every one of its ids from the workspace list.
+    // Each extra read is a separate daemon round trip, so a row that moved
+    // bins between them can appear in two lists — dedupe by id, preferring
+    // the later (fresher) read; the retired-only row is read last since it
+    // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
+    // by-parent read) are re-read the same way when the whole bin is not
+    // loaded, and the orphan-only subset while the delegated parents are not
+    // covered (`selectDelegatedParentsCovered`, against the FRESH background
+    // count) — the whole-bin rows alone cannot tell an orphan from the child of
+    // an unloaded live background parent, so its membership stays authoritative
+    // until then. The orphan re-read is gated on the FRESH
+    // `delegatedCounts.orphaned`, not the stored flag alone: a reconnect to a
+    // daemon predating it would otherwise send `orphanedOnly` to a daemon that
+    // ignores the flag and answers with the whole bin.
+    const delegatedLoadedAtRead = scopeCounts
+      ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
+      : false;
+    const backgroundLoadedAtRead = scopeCounts
+      ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
+      : false;
+    const delegatedParentsCoveredAtRead = scopeCounts
+      ? yield* selectDelegatedParentsCovered(workspaceId, scopeCounts.background)
+      : false;
+    const loadedParentIdsAtRead =
+      scopeCounts && !delegatedLoadedAtRead
+        ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
+        : [];
+    const orphanedServed = Boolean(scopeCounts && delegatedCounts?.orphaned);
+    const orphanedLoadedAtRead =
+      orphanedServed && !delegatedParentsCoveredAtRead
+        ? yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)
+        : false;
+    const retiredLoadedAtRead = yield* selectRetiredAgentsLoaded.effect(workspaceId);
+    if (delegatedLoadedAtRead) {
+      const delegatedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'delegated' as const }),
+        ),
       );
-    } else {
-      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+      listed = mergeListedRows(listed, delegatedRows);
     }
-  }
+    for (const parentAgentId of loadedParentIdsAtRead) {
+      const childRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'delegated' as const, parentAgentId }),
+        ),
+      );
+      listed = mergeListedRows(listed, childRows);
+    }
+    if (orphanedLoadedAtRead) {
+      const orphanedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'delegated' as const, orphanedOnly: true }),
+        ),
+      );
+      listed = mergeListedRows(listed, orphanedRows);
+      // The bin's membership re-baselines with the rows: a parent deleted or
+      // retired since the last read turned its children into orphans.
+      yield* put(
+        withRecoveryLifetime(
+          setOrphanedDelegatedAgentIds(
+            workspaceId,
+            orphanedRows.map((row) => String(row.id)),
+          ),
+          receipt,
+        ),
+      );
+    }
+    if (backgroundLoadedAtRead) {
+      const backgroundRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'background' as const }),
+        ),
+      );
+      listed = mergeListedRows(listed, backgroundRows);
+    }
+    if (retiredLoadedAtRead) {
+      const retiredRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { retiredOnly: true }),
+        ),
+      );
+      listed = mergeListedRows(listed, retiredRows);
+    }
+    // Everything from the loaded-checks above through the `setAgents` put below
+    // is synchronous saga work (sync calls, selects, puts — no promise yields),
+    // so a concurrent lazy-bin completion cannot interleave here. The mid-flight
+    // case — a lazy load finishing while the reads above were awaiting — is
+    // caught by the re-checks just after `setAgents`.
+    const fetched = yield* filterPendingDeletions(listed);
+    yield* put(withRecoveryLifetime(setAgentsLoaded(workspaceId, true), receipt));
+    yield* put(withRecoveryLifetime(setRetiredCount(workspaceId, retiredCount), receipt));
+    yield* put(withRecoveryLifetime(setScopeCounts(workspaceId, scopeCounts ?? null), receipt));
+    yield* put(
+      withRecoveryLifetime(setDelegatedCounts(workspaceId, delegatedCounts ?? null), receipt),
+    );
 
-  const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
-  const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
-  if (activeAgentId && agentIds.includes(activeAgentId)) return;
-  // Retired rows are hydrated for the sidebar's Retired bin but never
-  // auto-selected — the fallback active agent must be a working one.
-  const selectable = agents.filter((agent) => !agent.retiredAt);
-  if (selectable.length === 0) return;
-  const firstForeground = selectable.find((agent) => !agent.isBackground) ?? selectable[0];
-  yield* put(setActiveAgentId(workspaceId, String(firstForeground.id)));
+    const agents = [] as typeof fetched;
+    // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
+    // whose both-true isStreaming/isProcessing pair predates this read (the
+    // pre-fetch snapshot above) and whose fresh list row reports the turn idle
+    // is a crash leftover no event will ever clear — tag that row for stale
+    // clearing in the single batch so list refresh converges it, matching the
+    // per-agent fetch path (agent-read-service). Genuinely live rows retain the
+    // default pair-guard semantics (monorepo#1250). The per-agent `existing`
+    // read stays post-fetch on purpose: the message merge wants the latest
+    // stored transcript.
+    const staleRuntimeFlagClearAgentIds: string[] = [];
+    for (const agent of fetched) {
+      const existing = yield* selectAgentSession.effect(String(agent.id));
+      const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
+      const merged =
+        agent.messages.length === 0 && existing && existing.messages.length > 0
+          ? { ...agent, messages: existing.messages }
+          : agent;
+      agents.push(merged);
+      const clearOptions = staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, agent);
+      if (clearOptions) {
+        staleRuntimeFlagClearAgentIds.push(String(agent.id));
+      }
+    }
+    yield* put(withRecoveryLifetime(setAgents(workspaceId, agents), receipt));
+    // A lazy load that completed while this hydration's daemon reads were in
+    // flight: the snapshot above just evicted its rows while the loaded flag
+    // reads true (bin would render empty and never refetch). Reset the flag and
+    // re-request so the bin's worker re-adds the rows.
+    if (!retiredLoadedAtRead && (yield* selectRetiredAgentsLoaded.effect(workspaceId))) {
+      yield* put(withRecoveryLifetime(setRetiredAgentsLoaded(workspaceId, false), receipt));
+      yield* put(withRecoveryLifetime(fetchRetiredAgentsRequested(workspaceId), receipt));
+    }
+    if (scopeCounts) {
+      if (!delegatedLoadedAtRead && (yield* selectDelegatedAgentsLoaded.effect(workspaceId))) {
+        yield* put(
+          withRecoveryLifetime(setLazyBinLoaded(workspaceId, 'delegated', false), receipt),
+        );
+        yield* put(withRecoveryLifetime(fetchDelegatedAgentsRequested(workspaceId), receipt));
+      } else if (!delegatedLoadedAtRead) {
+        // Same guard per parent: a by-parent load that landed mid-hydration.
+        const loadedParentIds = yield* selectLoadedDelegatedParentIds.effect(workspaceId);
+        for (const parentAgentId of Object.keys(loadedParentIds)) {
+          if (loadedParentIdsAtRead.includes(parentAgentId)) continue;
+          yield* put(
+            withRecoveryLifetime(
+              setDelegatedParentLoaded(workspaceId, parentAgentId, false),
+              receipt,
+            ),
+          );
+          yield* put(
+            withRecoveryLifetime(
+              fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+              receipt,
+            ),
+          );
+        }
+      }
+      // Same guard for the orphan subset — and the capability-loss path: the
+      // daemon stopped serving `delegatedCounts.orphaned`, so a loaded flag
+      // is stale (the bin falls back to the whole-bin read) and must not
+      // suppress a later orphan-only load once the capability returns.
+      if (
+        !delegatedParentsCoveredAtRead &&
+        !orphanedLoadedAtRead &&
+        (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
+      ) {
+        yield* put(
+          withRecoveryLifetime(setOrphanedDelegatedAgentsLoaded(workspaceId, false), receipt),
+        );
+        if (orphanedServed)
+          yield* put(
+            withRecoveryLifetime(fetchOrphanedDelegatedAgentsRequested(workspaceId), receipt),
+          );
+      }
+      if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {
+        yield* put(
+          withRecoveryLifetime(setLazyBinLoaded(workspaceId, 'background', false), receipt),
+        );
+        yield* put(withRecoveryLifetime(fetchBackgroundAgentsRequested(workspaceId), receipt));
+      }
+    }
+    if (agents.length > 0) {
+      // `agent.list` rows are the slim §5.5 list projection: detail-only fields
+      // an earlier `agent.get` stored must survive this refresh.
+      if (staleRuntimeFlagClearAgentIds.length > 0) {
+        yield* put(
+          withRecoveryLifetime(
+            bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds, listProjection: true }),
+            receipt,
+          ),
+        );
+      } else {
+        yield* put(
+          withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), receipt),
+        );
+      }
+    }
+
+    const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
+    const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
+    if (activeAgentId && agentIds.includes(activeAgentId)) return;
+    // Retired rows are hydrated for the sidebar's Retired bin but never
+    // auto-selected — the fallback active agent must be a working one.
+    const selectable = agents.filter((agent) => !agent.retiredAt);
+    if (selectable.length === 0) return;
+    const firstForeground = selectable.find((agent) => !agent.isBackground) ?? selectable[0];
+    yield* put(
+      withRecoveryLifetime(setActiveAgentId(workspaceId, String(firstForeground.id)), receipt),
+    );
+  } finally {
+    release();
+  }
 }
 
 /**
@@ -1023,39 +1384,48 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
  * concurrent hydration snapshot is never clobbered.
  */
 function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
-  if (yield* selectRetiredAgentsLoaded.effect(workspaceId)) return;
-  if (yield* selectIsLoadingRetiredAgents.effect(workspaceId)) return;
-  yield* put(setIsLoadingRetiredAgents(workspaceId, true));
+  const release = acquireAgentMetadataDemand(workspaceId, { bin: 'retired' });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   try {
-    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { retiredOnly: true },
-    );
-    const fetched = yield* filterPendingDeletions(listed);
-    if (fetched.length > 0) {
-      // List rows carry message COUNTS, not transcripts — keep any transcript
-      // already in the store (e.g. an agent retired live in this session).
-      const agents = [] as typeof fetched;
-      for (const agent of fetched) {
-        const existing = yield* selectAgentSession.effect(String(agent.id));
-        agents.push(
-          agent.messages.length === 0 && existing && existing.messages.length > 0
-            ? { ...agent, messages: existing.messages }
-            : agent,
+    if (!receipt.commit(() => undefined)) return;
+    if (yield* selectRetiredAgentsLoaded.effect(workspaceId)) return;
+    if (yield* selectIsLoadingRetiredAgents.effect(workspaceId)) return;
+    yield* put(withRecoveryLifetime(setIsLoadingRetiredAgents(workspaceId, true), receipt));
+    try {
+      const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { retiredOnly: true }),
+        ),
+      );
+      const fetched = yield* filterPendingDeletions(listed);
+      if (fetched.length > 0) {
+        // List rows carry message COUNTS, not transcripts — keep any transcript
+        // already in the store (e.g. an agent retired live in this session).
+        const agents = [] as typeof fetched;
+        for (const agent of fetched) {
+          const existing = yield* selectAgentSession.effect(String(agent.id));
+          agents.push(
+            agent.messages.length === 0 && existing && existing.messages.length > 0
+              ? { ...agent, messages: existing.messages }
+              : agent,
+          );
+        }
+        yield* put(
+          withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), receipt),
         );
+        for (const agent of agents) {
+          yield* put(withRecoveryLifetime(addAgent(workspaceId, agent), receipt));
+        }
       }
-      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
-      for (const agent of agents) {
-        yield* put(addAgent(workspaceId, agent));
-      }
+      // Re-baseline the count to the rows actually loaded so the bin label and
+      // its contents can never disagree after a load.
+      yield* put(withRecoveryLifetime(setRetiredCount(workspaceId, fetched.length), receipt));
+      yield* put(withRecoveryLifetime(setRetiredAgentsLoaded(workspaceId, true), receipt));
+    } finally {
+      yield* put(withRecoveryLifetime(setIsLoadingRetiredAgents(workspaceId, false), receipt));
     }
-    // Re-baseline the count to the rows actually loaded so the bin label and
-    // its contents can never disagree after a load.
-    yield* put(setRetiredCount(workspaceId, fetched.length));
-    yield* put(setRetiredAgentsLoaded(workspaceId, true));
   } finally {
-    yield* put(setIsLoadingRetiredAgents(workspaceId, false));
+    release();
   }
 }
 
@@ -1078,47 +1448,61 @@ const LAZY_BIN_LOADING_SELECTOR = {
  * every row on the default read, so there is nothing to load.
  */
 function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGenerator<void> {
-  if (!(yield* selectScopeCounts.effect(workspaceId))) return;
-  if (yield* LAZY_BIN_LOADED_SELECTOR[bin].effect(workspaceId)) return;
-  if (yield* LAZY_BIN_LOADING_SELECTOR[bin].effect(workspaceId)) return;
-  yield* put(setIsLoadingLazyBin(workspaceId, bin, true));
+  const release = acquireAgentMetadataDemand(workspaceId, { bin });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   try {
-    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: bin },
-    );
-    const fetched = yield* filterPendingDeletions(listed);
-    if (fetched.length > 0) {
-      const agents = [] as typeof fetched;
-      for (const agent of fetched) {
-        const existing = yield* selectAgentSession.effect(String(agent.id));
-        agents.push(
-          agent.messages.length === 0 && existing && existing.messages.length > 0
-            ? { ...agent, messages: existing.messages }
-            : agent,
+    if (!receipt.commit(() => undefined)) return;
+    if (!(yield* selectScopeCounts.effect(workspaceId))) return;
+    if (yield* LAZY_BIN_LOADED_SELECTOR[bin].effect(workspaceId)) return;
+    if (yield* LAZY_BIN_LOADING_SELECTOR[bin].effect(workspaceId)) return;
+    yield* put(withRecoveryLifetime(setIsLoadingLazyBin(workspaceId, bin, true), receipt));
+    try {
+      const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: bin }),
+        ),
+      );
+      const fetched = yield* filterPendingDeletions(listed);
+      if (fetched.length > 0) {
+        const agents = [] as typeof fetched;
+        for (const agent of fetched) {
+          const existing = yield* selectAgentSession.effect(String(agent.id));
+          agents.push(
+            agent.messages.length === 0 && existing && existing.messages.length > 0
+              ? { ...agent, messages: existing.messages }
+              : agent,
+          );
+        }
+        yield* put(
+          withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), receipt),
+        );
+        for (const agent of agents) {
+          yield* put(withRecoveryLifetime(addAgent(workspaceId, agent), receipt));
+        }
+      }
+      // Re-baseline the bin's count to the rows actually loaded so the bin
+      // label and its contents can never disagree after a load. The delegated
+      // bin's rows are every parent's children, so its `byParent` totals
+      // re-baseline from the same read — `Σ byParent[*].total` must keep
+      // matching `scopeCounts.delegated` (§5.5).
+      const counts = yield* selectScopeCounts.effect(workspaceId);
+      if (counts) {
+        yield* put(
+          withRecoveryLifetime(
+            adjustScopeCount(workspaceId, bin, fetched.length - counts[bin]),
+            receipt,
+          ),
         );
       }
-      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
-      for (const agent of agents) {
-        yield* put(addAgent(workspaceId, agent));
+      if (bin === 'delegated') {
+        yield* rebaselineDelegatedCountsFromRows(workspaceId, fetched, receipt);
       }
+      yield* put(withRecoveryLifetime(setLazyBinLoaded(workspaceId, bin, true), receipt));
+    } finally {
+      yield* put(withRecoveryLifetime(setIsLoadingLazyBin(workspaceId, bin, false), receipt));
     }
-    // Re-baseline the bin's count to the rows actually loaded so the bin
-    // label and its contents can never disagree after a load. The delegated
-    // bin's rows are every parent's children, so its `byParent` totals
-    // re-baseline from the same read — `Σ byParent[*].total` must keep
-    // matching `scopeCounts.delegated` (§5.5).
-    const counts = yield* selectScopeCounts.effect(workspaceId);
-    if (counts) {
-      yield* put(adjustScopeCount(workspaceId, bin, fetched.length - counts[bin]));
-    }
-    if (bin === 'delegated') {
-      yield* rebaselineDelegatedCountsFromRows(workspaceId, fetched);
-    }
-    yield* put(setLazyBinLoaded(workspaceId, bin, true));
   } finally {
-    yield* put(setIsLoadingLazyBin(workspaceId, bin, false));
+    release();
   }
 }
 
@@ -1134,6 +1518,7 @@ function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGe
 function* rebaselineDelegatedCountsFromRows(
   workspaceId: string,
   rows: readonly AgentSession[],
+  receipt: RecoveryLifetime,
 ): SagaGenerator<void> {
   const counts = yield* selectDelegatedCounts.effect(workspaceId);
   if (!counts) return;
@@ -1150,11 +1535,14 @@ function* rebaselineDelegatedCountsFromRows(
     running += parentRunning;
   }
   yield* put(
-    setDelegatedCounts(workspaceId, {
-      running,
-      byParent,
-      ...(counts.orphaned ? { orphaned: counts.orphaned } : {}),
-    }),
+    withRecoveryLifetime(
+      setDelegatedCounts(workspaceId, {
+        running,
+        byParent,
+        ...(counts.orphaned ? { orphaned: counts.orphaned } : {}),
+      }),
+      receipt,
+    ),
   );
 }
 
@@ -1198,59 +1586,80 @@ function* selectDelegatedParentsCovered(
  * the bin never infers it from a parent's absence in the partial cache.
  */
 function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void> {
-  if (!(yield* selectScopeCounts.effect(workspaceId))) return;
-  if (!(yield* selectDelegatedCounts.effect(workspaceId))?.orphaned) return;
-  if (yield* selectDelegatedParentsCovered(workspaceId)) return;
-  if (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)) return;
-  if (yield* selectIsLoadingOrphanedDelegatedAgents.effect(workspaceId)) return;
-  const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
-  yield* put(setIsLoadingOrphanedDelegatedAgents(workspaceId, true));
+  const release = acquireAgentMetadataDemand(workspaceId, { bin: 'delegated', orphanedOnly: true });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   try {
-    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'delegated' as const, orphanedOnly: true },
+    if (!receipt.commit(() => undefined)) return;
+    if (!(yield* selectScopeCounts.effect(workspaceId))) return;
+    if (!(yield* selectDelegatedCounts.effect(workspaceId))?.orphaned) return;
+    if (yield* selectDelegatedParentsCovered(workspaceId)) return;
+    if (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)) return;
+    if (yield* selectIsLoadingOrphanedDelegatedAgents.effect(workspaceId)) return;
+    const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
+    yield* put(
+      withRecoveryLifetime(setIsLoadingOrphanedDelegatedAgents(workspaceId, true), receipt),
     );
-    const fetched = yield* filterPendingDeletions(listed);
-    if (fetched.length > 0) {
-      const agents = [] as typeof fetched;
-      for (const agent of fetched) {
-        const existing = yield* selectAgentSession.effect(String(agent.id));
-        agents.push(
-          agent.messages.length === 0 && existing && existing.messages.length > 0
-            ? { ...agent, messages: existing.messages }
-            : agent,
+    try {
+      const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'delegated' as const, orphanedOnly: true }),
+        ),
+      );
+      const fetched = yield* filterPendingDeletions(listed);
+      if (fetched.length > 0) {
+        const agents = [] as typeof fetched;
+        for (const agent of fetched) {
+          const existing = yield* selectAgentSession.effect(String(agent.id));
+          agents.push(
+            agent.messages.length === 0 && existing && existing.messages.length > 0
+              ? { ...agent, messages: existing.messages }
+              : agent,
+          );
+        }
+        yield* put(
+          withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), receipt),
+        );
+        for (const agent of agents) {
+          yield* put(withRecoveryLifetime(addAgent(workspaceId, agent), receipt));
+        }
+      }
+      const superseded =
+        (yield* selectDelegatedParentsCovered(workspaceId)) ||
+        (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
+      const counts = yield* selectDelegatedCounts.effect(workspaceId);
+      if (counts?.orphaned && !superseded && counts.orphaned.total !== fetched.length) {
+        yield* put(
+          withRecoveryLifetime(
+            setDelegatedCounts(workspaceId, {
+              ...counts,
+              orphaned: {
+                total: fetched.length,
+                running: Math.min(fetched.length, counts.orphaned.running),
+              },
+            }),
+            receipt,
+          ),
         );
       }
-      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
-      for (const agent of agents) {
-        yield* put(addAgent(workspaceId, agent));
-      }
-    }
-    const superseded =
-      (yield* selectDelegatedParentsCovered(workspaceId)) ||
-      (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
-    const counts = yield* selectDelegatedCounts.effect(workspaceId);
-    if (counts?.orphaned && !superseded && counts.orphaned.total !== fetched.length) {
       yield* put(
-        setDelegatedCounts(workspaceId, {
-          ...counts,
-          orphaned: {
-            total: fetched.length,
-            running: Math.min(fetched.length, counts.orphaned.running),
-          },
-        }),
+        withRecoveryLifetime(
+          setOrphanedDelegatedAgentIds(
+            workspaceId,
+            fetched.map((row) => String(row.id)),
+          ),
+          receipt,
+        ),
+      );
+      yield* put(
+        withRecoveryLifetime(setOrphanedDelegatedAgentsLoaded(workspaceId, true), receipt),
+      );
+    } finally {
+      yield* put(
+        withRecoveryLifetime(setIsLoadingOrphanedDelegatedAgents(workspaceId, false), receipt),
       );
     }
-    yield* put(
-      setOrphanedDelegatedAgentIds(
-        workspaceId,
-        fetched.map((row) => String(row.id)),
-      ),
-    );
-    yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, true));
   } finally {
-    yield* put(setIsLoadingOrphanedDelegatedAgents(workspaceId, false));
+    release();
   }
 }
 
@@ -1273,47 +1682,72 @@ function* fetchDelegatedAgentsForParent(
   workspaceId: string,
   parentAgentId: string,
 ): SagaGenerator<void> {
-  if (!(yield* selectScopeCounts.effect(workspaceId))) return;
-  if (yield* selectDelegatedParentLoaded.effect(workspaceId, parentAgentId)) return;
-  if (yield* selectIsLoadingDelegatedParent.effect(workspaceId, parentAgentId)) return;
-  const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
-  yield* put(setIsLoadingDelegatedParent(workspaceId, parentAgentId, true));
+  const release = acquireAgentMetadataDemand(workspaceId, { bin: 'delegated', parentAgentId });
+  const receipt = rendererEventRecovery.capture(agentMetadataRecoveryKey(workspaceId));
   try {
-    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
-      [appClient.agents, appClient.agents.list],
-      workspaceId,
-      { scope: 'delegated' as const, parentAgentId },
+    if (!receipt.commit(() => undefined)) return;
+    if (!(yield* selectScopeCounts.effect(workspaceId))) return;
+    if (yield* selectDelegatedParentLoaded.effect(workspaceId, parentAgentId)) return;
+    if (yield* selectIsLoadingDelegatedParent.effect(workspaceId, parentAgentId)) return;
+    const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
+    yield* put(
+      withRecoveryLifetime(setIsLoadingDelegatedParent(workspaceId, parentAgentId, true), receipt),
     );
-    const fetched = yield* filterPendingDeletions(listed);
-    if (fetched.length > 0) {
-      const agents = [] as typeof fetched;
-      for (const agent of fetched) {
-        const existing = yield* selectAgentSession.effect(String(agent.id));
-        agents.push(
-          agent.messages.length === 0 && existing && existing.messages.length > 0
-            ? { ...agent, messages: existing.messages }
-            : agent,
+    try {
+      const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(() =>
+        readAgentMetadata(receipt, workspaceId, () =>
+          appClient.agents.list(workspaceId, { scope: 'delegated' as const, parentAgentId }),
+        ),
+      );
+      const fetched = yield* filterPendingDeletions(listed);
+      if (fetched.length > 0) {
+        const agents = [] as typeof fetched;
+        for (const agent of fetched) {
+          const existing = yield* selectAgentSession.effect(String(agent.id));
+          agents.push(
+            agent.messages.length === 0 && existing && existing.messages.length > 0
+              ? { ...agent, messages: existing.messages }
+              : agent,
+          );
+        }
+        yield* put(
+          withRecoveryLifetime(bulkUpsertSessions(agents, { listProjection: true }), receipt),
         );
+        for (const agent of agents) {
+          yield* put(withRecoveryLifetime(addAgent(workspaceId, agent), receipt));
+        }
       }
-      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
-      for (const agent of agents) {
-        yield* put(addAgent(workspaceId, agent));
+      const superseded =
+        (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) ||
+        (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
+      const counts = yield* selectDelegatedCounts.effect(workspaceId);
+      if (counts && !superseded) {
+        const delta = fetched.length - (counts.byParent[parentAgentId]?.total ?? 0);
+        if (delta !== 0) {
+          yield* put(
+            withRecoveryLifetime(
+              adjustDelegatedParentCount(workspaceId, parentAgentId, delta),
+              receipt,
+            ),
+          );
+          yield* put(
+            withRecoveryLifetime(adjustScopeCount(workspaceId, 'delegated', delta), receipt),
+          );
+        }
       }
+      yield* put(
+        withRecoveryLifetime(setDelegatedParentLoaded(workspaceId, parentAgentId, true), receipt),
+      );
+    } finally {
+      yield* put(
+        withRecoveryLifetime(
+          setIsLoadingDelegatedParent(workspaceId, parentAgentId, false),
+          receipt,
+        ),
+      );
     }
-    const superseded =
-      (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) ||
-      (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
-    const counts = yield* selectDelegatedCounts.effect(workspaceId);
-    if (counts && !superseded) {
-      const delta = fetched.length - (counts.byParent[parentAgentId]?.total ?? 0);
-      if (delta !== 0) {
-        yield* put(adjustDelegatedParentCount(workspaceId, parentAgentId, delta));
-        yield* put(adjustScopeCount(workspaceId, 'delegated', delta));
-      }
-    }
-    yield* put(setDelegatedParentLoaded(workspaceId, parentAgentId, true));
   } finally {
-    yield* put(setIsLoadingDelegatedParent(workspaceId, parentAgentId, false));
+    release();
   }
 }
 
@@ -1387,40 +1821,83 @@ function* runWorkspaceRead(
 }
 
 function* refreshEvents(workspaceId: string): SagaGenerator<void> {
+  const release = acquireWorkspaceActivityDemand(workspaceId);
+  const key = workspaceActivityRecoveryKey(workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
   try {
-    yield* put(eventsLoadStarted(workspaceId));
-    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
-      [appClient.events, appClient.events.queryPage],
-      workspaceId,
-      { limit: EVENTS_PAGE_LIMIT },
+    if (!receipt.commit(() => undefined)) return;
+    yield* put(withRecoveryLifetime(eventsLoadStarted(workspaceId), receipt));
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(() =>
+      runWorkspaceActivityRead(key, receipt, () =>
+        appClient.events.queryPage(workspaceId, { limit: EVENTS_PAGE_LIMIT }),
+      ),
     );
-    yield* put(eventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+    yield* put(
+      withRecoveryLifetime(
+        eventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken),
+        receipt,
+      ),
+    );
   } catch (error) {
     yield* put(
-      eventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+      withRecoveryLifetime(
+        eventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+        receipt,
+      ),
     );
     throw error;
+  } finally {
+    release();
   }
 }
 
 function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
+  const release = acquireWorkspaceActivityDemand(workspaceId);
+  const key = workspaceActivityRecoveryKey(workspaceId);
+  const original = rendererEventRecovery.capture(key);
   const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
-  if (!nextToken) {
-    yield* put(olderEventsLoaded(workspaceId, [], null));
-    return;
-  }
+  const redux = yield* getContext<{ getState(): StoreState } | undefined>('reduxStore');
+  const initialState: StoreState = yield* select();
+  const historyGeneration =
+    initialState.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration;
+  const cursorCurrent = (state: StoreState = redux?.getState() ?? initialState) =>
+    selectOlderEventsNextToken.select(state, workspaceId) === nextToken &&
+    state.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration === historyGeneration;
+  const receipt: RecoveryLifetime = {
+    key: original.key,
+    isCurrent: () => original.isCurrent() && cursorCurrent(),
+    commit: (mutation) => cursorCurrent() && original.commit(mutation),
+  };
   try {
-    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
-      [appClient.events, appClient.events.queryPage],
-      workspaceId,
-      { limit: EVENTS_PAGE_LIMIT, nextToken },
+    if (!receipt.commit(() => undefined)) return;
+    if (!nextToken) {
+      yield* put(withRecoveryLifetime(olderEventsLoaded(workspaceId, [], null), receipt));
+      return;
+    }
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(() =>
+      runWorkspaceActivityRead(key, receipt, () => {
+        if (!cursorCurrent()) throw new Error('Activity cursor superseded');
+        return appClient.events.queryPage(workspaceId, { limit: EVENTS_PAGE_LIMIT, nextToken });
+      }),
     );
-    yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
-  } catch (error) {
+    if (!(yield* select(cursorCurrent))) return;
     yield* put(
-      olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+      withRecoveryLifetime(
+        olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken),
+        receipt,
+      ),
+    );
+  } catch (error) {
+    if (!(yield* select(cursorCurrent))) return;
+    yield* put(
+      withRecoveryLifetime(
+        olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+        receipt,
+      ),
     );
     throw error;
+  } finally {
+    release();
   }
 }
 
@@ -1441,6 +1918,11 @@ function* refreshPeopleEvents(
   if (mode === 'initial' && !force && (yield* selectPeopleEventsInitialized.effect(workspaceId))) {
     return;
   }
+  const release = acquireWorkspaceActivityDemand(workspaceId);
+  const key = workspaceActivityRecoveryKey(workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
+  const completion = rendererEventRecovery.captureAuthority(key);
+  const redux = yield* getContext<{ getState(): StoreState } | undefined>('reduxStore');
   const requestId = crypto.randomUUID();
   const dispatch = store.dispatch;
   const backendId = yield* selectActiveBackendId();
@@ -1448,6 +1930,7 @@ function* refreshPeopleEvents(
   const connection = yield* selectPrincipalConnectionContext.effect();
   function* isCurrent(): SagaGenerator<boolean> {
     return (
+      receipt.commit(() => undefined) &&
       dispatch === store.dispatch &&
       backendId === (yield* selectActiveBackendId()) &&
       principal === (yield* selectPrincipalActionContext.effect()) &&
@@ -1456,8 +1939,9 @@ function* refreshPeopleEvents(
   }
   let initialized = false;
   let error: string | null = null;
-  yield* put(peopleEventsLoadStarted(workspaceId, requestId));
   try {
+    if (!receipt.commit(() => undefined)) return;
+    yield* put(withRecoveryLifetime(peopleEventsLoadStarted(workspaceId, requestId), receipt));
     yield* call(withReadSlot, scheduler, workspaceId, function* () {
       if (!(yield* isCurrent())) return;
       const target =
@@ -1467,14 +1951,33 @@ function* refreshPeopleEvents(
         if (yield* selectOlderEventsEndReached.effect(workspaceId)) break;
         // Establish a cursor even when a live-only cache already has enough rows.
         if (nextToken && (yield* countPeopleEvents(workspaceId)) >= target) break;
-        const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
-          [appClient.events, appClient.events.queryPage],
-          workspaceId,
-          nextToken ? { limit: EVENTS_PAGE_LIMIT, nextToken } : { limit: EVENTS_PAGE_LIMIT },
+        const initialState: StoreState = yield* select();
+        const generation =
+          initialState.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration;
+        const cursorCurrent = (state: StoreState = redux?.getState() ?? initialState) =>
+          selectOlderEventsNextToken.select(state, workspaceId) === nextToken &&
+          state.workspaceEvents.byWorkspaceId[workspaceId]?.historyGeneration === generation;
+        const pageReceipt: RecoveryLifetime = {
+          key: receipt.key,
+          isCurrent: () => receipt.isCurrent() && cursorCurrent(),
+          commit: (mutation) => cursorCurrent() && receipt.commit(mutation),
+        };
+        const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(() =>
+          runWorkspaceActivityRead(key, pageReceipt, () =>
+            appClient.events.queryPage(
+              workspaceId,
+              nextToken ? { limit: EVENTS_PAGE_LIMIT, nextToken } : { limit: EVENTS_PAGE_LIMIT },
+            ),
+          ),
         );
-        if (!(yield* isCurrent())) return;
+        if (!(yield* isCurrent()) || !(yield* select(cursorCurrent))) return;
         // Merge even the first page: the cache may already contain newer live events.
-        yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+        yield* put(
+          withRecoveryLifetime(
+            olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken),
+            pageReceipt,
+          ),
+        );
         // Invalid pages or a non-advancing server cursor must not spin or hide continuation.
         if ((yield* selectOlderEventsNextToken.effect(workspaceId)) === nextToken) break;
       }
@@ -1484,38 +1987,59 @@ function* refreshPeopleEvents(
     error = cause instanceof Error ? cause.message : String(cause);
     initialized = true;
   } finally {
-    const current = yield* isCurrent();
-    yield* put(
-      peopleEventsLoadFinished(
-        workspaceId,
-        requestId,
-        initialized && current && !(yield* cancelled()),
-        current ? error : null,
-      ),
-    );
+    try {
+      const current = yield* isCurrent();
+      yield* put(
+        withRecoveryLifetime(
+          peopleEventsLoadFinished(
+            workspaceId,
+            requestId,
+            initialized && current && !(yield* cancelled()),
+            current ? error : null,
+          ),
+          completion,
+        ),
+      );
+    } finally {
+      release();
+    }
   }
 }
 
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
-  const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(
-    [appClient.tasks, appClient.tasks.listAgentLinks],
-    workspaceId,
-  );
-  yield* put(hydrateTaskAgentAssociations(workspaceId, byNoteId));
+  const release = acquireLifecycleMetadataDemand(workspaceId, 'taskAgentLinks');
+  const key = taskAgentLinksRecoveryKey(workspaceId);
+  const receipt = rendererEventRecovery.capture(key);
+  try {
+    if (!receipt.commit(() => undefined)) return;
+    const byNoteId: Awaited<ReturnType<typeof appClient.tasks.listAgentLinks>> = yield* call(() =>
+      readLifecycleMetadata(key, receipt, () => appClient.tasks.listAgentLinks(workspaceId)),
+    );
+    yield* put(withRecoveryLifetime(hydrateTaskAgentAssociations(workspaceId, byNoteId), receipt));
+  } finally {
+    release();
+  }
 }
 
 function* refreshSkills(workspaceId: string): SagaGenerator<void> {
+  const release = acquireSkillsRecoveryDemand(workspaceId);
+  const receipt = rendererEventRecovery.capture(skillsRecoveryKey(workspaceId));
   try {
-    const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(
-      [appClient.skills, appClient.skills.list],
-      workspaceId,
+    if (!receipt.commit(() => undefined)) return;
+    const skills: Awaited<ReturnType<typeof appClient.skills.list>> = yield* call(() =>
+      readSkillsWithRecovery(workspaceId, receipt, () => appClient.skills.list(workspaceId)),
     );
-    yield* put(setSkills(workspaceId, skills));
+    yield* put(withRecoveryLifetime(setSkills(workspaceId, skills), receipt));
   } catch (error) {
     yield* put(
-      loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+      withRecoveryLifetime(
+        loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+        receipt,
+      ),
     );
     throw error;
+  } finally {
+    release();
   }
 }
 
@@ -1526,45 +2050,67 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  * instead of logging an error on every refresh.
  */
 function* refreshWorkspaceScripts(workspaceId: string, append = false): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(scriptsRecoveryKey(workspaceId));
+  if (!receipt.commit(() => undefined)) return;
   const previous = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
   const ws = yield* selectScriptListPageState.effect(workspaceId);
   if (append && (!ws.nextCursor || ws.loading)) return;
   const context = yield* beginScriptRead(workspaceId);
-  yield* put(setScriptListState(workspaceId, true));
+  yield* put(withRecoveryLifetime(setScriptListState(workspaceId, true), receipt));
   try {
-    const page = append
-      ? yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId, {
-          cursor: ws.nextCursor,
-        })
-      : yield* call([appClient.scripts, appClient.scripts.listPage], workspaceId);
+    const page = yield* call(() =>
+      trackScriptsRecoveryRead(workspaceId, () =>
+        append
+          ? appClient.scripts.listPage(workspaceId, { cursor: ws.nextCursor })
+          : appClient.scripts.listPage(workspaceId),
+      ),
+    );
+    if (!receipt.commit(() => undefined)) return;
     const entries = append
       ? [...new Map([...previous, ...page.scripts].map((row) => [row.id, row])).values()]
       : page.scripts;
     const reconciled = yield* reconcileScriptRead(context, entries);
-    if (!reconciled) return;
-    yield* put(scriptReadReconciled(workspaceId, context.requestId, reconciled.scripts));
-    yield* put(setActiveScriptsData(workspaceId, reconciled.scripts));
-    yield* put(setScriptPageCursor(workspaceId, page.nextCursor));
-    yield* put(setScriptListState(workspaceId, false, undefined, true));
-    yield* put(setScriptsInitialized(workspaceId, true));
-  } catch (error) {
-    if (!(yield* isScriptReadCurrent(context))) return;
+    if (!reconciled || !receipt.commit(() => undefined)) return;
+    receipt.commit(() => {
+      recordScriptsRecoveryPage(workspaceId, append);
+    });
     yield* put(
-      setScriptListState(
-        workspaceId,
-        false,
-        error instanceof Error ? error.message : String(error),
+      withRecoveryLifetime(
+        scriptReadReconciled(workspaceId, context.requestId, reconciled.scripts),
+        receipt,
+      ),
+    );
+    yield* put(
+      withRecoveryLifetime(setActiveScriptsData(workspaceId, reconciled.scripts), receipt),
+    );
+    yield* put(withRecoveryLifetime(setScriptPageCursor(workspaceId, page.nextCursor), receipt));
+    yield* put(
+      withRecoveryLifetime(setScriptListState(workspaceId, false, undefined, true), receipt),
+    );
+    yield* put(withRecoveryLifetime(setScriptsInitialized(workspaceId, true), receipt));
+  } catch (error) {
+    if (!receipt.commit(() => undefined) || !(yield* isScriptReadCurrent(context))) return;
+    yield* put(
+      withRecoveryLifetime(
+        setScriptListState(
+          workspaceId,
+          false,
+          error instanceof Error ? error.message : String(error),
+        ),
+        receipt,
       ),
     );
     if (!isForbiddenErrorResponse(error)) throw error;
-    yield* put(setScriptsData(workspaceId, []));
-    yield* put(setScriptsInitialized(workspaceId, true));
+    yield* put(withRecoveryLifetime(setScriptsData(workspaceId, []), receipt));
+    yield* put(withRecoveryLifetime(setScriptsInitialized(workspaceId, true), receipt));
   } finally {
-    yield* put(scriptReadFinished(workspaceId, context.requestId));
+    yield* put(withRecoveryLifetime(scriptReadFinished(workspaceId, context.requestId), receipt));
   }
 }
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
+  const receipt = rendererEventRecovery.capture(terminalsRecoveryKey(workspaceId));
+  if (!receipt.commit(() => undefined)) return;
   let result: Awaited<ReturnType<typeof appClient.terminals.list>>;
   try {
     result = yield* call([appClient.terminals, appClient.terminals.list], workspaceId);
@@ -1575,14 +2121,17 @@ function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
     // any tabs still held for this workspace are dropped explicitly.
     const stale = yield* selectTerminalsForWorkspace.effect(workspaceId);
     for (const terminal of stale) {
-      yield* put(removeTerminal(workspaceId, terminal.id));
+      yield* put(withRecoveryLifetime(removeTerminal(workspaceId, terminal.id), receipt));
     }
     result = { terminals: [] };
   }
   yield* put(
-    Array.isArray(result)
-      ? loadWorkspaceTerminals(workspaceId, result)
-      : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
+    withRecoveryLifetime(
+      Array.isArray(result)
+        ? loadWorkspaceTerminals(workspaceId, result)
+        : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
+      receipt,
+    ),
   );
 }
 
@@ -1672,7 +2221,16 @@ function tasksReadContext(action: TasksReadAction) {
 }
 
 function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction) {
-  yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
+  const original = getRecoveryLifetime(action);
+  yield* runWorkspaceRead(
+    scheduler,
+    'tasks',
+    action.payload[0],
+    function* (workspaceId) {
+      yield* refreshTasks(workspaceId, original);
+    },
+    false,
+  );
 }
 
 function eventsReadContext(
@@ -1900,40 +2458,57 @@ function* agentLineStatsWorker(action: ReturnType<typeof requestAgentLineStats>)
 }
 
 function* contextWorker(
-  initializedContexts: Set<string>,
+  initializedContexts: Map<string, RecoveryLifetime>,
   action: ReturnType<typeof initContextForWorkspace>,
 ) {
   const [workspaceId, force] = action.payload;
-  if (!workspaceId || (!force && initializedContexts.has(workspaceId))) return;
+  if (!workspaceId) return;
+  const release = acquireLifecycleMetadataDemand(workspaceId, 'context');
+  const key = contextRecoveryKey(workspaceId);
+  if (force) rendererEventRecovery.push(key);
+  const receipt = rendererEventRecovery.capture(key);
   try {
+    // Cached data still acquires demand: loss may have dirtied its inactive owner.
+    // Releasing this demand keeps any admitted recovery alive through its fence.
+    if (!force && initializedContexts.get(workspaceId)?.isCurrent()) return;
+    if (!receipt.commit(() => undefined)) return;
     yield* race({
       read: call(function* () {
-        const items: Awaited<ReturnType<typeof appClient.workspaces.getContext>> = yield* call(
-          [appClient.workspaces, appClient.workspaces.getContext],
-          workspaceId,
+        const items: Awaited<ReturnType<typeof appClient.workspaces.getContext>> = yield* call(() =>
+          readLifecycleMetadata(key, receipt, () => appClient.workspaces.getContext(workspaceId)),
         );
-        yield* put(hydrateContextItems(workspaceId, Array.isArray(items) ? items : []));
-        initializedContexts.add(workspaceId);
+        yield* put(
+          withRecoveryLifetime(
+            hydrateContextItems(workspaceId, Array.isArray(items) ? items : []),
+            receipt,
+          ),
+        );
+        receipt.commit(() => {
+          initializedContexts.set(workspaceId, rendererEventRecovery.captureAuthority(key));
+        });
       }),
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
   } catch (error) {
     logger.error(`Refresh failed for context:${workspaceId}`, error);
+  } finally {
+    release();
   }
 }
 
 function* clearUnmountedInitializedContext(
-  initializedContexts: Set<string>,
+  initializedContexts: Map<string, RecoveryLifetime>,
   action: ReturnType<typeof workspaceUnmounted>,
 ) {
   initializedContexts.delete(action.payload[0]);
 }
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
+  const stopTaskCompletions = installTaskEventCompletionOwner();
   const changesReads: ChangesReads = new Map();
   const changesDemand: ChangesDemand = new Map();
   const membershipRevisions = new Map<string, symbol>();
-  const initializedContexts = new Set<string>();
+  const initializedContexts = new Map<string, RecoveryLifetime>();
   const pendingInitialEventReads = new Set<string>();
   const peopleReads: PeopleReads = new Map();
   // One scheduler per saga run: it dies with the saga, so a restart can never
@@ -2025,6 +2600,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         ],
         (action) => {
           if (isWorkspaceCleanupAction(action)) {
+            changesReads.get(action.payload[0])?.stopRecovery?.();
             changesReads.delete(action.payload[0]);
             changesDemand.delete(action.payload[0]);
           }
@@ -2080,6 +2656,8 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);
   } finally {
+    stopTaskCompletions();
+    for (const entry of changesReads.values()) entry.stopRecovery?.();
     initializedContexts.clear();
     pendingInitialEventReads.clear();
     peopleReads.clear();

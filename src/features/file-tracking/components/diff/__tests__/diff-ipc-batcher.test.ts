@@ -1,3 +1,4 @@
+import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { JsonRpcError } from '$features/backend/main/json-rpc-errors';
 /**
@@ -36,7 +37,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { batchedGitDiff, dedupedShowFile } from '../diff-ipc-batcher';
+import { batchedGitDiff, dedupedShowFile, dedupedGitNumstat } from '../diff-ipc-batcher';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -959,3 +960,122 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 });
+
+describe('captured Git read identity', () => {
+  it('never joins show-file requests across captured authorities', async () => {
+    let finish!: (value: unknown) => void;
+    const oldRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const newRequest = vi.fn(async () => ({ content: 'new' }));
+    const old = dedupedShowFile('authority', 'HEAD', 'a.ts', {
+      transport: { key: {}, request: oldRequest as any },
+    });
+    const fresh = dedupedShowFile('authority', 'HEAD', 'a.ts', {
+      transport: { key: {}, request: newRequest as any },
+    });
+    await expect(fresh).resolves.toEqual({ success: true, data: 'new' });
+    expect(newRequest).toHaveBeenCalledExactlyOnceWith('git.showFile', {
+      workspaceId: 'authority',
+      ref: 'HEAD',
+      filePath: 'a.ts',
+    });
+    finish({ content: 'old' });
+    await old;
+  });
+  it('never silently reads primary numstat for unsupported secondary roots', async () => {
+    const request = vi.fn();
+    await expect(
+      dedupedGitNumstat('roots', { gitRootId: 'a', transport: { key: {}, request } }),
+    ).rejects.toThrow('Secondary-root numstat');
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+it('retains show-file deduplication until the timed-out physical request drains', async () => {
+  let finish!: (value: { retired: boolean; errors: unknown[] }) => void;
+  const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+    finish = resolve;
+  });
+  const timeout = new RecoveryRequestTimeoutError(completion);
+  const request = vi.fn().mockRejectedValueOnce(timeout).mockResolvedValue({ content: 'fresh' });
+  const transport = { key: {}, request };
+  await expect(dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).rejects.toBe(
+    timeout,
+  );
+  await expect(dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).rejects.toBe(
+    timeout,
+  );
+  expect(request).toHaveBeenCalledTimes(1);
+  finish({ retired: false, errors: [] });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(await dedupedShowFile('timeout-ws', 'HEAD', 'held.ts', { transport })).toEqual({
+    success: true,
+    data: 'fresh',
+  });
+  expect(request).toHaveBeenCalledTimes(2);
+});
+it.each([false, true])(
+  'retains ordinary deadline deduplication with a scoped transport=%s',
+  async (scoped) => {
+    let finish!: (value: { retired: boolean; errors: unknown[] }) => void;
+    const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+      finish = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'ordinary deadline' }, completion);
+    const request = vi.fn().mockRejectedValueOnce(timeout).mockResolvedValue({ content: 'fresh' });
+    if (!scoped) mockedRequest.mockImplementation(request);
+    const transport = scoped ? { key: {}, request } : undefined;
+    await expect(
+      dedupedShowFile('ordinary-timeout-ws', 'HEAD', 'held.ts', { transport }),
+    ).rejects.toBe(timeout);
+    await expect(
+      dedupedShowFile('ordinary-timeout-ws', 'HEAD', 'held.ts', { transport }),
+    ).rejects.toBe(timeout);
+    expect(request).toHaveBeenCalledTimes(1);
+    finish({ retired: false, errors: [] });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(await dedupedShowFile('ordinary-timeout-ws', 'HEAD', 'held.ts', { transport })).toEqual({
+      success: true,
+      data: 'fresh',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(['showFile', 'numstat'] as const)(
+  'notifies each joined %s caller of a late denial without another physical request',
+  async (method) => {
+    let finish!: (value: { retired: boolean; errors: unknown[] }) => void;
+    const completion = new Promise<{ retired: boolean; errors: unknown[] }>((resolve) => {
+      finish = resolve;
+    });
+    const timeout = new BackendError({ code: 'TIMEOUT', message: 'deadline' }, completion);
+    const key = {};
+    const request = vi.fn().mockRejectedValue(timeout);
+    const first = { key, request, onFailure: vi.fn() };
+    const joined = { key, request, onFailure: vi.fn() };
+    const fresh = {
+      key: {},
+      request: vi.fn().mockResolvedValue(method === 'showFile' ? { content: 'new' } : []),
+      onFailure: vi.fn(),
+    };
+    const read = (transport: typeof first) =>
+      method === 'showFile'
+        ? dedupedShowFile('joined', 'HEAD', 'a.ts', { transport })
+        : dedupedGitNumstat('joined', { transport });
+    await expect(read(first)).rejects.toBe(timeout);
+    await expect(read(joined)).rejects.toBe(timeout);
+    await read(fresh);
+    expect(request).toHaveBeenCalledTimes(1);
+    const denial = { rpcCode: -32003, message: 'Forbidden' };
+    finish({ retired: false, errors: [denial] });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(first.onFailure).toHaveBeenCalledWith(denial);
+    expect(joined.onFailure).toHaveBeenCalledWith(denial);
+    expect(fresh.onFailure).not.toHaveBeenCalled();
+  },
+);

@@ -1,3 +1,9 @@
+import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
+import {
+  agentQueueRecoveryKey,
+  agentMetadataRecoveryKey,
+} from '$features/agent/agent-recovery-keys';
+import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { selectQueueMutationBlocked } from '../../pending-submissions/pending-submissions-selectors';
 import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
@@ -45,6 +51,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { AgentSession, QueuedMessage } from '$shared/types';
+import { AgentStatus } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
@@ -52,6 +59,7 @@ import {
   agentSessionRetryWithModelRequested,
   agentSessionRetryWithProviderRequested,
   agentSessionStopChatRequested,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   selectAgentIsResponding,
@@ -217,6 +225,7 @@ function* sendQueuedNow(
   if (yield* selectQueueMutationBlocked.effect(agentId, wsId, messageId))
     throw new Error(m.agent_chatSend_sendNowRejected_error());
   const ownership = captureAgentMutationOwnership(agentId, wsId);
+  const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
   const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
     agentId,
     workspaceId: wsId,
@@ -230,7 +239,9 @@ function* sendQueuedNow(
   if (result.quarantined) return 'quarantined';
   if (result.queued) return 'queued';
   if ((yield* mutationIsCurrent(agentId, ownership)) && typeof result.turnId === 'string') {
-    yield* put(chatQueueProcessingReceived(agentId, result.turnId));
+    yield* put(
+      withRecoveryLifetime(chatQueueProcessingReceived(agentId, result.turnId), queueRecovery),
+    );
   }
   return 'delivered';
 }
@@ -269,6 +280,7 @@ function* editQueued(
 ): SagaGenerator<QueuedMessageMutationResult> {
   const { agentId, workspaceId, messageId } = request;
   const ownership = captureAgentMutationOwnership(agentId, workspaceId);
+  const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(workspaceId, agentId));
   const queueSeqAtEdit = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
   const result = yield* call(
     [appClient.agents, appClient.agents.editQueued],
@@ -289,9 +301,16 @@ function* editQueued(
       getAgentQueueEventSnapshotSeq(agentId, workspaceId) === queueSeqAtEdit &&
       existing.some((message) => message.id === echoed.id)
     ) {
-      yield* put(upsertQueuedMessageInAgentQueue(agentId, echoed));
+      yield* put(
+        withRecoveryLifetime(upsertQueuedMessageInAgentQueue(agentId, echoed), queueRecovery),
+      );
     }
-    yield* put(chatQueuedRetryRecordUpdated(agentId, messageId, echoed.content));
+    yield* put(
+      withRecoveryLifetime(
+        chatQueuedRetryRecordUpdated(agentId, messageId, echoed.content),
+        queueRecovery,
+      ),
+    );
   }
   return { status: 'succeeded' };
 }
@@ -395,6 +414,7 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
       if (yield* selectQueueMutationBlocked.effect(agentId, wsId))
         throw new Error(m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
+      const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
       const result = yield* call(
         { context: appClient.agents, fn: appClient.agents.removeQueued },
         agentId,
@@ -404,7 +424,9 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
       if (!result.success)
         throw new Error(result.error ?? m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
-      yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
+      yield* put(
+        withRecoveryLifetime(removeQueuedMessageFromAgentQueue(agentId, messageId), queueRecovery),
+      );
     }
     yield* put(action.success(undefined as void));
     settled = true;
@@ -522,6 +544,7 @@ function* dispatchToLifecycle(
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
       yield* put(chatQueuedSendStarted(agentId));
+      const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       if (submission) yield* put(pendingSubmissionSending(submission.scope, submission.id));
       const result = yield* call(
@@ -548,12 +571,15 @@ function* dispatchToLifecycle(
             (message) => message.id === queuedMessage.id || message.turnId === turnId,
           );
           yield* put(
-            chatQueuedRetryRecordSet(
-              agentId,
-              queuedMessage.id,
-              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt),
-              turnId,
-              !retryMessage && (yield* selectSubmissionObserved.effect(submission!)),
+            withRecoveryLifetime(
+              chatQueuedRetryRecordSet(
+                agentId,
+                queuedMessage.id,
+                buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt),
+                turnId,
+                !retryMessage && (yield* selectSubmissionObserved.effect(submission!)),
+              ),
+              queueRecovery,
             ),
           );
         }
@@ -574,7 +600,7 @@ function* dispatchToLifecycle(
         if ((yield* current()) && getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
           const next = reconcileQueuedMessage(existing, queuedMessage);
-          yield* put(replaceAgentQueue(agentId, next, wsId));
+          yield* put(withRecoveryLifetime(replaceAgentQueue(agentId, next, wsId), queueRecovery));
         } else if (yield* current()) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
@@ -598,8 +624,14 @@ function* dispatchToLifecycle(
           const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
           yield* put(
             retryMessage
-              ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
-              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
+              ? withRecoveryLifetime(
+                  chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId),
+                  queueRecovery,
+                )
+              : withRecoveryLifetime(
+                  chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
+                  queueRecovery,
+                ),
           );
         }
       }
@@ -674,17 +706,17 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
  * put exactly once on every path (success, throw, cancellation).
  */
 function* performStop(agentId: string): SagaGenerator<void> {
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+  const ownership = captureAgentMutationOwnership(agentId, workspaceId);
+  const completion = rendererEventRecovery.captureAuthority(agentMetadataRecoveryKey(workspaceId));
   yield* put(chatStopInitiated(agentId));
   try {
-    const result = yield* call(
-      [appClient.agents, appClient.agents.stop],
-      agentId,
-      yield* selectAgentSessionWorkspaceId.effect(agentId),
-    );
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId, workspaceId);
     if (!result.success)
       logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
   } finally {
-    yield* put(chatStopCompleted(agentId));
+    if (yield* mutationIsCurrent(agentId, ownership))
+      yield* put(withRecoveryLifetime(chatStopCompleted(agentId), completion));
   }
 }
 
@@ -836,10 +868,22 @@ function pickModelForProvider(
  *   2. Switch the LIVE session via `agent.setModel` with an explicit
  *      `providerId` — the only FE→daemon path that carries a provider for a
  *      running agent (the daemon owns the child respawn + history replay).
- *   3. Only on a successful switch, redrive the failed turn through the
- *      retry-with-model path with the picked model as an explicit override,
- *      run inline in this handler so nothing queued behind it on the
- *      per-agent FIFO can move the session again before the redrive goes out.
+ *   3. Only on a successful switch, redrive the failed turn inline in this
+ *      handler so nothing queued behind it on the per-agent FIFO can move
+ *      the session again before the redrive goes out:
+ *      - an `error` session — every terminal quota failure, whether the
+ *        composer, a wake (PR monitor, hook, sibling agent) or anything else
+ *        started the turn — goes through the daemon's `agent.retry`, like the
+ *        plain Retry button (intent-hq/intent#7226). The daemon holds the
+ *        failed message requeued at its queue front and redrives it on the
+ *        session's CURRENT model: the one step 2 just set;
+ *      - otherwise the composer's resendable `lastAttemptedMessage` goes
+ *        through the retry-with-model path with the picked model as an
+ *        explicit override.
+ *
+ * When there is neither an `error` session nor a resendable message there is
+ * nothing to redrive, so the handler reports that BEFORE step 1 instead of
+ * moving the session to a new provider and then re-running nothing.
  *
  * A failed switch must NOT retry — that would re-send to the exhausted
  * provider and fail on quota all over again, which is exactly what the
@@ -849,6 +893,24 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
   const [agentId, wsId, providerId] = action.payload;
   let settled = false;
   try {
+    // An `error` session ALWAYS redrives through the daemon, exactly like the
+    // plain Retry button: the daemon holds the failed message requeued at its
+    // queue front, so a renderer-side resend would run the prompt twice (the
+    // resend, then the requeued copy), and `lastAttemptedMessage` may be a
+    // leftover from an earlier composer turn rather than the turn that failed
+    // (a wake-started turn never records one, intent-hq/intent#7226).
+    const daemonRedrive = (yield* selectAgentSession.effect(agentId))?.status === AgentStatus.Error;
+    const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
+    if (
+      !daemonRedrive &&
+      (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options))
+    ) {
+      yield* call(showNothingToRetry);
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+
     let models: AuggieModel[] = [];
     try {
       const catalog = yield* call(getModelsForProviderForLoadingState, providerId, {
@@ -913,25 +975,29 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
       providerId,
       model: model.value,
     });
-    // Redrive with an EXPLICIT model override rather than the plain
-    // last-message retry. The plain path resolves the wire model as
-    // `lastAttempted.options?.model ?? session.model` — the first is the
-    // exhausted provider's model recorded on the original attempt, and the
-    // second is the Redux session, which still holds the old model until the
-    // daemon's asynchronous `agent:updated` lands. Either way the redrive
-    // would re-send the model we just switched away from, defeating the whole
-    // recovery. Passing `model.value` wins that `??` chain outright, so the
-    // turn is issued on the provider the user actually picked.
-    //
-    // Run the redrive INLINE (a `call`, never a `put` back onto the FIFO):
+    // Both redrives run INLINE (a `call`, never a `put` back onto the FIFO):
     // the provider buttons stay rendered while this handler's catalog and
     // setModel RPCs are in flight, so a second click may already be queued
     // behind us. A put-back redrive would land AFTER that click, whose own
-    // setModel has by then moved the session to a different provider, and
-    // `model.value` would be sent against the wrong live provider. Calling
-    // here keeps switch + redrive atomic per handler. `retryLastMessage`
-    // settles the synthetic action itself and reports retry failures; this
-    // handler only awaits the inline worker, not its request promise.
+    // setModel has by then moved the session to a different provider. Calling
+    // here keeps switch + redrive atomic per handler.
+    if (daemonRedrive) {
+      yield* call(redriveRequeuedTurn, action, agentId, wsId, providerId);
+      settled = true;
+      return;
+    }
+    // Non-error session: resend the composer's last attempt with an EXPLICIT
+    // model override rather than the plain last-message retry. The plain path
+    // resolves the wire model as `lastAttempted.options?.model ?? session.model`
+    // — the first is the exhausted provider's model recorded on the original
+    // attempt, and the second is the Redux session, which still holds the old
+    // model until the daemon's asynchronous `agent:updated` lands. Either way
+    // the redrive would re-send the model we just switched away from,
+    // defeating the whole recovery. Passing `model.value` wins that `??` chain
+    // outright, so the turn is issued on the provider the user actually
+    // picked. `retryLastMessage` settles the synthetic action itself and
+    // reports retry failures; this handler only awaits the inline worker, not
+    // its request promise.
     const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
     yield* call(retryLastMessage, redrive, model.value);
     yield* put(action.success(undefined as void));
@@ -944,6 +1010,57 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
       yield* put(action.failure(new Error(CANCELLED_ERROR)));
     }
   }
+}
+
+/**
+ * Provider-retry redrive for an `error` session (intent-hq/intent#7226): ask
+ * the daemon to redrive the message it requeued at the failure, now on the
+ * provider the caller just switched to (`agent.retry` uses the session's
+ * current model). Mirrors the plain Retry button's `error`-status path
+ * (`chat-panel-ui-saga` `retryAgent`), except the failure banner is only
+ * cleared once the daemon accepted the retry, so a refused retry leaves the
+ * failure — and its recovery affordances — in place. A deleted agent
+ * (`notFound`) drops its stale failure instead of offering Retry forever,
+ * as `agent-failure-toast-saga` does. Settles `action`.
+ */
+function* redriveRequeuedTurn(
+  action: RetryProviderAction,
+  agentId: string,
+  wsId: string,
+  providerId: string,
+): SagaGenerator<void> {
+  const result = yield* call([appClient.agents, appClient.agents.retry], agentId, wsId);
+  if (!result.ok && result.notFound) {
+    logger.info('Provider retry target was deleted; dropping its stale failure', { agentId });
+    yield* put(chatErrorCleared(agentId));
+    yield* put(action.success(undefined as void));
+    return;
+  }
+  if (!result.ok) {
+    logger.warn('Provider retry switched provider but agent.retry failed', {
+      agentId,
+      providerId,
+      error: result.error,
+    });
+    yield* call(
+      showRetryProviderError,
+      m.agent_chatSend_retryProviderRedriveFailed_toast({
+        provider: providerId,
+        error: result.error,
+      }),
+    );
+    yield* put(action.failure(new Error(result.error)));
+    return;
+  }
+  yield* put(chatErrorCleared(agentId));
+  yield* put(
+    updateSession(agentId, {
+      status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
+      stopReason: null,
+    }),
+  );
+  if (result.redriven === false) yield* call(showNothingToRetry);
+  yield* put(action.success(undefined as void));
 }
 
 function matchesUserStop(agentId: string) {

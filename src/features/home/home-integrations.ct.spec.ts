@@ -667,13 +667,14 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   await expect(list).toContainText('Linked service fix');
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        window.__homeIntegrationBrowser!.calls.filter(
-          (call) => call.method === 'github.pulls.get' && call.params.number === 901,
-        ),
+      page.evaluate(
+        () =>
+          window.__homeIntegrationBrowser!.calls.filter(
+            (call) => call.method === 'github.pulls.get' && call.params.number === 901,
+          ).length,
       ),
     )
-    .toHaveLength(2);
+    .toBe(2);
   const status = component.getByRole('combobox', { name: 'Status', exact: true });
   await status.click();
   await page.getByRole('option', { name: 'Closed / merged', exact: true }).click();

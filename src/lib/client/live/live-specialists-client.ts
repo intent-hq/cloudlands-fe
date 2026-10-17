@@ -1,3 +1,17 @@
+import type { RecoveryLifetime } from '$shared/event-recovery/resource';
+import {
+  rendererEventRecovery,
+  type RendererRecoveryScope,
+} from '$features/events/renderer-event-recovery';
+
+type CatalogSource = RendererRecoveryScope | undefined;
+const globalReads = new Map<Promise<unknown>, CatalogSource>();
+/** Recovery waits for existing global reads to settle before starting a new snapshot. */
+export async function settleGlobalSpecialistReads(): Promise<void> {
+  await Promise.allSettled(
+    [...globalReads].filter(([, captured]) => captured?.isCurrent()).map(([read]) => read),
+  );
+}
 /**
  * Live specialists domain backed by the intentd daemon (PROTOCOL §5.11).
  *
@@ -41,6 +55,10 @@ const logger = createLogger('LiveSpecialistsClient');
 const REFETCH_DEBOUNCE_MS = 100;
 
 export class LiveSpecialistsClient implements SpecialistsClient {
+  private scope: RendererRecoveryScope | undefined;
+  private globalRead:
+    | { receipt: RecoveryLifetime; source: CatalogSource; promise: Promise<SpecialistCatalog> }
+    | undefined;
   /**
    * Raw `specialist.list` fetch — throws on transport/daemon failure. The
    * public `list()` folds errors to an empty list (picker falls back to the
@@ -48,7 +66,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  async listCatalog(
+  private async fetchCatalog(
     provider?: string,
     workspaceId?: string,
     options?: { includeProject?: boolean },
@@ -57,8 +75,8 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // using the daemon's default context rather than the last picker choice.
     const result =
       provider === undefined && workspaceId === undefined && !options?.includeProject
-        ? await backendRequest<SpecialistCatalog>('specialist.list')
-        : await backendRequest<SpecialistCatalog>('specialist.list', {
+        ? await (this.scope?.request ?? backendRequest)<SpecialistCatalog>('specialist.list')
+        : await (this.scope?.request ?? backendRequest)<SpecialistCatalog>('specialist.list', {
             ...(provider ? { provider } : {}),
             ...(workspaceId ? { workspaceId } : {}),
             ...(options?.includeProject ? { includeProject: true } : {}),
@@ -67,6 +85,37 @@ export class LiveSpecialistsClient implements SpecialistsClient {
       specialists: Array.isArray(result?.specialists) ? result.specialists : [],
       importDiagnostics: result?.importDiagnostics,
     };
+  }
+
+  async listCatalog(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog> {
+    if (provider || workspaceId || options?.includeProject)
+      return this.fetchCatalog(provider, workspaceId, options);
+    const receipt = rendererEventRecovery.capture('global-specialists');
+    // Lease changes invalidate commit receipts, but do not retire physical requests.
+    const source = this.scope;
+    const previous = this.globalRead;
+    if (previous?.source === source && previous?.receipt.isCurrent()) return previous.promise;
+    const fetch = () => {
+      if (!receipt.commit(() => undefined)) throw new Error('Specialist catalog lifetime retired');
+      return this.fetchCatalog();
+    };
+    const read =
+      previous && previous.source === source
+        ? previous.promise.catch(() => undefined).then(fetch)
+        : fetch();
+    const pending = { receipt, source, promise: read };
+    this.globalRead = pending;
+    globalReads.set(read, source);
+    try {
+      return await read;
+    } finally {
+      globalReads.delete(read);
+      if (this.globalRead === pending) this.globalRead = undefined;
+    }
   }
 
   async list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {
@@ -97,52 +146,90 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // carries `{ workspaceId }`, but `specialist.list` is global, so events
     // are debounced into a single refetch and the workspaceId is not needed.
     let disposed = false;
+    let generation = 0;
+    let scope: RendererRecoveryScope | undefined;
+    let abort: AbortController | undefined;
     let subscriptionId: string | undefined;
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-    // Initial snapshot: emit the current resolved view.
-    void this.listCatalog()
-      .then((catalog) => {
-        if (!disposed) handler(catalog);
-      })
-      .catch(() => {
-        if (!disposed) onInitialFailure?.();
-      });
-
-    // Event/reconnect refetch: non-folding — on failure, log and skip the
-    // emit so the store keeps its last known-good view (#610), matching
-    // the specialists saga's authoritative refetch.
-    const refetch = () => {
-      this.listCatalog()
-        .then((specialists) => {
-          if (!disposed) handler(specialists);
+    const refetch = (initial = false) => {
+      const captured = generation;
+      const receipt = rendererEventRecovery.capture('global-specialists');
+      if (!receipt.commit(() => undefined)) return Promise.resolve();
+      return this.listCatalog()
+        .then((catalog) => {
+          if (!disposed && captured === generation)
+            receipt.commit(() => {
+              handler(catalog);
+            });
         })
         .catch((error) => {
-          logger.error('Failed to refetch specialist list; keeping last known-good view', error);
+          if (!disposed && captured === generation) {
+            if (initial)
+              receipt.commit(() => {
+                onInitialFailure?.();
+              });
+            else
+              logger.error(
+                'Failed to refetch specialist list; keeping last known-good view',
+                error,
+              );
+          }
         });
     };
-
-    // Register daemon subscription. Guard the late-resolving case: if the
-    // subscriber disposed while registration was in flight, release the id
-    // instead of leaking the daemon-side subscription.
-    const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({
-        eventTypes: ['specialists:changed', 'skills:changed'],
-      })
-        .then((result) => {
-          subscriptionId = result?.subscriptionId;
-          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-        })
-        .catch(() => {
-          // Without a daemon subscription we stay with the one-shot snapshot.
-        });
-
-    doSubscribe();
+    const doSubscribe = async () => {
+      const captured = generation;
+      const owner = scope;
+      abort?.abort();
+      const cancellation = new AbortController();
+      abort = cancellation;
+      try {
+        const params = { eventTypes: ['specialists:changed', 'skills:changed'] };
+        const result = owner
+          ? await owner.subscribe(params, { recover: true, signal: cancellation.signal })
+          : await backendSubscribe<{ subscriptionId?: string }>(params);
+        const id = result && ('id' in result ? result.id : result.subscriptionId);
+        if (typeof id !== 'string') return;
+        if (disposed || captured !== generation) {
+          if (owner) void owner.unsubscribe(id);
+          else void backendUnsubscribe(id);
+        } else subscriptionId = id;
+      } catch {
+        /* Keep the current snapshot when subscription registration fails. */
+      }
+    };
+    const offRecovery = rendererEventRecovery.onSession((next) => {
+      generation += 1;
+      scope = next;
+      this.scope = next;
+      const previous = subscriptionId;
+      subscriptionId = undefined;
+      if (previous) void backendUnsubscribe(previous);
+      void doSubscribe().then(() => {
+        if (!disposed && scope === next) void refetch(true);
+      });
+      return () => {
+        generation += 1;
+        abort?.abort();
+        const id = subscriptionId;
+        subscriptionId = undefined;
+        if (id) void next.unsubscribe(id);
+        if (scope === next) scope = undefined;
+        if (this.scope === next) this.scope = undefined;
+      };
+    });
+    if (!scope) {
+      void doSubscribe();
+      void refetch(true);
+    }
 
     // Listen for specialists:changed events and refetch the resolved view,
     // coalescing bursts into one `specialist.list` call.
     const removeNotificationListener = onBackendNotification((n) => {
+      // Captured sessions deliver generic events through the registered owner.
+      if (scope) return;
       if ((n.method === 'specialists:changed' || n.method === 'skills:changed') && !disposed) {
+        if (!rendererEventRecovery.push('global-specialists')) return;
         if (debounceTimer !== undefined) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = undefined;
@@ -157,7 +244,9 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // the outage (#609). Mirrors `live-git-client.ts`.
     const offReconnect = onBackendReconnected(() => {
       if (disposed) return;
+      generation += 1;
       subscriptionId = undefined;
+      if (scope) return;
       void doSubscribe();
       // Cancel any pending debounced refetch so the reconnect refetch is the
       // single one — otherwise a pre-outage burst's timer would fire later
@@ -171,6 +260,9 @@ export class LiveSpecialistsClient implements SpecialistsClient {
 
     return () => {
       disposed = true;
+      generation += 1;
+      abort?.abort();
+      offRecovery();
       if (debounceTimer !== undefined) {
         clearTimeout(debounceTimer);
         debounceTimer = undefined;

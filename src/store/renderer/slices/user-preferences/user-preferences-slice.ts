@@ -1,3 +1,8 @@
+import {
+  settingsAuthorityRetired,
+  settingsRecoveryInvalidated,
+  settingsSnapshotReplacing,
+} from '../settings-events/settings-events-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
@@ -124,6 +129,7 @@ const emptyAgentRulesEditor: AgentRulesEditorState = {
 
 export const initialState: UserPreferencesStoreState = {
   agentRulesEditor: emptyAgentRulesEditor,
+  notificationFieldEdits: { enabled: 0, soundEnabled: 0, soundOnlyWhenUnfocused: 0 },
   updateChannel: 'stable',
   spellcheckEnabled: false,
   zoomFactor: 1.0,
@@ -547,14 +553,26 @@ userPreferencesReducer.with(setSystemFonts, (state, { payload: [fonts] }) => ({
 userPreferencesReducer.with(setNotificationEnabled, (state, { payload: [value] }) => ({
   ...state,
   enabled: value,
+  notificationFieldEdits: {
+    ...state.notificationFieldEdits,
+    enabled: state.notificationFieldEdits.enabled + 1,
+  },
 }));
 userPreferencesReducer.with(setSoundEnabled, (state, { payload: [value] }) => ({
   ...state,
   soundEnabled: value,
+  notificationFieldEdits: {
+    ...state.notificationFieldEdits,
+    soundEnabled: state.notificationFieldEdits.soundEnabled + 1,
+  },
 }));
 userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
   ...state,
   soundOnlyWhenUnfocused: value,
+  notificationFieldEdits: {
+    ...state.notificationFieldEdits,
+    soundOnlyWhenUnfocused: state.notificationFieldEdits.soundOnlyWhenUnfocused + 1,
+  },
 }));
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
   ...state,
@@ -608,6 +626,11 @@ userPreferencesReducer.with(
 userPreferencesReducer.with(resetNotificationSettings, (state) => ({
   ...state,
   ...notificationSettingsInitialState,
+  notificationFieldEdits: {
+    enabled: state.notificationFieldEdits.enabled + 1,
+    soundEnabled: state.notificationFieldEdits.soundEnabled + 1,
+    soundOnlyWhenUnfocused: state.notificationFieldEdits.soundOnlyWhenUnfocused + 1,
+  },
   notificationVolumeEditId: state.notificationVolumeEditId + 1,
   pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
   deferredNotificationVolume: null,
@@ -655,3 +678,23 @@ userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
   if (Object.keys(state.shortcutOverrides).length === 0) return state;
   return { ...state, shortcutOverrides: {} };
 });
+
+userPreferencesReducer.with(settingsRecoveryInvalidated, (state) => ({
+  ...state,
+  notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: null,
+  deferredNotificationVolume: null,
+  notificationVolumeConfirmedRevision: -1,
+}));
+for (const action of [settingsAuthorityRetired, settingsSnapshotReplacing]) {
+  userPreferencesReducer.with(action, (state) => ({
+    ...state,
+    volume: notificationSettingsInitialState.volume,
+    notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+    notificationVolumeEditId: state.notificationVolumeEditId + 1,
+    pendingNotificationVolumeEditId: null,
+    deferredNotificationVolume: null,
+    notificationVolumeConfirmedRevision: -1,
+  }));
+}

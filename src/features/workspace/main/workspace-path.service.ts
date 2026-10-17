@@ -26,6 +26,10 @@
  * knows it.
  */
 
+import {
+  captureMainEventRecovery,
+  onMainEventRecoveryReady,
+} from '../../backend/main/main-event-recovery';
 import { Logger } from '../../../shared/logger';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import {
@@ -34,7 +38,7 @@ import {
   onBackendNotification,
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
-import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import type { JsonRpcClient, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
 
 const logger = new Logger('WorkspacePathService');
@@ -61,6 +65,16 @@ const inFlight = new Map<string, Promise<WorkspacePathInfo | null>>();
 // `workspace.get` response that raced an invalidation is never cached.
 const invalidationGenerations = new Map<string, number>();
 let cacheEpoch = 0;
+let recovery: ReturnType<typeof captureMainEventRecovery>;
+let disposeNotification: (() => void) | undefined;
+let readinessClient: JsonRpcClient | undefined;
+let disposeReadiness: (() => void) | undefined;
+let disposeReconnect: (() => void) | undefined;
+function invalidatePaths(): void {
+  cache.clear();
+  cacheEpoch++;
+  invalidationGenerations.clear();
+}
 let listenersAttached = false;
 let subscriptionId: string | undefined;
 // Epoch guard: bumped on reconnect so a pre-reconnect `events.subscribe`
@@ -69,14 +83,15 @@ let subscriptionId: string | undefined;
 let subscribeEpoch = 0;
 let subscribeInFlight = false;
 
-function handleBackendNotification(n: JsonRpcNotification): void {
+function handleBackendNotification(n: JsonRpcNotification, ordered = false): void {
+  if (recovery && !ordered) return;
   if (n.method !== 'events.event') return;
   const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
   const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
   // Strict match: the shared client also carries notifications for
   // renderer-proxied subscriptions; only our own subscription's events may
   // invalidate the cache.
-  if (!subscriptionId || subId !== subscriptionId) return;
+  if (!ordered && (!subscriptionId || subId !== subscriptionId)) return;
   const event = params?.event as { type?: unknown; data?: unknown } | undefined;
   if (!event || (event.type !== 'workspace:updated' && event.type !== 'workspace:deleted')) return;
   const workspaceId = (event.data as { workspaceId?: unknown } | undefined)?.workspaceId;
@@ -93,9 +108,48 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
   try {
     const client = getBackendClientForConnection(LOCAL_CONNECTION_ID);
     if (!client) return;
-    const result = (await client.request('events.subscribe', {
-      eventTypes: ['workspace:updated', 'workspace:deleted'],
-    })) as { subscriptionId?: string } | undefined;
+    if (readinessClient !== client) {
+      disposeReadiness?.();
+      readinessClient = client;
+      disposeReadiness =
+        typeof client.getRepositoryConnection === 'function'
+          ? onMainEventRecoveryReady(client, () => {
+              if (!recovery?.session.isCurrent()) void subscribeToWorkspaceEvents();
+            })
+          : undefined;
+    }
+    if (typeof client.getRepositoryConnection === 'function' && !client.getRepositoryConnection())
+      return;
+    if (!recovery?.session.isCurrent()) {
+      recovery = captureMainEventRecovery(client, () => {
+        invalidatePaths();
+        subscribeEpoch++;
+        subscriptionId = undefined;
+        subscribeInFlight = false;
+      });
+      recovery?.coordinator.registerResource({
+        key: 'workspace-paths',
+        workspaceId: null,
+        eventTypes: ['workspace:updated', 'workspace:deleted'],
+        active: false,
+        read: async () => undefined,
+        apply: () => {},
+        invalidate: invalidatePaths,
+        retire: () => {
+          invalidatePaths();
+        },
+        onEvent: (n) => handleBackendNotification(n, true),
+      });
+    }
+    if (typeof client.getRepositoryConnection === 'function' && !recovery) return;
+    const eventTypes = ['workspace:updated', 'workspace:deleted'];
+    const result = recovery
+      ? {
+          subscriptionId: (await recovery.coordinator.subscribe({ eventTypes }, { recover: true }))
+            ?.id,
+        }
+      : ((await client.request('events.subscribe', { eventTypes })) as
+          { subscriptionId?: string } | undefined);
     // A reconnect happened while this request was in flight: the result
     // belongs to the previous connection — drop it.
     if (epoch !== subscribeEpoch) return;
@@ -117,8 +171,11 @@ async function subscribeToWorkspaceEvents(): Promise<void> {
 function attachListeners(): void {
   if (listenersAttached) return;
   listenersAttached = true;
-  onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
-  onBackendReconnected(() => {
+  disposeNotification = onBackendNotification(handleBackendNotification, LOCAL_CONNECTION_ID);
+  disposeReconnect = onBackendReconnected(() => {
+    if (recovery?.session.isCurrent()) return;
+    recovery?.coordinator.dispose();
+    recovery = undefined;
     // The daemon dropped in-memory subscriptions and the backend may have
     // been switched — drop every cached path and re-subscribe. cacheEpoch
     // ensures in-flight workspace.get responses from the old connection are
@@ -172,7 +229,7 @@ export async function getWorkspacePathInfo(
   if (pending) return pending;
 
   const lookup = fetchWorkspacePathInfo(workspaceId, backendId).finally(() => {
-    inFlight.delete(workspaceId);
+    if (inFlight.get(workspaceId) === lookup) inFlight.delete(workspaceId);
   });
   inFlight.set(workspaceId, lookup);
   return lookup;
@@ -186,9 +243,25 @@ async function fetchWorkspacePathInfo(
   const generationAtStart = invalidationGenerations.get(workspaceId) ?? 0;
   try {
     const backendClient = getBackendClientForConnection(backendId);
-    if (!backendClient) return null;
-    const response = (await backendClient.request('workspace.get', { workspaceId })) as
-      { workspace?: unknown } | unknown;
+    if (
+      !backendClient ||
+      (typeof backendClient.getRepositoryConnection === 'function' &&
+        !backendClient.getRepositoryConnection())
+    )
+      return null;
+    const connection = backendClient.getRepositoryConnection?.();
+    const session = recovery?.session;
+    if (typeof backendClient.getRepositoryConnection === 'function' && !session?.isCurrent())
+      return null;
+    const response = (await (session ?? backendClient).request('workspace.get', {
+      workspaceId,
+    })) as { workspace?: unknown } | unknown;
+    if (
+      epochAtStart !== cacheEpoch ||
+      generationAtStart !== (invalidationGenerations.get(workspaceId) ?? 0) ||
+      (connection && backendClient.getRepositoryConnection() !== connection)
+    )
+      return null;
     const raw =
       response && typeof response === 'object' && 'workspace' in response
         ? (response as { workspace?: unknown }).workspace
@@ -214,8 +287,8 @@ async function fetchWorkspacePathInfo(
       ...(typeof ws.scope === 'string' && ws.scope.length > 0 ? { scope: ws.scope } : {}),
     };
     // Do not cache a response that raced an invalidation or a reconnect: it
-    // may predate the change that triggered the invalidation. Still return
-    // it — the next lookup re-fetches.
+    // may predate the change that triggered the invalidation. Stale replies
+    // also return null so callers cannot act on a retired path.
     if (
       epochAtStart === cacheEpoch &&
       generationAtStart === (invalidationGenerations.get(workspaceId) ?? 0)
@@ -265,12 +338,21 @@ export function isWorkspacePathDeterministicallyNull(
 
 /** Test-only: reset module state (cache, listeners, subscription). */
 export function __resetWorkspacePathServiceForTesting(): void {
+  recovery?.coordinator.dispose();
+  recovery = undefined;
+  disposeNotification?.();
+  disposeNotification = undefined;
+  disposeReadiness?.();
+  disposeReadiness = undefined;
+  readinessClient = undefined;
+  disposeReconnect?.();
+  disposeReconnect = undefined;
   cache.clear();
   inFlight.clear();
   invalidationGenerations.clear();
-  cacheEpoch = 0;
+  cacheEpoch++;
   listenersAttached = false;
   subscriptionId = undefined;
-  subscribeEpoch = 0;
+  subscribeEpoch++;
   subscribeInFlight = false;
 }

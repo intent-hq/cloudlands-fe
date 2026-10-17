@@ -15,6 +15,12 @@ export type AgentRulesEditorState = {
 /** Editor state is renderer-only, not part of the persisted preferences contract. */
 export type UserPreferencesStoreState = UserPreferencesState & {
   agentRulesEditor: AgentRulesEditorState;
+  /** Local field ownership survives edits that return to the initial value. */
+  notificationFieldEdits: {
+    enabled: number;
+    soundEnabled: number;
+    soundOnlyWhenUnfocused: number;
+  };
   /** Backend whose persisted setup completion has been read; null before hydration. */
   providerSetupHydratedBackendId: string | null;
 };

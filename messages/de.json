@@ -5360,6 +5360,7 @@
   "agent_chatSend_retryProviderNoModels_toast": "Für {provider} sind keine Modelle verfügbar, daher kann die Runde dort nicht wiederholt werden.",
   "agent_chatSend_retryProviderSwitchRejected_error": "Der Anbieterwechsel wurde abgelehnt.",
   "agent_chatSend_retryProviderSwitchFailed_toast": "Wechsel zu {provider} nicht möglich: {error}",
+  "agent_chatSend_retryProviderRedriveFailed_toast": "Zu {provider} gewechselt, aber der erneute Versuch ist fehlgeschlagen: {error}",
   "agent_ipc_activeStreamsFailed_error": "Aktive Streams konnten nicht abgerufen werden",
   "agent_ipc_circuitBreakerResetFailed_error": "Circuit Breaker konnte nicht zurückgesetzt werden",
   "agent_ipc_unknown_error": "Unbekannter Fehler",

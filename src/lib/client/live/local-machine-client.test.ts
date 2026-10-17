@@ -15,6 +15,7 @@ describe('local machine client', () => {
     invoke.mockResolvedValueOnce({ ok: true, result: { settings, revision: 1 } });
     expect(await localMachineClient.settings.list()).toEqual(settings);
     expect(invoke).toHaveBeenLastCalledWith('backend:request', {
+      observeCompletion: true,
       method: 'settings.list',
       params: undefined,
       localMachine: true,
@@ -23,6 +24,7 @@ describe('local machine client', () => {
     invoke.mockResolvedValueOnce({ ok: true, result: { applied: changes, revision: 2 } });
     expect(await localMachineClient.settings.update(changes)).toEqual(changes);
     expect(invoke).toHaveBeenLastCalledWith('backend:request', {
+      observeCompletion: true,
       method: 'settings.update',
       params: { changes },
       localMachine: true,
@@ -42,6 +44,7 @@ describe('local machine client', () => {
     invoke.mockResolvedValueOnce({ ok: true, result: info });
     expect(await localMachineClient.server.pairingInfo()).toEqual(info);
     expect(invoke).toHaveBeenLastCalledWith('backend:request', {
+      observeCompletion: true,
       method: 'server.pairingInfo',
       params: undefined,
       localMachine: true,
@@ -49,6 +52,7 @@ describe('local machine client', () => {
     invoke.mockResolvedValueOnce({ ok: true, result: { token: 'rotated-host-token' } });
     expect(await localMachineClient.server.rotateToken()).toEqual({ token: 'rotated-host-token' });
     expect(invoke).toHaveBeenLastCalledWith('backend:request', {
+      observeCompletion: true,
       method: 'server.rotateToken',
       params: undefined,
       localMachine: true,

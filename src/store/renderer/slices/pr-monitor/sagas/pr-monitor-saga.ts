@@ -1,6 +1,5 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, delay, getContext, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { markWorkspaceSeed } from '../../../utils/switch-timing';
@@ -18,53 +17,12 @@ import {
   cancelPrMonitor,
   flushPrMonitor,
   subscribePrMonitors,
-  type PrMonitorRow,
 } from '$features/pr-monitor/pr-monitor-service';
 
 const logger = createLogger('PrMonitorSaga');
 
-type MonitorChannelMessage = { kind: 'rows'; monitors: PrMonitorRow[] } | { kind: 'failed' };
-
-type SubscriptionEntry = {
-  count: number;
-  channel?: EventChannel<MonitorChannelMessage>;
-};
-
+type SubscriptionEntry = { count: number; dispose?: () => void };
 const SUBSCRIPTION_RECONCILIATION_DELAY_MS = 100;
-
-function createMonitorChannel(workspaceId: string): EventChannel<MonitorChannelMessage> {
-  return eventChannel<MonitorChannelMessage>((emit) => {
-    const subscription = subscribePrMonitors(
-      workspaceId,
-      (monitors) => emit({ kind: 'rows', monitors }),
-      () => emit({ kind: 'failed' }),
-    );
-    return () => subscription.dispose();
-  }, buffers.expanding<MonitorChannelMessage>());
-}
-
-function* forwardMonitorUpdates(
-  active: Map<string, SubscriptionEntry>,
-  workspaceId: string,
-  channel: EventChannel<MonitorChannelMessage>,
-): SagaGenerator<void> {
-  try {
-    while (true) {
-      const message: MonitorChannelMessage = yield* take(channel);
-      if (message === (END as unknown as MonitorChannelMessage)) return;
-      // A closed event channel can still drain its buffer. Only the current
-      // lease's channel may forward rows or failure after a release/reacquire.
-      if (active.get(workspaceId)?.channel !== channel) return;
-      if (message.kind === 'rows') {
-        yield* put(prMonitorsUpdated(workspaceId, message.monitors));
-      } else {
-        yield* put(prMonitorsSnapshotFailed(workspaceId));
-      }
-    }
-  } finally {
-    channel.close();
-  }
-}
 
 function* acquireSubscription(
   active: Map<string, SubscriptionEntry>,
@@ -75,12 +33,26 @@ function* acquireSubscription(
   const entry = active.get(workspaceId) ?? { count: 0 };
   entry.count += 1;
   active.set(workspaceId, entry);
-  if (entry.channel) return;
+  if (entry.dispose) return;
   try {
     markWorkspaceSeed(workspaceId, 'prSeedStarted');
-    const channel = createMonitorChannel(workspaceId);
-    entry.channel = channel;
-    yield* fork(forwardMonitorUpdates, active, workspaceId, channel);
+    const reduxStore = yield* getContext<{
+      dispatch(
+        action: ReturnType<typeof prMonitorsUpdated> | ReturnType<typeof prMonitorsSnapshotFailed>,
+      ): unknown;
+    }>('reduxStore');
+    const subscription = subscribePrMonitors(
+      workspaceId,
+      (rows) => {
+        if (active.get(workspaceId) === entry)
+          reduxStore.dispatch(prMonitorsUpdated(workspaceId, rows));
+      },
+      () => {
+        if (active.get(workspaceId) === entry)
+          reduxStore.dispatch(prMonitorsSnapshotFailed(workspaceId));
+      },
+    );
+    entry.dispose = subscription.dispose;
   } catch (error) {
     logger.error('Failed to subscribe to prMonitor events', {
       workspaceId,
@@ -98,8 +70,7 @@ function* releaseSubscription(
   const entry = active.get(workspaceId);
   if (!entry || --entry.count > 0) return;
   active.delete(workspaceId);
-  // Close the external resource; END retires its attached forwarding worker.
-  entry.channel?.close();
+  entry.dispose?.();
 }
 
 function* watchActiveWorkspace(): SagaGenerator<void> {
@@ -171,7 +142,7 @@ export function* prMonitorSaga(): SagaGenerator<void> {
     yield* all([call(watchActiveWorkspace), call(watchFlush), call(watchCancel)]);
   } finally {
     for (const entry of active.values()) {
-      entry.channel?.close();
+      entry.dispose?.();
     }
     active.clear();
   }
