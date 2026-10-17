@@ -45,6 +45,7 @@ import {
   workspaceCatalogReceived,
   workspaceCatalogReadFailed,
 } from '../../provider-catalog/provider-catalog-slice';
+import { selectWorkspaceCatalogIds } from '../../provider-catalog/workspace-catalog-selectors';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
@@ -296,6 +297,26 @@ function mutationError(error: unknown, fallback: string): Error {
   return error instanceof Error ? error : new Error(errorMessage(error, fallback));
 }
 
+/** The daemon's structured not-found rejection (`data.code: "not-found"`, PROTOCOL §5.11). */
+function isNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, data } = error as { code?: unknown; data?: unknown };
+  return (
+    code === 'not-found' ||
+    (!!data && typeof data === 'object' && (data as { code?: unknown }).code === 'not-found')
+  );
+}
+
+/**
+ * User-tier files appear in every workspace catalog. The daemon's watcher
+ * eventually pushes `specialists:changed`, but workspace-scoped Settings
+ * would otherwise show the old override (and its Reset) until it does.
+ */
+function* refreshWorkspaceSpecialistCatalogs() {
+  for (const workspaceId of yield* selectWorkspaceCatalogIds.effect())
+    yield* put(workspaceCatalogRequested(workspaceId, ['specialists']));
+}
+
 function* showMutationError(error: unknown, fallback: string) {
   const { notify } = yield* call(() => import('$lib/components/patterns/notify'));
   yield* call([notify, notify.error], errorMessage(error, fallback));
@@ -376,7 +397,10 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
     settled = true;
     if (scope === 'project' && payload.workspaceId)
       yield* put(workspaceCatalogRequested(payload.workspaceId));
-    else yield* call(refetchSpecialists, context);
+    else {
+      yield* call(refreshWorkspaceSpecialistCatalogs);
+      yield* call(refetchSpecialists, context);
+    }
   } catch (error) {
     logger.error('Failed to save file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_saveFailed_error());
@@ -607,19 +631,32 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
     if (existing?.importedFrom) {
       throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
     }
-    yield* call(
-      [appClient.specialists, appClient.specialists.delete],
-      ref.id,
-      ref.scope ?? 'user',
-      ref.workspacePath,
-      ...(ref.workspaceId ? [ref.workspaceId] : []),
-    );
+    try {
+      yield* call(
+        [appClient.specialists, appClient.specialists.delete],
+        ref.id,
+        ref.scope ?? 'user',
+        ref.workspacePath,
+        ...(ref.workspaceId ? [ref.workspaceId] : []),
+      );
+    } catch (error) {
+      // A reset whose override is already gone has reached its goal; the
+      // refresh below reconciles the stale view instead of reporting failure.
+      if (!ref.allowMissing || !isNotFoundError(error)) throw error;
+      logger.warn('Specialist override was already absent; refreshing', {
+        id: ref.id,
+        scope: ref.scope ?? 'user',
+      });
+    }
     yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
     if (ref.scope === 'project' && ref.workspaceId)
       yield* put(workspaceCatalogRequested(ref.workspaceId));
-    else yield* call(refetchSpecialists, context);
+    else {
+      yield* call(refreshWorkspaceSpecialistCatalogs);
+      yield* call(refetchSpecialists, context);
+    }
   } catch (error) {
     logger.error('Failed to delete file specialist', error);
     yield* call(showMutationError, error, m.specialists_mutation_deleteFailed_error());
@@ -686,13 +723,57 @@ function* watchSpecialistsSubscription(context: ListContext) {
   }
 }
 
+type FileMutation = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>;
+
+/**
+ * Writes for one specialist run in dispatch order, each after the previous
+ * one's refetch; different specialists still proceed concurrently. Overlapping
+ * writes could otherwise land out of order, and a follow-up save would pick
+ * create/edit from a list that predates the previous write.
+ */
+function* watchFileMutations(context: ListContext) {
+  const queues = new Map<string, FileMutation[]>();
+  while (true) {
+    const action = yield* take<FileMutation>([saveFileSpecialist, deleteFileSpecialist]);
+    const key = action.payload[0].id;
+    const queued = queues.get(key);
+    if (queued) {
+      queued.push(action);
+      continue;
+    }
+    const queue: FileMutation[] = [action];
+    queues.set(key, queue);
+    yield* fork(function* () {
+      try {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          if (next.type === saveFileSpecialist.type)
+            yield* call(handleSave, context, next as ReturnType<typeof saveFileSpecialist>);
+          else yield* call(handleDelete, context, next as ReturnType<typeof deleteFileSpecialist>);
+        }
+      } finally {
+        queues.delete(key);
+        // Session teardown leaves queued promises unsettled otherwise.
+        for (const pending of queue.splice(0))
+          yield* call(
+            rejectAction,
+            pending,
+            new Error(
+              pending.type === saveFileSpecialist.type
+                ? m.specialists_mutation_saveFailed_error()
+                : m.specialists_mutation_deleteFailed_error(),
+            ),
+          );
+      }
+    });
+  }
+}
+
 function* specialistsSession(admission: string | null) {
   const context: ListContext = { generation: 0, confirmations: new Set() };
   if (admission) yield* fork(watchSpecialistsSubscription, context);
   yield* all([
     takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
-    takeEvery(saveFileSpecialist, handleSave, context),
-    takeEvery(deleteFileSpecialist, handleDelete, context),
+    fork(watchFileMutations, context),
     fork(watchSpecialistRefetches, context),
   ]);
 }

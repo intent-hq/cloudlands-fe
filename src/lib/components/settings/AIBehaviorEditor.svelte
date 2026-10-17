@@ -45,6 +45,13 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
+  import {
+    builtInExport,
+    createPendingWrites,
+    modelSelectionWrite,
+    type ModelPin,
+  } from './utils/specialist-model-writes';
+  import type { FileSpecialist } from '$store/renderer/slices/specialists/specialists-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -205,6 +212,42 @@
       : '';
   });
 
+  // While this editor's model/effort writes for a specialist are unsettled,
+  // the picker keeps the local picks: a refetch answering an EARLIER queued
+  // write must not briefly restore older values (e.g. Default).
+  const pendingModelWrites = createPendingWrites((id) => {
+    if (mounted && currentSpecialist?.id === id) syncModelSelection(currentSpecialist);
+  });
+  // The newest pick's model pin, which the stored file may predate.
+  let localModelPin: ({ id: string } & ModelPin) | null = null;
+
+  function syncModelSelection(specialist: NonNullable<typeof currentSpecialist>) {
+    localModelPin = null;
+    // User/bundled saves update the global list before the route projection.
+    const specialistWorkspaceId =
+      specialist.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
+    const codingAgent = selectEffectiveCodingAgent.select(
+      appStore.state,
+      specialist.id,
+      specialistWorkspaceId,
+    );
+    _specialistCodingAgentValue = codingAgent;
+    const explicitModel = selectExplicitModel.select(
+      appStore.state,
+      specialist.id,
+      specialistWorkspaceId,
+    );
+    specialistModelValue =
+      explicitModel && codingAgent && !explicitModel.includes(':')
+        ? `${codingAgent}:${explicitModel}`
+        : explicitModel;
+    specialistEffortValue = selectExplicitReasoningEffort.select(
+      appStore.state,
+      specialist.id,
+      specialistWorkspaceId,
+    );
+  }
+
   // Sync the EXPLICIT frontmatter model from the specialist's owning scope
   // only — undefined when inheriting (the daemon resolvedModel preview is
   // shown via the picker's default-option plumbing instead). The stored
@@ -213,31 +256,48 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      // User/bundled saves update the global list before the route projection.
-      const specialistWorkspaceId =
-        currentSpecialist.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
-      const codingAgent = selectEffectiveCodingAgent.select(
-        appStore.state,
-        currentSpecialist.id,
-        specialistWorkspaceId,
-      );
-      _specialistCodingAgentValue = codingAgent;
-      const explicitModel = selectExplicitModel.select(
-        appStore.state,
-        currentSpecialist.id,
-        specialistWorkspaceId,
-      );
-      specialistModelValue =
-        explicitModel && codingAgent && !explicitModel.includes(':')
-          ? `${codingAgent}:${explicitModel}`
-          : explicitModel;
-      specialistEffortValue = selectExplicitReasoningEffort.select(
-        appStore.state,
-        currentSpecialist.id,
-        specialistWorkspaceId,
-      );
+      if (!pendingModelWrites.has(currentSpecialist.id)) syncModelSelection(currentSpecialist);
     }
   });
+
+  function dispatchModelWrite(id: string, action: Parameters<typeof appStore.dispatch>[0]) {
+    pendingModelWrites.track(id, appStore.dispatch(action));
+  }
+
+  // Model/effort writes start from the stored file, or — while this editor's
+  // export of a built-in is still landing — from that export.
+  function modelWriteBase(specialist: NonNullable<typeof currentSpecialist>) {
+    const stored = isFileBased
+      ? selectGetFileSpecialist.select(appStore.state, specialist.id, routeWorkspaceId ?? undefined)
+      : undefined;
+    if (stored || localModelPin?.id !== specialist.id) return stored;
+    const prompt = selectEffectiveBehaviorPrompt.select(
+      appStore.state,
+      specialist.id,
+      routeWorkspaceId ?? undefined,
+    );
+    return builtInExport(specialist, prompt, localModelPin, specialistEffortValue);
+  }
+
+  function writeModelSelection(
+    file: FileSpecialist,
+    pin: ModelPin,
+    reasoningEffort: string | undefined,
+    redundant: boolean,
+  ) {
+    const owner =
+      file.source === 'project'
+        ? { workspaceId: routeWorkspaceId ?? undefined, workspacePath: getCurrentWorkspacePath() }
+        : {};
+    localModelPin = { id: file.id, ...pin };
+    const write = modelSelectionWrite(file, pin, reasoningEffort, redundant, owner);
+    dispatchModelWrite(
+      file.id,
+      write.kind === 'delete'
+        ? deleteFileSpecialistAction(write.ref)
+        : saveFileSpecialist(write.payload),
+    );
+  }
 
   // Drop unsupported effort levels using the selected provider’s catalog.
   function effortForModel(
@@ -275,53 +335,27 @@
         specialistEffortValue,
       );
       specialistEffortValue = nextEffort;
-      if (!isFileBased) return;
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
-      );
-      if (!fileSpec || !fileSpec.model) return;
+      const fileSpec = modelWriteBase(currentSpecialist);
+      const pinned =
+        localModelPin?.id === currentSpecialist.id ? localModelPin.model : fileSpec?.model;
+      if (!fileSpec || !pinned) return;
+      const codingAgent =
+        localModelPin?.id === currentSpecialist.id
+          ? localModelPin.codingAgent
+          : fileSpec.codingAgent;
       // If clearing the pin leaves the override identical to the bundled
       // defaults, delete the file instead of rewriting it — a redundant file
       // would keep the built-in reading as "Modified" (monorepo#1450).
       const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-      if (
+      writeModelSelection(
+        fileSpec,
+        { codingAgent, model: undefined },
+        nextEffort,
         isRedundantBuiltInOverride(
-          { ...fileSpec, reasoningEffort: nextEffort },
+          { ...fileSpec, codingAgent, reasoningEffort: nextEffort },
           bundledSpecialists,
           { ignoreModelPin: true },
-        )
-      ) {
-        appStore.dispatch(
-          deleteFileSpecialistAction({
-            id: fileSpec.id,
-            scope: fileSpec.source,
-            workspaceId:
-              fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
-            workspacePath: fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined,
-          }),
-        );
-        return;
-      }
-      const workspaceId =
-        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
-      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
-      appStore.dispatch(
-        saveFileSpecialist({
-          id: fileSpec.id,
-          name: fileSpec.name,
-          description: fileSpec.description,
-          codingAgent: fileSpec.codingAgent,
-          model: undefined,
-          roleReminder: fileSpec.roleReminder,
-          modelOptions: fileSpec.modelOptions,
-          reasoningEffort: nextEffort,
-          behaviorPrompt: fileSpec.behaviorPrompt,
-          scope: fileSpec.source,
-          workspacePath,
-          workspaceId,
-        }),
+        ),
       );
       return;
     }
@@ -341,34 +375,15 @@
     const nextEffort = effortForModel(newProvider || undefined, bareModelId, specialistEffortValue);
     specialistEffortValue = nextEffort;
 
-    if (isFileBased) {
+    const fileSpec = modelWriteBase(currentSpecialist);
+    if (fileSpec) {
       // Already a file specialist (user or project) — update in place
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+      writeModelSelection(
+        fileSpec,
+        { codingAgent: newProvider, model: bareModelId },
+        nextEffort,
+        false,
       );
-      if (fileSpec) {
-        const workspaceId =
-          fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
-        const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
-        appStore.dispatch(
-          saveFileSpecialist({
-            id: fileSpec.id,
-            name: fileSpec.name,
-            description: fileSpec.description,
-            codingAgent: newProvider,
-            model: bareModelId,
-            roleReminder: fileSpec.roleReminder,
-            modelOptions: fileSpec.modelOptions,
-            reasoningEffort: nextEffort,
-            behaviorPrompt: fileSpec.behaviorPrompt,
-            scope: fileSpec.source,
-            workspacePath,
-            workspaceId,
-          }),
-        );
-      }
     } else {
       // Built-in or legacy — export to user file with the change applied
       const effectivePrompt = selectEffectiveBehaviorPrompt.select(
@@ -376,7 +391,9 @@
         currentSpecialist.id,
         routeWorkspaceId ?? undefined,
       );
-      appStore.dispatch(
+      localModelPin = { id: currentSpecialist.id, codingAgent: newProvider, model: bareModelId };
+      dispatchModelWrite(
+        currentSpecialist.id,
         saveFileSpecialist({
           id: currentSpecialist.id,
           name: currentSpecialist.name,
@@ -398,51 +415,22 @@
     if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     specialistEffortValue = effort;
 
-    if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
-      );
-      if (!fileSpec) return;
-      const workspaceId =
-        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
-      const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
-      if (!effort && !fileSpec.model && !fileSpec.codingAgent) {
-        const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-        if (
-          isRedundantBuiltInOverride(
-            { ...fileSpec, reasoningEffort: undefined },
-            bundledSpecialists,
-          )
-        ) {
-          appStore.dispatch(
-            deleteFileSpecialistAction({
-              id: fileSpec.id,
-              scope: fileSpec.source,
-              workspacePath,
-              workspaceId,
-            }),
-          );
-          return;
-        }
-      }
-      appStore.dispatch(
-        saveFileSpecialist({
-          id: fileSpec.id,
-          name: fileSpec.name,
-          description: fileSpec.description,
-          codingAgent: fileSpec.codingAgent,
-          model: fileSpec.model || undefined,
-          roleReminder: fileSpec.roleReminder,
-          modelOptions: fileSpec.modelOptions,
-          reasoningEffort: effort,
-          behaviorPrompt: fileSpec.behaviorPrompt,
-          scope: fileSpec.source,
-          workspacePath,
-          workspaceId,
-        }),
-      );
+    const fileSpec = modelWriteBase(currentSpecialist);
+    if (fileSpec) {
+      // Keep the newest model pick even when the stored file predates it.
+      const pin =
+        localModelPin?.id === currentSpecialist.id
+          ? { codingAgent: localModelPin.codingAgent, model: localModelPin.model }
+          : { codingAgent: fileSpec.codingAgent, model: fileSpec.model || undefined };
+      const redundant =
+        !effort &&
+        !pin.model &&
+        !pin.codingAgent &&
+        isRedundantBuiltInOverride(
+          { ...fileSpec, reasoningEffort: undefined },
+          selectBundledSpecialists.select(appStore.state),
+        );
+      writeModelSelection(fileSpec, pin, effort, redundant);
       return;
     }
 
@@ -452,16 +440,23 @@
       currentSpecialist.id,
       routeWorkspaceId ?? undefined,
     );
-    appStore.dispatch(
+    const codingAgent = selectEffectiveCodingAgent.select(
+      appStore.state,
+      currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
+    );
+    localModelPin = {
+      id: currentSpecialist.id,
+      codingAgent,
+      model: currentSpecialist.defaultModel,
+    };
+    dispatchModelWrite(
+      currentSpecialist.id,
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: currentSpecialist.name,
         description: currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(
-          appStore.state,
-          currentSpecialist.id,
-          routeWorkspaceId ?? undefined,
-        ),
+        codingAgent,
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
@@ -716,11 +711,14 @@
 
   function resetToDefault() {
     if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
-    // Delete the user override file so the specialist reverts to bundled defaults
+    // Delete the user override file so the specialist reverts to bundled
+    // defaults. A stale "Modified" view whose file is already gone refreshes
+    // instead of failing.
     appStore.dispatch(
       deleteFileSpecialistAction({
         id: currentSpecialist.id,
         scope: 'user',
+        allowMissing: true,
       }),
     );
   }
