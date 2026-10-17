@@ -329,7 +329,7 @@
     if (onError) onError(err);
   }}
 >
-  {#snippet failed(error: unknown, reset)}
+  {#snippet failed(error: unknown, reset: () => void)}
     {@const err = error instanceof Error ? error : new Error(String(error))}
     {@render errorDisplay(
       err.message || m.lib_errorBoundary_unexpected_error(),
