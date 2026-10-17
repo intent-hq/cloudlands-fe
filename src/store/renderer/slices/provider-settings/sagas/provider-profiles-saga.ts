@@ -42,6 +42,7 @@ import {
 import type { ProviderProfileStatus } from '../provider-settings-types';
 import { takeStagedProfileEnv } from '../provider-profiles-state';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
+import { hydrateProviderCatalog } from '../../provider-catalog/sagas/provider-catalog-saga';
 
 const logger = createLogger('ProviderProfilesSaga');
 
@@ -94,6 +95,19 @@ function* readLoop(deps: ProviderProfilesSagaDeps) {
   while (true) {
     yield* take(requests);
     yield* call(loadProfiles, deps);
+  }
+}
+
+/**
+ * Model pickers read profile summaries from `providers.catalog` (members
+ * included), which `providers:profiles-changed` invalidates. Sliding(1): one
+ * catalog read in flight plus at most one trailing read per event burst.
+ */
+function* catalogRefreshLoop() {
+  const changes = yield* actionChannel(providerProfilesChanged, buffers.sliding(1));
+  while (true) {
+    yield* take(changes);
+    yield* call(hydrateProviderCatalog);
   }
 }
 
@@ -214,6 +228,7 @@ export function* providerProfilesSaga(deps: ProviderProfilesSagaDeps = defaultDe
   yield* all([
     call(readLoop, deps),
     call(mutationLoop, deps),
+    call(catalogRefreshLoop),
     takeEvery(providerProfilesChanged, onProfilesChanged),
     takeEvery(providerCatalogLoaded, onCatalogLoaded),
     takeEvery(providerProfileCheckRequested, onCheckRequested, deps),

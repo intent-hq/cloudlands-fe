@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  catalog: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -15,6 +16,7 @@ vi.mock('$lib/client', () => ({
       createProfile: mocks.create,
       updateProfile: mocks.update,
       deleteProfile: mocks.remove,
+      catalog: mocks.catalog,
     },
   },
 }));
@@ -45,6 +47,7 @@ import {
   selectProviderProfileStatusMap,
 } from '../provider-settings-selectors';
 import { providerProfilesSaga } from './provider-profiles-saga';
+import { selectProviderCatalogProfiles } from '../../provider-catalog/provider-catalog-selectors';
 
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -341,5 +344,33 @@ describe('provider profiles saga', () => {
     await settle();
     expect(h.auth).toHaveBeenCalledWith('codex@pwork', true);
     expect(selectProviderProfileStatusMap.select(h.state()).pwork).toBe('ready');
+  });
+});
+
+describe('model picker catalog refresh (§5.54)', () => {
+  it('re-reads providers.catalog once per event burst, with one trailing read', async () => {
+    const h = setup();
+    task = h.task;
+    const first = deferred<unknown>();
+    const work = {
+      id: 'pwork00000001',
+      providerRef: 'codex@pwork00000001',
+      baseProviderId: 'codex',
+      name: 'Work',
+    };
+    mocks.catalog
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({ providers: [row('codex', true)], profiles: [work] });
+
+    h.dispatch(providerProfilesChanged(1));
+    h.dispatch(providerProfilesChanged(2));
+    h.dispatch(providerProfilesChanged(3));
+    await settle();
+    expect(mocks.catalog).toHaveBeenCalledTimes(1);
+
+    first.resolve({ providers: [row('codex', true)], profiles: [] });
+    await settle();
+    expect(mocks.catalog).toHaveBeenCalledTimes(2);
+    expect(selectProviderCatalogProfiles.select(h.state())).toEqual([work]);
   });
 });

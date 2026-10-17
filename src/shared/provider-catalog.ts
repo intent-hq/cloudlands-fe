@@ -57,11 +57,29 @@ const ProviderCatalogEntrySchema = z
  * array position. `.passthrough()` for the same additive-field preservation
  * as the entry schema.
  */
+/**
+ * One named profile summary (§5.54 `ProviderProfileSummary`): identity and
+ * display name only — never env. `providerRef` is the value every provider
+ * field carries; clients read it and never compose it.
+ */
+const ProviderProfileSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    providerRef: z.string().min(1),
+    baseProviderId: z.string().min(1),
+    name: z.string(),
+  })
+  .passthrough();
+
 export const ProviderCatalogResponseSchema = z
   .object({
     providers: z.array(ProviderCatalogEntrySchema),
+    // Named profiles (§5.54): absent on older daemons and hosts without profiles.
+    profiles: z.array(ProviderProfileSummarySchema).optional(),
   })
   .passthrough();
+
+export type ProviderProfileSummary = z.infer<typeof ProviderProfileSummarySchema>;
 
 export type ProviderCatalogEntry = z.infer<typeof ProviderCatalogEntrySchema>;
 export type ProviderCatalogResult = z.infer<typeof ProviderCatalogResponseSchema>;

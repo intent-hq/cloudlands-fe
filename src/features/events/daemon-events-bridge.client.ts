@@ -3630,6 +3630,7 @@ export function routeDaemonEventsNotification(
       'skills:changed',
       'mcp.servers:status-changed',
       'workspace:updated',
+      PROVIDER_PROFILES_CHANGED_EVENT,
     ].includes(type)
   ) {
     appStore.dispatch(workspaceCatalogEventReceived(event));

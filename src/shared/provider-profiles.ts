@@ -154,3 +154,94 @@ export function classifyProviderProfileError(error: unknown): ProviderProfileFai
 export function isProviderProfileRef(providerRef: string): boolean {
   return providerRef.includes('@');
 }
+
+/**
+ * Canonical base provider id of a provider reference (§5.54). A qualified
+ * reference only ever uses a canonical base id before its single `@`, so the
+ * base is recoverable even after the profile is deleted (icons, base
+ * enablement). Never used to build a reference — clients read `providerRef`.
+ */
+export function providerRefBaseId(providerRef: string): string {
+  const at = providerRef.indexOf('@');
+  return at < 0 ? providerRef : providerRef.slice(0, at);
+}
+
+/** Minimal profile identity shared by the catalog summary and full profile reads. */
+export interface ProviderProfileRefInfo {
+  providerRef: string;
+  baseProviderId: string;
+  name: string;
+}
+
+/** The saved profile a reference names; `undefined` for bare or missing references. */
+export function findProfileByRef<T extends ProviderProfileRefInfo>(
+  profiles: readonly T[],
+  providerRef: string,
+): T | undefined {
+  return isProviderProfileRef(providerRef)
+    ? profiles.find((profile) => profile.providerRef === providerRef)
+    : undefined;
+}
+
+/**
+ * Insert each base provider's profile references directly after it, in the
+ * daemon's stored order. Profiles whose base is absent from `providerIds`
+ * (disabled, unavailable) are not offered. Order of `providerIds` is kept.
+ */
+export function expandProviderIdsWithProfiles(
+  providerIds: readonly string[],
+  profiles: readonly ProviderProfileRefInfo[],
+): string[] {
+  if (profiles.length === 0) return [...providerIds];
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    result.push(id);
+  };
+  for (const id of providerIds) {
+    push(id);
+    if (isProviderProfileRef(id)) continue;
+    for (const profile of profiles) if (profile.baseProviderId === id) push(profile.providerRef);
+  }
+  return result;
+}
+
+/** How a provider group/selection is labelled once profiles are considered. */
+export type ProviderRefLabelParts =
+  { kind: 'plain' } | { kind: 'default' } | { kind: 'profile'; name: string } | { kind: 'missing' };
+
+/**
+ * Label rule (§5.54 brief): bare provider labels while the base has no
+ * profiles; the original configuration reads "Default" once it has any; a
+ * qualified reference reads its current profile name (renames update the
+ * label only); a reference to a deleted profile is reported as missing.
+ */
+export function providerRefLabelParts(
+  providerRef: string,
+  profiles: readonly ProviderProfileRefInfo[],
+  baseProviderId = providerRefBaseId(providerRef),
+): ProviderRefLabelParts {
+  if (isProviderProfileRef(providerRef)) {
+    const profile = findProfileByRef(profiles, providerRef);
+    return profile ? { kind: 'profile', name: profile.name } : { kind: 'missing' };
+  }
+  return profiles.some((profile) => profile.baseProviderId === baseProviderId)
+    ? { kind: 'default' }
+    : { kind: 'plain' };
+}
+
+/**
+ * `models.list` `providerId` for a `<base>:get-models` channel (§5.54): the
+ * requested profile reference when it names a profile of that same base
+ * provider, otherwise the base itself. A profile's catalog is served under its
+ * own reference, so caches never cross configurations.
+ */
+export function modelsListProviderId(baseProviderId: string, providerRef: unknown): string {
+  return typeof providerRef === 'string' &&
+    isProviderProfileRef(providerRef) &&
+    providerRefBaseId(providerRef) === baseProviderId
+    ? providerRef
+    : baseProviderId;
+}
