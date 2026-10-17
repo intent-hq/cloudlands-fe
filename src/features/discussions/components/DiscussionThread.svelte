@@ -517,7 +517,7 @@
       </div>
     {/if}
     <div
-      class="flex min-h-[76px] flex-col justify-end rounded-[10px] border border-border bg-background px-3 py-2.5 focus-within:ring-1 focus-within:ring-ring"
+      class="flex min-h-[76px] flex-col justify-end rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none"
       class:opacity-45={!(canCompose ?? canSend)}
     >
       <div class="flex items-end gap-3">
@@ -526,9 +526,10 @@
           value={draft}
           aria-label={m.workspace_discussion_composer_label()}
           placeholder={composerPlaceholder ?? m.workspace_discussion_composer_placeholder()}
-          class="min-h-6 flex-1 resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none focus-visible:ring-0"
+          class="min-h-6 flex-1 resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent"
           rows={1}
           autoResize
+          noFocusStyle
           minHeight={24}
           maxHeight={160}
           readonly={!(canCompose ?? canSend)}
