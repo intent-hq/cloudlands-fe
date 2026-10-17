@@ -39,9 +39,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
   it('orders the live identity, progress, then current status', () => {
     const progress = source('../sidebar/WorkspaceProgressCard.svelte');
-    const fullMode = progress.slice(
-      progress.indexOf('<div class="flex w-full flex-col" data-workspace-title-section>'),
-    );
+    const section = progress.match(/<div\b[^>]*\bdata-workspace-title-section\s*>/);
+    expect(section).not.toBeNull();
+    const fullMode = progress.slice(section!.index);
     const title = fullMode.indexOf('<!-- Workspace Header -->');
     const status = fullMode.indexOf('<!-- Status follows identity and progress');
     const metadata = fullMode.indexOf('<!-- repository and branch metadata -->');
@@ -51,7 +51,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(title).toBeLessThan(metadata);
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
-    expect(fullMode).toContain('class="flex w-full flex-col" data-workspace-title-section');
+    expect(section![0]).toMatch(/class="flex w-full flex-col"\s+data-workspace-title-section/);
     expect(fullMode).toContain(
       'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
     );

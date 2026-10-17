@@ -139,3 +139,10 @@ export const selectWorkspaceBrowserTabsRevision = store.createSelector(
   (state, wsId: string): number =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabsRevision,
 );
+
+/** Demand is independent of warm workspace sessions and open tabs. */
+export const selectBrowserClientConsumerWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.browserClients?.byWorkspaceId ?? {})
+    .filter(([, entry]) => Object.keys(entry.consumers ?? {}).length > 0)
+    .map(([id]) => id),
+);
