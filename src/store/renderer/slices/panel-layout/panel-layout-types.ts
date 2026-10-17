@@ -30,6 +30,7 @@ export type PanelTabType =
   | 'local-changes'
   | 'chat-changes'
   | 'agent'
+  | 'discussion'
   | 'terminal'
   | 'settings'
   | 'workspace'

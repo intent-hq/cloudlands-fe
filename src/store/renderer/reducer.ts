@@ -115,6 +115,7 @@ import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
 import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
+import { workspaceDiscussionReducer } from './slices/workspace-discussion/workspace-discussion-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -237,6 +238,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  workspaceDiscussion: workspaceDiscussionReducer,
   presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,

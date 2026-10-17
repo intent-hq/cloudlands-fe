@@ -1,3 +1,4 @@
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * Hover-card roster selectors: the owner gate (`workspace.myRole === 'owner'`
@@ -22,6 +23,10 @@ import {
 } from '../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import {
+  selectShareSharingEnabled,
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingError,
   selectShareCanManage,
   selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
@@ -32,6 +37,8 @@ import {
   selectWorkspaceRosterWithheld,
 } from './workspace-share-selectors';
 import {
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   initialState,
   openShareDialog,
   shareDataLoaded,
@@ -230,4 +237,31 @@ describe('keyed roster reads', () => {
     expect(selectWorkspaceRosterTracked.select(state, 'ws-1')).toBe(true);
     expect(selectWorkspaceRosterTracked.select(state, 'ws-2')).toBe(false);
   });
+});
+
+it('hides prerequisite status as soon as host identity changes', () => {
+  const root = stateWith(
+    { 'ws-1': 'owner' },
+    openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }),
+  );
+  const target = {
+    workspaceId: 'ws-1',
+    session: root.workspaceShare.session,
+    authority: selectPrincipalActionContext.select(root),
+  };
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesStarted({ target, enabling: true }),
+  );
+  expect(selectShareSharingEnabling.select(root)).toBe(true);
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesSettled({ target, enabled: true, error: null }),
+  );
+  expect(selectShareSharingEnabled.select(root)).toBe(true);
+  root.principal = { ...root.principal, invalidation: root.principal.invalidation + 1 };
+  expect(selectShareSharingEnabled.select(root)).toBeNull();
+  expect(selectShareSharingChecking.select(root)).toBe(false);
+  expect(selectShareSharingEnabling.select(root)).toBe(false);
+  expect(selectShareSharingError.select(root)).toBeNull();
 });

@@ -17,6 +17,7 @@
 import {
   createCollection,
   getItem,
+  upsertItem,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createAction } from '@themislib/themis/utils/store/create-action';
@@ -83,6 +84,12 @@ export const initialRosterState: WorkspaceRosterState = {
 
 export interface WorkspaceShareState {
   integrationAuth: { github: boolean; gitlab: boolean };
+  /** Prerequisites belong to one admitted host identity and dialog session. */
+  sharingContext: string | null;
+  sharingEnabled: boolean | null;
+  sharingChecking: boolean;
+  sharingEnabling: boolean;
+  sharingError: string | null;
   /** Hover-card rosters by workspace id; absent until a card asks for one. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
@@ -143,6 +150,11 @@ export interface WorkspaceShareState {
 
 export const initialState: WorkspaceShareState = {
   integrationAuth: { github: false, gitlab: false },
+  sharingContext: null,
+  sharingEnabled: null,
+  sharingChecking: false,
+  sharingEnabling: false,
+  sharingError: null,
   byWorkspaceId: {},
   open: false,
   workspaceId: null,
@@ -172,6 +184,16 @@ export const initialState: WorkspaceShareState = {
 export const openShareDialog = createAction<
   [payload: { workspaceId: string; workspaceTitle: string }]
 >('workspaceShare/openDialog');
+
+/** Recheck the current host without resetting the dialog's selections. */
+export const sharePrerequisitesRequested = createAction('workspaceShare/prerequisitesRequested');
+export const shareEnableRequested = createAction('workspaceShare/enableRequested');
+export const sharePrerequisitesStarted = createAction<
+  [payload: { target: WorkspaceShareTarget; enabling: boolean }]
+>('workspaceShare/prerequisitesStarted');
+export const sharePrerequisitesSettled = createAction<
+  [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
+>('workspaceShare/prerequisitesSettled');
 
 /** Close the Share dialog and drop every loaded row. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
@@ -238,9 +260,16 @@ export const shareInviteCreateRequested = createAction<
   [payload: { pinLogin: string; pin?: InvitePin }]
 >('workspaceShare/inviteCreateRequested');
 
-/** Saga: the invite for `target` / `request` was created; the link is shown once. */
+/** Saga: creation succeeded; publish the secret-free row before refreshing the roster. */
 export const shareInviteCreated = createAction<
-  [payload: { target: WorkspaceShareTarget; request: number; link: WorkspaceShareCreatedLink }]
+  [
+    payload: {
+      target: WorkspaceShareTarget;
+      request: number;
+      link: WorkspaceShareCreatedLink;
+      invite: WorkspaceInvite;
+    },
+  ]
 >('workspaceShare/inviteCreated');
 
 /** Saga: invite creation failed (`error` already localized). */
@@ -372,6 +401,36 @@ workspaceShareReducer.with(closeShareDialog, (state) => ({
   byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
+workspaceShareReducer.with(
+  sharePrerequisitesStarted,
+  (state, { payload: [{ target, enabling }] }) => {
+    if (!targets(state, target) || state.withheld || !target.authority) return state;
+    return {
+      ...state,
+      sharingContext: target.authority,
+      createError: enabling ? null : state.createError,
+      sharingEnabled: null,
+      sharingChecking: !enabling,
+      sharingEnabling: enabling,
+      sharingError: null,
+    };
+  },
+);
+workspaceShareReducer.with(
+  sharePrerequisitesSettled,
+  (state, { payload: [{ target, enabled, error }] }) => {
+    if (!targets(state, target) || state.withheld || state.sharingContext !== target.authority)
+      return state;
+    return {
+      ...state,
+      sharingEnabled: enabled,
+      createError: state.sharingEnabling && enabled === true ? null : state.createError,
+      sharingChecking: false,
+      sharingEnabling: false,
+      sharingError: error,
+    };
+  },
+);
 workspaceShareReducer.with(shareRosterRetired, (state, { payload: [{ workspaceId }] }) => {
   const byWorkspaceId = { ...state.byWorkspaceId };
   delete byWorkspaceId[workspaceId];
@@ -487,7 +546,16 @@ workspaceShareReducer.with(shareCommandDiscarded, (state, { payload: [target, op
 });
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
-  return { ...withoutRows(state), withheld: true, loadStatus: 'loaded', loadError: null };
+  return {
+    ...withoutRows(state),
+    sharingEnabled: null,
+    sharingChecking: false,
+    sharingEnabling: false,
+    sharingError: null,
+    withheld: true,
+    loadStatus: 'loaded',
+    loadError: null,
+  };
 });
 workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
   if (!state.open || state.withheld) return state;
@@ -500,13 +568,18 @@ workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareInviteCreated,
-  (state, { payload: [{ target, request, link }] }) => {
+  (state, { payload: [{ target, request, link, invite }] }) => {
     if (!targets(state, target) || state.createRequest !== request || state.withheld) return state;
     return {
       ...state,
       creating: false,
       createError: null,
       createdLink: link,
+      invites: upsertItem(state.invites, invite),
+      guestCount:
+        state.guestCount === null || getItem(state.invites, invite.id)
+          ? state.guestCount
+          : state.guestCount + 1,
       mutationGeneration: state.mutationGeneration + 1,
     };
   },

@@ -19,6 +19,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
   owner: '007-B1',
   callers: [
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/discussions/components/DiscussionMicrophone.svelte',
     'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',

@@ -36,7 +36,7 @@ import {
   type RecoveryNotification,
 } from '$shared/event-recovery/session';
 import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { readInviteLink, storeInviteLink } from '$features/workspace-sharing/invite-link-vault';
+import { readInviteLink, vaultInviteLinks } from '$features/workspace-sharing/invite-link-vault';
 import {
   collaborationKey,
   installCollaborationRecovery,
@@ -206,7 +206,16 @@ describe('collaboration loss recovery', () => {
     h.dispatch(shareRosterLoaded({ workspaceId: 'ws', members: [member] }));
     h.dispatch(hostMembershipOpened({ session: 'host', context: h.context }));
     h.dispatch(hostUserPresenceStarted(selectHostUserPresenceSession.select(h.state())!));
-    storeInviteLink('revoked', 'secret');
+    vaultInviteLinks([
+      {
+        id: 'revoked',
+        workspaceId: 'ws',
+        createdByPrincipalId: 'owner',
+        createdAt: '2026-10-13T00:00:00Z',
+        expiresAt: '2026-10-20T00:00:00Z',
+        url: 'secret',
+      },
+    ]);
     await h.subscribe(['*'], '');
     h.loss('lease-1', '1', null);
     await settle();

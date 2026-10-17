@@ -1119,6 +1119,17 @@ export const PresenceReportSchema = z.object({
     .object({ agentId: z.string().min(1, 'Agent id is required') })
     .nullable()
     .optional(),
+  discussionTyping: z
+    .object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      conversationId: z
+        .string()
+        .min(1)
+        .refine((id) => id !== 'new')
+        .optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const ConnectionsCaptureFingerprintSchema = z.object({

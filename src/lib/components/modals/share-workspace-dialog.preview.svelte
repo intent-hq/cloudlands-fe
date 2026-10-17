@@ -21,6 +21,14 @@
     members: WorkspaceMember[];
     invites: WorkspaceInvite[];
     principals: HostPrincipal[];
+    sharingEnabled?: boolean | null;
+    sharingChecking?: boolean;
+    sharingEnabling?: boolean;
+    sharingError?: string | null;
+    canAdministerHost?: boolean;
+    workspaceTitle?: string;
+    guestLimit?: number;
+    inviteDelayMs?: number;
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -109,12 +117,39 @@
     invites: [gitlabPinnedInvite, githubPinnedInvite, openInvite],
     principals: [knownGuest],
   };
+  const sharingSetup: ShareDialogPreviewProps = {
+    ...bothConnected,
+    gitlabConnected: false,
+    gitlabEnabled: false,
+    identityProvider: 'github',
+    members: [{ ...owner, displayName: 'Sam Breed', login: 'wookiehangover' }],
+    invites: [],
+    principals: [],
+    sharingEnabled: false,
+    workspaceTitle: 'Intent Site',
+    guestLimit: 10,
+  };
 
   export const preview = definePreview<ShareDialogPreviewProps>({
     id: 'share-workspace-dialog',
     title: 'Share workspace dialog (identity seam)',
     defaultState: 'both-connected',
     states: {
+      'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
+      'link-slow': { props: { ...sharingSetup, sharingEnabled: true, inviteDelayMs: 750 } },
+      'sharing-disabled': { props: sharingSetup },
+      'sharing-checking': {
+        props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
+      },
+      'sharing-enabling': { props: { ...sharingSetup, sharingEnabling: true } },
+      'sharing-error': {
+        props: {
+          ...sharingSetup,
+          sharingError:
+            'The sharing service is missing. Install Tailcat, restart the app, and try again.',
+        },
+      },
+      'sharing-admin-required': { props: { ...sharingSetup, canAdministerHost: false } },
       'both-connected': { props: bothConnected },
       'gitlab-lab-off': { props: { ...bothConnected, gitlabEnabled: false } },
       'gitlab-only': {
@@ -147,7 +182,19 @@
 <script lang="ts">
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
 
+  import type { WorkspaceShareCreatedLink } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   let props: ShareDialogPreviewProps = $props();
+  let query = $state('');
+  let addedInvites = $state<WorkspaceInvite[]>([]);
+  let createdLink = $state<WorkspaceShareCreatedLink | null>(null);
+  let creating = $state(false);
+  const previewUsers = ['alex', 'alexchen', 'alex-k'].map((login, index) => ({
+    login,
+    githubUserId: index + 1,
+    avatarUrl: null,
+    htmlUrl: null,
+  }));
+  const suggestions = $derived(query ? previewUsers : []);
 </script>
 
 <div class="relative min-h-[1000px] w-full">
@@ -157,8 +204,48 @@
     workspaceTitle="Polish workspace hover cards"
     gitlabHost={GITLAB_HOST}
     canManage
-    guestCount={3}
+    guestCount={props.members.length - 1 + addedInvites.length}
     guestLimit={5}
     {...props}
+    invites={[...props.invites, ...addedInvites]}
+    {createdLink}
+    {creating}
+    inviteLinks={Object.fromEntries(
+      addedInvites.map((invite) => [invite.id, `intent://invite?preview=${invite.id}`]),
+    )}
+    userSearchQuery={query}
+    userSuggestions={suggestions}
+    onSearchUsers={(value) => (query = value)}
+    onCreateInvite={async (login, pin) => {
+      creating = true;
+      // Fixture latency makes the real in-button pending state reviewable.
+      if (props.inviteDelayMs)
+        await new Promise((resolve) => setTimeout(resolve, props.inviteDelayMs));
+      const id = `preview-${addedInvites.length}`;
+      const userId = previewUsers.find((user) => user.login === login)?.githubUserId ?? 1;
+      addedInvites = [
+        ...addedInvites,
+        {
+          id,
+          workspaceId: WORKSPACE_ID,
+          createdByPrincipalId: owner.principalId,
+          pinLogin: login || undefined,
+          pinGithubUserId: login ? userId : undefined,
+          pinIdentity: login
+            ? {
+                provider: pin?.provider ?? 'github',
+                host: pin?.host ?? 'github.com',
+                externalUserId: String(userId),
+              }
+            : undefined,
+          createdAt: '2026-10-15T00:00:00Z',
+          expiresAt: '2099-10-15T00:00:00Z',
+          reusable: !login,
+        },
+      ];
+      createdLink = { inviteId: id, pinLogin: login || undefined };
+      creating = false;
+    }}
+    onRevokeInvite={(id) => (addedInvites = addedInvites.filter((invite) => invite.id !== id))}
   />
 </div>

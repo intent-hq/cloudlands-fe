@@ -1,4 +1,7 @@
 {
+  "workspace_share_guestCount_label": "*",
+  "workspace_discussion_list_label": ["fr"],
+  "workspace_discussion_composer_label": ["fr"],
   "home_assistant": ["fr"],
   "home_repository": ["de"],
   "home_agents": ["fr"],

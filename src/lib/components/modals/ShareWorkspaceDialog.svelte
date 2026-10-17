@@ -1,56 +1,20 @@
 <script lang="ts">
-  /**
-   * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
-   *
-   * Offers the guests already authed on this host (`principal.list`, minus
-   * the current roster) in an "Invite an existing user" dropdown whose
-   * Invite attaches the pick directly (`workspace.members.add`, no link);
-   * creates `intent://invite` links (optionally pinned to a GitHub login;
-   * an unpinned link is reusable until it expires or is revoked, a pinned
-   * one is single-use), lists the open invites with Copy link + Revoke, and
-   * lists the member roster with Remove. A reusable row shows the join count
-   * ("N joined") from the daemon's `reusable` / `redemptionCount`;
-   * a daemon that predates those fields (every link single-use) shows the
-   * pinned presentation for every row. Gated on a forge connection: members
-   * are identified by their GitHub or GitLab account, so a daemon with neither
-   * configured cannot mint invites and the dialog shows a connect-first state
-   * instead. With both forges connected the pin field gains a provider
-   * selector (seeded from the host's identity forge); with one, the pin is
-   * sent bare and the daemon resolves it on its own identity forge. Member
-   * rows carry the identity's forge icon and `@login` (GitLab rows name the
-   * instance). Everything provider-aware is gated on `identitySeamSupported`:
-   * against an older daemon the dialog is the GitHub-only one.
-   *
-   * Owner-only: `canManage` is false for a collaborator connection (or once
-   * the daemon refused an owner-only method with `-32003`), and the dialog then
-   * renders the owner-only notice instead of any control or row. Member Remove
-   * is confirmation-gated (inline confirm on the row).
-   *
-   * The pin field is a GitHub user typeahead: typing dispatches a debounced
-   * `github.users.search` through `onSearchUsers` and the suggestions arrive
-   * back as props from the github-user-search slice; picking a row pins the
-   * invite to that login (rendered as a chip), free text still submits as-is.
-   *
-   * The workspace's guest cap (`guestCount` / `guestLimit` from
-   * `workspace.members.list`, intent-hq/intentd#1917) is shown as
-   * "Guests n / N"; at the cap Create is disabled with the reason inline.
-   * The daemon still enforces the cap (`guest-limit`) for a raced create.
-   *
-   * Fully presentational: every row and in-flight flag arrives from the
-   * workspace-share slice through the Redux host, and user intent (create /
-   * revoke / remove / add) goes back as callbacks the host dispatches. Only
-   * the pin input draft, the existing-guest pick, the pending Remove
-   * confirmation, and the clipboard copy live
-   * here. Invite links never ride the store: the host resolves them from the
-   * invite-link vault into `inviteLinks` (by invite id), and a row with no
-   * link (the daemon's Remote Access listener is down) has its Copy disabled.
+  /** Audience selection and clipboard intent are local UI state. Membership,
+   * invitations, permissions and setup arrive from the Redux host. A selection
+   * never grants access; Copy link creates or reuses an invite for that audience.
    */
 
+  import WorkspaceSharingSetup from '$features/workspace-sharing/components/WorkspaceSharingSetup.svelte';
   import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+  import {
+    findCopyableInvite,
+    type InviteAudience,
+  } from '$features/workspace-sharing/utils/invite-audience';
   import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
   import { tick, untrack } from 'svelte';
+  import { animatedHeight } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import { faCopy, faLink, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faCopy, faGlobe, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -82,6 +46,8 @@
 
   /** Rows shown in the pin typeahead (the daemon default page size). */
   const MAX_USER_SUGGESTIONS = 8;
+  const sharingActionStyle =
+    '--color-primary: var(--color-foreground); --color-primary-foreground: var(--color-background)';
 
   interface Props {
     open?: boolean;
@@ -97,6 +63,11 @@
     gitlabHost?: string;
     gitlabStatusReady?: boolean;
     canAdministerHost?: boolean;
+    sharingEnabled?: boolean | null;
+    sharingChecking?: boolean;
+    sharingEnabling?: boolean;
+    sharingError?: string | null;
+    onEnableSharing?: () => void;
     /**
      * The connected daemon serves the identity seam — `pinProvider` /
      * `pinHost` on `workspace.invite.create` and `identity` on member rows.
@@ -173,6 +144,11 @@
     gitlabHost = '',
     gitlabStatusReady = true,
     canAdministerHost = true,
+    sharingEnabled = true,
+    sharingChecking = false,
+    sharingEnabling = false,
+    sharingError = null,
+    onEnableSharing,
     identitySeamSupported = false,
     hostMembershipSupported = false,
     identityProvider = null,
@@ -209,6 +185,11 @@
   const busy = $derived(
     revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
   );
+  const sharingReady = $derived(
+    (canAdministerHost ? sharingEnabled === true : sharingEnabled !== false) &&
+      !sharingChecking &&
+      !sharingEnabling,
+  );
   /** GitLab counts as an identity forge only once the daemon serves the seam. */
   const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
   /** Any forge identity on the host lets it mint invites. */
@@ -221,9 +202,9 @@
   );
   /** The forge the pin is resolved on; `null` while no forge is connected. */
   const pinProvider = $derived.by((): IdentityProvider | null => {
+    if (pinProviderDraft) return pinProviderDraft;
     if (!forgeConnected) return null;
     if (pinProviderChoosable) {
-      if (pinProviderDraft) return pinProviderDraft;
       if (
         identityProvider &&
         (!hostMembershipSupported || identityProvider !== 'gitlab' || gitlabEnabled)
@@ -238,17 +219,21 @@
     pinProvider === 'github' && (!hostMembershipSupported || githubConnected),
   );
   let pinHostDraft = $state('gitlab.com');
-  const pinProviderItems = $derived(
-    [
-      { value: 'github', label: m.workspace_share_pinProvider_github_label() },
-      {
-        value: 'gitlab',
-        label: m.workspace_share_pinProvider_gitlab_label({
-          host: hostMembershipSupported ? pinHostDraft : gitlabHost,
-        }),
-      },
-    ].filter((item) => item.value !== 'gitlab' || gitlabEnabled || pinProvider === 'gitlab'),
-  );
+  let restricted = $state(false);
+  const audienceItems = $derived([
+    { value: 'anyone', label: m.workspace_share_invite_anyone_label(), icon: faGlobe },
+    ...((forgeConnected || restricted) && (pinProviderChoosable || pinProvider === 'github')
+      ? [{ value: 'github', label: m.workspace_share_audienceGithub_label(), icon: faGithub }]
+      : []),
+    ...((forgeConnected || restricted) &&
+    (pinProviderChoosable || pinProvider === 'gitlab') &&
+    (gitlabEnabled || pinProvider === 'gitlab')
+      ? [{ value: 'gitlab', label: m.workspace_share_audienceGitlab_label(), icon: faGitlab }]
+      : []),
+  ]);
+  const audienceValue = $derived(restricted ? (pinProvider ?? 'anyone') : 'anyone');
+  let pendingCopy = $state<{ audience: InviteAudience; previousId?: string } | null>(null);
+  let copying = $state(false);
   /** The cap is known and spent: no further invite can be minted. */
   const atGuestCap = $derived(
     guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
@@ -262,6 +247,30 @@
   let pinProviderDraft = $state<IdentityProvider | ''>('');
   /** Suggestion the user picked; wins over the free-text draft on submit. */
   let selectedUser = $state<GithubUserSearchItem | null>(null);
+  const audience = $derived<InviteAudience>({
+    workspaceId: workspaceId ?? '',
+    login: restricted ? (selectedUser?.login ?? pinLogin.trim()) : '',
+    provider: restricted ? (pinProvider ?? 'github') : 'github',
+    externalUserId: restricted && selectedUser ? String(selectedUser.githubUserId) : undefined,
+    host: pinProvider === 'gitlab' ? (selectedPinHost ?? '') : 'github.com',
+  });
+  const matchingInvite = $derived(findCopyableInvite(invites, inviteLinks, audience));
+  const linkActionLabel = $derived(
+    restricted && (creating || pendingCopy || !matchingInvite)
+      ? m.workspace_share_createRecipientLink_label()
+      : m.workspace_share_copyLink_label(),
+  );
+  const recipientReady = $derived(
+    !restricted ||
+      (!!audience.login &&
+        (hostMembershipSupported ||
+          (pinProvider === 'github' ? githubConnected : gitlabIdentityConnected)) &&
+        (!pinTypeahead || !!selectedUser) &&
+        (pinProvider !== 'gitlab' ||
+          (hostMembershipSupported
+            ? !!selectedPinHost && gitlabEnabled
+            : gitlabStatusReady && !!gitlabHost))),
+  );
   /** Escape closes the list until the next keystroke. */
   let suggestionsDismissed = $state(false);
   /** Highlighted suggestion row; -1 means none. */
@@ -306,7 +315,16 @@
   const visibleSuggestions = $derived(
     suggestionsCurrent ? userSuggestions.slice(0, MAX_USER_SUGGESTIONS) : [],
   );
-  const suggestionsOpen = $derived(pinSearchable && !selectedUser && !suggestionsDismissed);
+  const suggestionsOpen = $derived(
+    sharingReady && restricted && pinSearchable && !selectedUser && !suggestionsDismissed,
+  );
+
+  $effect(() => {
+    if (!sharingReady) {
+      closeSelectMenus();
+      dismissSuggestions();
+    }
+  });
 
   $effect(() => {
     if (suggestionsOpen && activeSuggestion >= 0) {
@@ -324,6 +342,8 @@
   }
 
   function resetPinDraft() {
+    restricted = false;
+    pendingCopy = null;
     pinLogin = '';
     pinProviderDraft = '';
     pinHostDraft = 'gitlab.com';
@@ -335,6 +355,9 @@
 
   function handlePinProviderChange(value: string) {
     if (value === 'gitlab' && !gitlabEnabled) return;
+    restricted = value !== 'anyone';
+    pinLogin = '';
+    pendingCopy = null;
     pinProviderDraft = value === 'github' || value === 'gitlab' ? value : '';
     selectedUser = null;
     suggestionsDismissed = false;
@@ -342,7 +365,7 @@
     onSearchUsers?.('');
   }
 
-  // Drafts reset when the dialog retargets and after a link is minted.
+  // Reset drafts and pending clipboard intent when the dialog closes or retargets.
   $effect(() => {
     void open;
     void workspaceId;
@@ -352,7 +375,21 @@
     closeSelectMenus();
   });
   $effect(() => {
-    if (createdLink) untrack(resetPinDraft);
+    if (!open || !canManage || !sharingReady || createError) {
+      pendingCopy = null;
+      return;
+    }
+    const request = pendingCopy;
+    if (!request || creating || !createdLink || createdLink.inviteId === request.previousId) return;
+    const invite = findCopyableInvite(
+      invites.filter((item) => item.id === createdLink.inviteId),
+      inviteLinks,
+      request.audience,
+    );
+    if (!invite) return;
+    pendingCopy = null;
+    untrack(() => void clearSelectedUser());
+    void copyLink(inviteLinks[invite.id]);
   });
 
   function handlePinInput(value: string) {
@@ -401,34 +438,55 @@
   async function clearSelectedUser() {
     selectedUser = null;
     pinLogin = '';
+    dismissSuggestions();
+    onSearchUsers?.('');
     await tick();
     pinInput?.focus();
   }
 
   function createInvite() {
-    if (!workspaceId || !canManage || creating || atGuestCap) return;
-    const login = selectedUser ? selectedUser.login : pinLogin.trim();
-    let pin: InvitePin | undefined;
     if (
-      login &&
-      pinProvider === 'gitlab' &&
-      (hostMembershipSupported
-        ? !selectedPinHost || !gitlabEnabled
-        : !gitlabStatusReady || !gitlabHost)
+      !open ||
+      !workspaceId ||
+      !canManage ||
+      creating ||
+      pendingCopy ||
+      copying ||
+      !sharingReady ||
+      !recipientReady
     )
       return;
-    if (login && (hostMembershipSupported || identitySeamSupported) && pinProvider) {
-      pin =
-        pinProvider === 'gitlab'
-          ? { provider: 'gitlab', host: selectedPinHost! }
-          : { provider: 'github' };
+    // Recheck expiry on click, including when the dialog has stayed open a long time.
+    const existing = findCopyableInvite(invites, inviteLinks, audience);
+    if (existing) {
+      void copyLink(inviteLinks[existing.id]);
+      return;
     }
-    if (pin) onCreateInvite?.(login, pin);
-    else onCreateInvite?.(login);
+    if (atGuestCap || !onCreateInvite) return;
+    pendingCopy = { audience: { ...audience }, previousId: createdLink?.inviteId };
+    const login = audience.login;
+    const pin: InvitePin | undefined =
+      login && (hostMembershipSupported || identitySeamSupported)
+        ? {
+            provider: audience.provider,
+            ...(audience.provider === 'gitlab' ? { host: audience.host } : {}),
+          }
+        : undefined;
+    if (pin) onCreateInvite(login, pin);
+    else onCreateInvite(login);
   }
 
   function inviteExistingGuest() {
-    if (!workspaceId || !canManage || loading || busy || atGuestCap || !selectedPrincipal) return;
+    if (
+      !workspaceId ||
+      !canManage ||
+      !sharingReady ||
+      loading ||
+      busy ||
+      atGuestCap ||
+      !selectedPrincipal
+    )
+      return;
     onAddMember?.(selectedPrincipal.principalId);
   }
 
@@ -437,11 +495,14 @@
   }
 
   async function copyLink(url: string) {
+    copying = true;
     try {
       await navigator.clipboard.writeText(url);
       notify.success(m.workspace_share_linkCopied_toast());
     } catch {
       notify.error(m.workspace_share_linkCopyFailed_error());
+    } finally {
+      copying = false;
     }
   }
 
@@ -534,561 +595,602 @@
   }
 </script>
 
-{#snippet userAvatar(user: GithubUserSearchItem)}
-  <PrincipalAvatar
-    avatarUrl={user.avatarUrl}
-    label={user.login}
-    size={24}
-    testid="share-pin-avatar"
-  />
+{#snippet userAvatar(user: GithubUserSearchItem, size: number = 24)}
+  <PrincipalAvatar avatarUrl={user.avatarUrl} label={user.login} {size} testid="share-pin-avatar" />
 {/snippet}
 
 {#if open}
   <ContentDialog
     {open}
     bind:contentRef={dialogContent}
-    title={m.workspace_share_dialog_title()}
+    title={sharingReady && workspaceTitle
+      ? m.workspace_share_namedTitle_label({ title: workspaceTitle })
+      : m.workspace_share_dialog_title()}
     titleId="share-workspace-title"
     closeLabel={m.workspace_share_close_ariaLabel()}
     onClose={() => onClose?.()}
     onkeydowncapture={handleKeydown}
   >
-    <div class="space-y-5 min-w-0" data-testid="share-workspace-dialog">
-      {#if !canManage}
-        <p class="text-sm text-subtle" role="status" data-testid="share-owner-only">
-          {m.workspace_share_ownerOnly_notice()}
-        </p>
-      {:else}
-        {#if !forgeConnected && canAdministerHost}
-          <div
-            class="flex flex-col items-start gap-3 rounded border border-border bg-muted/50 p-4"
-            data-testid="share-github-required"
-          >
-            <div class="flex items-center gap-2 text-sm font-medium">
-              <Fa icon={faGithub} />
-              {#if gitlabEnabled}<Fa icon={faGitlab} />{/if}
-              {gitlabEnabled
-                ? m.workspace_share_forgeRequired_title()
-                : m.workspace_share_githubRequired_title()}
-            </div>
-            <p class="text-sm text-subtle">
-              {gitlabEnabled
-                ? m.workspace_share_forgeRequired_description()
-                : m.workspace_share_githubRequired_description()}
-            </p>
-            <div class="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
-                {m.workspace_share_connectGithub_label()}
-              </Button>
-              {#if gitlabEnabled}
-                <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
-                  {m.workspace_share_openConnections_label()}
-                </Button>
-              {/if}
-            </div>
-          </div>
-        {/if}
-        <p class="text-sm text-subtle">
-          {m.workspace_share_dialog_description({ title: workspaceTitle })}
-        </p>
-
-        {#if principals.length > 0 || loading || selectedPrincipalId}
-          <section
-            class="space-y-2"
-            aria-labelledby="share-existing-guest-label"
-            data-testid="share-existing-guest"
-          >
-            <Label id="share-existing-guest-label" for="share-existing-guest">
-              {m.workspace_share_existingGuest_label()}
-            </Label>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0 flex-1">
-                <Select.Root
-                  bind:open={existingGuestMenuOpen}
-                  bind:value={selectedPrincipalId}
-                  items={principalItems}
-                  disabled={busy || loading}
-                >
-                  <Select.Trigger
-                    id="share-existing-guest"
-                    aria-busy={loading || busy}
-                    data-testid="share-existing-guest-trigger"
-                  >
-                    <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
-                  </Select.Trigger>
-                  <Select.Content class="z-(--layer-modal)">
-                    {#each principals as principal (principal.principalId)}
-                      <Select.Item value={principal.principalId} label={principalLabel(principal)}>
-                        <span class="flex min-w-0 items-center gap-2">
-                          <PrincipalAvatar
-                            avatarUrl={principal.avatarUrl}
-                            label={principalLabel(principal)}
-                            size={20}
-                          />
-                          <span class="truncate">{principalLabel(principal)}</span>
-                        </span>
-                      </Select.Item>
-                    {/each}
-                  </Select.Content>
-                </Select.Root>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!selectedPrincipal || loading || busy || atGuestCap}
-                title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
-                onclick={inviteExistingGuest}
-                data-testid="share-existing-guest-invite"
-              >
-                <Fa icon={faUserPlus} />
-                {addingPrincipalId !== null
-                  ? m.workspace_share_existingGuest_inviting_label()
-                  : m.workspace_share_existingGuest_invite_label()}
-              </Button>
-            </div>
-            <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
-            {#if loading}<p role="status" class="text-xs text-subtle">
-                {m.workspace_share_loading_label()}
-              </p>{/if}
-          </section>
-        {:else}
-          <p role="status" class="text-xs text-subtle">
-            {m.workspace_share_existingGuest_empty()}
+    <div use:animatedHeight={{ tier: 'moderate' }} data-testid="share-dialog-height">
+      <div class="space-y-4.5 min-w-0" data-testid="share-workspace-dialog">
+        {#if !canManage}
+          <p class="text-sm text-subtle" role="status" data-testid="share-owner-only">
+            {m.workspace_share_ownerOnly_notice()}
           </p>
-        {/if}
-
-        <form
-          class="space-y-2"
-          onsubmit={(e) => {
-            e.preventDefault();
-            createInvite();
-          }}
-        >
-          {#if forgeConnected}
-            <Label id="share-pin-login-label" for="share-pin-login">
-              {pinProvider === 'gitlab'
-                ? m.workspace_share_pinLogin_gitlab_label()
-                : m.workspace_share_pinLogin_label()}
-            </Label>
-          {/if}
-          {#if hostMembershipSupported && pinProvider === 'gitlab'}
-            <Label for="share-pin-host">{m.collaboration_pin_instance_label()}</Label>
-            <Input id="share-pin-host" bind:value={pinHostDraft} disabled={creating} />
-          {/if}
-          <div class="flex flex-wrap items-center gap-2">
-            {#if pinProviderChoosable && (gitlabEnabled || pinProvider === 'gitlab')}
-              <div class="w-40 shrink-0">
-                <Select.Root
-                  bind:open={pinProviderMenuOpen}
-                  value={pinProvider ?? ''}
-                  onchange={handlePinProviderChange}
-                  items={pinProviderItems}
-                  disabled={creating}
-                >
-                  <Select.Trigger
-                    id="share-pin-provider"
-                    aria-label={m.workspace_share_pinProvider_ariaLabel()}
-                    data-testid="share-pin-provider-trigger"
-                  >
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content class="z-(--layer-modal)">
-                    {#each pinProviderItems as item (item.value)}
-                      <Select.Item
-                        value={item.value}
-                        label={item.label}
-                        disabled={item.value === 'gitlab' && !gitlabEnabled}
-                      >
-                        <span class="flex min-w-0 items-center gap-2">
-                          <Fa icon={item.value === 'gitlab' ? faGitlab : faGithub} />
-                          <span class="truncate">{item.label}</span>
-                        </span>
-                      </Select.Item>
-                    {/each}
-                  </Select.Content>
-                </Select.Root>
+        {:else}
+          {#if !forgeConnected && canAdministerHost}
+            <div
+              class="flex flex-col items-start gap-3 rounded border border-border bg-muted/50 p-4"
+              data-testid="share-github-required"
+            >
+              <div class="flex items-center gap-2 text-sm font-medium">
+                <Fa icon={faGithub} />
+                {#if gitlabEnabled}<Fa icon={faGitlab} />{/if}
+                {gitlabEnabled
+                  ? m.workspace_share_forgeRequired_title()
+                  : m.workspace_share_githubRequired_title()}
               </div>
-            {/if}
-            {#if forgeConnected}
-              {#if selectedUser}
-                <div
-                  class="flex h-(--control-height-medium) min-w-0 flex-1 basis-44 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
-                  role="group"
-                  aria-labelledby="share-pin-login-label"
-                  data-testid="share-pin-selected"
-                  data-login={selectedUser.login}
+              <p class="text-sm text-subtle">
+                {gitlabEnabled
+                  ? m.workspace_share_forgeRequired_description()
+                  : m.workspace_share_githubRequired_description()}
+              </p>
+              <div class="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  style={sharingActionStyle}
+                  size="sm"
+                  onclick={() => onConnectGitHub?.()}
                 >
-                  {@render userAvatar(selectedUser)}
-                  <span class="min-w-0 flex-1 truncate text-sm">@{selectedUser.login}</span>
+                  {m.workspace_share_connectGithub_label()}
+                </Button>
+                {#if gitlabEnabled}
+                  <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
+                    {m.workspace_share_openConnections_label()}
+                  </Button>
+                {/if}
+              </div>
+            </div>
+          {/if}
+          {#if !sharingReady}
+            <p class="text-sm text-subtle">
+              {m.workspace_share_dialog_description({ title: workspaceTitle })}
+            </p>
+          {/if}
+
+          {#if (canAdministerHost && sharingEnabled !== true) || sharingEnabled === false || sharingEnabling || sharingError}
+            <WorkspaceSharingSetup
+              {canAdministerHost}
+              {sharingEnabled}
+              {sharingChecking}
+              {sharingEnabling}
+              {sharingError}
+              {onEnableSharing}
+            />
+          {/if}
+
+          <div
+            hidden={!sharingReady}
+            inert={!sharingReady}
+            class="space-y-4.5"
+            data-testid="share-invite-controls"
+          >
+            {#if principals.length > 0 || loading || selectedPrincipalId}
+              <section
+                class="space-y-2"
+                aria-labelledby="share-existing-guest-label"
+                data-testid="share-existing-guest"
+              >
+                <Label id="share-existing-guest-label" for="share-existing-guest">
+                  {m.workspace_share_existingGuest_label()}
+                </Label>
+                <div class="flex items-center gap-2">
+                  <div class="min-w-0 flex-1">
+                    <Select.Root
+                      bind:open={existingGuestMenuOpen}
+                      bind:value={selectedPrincipalId}
+                      items={principalItems}
+                      disabled={busy || loading}
+                    >
+                      <Select.Trigger
+                        id="share-existing-guest"
+                        aria-busy={loading || busy}
+                        data-testid="share-existing-guest-trigger"
+                      >
+                        <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
+                      </Select.Trigger>
+                      <Select.Content class="z-(--layer-modal)">
+                        {#each principals as principal (principal.principalId)}
+                          <Select.Item
+                            value={principal.principalId}
+                            label={principalLabel(principal)}
+                          >
+                            <span class="flex min-w-0 items-center gap-2">
+                              <PrincipalAvatar
+                                avatarUrl={principal.avatarUrl}
+                                label={principalLabel(principal)}
+                                size={20}
+                              />
+                              <span class="truncate">{principalLabel(principal)}</span>
+                            </span>
+                          </Select.Item>
+                        {/each}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
                   <Button
-                    variant="ghost-light"
-                    size="icon-compact"
-                    iconOnly
-                    class="size-5 rounded-full"
-                    disabled={creating}
-                    onclick={() => void clearSelectedUser()}
-                    aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
-                      login: `@${selectedUser.login}`,
-                    })}
+                    variant="primary"
+                    style={sharingActionStyle}
+                    size="sm"
+                    disabled={!selectedPrincipal || loading || busy || atGuestCap}
+                    title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+                    onclick={inviteExistingGuest}
+                    data-testid="share-existing-guest-invite"
                   >
-                    <Fa icon={faXmark} size="xs" />
+                    <Fa icon={faUserPlus} />
+                    {addingPrincipalId !== null
+                      ? m.workspace_share_existingGuest_inviting_label()
+                      : m.workspace_share_existingGuest_invite_label()}
                   </Button>
                 </div>
-              {:else}
-                <Popover.Root
-                  open={suggestionsOpen}
-                  onOpenChange={(next) => {
-                    if (!next) dismissSuggestions();
-                  }}
-                >
-                  <div bind:this={pinAnchor} class="min-w-0 flex-1 basis-44">
-                    <Input
-                      id="share-pin-login"
-                      bind:this={pinInput}
-                      bind:value={pinLogin}
-                      autocomplete="off"
-                      spellcheck={false}
-                      disabled={creating}
-                      placeholder={pinProvider === 'github'
-                        ? m.workspace_share_pinLogin_placeholder()
-                        : m.workspace_share_pinLogin_gitlab_placeholder()}
-                      role="combobox"
-                      aria-autocomplete="list"
-                      aria-controls="share-pin-suggestions"
-                      aria-expanded={suggestionsOpen}
-                      aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
-                        ? `share-pin-suggestion-${activeSuggestion}`
-                        : undefined}
-                      oninput={(e) => handlePinInput(e.currentTarget.value)}
-                      onkeydown={handlePinKeydown}
-                    />
-                    <Popover.Content
-                      portalProps={{ to: dialogContent ?? undefined }}
-                      customAnchor={pinAnchor}
-                      collisionBoundary={dialogContent}
-                      align="start"
-                      collisionPadding={8}
-                      trapFocus={false}
-                      preventScroll={false}
-                      onOpenAutoFocus={(event) => event.preventDefault()}
-                      onCloseAutoFocus={(event) => event.preventDefault()}
-                      onInteractOutside={keepPinInteraction}
-                      onFocusOutside={(event) => {
-                        keepPinInteraction(event);
-                        if (!event.defaultPrevented) dismissSuggestions();
-                      }}
-                      onEscapeKeydown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        dismissSuggestions();
-                      }}
-                      role="presentation"
-                      class="z-(--layer-modal) w-(--bits-popover-anchor-width) max-h-[min(18rem,var(--bits-popover-content-available-height))] overflow-y-auto"
-                      data-testid="share-pin-suggestions"
-                    >
-                      {#if visibleSuggestions.length > 0}
-                        <div
-                          bind:this={suggestionList}
-                          id="share-pin-suggestions"
-                          role="listbox"
-                          aria-label={m.workspace_share_userSuggestions_ariaLabel()}
-                          class="py-1"
-                        >
-                          {#each visibleSuggestions as user, index (user.login)}
-                            <Button
-                              variant="ghost"
-                              id="share-pin-suggestion-{index}"
-                              role="option"
-                              aria-selected={index === activeSuggestion}
-                              tabindex={-1}
-                              class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
-                              data-testid="share-pin-suggestion"
-                              data-login={user.login}
-                              onpointerdown={(event) => event.preventDefault()}
-                              onclick={() => selectUser(user)}
-                              onmousemove={() => (activeSuggestion = index)}
-                            >
-                              {@render userAvatar(user)}
-                              <span class="truncate">@{user.login}</span>
-                            </Button>
-                          {/each}
-                        </div>
-                      {:else if suggestionsCurrent && userSearchError}
-                        <p
-                          class="px-3 py-2 text-xs text-danger"
-                          role="alert"
-                          data-testid="share-pin-search-error"
-                        >
-                          {userSearchError}
-                        </p>
-                      {:else if !suggestionsCurrent || userSearchLoading}
-                        <p
-                          class="px-3 py-2 text-xs text-subtle"
-                          role="status"
-                          data-testid="share-pin-searching"
-                        >
-                          {m.workspace_share_userSearch_searching_label()}
-                        </p>
-                      {:else}
-                        <p
-                          class="px-3 py-2 text-xs text-subtle"
-                          role="status"
-                          data-testid="share-pin-no-results"
-                        >
-                          {m.workspace_share_userSearch_noResults_label()}
-                        </p>
-                      {/if}
-                    </Popover.Content>
-                  </div>
-                </Popover.Root>
-              {/if}
+                <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
+                {#if loading}<p role="status" class="text-xs text-subtle">
+                    {m.workspace_share_loading_label()}
+                  </p>{/if}
+              </section>
             {/if}
-            <Button
-              type="submit"
-              variant="secondary"
-              size="sm"
-              disabled={creating ||
-                atGuestCap ||
-                (!!(selectedUser?.login || pinLogin.trim()) &&
-                  pinProvider === 'gitlab' &&
-                  (hostMembershipSupported
-                    ? !selectedPinHost || !gitlabEnabled
-                    : !gitlabStatusReady || !gitlabHost))}
-              title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+
+            <form
+              class="space-y-2"
+              onsubmit={(e) => {
+                e.preventDefault();
+                createInvite();
+              }}
             >
-              <Fa icon={faLink} />
-              {creating ? m.workspace_share_creating_label() : m.workspace_share_createLink_label()}
-            </Button>
-          </div>
-          {#if atGuestCap}
-            <p class="text-xs text-subtle" role="status" data-testid="share-guest-cap-reached">
-              {m.workspace_share_guestLimitReached_notice()}
-            </p>
-          {/if}
-          {#if createError}
-            <p class="text-xs text-danger" role="alert" data-testid="share-create-error">
-              {createError}
-            </p>
-          {/if}
-        </form>
-
-        {#if createdLink && inviteLink(createdLink.inviteId)}
-          {@const createdUrl = inviteLink(createdLink.inviteId) ?? ''}
-          <div
-            class="space-y-2 rounded border border-border bg-muted/50 p-3"
-            data-testid="share-created-link"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-medium">{m.workspace_share_newLink_label()}</span>
-              <span class="text-xs text-subtle">{inviteAudience(createdLink)}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <code
-                class="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs"
-                data-testid="share-created-link-url">{createdUrl}</code
-              >
-              <Button variant="secondary" size="sm" onclick={() => void copyLink(createdUrl)}>
-                <Fa icon={faCopy} />
-                {m.workspace_share_copyLink_label()}
-              </Button>
-            </div>
-          </div>
-        {/if}
-
-        {#if loadError}
-          <p class="text-sm text-danger" role="alert">{loadError}</p>
-        {/if}
-        {#if actionError}
-          <p class="text-sm text-danger" role="alert" data-testid="share-action-error">
-            {actionError}
-          </p>
-        {/if}
-
-        {#if invites.length > 0}
-          <section class="space-y-2" aria-label={m.workspace_share_openInvites_label()}>
-            <h3 class="type-caption font-medium text-subtle">
-              {m.workspace_share_openInvites_label()}
-            </h3>
-            <ListView
-              virtualize={false}
-              items={invites}
-              getKey={(invite) => invite.id}
-              getText={(invite) => inviteAudience(invite)}
-              ariaLabel={m.workspace_share_openInvites_label()}
-              class="overflow-visible rounded border border-border"
-            >
-              {#snippet row({ item: invite })}
-                <div
-                  class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
-                  data-testid="share-invite-row"
-                  data-invite-id={invite.id}
-                >
-                  <div class="min-w-0 flex-1 basis-40">
-                    <div class="break-words text-sm">{inviteAudience(invite)}</div>
-                    <div class="text-xs text-subtle" data-testid="share-invite-detail">
-                      {inviteDetail(invite)}
-                    </div>
-                  </div>
-                  <div class="ml-auto flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost-light"
-                      size="sm"
-                      disabled={!inviteLink(invite.id)}
-                      title={inviteLink(invite.id)
-                        ? undefined
-                        : m.workspace_share_linkUnavailable_tooltip()}
-                      onclick={() => copyInvite(invite)}
-                      aria-label={m.workspace_share_copyInvite_ariaLabel({
-                        audience: inviteAudience(invite),
-                      })}
-                      data-testid="share-invite-copy"
+              <div class="flex flex-wrap items-center gap-2">
+                <div class={restricted ? 'w-full' : 'min-w-0 flex-1 basis-60'}>
+                  <Select.Root
+                    bind:open={pinProviderMenuOpen}
+                    value={audienceValue}
+                    onchange={handlePinProviderChange}
+                    items={audienceItems}
+                    disabled={creating || !!pendingCopy || copying}
+                  >
+                    <Select.Trigger
+                      aria-label={m.workspace_share_audience_ariaLabel()}
+                      data-testid="share-audience-trigger"
                     >
-                      <Fa icon={faCopy} />
-                      {m.workspace_share_copyLink_label()}
-                    </Button>
-                    <Button
-                      variant="ghost-light"
-                      size="sm"
-                      disabled={busy}
-                      onclick={() => revokeInvite(invite.id)}
-                      aria-label={m.workspace_share_revoke_ariaLabel({
-                        audience: inviteAudience(invite),
-                      })}
-                    >
-                      {m.workspace_share_revoke_label()}
-                    </Button>
-                  </div>
-                </div>
-              {/snippet}
-            </ListView>
-          </section>
-        {/if}
-
-        <section class="space-y-2" aria-label={m.workspace_share_members_label()}>
-          <div class="flex items-baseline justify-between gap-2">
-            <h3 class="type-caption font-medium text-subtle">
-              {m.workspace_share_members_label()}
-            </h3>
-            {#if guestCount !== null && guestLimit !== null}
-              <span
-                class="text-xs text-subtle"
-                data-testid="share-guest-count"
-                data-guest-count={guestCount}
-                data-guest-limit={guestLimit}
-              >
-                {m.workspace_share_guests_label({
-                  count: formatInteger(guestCount),
-                  limit: formatInteger(guestLimit),
-                })}
-              </span>
-            {/if}
-          </div>
-          {#if loading && members.length === 0}
-            <p class="text-xs text-subtle" data-testid="share-members-loading">
-              {m.workspace_share_loading_label()}
-            </p>
-          {:else}
-            <ListView
-              virtualize={false}
-              items={members}
-              getKey={(member) => member.principalId}
-              getText={(member) => memberName(member)}
-              ariaLabel={m.workspace_share_members_label()}
-              class="overflow-visible rounded border border-border"
-            >
-              {#snippet row({ item: member })}
-                <div
-                  class="flex items-center justify-between gap-3 px-3 py-2"
-                  data-testid="share-member-row"
-                  data-principal-id={member.principalId}
-                >
-                  <div class="flex min-w-0 items-start gap-2 text-sm">
-                    <span class="first-line-icon">
-                      <PrincipalAvatar
-                        avatarUrl={member.avatarUrl}
-                        label={memberName(member)}
-                        size={24}
+                      <Fa
+                        icon={restricted
+                          ? pinProvider === 'gitlab'
+                            ? faGitlab
+                            : faGithub
+                          : faGlobe}
                       />
-                    </span>
-                    <div class="min-w-0">
-                      <div class="truncate text-sm">{memberName(member)}</div>
-                      <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
-                        {#if member.identity}
-                          <span
-                            class="flex shrink-0 items-center"
-                            data-testid="share-member-identity"
-                            data-provider={member.identity.provider}
-                          >
-                            <Fa icon={providerIcon(member.identity)} size="xs" />
-                          </span>
-                          <span class="truncate">
-                            {m.workspace_share_member_identityRole_label({
-                              handle: memberHandle(member),
-                              role:
-                                member.hostRole === 'member'
-                                  ? m.collaboration_host_member_label()
-                                  : roleLabel(member.role),
-                            })}
-                          </span>
-                        {:else}
-                          <span
-                            >{member.hostRole === 'member'
-                              ? m.collaboration_host_member_label()
-                              : roleLabel(member.role)}</span
-                          >
-                        {/if}
-                      </div>
-                    </div>
-                  </div>
-                  {#if isWorkspaceGuest(member)}
-                    {#if confirmRemovePrincipalId === member.principalId}
-                      <div
-                        class="flex shrink-0 items-center gap-1"
-                        role="group"
-                        aria-label={m.workspace_share_removeMember_confirm_label({
-                          name: memberName(member),
-                        })}
-                        data-testid="share-remove-confirm"
-                      >
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={busy}
-                          onclick={() => confirmRemoveMember(member.principalId)}
-                          aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
-                            name: memberName(member),
-                          })}
+                      <Select.Value />
+                    </Select.Trigger>
+                    <Select.Content class="z-(--layer-modal)">
+                      {#each audienceItems as item (item.value)}
+                        <Select.Item
+                          value={item.value}
+                          label={item.label}
+                          disabled={item.value === 'gitlab' && !gitlabEnabled}
                         >
-                          {m.workspace_share_removeMember_label()}
-                        </Button>
+                          <span class="flex min-w-0 items-center gap-2">
+                            <Fa icon={item.icon} />
+                            <span class="truncate">{item.label}</span>
+                          </span>
+                        </Select.Item>
+                      {/each}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+                {#if restricted && hostMembershipSupported && pinProvider === 'gitlab'}
+                  <div class="w-full space-y-2">
+                    <Label for="share-pin-host">{m.collaboration_pin_instance_label()}</Label>
+                    <Input
+                      id="share-pin-host"
+                      bind:value={pinHostDraft}
+                      disabled={creating || !!pendingCopy}
+                    />
+                  </div>
+                {/if}
+                {#if restricted && forgeConnected}
+                  {#if selectedUser}
+                    <div
+                      class="flex h-(--control-height-medium) min-w-0 flex-1 basis-60 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
+                      role="group"
+                      aria-label={m.workspace_share_pinLogin_placeholder()}
+                      data-testid="share-pin-selected"
+                      data-login={selectedUser.login}
+                    >
+                      <span
+                        class="flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5"
+                      >
+                        {@render userAvatar(selectedUser, 18)}
+                        <span class="min-w-0 truncate text-xs">@{selectedUser.login}</span>
                         <Button
                           variant="ghost-light"
-                          size="sm"
-                          onclick={() => (confirmRemovePrincipalId = null)}
+                          size="icon-compact"
+                          iconOnly
+                          class="size-4 rounded-full [&_svg]:size-3"
+                          disabled={creating || !!pendingCopy}
+                          onclick={() => void clearSelectedUser()}
+                          aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
+                            login: `@${selectedUser.login}`,
+                          })}
                         >
-                          {m.workspace_share_cancel_label()}
+                          <Fa icon={faXmark} size="xs" />
                         </Button>
+                      </span>
+                    </div>
+                  {:else}
+                    <Popover.Root
+                      open={suggestionsOpen}
+                      onOpenChange={(next) => {
+                        if (!next) dismissSuggestions();
+                      }}
+                    >
+                      <div bind:this={pinAnchor} class="min-w-0 flex-1 basis-60">
+                        <Input
+                          id="share-pin-login"
+                          aria-label={pinProvider === 'gitlab'
+                            ? m.workspace_share_pinLogin_gitlab_placeholder()
+                            : m.workspace_share_pinLogin_placeholder()}
+                          bind:this={pinInput}
+                          bind:value={pinLogin}
+                          autocomplete="off"
+                          spellcheck={false}
+                          disabled={creating || !!pendingCopy}
+                          placeholder={pinProvider === 'github'
+                            ? m.workspace_share_pinLogin_placeholder()
+                            : m.workspace_share_pinLogin_gitlab_placeholder()}
+                          role="combobox"
+                          aria-autocomplete="list"
+                          aria-controls="share-pin-suggestions"
+                          aria-expanded={suggestionsOpen}
+                          aria-activedescendant={suggestionsOpen &&
+                          visibleSuggestions[activeSuggestion]
+                            ? `share-pin-suggestion-${activeSuggestion}`
+                            : undefined}
+                          oninput={(e) => handlePinInput(e.currentTarget.value)}
+                          onkeydown={handlePinKeydown}
+                        />
+                        <Popover.Content
+                          portalProps={{ to: dialogContent ?? undefined }}
+                          customAnchor={pinAnchor}
+                          collisionBoundary={dialogContent}
+                          align="start"
+                          collisionPadding={8}
+                          trapFocus={false}
+                          preventScroll={false}
+                          onOpenAutoFocus={(event) => event.preventDefault()}
+                          onCloseAutoFocus={(event) => event.preventDefault()}
+                          onInteractOutside={keepPinInteraction}
+                          onFocusOutside={(event) => {
+                            keepPinInteraction(event);
+                            if (!event.defaultPrevented) dismissSuggestions();
+                          }}
+                          onEscapeKeydown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            dismissSuggestions();
+                          }}
+                          role="presentation"
+                          class="z-(--layer-modal) w-(--bits-popover-anchor-width) max-h-[min(18rem,var(--bits-popover-content-available-height))] overflow-y-auto"
+                          data-testid="share-pin-suggestions"
+                        >
+                          {#if visibleSuggestions.length > 0}
+                            <div
+                              bind:this={suggestionList}
+                              id="share-pin-suggestions"
+                              role="listbox"
+                              aria-label={m.workspace_share_userSuggestions_ariaLabel()}
+                              class="py-1"
+                            >
+                              {#each visibleSuggestions as user, index (user.login)}
+                                <Button
+                                  variant="ghost"
+                                  id="share-pin-suggestion-{index}"
+                                  role="option"
+                                  aria-selected={index === activeSuggestion}
+                                  tabindex={-1}
+                                  class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
+                                  data-testid="share-pin-suggestion"
+                                  data-login={user.login}
+                                  onpointerdown={(event) => event.preventDefault()}
+                                  onclick={() => selectUser(user)}
+                                  onmousemove={() => (activeSuggestion = index)}
+                                >
+                                  {@render userAvatar(user)}
+                                  <span class="truncate">@{user.login}</span>
+                                </Button>
+                              {/each}
+                            </div>
+                          {:else if suggestionsCurrent && userSearchError}
+                            <p
+                              class="px-3 py-2 text-xs text-danger"
+                              role="alert"
+                              data-testid="share-pin-search-error"
+                            >
+                              {userSearchError}
+                            </p>
+                          {:else if !suggestionsCurrent || userSearchLoading}
+                            <p
+                              class="px-3 py-2 text-xs text-subtle"
+                              role="status"
+                              data-testid="share-pin-searching"
+                            >
+                              {m.workspace_share_userSearch_searching_label()}
+                            </p>
+                          {:else}
+                            <p
+                              class="px-3 py-2 text-xs text-subtle"
+                              role="status"
+                              data-testid="share-pin-no-results"
+                            >
+                              {m.workspace_share_userSearch_noResults_label()}
+                            </p>
+                          {/if}
+                        </Popover.Content>
                       </div>
-                    {:else}
-                      <Button
-                        variant="ghost-light"
-                        size="sm"
-                        disabled={busy}
-                        onclick={() => (confirmRemovePrincipalId = member.principalId)}
-                        aria-label={m.workspace_share_removeMember_ariaLabel({
-                          name: memberName(member),
-                        })}
-                      >
-                        {m.workspace_share_removeMember_label()}
-                      </Button>
-                    {/if}
+                    </Popover.Root>
                   {/if}
-                </div>
-              {/snippet}
-            </ListView>
+                {/if}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  style={sharingActionStyle}
+                  loading={creating || !!pendingCopy || copying}
+                  aria-label={creating || pendingCopy
+                    ? m.workspace_share_creating_label()
+                    : undefined}
+                  data-testid="share-link-submit"
+                  disabled={!sharingReady ||
+                    creating ||
+                    !!pendingCopy ||
+                    copying ||
+                    !recipientReady ||
+                    (atGuestCap && !matchingInvite)}
+                  title={atGuestCap && !matchingInvite
+                    ? m.workspace_share_guestLimitReached_notice()
+                    : undefined}
+                >
+                  {linkActionLabel}
+                </Button>
+              </div>
+              {#if atGuestCap}
+                <p class="text-xs text-subtle" role="status" data-testid="share-guest-cap-reached">
+                  {m.workspace_share_guestLimitReached_notice()}
+                </p>
+              {/if}
+              {#if createError}
+                <p class="text-xs text-danger" role="alert" data-testid="share-create-error">
+                  {createError}
+                </p>
+              {/if}
+            </form>
+          </div>
+
+          {#if loadError}
+            <p class="text-sm text-danger" role="alert">{loadError}</p>
           {/if}
-        </section>
-      {/if}
+          {#if actionError}
+            <p class="text-sm text-danger" role="alert" data-testid="share-action-error">
+              {actionError}
+            </p>
+          {/if}
+
+          <section class="space-y-4.5" aria-label={m.workspace_share_members_label()}>
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="type-caption font-medium text-subtle">
+                {m.workspace_share_members_label()}
+              </h3>
+              {#if guestCount !== null && guestLimit !== null}
+                <span
+                  class="text-xs text-subtle"
+                  data-testid="share-guest-count"
+                  data-guest-count={guestCount}
+                  data-guest-limit={guestLimit}
+                >
+                  {m.workspace_share_guestCount_label({
+                    count: formatInteger(guestCount),
+                    limit: formatInteger(guestLimit),
+                  })}
+                </span>
+              {/if}
+            </div>
+            <div class="space-y-2">
+              {#if loading && members.length === 0}
+                <p class="text-xs text-subtle" data-testid="share-members-loading">
+                  {m.workspace_share_loading_label()}
+                </p>
+              {:else}
+                <ListView
+                  virtualize={false}
+                  items={members}
+                  getKey={(member) => member.principalId}
+                  getText={(member) => memberName(member)}
+                  ariaLabel={m.workspace_share_members_label()}
+                  class="overflow-visible rounded-lg border border-border"
+                >
+                  {#snippet row({ item: member })}
+                    <div
+                      class="flex items-center justify-between gap-3 px-3.5 py-3"
+                      data-testid="share-member-row"
+                      data-principal-id={member.principalId}
+                    >
+                      <div class="flex min-w-0 items-center gap-3 text-sm">
+                        <PrincipalAvatar
+                          avatarUrl={member.avatarUrl}
+                          label={memberName(member)}
+                          size={32}
+                        />
+                        <div class="min-w-0">
+                          <div class="truncate text-sm">{memberName(member)}</div>
+                          <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
+                            {#if member.identity}
+                              <span
+                                class="flex shrink-0 items-center"
+                                data-testid="share-member-identity"
+                                data-provider={member.identity.provider}
+                              >
+                                <Fa icon={providerIcon(member.identity)} size="xs" />
+                              </span>
+                              <span class="truncate">
+                                {m.workspace_share_member_identityRole_label({
+                                  handle: memberHandle(member),
+                                  role:
+                                    member.hostRole === 'member'
+                                      ? m.collaboration_host_member_label()
+                                      : roleLabel(member.role),
+                                })}
+                              </span>
+                            {:else}
+                              <span
+                                >{member.hostRole === 'member'
+                                  ? m.collaboration_host_member_label()
+                                  : roleLabel(member.role)}</span
+                              >
+                            {/if}
+                          </div>
+                        </div>
+                      </div>
+                      {#if isWorkspaceGuest(member)}
+                        {#if confirmRemovePrincipalId === member.principalId}
+                          <div
+                            class="flex shrink-0 items-center gap-1"
+                            role="group"
+                            aria-label={m.workspace_share_removeMember_confirm_label({
+                              name: memberName(member),
+                            })}
+                            data-testid="share-remove-confirm"
+                          >
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={busy}
+                              onclick={() => confirmRemoveMember(member.principalId)}
+                              aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
+                                name: memberName(member),
+                              })}
+                            >
+                              {m.workspace_share_removeMember_label()}
+                            </Button>
+                            <Button
+                              variant="ghost-light"
+                              size="sm"
+                              onclick={() => (confirmRemovePrincipalId = null)}
+                            >
+                              {m.workspace_share_cancel_label()}
+                            </Button>
+                          </div>
+                        {:else}
+                          <Button
+                            variant="ghost-light"
+                            size="sm"
+                            disabled={busy}
+                            onclick={() => (confirmRemovePrincipalId = member.principalId)}
+                            aria-label={m.workspace_share_removeMember_ariaLabel({
+                              name: memberName(member),
+                            })}
+                          >
+                            {m.workspace_share_removeMember_label()}
+                          </Button>
+                        {/if}
+                      {/if}
+                    </div>
+                  {/snippet}
+                </ListView>
+              {/if}
+              {#if invites.length > 0}
+                <section class="space-y-2" aria-label={m.workspace_share_openInvites_label()}>
+                  <ListView
+                    virtualize={false}
+                    items={invites}
+                    getKey={(invite) => invite.id}
+                    getText={(invite) => inviteAudience(invite)}
+                    ariaLabel={m.workspace_share_openInvites_label()}
+                    class="overflow-visible rounded-lg border border-border"
+                  >
+                    {#snippet row({ item: invite })}
+                      <div
+                        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
+                        data-testid="share-invite-row"
+                        data-invite-id={invite.id}
+                      >
+                        <div class="min-w-0 flex-1 basis-40">
+                          <div class="flex items-center gap-3">
+                            <PrincipalAvatar
+                              label={invite.pinLogin ?? inviteAudience(invite)}
+                              size={32}
+                            />
+                            <div class="min-w-0">
+                              <div class="break-words text-sm">
+                                {invite.pinLogin ? `@${invite.pinLogin}` : inviteAudience(invite)}
+                              </div>
+                              <div
+                                class="flex items-center gap-1 text-xs text-subtle"
+                                data-testid="share-invite-detail"
+                                title={inviteDetail(invite)}
+                              >
+                                <Fa
+                                  icon={invite.pinLogin
+                                    ? invite.pinIdentity?.provider === 'gitlab'
+                                      ? faGitlab
+                                      : faGithub
+                                    : faGlobe}
+                                  size="xs"
+                                />
+                                {#if invite.pinLogin}
+                                  {m.workspace_share_invited_label()}
+                                  {#if invite.pinIdentity?.provider === 'gitlab'}<span
+                                      >· {invite.pinIdentity.host}</span
+                                    >{/if}
+                                {:else}{inviteDetail(invite)}{/if}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="ml-auto flex shrink-0 items-center gap-1">
+                          <Button
+                            variant="ghost-light"
+                            size="icon-compact"
+                            iconOnly
+                            disabled={!inviteLink(invite.id)}
+                            title={inviteLink(invite.id)
+                              ? undefined
+                              : m.workspace_share_linkUnavailable_tooltip()}
+                            onclick={() => copyInvite(invite)}
+                            aria-label={m.workspace_share_copyInvite_ariaLabel({
+                              audience: inviteAudience(invite),
+                            })}
+                            data-testid="share-invite-copy"
+                          >
+                            <Fa icon={faCopy} />
+                          </Button>
+                          <Button
+                            variant="ghost-light"
+                            size="icon-compact"
+                            iconOnly
+                            disabled={busy}
+                            onclick={() => revokeInvite(invite.id)}
+                            aria-label={m.workspace_share_revoke_ariaLabel({
+                              audience: inviteAudience(invite),
+                            })}
+                          >
+                            <Fa icon={faXmark} />
+                          </Button>
+                        </div>
+                      </div>
+                    {/snippet}
+                  </ListView>
+                </section>
+              {/if}
+            </div>
+          </section>
+        {/if}
+      </div>
     </div>
   </ContentDialog>
 {/if}

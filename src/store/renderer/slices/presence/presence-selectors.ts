@@ -1,12 +1,22 @@
+import {
+  DEFAULT_DISCUSSION_ID,
+  NEW_DISCUSSION_ID,
+  discussionKey,
+} from '$shared/types/workspace-discussion';
 /** Current workspace-authorized presence projections. Online is host-connected;
  * viewing is workspace focus. Management membership remains unfiltered. */
 
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
+import type {
+  PresenceFocusItem,
+  PresenceMember,
+  PresenceReportParams,
+} from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import { store } from '../../store';
+import { selectDiscussionCanSend } from '../workspace-discussion/workspace-discussion-selectors';
 import { selectActiveWorkspaceIds } from '../tab-state/tab-state-selectors';
 import {
   selectCollaborationReady,
@@ -233,30 +243,92 @@ export const selectAgentTypingPeople = store.createSelector<
   return getItems(roster).filter((member) => typingPrincipals.has(member.principalId));
 });
 
+/** Only actual composer focus in the current admitted workspace can report discussion input. */
+const selectDiscussionTypingWorkspace = store.createSelector((state): string | null => {
+  const id = state.presence.discussionComposerWorkspaceId;
+  return id &&
+    currentPresence(state) &&
+    sharedWorkspace(state, id) &&
+    state.presence.windowVisible &&
+    state.tabState.currentTabId === id &&
+    state.presence.discussionComposerConversationId !== NEW_DISCUSSION_ID &&
+    selectDiscussionCanSend.select(state, id, state.presence.discussionComposerConversationId)
+    ? id
+    : null;
+});
+
+export const selectDiscussionTypingTarget = store.createSelector((state) => {
+  const workspaceId = selectDiscussionTypingWorkspace.select(state);
+  return workspaceId
+    ? discussionKey(workspaceId, state.presence.discussionComposerConversationId)
+    : null;
+});
+
+export const selectDiscussionTypingPeople = store.createSelector<
+  [workspaceId: string, conversationId?: string],
+  PresenceIdentity[]
+>((state, workspaceId, conversationId = DEFAULT_DISCUSSION_ID) => {
+  if (
+    (conversationId !== DEFAULT_DISCUSSION_ID &&
+      !selectDiscussionCanSend.select(state, workspaceId, conversationId)) ||
+    !sharedWorkspace(state, workspaceId) ||
+    state.presence.ownPrincipalId === null
+  )
+    return NO_MEMBERS;
+  const live = state.presence.liveDiscussionTyping[workspaceId];
+  const roster = state.presence.rosters[workspaceId];
+  if (!live || !roster) return NO_MEMBERS;
+  const people = new Set(
+    Object.entries(live)
+      .filter(
+        ([source, entry]) =>
+          !entry.expired &&
+          entry.conversationId === conversationId &&
+          source !== state.presence.ownTypingSource &&
+          entry.principalId !== state.presence.ownPrincipalId,
+      )
+      .map(([, entry]) => entry.principalId),
+  );
+  return people.size
+    ? getItems(roster).filter((member) => people.has(member.principalId))
+    : NO_MEMBERS;
+});
+
+export const selectPresenceLiveDiscussionTyping = store.createSelector(
+  (state) => state.presence.liveDiscussionTyping,
+);
+
 /**
  * This window's own `presence.update` contribution: the current workspace
  * tab plus the agent / note each of its panels shows, and the typing target.
  * A hidden window contributes nothing at all.
  */
-export const selectOwnPresenceReport = store.createSelector(
-  (state): { focus: PresenceFocusItem[]; typing: { agentId: string } | null } => {
-    if (!state.presence.windowVisible) return { focus: [], typing: null };
-    const workspaceId = state.tabState.currentTabId;
-    if (!workspaceId) return { focus: [], typing: null };
-    const focus: PresenceFocusItem[] = [{ workspaceId }];
-    const panels = state.panelLayout.byWorkspaceId[workspaceId]?.panels ?? {};
-    for (const panelId of Object.keys(panels).sort()) {
-      const panel = panels[panelId];
-      const tab = panel.activeTabId
-        ? panel.tabs.find((candidate) => candidate.id === panel.activeTabId)
-        : undefined;
-      if (!tab) continue;
-      if (tab.type === 'agent' && tab.agentId) focus.push({ workspaceId, agentId: tab.agentId });
-      else if (tab.type === 'note' && tab.noteId) focus.push({ workspaceId, noteId: tab.noteId });
-    }
-    return { focus, typing: state.presence.ownTyping };
-  },
-);
+export const selectOwnPresenceReport = store.createSelector((state): PresenceReportParams => {
+  if (!state.presence.windowVisible) return { focus: [], typing: null };
+  const workspaceId = state.tabState.currentTabId;
+  if (!workspaceId) return { focus: [], typing: null };
+  const focus: PresenceFocusItem[] = [{ workspaceId }];
+  const panels = state.panelLayout.byWorkspaceId[workspaceId]?.panels ?? {};
+  for (const panelId of Object.keys(panels).sort()) {
+    const panel = panels[panelId];
+    const tab = panel.activeTabId
+      ? panel.tabs.find((candidate) => candidate.id === panel.activeTabId)
+      : undefined;
+    if (!tab) continue;
+    if (tab.type === 'agent' && tab.agentId) focus.push({ workspaceId, agentId: tab.agentId });
+    else if (tab.type === 'note' && tab.noteId) focus.push({ workspaceId, noteId: tab.noteId });
+  }
+  const discussionTyping = state.presence.ownDiscussionTyping;
+  return {
+    focus,
+    typing: state.presence.ownTyping,
+    ...(discussionTyping &&
+    discussionKey(discussionTyping.workspaceId, discussionTyping.conversationId) ===
+      selectDiscussionTypingTarget.select(state)
+      ? { discussionTyping }
+      : {}),
+  };
+});
 
 /** `selectOwnPresenceReport` serialized, so a selector channel fires only on real change. */
 export const selectOwnPresenceReportKey = store.createSelector((state) =>
