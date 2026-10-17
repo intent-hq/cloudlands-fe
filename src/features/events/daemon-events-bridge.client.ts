@@ -326,7 +326,6 @@ import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/w
 import {
   browserTabClosed,
   browserTabUpserted,
-  fetchWorkspaceBrowserClientRequested,
   workspaceBrowserClientPinReceived,
   refreshLiveClientsRequested,
 } from '$store/renderer/slices/browser-clients/browser-clients-slice';
@@ -2692,7 +2691,6 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
     changes.browserClientId = raw.browserClientId ?? undefined;
     appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
-    appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
   }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no

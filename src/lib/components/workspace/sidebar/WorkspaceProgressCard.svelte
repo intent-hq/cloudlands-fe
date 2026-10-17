@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
@@ -105,11 +107,12 @@
 
   interface Props {
     workspaceId?: string;
+    active?: boolean;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
   }
 
-  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
+  let { workspaceId, active = true, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -889,7 +892,11 @@
   />
 {/snippet}
 
-<div class="flex w-full flex-col" data-workspace-title-section>
+<div
+  use:browserClientConsumer={active ? workspaceId : undefined}
+  class="flex w-full flex-col"
+  data-workspace-title-section
+>
   <!-- Workspace Header -->
   <div class="flex w-full flex-col pb-1">
     <div class="flex items-center justify-between group">
