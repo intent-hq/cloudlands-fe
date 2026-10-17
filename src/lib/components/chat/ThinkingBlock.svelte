@@ -29,6 +29,7 @@
     allowFileMedia?: boolean;
     class?: string;
     adjacentOperationalRow?: boolean;
+    fragment?: number;
   }
 
   let {
@@ -42,6 +43,7 @@
     allowFileMedia = true,
     class: className = '',
     adjacentOperationalRow = false,
+    fragment = 0,
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
@@ -129,7 +131,11 @@
 {/snippet}
 
 {#snippet details()}
-  <div class="reasoning-expanded-body" data-reasoning-expanded-body>
+  <div
+    class="reasoning-expanded-body"
+    data-reasoning-expanded-body
+    data-chat-search-block-path={searchPath ? `${searchPath}:body` : undefined}
+  >
     <MarkdownViewer
       {canOpenFile}
       {allowFileMedia}
@@ -155,6 +161,7 @@
       streaming={isStreaming}
       testId="reasoning-tool-call"
       summaryTestId="reasoning-summary"
+      summarySearchPath={searchPath ? `${searchPath}:title:${fragment + index}:summary` : undefined}
       class={className}
     />
   {/each}
@@ -169,9 +176,6 @@
     {details}
     animateDetailsHeight
     interactive
-    searchDisclosureId={searchPath ? `thinking:${searchPath}` : undefined}
-    onSearchExpand={expandForSearch}
-    onSearchRestore={restoreSearchExpansion}
     expanded={isExpanded}
     controls={detailsId}
     {detailsId}
@@ -185,6 +189,10 @@
     testId="reasoning-tool-call"
     disclosureTestId="reasoning-disclosure"
     summaryTestId="reasoning-summary"
+    searchDisclosureId={searchPath ? `reasoning:${searchPath}` : undefined}
+    summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
+    onSearchExpand={expandForSearch}
+    onSearchRestore={restoreSearchExpansion}
     class={className}
   />
 {/if}

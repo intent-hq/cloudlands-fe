@@ -206,7 +206,21 @@ test('two clipped streaming previews share overscan while each retains local scr
   page,
 }) => {
   const host = await mount(OperationalRowWindowHost, {
-    props: { grouped: true, live: true, messages: 2, count: 300 },
+    props: {
+      live: true,
+      messages: 2,
+      contentOverride: [
+        { type: 'text', text: '<group:Inspection>' },
+        {
+          type: 'thinking',
+          id: 'current-titles',
+          text: Array.from(
+            { length: 300 },
+            (_, i) => `## Inspecting ${i}\n\n## Checking ${i}`,
+          ).join('\n\n'),
+        },
+      ],
+    },
   });
   await expect(host.getByTestId('response-group-disclosure')).toHaveCount(2);
   await expect(host.getByText('Checking 299', { exact: true })).toHaveCount(2);
@@ -478,16 +492,57 @@ for (const renderer of ['streaming', 'settled'] as const) {
     await component.update({ props: { renderer, phase: 'live', isStreaming: true } });
     await expect(
       component.locator('[data-operational-preview-content] [data-response-group-child]'),
-    ).toHaveCount(6);
+    ).toHaveCount(1);
     await trigger.click();
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
     await expect(
       component.locator('[data-operational-expanded-content] [data-response-group-child]'),
-    ).toHaveCount(6);
+    ).toHaveCount(7);
     await expect(
       component.getByText(
         'I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
       ),
     ).toBeVisible();
+  });
+}
+
+for (const renderer of ['streaming', 'settled'] as const) {
+  test(`${renderer}: current reasoning survives orphan results and renderer remount within admission`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const contentOverride: ContentBlock[] = [
+      { type: 'thinking', id: 'compact', text: '## Compact boundary' },
+      { type: 'text', text: '<group:Prepping>Inline prose stays outside.</group>' },
+      { type: 'text', text: '<group:Working>Old description.' },
+      { type: 'thinking', id: 'current', text: 'Current reasoning\n\nLive body.' },
+      { type: 'tool_result', id: 'orphan', tool_use_id: 'missing', output: 'Orphan payload.' },
+    ];
+    const host = await mount(OperationalRowWindowHost, {
+      props: { renderer, live: true, contentOverride },
+    });
+    const current = host.getByTestId('reasoning-disclosure');
+    await expect(current).toHaveAttribute('aria-expanded', 'true');
+    await expect(host.getByText('Live body.', { exact: true })).toBeVisible();
+    await expect(
+      host.locator('[data-operational-preview-content] [data-response-group-child]'),
+    ).toHaveCount(1);
+    await expect(host.getByText('Inline prose stays outside.', { exact: true })).toBeVisible();
+    await current.click();
+    await expect(current).toHaveAttribute('aria-expanded', 'false');
+    await host.update({ props: { renderer, live: true, contentOverride, shown: false } });
+    await expect(current).toHaveCount(0);
+    await host.update({
+      props: { renderer, live: true, contentOverride, shown: true, generation: 1 },
+    });
+    await expect(current).toHaveAttribute('aria-expanded', 'false');
+    await host.getByTestId('response-group-disclosure').click();
+    await expect(host.getByText('Orphan payload.', { exact: true })).toBeVisible();
+    await expect(current).toHaveAttribute('aria-expanded', 'false');
+    await info.attach('remounted-current-reasoning', {
+      body: await host.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }

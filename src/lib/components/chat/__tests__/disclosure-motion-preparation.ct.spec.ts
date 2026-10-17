@@ -300,16 +300,12 @@ test('accepts live response updates during collapse without stale detached conte
     await current.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
   ).toBe(true);
   const body = component.getByTestId('prepared-response-body');
-  await expect(body).toHaveCount(1);
-  await expect(body).toBeVisible();
+  await expect(body).toHaveCount(0);
   expect(
-    await body.evaluate((node) => {
+    await current.evaluate((node) => {
       const groupContent = node.closest('[data-response-group-content]');
       return groupContent?.closest('[data-operational-preview-content]') !== null;
     }),
-  ).toBe(true);
-  expect(
-    await body.evaluate((node) => node.closest('[data-operational-expanded-content]') === null),
   ).toBe(true);
   expect(
     await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
