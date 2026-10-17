@@ -285,7 +285,10 @@ describe('resolveSocketPath', () => {
 function startMockDaemon(
   socketPath: string,
   behavior:
-    { kind: 'result'; result: Record<string, unknown> } | { kind: 'garbage' } | { kind: 'silent' },
+    | { kind: 'result'; result: Record<string, unknown> }
+    | { kind: 'error'; error: Record<string, unknown> }
+    | { kind: 'garbage' }
+    | { kind: 'silent' },
 ): Promise<net.Server> {
   const server = net.createServer((conn) => {
     conn.on('data', () => {
@@ -294,7 +297,13 @@ function startMockDaemon(
         conn.write('not json\n');
         return;
       }
-      conn.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: behavior.result }) + '\n');
+      conn.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          ...(behavior.kind === 'error' ? { error: behavior.error } : { result: behavior.result }),
+        }) + '\n',
+      );
     });
   });
   return new Promise((resolve, reject) => {
@@ -320,6 +329,23 @@ describe('probeDaemonVersion', () => {
     }
     actualFs.rmSync(tmpDir, { recursive: true, force: true });
     vi.clearAllMocks();
+  });
+
+  it('recognizes a protected startup listener as alive without inventing version readiness', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, {
+      kind: 'error',
+      error: {
+        code: -32012,
+        message: 'Daemon not ready',
+        data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+      },
+    });
+    expect(await probeDaemonVersion(socketPath)).toMatchObject({
+      alive: true,
+      starting: true,
+      version: undefined,
+    });
   });
 
   it('returns alive with version, buildCommit, and protocolVersion from system.status', async () => {
@@ -418,6 +444,7 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawn.mockReset();
     __resetIntentdSidecarForTesting();
     __resetConnectionModeForTesting();
     // The fake process carries a pid; never touch a real process's priority.
@@ -469,6 +496,19 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     expect(log.lines).toEqual(['hello', 'world', 'oops']);
   });
 
+  it('preserves the managed child and its run record on repeated initial acquisition', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('still starting\n'));
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(getSidecarRunLog().lines).toEqual(['still starting']);
+  });
+
   it('caps the tail at the last 400 lines', async () => {
     const proc = await startWithFakeProc();
     for (let i = 1; i <= 450; i++) {
@@ -498,6 +538,7 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     proc1.stdout.emit('data', Buffer.from('first-run\n'));
     expect(getSidecarRunLog().lines).toEqual(['first-run']);
 
+    proc1.emit('exit', 0, null);
     const proc2 = await startWithFakeProc();
     expect(getSidecarRunLog().lines).toEqual([]);
     expect(getSidecarRunLog().endedAt).toBeNull();
@@ -619,6 +660,7 @@ describe('sidecar scheduling priority (best-effort)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawn.mockReset();
     __resetIntentdSidecarForTesting();
     __resetConnectionModeForTesting();
     mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
@@ -691,7 +733,8 @@ describe('sidecar scheduling priority (best-effort)', () => {
       throw systemError('EPERM');
     });
 
-    await startWithFakeProc();
+    const first = await startWithFakeProc();
+    first.emit('exit', 0, null);
     await startWithFakeProc();
 
     expect(

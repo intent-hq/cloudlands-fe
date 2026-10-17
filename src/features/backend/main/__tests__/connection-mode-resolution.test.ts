@@ -381,6 +381,47 @@ describe('spawnSidecarOnDemand', () => {
     );
   });
 
+  it.each(['indexing', 'finalizing', 'failed', 'unknown-schema'])(
+    'adopts an existing %s daemon during on-demand local recovery without spawning',
+    async (phase) => {
+      mockProbeSocket(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          error: {
+            code: -32012,
+            message: 'Daemon not ready',
+            data: {
+              code: phase === 'failed' ? 'daemon-startup-failed' : 'daemon-not-ready',
+              startup:
+                phase === 'unknown-schema'
+                  ? { startupStatus: 99 }
+                  : {
+                      startupStatus: 1,
+                      attemptId: 'existing',
+                      phase,
+                      elapsedMs: 1000,
+                      phaseElapsedMs: 1000,
+                      progressAgeMs: 0,
+                      retryAfterMs: 1000,
+                    },
+            },
+          },
+        }),
+      );
+      mockSpawnedProcess();
+      const result = await spawnSidecarOnDemand(
+        { INTENTD_BIN: '/fake/intentd' },
+        false,
+        '/resources',
+        '/cwd',
+      );
+      expect(result).toMatchObject({ ok: true, spawned: false });
+      expect(getConnectionMode()).toBe('external');
+      expect(mockSpawn).not.toHaveBeenCalled();
+    },
+  );
+
   it('spawns exactly once under concurrent calls (in-flight coalescing)', async () => {
     mockProbeSocket(null);
     mockSpawnedProcess();
@@ -463,6 +504,8 @@ describe('sidecar gave-up notifier (crash-loop surfacing)', () => {
       exitHandlers[exitHandlers.length - 1](1, null);
       expect(gaveUp).not.toHaveBeenCalled();
       await vi.runOnlyPendingTimersAsync();
+      // The restart now re-probes socket ownership before spawning.
+      await vi.advanceTimersByTimeAsync(1);
       expect(exitHandlers).toHaveLength(attempt + 1);
     }
     exitHandlers[exitHandlers.length - 1](1, null);
@@ -470,4 +513,83 @@ describe('sidecar gave-up notifier (crash-loop surfacing)', () => {
     expect(gaveUp).toHaveBeenCalledTimes(1);
     expect(gaveUp).toHaveBeenCalledWith(expect.stringContaining('Max restart attempts'));
   });
+
+  it('does not restart alongside a daemon that takes the socket during restart backoff', async () => {
+    mockProbeSocket(null);
+    const exitHandlers: Array<(code: number, signal: null) => void> = [];
+    mockSpawnCapturingExit(exitHandlers);
+    await spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd');
+    mockProbeSocket(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32012 } }));
+    vi.useFakeTimers();
+    exitHandlers[0](1, null);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(getConnectionMode()).toBe('external');
+  });
+
+  it.each([
+    ['restart', 'absent', 'absent'],
+    ['restart', 'starting', 'absent'],
+    ['on-demand', 'absent', 'absent'],
+    ['on-demand', 'starting', 'absent'],
+    ['restart', 'absent', 'starting'],
+    ['on-demand', 'absent', 'starting'],
+  ])(
+    'ignores a late %s probe reporting %s after the winning probe reports %s',
+    async (late, response, winnerResponse) => {
+      mockProbeSocket(null);
+      const exits: Array<(code: number, signal: null) => void> = [];
+      mockSpawnCapturingExit(exits);
+      await spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd');
+      vi.useFakeTimers();
+      const probes: Array<{ finish(response: string): void }> = [];
+      mockConnect.mockImplementation(() => {
+        const handlers = new Map<string, (arg?: unknown) => void>();
+        probes.push({
+          finish(response) {
+            if (response === 'absent') handlers.get('error')?.(new Error('connection refused'));
+            else
+              handlers.get('data')?.(
+                Buffer.from(
+                  JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    error: { code: -32012 },
+                  }) + '\n',
+                ),
+              );
+          },
+        });
+        return {
+          write: vi.fn(),
+          destroy: vi.fn(),
+          on: vi.fn((event, handler) => {
+            handlers.set(event, handler);
+          }),
+        } as never;
+      });
+      exits[0](1, null);
+      await vi.advanceTimersByTimeAsync(1001);
+      const recovery = spawnSidecarOnDemand(
+        { INTENTD_BIN: '/fake/intentd' },
+        false,
+        '/resources',
+        '/cwd',
+      );
+      expect(probes).toHaveLength(2);
+      const lateIndex = late === 'restart' ? 0 : 1;
+      const spawned = winnerResponse === 'absent';
+      probes[1 - lateIndex].finish(winnerResponse);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockSpawn).toHaveBeenCalledTimes(spawned ? 2 : 1);
+      probes[lateIndex].finish(response);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await recovery).toMatchObject({
+        ok: spawned || late === 'restart',
+        spawned: spawned && late === 'restart',
+      });
+      expect(mockSpawn).toHaveBeenCalledTimes(spawned ? 2 : 1);
+      expect(getConnectionMode()).toBe(spawned ? 'sidecar' : 'external');
+    },
+  );
 });

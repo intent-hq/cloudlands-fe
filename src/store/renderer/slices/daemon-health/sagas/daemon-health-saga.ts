@@ -1,3 +1,5 @@
+import { selectDaemonStartup } from '../daemon-health-selectors';
+import type { StartupState } from '$shared/startup-status';
 import { buffers, channel as sagaChannel, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -61,6 +63,7 @@ const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
 const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
 interface BackendStatusPayload {
+  startup?: StartupState | null;
   status: string;
   transport?: BackendTransportInfo;
   sidecarGaveUp?: boolean;
@@ -184,6 +187,7 @@ async function notifyOrphanedSidecar(
 
 function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   return connectionStatusChanged(payload.status, payload.transport, {
+    startup: payload.startup,
     sidecarGaveUp: payload.sidecarGaveUp,
     sidecarStartupFailed: payload.sidecarStartupFailed,
     reason: snapshot
@@ -250,6 +254,7 @@ function* daemonStatusSaga() {
     const orphanNotifyState: OrphanNotifyState = { notified: false };
     while (true) {
       const payload = yield* take(notifications);
+      if (payload.startup?.available) continue;
       yield* call(maybeNotifyOrphanedSidecar, payload.transport, orphanNotifyState);
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
@@ -314,6 +319,8 @@ function classifyStatusCheckFailure(error: unknown): DaemonStatusCheckFailureKin
 }
 
 export function* pollSystemStatusSaga() {
+  const startup = yield* selectDaemonStartup.effect();
+  if (startup) return;
   // Snapshot the connection generation before the request: the reducer
   // discards the terminal action when a connection lifecycle change happened
   // meanwhile, so a slow poll can never report on a connection it did not

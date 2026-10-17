@@ -2450,3 +2450,109 @@ describe('M original producer admission and member drain', () => {
     expect(() => client.beginMemberRetirement()).toThrow('not enrolled');
   });
 });
+
+describe('protected startup handshake', () => {
+  it('gates no-count preparing and service startup until a fresh hello after ready', async () => {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      helloParams: () => ({ clientId: 'desktop' }),
+      heartbeatIntervalMs: 0,
+    });
+    const reconnected = vi.fn();
+    client.on('reconnected', reconnected);
+    const pending = client.request('workspace.list').catch((e) => e);
+    sockets[0].open();
+    await vi.advanceTimersByTimeAsync(0);
+    const status = {
+      startupStatus: 1,
+      attemptId: 'boot-a',
+      phase: 'preparing',
+      elapsedMs: 1000,
+      phaseElapsedMs: 1000,
+      progressAgeMs: 0,
+      retryAfterMs: 1000,
+    };
+    sockets[0].receive(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: -32012,
+          message: 'Daemon not ready',
+          data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000, startup: status },
+        },
+      }) + '\n',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await pending).toBeInstanceOf(Error);
+    expect(client.getStatus()).toBe('connecting');
+    await expect(client.request('note.create', { content: 'do not replay' })).rejects.toMatchObject(
+      { rpcCode: -32012 },
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(JSON.parse(sockets[0].writes[1])).toEqual({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'system.startupStatus',
+    });
+    sockets[0].receive(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: { ...status, phase: 'finalizing', finalizingStep: 'services' },
+      }) + '\n',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getStartupState()).toMatchObject({
+      available: true,
+      snapshot: { phase: 'finalizing', finalizingStep: 'services' },
+    });
+    expect(client.getStartupState()?.snapshot?.progress).toBeUndefined();
+    expect(client.getStartupState()?.snapshot?.estimatedRemainingMs).toBeUndefined();
+    expect(client.getStatus()).toBe('connecting');
+    expect(reconnected).not.toHaveBeenCalled();
+    await expect(client.request('workspace.list')).rejects.toMatchObject({ rpcCode: -32012 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(JSON.parse(sockets[0].writes[2])).toMatchObject({
+      id: 3,
+      method: 'system.startupStatus',
+    });
+    sockets[0].receive(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        result: { ...status, phase: 'ready', retryAfterMs: undefined },
+      }) + '\n',
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sockets[0].destroyed).toBe(true);
+    expect(reconnected).not.toHaveBeenCalled();
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    const hello = JSON.parse(sockets[1].writes[0]);
+    expect(hello).toMatchObject({ method: 'client.hello', params: { clientId: 'desktop' } });
+    expect(client.getStatus()).not.toBe('connected');
+    expect(reconnected).not.toHaveBeenCalled();
+    sockets[1].receive(
+      JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { clientId: 'desktop' } }) + '\n',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getStatus()).toBe('connected');
+    expect(client.getStartupState()).toBeNull();
+    expect(reconnected).toHaveBeenCalledOnce();
+    expect(sockets.flatMap((s) => s.writes).map((s) => JSON.parse(s).method)).toEqual([
+      'client.hello',
+      'system.startupStatus',
+      'system.startupStatus',
+      'client.hello',
+    ]);
+    client.dispose();
+    vi.useRealTimers();
+  });
+});

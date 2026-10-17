@@ -7499,5 +7499,18 @@
   "workspace_peopleActivity_loadOlder_error": "无法加载更早的活动。",
   "workspace_peopleActivity_loadMore_label": "加载更多",
   "browser_activity_browsing_label": "正在浏览 {host}",
-  "browser_activity_unavailable_tooltip": "此浏览器标签页已不可用"
+  "browser_activity_unavailable_tooltip": "此浏览器标签页已不可用",
+  "daemonStartup_preparing_label": "正在启动 intentd",
+  "daemonStartup_indexing_label": "正在重建笔记索引",
+  "daemonStartup_finalizing_label": "正在完成启动",
+  "daemonStartup_failed_label": "守护进程启动失败",
+  "daemonStartup_unavailable_label": "无法获取启动状态",
+  "daemonStartup_elapsed_label": "已用时：{duration}",
+  "daemonStartup_notes_label": "已索引笔记：{completed} / {total}",
+  "daemonStartup_remaining_label": "索引预计还需约 {duration}",
+  "daemonStartup_estimating_label": "正在估算剩余时间",
+  "daemonStartup_unchanged_description": "仍在建立索引；已完成笔记数未变化",
+  "daemonStartup_finalizing_description": "正在完成数据库操作并启动服务。准备就绪后，应用将自动打开。",
+  "daemonStartup_failed_description": "请查看守护进程日志以了解详情。",
+  "daemonStartup_unavailable_description": "未能收到最新启动状态。正在重新连接…"
 }

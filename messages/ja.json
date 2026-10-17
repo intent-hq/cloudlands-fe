@@ -7499,5 +7499,18 @@
   "workspace_peopleActivity_loadOlder_error": "過去のアクティビティを読み込めませんでした。",
   "workspace_peopleActivity_loadMore_label": "さらに読み込む",
   "browser_activity_browsing_label": "{host} を閲覧中",
-  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました"
+  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました",
+  "daemonStartup_preparing_label": "intentd を起動中",
+  "daemonStartup_indexing_label": "ノートのインデックスを再構築中",
+  "daemonStartup_finalizing_label": "起動を完了しています",
+  "daemonStartup_failed_label": "デーモンの起動に失敗しました",
+  "daemonStartup_unavailable_label": "起動状態を取得できません",
+  "daemonStartup_elapsed_label": "経過時間：{duration}",
+  "daemonStartup_notes_label": "インデックス済みのノート：{total} 件中 {completed} 件",
+  "daemonStartup_remaining_label": "インデックス作成の残り時間：約 {duration}",
+  "daemonStartup_estimating_label": "残り時間を推定中",
+  "daemonStartup_unchanged_description": "インデックス作成中です。完了したノート数は変わっていません",
+  "daemonStartup_finalizing_description": "データベース処理を完了し、サービスを起動しています。準備ができるとアプリが自動的に開きます。",
+  "daemonStartup_failed_description": "詳細はデーモンのログを確認してください。",
+  "daemonStartup_unavailable_description": "最新の起動状態を受信できませんでした。再接続中…"
 }

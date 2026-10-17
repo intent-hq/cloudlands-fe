@@ -1,3 +1,5 @@
+import { StartupMonitor } from '$shared/startup-monitor';
+import { isStartupError } from '$shared/startup-status';
 /**
  * Main-process JSON-RPC 2.0 client for the live intentd daemon.
  *
@@ -217,6 +219,11 @@ export class JsonRpcClient extends EventEmitter {
   private connectionGeneration = 0;
   private readonly trafficObservers = new Set<RpcTrafficObserver>();
   private status: ConnectionStatus = 'disconnected';
+  private readonly startup = new StartupMonitor(() => this.emit('startup'));
+  getStartupState() {
+    return this.startup.state;
+  }
+
   private disposed = false;
   private currentReconnectDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -810,6 +817,16 @@ export class JsonRpcClient extends EventEmitter {
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
+    if (this.startup.state && this.socket) {
+      return Promise.reject(
+        new JsonRpcError({
+          code: -32012,
+          // i18n-ignore (JSON-RPC protocol error, localized by startup UI)
+          message: 'Daemon not ready',
+          data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+        }),
+      );
+    }
     // §5.17: a caller-issued `client.hello` (e.g. the renderer capability
     // probe) must present the SAME persisted identity as the connect-time
     // handshake — an anonymous re-hello would mint a fresh clientId and
@@ -1041,6 +1058,15 @@ export class JsonRpcClient extends EventEmitter {
       // The socket died mid-handshake: onConnectionFailure already tore it
       // down and scheduled a reconnect — do not report this socket connected.
       if (this.disposed || this.socket !== socket) return;
+      if (isStartupError(error)) {
+        this.failWaiters(error instanceof Error ? error : new Error('Daemon is starting'));
+        this.startup.start(
+          error,
+          () => this.sendNow('system.startupStatus', undefined, 5000),
+          () => this.onConnectionFailure(new Error('Startup complete; reconnect')),
+        );
+        return;
+      }
       // Identity degrades, transport survives: the daemon treats a failed
       // hello as an anonymous connection, so scoped features (§5.16 drafts)
       // may not restore, but everything else keeps working.
@@ -1052,6 +1078,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private finishConnect(): void {
+    this.startup.stop(true);
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
     this.connectionLimited = false;
@@ -1359,6 +1386,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
+    this.startup.stop();
     this.protocolVersion = undefined;
     // Retire BEFORE any teardown callback can attempt another dispatch.
     this.retireRepositorySocket();

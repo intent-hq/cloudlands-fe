@@ -1060,3 +1060,66 @@ describe('binary file reads through browser transport normalization', () => {
     }
   });
 });
+
+describe('protected startup handshake', () => {
+  it('withholds connected and mutation replay, exposes lost status, then authenticates a new socket', async () => {
+    vi.useFakeTimers();
+    const { transport, socket } = createHarness();
+    const pending = transport.request('workspace.list').catch((e) => e);
+    const first = socket();
+    first.open();
+    await flush();
+    const snapshot = {
+      startupStatus: 1,
+      attemptId: 'boot-a',
+      phase: 'finalizing',
+      finalizingStep: 'services',
+      elapsedMs: 3000,
+      phaseElapsedMs: 1000,
+      progressAgeMs: 0,
+      retryAfterMs: 1000,
+    };
+    first.receive({
+      jsonrpc: '2.0',
+      id: first.lastFrame().id,
+      error: {
+        code: -32012,
+        message: 'Daemon not ready',
+        data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000, startup: snapshot },
+      },
+    });
+    await flush();
+    expect(await pending).toBeInstanceOf(Error);
+    expect(transport.getConnectionStatus()).toBe('connecting');
+    expect(transport.getStartupState()?.available).toBe(true);
+    await expect(
+      transport.request('note.create', { content: 'do not replay' }),
+    ).rejects.toMatchObject({ rpcCode: -32012 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(first.lastFrame()).toEqual({
+      jsonrpc: '2.0',
+      id: first.lastFrame().id,
+      method: 'system.startupStatus',
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(transport.getStartupState()?.available).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    first.receive({
+      jsonrpc: '2.0',
+      id: first.lastFrame().id,
+      result: { ...snapshot, phase: 'ready', finalizingStep: undefined, retryAfterMs: undefined },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(first.closed).toBe(true);
+    await connect(socket());
+    expect(transport.getConnectionStatus()).toBe('connected');
+    expect(transport.getStartupState()).toBeNull();
+    expect(first.sent.map((s) => JSON.parse(s).method)).toEqual([
+      'client.hello',
+      'system.startupStatus',
+      'system.startupStatus',
+    ]);
+    transport.dispose();
+    vi.useRealTimers();
+  });
+});

@@ -255,3 +255,5 @@ export const selectAgentMemoryUsage = store.createSelector(
 export const selectAgentMemoryUsageError = store.createSelector(
   (state) => state.daemonHealth.agentMemoryUsageError,
 );
+
+export const selectDaemonStartup = store.createSelector((state) => state.daemonHealth.startup);

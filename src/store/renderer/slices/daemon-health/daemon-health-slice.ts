@@ -1,3 +1,4 @@
+import type { StartupState } from '$shared/startup-status';
 /**
  * Daemon Health Slice
  *
@@ -24,6 +25,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 export const initialState: DaemonHealthState = {
+  startup: null,
   health: 'down',
   stats: null,
   lastUpdated: null,
@@ -65,6 +67,7 @@ export const initialState: DaemonHealthState = {
  * (binary not found, spawn error), plus a human-readable reason.
  */
 export interface ConnectionStatusExtras {
+  startup?: StartupState | null;
   sidecarGaveUp?: boolean;
   sidecarStartupFailed?: boolean;
   reason?: string;
@@ -286,6 +289,7 @@ daemonHealthReducer.with(
         ...state,
         connectionGeneration,
         polling,
+        startup: null,
         health: sameConnection ? state.health : 'healthy',
         // Stats belong to the daemon that reported them. Drop them on a
         // genuine daemon switch (mode/target changed) so selectors never
@@ -331,6 +335,7 @@ daemonHealthReducer.with(
         ...state,
         connectionGeneration,
         polling: false,
+        startup: extras?.startup ?? null,
         health: 'down',
         transport: transport ?? state.transport,
         hostLocality,

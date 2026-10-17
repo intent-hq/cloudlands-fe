@@ -1,3 +1,4 @@
+import { isStartupError } from '$shared/startup-status';
 /**
  * Sidecar manager: spawns and supervises the intentd daemon in the Electron
  * main process.
@@ -105,8 +106,9 @@ const SIDECAR_PROBE_TIMEOUT_MS = 3000;
 const SIDECAR_STEADY_PROBE_INTERVAL_MS = 10_000;
 
 /**
- * Per-spawn identity token, bumped whenever the process we supervise changes
- * (spawn, exit, stop, test reset).
+ * Ownership identity token, bumped whenever the process we supervise changes
+ * (spawn, exit, stop, adoption, test reset). Acquisition probes use the same
+ * token so late results cannot spawn over or relabel a replacement.
  *
  * A readiness probe can still be in flight (up to 3s) when the daemon crashes
  * and the restart backoff spawns a replacement. Without an identity check, that
@@ -128,7 +130,7 @@ let readyStartedAt = 0;
 
 /**
  * Arm a fresh startup readiness window and invalidate in-flight probes from the
- * previous process (called per spawn, and on exit/stop/test reset).
+ * previous owner (called per spawn/adoption, and on exit/stop/test reset).
  */
 function resetReadinessState(): void {
   sidecarGeneration++;
@@ -488,6 +490,7 @@ export function resolveSocketPath(
 /** Result of a version-aware daemon probe (see [[probeDaemonVersion]]). */
 export interface DaemonVersionProbeResult {
   alive: boolean;
+  starting?: boolean;
   version?: string;
   buildCommit?: string;
   protocolVersion?: string;
@@ -543,10 +546,12 @@ export async function probeDaemonVersion(
       if (newlineIndex === -1) return;
       try {
         const parsed = JSON.parse(buffer.slice(0, newlineIndex)) as {
+          error?: unknown;
           result?: { version?: unknown; buildCommit?: unknown; protocolVersion?: unknown };
         };
         finish({
           alive: true,
+          ...(isStartupError(parsed.error) ? { starting: true } : {}),
           version: typeof parsed.result?.version === 'string' ? parsed.result.version : undefined,
           buildCommit:
             typeof parsed.result?.buildCommit === 'string' ? parsed.result.buildCommit : undefined,
@@ -580,12 +585,20 @@ export async function probeDaemonVersion(
  * @param timeoutMs - Timeout in milliseconds (default: 3000)
  */
 export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
+  return (await probeDaemonHealth(socketPath, timeoutMs)) === true;
+}
+
+async function probeDaemonHealth(
+  socketPath: string,
+  timeoutMs: number,
+): Promise<boolean | 'starting'> {
   // See probeDaemonVersion: pipe paths are not filesystem entries.
   if (!isWindowsPipePath(socketPath) && !fs.existsSync(socketPath)) return false;
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean | 'starting'>((resolve) => {
     const client = net.connect({ path: socketPath });
     let resolved = false;
+    let buffer = '';
 
     const timeout = setTimeout(() => {
       if (!resolved) {
@@ -607,13 +620,30 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       client.write(JSON.stringify(rpcRequest) + '\n');
     });
 
-    client.on('data', (_chunk: Buffer) => {
+    client.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const newline = buffer.indexOf('\n');
+      if (newline === -1) return;
+      let starting = false;
+      try {
+        const error = JSON.parse(buffer.slice(0, newline)).error;
+        starting = isStartupError(error);
+        if (starting && error.data?.code === 'daemon-startup-failed') {
+          resolved = true;
+          clearTimeout(timeout);
+          client.destroy();
+          resolve(false);
+          return;
+        }
+      } catch {
+        /* Legacy liveness response. */
+      }
       // Got a response - daemon is alive
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         client.destroy();
-        resolve(true);
+        resolve(starting ? 'starting' : true);
       }
     });
 
@@ -741,7 +771,7 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
       readyDeadlineAt = readyStartedAt + SIDECAR_READY_BUDGET_MS;
     }
 
-    const isHealthy = await healthCheckProbe(socketPath, SIDECAR_PROBE_TIMEOUT_MS);
+    const isHealthy = await probeDaemonHealth(socketPath, SIDECAR_PROBE_TIMEOUT_MS);
 
     // The process may have exited (crashed) while the probe was in flight: its
     // exit handler already cleared this timer and consulted the restart policy.
@@ -756,6 +786,14 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
         armedGeneration,
         currentGeneration: sidecarGeneration,
       });
+      return;
+    }
+
+    if (isHealthy === 'starting') {
+      // A fresh authenticated response extends liveness, never declares readiness.
+      readyDeadlineAt = Date.now() + SIDECAR_READY_BUDGET_MS;
+      consecutiveFailures = 0;
+      startHealthWatchdog(socketPath, SIDECAR_READY_PROBE_INTERVAL_MS);
       return;
     }
 
@@ -976,11 +1014,25 @@ async function spawnSidecarProcess(
       reason: decision.reason,
     });
 
-    // Schedule restart after backoff delay
+    // Capture at scheduling time: recovery may acquire an owner during backoff.
+    const restartGeneration = sidecarGeneration;
     restartTimer = setTimeout(async () => {
       restartTimer = null;
-      if (isShuttingDown) {
-        logger.info('Skipping restart; shutdown in progress');
+      if (isShuttingDown || sidecarGeneration !== restartGeneration || sidecarProcess) {
+        logger.info('Skipping restart; shutdown or daemon ownership changed');
+        return;
+      }
+      // A different daemon may have acquired the socket during backoff. Any
+      // response (including startup/failed admission) still owns its data dir.
+      const probe = await probeDaemonVersion(socketPath);
+      if (isShuttingDown || sidecarGeneration !== restartGeneration || sidecarProcess) return;
+      if (probe.alive) {
+        resetReadinessState();
+        if (!isIsolatedTestBuild()) {
+          setConnectionMode('external');
+          refreshLocalUpdateSupportedAfterModeResolution();
+        }
+        logger.info('Skipping restart; a live daemon owns the socket', { socketPath });
         return;
       }
       await spawnSidecarProcess(binaryPath, socketPath, env);
@@ -1054,7 +1106,10 @@ export async function startIntentdSidecar(
   }
 
   const socketPath = resolveSocketPath(env);
+  if (isSidecarRunning()) return;
+  const acquisitionGeneration = sidecarGeneration;
   const probe = await probeDaemonVersion(socketPath);
+  if (sidecarGeneration !== acquisitionGeneration || isSidecarRunning()) return;
   // Record the local daemon's protocolVersion as the stable baseline for the
   // multi-backend protocol-compat check (survives renderer client disposal;
   // see [[localDaemonProtocolVersion]]). Only a live daemon reports a version —
@@ -1068,6 +1123,7 @@ export async function startIntentdSidecar(
     // A live daemon owns the socket (and the data dir behind it): ALWAYS
     // adopt it — never spawn a second daemon alongside. Version mismatch is
     // warn-only, surfaced to the renderer via the transport payload.
+    resetReadinessState();
     setConnectionMode('external');
     const pinnedVersion = readPinnedVersion({ isPackaged, resourcesPath });
     const comparison =
@@ -1087,7 +1143,7 @@ export async function startIntentdSidecar(
     // so the renderer can offer kill-and-restart recovery. Detection fails
     // safe (any doubt → null), and only packaged builds have a meaningful
     // resourcesPath to compare against.
-    const orphan = isPackaged ? detectOrphanedSidecar(env, resourcesPath) : null;
+    const orphan = isPackaged && !probe.starting ? detectOrphanedSidecar(env, resourcesPath) : null;
     setOrphanedSidecarInfo(orphan);
     const details = {
       socketPath,
@@ -1282,10 +1338,22 @@ async function doSpawnSidecarOnDemand(
     return { ok: true, spawned: false, reason: 'sidecar already running' };
   }
   const socketPath = resolveSocketPath(env);
-  if (await healthCheckProbe(socketPath)) {
+  // Readiness is deliberately false while indexing; ownership is not. Match
+  // initial acquisition and preserve every responding daemon, even when its
+  // startup snapshot is failed or from an unknown schema version.
+  const acquisitionGeneration = sidecarGeneration;
+  const probe = await probeDaemonVersion(socketPath);
+  if (isSidecarRunning()) {
+    return { ok: true, spawned: false, reason: 'sidecar already running' };
+  }
+  if (sidecarGeneration !== acquisitionGeneration) {
+    return { ok: false, spawned: false, reason: 'daemon ownership changed during acquisition' };
+  }
+  if (probe.alive) {
     if (isIsolatedTestBuild()) {
       return { ok: false, spawned: false, reason: 'isolated test socket is already owned' };
     }
+    resetReadinessState();
     setConnectionMode('external');
     // The client hello that reconnected to this revived socket may have fired
     // while the mode was still 'sidecar' (clearing the flag) — re-run the

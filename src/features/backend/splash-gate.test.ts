@@ -54,6 +54,16 @@ describe('startSplashGate', () => {
     stop();
   });
 
+  it('reveals the renderer startup UI without waiting for application readiness', async () => {
+    const { api, emit } = makeMockApi({ status: 'connecting' });
+    const dismiss = vi.fn();
+    startSplashGate(dismiss, { api });
+    await Promise.resolve();
+    expect(dismiss).not.toHaveBeenCalled();
+    emit(BACKEND.STATUS, { status: 'connecting', startup: { available: true, snapshot: null } });
+    expect(dismiss).toHaveBeenCalledOnce();
+  });
+
   it('dismisses once backend:get-status resolves connected', async () => {
     const { api } = makeMockApi({ status: 'connected' });
     const dismiss = vi.fn();

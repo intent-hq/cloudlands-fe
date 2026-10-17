@@ -6405,3 +6405,36 @@ it('reopens a saved instance through IPC after navigation policy is republished 
     sender.emit('destroyed');
   }
 });
+
+describe('startup status IPC ownership', () => {
+  it('routes progress pushes and snapshots only to the owning backend', async () => {
+    const { mod } = await loadModule();
+    const { localSender, remoteSender, localSend, remoteSend } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const remote = await mod.connectBackendClient('remote-1');
+    const startup = {
+      available: true,
+      snapshot: {
+        startupStatus: 1,
+        attemptId: 'remote-boot',
+        phase: 'preparing',
+        elapsedMs: 0,
+        phaseElapsedMs: 0,
+        progressAgeMs: 0,
+        retryAfterMs: 1000,
+      },
+    };
+    remote.getStartupState = () => startup as ReturnType<typeof remote.getStartupState>;
+    localSend.mockClear();
+    remoteSend.mockClear();
+    remote.emit('startup');
+    expect(remoteSend).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({ startup, status: 'disconnected' }),
+    );
+    expect(localSend.mock.calls.some(([channel]) => channel === 'backend:status')).toBe(false);
+    const getStatus = findHandler('backend:get-status')!;
+    expect(await getStatus({ sender: remoteSender }, undefined)).toMatchObject({ startup });
+    expect(await getStatus({ sender: localSender }, undefined)).toMatchObject({ startup: null });
+  });
+});

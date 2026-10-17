@@ -32,6 +32,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { isStartupError } from '$shared/startup-status';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   AuthRejectedError,
@@ -1691,6 +1692,7 @@ function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void 
           rebuilt.getConnectedVia(),
         ),
         reconnectAttempts: rebuilt.getReconnectAttempts(),
+        startup: rebuilt.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2000,6 +2002,7 @@ function createAdditionalBackendClient(
                     instance.getConnectedVia(),
                   ),
                   reconnectAttempts: instance.getReconnectAttempts(),
+                  startup: instance.getStartupState?.() ?? null,
                   ...daemonUpdateMarker(id),
                 },
                 id,
@@ -2079,6 +2082,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         connectionLimited: instance.isConnectionLimited(),
         connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
@@ -2087,6 +2091,22 @@ function createAdditionalBackendClient(
     );
     backendStatusForwarder.emit('status', id, status);
     refreshConnectionsForStatusChange();
+  });
+  instance.on('startup', () => {
+    if (backendClients.get(id) !== instance) return;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        startup: instance.getStartupState(),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
+      },
+      id,
+    );
   });
   instance.on('reconnected', () => {
     if (backendClients.get(id) !== instance) return;
@@ -2102,6 +2122,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -3059,6 +3080,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            startup: client.getStartupState?.() ?? null,
             ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
@@ -3926,9 +3948,9 @@ function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): P
  * thrown before any client is built) still blocks the window — there is
  * nothing for a window to retry against.
  *
- * The LOCAL open keeps strict probe semantics: one authenticated
- * `host.status` completes before the window is created, and a failure
- * rejects — {@link openLocalAndSpawn}'s deadline/retry loop depends on it.
+ * The LOCAL open verifies readiness with `host.status`, unless the client
+ * has recognized startup: then the window opens to show startup progress.
+ * Other failures reject so {@link openLocalAndSpawn} can retry unavailable sockets.
  * `options.probeTimeoutMs` bounds that local probe for a single call (used by
  * deadline-driven callers whose budget is shorter than the 30s client
  * default); it is ignored for a remote, which issues no probe.
@@ -3960,14 +3982,20 @@ async function performOpenBackendWindowOriginal(
   const target = await connectBackendClientOwned(id, undefined, owner);
   try {
     if (id === LOCAL_CONNECTION_ID) {
-      // Complete one authenticated request over the pinned transport before
-      // creating a renderer, so the common healthy open never flashes the
-      // connection-lost overlay. A failure rejects: openLocalAndSpawn's
-      // deadline loop retries on it, and a local window without a daemon has
-      // no client reconnect posture worth showing.
-      await observeStatus(target, 'performOpenBackendWindow', owner, () =>
-        target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
-      );
+      // Startup already owns polling and gates ordinary RPCs. Open its progress
+      // window without probing again or claiming that the daemon is ready.
+      // Cached unavailable status must not mask a later offline/auth failure.
+      if (!target.getStartupState?.()?.available) {
+        try {
+          await observeStatus(target, 'performOpenBackendWindow', owner, () =>
+            target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
+          );
+        } catch (error) {
+          // The initial hello can discover startup while this request waits.
+          // Preserve offline/auth failures, but let recognized startup be seen.
+          if (!isStartupError(error)) throw error;
+        }
+      }
     } else {
       // Label the remote by its hostname once it connects (T14). Reuses the
       // live client's `host.status`; fire-and-forget so a slow remote never
@@ -4046,6 +4074,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          startup: client.getStartupState?.() ?? null,
           ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
@@ -4131,6 +4160,7 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
           client.getConnectedVia(),
         ),
         reconnectAttempts: client.getReconnectAttempts(),
+        startup: client.getStartupState?.() ?? null,
       });
     }
     return result;
@@ -4159,7 +4189,8 @@ const OPEN_LOCAL_PROBE_RETRY_MS = 500;
  * THEN open. `spawnSidecarOnDemand` resolves as soon as the child is forked —
  * before the daemon binds the socket — and a connect attempt against an
  * unserved socket rejects fast, so the open retries on a short cadence until
- * the daemon answers the authenticated probe (or the deadline lapses). A spawn
+ * the daemon answers the authenticated probe or reports startup (or the
+ * deadline lapses). Startup opens its progress window without awaiting ready. A spawn
  * that reports a live daemon already on the socket (`spawned: false`) still
  * proceeds to the open. The spawn's uds guard needs no switch: the always-on
  * local pooled client is UDS-configured regardless of any window's backend.
@@ -4454,6 +4485,7 @@ export function registerBackendHandlers(): void {
         status: client.getStatus(),
         transport,
         reconnectAttempts: client.getReconnectAttempts(),
+        startup: client.getStartupState?.() ?? null,
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
         ...daemonUpdateMarker(backendId),
@@ -4463,6 +4495,7 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      startup: client.getStartupState?.() ?? null,
       connectionLimited: client.isConnectionLimited(),
       connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
@@ -4511,6 +4544,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
@@ -4540,6 +4574,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        startup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,

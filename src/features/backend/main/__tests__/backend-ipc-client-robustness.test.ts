@@ -56,6 +56,7 @@ vi.mock('../json-rpc-client', () => {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
     request = vi.fn(async () => ({}));
+    getStartupState = vi.fn(() => null);
     registerMethod(): () => void {
       return () => {};
     }
@@ -366,6 +367,84 @@ describe('openBackendWindow serialization', () => {
 // ---------------------------------------------------------------------------
 
 describe('openLocalAndSpawn — open-only recovery', () => {
+  it.each(['direct', 'recovery-adopted', 'recovery-managed'])(
+    'opens the startup window through the %s production path without a host.status retry loop',
+    async (entry) => {
+      vi.useFakeTimers();
+      const priorSocket = process.env.INTENTD_SOCKET;
+      process.env.INTENTD_SOCKET = '/tmp/intent-open-starting-test.sock';
+      try {
+        const mod = await loadModule();
+        const openOrFocus = vi.fn(async () => {});
+        mod.__setBackendWindowHooksForTesting({ openOrFocus });
+        const client = mod.getBackendClientForId('local');
+        const startup = {
+          available: true,
+          snapshot: {
+            startupStatus: 1,
+            attemptId: 'indexing-local',
+            phase: 'indexing',
+            elapsedMs: 20000,
+            phaseElapsedMs: 20000,
+            progressAgeMs: 0,
+            retryAfterMs: 1000,
+          },
+        };
+        vi.spyOn(client, 'getStartupState').mockReturnValue(startup as never);
+        vi.mocked(client.request).mockRejectedValue({ code: -32012, message: 'Daemon not ready' });
+        vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+          ok: true,
+          spawned: entry === 'recovery-managed',
+          reason: 'live daemon already serving the socket',
+        });
+        const pending =
+          entry === 'direct'
+            ? mod.openBackendWindow('local').then(
+                () => ({ ok: true }),
+                () => ({ ok: false }),
+              )
+            : mod.openLocalAndSpawn();
+        await vi.advanceTimersByTimeAsync(16000);
+        expect(await pending).toMatchObject({ ok: true });
+        expect(openOrFocus).toHaveBeenCalledWith('local');
+        expect(client.request).not.toHaveBeenCalled();
+        expect(client.getStatus()).toBe('disconnected');
+        expect(store.setActiveId).not.toHaveBeenCalled();
+      } finally {
+        if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+        else process.env.INTENTD_SOCKET = priorSocket;
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('opens local progress when startup is discovered by the initial probe', async () => {
+    const mod = await loadModule();
+    const openOrFocus = vi.fn(async () => {});
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
+    const client = mod.getBackendClientForId('local');
+    // Reserved startup code still gates unknown or malformed snapshot versions.
+    vi.mocked(client.request).mockRejectedValue({ code: -32012, data: { startup: 99 } });
+    await expect(mod.openBackendWindow('local')).resolves.toEqual({ id: 'local' });
+    expect(openOrFocus).toHaveBeenCalledWith('local');
+    expect(client.request).toHaveBeenCalledTimes(1);
+    expect(client.getStatus()).toBe('disconnected');
+  });
+
+  it.each(['offline', 'auth-rejected'])('preserves a local %s probe failure', async (reason) => {
+    const mod = await loadModule();
+    const openOrFocus = vi.fn(async () => {});
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
+    const error = Object.assign(new Error(reason), {
+      code: reason === 'offline' ? 'ECONNREFUSED' : -32001,
+    });
+    const client = mod.getBackendClientForId('local');
+    vi.spyOn(client, 'getStartupState').mockReturnValue({ available: false, snapshot: null });
+    vi.mocked(client.request).mockRejectedValue(error);
+    await expect(mod.openBackendWindow('local')).rejects.toBe(error);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
   it('spawns the sidecar then opens the local windows without retargeting any window', async () => {
     // The initiating window targets a remote backend; recovery must NOT
     // retarget it (or any other window) to local.

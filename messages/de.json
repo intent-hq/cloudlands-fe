@@ -7499,5 +7499,18 @@
   "workspace_peopleActivity_loadOlder_error": "Ältere Aktivitäten konnten nicht geladen werden.",
   "workspace_peopleActivity_loadMore_label": "Mehr laden",
   "browser_activity_browsing_label": "Surft auf {host}",
-  "browser_activity_unavailable_tooltip": "Dieser Browser-Tab ist nicht mehr verfügbar"
+  "browser_activity_unavailable_tooltip": "Dieser Browser-Tab ist nicht mehr verfügbar",
+  "daemonStartup_preparing_label": "intentd wird gestartet",
+  "daemonStartup_indexing_label": "Notizindizes werden neu aufgebaut",
+  "daemonStartup_finalizing_label": "Start wird abgeschlossen",
+  "daemonStartup_failed_label": "Daemon-Start fehlgeschlagen",
+  "daemonStartup_unavailable_label": "Startstatus nicht verfügbar",
+  "daemonStartup_elapsed_label": "Vergangen: {duration}",
+  "daemonStartup_notes_label": "Indizierte Notizen: {completed} von {total}",
+  "daemonStartup_remaining_label": "Noch etwa {duration} für die Indizierung",
+  "daemonStartup_estimating_label": "Verbleibende Zeit wird geschätzt",
+  "daemonStartup_unchanged_description": "Indizierung läuft; Anzahl abgeschlossener Notizen unverändert",
+  "daemonStartup_finalizing_description": "Datenbankarbeiten werden abgeschlossen und Dienste gestartet. Die App öffnet sich automatisch, sobald sie bereit ist.",
+  "daemonStartup_failed_description": "Details finden Sie in den Daemon-Protokollen.",
+  "daemonStartup_unavailable_description": "Der aktuelle Startstatus konnte nicht empfangen werden. Verbindung wird wiederhergestellt…"
 }

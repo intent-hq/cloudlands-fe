@@ -24,12 +24,14 @@
   import { page } from '$app/stores';
   import {
     selectDaemonHealth,
+    selectDaemonStartup,
     selectDaemonUpdateDisconnectedAt,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
+  const startup$ = selectDaemonStartup();
   const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
 
   const isSandboxPage = $derived(
@@ -75,7 +77,7 @@
   const seconds = $derived(Math.ceil(remainingMs / 1000));
 </script>
 
-{#if visible}
+{#if visible && !$startup$}
   <Portal target="body" zIndex="var(--layer-connection-overlay)">
     <div
       class="fixed inset-0 z-[var(--layer-connection-overlay)] flex items-center justify-center bg-black/70 backdrop-blur-md"
