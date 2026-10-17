@@ -1,6 +1,7 @@
 // Success actions restore visible values; loaded/check flags and epochs may remain.
 // Newly introduced availability keys settle to unavailable because no remove action exists.
 import { setupProviderFastModePreview } from '../../../test/provider-fast-mode-preview';
+import { setupProviderProfilesPreview } from '../../../test/provider-profiles-preview';
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
@@ -117,6 +118,28 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   defaultState: 'mixed',
   states: {
     mixed: { props: {}, setup: setupProviderSelector },
+    profiles: {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    'profiles-remote': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     'fast-mode': {
       props: {},
       setup: () => {

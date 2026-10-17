@@ -71,6 +71,8 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import ProviderProfiles from './ProviderProfiles.svelte';
+  import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -235,6 +237,12 @@
     if (current !== enabled) appStore.dispatch(setProviderFastMode('codex', enabled));
   }
 
+  // Add profile is offered only on installed rows whose catalog entry
+  // advertises named profiles (§5.54); other providers never show it.
+  function supportsProfiles(providerId: string): boolean {
+    return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
+  }
+
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
   }
@@ -267,6 +275,7 @@
     appStore.dispatch(providerSettingsSessionOpened(sessionId));
     appStore.dispatch(providerAvailabilityPanelOpened(sessionId));
     appStore.dispatch(providerPathsRequested());
+    appStore.dispatch(providerProfilesRequested());
     return () => {
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
@@ -781,6 +790,9 @@
                   </div>
                 </div>
               </div>
+              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+              {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}
