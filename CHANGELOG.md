@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.15](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.14...v2.219.15) (2026-10-17)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** retry wake-started quota failures on another provider ([#3451](https://github.com/intent-hq/cloudlands-fe/issues/3451)) ([1487c4d](https://github.com/intent-hq/cloudlands-fe/commit/1487c4d9391e75d5dd6fdd4586a1b1b670a4a31a))
+* recover authorized stores after generic event loss ([#3392](https://github.com/intent-hq/cloudlands-fe/issues/3392)) ([7de4594](https://github.com/intent-hq/cloudlands-fe/commit/7de4594f31ea51a9ff9efec924a07be2e0afdba4))
+* stop Home New workspace from overwriting the last-used repo ([#3455](https://github.com/intent-hq/cloudlands-fe/issues/3455)) ([17eb598](https://github.com/intent-hq/cloudlands-fe/commit/17eb5989fc263c3455bbf1d873b961f6af278645))
+
 ## [2.219.14](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.13...v2.219.14) (2026-10-17)
 
 
