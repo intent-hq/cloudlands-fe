@@ -490,9 +490,8 @@
     () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
     () => tab,
   );
-  // New space defaults to the selected Home repository itself
-  // (`defaultToSidebarRepository`); recording it here as the last-used repo
-  // would overwrite the user's real last pick, e.g. with a workspace's clone.
+  // New space resolves the selected Home repository itself
+  // (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
     store.dispatch(setShowCreateModal(true));
   }
