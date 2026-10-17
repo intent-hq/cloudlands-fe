@@ -293,6 +293,15 @@ describe('coverage contract', () => {
     ).toEqual({ files: ['a.test.ts', 'b.test.ts'], checks: ['eslint', 'vitest-related'] });
   });
 
+  it('keeps finished passes of a check stopped by a termination signal', async () => {
+    expect(
+      await credited([
+        file('a.test.ts', 'passed'),
+        end('vitest-related', 'interrupted', 'vitest-related#2', commandIdentity(lane)),
+      ]),
+    ).toEqual({ files: ['a.test.ts'], checks: [] });
+  });
+
   it('credits a skipped file only when its run ended normally', async () => {
     const runEnd = (reason: string) => ({
       type: 'unit-run-end',

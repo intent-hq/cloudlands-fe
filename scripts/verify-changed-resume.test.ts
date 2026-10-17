@@ -404,7 +404,12 @@ it('waits', async () => {
       driver,
       `import { installTerminationHandlers, runVerificationPlan } from ${JSON.stringify(plannerUrl)};
 const { onAttempt } = installTerminationHandlers();
-await runVerificationPlan(${JSON.stringify(plan(root, changed))}, process.cwd(), { record: true, onAttempt, log() {} });`,
+// Like the CLI, a failed run sets the exit code; the signal handler owns the exit.
+try {
+  await runVerificationPlan(${JSON.stringify(plan(root, changed))}, process.cwd(), { record: true, onAttempt, log() {} });
+} catch {
+  process.exitCode = 1;
+}`,
     );
     // A killed runner cannot clean its own temp files; keep them in the fixture.
     const scratch = join(outside, 'tmp');

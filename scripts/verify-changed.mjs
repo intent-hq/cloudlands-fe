@@ -989,6 +989,8 @@ export function printPlan(plan, dryRun, log = console.log) {
 }
 
 const activeChildren = new Set();
+// Set once a termination signal arrives; no further check starts afterwards.
+let terminating = false;
 
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
@@ -1301,6 +1303,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
 
   try {
     for (const check of plan.checks) {
+      if (terminating) throw new Error('verification interrupted');
       const invocation = attempt?.nextInvocation(check.id) ?? null;
       const execution = executionFor(check, selections, credits, attempt, invocation);
       if (execution.skip) {
@@ -1338,7 +1341,8 @@ export async function runVerificationPlan(plan, root, options = {}) {
           id: check.id,
           invocation,
           command,
-          status: 'failed',
+          // A check stopped by a termination signal is unfinished, not failed.
+          status: terminating ? 'interrupted' : 'failed',
           exitCode: error?.exitCode ?? null,
           signal: error?.signal ?? null,
         });
@@ -1431,6 +1435,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
 export function installTerminationHandlers({ graceMs = 10_000 } = {}) {
   let current = null;
   const stop = async (signal, code) => {
+    terminating = true;
     // A terminal Ctrl+C already reached the whole process group; forwarding it
     // again can force Vitest into a hard exit that drops in-flight records.
     if (signal !== 'SIGINT') for (const child of activeChildren) child.kill(signal);

@@ -82,8 +82,9 @@ function credibleFileResults(results) {
       // No end record: the invocation was interrupted; its finished files stand.
       if (!invocation) return true;
       if (invocation.runEnds.some((end) => end.unhandledErrors > 0)) return false;
-      if (invocation.checkEnd && invocation.checkEnd.status !== 'passed' && !invocation.failedFile)
-        return false;
+      // A failure no failing file explains (teardown, leak check) voids its passes;
+      // an interrupted check keeps the files that finished.
+      if (invocation.checkEnd?.status === 'failed' && !invocation.failedFile) return false;
       return true;
     })
     .map((record) => ({
@@ -217,7 +218,12 @@ export function buildCoverage({ attemptId, obligations, credits, results }) {
     const end = ends.get(obligation.id);
     return {
       ...entry,
-      status: !end ? 'unfinished' : end.status === 'passed' ? 'executed-passed' : 'failed',
+      status:
+        end?.status === 'passed'
+          ? 'executed-passed'
+          : end?.status === 'failed'
+            ? 'failed'
+            : 'unfinished',
     };
   });
   const files = obligations.files.map((obligation) => {
