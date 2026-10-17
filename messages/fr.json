@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "Ce fournisseur ne prend pas en charge les profils.",
   "settings_providers_inUseDefaultProvider_label": "Sélectionné comme fournisseur par défaut",
   "settings_providers_inUseQuickActions_label": "Utilisé par les actions rapides",
-  "settings_providers_inUseSpecialistModelOption_label": "Utilisé par l'option de modèle {position} du spécialiste \"{name}\""
+  "settings_providers_inUseSpecialistModelOption_label": "Utilisé par l'option de modèle {position} du spécialiste \"{name}\"",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "Par défaut",
+  "chat_modelPicker_missingProfile_name": "Profil supprimé",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "Utilise les paramètres précédents",
+  "chat_modelPicker_earlierSettingsLocal_description": "Cette conversation a démarré avant la modification de son profil. Redémarrez Intent pour utiliser les paramètres enregistrés.",
+  "chat_modelPicker_earlierSettingsRemote_description": "Cette conversation a démarré avant la modification de son profil. Redémarrez intentd sur l’hôte du fournisseur pour utiliser les paramètres enregistrés.",
+  "chat_modelPicker_replacementRequired_title": "Choisissez un autre modèle pour continuer",
+  "chat_modelPicker_replacementProfileMissing_description": "Le profil {provider} utilisé par cette conversation a été supprimé. Choisissez un modèle avant d’envoyer un autre message.",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} est désactivé dans Paramètres > Agents. Choisissez un modèle avant d’envoyer un autre message."
 }

@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "此提供方不支持配置文件。",
   "settings_providers_inUseDefaultProvider_label": "已选为默认提供方",
   "settings_providers_inUseQuickActions_label": "快捷操作正在使用",
-  "settings_providers_inUseSpecialistModelOption_label": "专家“{name}”的模型选项 {position} 正在使用"
+  "settings_providers_inUseSpecialistModelOption_label": "专家“{name}”的模型选项 {position} 正在使用",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "默认",
+  "chat_modelPicker_missingProfile_name": "已删除的配置",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "正在使用之前的设置",
+  "chat_modelPicker_earlierSettingsLocal_description": "此对话在其配置被编辑之前开始。重启 Intent 以使用已保存的设置。",
+  "chat_modelPicker_earlierSettingsRemote_description": "此对话在其配置被编辑之前开始。在提供方主机上重启 intentd 以使用已保存的设置。",
+  "chat_modelPicker_replacementRequired_title": "请选择其他模型以继续",
+  "chat_modelPicker_replacementProfileMissing_description": "此对话使用的 {provider} 配置已被删除。发送下一条消息前请选择一个模型。",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在“设置 > 代理”中停用。发送下一条消息前请选择一个模型。"
 }

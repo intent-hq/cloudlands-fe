@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "Dieser Anbieter unterstützt keine Profile.",
   "settings_providers_inUseDefaultProvider_label": "Als Standardanbieter ausgewählt",
   "settings_providers_inUseQuickActions_label": "Von Schnellaktionen verwendet",
-  "settings_providers_inUseSpecialistModelOption_label": "Wird von Modelloption {position} des Spezialisten \"{name}\" verwendet"
+  "settings_providers_inUseSpecialistModelOption_label": "Wird von Modelloption {position} des Spezialisten \"{name}\" verwendet",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "Standard",
+  "chat_modelPicker_missingProfile_name": "Entferntes Profil",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "Verwendet frühere Einstellungen",
+  "chat_modelPicker_earlierSettingsLocal_description": "Diese Unterhaltung wurde gestartet, bevor ihr Profil bearbeitet wurde. Starte Intent neu, um die gespeicherten Einstellungen zu verwenden.",
+  "chat_modelPicker_earlierSettingsRemote_description": "Diese Unterhaltung wurde gestartet, bevor ihr Profil bearbeitet wurde. Starte intentd auf dem Provider-Host neu, um die gespeicherten Einstellungen zu verwenden.",
+  "chat_modelPicker_replacementRequired_title": "Wähle ein anderes Modell, um fortzufahren",
+  "chat_modelPicker_replacementProfileMissing_description": "Das {provider}-Profil dieser Unterhaltung wurde entfernt. Wähle ein Modell, bevor du eine weitere Nachricht sendest.",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} ist unter Einstellungen > Agents deaktiviert. Wähle ein Modell, bevor du eine weitere Nachricht sendest."
 }

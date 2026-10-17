@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "此提供者不支援設定檔。",
   "settings_providers_inUseDefaultProvider_label": "已選為預設提供者",
   "settings_providers_inUseQuickActions_label": "快速動作正在使用",
-  "settings_providers_inUseSpecialistModelOption_label": "專家「{name}」的模型選項 {position} 正在使用"
+  "settings_providers_inUseSpecialistModelOption_label": "專家「{name}」的模型選項 {position} 正在使用",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "預設",
+  "chat_modelPicker_missingProfile_name": "已刪除的設定檔",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "正在使用先前的設定",
+  "chat_modelPicker_earlierSettingsLocal_description": "此對話在其設定檔被編輯之前開始。重新啟動 Intent 以使用已儲存的設定。",
+  "chat_modelPicker_earlierSettingsRemote_description": "此對話在其設定檔被編輯之前開始。在提供者主機上重新啟動 intentd 以使用已儲存的設定。",
+  "chat_modelPicker_replacementRequired_title": "請選擇其他模型以繼續",
+  "chat_modelPicker_replacementProfileMissing_description": "此對話使用的 {provider} 設定檔已被刪除。傳送下一則訊息前請選擇模型。",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在「設定 > 代理程式」中停用。傳送下一則訊息前請選擇模型。"
 }

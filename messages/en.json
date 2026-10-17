@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "This provider doesn't support profiles.",
   "settings_providers_inUseDefaultProvider_label": "Selected as the default provider",
   "settings_providers_inUseQuickActions_label": "Used by quick actions",
-  "settings_providers_inUseSpecialistModelOption_label": "In use by model option {position} of specialist \"{name}\""
+  "settings_providers_inUseSpecialistModelOption_label": "In use by model option {position} of specialist \"{name}\"",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "Default",
+  "chat_modelPicker_missingProfile_name": "Removed profile",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "Using earlier settings",
+  "chat_modelPicker_earlierSettingsLocal_description": "This conversation started before its profile was edited. Restart Intent to use the saved settings.",
+  "chat_modelPicker_earlierSettingsRemote_description": "This conversation started before its profile was edited. Restart intentd on the provider host to use the saved settings.",
+  "chat_modelPicker_replacementRequired_title": "Choose another model to continue",
+  "chat_modelPicker_replacementProfileMissing_description": "The {provider} profile this conversation used was removed. Pick a model before sending another message.",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} is disabled in Settings > Agents. Pick a model before sending another message."
 }

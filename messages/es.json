@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "Este proveedor no admite perfiles.",
   "settings_providers_inUseDefaultProvider_label": "Seleccionado como proveedor predeterminado",
   "settings_providers_inUseQuickActions_label": "Usado por las acciones rápidas",
-  "settings_providers_inUseSpecialistModelOption_label": "En uso por la opción de modelo {position} del especialista \"{name}\""
+  "settings_providers_inUseSpecialistModelOption_label": "En uso por la opción de modelo {position} del especialista \"{name}\"",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "Predeterminado",
+  "chat_modelPicker_missingProfile_name": "Perfil eliminado",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "Usa la configuración anterior",
+  "chat_modelPicker_earlierSettingsLocal_description": "Esta conversación empezó antes de que se editara su perfil. Reinicia Intent para usar la configuración guardada.",
+  "chat_modelPicker_earlierSettingsRemote_description": "Esta conversación empezó antes de que se editara su perfil. Reinicia intentd en el host del proveedor para usar la configuración guardada.",
+  "chat_modelPicker_replacementRequired_title": "Elige otro modelo para continuar",
+  "chat_modelPicker_replacementProfileMissing_description": "Se eliminó el perfil de {provider} que usaba esta conversación. Elige un modelo antes de enviar otro mensaje.",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} está desactivado en Configuración > Agentes. Elige un modelo antes de enviar otro mensaje."
 }

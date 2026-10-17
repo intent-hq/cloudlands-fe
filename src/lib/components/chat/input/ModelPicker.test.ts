@@ -38,6 +38,13 @@ const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
   observers: { idField: 'id', ids: [], map: {}, refsCount: {} },
 }));
 
+// Named profile summaries served by `providers.catalog` (§5.54). Empty by
+// default so every existing test keeps the profile-free picker.
+const mockCatalogProfiles = vi.hoisted(() => ({
+  current: [] as { id: string; providerRef: string; baseProviderId: string; name: string }[],
+}));
+const mockDaemonAppOwned = vi.hoisted(() => ({ current: true }));
+
 // Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
 // (guest window / collaborator seat / unsettled identity). Defaults to a
 // settled owner window so every existing test keeps the unlocked path.
@@ -108,6 +115,7 @@ vi.mock('$store/renderer/store', async () => {
   // (display names, id normalization, compound-id parsing) resolve.
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
@@ -119,11 +127,12 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       providerCatalog: {
         ...providerCatalog,
+        profiles: createCollection('id', mockCatalogProfiles.current),
         byWorkspaceId: Object.fromEntries(
           ['ws-1', 'A', 'B'].map((workspaceId) => [
             workspaceId,
             {
-              catalog: MOCK_PROVIDER_CATALOG,
+              catalog: { ...MOCK_PROVIDER_CATALOG, profiles: mockCatalogProfiles.current },
               settings: [
                 { path: 'model.defaultProvider', value: mockModelState.defaultProviderId },
               ],
@@ -313,6 +322,7 @@ vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors'
 const daemonHealth$ = writable<'healthy' | 'degraded' | 'down'>('healthy');
 vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
   selectDaemonHealth: () => daemonHealth$,
+  selectIsDaemonAppOwned: { select: () => mockDaemonAppOwned.current },
 }));
 
 const enabledProviderIds$ = writable(['auggie']);
@@ -449,6 +459,8 @@ afterEach(() => {
   agentModelEffortLevels$.set(undefined);
   workspaceCatalogEpoch$.set(0);
   providerEntriesOverride$.set(null);
+  mockCatalogProfiles.current = [];
+  mockDaemonAppOwned.current = true;
 });
 
 describe('ModelPicker locked state', () => {
@@ -5707,3 +5719,238 @@ vi.mock(
     };
   },
 );
+
+describe('ModelPicker named provider profiles (§5.54)', () => {
+  const WORK = {
+    id: 'pwork00000001',
+    providerRef: 'codex@pwork00000001',
+    baseProviderId: 'codex',
+    name: 'Work',
+  };
+  const PERSONAL = {
+    id: 'ppers00000001',
+    providerRef: 'codex@ppers00000001',
+    baseProviderId: 'codex',
+    name: 'Personal',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.loadError = null;
+    // Each reference has its own models.list catalog.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === WORK.providerRef
+          ? [{ value: 'gpt-5-work', label: 'GPT-5 Work row', description: 'Work catalog' }]
+          : providerId === PERSONAL.providerRef
+            ? [{ value: 'gpt-5-pers', label: 'GPT-5 Personal row', description: '' }]
+            : providerId === 'codex'
+              ? [{ value: 'gpt-5', label: 'GPT-5', description: 'Default catalog' }]
+              : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
+    }));
+    enabledProviderIds$.set(['auggie', 'codex']);
+    activeProviderId$.set('auggie');
+    mockModelState.defaultProviderId = 'auggie';
+    mockAgentSession$.set(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    mockAgentSession$.set(undefined);
+  });
+
+  it('keeps one Codex tab with its bare label when no profiles exist', async () => {
+    render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    const tabs = within(screen.getByTestId('model-provider-tabs')).getAllByRole('tab');
+    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
+      expect.not.stringMatching(/·/),
+      expect.not.stringMatching(/·/),
+    ]);
+    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
+      expect.stringContaining('@'),
+    );
+    expect(screen.queryByTestId('model-picker-profile-group')).toBeNull();
+  });
+
+  it('offers each profile as its own tab with its own catalog, and reports its reference on pick', async () => {
+    mockCatalogProfiles.current = [WORK, PERSONAL];
+    const onModelChange = vi.fn();
+    render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false, onModelChange } });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith(WORK.providerRef);
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith(
+        PERSONAL.providerRef,
+      );
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    const tabs = within(screen.getByTestId('model-provider-tabs')).getAllByRole('tab');
+    const labels = tabs.map((tab) => tab.getAttribute('aria-label') ?? '');
+    // Profiles follow their base provider; the base becomes "Default".
+    expect(labels).toHaveLength(4);
+    expect(labels[1]).toMatch(/Codex.*Default/);
+    expect(labels[2]).toMatch(/Codex.*Work/);
+    expect(labels[3]).toMatch(/Codex.*Personal/);
+
+    await fireEvent.click(screen.getByRole('tab', { name: /Work/ }));
+    // The browsed configuration is named above its models.
+    expect((await screen.findByTestId('model-picker-profile-group')).textContent).toMatch(
+      /Codex.*Work/,
+    );
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Work row/ }));
+
+    expect(onModelChange).toHaveBeenLastCalledWith('gpt-5-work', {
+      providerId: WORK.providerRef,
+      modelId: 'gpt-5-work',
+    });
+  });
+
+  it('shows the selected profile with the model, and follows a rename without changing identity', async () => {
+    mockCatalogProfiles.current = [WORK];
+    const view = render(ModelPicker, {
+      props: { selectedModel: 'gpt-5-work', providerId: WORK.providerRef, portal: false },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() =>
+      expect(screen.getByTestId('model-picker-profile').textContent).toBe('Work'),
+    );
+    const accessible = trigger.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+    expect(accessible).toMatch(/GPT-5 Work row.*Codex.*Work/);
+
+    // Rename: the catalog lists the same reference under a new name.
+    mockCatalogProfiles.current = [{ ...WORK, name: 'Client A' }];
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+    await view.rerender({ selectedModel: 'gpt-5-work', providerId: WORK.providerRef });
+    await waitFor(() =>
+      expect(screen.getByTestId('model-picker-profile').textContent).toBe('Client A'),
+    );
+    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Client A/),
+    );
+  });
+
+  it('labels the original configuration Default once its provider has profiles', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, { props: { selectedModel: 'gpt-5', providerId: 'codex', portal: false } });
+    await waitFor(() =>
+      expect(screen.getByTestId('model-picker-profile').textContent).toBe('Default'),
+    );
+  });
+
+  it('asks for a replacement instead of switching accounts when the profile was removed', async () => {
+    mockCatalogProfiles.current = [];
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: WORK.providerRef,
+      model: 'gpt-5-work',
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Choose another model/);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    const { agentClient } = await import('$features/agent/agent.client');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('shows the daemon-reported replacement requirement for a disabled base provider', async () => {
+    mockCatalogProfiles.current = [WORK];
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: WORK.providerRef,
+      model: 'gpt-5-work',
+      providerReplacementRequired: { providerRef: WORK.providerRef, reason: 'provider-disabled' },
+    } as never);
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Choose another model/);
+    expect(alert.textContent).toMatch(/Work/);
+  });
+
+  it.each([
+    [true, /Restart Intent/],
+    [false, /Restart intentd/],
+  ])(
+    'shows Using earlier settings with owner-specific restart guidance (app-owned=%s)',
+    async (appOwned, guidance) => {
+      mockDaemonAppOwned.current = appOwned;
+      mockCatalogProfiles.current = [WORK];
+      mockAgentSession$.set({
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        provider: WORK.providerRef,
+        model: 'gpt-5-work',
+        usingEarlierProfileSettings: true,
+      } as never);
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'gpt-5-work',
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          portal: false,
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await waitFor(() =>
+        expect(trigger.querySelector('[aria-label]')?.getAttribute('aria-label')).toMatch(
+          /earlier settings/,
+        ),
+      );
+      await fireEvent.click(trigger);
+      const notice = await screen.findByTestId('model-picker-earlier-settings');
+      expect(within(notice).getByRole('status').textContent).toMatch(guidance);
+    },
+  );
+
+  it('switches an agent to a profile through agent.setModel with the profile reference', async () => {
+    mockCatalogProfiles.current = [WORK];
+    activeProviderId$.set('codex');
+    mockModelState.defaultProviderId = 'codex';
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5',
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Work row/ }));
+    const { agentClient } = await import('$features/agent/agent.client');
+    await waitFor(() =>
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'gpt-5-work',
+        'ws-1',
+        WORK.providerRef,
+      ),
+    );
+  });
+});

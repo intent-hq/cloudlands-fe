@@ -7578,5 +7578,15 @@
   "settings_providerProfiles_unsupported_error": "このプロバイダーはプロファイルに対応していません。",
   "settings_providers_inUseDefaultProvider_label": "デフォルトのプロバイダーとして選択されています",
   "settings_providers_inUseQuickActions_label": "クイックアクションで使用中",
-  "settings_providers_inUseSpecialistModelOption_label": "スペシャリスト「{name}」のモデルオプション {position} で使用中"
+  "settings_providers_inUseSpecialistModelOption_label": "スペシャリスト「{name}」のモデルオプション {position} で使用中",
+  "chat_modelPicker_profileGroup_label": "{provider} · {profile}",
+  "chat_modelPicker_defaultProfile_name": "デフォルト",
+  "chat_modelPicker_missingProfile_name": "削除されたプロファイル",
+  "chat_modelPicker_modelWithProfile_ariaLabel": "{model} · {provider}",
+  "chat_modelPicker_earlierSettings_label": "以前の設定を使用中",
+  "chat_modelPicker_earlierSettingsLocal_description": "この会話はプロファイルの編集前に開始されました。保存した設定を使うには Intent を再起動してください。",
+  "chat_modelPicker_earlierSettingsRemote_description": "この会話はプロファイルの編集前に開始されました。保存した設定を使うにはプロバイダーのホストで intentd を再起動してください。",
+  "chat_modelPicker_replacementRequired_title": "続行するには別のモデルを選択してください",
+  "chat_modelPicker_replacementProfileMissing_description": "この会話で使用していた {provider} のプロファイルは削除されました。次のメッセージを送る前にモデルを選択してください。",
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} は 設定 > エージェント で無効になっています。次のメッセージを送る前にモデルを選択してください。"
 }
