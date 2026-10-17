@@ -7499,5 +7499,19 @@
   "workspace_peopleActivity_loadOlder_error": "過去のアクティビティを読み込めませんでした。",
   "workspace_peopleActivity_loadMore_label": "さらに読み込む",
   "browser_activity_browsing_label": "{host} を閲覧中",
-  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました"
+  "browser_activity_unavailable_tooltip": "このブラウザータブは利用できなくなりました",
+  "settings_providerToken_label": "アクセストークン（任意）",
+  "settings_providerToken_saved": "トークン保存済み · 未検証",
+  "settings_providerToken_absent": "トークン未保存",
+  "settings_providerToken_manual": "トークンを使用しない場合は、各接続先マシンでノードを実行するアカウントとしてログインしてください。",
+  "settings_providerToken_nextLaunch": "変更は新しいエージェントに適用されます。実行中のエージェントは現在の認証を維持します。",
+  "settings_providerToken_claude": "claude setup-token で Claude のセットアップトークンを作成してください。",
+  "settings_providerToken_codex": "対象の ChatGPT Business または Enterprise ワークスペースの Codex アクセストークンを使用してください。",
+  "settings_providerToken_save": "トークンを保存",
+  "settings_providerToken_replace": "トークンを置換",
+  "settings_providerToken_remove": "トークンを削除",
+  "settings_providerToken_loading": "トークン設定を読み込み中…",
+  "settings_providerToken_unavailable": "このデーモンではトークン設定を利用できません。",
+  "settings_providerToken_error": "トークンを更新できませんでした。再試行してください。",
+  "settings_providerToken_loadError": "トークン設定を読み込めませんでした。再試行してください。"
 }

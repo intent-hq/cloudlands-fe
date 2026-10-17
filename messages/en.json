@@ -7499,5 +7499,19 @@
   "workspace_peopleActivity_loadOlder_error": "Could not load older activity.",
   "workspace_peopleActivity_loadMore_label": "Load more",
   "browser_activity_browsing_label": "Browsing {host}",
-  "browser_activity_unavailable_tooltip": "This browser tab is no longer available"
+  "browser_activity_unavailable_tooltip": "This browser tab is no longer available",
+  "settings_providerToken_label": "Optional access token",
+  "settings_providerToken_saved": "Token saved · not verified",
+  "settings_providerToken_absent": "No token saved",
+  "settings_providerToken_manual": "Without a token, sign in on each target machine as the account running the node.",
+  "settings_providerToken_nextLaunch": "Changes apply to new agents. Running agents keep their current authentication.",
+  "settings_providerToken_claude": "Create a Claude setup token with claude setup-token.",
+  "settings_providerToken_codex": "Use a Codex access token from an eligible ChatGPT Business or Enterprise workspace.",
+  "settings_providerToken_save": "Save token",
+  "settings_providerToken_replace": "Replace token",
+  "settings_providerToken_remove": "Remove token",
+  "settings_providerToken_loading": "Loading token settings…",
+  "settings_providerToken_unavailable": "Token settings are unavailable on this daemon.",
+  "settings_providerToken_error": "Could not update the token. Please try again.",
+  "settings_providerToken_loadError": "Could not load token settings. Please try again."
 }

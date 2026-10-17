@@ -7499,5 +7499,19 @@
   "workspace_peopleActivity_loadOlder_error": "No se pudo cargar la actividad anterior.",
   "workspace_peopleActivity_loadMore_label": "Cargar más",
   "browser_activity_browsing_label": "Navegando por {host}",
-  "browser_activity_unavailable_tooltip": "Esta pestaña del navegador ya no está disponible"
+  "browser_activity_unavailable_tooltip": "Esta pestaña del navegador ya no está disponible",
+  "settings_providerToken_label": "Token de acceso opcional",
+  "settings_providerToken_saved": "Token guardado · sin verificar",
+  "settings_providerToken_absent": "No hay token guardado",
+  "settings_providerToken_manual": "Sin un token, inicia sesión en cada máquina de destino con la cuenta que ejecuta el nodo.",
+  "settings_providerToken_nextLaunch": "Los cambios se aplican a los agentes nuevos. Los agentes en ejecución conservan su autenticación actual.",
+  "settings_providerToken_claude": "Crea un token de configuración de Claude con claude setup-token.",
+  "settings_providerToken_codex": "Usa un token de acceso de Codex de un espacio de ChatGPT Business o Enterprise elegible.",
+  "settings_providerToken_save": "Guardar token",
+  "settings_providerToken_replace": "Reemplazar token",
+  "settings_providerToken_remove": "Eliminar token",
+  "settings_providerToken_loading": "Cargando ajustes del token…",
+  "settings_providerToken_unavailable": "Los ajustes de token no están disponibles en este daemon.",
+  "settings_providerToken_error": "No se pudo actualizar el token. Inténtalo de nuevo.",
+  "settings_providerToken_loadError": "No se pudieron cargar los ajustes del token. Inténtalo de nuevo."
 }
