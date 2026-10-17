@@ -1049,10 +1049,10 @@ const GENERATED_MODULES = [
  */
 export async function invalidatedUnitFiles(changed, root = REPO_ROOT, options = {}) {
   const resolveSelections = options.resolveUnitSelections ?? resolveUnitSelections;
-  // A deleted module can break an unchanged importer that the current graph no longer shows.
+  // A deleted module or asset (.json, .css, ?raw import) can break an unchanged
+  // importer that the current graph no longer shows. Only tests and docs are exempt.
   const deleted = changed.find(
-    (file) =>
-      !isExisting(file, root) && CODE_EXTENSIONS.has(extname(file)) && !UNIT_TEST_RE.test(file),
+    (file) => !isExisting(file, root) && testRunner(file) === null && extname(file) !== '.md',
   );
   if (deleted) return { all: true, reason: `deleted module ${deleted}` };
   const plan = createVerificationPlan(changed, { root, ctTests: [] });
@@ -1428,10 +1428,17 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
  * On SIGINT/SIGTERM, forwards the signal to running checks and writes the
  * current attempt's coverage so a later --resume can continue from it.
  */
-export function installTerminationHandlers() {
+export function installTerminationHandlers({ graceMs = 10_000 } = {}) {
   let current = null;
-  const stop = (signal, code) => {
-    for (const child of activeChildren) child.kill(signal);
+  const stop = async (signal, code) => {
+    // A terminal Ctrl+C already reached the whole process group; forwarding it
+    // again can force Vitest into a hard exit that drops in-flight records.
+    if (signal !== 'SIGINT') for (const child of activeChildren) child.kill(signal);
+    // Let checks settle so their final records land before coverage is written.
+    const deadline = Date.now() + graceMs;
+    while (activeChildren.size && Date.now() < deadline)
+      await new Promise((done) => setTimeout(done, 50));
+    for (const child of activeChildren) child.kill('SIGKILL');
     try {
       current?.finish();
     } catch (error) {

@@ -2,16 +2,14 @@
 // test file of the current plan is an obligation. An obligation is satisfied by
 // a pass in this attempt or, under `--resume`, by a compatible earlier receipt.
 import { commandIdentity, diffSources, digest } from './verify-changed-receipts.mjs';
+import { UNIT_SELECTION_IDS } from './verify-unit-selection.mjs';
 
-export const UNIT_LANES = new Set([
-  'vitest-direct',
-  'vitest-related',
-  'vitest-declared',
-  'vitest-full',
-  'vitest-ui-invariants',
-]);
+/** Lanes whose resolved files are individual obligations. */
+export const UNIT_LANES = UNIT_SELECTION_IDS;
 const SATISFIED = new Set(['executed-passed', 'resumed-passed']);
-const PASSING_FILE_STATES = new Set(['passed', 'skipped']);
+// Only the most recent compatible attempts are consulted; each distinct change
+// set since an attempt costs one invalidation discovery.
+const MAX_EVIDENCE_ATTEMPTS = 10;
 // Invalidation is computed with the standard unit configuration only; files
 // recorded under any other configuration never earn cross-tree credit.
 const INVALIDATION_CONFIG = 'vitest.config.ts';
@@ -55,6 +53,20 @@ function invocationsOf(results) {
 }
 
 /**
+ * A file passed only if all of its tests passed. A `skipped` file counts only
+ * when its run ended normally: a cancelled run also reports never-run files
+ * as skipped.
+ */
+function filePassed(record, invocation) {
+  if (record.state === 'passed') return true;
+  return (
+    record.state === 'skipped' &&
+    !!invocation?.runEnds.length &&
+    invocation.runEnds.every((end) => end.reason === 'passed')
+  );
+}
+
+/**
  * Per-file results are credible unless their invocation reported unhandled
  * errors, or failed without any failing file to explain the failure (for
  * example a teardown or leak check). Interrupted invocations stay credible for
@@ -62,30 +74,27 @@ function invocationsOf(results) {
  */
 function credibleFileResults(results) {
   const invocations = invocationsOf(results);
-  return results.filter((record) => {
-    if (record.type !== 'unit-file' || typeof record.file !== 'string') return false;
-    if (!record.invocation) return false;
-    const invocation = invocations.get(record.invocation);
-    // No end record: the invocation was interrupted; its finished files stand.
-    if (!invocation) return true;
-    if (invocation.runEnds.some((end) => end.unhandledErrors > 0)) return false;
-    if (invocation.checkEnd && invocation.checkEnd.status !== 'passed' && !invocation.failedFile)
-      return false;
-    return true;
-  });
+  return results
+    .filter((record) => {
+      if (record.type !== 'unit-file' || typeof record.file !== 'string') return false;
+      if (!record.invocation) return false;
+      const invocation = invocations.get(record.invocation);
+      // No end record: the invocation was interrupted; its finished files stand.
+      if (!invocation) return true;
+      if (invocation.runEnds.some((end) => end.unhandledErrors > 0)) return false;
+      if (invocation.checkEnd && invocation.checkEnd.status !== 'passed' && !invocation.failedFile)
+        return false;
+      return true;
+    })
+    .map((record) => ({
+      ...record,
+      passed: filePassed(record, invocations.get(record.invocation)),
+    }));
 }
 
-function latestFileResults(results) {
+function latestFileResults(results, key) {
   const latest = new Map();
-  for (const record of credibleFileResults(results))
-    latest.set(`${record.lane}\0${record.config}\0${record.file}`, record);
-  return latest;
-}
-
-function latestByFile(results) {
-  const latest = new Map();
-  for (const record of credibleFileResults(results))
-    latest.set(`${record.config}\0${record.file}`, record);
+  for (const record of credibleFileResults(results)) latest.set(key(record), record);
   return latest;
 }
 
@@ -117,7 +126,8 @@ export async function reconcile({
   const obligations = obligationsFor(plan, selections);
   const compatible = attempts
     .filter((attempt) => attempt.run.identities?.configuration?.digest === configuration.digest)
-    .reverse();
+    .reverse()
+    .slice(0, MAX_EVIDENCE_ATTEMPTS);
   const changedFor = new Map();
   const changed = (attempt) => {
     if (!changedFor.has(attempt.id)) {
@@ -135,7 +145,7 @@ export async function reconcile({
   const evidence = compatible.map((attempt) => ({
     attempt,
     checks: latestCheckEnds(attempt.results),
-    files: latestByFile(attempt.results),
+    files: latestFileResults(attempt.results, (record) => `${record.config}\0${record.file}`),
   }));
 
   const checks = new Map();
@@ -165,8 +175,7 @@ export async function reconcile({
         // Stale evidence (pass or failure) for a file affected since then is ignored.
         if (invalid.all || invalid.files.has(obligation.file)) continue;
       }
-      if (PASSING_FILE_STATES.has(record.state))
-        files.set(`${obligation.lane}\0${obligation.file}`, attempt.id);
+      if (record.passed) files.set(`${obligation.lane}\0${obligation.file}`, attempt.id);
       break;
     }
   }
@@ -195,7 +204,10 @@ export function buildCoverage({ attemptId, obligations, credits, results }) {
   const ends = new Map();
   for (const record of results)
     if (record.type === 'check-end' && record.id) ends.set(record.id, record);
-  const fileResults = latestFileResults(results);
+  const fileResults = latestFileResults(
+    results,
+    (record) => `${record.lane}\0${record.config}\0${record.file}`,
+  );
   const checks = obligations.checks.map((obligation) => {
     const entry = { id: obligation.id, command: obligation.command };
     if (credits?.checks.has(obligation.id)) {
@@ -216,7 +228,11 @@ export function buildCoverage({ attemptId, obligations, credits, results }) {
     if (!record) return { ...entry, status: 'unfinished' };
     return {
       ...entry,
-      status: PASSING_FILE_STATES.has(record.state) ? 'executed-passed' : 'failed',
+      status: record.passed
+        ? 'executed-passed'
+        : record.state === 'failed'
+          ? 'failed'
+          : 'unfinished',
     };
   });
   const count = (entries) => {

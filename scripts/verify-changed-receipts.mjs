@@ -59,7 +59,20 @@ const CONFIG_FILES = [
 ];
 const CONFIG_PATTERN = /^tsconfig[^/]*\.json$/;
 const VITEST_CONFIGS = ['vitest.config.ts', 'tests/integration/vitest.integration.config.ts'];
-const ENVIRONMENT_KEYS = ['CI', 'LANG', 'LC_ALL', 'NODE_ENV', 'NODE_OPTIONS', 'TZ'];
+const ENVIRONMENT_KEYS = [
+  'CI',
+  'LANG',
+  'LC_ALL',
+  'NODE_ENV',
+  'NODE_OPTIONS',
+  'TRANSFER_SELECTION_FIXTURE_ROOT',
+  'TRANSFER_SELECTION_GENERATED',
+  'TZ',
+];
+// Shared monorepo inputs some suites read (see transfer-selection-fixtures.mjs);
+// they live outside the package source map.
+const MONOREPO_FIXTURES = '../../../docs/protocol/fixtures/transfer-selection';
+const MONOREPO_VALIDATOR = '../../../scripts/check-transfer-selection-contract.mjs';
 const IMPORT_SUFFIXES = ['', '.ts', '.js', '.mjs', '.cjs', '.svelte', '/index.ts', '/index.js'];
 const ALIASES = {
   '$features/': 'src/features/',
@@ -247,8 +260,24 @@ export function configurationIdentity(root, options = {}) {
       return [file, content ? sha256(content) : null];
     }),
   );
+  const fixtureRoot = env.TRANSFER_SELECTION_FIXTURE_ROOT ?? resolve(runnerRoot, MONOREPO_FIXTURES);
+  const external = {};
+  const hashTree = (path) => {
+    const stat = statSync(path, { throwIfNoEntry: false });
+    if (stat?.isDirectory())
+      for (const name of readdirSync(path).sort()) hashTree(join(path, name));
+    else {
+      const content = readIfFile(path);
+      external[path] = content ? sha256(content) : null;
+    }
+  };
+  hashTree(fixtureRoot);
+  hashTree(resolve(fixtureRoot, '../../../../scripts/check-transfer-selection-contract.mjs'));
+  hashTree(resolve(runnerRoot, MONOREPO_VALIDATOR));
+  if (env.TRANSFER_SELECTION_GENERATED) hashTree(env.TRANSFER_SELECTION_GENERATED);
   const parts = {
     schema: RECEIPT_SCHEMA,
+    external,
     node: options.nodeVersion ?? process.version,
     platform: options.platform ?? process.platform,
     arch: options.arch ?? process.arch,
