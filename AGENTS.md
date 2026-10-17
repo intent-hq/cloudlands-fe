@@ -368,6 +368,23 @@ truncates coverage. Review the resolved plan, then raise or omit the limit to ru
 selected checks. Discovery failures also stop before checks; fix the reported config
 or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
 unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+
+Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`:
+`run.json` holds the source, configuration, command and resolved-selection identities;
+`results.jsonl` appends check outcomes and each unit file's result as it finishes; and
+`coverage.json` lists every current check and resolved unit file per lane as
+`executed-passed`, `resumed-passed` (with its source attempt), `failed` or `unfinished`.
+The run passes only when every entry is satisfied. To continue after a failure or
+interruption, rerun with `--resume`; never hand-pick stages. It reruns anything not
+proven compatible. A configuration, lockfile, Node, Vitest setup or runner change voids
+all credit. A non-unit check needs an identical command on identical sources. A unit
+file keeps its pass unless the plan for the changes since then would select it (direct
+edit, `vitest related`, declared trigger, UI invariant, full-risk fallback or deleted
+module). Credit follows the file across lanes, so an edited test that moves from the
+declared to the direct lane simply reruns there (cloudlands-fe#3439).
+`--resolved-plan --resume` previews the continuation; `--max-unit-files` still bounds
+the full resolved plan. Attempts untouched for seven days are pruned.
+
 The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
