@@ -88,7 +88,6 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-  import { setWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -491,21 +490,10 @@
     () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
     () => tab,
   );
+  // New space defaults to the selected Home repository itself
+  // (`defaultToSidebarRepository`); recording it here as the last-used repo
+  // would overwrite the user's real last pick, e.g. with a workspace's clone.
   function createWorkspace() {
-    const repoPath = selectedRepository?.repoPath;
-    if (selectedRepository && repoPath) {
-      store.dispatch(
-        setWorkspaceInitializerLastSelectedRepo({
-          path: repoPath,
-          type: selectedRepository.isGithub && !repoPath.startsWith('/') ? 'github' : 'local',
-          ...(selectedRepository.owner && selectedRepository.name
-            ? {
-                githubUrl: `https://github.com/${selectedRepository.owner}/${selectedRepository.name}`,
-              }
-            : {}),
-        }),
-      );
-    }
     store.dispatch(setShowCreateModal(true));
   }
 </script>
