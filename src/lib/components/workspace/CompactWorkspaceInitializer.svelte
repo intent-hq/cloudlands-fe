@@ -8,6 +8,10 @@
   const currentHostRole$ = selectHostRole();
   /* eslint-disable max-lines */
   import { selectHomeWorkspaceRepository } from '$features/home/home-workspaces-selectors';
+  import {
+    readSkipIsolation,
+    resolveSidebarRepositoryDefault,
+  } from './initializer/sidebar-repository-default';
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
@@ -536,28 +540,10 @@
       $pendingGitHubPrefill$
     )
       return saved;
-    const repo = selectHomeWorkspaceRepository.select(appStore.state);
-    if (!repo?.repoPath) return saved;
-    const repoType =
-      repo.isGithub && repo.repoPath === `${repo.owner}/${repo.name}` ? 'github' : 'local';
-    if (saved?.repoPath === repo.repoPath && saved.repoType === repoType && !saved.isNewRepo)
-      return saved;
-    const githubUrl =
-      repo.owner && repo.name ? `https://github.com/${repo.owner}/${repo.name}` : '';
-    return {
-      ...saved,
-      repositoryCheckoutDraft: undefined,
-      repoPath: repo.repoPath,
-      repoType,
-      skipIsolation: repoType === 'github' ? false : readSkipIsolation(saved),
-      githubUrl,
-      isNewRepo: false,
-      isValidPath: true,
-      branch: '',
-      scope: '',
-      scopeRepoPath: undefined,
-      remoteSetup: null,
-    } satisfies CompactWorkspaceInitializerFormState;
+    return resolveSidebarRepositoryDefault(
+      selectHomeWorkspaceRepository.select(appStore.state),
+      saved,
+    );
   });
   const savedAgentSettings = $compactFormState$ ?? $lastSubmittedAgent$;
 
@@ -837,19 +823,6 @@
     setupScriptName = choice.name;
     setupScriptNameSource = choice.source;
     isCustomSetupScript = false;
-  }
-
-  /**
-   * Read skipIsolation from persisted form state, falling back to the legacy
-   * `skipWorktree` key so pre-rename persisted state keeps the user's choice.
-   */
-  function readSkipIsolation(
-    formState: CompactWorkspaceInitializerFormState | null | undefined,
-  ): boolean | undefined {
-    return (
-      formState?.skipIsolation ??
-      (formState as { skipWorktree?: boolean } | null | undefined)?.skipWorktree
-    );
   }
 
   // Skip isolation toggle (work directly in the repo folder, no isolated checkout)

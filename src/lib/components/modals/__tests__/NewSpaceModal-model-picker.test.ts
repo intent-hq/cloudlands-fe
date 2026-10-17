@@ -282,6 +282,8 @@ vi.mock('svelte-fa', async () => ({
 
 import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
 import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
+import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
+import { WorkspaceStatusEnum } from '$shared/types';
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -647,6 +649,87 @@ describe('NewSpaceModal model-picker composition', () => {
         });
       },
     );
+
+    describe('GitHub repository cloned by a "Pick a repo" workspace', () => {
+      const clonePath = '/workspaces/ideate-future/intent';
+
+      // A Pick-a-repo workspace is cloned into its own folder, so the daemon
+      // reports the clone as both repositoryPath and worktreePath, and no
+      // known repo row backs the group.
+      function selectClonedSidebarRepo() {
+        appStore.dispatch(setRepos([]));
+        appStore.dispatch(
+          replaceWorkspaceList([
+            {
+              id: 'ideate-future',
+              title: 'Ideate',
+              status: WorkspaceStatusEnum.Active,
+              createdAt: '',
+              updatedAt: '',
+              changesets: [],
+              timeline: [],
+              conversationInfo: [],
+              repositoryPath: clonePath,
+              worktreePath: clonePath,
+              repositoryOwner: 'intent-hq',
+              repositoryName: 'intent',
+            },
+          ]),
+        );
+        appStore.dispatch(updateHomeWorkspaceView({ repoKey: 'intent-hq/intent' }));
+      }
+
+      it('defaults to the GitHub pick instead of copying the workspace clone', async () => {
+        selectClonedSidebarRepo();
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: 'intent-hq/intent',
+            repoType: 'github',
+            githubUrl: 'https://github.com/intent-hq/intent',
+            skipIsolation: false,
+          }),
+        );
+      });
+
+      it('keeps the saved GitHub pick of the same repository with its branch', async () => {
+        mocks.compactFormState = {
+          repoPath: 'intent-hq/intent',
+          repoType: 'github',
+          githubUrl: 'https://github.com/intent-hq/intent',
+          isValidPath: true,
+          branch: 'release',
+        };
+        selectClonedSidebarRepo();
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: 'intent-hq/intent',
+            repoType: 'github',
+            branch: 'release',
+          }),
+        );
+      });
+
+      it('replaces a saved local copy of the workspace clone with the GitHub pick', async () => {
+        mocks.compactFormState = {
+          repoPath: clonePath,
+          repoType: 'local',
+          githubUrl: 'https://github.com/intent-hq/intent',
+          isValidPath: true,
+          branch: 'main',
+        };
+        selectClonedSidebarRepo();
+        render(NewSpaceModal, { props: { open: true } });
+        await waitFor(() =>
+          expect(persistedStates().at(-1)).toMatchObject({
+            repoPath: 'intent-hq/intent',
+            repoType: 'github',
+            branch: '',
+          }),
+        );
+      });
+    });
 
     it.each(['skipIsolation', 'skipWorktree'] as const)(
       'preserves saved %s for a local sidebar default',
