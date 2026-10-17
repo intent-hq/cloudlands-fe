@@ -466,6 +466,12 @@ jobs:
           pnpm run generate:build-config
           pnpm run generate:ipc-channels
           xvfb-run -a pnpm exec playwright test --config test/fixtures/repository-checkout/playwright.config.ts
+      - name: Electron monitor document tests
+        # Controlled peer proves main/preload/document routing, not provider authority.
+        run: |
+          pnpm run generate:build-config
+          pnpm run generate:ipc-channels
+          xvfb-run -a pnpm exec playwright test --config test/fixtures/pr-monitor-native/playwright.config.ts
       - name: Record browser outcome
         if: always()
         env:

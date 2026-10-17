@@ -648,6 +648,8 @@ function generateListenerId(): string {
 
 // Define the API exposed to the renderer
 const electronAPI = {
+  // Decoder capability only: the renderer and main must independently opt in.
+  reviewMonitoring: 1,
   // IPC invoke (request/response)
   invoke: (channel: string, ...args: any[]) => {
     // Use generated allowed channels for security

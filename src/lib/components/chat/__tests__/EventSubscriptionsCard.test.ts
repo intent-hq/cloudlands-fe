@@ -37,7 +37,7 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', as
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async () => {
   const { derived } = await import('svelte/store');
   return {
-    selectAgentPrMonitors: (
+    selectAgentReviewMonitors: (
       _workspaceId: unknown,
       agentId: import('svelte/store').Readable<string>,
     ) =>
