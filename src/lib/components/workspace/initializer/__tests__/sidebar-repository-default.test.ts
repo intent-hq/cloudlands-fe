@@ -46,21 +46,75 @@ describe('resolveSidebarRepositoryDefault', () => {
   it.each([
     ['shorthand', { repoPath: 'Intent-HQ/Intent', githubUrl: '' }],
     ['URL', { repoPath: 'intent-hq/intent', githubUrl: 'https://github.com/intent-hq/intent' }],
+    [
+      'repoPath when the URL does not parse',
+      { repoPath: 'intent-hq/intent', githubUrl: 'https://github.com/intent-hq/intent/' },
+    ],
   ])('keeps a saved GitHub pick of the same repository by %s', (_, fields) => {
     const saved = { ...fields, repoType: 'github' as const, branch: 'release' };
     expect(resolveSidebarRepositoryDefault(githubGroup(), saved)).toBe(saved);
   });
 
-  it('keeps a saved user checkout of the same repository', () => {
+  it('keeps a saved GitHub pick over a user checkout of the same repository', () => {
     const saved = {
-      repoPath: '/home/me/code/intent',
-      repoType: 'local' as const,
+      repoPath: 'intent-hq/intent',
+      repoType: 'github' as const,
       githubUrl: 'https://github.com/intent-hq/intent',
-      branch: 'feature',
-      skipIsolation: true,
+      branch: 'dev',
     };
-    expect(resolveSidebarRepositoryDefault(githubGroup(), saved)).toBe(saved);
+    const group = githubGroup({ repoPath: '/home/me/code/intent', workspaces: [] });
+    expect(resolveSidebarRepositoryDefault(group, saved)).toBe(saved);
   });
+
+  it('replaces a saved local selection that is not the sidebar checkout', () => {
+    expect(
+      resolveSidebarRepositoryDefault(githubGroup(), {
+        repoPath: '/workspaces/deleted/intent',
+        repoType: 'local',
+        githubUrl: 'https://github.com/intent-hq/intent',
+        branch: 'feature',
+      }),
+    ).toMatchObject({ repoPath: 'intent-hq/intent', repoType: 'github', branch: '' });
+  });
+
+  it('copies a user checkout from a group whose first path is a clone', () => {
+    const group = githubGroup({
+      workspaces: [
+        { repositoryPath: clone, worktreePath: clone },
+        { repositoryPath: '/home/me/code/intent', worktreePath: '/workspaces/b/intent' },
+      ],
+    });
+    expect(resolveSidebarRepositoryDefault(group, null)).toMatchObject({
+      repoPath: '/home/me/code/intent',
+      repoType: 'local',
+    });
+  });
+
+  it('treats a direct-work workspace folder as a user checkout', () => {
+    const checkout = '/home/me/code/intent';
+    const group = githubGroup({
+      repoPath: checkout,
+      workspaces: [{ repositoryPath: checkout, worktreePath: checkout, skipWorktree: true }],
+    });
+    expect(resolveSidebarRepositoryDefault(group, null)).toMatchObject({
+      repoPath: checkout,
+      repoType: 'local',
+    });
+  });
+
+  it.each(['/root/.clones/intent-hq/intent', '/root/.repo-cache/intent-hq/intent'])(
+    'does not copy the daemon-managed path %s',
+    (path) => {
+      const group = githubGroup({
+        repoPath: path,
+        workspaces: [{ repositoryPath: path, worktreePath: '/workspaces/a/intent' }],
+      });
+      expect(resolveSidebarRepositoryDefault(group, null)).toMatchObject({
+        repoPath: 'intent-hq/intent',
+        repoType: 'github',
+      });
+    },
+  );
 
   it('replaces a saved local copy of any workspace clone in the group', () => {
     const otherClone = '/workspaces/shy-gopher/intent';
