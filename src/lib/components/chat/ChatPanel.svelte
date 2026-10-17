@@ -399,7 +399,10 @@
     selectContextReadiness,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 
-  import { selectEffectiveModel } from '$store/renderer/slices/specialists/specialists-selectors';
+  import {
+    selectEffectiveCodingAgent,
+    selectEffectiveModel,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import {
     selectProviderAuthFailureGuidance,
@@ -5749,6 +5752,7 @@
 
     let behaviorPrompt: string | undefined;
     let newModel: string | null | undefined;
+    let newProvider: string | undefined;
     let specialistName: string | undefined;
 
     if (specialistId) {
@@ -5758,9 +5762,22 @@
         .select(reduxState, workspace.id)
         .find((s) => s.id === specialistId);
       behaviorPrompt = specialist ? specialist.defaultBehaviorPrompt : undefined;
-      // Prefer the workspace's explicit or daemon-resolved model before the current session.
-      newModel =
-        selectEffectiveModel.select(reduxState, specialistId, workspace.id) || session.model;
+      // The specialist's model and provider travel as a pair: its explicit or
+      // daemon-resolved model belongs to its own (or the default) provider, so
+      // applying the model alone strands it on the agent's previous provider.
+      const specialistProvider =
+        selectEffectiveCodingAgent.select(reduxState, specialistId, workspace.id) || undefined;
+      const specialistModel = selectEffectiveModel.select(reduxState, specialistId, workspace.id);
+      const currentProvider = getAgentProvider(session, $catalogDefaultProviderId$);
+      if (specialistProvider && specialistProvider !== currentProvider) {
+        newProvider = specialistProvider;
+        // The current model belongs to the old provider; fall back to the new
+        // provider's CLI default rather than carry it across.
+        newModel = specialistModel || null;
+      } else {
+        // Prefer the specialist's explicit or daemon-resolved model before the current session.
+        newModel = specialistModel || session.model;
+      }
       specialistName = specialist?.name;
     } else {
       // Blank agent - no specialist
@@ -5773,6 +5790,7 @@
     appStore.dispatch(
       updateAgentSessionFields(agentId, {
         model: newModel,
+        ...(newProvider ? { provider: newProvider } : {}),
         metadataPatch: {
           specialist: specialistId === null ? { op: 'clear' } : { op: 'set', value: specialistId },
           behaviorPrompt: { op: 'set', value: behaviorPrompt ?? '' },
@@ -5787,14 +5805,18 @@
         specialist: specialistId,
         rememberSpecialist: true,
         ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
+        ...(newProvider ? { provider: newProvider } : {}),
         ...(specialistId === null
           ? { systemPrompt: null }
           : behaviorPrompt !== undefined
             ? { systemPrompt: behaviorPrompt }
             : {}),
       },
+      // Roll the provider back only when this change owns it: a guarded
+      // provider rollback must never overwrite a newer, successful selection.
       specialistRollback: {
         model: session.model,
+        ...(newProvider ? { provider: session.provider } : {}),
         metadataPatch: {
           specialist:
             session.metadata?.specialist === undefined
@@ -5820,6 +5842,7 @@
       agentId,
       specialistId,
       newModel,
+      newProvider,
       hasBehaviorPrompt: !!behaviorPrompt,
       behaviorPromptLength: behaviorPrompt?.length || 0,
     });
