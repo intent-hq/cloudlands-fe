@@ -5360,6 +5360,7 @@
   "agent_chatSend_retryProviderNoModels_toast": "{provider} 上没有可用模型，无法在该提供商重试本轮对话。",
   "agent_chatSend_retryProviderSwitchRejected_error": "提供商切换被拒绝。",
   "agent_chatSend_retryProviderSwitchFailed_toast": "无法切换到 {provider}：{error}",
+  "agent_chatSend_retryProviderRedriveFailed_toast": "已切换到 {provider}，但重试失败：{error}",
   "agent_ipc_activeStreamsFailed_error": "获取活跃流失败",
   "agent_ipc_circuitBreakerResetFailed_error": "重置熔断器失败",
   "agent_ipc_unknown_error": "未知错误",

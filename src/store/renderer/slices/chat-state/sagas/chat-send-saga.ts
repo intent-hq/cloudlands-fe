@@ -51,6 +51,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { AgentSession, QueuedMessage } from '$shared/types';
+import { AgentStatus } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
@@ -58,6 +59,7 @@ import {
   agentSessionRetryWithModelRequested,
   agentSessionRetryWithProviderRequested,
   agentSessionStopChatRequested,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   selectAgentIsResponding,
@@ -866,10 +868,22 @@ function pickModelForProvider(
  *   2. Switch the LIVE session via `agent.setModel` with an explicit
  *      `providerId` — the only FE→daemon path that carries a provider for a
  *      running agent (the daemon owns the child respawn + history replay).
- *   3. Only on a successful switch, redrive the failed turn through the
- *      retry-with-model path with the picked model as an explicit override,
- *      run inline in this handler so nothing queued behind it on the
- *      per-agent FIFO can move the session again before the redrive goes out.
+ *   3. Only on a successful switch, redrive the failed turn inline in this
+ *      handler so nothing queued behind it on the per-agent FIFO can move
+ *      the session again before the redrive goes out:
+ *      - an `error` session — every terminal quota failure, whether the
+ *        composer, a wake (PR monitor, hook, sibling agent) or anything else
+ *        started the turn — goes through the daemon's `agent.retry`, like the
+ *        plain Retry button (intent-hq/intent#7226). The daemon holds the
+ *        failed message requeued at its queue front and redrives it on the
+ *        session's CURRENT model: the one step 2 just set;
+ *      - otherwise the composer's resendable `lastAttemptedMessage` goes
+ *        through the retry-with-model path with the picked model as an
+ *        explicit override.
+ *
+ * When there is neither an `error` session nor a resendable message there is
+ * nothing to redrive, so the handler reports that BEFORE step 1 instead of
+ * moving the session to a new provider and then re-running nothing.
  *
  * A failed switch must NOT retry — that would re-send to the exhausted
  * provider and fail on quota all over again, which is exactly what the
@@ -879,6 +893,24 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
   const [agentId, wsId, providerId] = action.payload;
   let settled = false;
   try {
+    // An `error` session ALWAYS redrives through the daemon, exactly like the
+    // plain Retry button: the daemon holds the failed message requeued at its
+    // queue front, so a renderer-side resend would run the prompt twice (the
+    // resend, then the requeued copy), and `lastAttemptedMessage` may be a
+    // leftover from an earlier composer turn rather than the turn that failed
+    // (a wake-started turn never records one, intent-hq/intent#7226).
+    const daemonRedrive = (yield* selectAgentSession.effect(agentId))?.status === AgentStatus.Error;
+    const lastAttempted = yield* selectChatLastAttemptedMessage.effect(agentId);
+    if (
+      !daemonRedrive &&
+      (!lastAttempted || !hasSendableMessageContent(lastAttempted.text, lastAttempted.options))
+    ) {
+      yield* call(showNothingToRetry);
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
+
     let models: AuggieModel[] = [];
     try {
       const catalog = yield* call(getModelsForProviderForLoadingState, providerId, {
@@ -943,25 +975,29 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
       providerId,
       model: model.value,
     });
-    // Redrive with an EXPLICIT model override rather than the plain
-    // last-message retry. The plain path resolves the wire model as
-    // `lastAttempted.options?.model ?? session.model` — the first is the
-    // exhausted provider's model recorded on the original attempt, and the
-    // second is the Redux session, which still holds the old model until the
-    // daemon's asynchronous `agent:updated` lands. Either way the redrive
-    // would re-send the model we just switched away from, defeating the whole
-    // recovery. Passing `model.value` wins that `??` chain outright, so the
-    // turn is issued on the provider the user actually picked.
-    //
-    // Run the redrive INLINE (a `call`, never a `put` back onto the FIFO):
+    // Both redrives run INLINE (a `call`, never a `put` back onto the FIFO):
     // the provider buttons stay rendered while this handler's catalog and
     // setModel RPCs are in flight, so a second click may already be queued
     // behind us. A put-back redrive would land AFTER that click, whose own
-    // setModel has by then moved the session to a different provider, and
-    // `model.value` would be sent against the wrong live provider. Calling
-    // here keeps switch + redrive atomic per handler. `retryLastMessage`
-    // settles the synthetic action itself and reports retry failures; this
-    // handler only awaits the inline worker, not its request promise.
+    // setModel has by then moved the session to a different provider. Calling
+    // here keeps switch + redrive atomic per handler.
+    if (daemonRedrive) {
+      yield* call(redriveRequeuedTurn, action, agentId, wsId, providerId);
+      settled = true;
+      return;
+    }
+    // Non-error session: resend the composer's last attempt with an EXPLICIT
+    // model override rather than the plain last-message retry. The plain path
+    // resolves the wire model as `lastAttempted.options?.model ?? session.model`
+    // — the first is the exhausted provider's model recorded on the original
+    // attempt, and the second is the Redux session, which still holds the old
+    // model until the daemon's asynchronous `agent:updated` lands. Either way
+    // the redrive would re-send the model we just switched away from,
+    // defeating the whole recovery. Passing `model.value` wins that `??` chain
+    // outright, so the turn is issued on the provider the user actually
+    // picked. `retryLastMessage` settles the synthetic action itself and
+    // reports retry failures; this handler only awaits the inline worker, not
+    // its request promise.
     const redrive = agentSessionRetryWithModelRequested(agentId, wsId, model.value);
     yield* call(retryLastMessage, redrive, model.value);
     yield* put(action.success(undefined as void));
@@ -974,6 +1010,57 @@ function* handleRetryWithProvider(action: RetryProviderAction): SagaGenerator<vo
       yield* put(action.failure(new Error(CANCELLED_ERROR)));
     }
   }
+}
+
+/**
+ * Provider-retry redrive for an `error` session (intent-hq/intent#7226): ask
+ * the daemon to redrive the message it requeued at the failure, now on the
+ * provider the caller just switched to (`agent.retry` uses the session's
+ * current model). Mirrors the plain Retry button's `error`-status path
+ * (`chat-panel-ui-saga` `retryAgent`), except the failure banner is only
+ * cleared once the daemon accepted the retry, so a refused retry leaves the
+ * failure — and its recovery affordances — in place. A deleted agent
+ * (`notFound`) drops its stale failure instead of offering Retry forever,
+ * as `agent-failure-toast-saga` does. Settles `action`.
+ */
+function* redriveRequeuedTurn(
+  action: RetryProviderAction,
+  agentId: string,
+  wsId: string,
+  providerId: string,
+): SagaGenerator<void> {
+  const result = yield* call([appClient.agents, appClient.agents.retry], agentId, wsId);
+  if (!result.ok && result.notFound) {
+    logger.info('Provider retry target was deleted; dropping its stale failure', { agentId });
+    yield* put(chatErrorCleared(agentId));
+    yield* put(action.success(undefined as void));
+    return;
+  }
+  if (!result.ok) {
+    logger.warn('Provider retry switched provider but agent.retry failed', {
+      agentId,
+      providerId,
+      error: result.error,
+    });
+    yield* call(
+      showRetryProviderError,
+      m.agent_chatSend_retryProviderRedriveFailed_toast({
+        provider: providerId,
+        error: result.error,
+      }),
+    );
+    yield* put(action.failure(new Error(result.error)));
+    return;
+  }
+  yield* put(chatErrorCleared(agentId));
+  yield* put(
+    updateSession(agentId, {
+      status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
+      stopReason: null,
+    }),
+  );
+  if (result.redriven === false) yield* call(showNothingToRetry);
+  yield* put(action.success(undefined as void));
 }
 
 function matchesUserStop(agentId: string) {
