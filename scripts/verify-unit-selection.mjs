@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { listUiInvariantSuites } from './ui-invariant-suites.mjs';
 
 const self = fileURLToPath(import.meta.url);
-const unitIds = new Set([
+export const UNIT_SELECTION_IDS = new Set([
   'vitest-direct',
   'vitest-related',
   'vitest-declared',
@@ -21,7 +21,7 @@ const ALLOW_EMPTY_ENV = 'VERIFY_UNIT_SELECTION_ALLOW_EMPTY';
 
 export async function resolveUnitSelections(plan, root, options = {}) {
   const selections = [];
-  for (const check of plan.checks.filter((check) => unitIds.has(check.id))) {
+  for (const check of plan.checks.filter((check) => UNIT_SELECTION_IDS.has(check.id))) {
     const directory = mkdtempSync(join(tmpdir(), 'verify-unit-selection-'));
     const output = join(directory, 'files.json');
     try {

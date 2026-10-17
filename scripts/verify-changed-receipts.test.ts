@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildCoverage, obligationsFor, reconcile } from './verify-changed-coverage.mjs';
+import { invalidatedUnitFiles } from './verify-changed.mjs';
 import {
   commandIdentity,
   configurationIdentity,
@@ -123,6 +124,16 @@ describe('configuration identity', () => {
     expect(configurationIdentity(root, { env: {} }).digest).toBe(base);
     expect(configurationIdentity(root, { env: {}, nodeVersion: 'v0.0.0' }).digest).not.toBe(base);
     expect(configurationIdentity(root, { env: { CI: 'true' } }).digest).not.toBe(base);
+  });
+
+  it('changes when the shared monorepo transfer-selection fixtures change', () => {
+    const { root } = repo({ 'vitest.config.ts': config });
+    const { root: fixtures, write } = repo({ 'contract.json': '{"v":1}' });
+    const env = { TRANSFER_SELECTION_FIXTURE_ROOT: fixtures };
+    const base = configurationIdentity(root, { env }).digest;
+    expect(configurationIdentity(root, { env }).digest).toBe(base);
+    write('contract.json', '{"v":2}');
+    expect(configurationIdentity(root, { env }).digest).not.toBe(base);
   });
 });
 
@@ -280,6 +291,41 @@ describe('coverage contract', () => {
         end('eslint', 'passed', 'eslint#1', commandIdentity(lint)),
       ]),
     ).toEqual({ files: ['a.test.ts', 'b.test.ts'], checks: ['eslint', 'vitest-related'] });
+  });
+
+  it('credits a skipped file only when its run ended normally', async () => {
+    const runEnd = (reason: string) => ({
+      type: 'unit-run-end',
+      invocation: 'vitest-related#2',
+      reason,
+      unhandledErrors: 0,
+    });
+    expect(await credited([file('a.test.ts', 'passed'), file('b.test.ts', 'skipped')])).toEqual({
+      files: ['a.test.ts'],
+      checks: [],
+    });
+    expect(
+      await credited([
+        file('a.test.ts', 'passed'),
+        file('b.test.ts', 'skipped'),
+        runEnd('interrupted'),
+      ]),
+    ).toEqual({ files: ['a.test.ts'], checks: [] });
+    expect(
+      await credited([file('a.test.ts', 'passed'), file('b.test.ts', 'skipped'), runEnd('passed')]),
+    ).toEqual({ files: ['a.test.ts', 'b.test.ts'], checks: ['vitest-related'] });
+  });
+
+  it('voids all unit credit when an imported asset or module was deleted, but not for docs or tests', async () => {
+    const { root } = repo({ 'src/a.ts': 'a' });
+    for (const deleted of ['src/fixture.json', 'src/style.css', 'src/gone.ts'])
+      expect(await invalidatedUnitFiles([deleted], root), deleted).toMatchObject({ all: true });
+    const resolveUnitSelections = async () => [];
+    expect(
+      await invalidatedUnitFiles(['docs/gone.md', 'src/gone.test.ts'], root, {
+        resolveUnitSelections,
+      }),
+    ).toMatchObject({ all: false });
   });
 
   it('credits a non-unit check only for the identical command', async () => {
