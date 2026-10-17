@@ -49,6 +49,7 @@ import {
   workspaceCatalogReceived,
   workspaceCatalogReadFailed,
 } from '../../provider-catalog/provider-catalog-slice';
+import { isStructuredAgentNotFoundError as isStructuredNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import {
@@ -332,10 +333,20 @@ function* requireOwner(admission: string | null) {
   }
 }
 
-function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpecialist>) {
+/**
+ * `fileExists` is what an earlier write in the same per-specialist queue left
+ * on disk; it wins over the list, which may not have caught up (a failed or
+ * superseded refetch, or a workspace catalog that refreshes asynchronously).
+ */
+function* handleSave(
+  context: ListContext,
+  action: ReturnType<typeof saveFileSpecialist>,
+  fileExists?: boolean,
+) {
   const [payload] = action.payload;
   const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
+  let written = false;
   try {
     yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
@@ -363,7 +374,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
       teamAgents: existing?.teamAgents ?? bundled?.teamAgents,
       icon: existing?.icon ?? bundled?.icon,
     };
-    if (existing) {
+    if (fileExists ?? !!existing) {
       yield* call(
         [appClient.specialists, appClient.specialists.edit],
         payload.id,
@@ -387,6 +398,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
     yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
+    written = true;
     if (scope === 'project' && payload.workspaceId)
       yield* put(workspaceCatalogRequested(payload.workspaceId));
     else yield* call(refetchSpecialists, context);
@@ -404,6 +416,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
       yield* call(rejectAction, action, new Error(m.specialists_mutation_saveFailed_error()));
     }
   }
+  return written;
 }
 
 function* isInSettingsSidebar(id: string, workspaceId?: string) {
@@ -614,22 +627,34 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
   const [ref] = action.payload;
   const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
+  let written = false;
   try {
     yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(ref.id, ref.workspaceId);
     if (existing?.importedFrom) {
       throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
     }
-    yield* call(
-      [appClient.specialists, appClient.specialists.delete],
-      ref.id,
-      ref.scope ?? 'user',
-      ref.workspacePath,
-      ...(ref.workspaceId ? [ref.workspaceId] : []),
-    );
+    try {
+      yield* call(
+        [appClient.specialists, appClient.specialists.delete],
+        ref.id,
+        ref.scope ?? 'user',
+        ref.workspacePath,
+        ...(ref.workspaceId ? [ref.workspaceId] : []),
+      );
+    } catch (error) {
+      // A reset whose override is already gone has reached its goal; the
+      // refresh below reconciles the stale view instead of reporting failure.
+      if (!ref.allowMissing || !isStructuredNotFoundError(error)) throw error;
+      logger.warn('Specialist override was already absent; refreshing', {
+        id: ref.id,
+        scope: ref.scope ?? 'user',
+      });
+    }
     yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
+    written = true;
     if (ref.scope === 'project' && ref.workspaceId)
       yield* put(workspaceCatalogRequested(ref.workspaceId));
     else yield* call(refetchSpecialists, context);
@@ -647,6 +672,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
       yield* call(rejectAction, action, new Error(m.specialists_mutation_deleteFailed_error()));
     }
   }
+  return written;
 }
 
 /**
@@ -699,6 +725,61 @@ function* watchSpecialistsSubscription(context: ListContext) {
     }
   } finally {
     channel.close();
+  }
+}
+
+type FileMutation = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>;
+
+/**
+ * Writes for one specialist run in dispatch order, each after the previous
+ * one (and its refetch); different specialists still proceed concurrently.
+ * Overlapping writes could otherwise land out of order, and a follow-up save
+ * would pick create/edit from a list that predates the previous write.
+ */
+function* watchFileMutations(context: ListContext) {
+  const queues = new Map<string, FileMutation[]>();
+  while (true) {
+    const action = yield* take<FileMutation>([saveFileSpecialist, deleteFileSpecialist]);
+    const key = action.payload[0].id;
+    const queued = queues.get(key);
+    if (queued) {
+      queued.push(action);
+      continue;
+    }
+    const queue: FileMutation[] = [action];
+    queues.set(key, queue);
+    yield* fork(function* () {
+      try {
+        // What this queue's last successful write left on disk.
+        let fileExists: boolean | undefined;
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          const isSave = next.type === saveFileSpecialist.type;
+          const written = isSave
+            ? yield* call(
+                handleSave,
+                context,
+                next as ReturnType<typeof saveFileSpecialist>,
+                fileExists,
+              )
+            : yield* call(handleDelete, context, next as ReturnType<typeof deleteFileSpecialist>);
+          // A failure leaves the disk state unknown: fall back to the list.
+          fileExists = written ? isSave : undefined;
+        }
+      } finally {
+        queues.delete(key);
+        // Session teardown leaves queued promises unsettled otherwise.
+        for (const pending of queue.splice(0))
+          yield* call(
+            rejectAction,
+            pending,
+            new Error(
+              pending.type === saveFileSpecialist.type
+                ? m.specialists_mutation_saveFailed_error()
+                : m.specialists_mutation_deleteFailed_error(),
+            ),
+          );
+      }
+    });
   }
 }
 
@@ -771,8 +852,7 @@ function* specialistsSession(admission: string | null) {
     if (admission) yield* fork(watchSpecialistsSubscription, context);
     yield* all([
       takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
-      takeEvery(saveFileSpecialist, handleSave, context),
-      takeEvery(deleteFileSpecialist, handleDelete, context),
+      fork(watchFileMutations, context),
       fork(watchSpecialistRefetches, context),
     ]);
     yield* take(() => false);
