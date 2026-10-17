@@ -1657,13 +1657,13 @@ describe('chatSendSaga', () => {
       await run.task.toPromise();
     });
 
-    describe('failed turn with no renderer-side message to resend (intent-hq/intent#7226)', () => {
+    describe('error session redrives through agent.retry (intent-hq/intent#7226)', () => {
       // A turn started by a wake (PR monitor, hook, sibling agent) — or any
       // turn after an app reload — has no `lastAttemptedMessage`: that record
       // only exists for composer sends. The daemon, however, parked the
       // session in `error` with the failed message requeued at the queue
       // front, so `agent.retry` redrives it on the session's CURRENT model —
-      // the one setModel just switched to.
+      // the one setModel just switched to. That holds for composer turns too.
       const errored = () => session({ status: AgentStatus.Error });
       const sessionStatus = (run: ReturnType<typeof harness>) =>
         selectAgentSession.select(run.state(), AGENT)?.status;
@@ -1689,6 +1689,42 @@ describe('chatSendSaga', () => {
         expect(mocks.toastError).not.toHaveBeenCalled();
         expect(selectChatError.select(run.state(), AGENT)).toBeNull();
         expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('redrives through agent.retry even when a composer message is on record', async () => {
+        // The daemon requeued the failed message, so a renderer-side resend
+        // would run the prompt twice — and the record may be a leftover from
+        // an earlier composer turn rather than the turn that failed.
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: true });
+        const run = harness(errored());
+        run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'older prompt', options: {} }));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.queue).not.toHaveBeenCalled();
+        expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('drops the stale failure when the agent was deleted', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: false, notFound: true, error: 'not found' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+        expect(mocks.toastError).not.toHaveBeenCalled();
         run.task.cancel();
         await run.task.toPromise();
       });
