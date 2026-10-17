@@ -19,8 +19,8 @@ export const PROVIDER_PROFILES_DELETE_METHOD = 'providers.profiles.delete';
 export const PROVIDER_PROFILES_CHANGED_EVENT = 'providers:profiles-changed';
 
 const EnvEntryReadSchema = z.discriminatedUnion('kind', [
-  z.object({ key: z.string().min(1), kind: z.literal('set'), value: z.string() }).strict(),
-  z.object({ key: z.string().min(1), kind: z.literal('unset') }).strict(),
+  z.object({ key: z.string().min(1), kind: z.literal('set'), value: z.string() }).passthrough(),
+  z.object({ key: z.string().min(1), kind: z.literal('unset') }).passthrough(),
 ]);
 
 const ProviderProfileSchema = z

@@ -12,7 +12,7 @@
   import { FormField } from '$lib/components/patterns/form';
   import { notify } from '$lib/components/patterns/notify';
   import { Input } from '$lib/components/patterns/settings/custom-controls';
-  import type { ProviderProfile } from '$shared/provider-profiles';
+  import type { ProviderProfile, ProviderProfileFailure } from '$shared/provider-profiles';
   import {
     buildEnvWrites,
     isEnvUnchanged,
@@ -20,6 +20,7 @@
     newRow,
     restartGuidance,
     rowsFromSaved,
+    writtenRows,
     type EnvRow,
   } from '$features/settings/profile-env-form';
   import { store as appStore } from '$store/renderer/store';
@@ -49,7 +50,13 @@
   let name = $state('');
   let rows = $state<EnvRow[]>([]);
   let errors = $state<Record<string, string>>({});
-  let requestId = $state<string | null>(null);
+  /** The save this open dialog is waiting on; reset when the dialog reopens. */
+  let activeRequestId = $state<string | null>(null);
+  /**
+   * Every save this dialog sent, kept across close/reopen so a cancelled
+   * dialog still reports its outcome (restart warning or rejection).
+   */
+  let submissions = $state<Record<string, { name: string; rows: EnvRow[] }>>({});
   let wasOpen = false;
 
   $effect(() => {
@@ -57,54 +64,66 @@
       name = profile?.name ?? '';
       rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
       errors = {};
-      requestId = null;
+      activeRequestId = null;
     }
     wasOpen = open;
   });
 
   const envChanged = $derived(!profile || !isEnvUnchanged(rows, profile.env));
-  const outcome = $derived(requestId ? $mutations$[requestId] : undefined);
-  const pending = $derived(outcome?.status === 'pending');
+  const pending = $derived(
+    activeRequestId !== null && $mutations$[activeRequestId]?.status === 'pending',
+  );
+
+  function failureMessage(failure: ProviderProfileFailure | undefined): string {
+    return failure?.kind === 'notFound'
+      ? m.settings_providerProfiles_notFound_error()
+      : m.settings_providerProfiles_saveFailed_error();
+  }
 
   $effect(() => {
-    if (!outcome || outcome.status === 'pending' || !requestId) return;
-    const settled = outcome;
-    appStore.dispatch(providerProfileMutationDismissed(settled.id));
-    requestId = null;
-    if (settled.status === 'success') {
-      open = false;
-      if (settled.kind === 'create') {
-        notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
-      } else if (settled.activation?.envChanged) {
-        notify.warning(m.settings_providerProfiles_saved_label({ name: name.trim() }), {
-          description: restartGuidance(selectIsDaemonAppOwned.select(appStore.state)),
-        });
+    for (const [id, submission] of Object.entries(submissions)) {
+      const settled = $mutations$[id];
+      if (!settled || settled.status === 'pending') continue;
+      appStore.dispatch(providerProfileMutationDismissed(id));
+      const { [id]: _done, ...rest } = submissions;
+      submissions = rest;
+      const visible = open && id === activeRequestId;
+      if (visible) activeRequestId = null;
+      const savedName = submission.name.trim();
+      if (settled.status === 'success') {
+        if (visible) open = false;
+        if (settled.kind === 'create') {
+          notify.success(m.settings_providerProfiles_created_label({ name: savedName }));
+        } else if (settled.activation?.envChanged) {
+          notify.warning(m.settings_providerProfiles_saved_label({ name: savedName }), {
+            description: restartGuidance(selectIsDaemonAppOwned.select(appStore.state)),
+          });
+        } else {
+          notify.success(m.settings_providerProfiles_saved_label({ name: savedName }));
+        }
+      } else if (visible) {
+        errors =
+          settled.failure?.kind === 'fieldErrors'
+            ? mapFieldErrors(settled.failure.fieldErrors, submission.rows, providerName)
+            : { general: failureMessage(settled.failure) };
       } else {
-        notify.success(m.settings_providerProfiles_saved_label({ name: name.trim() }));
+        notify.error(failureMessage(settled.failure));
       }
-      return;
-    }
-    const failure = settled.failure;
-    if (failure?.kind === 'fieldErrors') {
-      errors = mapFieldErrors(failure.fieldErrors, rows, providerName);
-    } else if (failure?.kind === 'notFound') {
-      errors = { general: m.settings_providerProfiles_notFound_error() };
-    } else {
-      errors = { general: m.settings_providerProfiles_saveFailed_error() };
     }
   });
 
   function submit() {
     if (pending) return;
     errors = {};
-    const includeEnv = profile ? envChanged : rows.length > 0;
+    const includeEnv = profile ? envChanged : writtenRows(rows).length > 0;
     const built = includeEnv ? buildEnvWrites(rows) : { ok: true as const, env: undefined };
     if (!built.ok) {
       errors = built.rowErrors;
       return;
     }
     const id = crypto.randomUUID();
-    requestId = id;
+    activeRequestId = id;
+    submissions = { ...submissions, [id]: { name, rows: writtenRows(rows) } };
     if (profile) {
       appStore.dispatch(
         providerProfileUpdateRequested({
