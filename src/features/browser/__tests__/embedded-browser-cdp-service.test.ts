@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
@@ -165,6 +166,7 @@ describe('focusTab', () => {
       'ws-1',
       IPC_CHANNELS.BROWSER.FOCUS_TAB,
       { tabId: 'tab-1', workspaceId: 'ws-1', pin: true },
+      ANY_HOST,
     );
     service.unregisterTab('tab-1');
   });
@@ -206,6 +208,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
         requestId: expect.any(String),
         recoverTabId: 'tab-a',
       },
+      ANY_HOST,
     );
     mocks.sendToWorkspaceWindows.mockClear();
     await service.listAllTabs('ws-1');
@@ -216,6 +219,7 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
         workspaceId: 'ws-1',
         requestId: expect.any(String),
       },
+      ANY_HOST,
     );
   });
 
@@ -880,6 +884,7 @@ describe('tab ownership registry (#2857)', () => {
         emulatedSize: { width: 390, height: 844 },
         viewport: { mode: 'custom', width: 390, height: 844 },
       },
+      ANY_HOST,
     );
   });
 
