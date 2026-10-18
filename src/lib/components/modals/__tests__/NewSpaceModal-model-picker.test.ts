@@ -1015,7 +1015,7 @@ describe('NewSpaceModal model-picker composition', () => {
         );
     }
 
-    it('does not save repo, branch or model changes when New space is cancelled', async () => {
+    it('does not save repo, branch or model changes after a failed create and cancel', async () => {
       const view = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
       const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
       await waitFor(() =>
@@ -1040,6 +1040,14 @@ describe('NewSpaceModal model-picker composition', () => {
         await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
       );
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
+
+      // A create that fails must not save anything either.
+      const create = screen.getByRole('button', { name: /^Create workspace/ });
+      await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+      await fireEvent.click(create);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      await mocks.create.mock.results[0].value;
+      await tick();
 
       await view.rerender({ open: false });
       await waitFor(() => expect(screen.queryByTestId('picker-repo-path')).toBeNull());
