@@ -214,14 +214,11 @@ export function subscribeScriptMonitors(
     }
     try {
       const hello = await request<{
-        server?: { protocolVersion?: string; capabilities?: { scriptMonitors?: number } };
+        server?: { capabilities?: { scriptMonitors?: number } };
       }>('client.hello', {});
       if (disposed || version !== epoch) return;
-      if (
-        connection.isRejected() ||
-        !/^14\.\d+(?:\.\d+)?$/.test(hello.server?.protocolVersion ?? '') ||
-        hello.server?.capabilities?.scriptMonitors !== 2
-      ) {
+      // Capability-gated only: the protocol major moves for unrelated changes.
+      if (connection.isRejected() || hello.server?.capabilities?.scriptMonitors !== 2) {
         disable();
         return;
       }

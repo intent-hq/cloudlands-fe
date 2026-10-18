@@ -5945,7 +5945,8 @@
     const hint = scrollContainer?.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]')[
       index
     ];
-    if (!scrollContainer || !hint) return false;
+    // Hidden hints still occupy layout (reserved space), so their box is not proof.
+    if (!scrollContainer || !hint || hint.dataset.hintVisible !== 'true') return false;
     // Read the targeted hint at keypress time: scroll/resize can precede an
     // IntersectionObserver delivery, and only part of the prompt list may be visible.
     const target = hint.getBoundingClientRect();
@@ -7391,6 +7392,7 @@
               onEdit={handleEditSuggestedPrompt}
               compact={isCompactMode}
               showShortcutHints={isChatFocused}
+              reserveShortcutHintSpace
               workspaceId={workspace?.id}
             />
           </div>
