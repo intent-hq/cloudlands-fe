@@ -374,8 +374,18 @@ export interface AgentSession extends AgentNodeFields {
   /** Last user message sent */
   lastUserMessage?: string;
 
+  /**
+   * `true` only on an agent.list row whose `lastUserMessage` the daemon's
+   * list-row preview cap shortened (PROTOCOL §5.5 truncation flags); the
+   * value is then a prefix and agent.get serves the full text.
+   */
+  lastUserMessageTruncated?: boolean;
+
   /** Last agent response */
   lastAgentResponse?: string;
+
+  /** `true` only when the list-row cap shortened `lastAgentResponse`. */
+  lastAgentResponseTruncated?: boolean;
 
   /**
    * Number of transcript messages (PROTOCOL.md §5.5 `AgentLite` additive
@@ -564,6 +574,9 @@ export interface AgentSession extends AgentNodeFields {
    * to provide a 1-sentence summary or question for the user
    */
   digest?: string;
+
+  /** `true` only when the list-row cap shortened `digest`. */
+  digestTruncated?: boolean;
 
   // ========== File Operations ==========
   /** File changes made by this agent */

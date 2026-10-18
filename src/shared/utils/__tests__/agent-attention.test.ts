@@ -46,6 +46,49 @@ describe('getAgentAttentionRequest', () => {
     });
   });
 
+  // PROTOCOL §5.5 truncation flags: an agent.list row marks a reason the
+  // list cap shortened; the derivation surfaces it only for that copy.
+  it('marks a metadata reason the list cap shortened', () => {
+    expect(
+      getAgentAttentionRequest({
+        metadata: {
+          attentionRequestKind: 'blocker',
+          attentionRequestReason: 'Provider stal',
+          attentionRequestReasonTruncated: true,
+          attentionRequestTimestamp: '2026-10-18T00:00:00Z',
+        },
+      }),
+    ).toStrictEqual({
+      kind: 'blocker',
+      reason: 'Provider stal',
+      timestamp: '2026-10-18T00:00:00Z',
+      reasonTruncated: true,
+    });
+  });
+
+  it('does not mark an unflagged metadata reason or a full top-level reason', () => {
+    expect(
+      getAgentAttentionRequest({
+        metadata: { attentionRequestKind: 'blocker', attentionRequestReason: 'Complete' },
+      }),
+    ).not.toHaveProperty('reasonTruncated');
+    expect(
+      getAgentAttentionRequest({
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Full reason from the live event',
+        metadata: {
+          attentionRequestKind: 'blocker',
+          attentionRequestReason: 'Full rea',
+          attentionRequestReasonTruncated: true,
+        },
+      }),
+    ).toStrictEqual({
+      kind: 'blocker',
+      reason: 'Full reason from the live event',
+      timestamp: undefined,
+    });
+  });
+
   it('prefers top-level fields over metadata', () => {
     expect(
       getAgentAttentionRequest({
