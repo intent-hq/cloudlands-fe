@@ -10,6 +10,7 @@ import {
   dividerDefersToTurnBoundary,
   dividerEntryScrollTop,
   DIVIDER_ENTRY_VIEWPORT_FRACTION,
+  resolveUnreadEntryPhase,
 } from '../new-messages-divider';
 import { indexConversationTurns } from '../conversation-turns';
 import type { AgentMessage } from '$shared/types';
@@ -210,6 +211,51 @@ describe('resolveNewMessagesDividerAnchor', () => {
 
   it('returns null for an empty transcript', () => {
     expect(resolveNewMessagesDividerAnchor([], 'm1')).toBeNull();
+  });
+});
+
+describe('resolveUnreadEntryPhase', () => {
+  // Chronological ids; progressive delivery loads them newest-first.
+  const ids = ['m-1', 'm-2', 'm-3', 'm-4'];
+  const loading = { complete: false, truncated: false };
+  const doneWithOlder = { complete: true, truncated: true };
+  const doneWhole = { complete: true, truncated: false };
+
+  it('is none without a marker, regardless of transfer state', () => {
+    expect(resolveUnreadEntryPhase(ids, undefined, loading)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, null, doneWithOlder)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, '', loading)).toBe('none');
+  });
+
+  it('is none for an empty transcript', () => {
+    expect(resolveUnreadEntryPhase([], 'm-1', loading)).toBe('none');
+  });
+
+  it('is none when the marker is the newest message (nothing unseen)', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-4', loading)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, 'm-4', doneWhole)).toBe('none');
+  });
+
+  it('is marker-pending while loading and the marker row has not arrived', () => {
+    // Only the newest two rows have arrived so far.
+    expect(resolveUnreadEntryPhase(['m-3', 'm-4'], 'm-1', loading)).toBe('marker-pending');
+  });
+
+  it('is marker-loaded as soon as the marker row arrives, before completion', () => {
+    expect(resolveUnreadEntryPhase(['m-2', 'm-3', 'm-4'], 'm-2', loading)).toBe('marker-loaded');
+  });
+
+  it('is marker-loaded after completion when the marker is in the window', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-2', doneWithOlder)).toBe('marker-loaded');
+    expect(resolveUnreadEntryPhase(ids, 'm-1', doneWhole)).toBe('marker-loaded');
+  });
+
+  it('is marker-beyond-window when complete without the marker and older history exists', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-0', doneWithOlder)).toBe('marker-beyond-window');
+  });
+
+  it('is none for a dangling marker once the whole conversation is loaded', () => {
+    expect(resolveUnreadEntryPhase(ids, 'gone', doneWhole)).toBe('none');
   });
 });
 
