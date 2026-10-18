@@ -6,7 +6,8 @@
   import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
-  import { openInBrowserPanel, openInExternalBrowser } from './link-handler';
+  import type { PullRequestWorkspace } from '$lib/client/app-client';
+  import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
   const menuAnchor = $derived.by(() => {
@@ -68,6 +69,24 @@
         }),
   );
 
+  // The workspace the click came from is never offered: the user is already there.
+  const originalWorkspaces = $derived(
+    linkActionMenuState.gitHubRef?.kind === 'pr'
+      ? linkActionMenuState.linkedWorkspaces.filter(
+          (workspace) => workspace.id !== linkActionMenuState.workspaceId,
+        )
+      : [],
+  );
+
+  function workspaceName(workspace: PullRequestWorkspace): string {
+    return workspace.title.trim() || m.navigation_linkActionMenu_untitledWorkspace_label();
+  }
+
+  async function handleOpenOriginalWorkspace(workspace: PullRequestWorkspace) {
+    hideLinkActionMenu();
+    await openLinkedWorkspace(workspace.id);
+  }
+
   function handleStartWorkspace() {
     const ref = linkActionMenuState.gitHubRef;
     const { url } = linkActionMenuState;
@@ -108,6 +127,14 @@
   }
 </script>
 
+{#snippet archivedTag(workspace: PullRequestWorkspace)}
+  {#if workspace.archived}
+    <span class="shrink-0 text-muted-foreground">
+      {m.navigation_linkActionMenu_archivedWorkspace_label()}
+    </span>
+  {/if}
+{/snippet}
+
 {#if linkActionMenuState.visible}
   <Menu.Root
     open={linkActionMenuState.visible}
@@ -144,6 +171,34 @@
       <Menu.Item onSelect={handleCopyLink}>
         {m.navigation_linkActionMenu_copyLink_label()}
       </Menu.Item>
+      <!-- Last, so a lookup that resolves while the menu is open never shifts the items above. -->
+      {#if originalWorkspaces.length === 1}
+        {@const workspace = originalWorkspaces[0]}
+        <Menu.Separator />
+        <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+          <span class="shrink-0">{m.navigation_linkActionMenu_openInOriginalWorkspace_label()}</span
+          >
+          <span class="min-w-0 flex-1 truncate text-muted-foreground">
+            {workspaceName(workspace)}
+          </span>
+          {@render archivedTag(workspace)}
+        </Menu.Item>
+      {:else if originalWorkspaces.length > 1}
+        <Menu.Separator />
+        <Menu.Sub>
+          <Menu.SubTrigger>
+            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
+          </Menu.SubTrigger>
+          <Menu.SubContent class="max-w-72">
+            {#each originalWorkspaces as workspace (workspace.id)}
+              <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+                <span class="min-w-0 flex-1 truncate">{workspaceName(workspace)}</span>
+                {@render archivedTag(workspace)}
+              </Menu.Item>
+            {/each}
+          </Menu.SubContent>
+        </Menu.Sub>
+      {/if}
     </Menu.Content>
   </Menu.Root>
 {/if}

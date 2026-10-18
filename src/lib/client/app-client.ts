@@ -1,3 +1,4 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -409,6 +410,15 @@ export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
+/** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
+export interface PullRequestWorkspace {
+  id: WorkspaceId;
+  title: string;
+  archived: boolean;
+  /** RFC 3339 time the daemon first linked this workspace to the PR. */
+  linkedAt: string;
+}
+
 export interface WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -425,6 +435,13 @@ export interface WorkspacesClient {
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /**
+   * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
+   * §5.1), most recently linked first, archived included. Callers must gate on
+   * the `prWorkspaceLookup: 1` server capability. Rejects on transport errors
+   * and on a malformed result.
+   */
+  findByPullRequest(url: string): Promise<PullRequestWorkspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
