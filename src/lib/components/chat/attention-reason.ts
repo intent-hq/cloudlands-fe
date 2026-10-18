@@ -14,23 +14,22 @@ import {
   type AgentAttentionRequest,
   type AgentAttentionFieldsLike,
 } from '$shared/utils/agent-attention';
+import { attentionRequestKey } from './attention-notice';
 
 const inflight = new Map<string, Promise<string | null>>();
 
-function requestKey(agentId: string, request: AgentAttentionRequest): string {
-  return `${agentId}\u0000${request.kind}\u0000${request.timestamp ?? ''}`;
-}
-
 /**
- * Resolve the full reason of `request` for `agentId`, or `null` when the read
- * fails or the daemon now holds a different request (another kind or
- * timestamp). Concurrent calls for the same request share one `agent.get`.
+ * Resolve the full reason of `request` for `agentId`, or `null` when the
+ * request has no identity (see {@link attentionRequestKey}), the read fails, or
+ * the daemon now holds a different request (another kind or timestamp).
+ * Concurrent calls for the same request share one `agent.get`.
  */
 export function loadFullAttentionReason(
   agentId: string,
   request: AgentAttentionRequest,
 ): Promise<string | null> {
-  const key = requestKey(agentId, request);
+  const key = attentionRequestKey(agentId, request);
+  if (key === null) return Promise.resolve(null);
   const pending = inflight.get(key);
   if (pending) return pending;
   const workspaceId = store.state.agentSessions?.byAgentId[agentId]?.workspaceId;
@@ -40,8 +39,7 @@ export function loadFullAttentionReason(
   })
     .then((result) => {
       const full = getAgentAttentionRequest(result?.agent);
-      if (!full || full.kind !== request.kind) return null;
-      if (request.timestamp && full.timestamp !== request.timestamp) return null;
+      if (!full?.timestamp || attentionRequestKey(agentId, full) !== key) return null;
       return full.reason ?? null;
     })
     .catch(() => null)

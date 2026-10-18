@@ -89,6 +89,24 @@ describe('getAgentAttentionRequest', () => {
     });
   });
 
+  it('falls back to the metadata reason when the top-level reason is null', () => {
+    expect(
+      getAgentAttentionRequest({
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: null,
+        metadata: {
+          attentionRequestReason: 'Full rea',
+          attentionRequestReasonTruncated: true,
+        },
+      }),
+    ).toStrictEqual({
+      kind: 'blocker',
+      reason: 'Full rea',
+      timestamp: undefined,
+      reasonTruncated: true,
+    });
+  });
+
   it('prefers top-level fields over metadata', () => {
     expect(
       getAgentAttentionRequest({

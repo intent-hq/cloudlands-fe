@@ -21,7 +21,7 @@
     selectAgentMessages,
     selectAgentHistoryMessages,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { hasMatchingAttentionNotice } from './attention-notice';
+  import { attentionRequestKey, hasMatchingAttentionNotice } from './attention-notice';
   import { loadFullAttentionReason } from './attention-reason';
   import ChatNotice from './ChatNotice.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -48,9 +48,7 @@
   const isBlocker = $derived($attentionRequest$?.kind === 'blocker');
 
   const requestKey = $derived(
-    $attentionRequest$
-      ? `${agentId}|${$attentionRequest$.kind}|${$attentionRequest$.timestamp ?? ''}`
-      : null,
+    $attentionRequest$ ? attentionRequestKey(agentId, $attentionRequest$) : null,
   );
   let fullReason = $state<{ key: string; reason: string } | null>(null);
   const needsFullReason = $derived(

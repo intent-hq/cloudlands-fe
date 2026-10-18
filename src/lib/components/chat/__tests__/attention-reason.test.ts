@@ -60,6 +60,22 @@ describe('loadFullAttentionReason', () => {
     await expect(loadFullAttentionReason('agent-1', request)).resolves.toBeNull();
   });
 
+  it('matches the same request across timestamp spellings', async () => {
+    backendRequest.mockResolvedValue(
+      agent({ attentionRequestTimestamp: '2026-10-18T00:00:00.000+00:00' }),
+    );
+    await expect(loadFullAttentionReason('agent-1', request)).resolves.toBe(
+      'Provider stalled. Retry the turn.',
+    );
+  });
+
+  it('does not read a request it cannot identify', async () => {
+    await expect(
+      loadFullAttentionReason('agent-1', { ...request, timestamp: undefined }),
+    ).resolves.toBeNull();
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
   it('resolves null when the read fails', async () => {
     backendRequest.mockRejectedValue(new Error('offline'));
     await expect(loadFullAttentionReason('agent-1', request)).resolves.toBeNull();

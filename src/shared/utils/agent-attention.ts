@@ -71,7 +71,7 @@ export function getAgentAttentionRequest(
   if (!isAttentionKind(kind)) return null;
   // The flag describes the metadata copy only: a top-level reason (full
   // session projection or a live attention event) is never shortened.
-  const fromMetadata = session.attentionRequestReason === undefined;
+  const fromMetadata = session.attentionRequestReason == null;
   const reason = fromMetadata ? metadata.attentionRequestReason : session.attentionRequestReason;
   const timestamp = session.attentionRequestTimestamp ?? metadata.attentionRequestTimestamp;
   const request: AgentAttentionRequest = {
