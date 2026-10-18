@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.17](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.16...v2.219.17) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* gate script lists and monitors on capabilities, not protocol 14 ([#3461](https://github.com/intent-hq/cloudlands-fe/issues/3461)) ([7c3d51e](https://github.com/intent-hq/cloudlands-fe/commit/7c3d51e2cd9b23025dd8a4123e4133b7eb31df5a))
+
 ## [2.219.16](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.15...v2.219.16) (2026-10-17)
 
 
