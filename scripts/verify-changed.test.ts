@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireVerificationLock,
+  checkEnvironment,
   collectChangedFiles,
   createVerificationPlan,
   expandInputPaths,
@@ -32,7 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
-import { lockOwner } from './verification-lock.mjs';
+import { HELD_LOCK_ENV, lockOwner } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
@@ -444,10 +445,14 @@ describe('verification planning', () => {
     });
 
     it.each([
-      ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
-      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
-      ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
-      ['test/.dev/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
+      ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--', '--retries=2']],
+      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--', '--retries=2']],
+      ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test', '--retries=2']],
+      [
+        'test/.dev/browser.spec.ts',
+        'playwright-direct',
+        ['exec', 'playwright', 'test', '--retries=2'],
+      ],
       [
         'tests/integration/example.test.ts',
         'vitest-integration',
@@ -1726,7 +1731,7 @@ describe('verification planning', () => {
       expect(findRelatedCtTests(files, options)).toEqual([spec]);
       const plan = createVerificationPlan(files, options);
       expect(plan.checks.filter((check) => check.id.startsWith('ct-'))).toMatchObject([
-        { id: 'ct-related', args: ['run', 'test:ct', '--', spec] },
+        { id: 'ct-related', args: ['run', 'test:ct', '--', '--retries=2', spec] },
       ]);
       expect(findRelatedCtTests([unrelatedHost], options)).toEqual([]);
       expect(
@@ -1915,8 +1920,49 @@ describe('verification planning', () => {
       'exec',
       'playwright',
       'test',
+      '--retries=2',
       'test/splash-loader.spec.ts',
     ]);
+  });
+
+  // A failing local run once sat ~2 h on "Serving HTML report ... Press Ctrl+C
+  // to quit" (cloudlands-fe#3392): every Playwright stage must be
+  // non-interactive and retry like CI.
+  it.each([
+    ['playwright-direct', ['test/splash-loader.spec.ts']],
+    ['playwright-full', ['playwright.config.ts']],
+    ['ct-related', ['src/lib/Widget.ct.spec.ts']],
+    ['ct-full', ['playwright-ct.config.ts']],
+  ])('runs %s non-interactively with CI-style retries', (checkId, files) => {
+    const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+    const plan = createVerificationPlan(files, { root, ctTests: [] });
+    const check = plan.checks.find((candidate) => candidate.id === checkId);
+    expect(check, plan.checks.map((candidate) => candidate.id).join(', ')).toBeDefined();
+    expect(check?.env).toEqual({ PLAYWRIGHT_HTML_OPEN: 'never' });
+    expect(check?.args).toContain('--retries=2');
+  });
+
+  it('gives the spawned check its own env over the caller environment', () => {
+    const check = { env: { PLAYWRIGHT_HTML_OPEN: 'never' } };
+    expect(
+      checkEnvironment(check, { heldLock: 'ct-3100', baseEnv: { PLAYWRIGHT_HTML_OPEN: 'always' } }),
+    ).toEqual({
+      PLAYWRIGHT_HTML_OPEN: 'never',
+      GIT_TERMINAL_PROMPT: '0',
+      [HELD_LOCK_ENV]: 'ct-3100',
+    });
+    expect(checkEnvironment({}, { baseEnv: { KEEP: '1' } })).toEqual({
+      KEEP: '1',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+  });
+
+  it('never serves the root Playwright HTML report', async () => {
+    const { default: config } = await import('../playwright.config');
+    const reporters = Array.isArray(config.reporter) ? config.reporter : [[config.reporter]];
+    const html = reporters.find(([name]) => name === 'html');
+    expect(html, 'the html report is still written for CI artifacts').toBeDefined();
+    expect(html?.[1]).toMatchObject({ open: 'never' });
   });
 
   it('does not hand a browser-owned CT-shaped spec to the component test runner', () => {
@@ -2101,6 +2147,7 @@ describe('verification planning', () => {
       'exec',
       'playwright',
       'test',
+      '--retries=2',
       'test/splash-loader.spec.ts',
     ]);
     expect(byId['vitest-direct']?.args).toEqual([
@@ -2116,10 +2163,14 @@ describe('verification planning', () => {
 
     const lines: string[] = [];
     printPlan(plan, true, (line: string) => lines.push(line));
-    const commandLines = lines.filter((line) => line.startsWith('  - ') && line.includes(': pnpm'));
+    const commandLines = lines.filter(
+      (line) => line.startsWith('  - ') && /: (?:[A-Z_]+=\S+ )*pnpm /.test(line),
+    );
     expect(
       commandLines.some(
-        (line) => line.includes('playwright test') && line.includes('test/splash-loader.spec.ts'),
+        (line) =>
+          line.includes(': PLAYWRIGHT_HTML_OPEN=never pnpm exec playwright test --retries=2') &&
+          line.includes('test/splash-loader.spec.ts'),
       ),
     ).toBe(true);
     for (const line of commandLines) {
@@ -2397,7 +2448,9 @@ describe('expensive-check coordination', () => {
     const check = plan.checks.find((check) => check.id === id);
     expect(check).toMatchObject({ executable: 'pnpm', lockKind: 'ct' });
     expect(check?.args).toEqual(
-      id === 'ct-full' ? ['run', 'test:ct'] : ['run', 'test:ct', '--', fixture.spec],
+      id === 'ct-full'
+        ? ['run', 'test:ct', '--', '--retries=2']
+        : ['run', 'test:ct', '--', '--retries=2', fixture.spec],
     );
     // Execute only the selected CT gate: the fixture package routes the real
     // test:ct script to a tiny aligned-runner control, not the application suite.

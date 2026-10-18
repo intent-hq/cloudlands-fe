@@ -28,8 +28,13 @@ export default defineConfig({
   // Each worker starts its own Vite module graph; bound concurrent cold compilation locally.
   workers: process.env.CI ? 1 : 2,
 
-  // Reporter to use
-  reporter: 'html',
+  // `list` streams results; the html report is still written to
+  // playwright-report/ (CI uploads it) but never served. The default
+  // `open: 'on-failure'` served it on :9323 after a local failure and kept the
+  // run alive for ~2 h waiting for Ctrl+C (cloudlands-fe#3392), the same hang
+  // playwright-ct.config.ts already avoids (intent-hq/intent#4652). View a
+  // report with `pnpm exec playwright show-report`.
+  reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
     // Base URL for file:// protocol tests
