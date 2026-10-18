@@ -16,7 +16,7 @@
  * surfaced; a same-key retry against the daemon replays the bound placement
  * instead of placing a collision-suffixed duplicate.
  */
-import { protocolVersionAtLeast } from '$shared/protocol-version';
+import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
 import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
@@ -96,7 +96,9 @@ export function isRemoteBackend(): boolean {
  * (PROTOCOL §5.9). Older daemons reject unknown params, so the key
  * is never sent to them.
  */
-export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
+export function supportsIdempotentPlacementProtocol(
+  protocolVersion?: ProtocolVersion | null,
+): boolean {
   return protocolVersionAtLeast(protocolVersion, 9, 13);
 }
 

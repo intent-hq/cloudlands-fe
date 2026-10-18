@@ -1,5 +1,6 @@
 // protocol-version-ok-file: supported-generation boundary fixtures.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { backendRequest } from './backend-transport';
 import { LiveFilesClient } from './live-files-client';
@@ -15,7 +16,11 @@ describe('registered-root file read support', () => {
     (protocolVersion) => {
       for (const method of ['file.read', 'file.readChunk']) {
         expect(() =>
-          assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
+          assertScopedFileReadSupport(
+            method,
+            { gitRootId: 'root-a' },
+            parseProtocolVersion(protocolVersion),
+          ),
         ).toThrow();
       }
     },
@@ -43,7 +48,11 @@ describe('registered-root file read support', () => {
   ])('accepts any sending connection at or above 11.1: %s', (protocolVersion) => {
     for (const method of ['file.read', 'file.readChunk']) {
       expect(() =>
-        assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
+        assertScopedFileReadSupport(
+          method,
+          { gitRootId: 'root-a' },
+          parseProtocolVersion(protocolVersion),
+        ),
       ).not.toThrow();
     }
   });

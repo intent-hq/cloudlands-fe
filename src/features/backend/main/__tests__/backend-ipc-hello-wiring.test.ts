@@ -504,6 +504,11 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     // A fresh hello (reconnect after a daemon upgrade) re-captures.
     onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} });
     expect(getConnectedDaemonProtocolVersion('local')).toBe('10.10');
+
+    // Parsed once at the hello: a malformed version is unknown, never a string
+    // a gate could hand-parse.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '15-dev', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
     __resetBackendProtocolStateForTesting();
   });
 
