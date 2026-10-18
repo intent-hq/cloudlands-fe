@@ -2,6 +2,7 @@
  * Daemon Health Selectors
  */
 
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
 import type { BackendTransportInfo } from './daemon-health-types';
@@ -96,13 +97,8 @@ const SOURCE_CONTROL_AUTH_MIN_PROTOCOL = { major: 10, minor: 5 } as const;
  * the field also predates the methods.
  */
 export function supportsSourceControlAuthProtocol(protocolVersion?: string | null): boolean {
-  if (!protocolVersion) return false;
-  const match = protocolVersion.trim().match(/^([0-9]+)\.([0-9]+)(?:\.[0-9]+)?$/);
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  const { major: minMajor, minor: minMinor } = SOURCE_CONTROL_AUTH_MIN_PROTOCOL;
-  return major > minMajor || (major === minMajor && minor >= minMinor);
+  const { major, minor } = SOURCE_CONTROL_AUTH_MIN_PROTOCOL;
+  return protocolVersionAtLeast(protocolVersion, major, minor);
 }
 
 /**
@@ -130,13 +126,8 @@ const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
  * above. Same comparison rules as `supportsSourceControlAuthProtocol`.
  */
 export function supportsIdentitySeamProtocol(protocolVersion?: string | null): boolean {
-  if (!protocolVersion) return false;
-  const match = protocolVersion.trim().match(/^([0-9]+)\.([0-9]+)(?:\.[0-9]+)?$/);
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  const { major: minMajor, minor: minMinor } = IDENTITY_SEAM_MIN_PROTOCOL;
-  return major > minMajor || (major === minMajor && minor >= minMinor);
+  const { major, minor } = IDENTITY_SEAM_MIN_PROTOCOL;
+  return protocolVersionAtLeast(protocolVersion, major, minor);
 }
 
 /**

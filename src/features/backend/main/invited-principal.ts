@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { compareToPinnedVersion } from '../../../shared/intentd-version-compare';
 import { readPinnedVersion } from './intentd-version-pin';
-import { protocolVersionAtLeast } from './protocol-compat';
+import { parseProtocolVersion, protocolVersionAtLeast } from '$shared/protocol-version';
 import { parsePrincipalSnapshot, type PrincipalSnapshot } from '../../../shared/types/principal';
 import { m } from '../../../shared/paraglide/messages.js';
 import { JsonRpcError } from './json-rpc-errors';
@@ -97,11 +97,7 @@ function assertIdentityProtocol(hello: unknown): void {
   // Some builds on that boundary also lack it, so the actual RPC remains required.
   // Older identity-aware daemons need not advertise the newer hostMembership capability.
   // Unknown metadata is not authority: the required principal.me call below must still succeed.
-  if (
-    typeof protocol === 'string' &&
-    /^\d+(?:\.\d+)*$/.test(protocol.trim()) &&
-    !protocolVersionAtLeast(protocol, 10, 3)
-  ) {
+  if (parseProtocolVersion(protocol) && !protocolVersionAtLeast(protocol, 10, 3)) {
     throw new BackendCompatibilityError('principal.me', hello);
   }
 }
