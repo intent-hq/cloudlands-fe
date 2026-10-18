@@ -2458,6 +2458,10 @@ describe('expensive-check coordination', () => {
       /failed with exit code 1/,
     );
     expect(fixture.report().stats).toMatchObject({ flaky: 1, unexpected: 0 });
+    // The retry count reaches Playwright as an option, not a file filter after `--`.
+    const argv = fixture.argv();
+    expect(argv).toContain('--retries=2');
+    expect(argv).not.toContain('--');
   });
 
   it('releases only its own acquired lock', async () => {

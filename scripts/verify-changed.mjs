@@ -614,6 +614,9 @@ function command(id, label, args, lockKind = null) {
 // stage therefore runs non-interactively and retries like CI (retries: 2 in
 // both Playwright configs under CI), without CI=1's other effects
 // (forbidOnly, one worker).
+// CT stages pass it after `--`: npm drops unknown flags before the separator,
+// pnpm forwards the separator literally, and the CT launcher strips it only as
+// its first argument (a later `--` would turn `--retries=2` into a file filter).
 export const PLAYWRIGHT_RETRIES_ARG = '--retries=2';
 export const PLAYWRIGHT_CHECK_ENV = Object.freeze({ PLAYWRIGHT_HTML_OPEN: 'never' });
 
