@@ -17,6 +17,7 @@ import {
   type WorkspaceOwnershipProber,
 } from './utils/workspace-backend-client';
 import { getBackendIdForWindow } from './window-backend';
+import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
 import type { JsonRpcClient } from '../features/backend/main/json-rpc-client';
@@ -52,7 +53,9 @@ async function backendClientForWorkspace(workspaceId: string, backendIdHint: str
   const resolution = await resolveWorkspaceBackendClientWithRetry(
     workspaceId,
     {
-      getWindowIdsForWorkspace,
+      // ANY_HOST: this resolver's job is to find the host from the windows
+      // (and to report windows on different hosts as ambiguous).
+      getWindowIdsForWorkspace: (id) => getWindowIdsForWorkspace(id, ANY_HOST),
       getBackendIdForWindowId: (windowId) => {
         const window = BrowserWindow.fromId(windowId);
         return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;

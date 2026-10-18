@@ -182,6 +182,7 @@ describe('browser:resolve-url IPC handler', () => {
         allowDuplicate: true,
         pin: true,
       }),
+      'remote-1',
     );
   });
 
@@ -221,6 +222,7 @@ describe('browser:resolve-url IPC handler', () => {
         emulatedSize: { width: 1280, height: 800 },
         visible: false,
       }),
+      'remote-1',
     );
   });
 
