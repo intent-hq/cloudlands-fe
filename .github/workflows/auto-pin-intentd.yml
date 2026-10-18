@@ -209,7 +209,15 @@ jobs:
           # Test fixtures default fake hellos to the pinned daemon's protocol
           # version (intent-hq/intent#7206); regenerate it with the pin so the
           # offline lint:intentd-protocol-pin gate stays green on the bump PR.
-          if ! node scripts/sync-intentd-protocol-version.mjs; then
+          # A fetch failure may be transient (warn and retry next run); exit 3
+          # means protocol.rs changed shape, which blocks every future bump, so
+          # it fails the run instead of skipping quietly.
+          sync_status=0
+          node scripts/sync-intentd-protocol-version.mjs || sync_status=$?
+          if [ "$sync_status" -eq 3 ]; then
+            echo "::error::scripts/sync-intentd-protocol-version.mjs cannot parse PROTOCOL_VERSION for intentd $LATEST; update its parser before the pin can advance."
+            exit 1
+          elif [ "$sync_status" -ne 0 ]; then
             echo "::warning::could not read PROTOCOL_VERSION for intentd $LATEST; not landing the pin this run."
             exit 0
           fi

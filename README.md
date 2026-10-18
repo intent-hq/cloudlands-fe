@@ -139,7 +139,11 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 [intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
-  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify, and
+  `node scripts/sync-intentd-protocol-version.mjs` to regenerate the tests' default
+  `CURRENT_PROTOCOL_VERSION` (`src/test/current-protocol-version.ts`); commit both files.
+  `auto-pin-intentd` does all three, and `lint:intentd-protocol-pin` fails a pin that
+  skipped the sync.
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at

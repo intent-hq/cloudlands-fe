@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkProtocolPin } from './check-intentd-protocol-pin.mjs';
 import {
+  EXIT_SOURCE_FORMAT,
   OUTPUT_FILE,
   main,
   parseRustProtocolVersion,
@@ -40,6 +41,9 @@ const fakeFetch = (body: string, status = 200) =>
 describe('parseRustProtocolVersion', () => {
   it('reads the PROTOCOL_VERSION constant', () => {
     expect(parseRustProtocolVersion(RUST_SOURCE('16.2'))).toBe('16.2');
+    expect(parseRustProtocolVersion('pub const PROTOCOL_VERSION: &\'static str = "16.3";')).toBe(
+      '16.3',
+    );
   });
 
   it('rejects a source without exactly one constant', () => {
@@ -94,6 +98,21 @@ describe('sync main', () => {
       [OUTPUT_FILE]: renderVersionModule({ pin: '0.11.7', version: '15.0' }),
     });
     expect(await main(['--check'], dir, { fetchImpl: fakeFetch(RUST_SOURCE('15.0')) })).toBe(0);
+  });
+
+  it('exits 3 when protocol.rs no longer has the expected constant shape', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const dir = tree({ 'intentd.version': PIN_FILE_CONTENT('0.11.7') });
+    const fetchImpl = fakeFetch('pub const PROTOCOL_MAJOR: u32 = 16;');
+    expect(await main([], dir, { fetchImpl })).toBe(EXIT_SOURCE_FORMAT);
+  });
+
+  it('reads the pinned tag from the configured intentd repository', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const dir = tree({ 'intentd.version': PIN_FILE_CONTENT('0.11.7') });
+    const fetchImpl = fakeFetch(RUST_SOURCE('15.0'));
+    expect(await main([], dir, { fetchImpl, repo: 'example/intentd-mirror' })).toBe(0);
+    expect(fetchImpl.mock.calls[0][0]).toContain('/repos/example/intentd-mirror/contents/');
   });
 
   it('fails without writing when the tag cannot be fetched', async () => {

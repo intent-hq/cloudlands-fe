@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { ESCAPE_TOKEN as FIXTURE_ESCAPE_TOKEN } from './check-fixture-protocol-versions.mjs';
 
 // Renderer source must reference daemon protocol features by method or field name,
 // never by a protocol-version literal. Protocol numbers are provisional until merge
@@ -55,7 +56,6 @@ const NON_VERSION_SHAPES = [
 const escapePattern = (token, openers) => new RegExp(`(?:${openers})\\s*${token}:\\s*(?!\\*/)\\S`);
 // A reasoned `fixture-protocol-version:` comment (scripts/check-fixture-protocol-versions.mjs)
 // already marks a deliberate test-fixture version, so it exempts the line here too.
-const FIXTURE_ESCAPE_TOKEN = 'fixture-protocol-version';
 const LINE_ESCAPE_PATTERN = escapePattern(`(?:${ESCAPE_TOKEN}|${FIXTURE_ESCAPE_TOKEN})`, '//|/\\*');
 const FILE_ESCAPE_PATTERN = escapePattern(FILE_ESCAPE_TOKEN, '//|/\\*|^\\s*\\*');
 

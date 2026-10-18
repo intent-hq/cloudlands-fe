@@ -327,8 +327,8 @@ describe('connectionsSaga', () => {
       id: 'remote-1',
       host: '10.0.0.5',
       port: 8443,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
@@ -358,8 +358,8 @@ describe('connectionsSaga', () => {
       id: 'remote-1',
       host: '10.0.0.5',
       port: 8443,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
       origin: 'boot',
     };
     invoke.mockImplementation(async (channel: string) =>
@@ -802,8 +802,8 @@ describe('connectionsSaga', () => {
       id: REMOTE.id,
       host: REMOTE.host,
       port: REMOTE.port,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
     });
     callbacks[CONNECTION_AUTH_REJECTED_EVENT]!({
       id: REMOTE.id,

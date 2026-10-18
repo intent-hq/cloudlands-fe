@@ -42,7 +42,8 @@
 //   3. The head file is byte-identical to the base file after replacing the
 //      new pin line B with the old pin line A — i.e. nothing but the pin
 //      value changed (a comment edit or added line breaks the match).
-//   4. When the generated protocol-version module changed, only its
+//   4. When the generated protocol-version module exists at base it must be in the
+//      diff (a pin bump that skipped its regeneration takes full CI), and only its
 //      `// source-pin: A` line moved to `// source-pin: B`. A changed
 //      CURRENT_PROTOCOL_VERSION is a protocol bump: every fake-hello test must
 //      re-run against it (intent-hq/intent#7206), so it takes full CI.
@@ -122,8 +123,7 @@ export function evaluateFastPath(
   const diffPaths = diff.map(([, path]) => path);
   const isPinBumpDiff =
     diffPaths.includes(PIN_FILE) &&
-    diffPaths.every((path) => path === PIN_FILE || path === PROTOCOL_VERSION_FILE) &&
-    (diff.length === 1 || diff.length === 2);
+    diffPaths.every((path) => path === PIN_FILE || path === PROTOCOL_VERSION_FILE);
   if (!releaseOnly && isPinBumpDiff) {
     for (const [status, path] of diff) {
       if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
@@ -151,6 +151,18 @@ export function evaluateFastPath(
       .map((line) => (line === pinB ? pinA : line))
       .join('\n');
     if (reverted !== pinBase) return noMatch(`non-pin change in ${PIN_FILE}`);
+    // A pin bump that skipped the regeneration would leave fake hellos on the old
+    // daemon's protocol; it must run the checks job, whose lint:intentd-protocol-pin
+    // names the fix, instead of skipping it here.
+    let moduleAtBase = true;
+    try {
+      show(mergeBase, PROTOCOL_VERSION_FILE);
+    } catch {
+      moduleAtBase = false;
+    }
+    if (moduleAtBase && !diffPaths.includes(PROTOCOL_VERSION_FILE)) {
+      return noMatch(`${PROTOCOL_VERSION_FILE} not regenerated for the pin bump`);
+    }
     if (diffPaths.includes(PROTOCOL_VERSION_FILE)) {
       const moduleBase = show(mergeBase, PROTOCOL_VERSION_FILE);
       const moduleHead = show(head, PROTOCOL_VERSION_FILE);

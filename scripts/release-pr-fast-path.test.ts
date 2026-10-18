@@ -308,6 +308,16 @@ describe('release-pr-fast-path', () => {
       expect(evaluate(dir)).toEqual({ fastPath: true });
     });
 
+    it('takes full CI when a pin bump skipped regenerating the module', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `${MODULE} not regenerated for the pin bump`,
+      });
+    });
+
     it('takes full CI when the pin bump changes the protocol version', () => {
       const dir = repoWithModule();
       writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));

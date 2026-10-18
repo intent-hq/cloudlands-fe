@@ -34,11 +34,29 @@ const FIXTURE_PATH_PATTERNS = [
   /(?:^|\/)__mocks__\//,
   /^src\/test\//,
 ];
-// `protocolVersion: '14.0'`, `"protocol_version": "14.0"`, `stats.protocolVersion = '5.1'`,
-// `{ protocolVersion = '10.4' }` defaults. Comparisons (`==`, `===`) and calls such as
+const VERSION_LITERAL = String.raw`['"\`](\d+(?:\.\d+)*)['"\`]`;
+// Fixture shapes that hand a daemon protocol version to the code under test:
+//   - keys and assignments: `protocolVersion: '14.0'`, `"protocol_version": "14.0"`,
+//     `remoteProtocolVersion: '2'`, `stats.protocolVersion = '5.1'`,
+//     `{ protocolVersion = '10.4' }` defaults;
+//   - mocked getters: `getLocalDaemonProtocolVersion.mockReturnValue('1')`,
+//     `fixture.protocol.mockResolvedValueOnce('10.4')`;
+//   - getter arrows: `getProtocolVersion: () => '10.4'`.
+// Comparisons (`==`, `===`), assertions and calls such as
 // `protocolVersionAtLeast('10.4', …)` are not fixture values.
-const LITERAL_PATTERN =
-  /(?<![\w$])['"]?protocol(?:Version|_version)['"]?\s*(?::|=(?![=>]))\s*['"`](\d+(?:\.\d+)*)['"`]/g;
+const LITERAL_PATTERNS = [
+  new RegExp(
+    String.raw`(?<![\w$])['"]?\w*?(?:p|P)rotocol(?:Version|_version)['"]?\s*(?::|=(?![=>]))\s*` +
+      VERSION_LITERAL,
+    'g',
+  ),
+  new RegExp(
+    String.raw`\b\w*(?:p|P)rotocol\w*\.mock(?:Return|Resolved)Value(?:Once)?\(\s*` +
+      VERSION_LITERAL,
+    'g',
+  ),
+  new RegExp(String.raw`\b\w*(?:p|P)rotocol\w*\s*:\s*\(\)\s*=>\s*` + VERSION_LITERAL, 'g'),
+];
 const escapePattern = (token, openers) => new RegExp(`(?:${openers})\\s*${token}:\\s*(?!\\*/)\\S`);
 const ESCAPE_PATTERN = escapePattern(ESCAPE_TOKEN, '//|/\\*');
 const FILE_ESCAPE_PATTERN = escapePattern(FILE_ESCAPE_TOKEN, '//|/\\*|^\\s*\\*');
@@ -52,7 +70,9 @@ export const isFixturePath = (filePath) =>
   FIXTURE_PATH_PATTERNS.some((pattern) => pattern.test(filePath));
 
 export function findLiteralVersions(text) {
-  return [...text.matchAll(LITERAL_PATTERN)].map((match) => match[1]);
+  return LITERAL_PATTERNS.flatMap((pattern) =>
+    [...text.matchAll(pattern)].map((match) => match[1]),
+  );
 }
 
 const isEscaped = (lines, index) =>
