@@ -681,6 +681,7 @@ describe('daemonHealthReducer', () => {
         version: '0.1.0',
         buildCommit: '0123456789abcdef',
         protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: 120,
         cpuPercent: 12.34,
         memoryBytes: 104857600,
@@ -698,6 +699,27 @@ describe('daemonHealthReducer', () => {
       });
       expect(next.lastUpdated).toBe(receivedAt);
       expect(next.hostLocality).toBe('local');
+    });
+
+    it('parses protocolVersion once, keeping only the wire text of a malformed one', () => {
+      const poll = (protocolVersion: unknown) =>
+        daemonHealthReducer(
+          { ...initialState, polling: true },
+          systemStatusSuccess(
+            {
+              ...collaboratorSystemStatusProjection,
+              protocolVersion,
+            } as unknown as SystemStatusWirePayload,
+            '2026-09-16T13:00:00.000Z',
+            0,
+          ),
+        ).stats;
+      expect(poll(' 16.0 ')?.protocolVersion).toBe('16.0');
+      // Malformed: no gate can use it, but the status panel still shows the text.
+      expect(poll('16-dev')?.protocolVersion).toBeUndefined();
+      expect(poll('16-dev')?.protocolVersionText).toBe('16-dev');
+      expect(poll(undefined)?.protocolVersion).toBeUndefined();
+      expect(poll(undefined)?.protocolVersionText).toBeUndefined();
     });
 
     it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
@@ -742,6 +764,7 @@ describe('daemonHealthReducer', () => {
         version: payload.version,
         buildCommit: payload.buildCommit,
         protocolVersion: payload.protocolVersion,
+        protocolVersionText: payload.protocolVersion,
         hostname: payload.hostname,
         os: payload.host.os,
         arch: payload.host.arch,
@@ -797,6 +820,7 @@ describe('daemonHealthReducer', () => {
         version: undefined,
         buildCommit: undefined,
         protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: undefined,
         cpuPercent: undefined,
         memoryBytes: undefined,

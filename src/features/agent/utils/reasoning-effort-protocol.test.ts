@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import {
   supportsReasoningEffortProtocol,
   usesLegacyReasoningEffort,
@@ -14,7 +15,7 @@ describe('supportsReasoningEffortProtocol', () => {
     ['invalid', false],
     [undefined, false],
   ])('returns %s support as %s', (version, expected) => {
-    expect(supportsReasoningEffortProtocol(version)).toBe(expected);
+    expect(supportsReasoningEffortProtocol(parseProtocolVersion(version))).toBe(expected);
   });
 });
 
@@ -30,6 +31,6 @@ describe('usesLegacyReasoningEffort', () => {
     [undefined, false],
     [null, false],
   ])('%s → %s', (version, expected) => {
-    expect(usesLegacyReasoningEffort(version)).toBe(expected);
+    expect(usesLegacyReasoningEffort(parseProtocolVersion(version))).toBe(expected);
   });
 });

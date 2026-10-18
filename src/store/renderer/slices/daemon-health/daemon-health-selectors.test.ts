@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import type { StoreState } from '../../types';
 import type { BackendTransportInfo } from './daemon-health-types';
 import {
@@ -212,42 +213,44 @@ describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlA
           listenMode: 'uds',
           os: 'linux',
           arch: 'x64',
-          ...(protocolVersion === undefined ? {} : { protocolVersion }),
+          ...(protocolVersion === undefined
+            ? {}
+            : { protocolVersion: parseProtocolVersion(protocolVersion) ?? undefined }),
         },
       },
     } as unknown as StoreState;
   }
 
   it('accepts the first version carrying sourceControl.* auth and every later one', () => {
-    expect(supportsSourceControlAuthProtocol('10.5')).toBe(true);
-    expect(supportsSourceControlAuthProtocol('10.5.2')).toBe(true);
-    expect(supportsSourceControlAuthProtocol('10.12')).toBe(true);
-    expect(supportsSourceControlAuthProtocol('11.0')).toBe(true);
-    expect(supportsSourceControlAuthProtocol(' 10.5 ')).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.2'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.12'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('11.0'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(' 10.5 '))).toBe(true);
   });
 
   it('rejects every earlier version, comparing minor numerically rather than lexically', () => {
-    expect(supportsSourceControlAuthProtocol('10.4')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('10.4.9')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('9.14')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('10')).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.4'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.4.9'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('9.14'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10'))).toBe(false);
   });
 
   it('treats a missing or unparsable version as unsupported', () => {
-    expect(supportsSourceControlAuthProtocol(undefined)).toBe(false);
-    expect(supportsSourceControlAuthProtocol(null)).toBe(false);
-    expect(supportsSourceControlAuthProtocol('')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('dev-build')).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(undefined))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(null))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(''))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('dev-build'))).toBe(false);
   });
 
   it('rejects a malformed version even when it starts with a supporting numeric prefix', () => {
-    expect(supportsSourceControlAuthProtocol('10.5garbage')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('10.5.2broken')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('11x')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('10.')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('10.5.')).toBe(false);
-    expect(supportsSourceControlAuthProtocol('v10.5')).toBe(false); // protocol-version-ok: malformed-shape fixture under test
-    expect(supportsSourceControlAuthProtocol('10.5-rc1')).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5garbage'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.2broken'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('11x'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('v10.5'))).toBe(false); // protocol-version-ok: malformed-shape fixture under test
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5-rc1'))).toBe(false);
   });
 
   it('reads stats.protocolVersion from the last system.status poll', () => {
@@ -263,23 +266,23 @@ describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlA
 
   describe('supportsIdentitySeamProtocol / selectDaemonSupportsIdentitySeam', () => {
     it('accepts the first version carrying the identity seam and every later one', () => {
-      expect(supportsIdentitySeamProtocol('10.8')).toBe(true);
-      expect(supportsIdentitySeamProtocol('10.8.1')).toBe(true);
-      expect(supportsIdentitySeamProtocol('10.12')).toBe(true);
-      expect(supportsIdentitySeamProtocol('11.0')).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8.1'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.12'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('11.0'))).toBe(true);
     });
 
     it('rejects the image-sidecar and sourceControl.* auth versions and everything earlier', () => {
-      expect(supportsIdentitySeamProtocol('10.7')).toBe(false);
-      expect(supportsIdentitySeamProtocol('10.7.9')).toBe(false);
-      expect(supportsIdentitySeamProtocol('10.5')).toBe(false);
-      expect(supportsIdentitySeamProtocol('10.5.9')).toBe(false);
-      expect(supportsIdentitySeamProtocol('9.14')).toBe(false);
-      expect(supportsIdentitySeamProtocol('10')).toBe(false);
-      expect(supportsIdentitySeamProtocol(undefined)).toBe(false);
-      expect(supportsIdentitySeamProtocol(null)).toBe(false);
-      expect(supportsIdentitySeamProtocol('dev-build')).toBe(false);
-      expect(supportsIdentitySeamProtocol('10.8garbage')).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.7'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.7.9'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.5'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.5.9'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('9.14'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion(undefined))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion(null))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('dev-build'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8garbage'))).toBe(false);
     });
 
     it('reads stats.protocolVersion and is unsupported before the first poll', () => {

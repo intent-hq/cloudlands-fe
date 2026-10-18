@@ -45,6 +45,7 @@ describe('findLiteralVersions', () => {
     ["fixture.protocol.mockReturnValue('10.4');", ['10.4']],
     ["sidecar.getLocalDaemonProtocolVersion.mockResolvedValueOnce('1');", ['1']],
     ["getProtocolVersion: () => '10.4',", ['10.4']],
+    ["stats = { protocolVersion: parseProtocolVersion('9.13') };", ['9.13']],
   ])('flags a literal fixture value: %s', (line, expected) => {
     expect(findLiteralVersions(line)).toEqual(expected);
   });
@@ -57,6 +58,7 @@ describe('findLiteralVersions', () => {
     "server: { protocolVersion: 'test' },",
     "export const CURRENT_PROTOCOL_VERSION = '15.0';",
     'fixture.protocol.mockReturnValue(CURRENT_PROTOCOL_VERSION);',
+    'stats = { protocolVersion: parseProtocolVersion(CURRENT_PROTOCOL_VERSION) };',
     "expect(options.getProtocolVersion()).toBe('10.4');",
   ])('ignores non-fixture or non-literal values: %s', (line) => {
     expect(findLiteralVersions(line)).toEqual([]);

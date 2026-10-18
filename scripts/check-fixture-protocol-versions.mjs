@@ -34,7 +34,9 @@ const FIXTURE_PATH_PATTERNS = [
   /(?:^|\/)__mocks__\//,
   /^src\/test\//,
 ];
-const VERSION_LITERAL = String.raw`['"\`](\d+(?:\.\d+)*)['"\`]`;
+// A literal, bare or wrapped in the shared parser (`parseProtocolVersion('9.13')`), since
+// parsed protocol state is seeded through that helper.
+const VERSION_LITERAL = String.raw`(?:parseProtocolVersion\(\s*)?['"\`](\d+(?:\.\d+)*)['"\`]`;
 // Fixture shapes that hand a daemon protocol version to the code under test:
 //   - keys and assignments: `protocolVersion: '14.0'`, `"protocol_version": "14.0"`,
 //     `remoteProtocolVersion: '2'`, `stats.protocolVersion = '5.1'`,

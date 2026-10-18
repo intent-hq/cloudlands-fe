@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.220.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.20...v2.220.0) (2026-10-18)
+
+
+### 🚀 Features
+
+* **ci:** use the self-hosted sccache cache when INTENT_SCCACHE_ENDPOINT is set ([#3487](https://github.com/intent-hq/cloudlands-fe/issues/3487)) ([6283f2d](https://github.com/intent-hq/cloudlands-fe/commit/6283f2dd1e6bd9bcf66f54ea77b5f4b6eb6c7957))
+* **navigation:** open the original workspace from a PR link ([#3482](https://github.com/intent-hq/cloudlands-fe/issues/3482)) ([e14af19](https://github.com/intent-hq/cloudlands-fe/commit/e14af194c37d786217711bea096d0b8d4b88e69e))
+* open proposal-created workspaces as background tabs ([#3477](https://github.com/intent-hq/cloudlands-fe/issues/3477)) ([9893036](https://github.com/intent-hq/cloudlands-fe/commit/989303690d5d042e0c5649380684eedc90987f30))
+* resume verify:changed from compatible attempt receipts ([#3456](https://github.com/intent-hq/cloudlands-fe/issues/3456)) ([277005b](https://github.com/intent-hq/cloudlands-fe/commit/277005b06d355cb457e9a96292f1923e481cebe1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.8 ([#3493](https://github.com/intent-hq/cloudlands-fe/issues/3493)) ([6af062d](https://github.com/intent-hq/cloudlands-fe/commit/6af062df4f7fe8747d588aa4c5c57f2ea917b1fe))
+* **chat:** center empty interrupted replies between user cards ([#3486](https://github.com/intent-hq/cloudlands-fe/issues/3486)) ([e2452f4](https://github.com/intent-hq/cloudlands-fe/commit/e2452f47e3a5d15c81a6db1f148a163b09589a78))
+* **lint:** classify domain-named imports by module content ([#3469](https://github.com/intent-hq/cloudlands-fe/issues/3469)) ([6ff2fcc](https://github.com/intent-hq/cloudlands-fe/commit/6ff2fcc957da03728e6c12c6caf87d2543763a9e))
+* **verify-changed:** never serve the Playwright HTML report; pre-bundle titlebar harness deps ([#3475](https://github.com/intent-hq/cloudlands-fe/issues/3475)) ([03e8d92](https://github.com/intent-hq/cloudlands-fe/commit/03e8d92087c3ee6fbbfe0791504630ed989a1cf5))
+
 ## [2.219.20](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.19...v2.219.20) (2026-10-18)
 
 

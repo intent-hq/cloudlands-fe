@@ -12,6 +12,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
+import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { Logger } from '$shared/logger';
 import type { RpcTrafficMessage, RpcTrafficObserver } from './rpc-traffic';
@@ -197,7 +198,8 @@ export class JsonRpcClient extends EventEmitter {
   private readonly onHelloResult?: (result: unknown, parent?: object) => void;
 
   private socket: Duplex | null = null;
-  private protocolVersion: unknown;
+  /** This socket's `client.hello` version, parsed once when the hello answers. */
+  private protocolVersion: ProtocolVersion | null = null;
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
@@ -851,8 +853,9 @@ export class JsonRpcClient extends EventEmitter {
         timeout,
         resolve: (result) => {
           if (method === HELLO_METHOD && this.socket === socket) {
-            this.protocolVersion = (result as { protocolVersion?: unknown } | null)
-              ?.protocolVersion;
+            this.protocolVersion = parseProtocolVersion(
+              (result as { protocolVersion?: unknown } | null)?.protocolVersion,
+            );
           }
           resolve(result as T);
         },
@@ -1359,7 +1362,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
-    this.protocolVersion = undefined;
+    this.protocolVersion = null;
     // Retire BEFORE any teardown callback can attempt another dispatch.
     this.retireRepositorySocket();
     if (!this.socket) return;
