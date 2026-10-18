@@ -176,10 +176,10 @@ for (const [scenario, between] of [
   });
 }
 
-// An interrupted reply that produced no visible output renders only its status
-// row between two user cards. With nothing above the row to separate it from,
-// it must sit centered in the seam instead of stacking the card's bottom margin
-// and the row's own content-separating top margin on one side.
+// A reply that produced no visible output renders only its status row between
+// two user cards. With nothing above the row to separate it from, it must sit
+// centered in the seam instead of stacking the card's bottom margin and the
+// row's own content-separating top margin on one side.
 const userCard = (id: string, text: string): AgentMessage => ({
   id,
   role: 'user',
@@ -187,41 +187,42 @@ const userCard = (id: string, text: string): AgentMessage => ({
   contentBlocks: [{ type: 'text', text }],
 });
 
-test('centers an empty interrupted reply between user cards', async ({ mount, page }) => {
-  await page.setViewportSize({ width: 900, height: 1100 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(ChatPanelOperationalGeometryHost, {
-    props: {
-      width: 720,
-      cardSeamMessages: [
-        userCard('interrupt-before', 'We lost some activations last night.'),
-        {
-          id: 'interrupt-assistant',
-          role: 'assistant',
-          timestamp,
-          contentBlocks: [],
-          metadata: {
-            interrupted: true,
-            stopReason: 'interrupted',
-            interruptReason: 'preempted_by_message',
-            interruptedBy: { kind: 'user' },
-          },
-        },
-        userCard('interrupt-after', 'Sorry, today.'),
-      ],
+for (const [statusTestId, metadata] of [
+  [
+    'stopped-indicator',
+    {
+      interrupted: true,
+      stopReason: 'interrupted',
+      interruptReason: 'preempted_by_message',
+      interruptedBy: { kind: 'user' },
     },
-    hooksConfig: { mockBackend: { 'agent.getQueue': { success: true, queue: [] } } },
+  ],
+  ['finish-reason-notice', { finishReason: 'refusal' }],
+] as const) {
+  test(`centers an empty reply's ${statusTestId} between user cards`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 900, height: 1100 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatPanelOperationalGeometryHost, {
+      props: {
+        width: 720,
+        cardSeamMessages: [
+          userCard('status-before', 'We lost some activations last night.'),
+          { id: 'status-assistant', role: 'assistant', timestamp, contentBlocks: [], metadata },
+          userCard('status-after', 'Sorry, today.'),
+        ],
+      },
+      hooksConfig: { mockBackend: { 'agent.getQueue': { success: true, queue: [] } } },
+    });
+    await expect(component.getByTestId(statusTestId)).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const seams = await component.evaluate((root, testId) => {
+      const box = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+      const before = box('[data-message-id="status-before"]');
+      const row = box(`[data-testid="${testId}"] [data-operational-disclosure-row]`);
+      const after = box('[data-message-id="status-after"]');
+      return { above: row.top - before.bottom, below: after.top - row.bottom };
+    }, statusTestId);
+    expect(seams.above).toBeGreaterThan(0);
+    expect(seams.above).toBeCloseTo(seams.below, 0);
   });
-  const status = component.getByTestId('stopped-indicator');
-  await expect(status).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
-  const seams = await component.evaluate((root) => {
-    const box = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
-    const before = box('[data-message-id="interrupt-before"]');
-    const row = box('[data-testid="stopped-indicator"] [data-operational-disclosure-row]');
-    const after = box('[data-message-id="interrupt-after"]');
-    return { above: row.top - before.bottom, below: after.top - row.bottom };
-  });
-  expect(seams.above).toBeGreaterThan(0);
-  expect(seams.above).toBeCloseTo(seams.below, 0);
-});
+}
