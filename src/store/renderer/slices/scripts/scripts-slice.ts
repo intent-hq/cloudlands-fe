@@ -33,13 +33,9 @@ import type {
   ScriptOutputBuffer,
   ScriptOutputChunk,
   ScriptQuickAction,
-  ScriptDefinitionChanges,
   ScriptDefinitionInput,
-  ScriptDefinitionSnapshot,
   ScriptDefinitionUpdate,
   ScriptDetectionOutcome,
-  ScriptDefinitionChangesOutcome,
-  ScriptAgentDetectionOutcome,
   ScriptBulkRemovalOutcome,
   ScriptRemovalTarget,
   ScriptWorkflowConsumer,
@@ -168,48 +164,9 @@ export const detectScriptDefinitionsRequested = createAsyncAction<
   ScriptDetectionOutcome
 >('scripts/detectScriptDefinitions', 'scripts/detectScriptDefinitionsRequested');
 
-export const detectScriptsWithAgentRequested = createAsyncAction<
-  [wsId: string, consumer?: ScriptWorkflowConsumer],
-  ScriptAgentDetectionOutcome
->('scripts/detectScriptsWithAgent', 'scripts/detectScriptsWithAgentRequested');
-
 export const createScriptFixAgentRequested = createAction<
   [wsId: string, scriptId: string, retainedOutput?: string, consumerId?: string]
 >('scripts/createFixAgentRequested');
-
-type ApplyScriptDefinitionChangesArgs = [
-  wsId: string,
-  changes: ScriptDefinitionChanges,
-  definitionsOrConsumer?: ScriptWithState[] | ScriptWorkflowConsumer,
-  consumerOrLegacyId?: ScriptWorkflowConsumer | string,
-];
-type ApplyScriptDefinitionChangesPayload = [
-  wsId: string,
-  changes: ScriptDefinitionChanges,
-  definitions?: ScriptWithState[],
-  consumer?: ScriptWorkflowConsumer,
-  lifetimeConsumerId?: string,
-];
-export const applyScriptDefinitionChangesRequested = createAsyncAction<
-  ApplyScriptDefinitionChangesArgs,
-  ApplyScriptDefinitionChangesPayload,
-  ScriptDefinitionChangesOutcome
->(
-  'scripts/applyScriptDefinitionChanges',
-  'scripts/applyScriptDefinitionChangesRequested',
-  (wsId, changes, definitionsOrConsumer, consumerOrLegacyId) => {
-    const definitions = Array.isArray(definitionsOrConsumer) ? definitionsOrConsumer : undefined;
-    const consumer = Array.isArray(definitionsOrConsumer)
-      ? typeof consumerOrLegacyId === 'object'
-        ? consumerOrLegacyId
-        : undefined
-      : (definitionsOrConsumer ??
-        (typeof consumerOrLegacyId === 'object' ? consumerOrLegacyId : undefined));
-    const lifetimeConsumerId =
-      typeof consumerOrLegacyId === 'string' ? consumerOrLegacyId : consumer?.consumerId;
-    return [wsId, changes, definitions, consumer, lifetimeConsumerId];
-  },
-);
 
 export const listScriptDefinitionsRequested = createAsyncAction<
   [wsId: string, options?: { archive?: 'active' }, consumer?: ScriptWorkflowConsumer],
@@ -220,15 +177,6 @@ export const getScriptDefinitionRequested = createAsyncAction<
   [wsId: string, scriptId: string, consumer?: ScriptWorkflowConsumer],
   ScriptWithState
 >('scripts/getScriptDefinition', 'scripts/getScriptDefinitionRequested');
-
-export const scriptDefinitionChangesReleased = createAction<[wsId: string, consumerId: string]>(
-  'scripts/scriptDefinitionChangesReleased',
-);
-
-export const restoreScriptDefinitionsRequested = createAsyncAction<
-  [wsId: string, snapshot: ScriptDefinitionSnapshot, consumer?: ScriptWorkflowConsumer],
-  void
->('scripts/restoreScriptDefinitions', 'scripts/restoreScriptDefinitionsRequested');
 
 export const saveScriptDefinitionsToRepoRequested = createAsyncAction<
   [wsId: string, consumer?: ScriptWorkflowConsumer],
@@ -393,19 +341,10 @@ scriptsReducer.with(removeScriptDefinitionsRequested, (state, { payload }) =>
 scriptsReducer.with(detectScriptDefinitionsRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[1]),
 );
-scriptsReducer.with(detectScriptsWithAgentRequested, (state, { payload }) =>
-  startWorkflow(state, payload[0], payload[1]),
-);
-scriptsReducer.with(applyScriptDefinitionChangesRequested, (state, { payload }) =>
-  startWorkflow(state, payload[0], payload[3]),
-);
 scriptsReducer.with(listScriptDefinitionsRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[2]),
 );
 scriptsReducer.with(getScriptDefinitionRequested, (state, { payload }) =>
-  startWorkflow(state, payload[0], payload[2]),
-);
-scriptsReducer.with(restoreScriptDefinitionsRequested, (state, { payload }) =>
   startWorkflow(state, payload[0], payload[2]),
 );
 scriptsReducer.with(saveScriptDefinitionsToRepoRequested, (state, { payload }) =>

@@ -106,25 +106,6 @@ it('refuses a stale edit detail when an archive event wins during the read', asy
   expect(backendRequest).not.toHaveBeenCalledWith('script.create', expect.anything());
 });
 
-it('restores full detection Undo data including readiness settings', async () => {
-  const original = vi.mocked(backendRequest).getMockImplementation()!;
-  vi.mocked(backendRequest).mockImplementation((method, params) =>
-    method === 'script.list' ? Promise.resolve({ scripts: [] }) : original(method, params),
-  );
-  expect((await scriptsClient.restoreSnapshot('ws', [full])).success).toBe(true);
-  expect(backendRequest).toHaveBeenCalledWith(
-    'script.create',
-    expect.objectContaining({
-      command: full.command,
-      cwd: full.cwd,
-      env: full.env,
-      source: full.source,
-      healthUrl: full.healthUrl,
-      readyPattern: full.readyPattern,
-    }),
-  );
-});
-
 for (const operation of ['update', 'remove'] as const) {
   const mutate = () =>
     operation === 'update'

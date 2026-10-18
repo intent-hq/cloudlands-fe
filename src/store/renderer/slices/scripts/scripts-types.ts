@@ -79,12 +79,6 @@ export type ScriptDefinitionUpdate = Partial<
   >
 >;
 
-export type ScriptDefinitionChanges = {
-  add: ScriptDefinitionInput[];
-  update: Array<{ id: string; updates: ScriptDefinitionUpdate }>;
-  remove: string[];
-};
-
 export type ScriptDetectionOutcome = {
   detected: number;
   added: number;
@@ -93,19 +87,6 @@ export type ScriptDetectionOutcome = {
   skippedRunning: string[];
   packageManager?: 'npm' | 'yarn' | 'pnpm';
 };
-
-export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
-  /** Full pre-change inventory captured by the saga for Undo. */
-  snapshot: ScriptDefinitionSnapshot;
-};
-
-export type ScriptAgentDetectionOutcome =
-  | { source: 'agent'; presentation: 'changes' | 'legacy'; changes: ScriptDefinitionChangesOutcome }
-  | {
-      source: 'local';
-      detection: ScriptDetectionOutcome;
-      fallbackReason: 'agent-failed' | 'unexpected-format' | 'apply-failed';
-    };
 
 export type ScriptRemovalTarget = Pick<
   WorkspaceScript,
@@ -129,9 +110,7 @@ export type ScriptWorkflowResult =
   | ScriptListEntry
   | ScriptListEntry[]
   | ScriptBulkRemovalOutcome
-  | ScriptDetectionOutcome
-  | ScriptDefinitionChangesOutcome
-  | ScriptAgentDetectionOutcome;
+  | ScriptDetectionOutcome;
 
 export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
   id: string;
@@ -141,8 +120,6 @@ export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
   error?: string;
   consumed?: true;
 }
-
-export type ScriptDefinitionSnapshot = WorkspaceScript[];
 
 export type ScriptOperationState = {
   action: ScriptQuickAction;
