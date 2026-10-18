@@ -49,6 +49,7 @@
     controlled = false,
     releasedPages = 0,
     expanded = false,
+    lastSeen,
   }: {
     progressive?: number;
     received?: number;
@@ -73,8 +74,11 @@
     refreshSnapshot?: boolean;
     retained?: boolean;
     compact?: boolean;
+    /** Seeds the session's daemon seen marker (`metadata.lastSeenMessageId`). */
+    lastSeen?: string;
   } = $props();
   const fixture = untrack(() => scenario);
+  const seenMarker = untrack(() => lastSeen);
   const forwardGap = fixture.startsWith('gap-');
   // One missing row lets a five-row inclusive fallback overlap the tail
   // and close the gap with exactly one successful retry.
@@ -259,6 +263,7 @@
           ),
           createdAt: timestamp,
           updatedAt: timestamp,
+          ...(seenMarker === undefined ? {} : { metadata: { lastSeenMessageId: seenMarker } }),
         } as AgentSession,
       ]),
     );
