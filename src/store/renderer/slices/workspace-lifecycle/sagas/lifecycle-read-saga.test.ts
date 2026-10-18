@@ -6,7 +6,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
-import { setWorkspaceEntity } from '../../workspace/workspace-slice';
+import { setWorkspaceEntity, updateWorkspaceEntity } from '../../workspace/workspace-slice';
 import type { WorkspaceEvent } from '$features/events/types';
 import { LiveEventsClient } from '$lib/client/live/live-events-client';
 import { getPeopleActivity } from '$features/presence/components/people-activity';
@@ -436,21 +436,32 @@ describe('lifecycleReadSaga', () => {
     // workspace.list reply is in flight (#7249 startup skeleton).
     // Bounded so the pre-fix livelock fails on the call count, not on OOM.
     let calls = 0;
+    let run!: ReturnType<typeof startWithLoopback>;
     mocks.workspaceServiceList.mockImplementation(async () => {
       if (++calls < 50) rendererEventRecovery.push('workspace-list');
+      // The push's projection lands mid-read and must be replayed onto the reply.
+      if (calls === 1) run.dispatch(updateWorkspaceEntity(WS, { title: 'pushed' }));
       // The trailing refetch sees a newer list than the first reply.
-      return { ok: true, data: calls === 1 ? [{ id: WS }] : [{ id: WS }, { id: 'later' }] };
+      return {
+        ok: true,
+        data:
+          calls === 1
+            ? [{ id: WS, title: 'stale' }]
+            : [{ id: WS, title: 'pushed' }, { id: 'later' }],
+      };
     });
     mocks.workspaces.recentViews.mockImplementation(async () => {
       rendererEventRecovery.push('workspace-list');
       return { [WS]: 7 };
     });
-    const run = startWithLoopback();
+    run = startWithLoopback();
     try {
       run.channel.put(loadWorkspacesRequested());
       await settle();
-      // The first reply is published even though a push overtook it.
+      // The first reply is published even though a push overtook it, with
+      // the mid-read projection replayed over its stale field.
       expect(run.getWorkspaceState().hasLoaded).toBe(true);
+      expect(run.getWorkspaceState().workspaces.map[WS]?.title).toBe('pushed');
       for (let i = 0; i < 10; i++) {
         await settle();
         await vi.advanceTimersByTimeAsync(1000);
