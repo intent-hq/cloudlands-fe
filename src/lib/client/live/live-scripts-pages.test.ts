@@ -26,6 +26,29 @@ describe('active script discovery', () => {
     await expect(new LiveScriptsClient().listPage('ws')).rejects.toThrow();
     expect(backendRequest).toHaveBeenCalledTimes(1);
   });
+  it.each(['14.0', '15.0', '16.2.1'])(
+    'loads active lists from protocol %s when the capability is advertised',
+    async (protocolVersion) => {
+      vi.mocked(backendRequest)
+        .mockResolvedValueOnce({
+          server: { protocolVersion, capabilities: { scriptActiveLists: 1 } },
+        })
+        .mockResolvedValueOnce({ view: 'summary', scripts: [] });
+      await expect(new LiveScriptsClient().listPage('ws')).resolves.toMatchObject({
+        view: 'summary',
+      });
+    },
+  );
+  it.each([undefined, 0, 2])(
+    'rejects a protocol 15 daemon whose scriptActiveLists is %s',
+    async (scriptActiveLists) => {
+      vi.mocked(backendRequest).mockResolvedValue({
+        server: { protocolVersion: '15.0', capabilities: { scriptActiveLists } },
+      });
+      await expect(new LiveScriptsClient().listPage('ws')).rejects.toThrow();
+      expect(backendRequest).toHaveBeenCalledTimes(1);
+    },
+  );
   it('rejects a missing summary discriminator without a full-list retry', async () => {
     vi.mocked(backendRequest).mockResolvedValueOnce(hello).mockResolvedValueOnce({ scripts: [] });
     await expect(new LiveScriptsClient().listPage('ws')).rejects.toThrow();
