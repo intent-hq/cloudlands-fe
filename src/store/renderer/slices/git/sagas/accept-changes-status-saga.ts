@@ -1,13 +1,3 @@
-import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
-import {
-  rendererEventRecovery,
-  type RendererRecoveryHandle,
-} from '$features/events/renderer-event-recovery';
-import { registerAcceptStatusRecovery } from '$features/file-tracking/accept-status-event-recovery';
-import { acceptStatusRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
-import { getRecoveryAdmission, withRecoveryLifetime } from '../../../middlewares/event-recovery';
-import { store } from '../../../store';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
@@ -24,7 +14,6 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  clearAcceptSnapshot,
   acceptChangesConsumerMounted,
   acceptChangesConsumerUnmounted,
   acceptChangesStatusInvalidated,
@@ -36,13 +25,7 @@ import { selectAcceptChangesStatus, selectPostMergeState } from '../git-selector
 
 const logger = createLogger('AcceptChangesStatusSaga');
 
-type Entry = {
-  consumers: number;
-  dirty: boolean;
-  generation: number;
-  recovery?: RendererRecoveryHandle;
-  stopRecovery?: () => void;
-};
+type Entry = { consumers: number; dirty: boolean; generation: number };
 type Coordinator = Map<string, Entry>;
 
 function entryFor(coordinator: Coordinator, workspaceId: string): Entry {
@@ -51,54 +34,6 @@ function entryFor(coordinator: Coordinator, workspaceId: string): Entry {
   const entry = { consumers: 0, dirty: false, generation: 0 };
   coordinator.set(workspaceId, entry);
   return entry;
-}
-
-function ensureRecovery(coordinator: Coordinator, workspaceId: string, entry: Entry) {
-  if (!entry.stopRecovery)
-    entry.stopRecovery = rendererEventRecovery.onSession((scope) => {
-      const context = selectPrincipalActionContext.select(store.state);
-      const token = store.state.workspace.deletionTokens[workspaceId];
-      const handle = registerAcceptStatusRecovery(scope, workspaceId, {
-        isCurrent: () =>
-          coordinator.get(workspaceId) === entry &&
-          context === selectPrincipalActionContext.select(store.state) &&
-          store.state.workspace.deletionTokens[workspaceId] === token &&
-          !!selectWorkspaceById.select(store.state, workspaceId),
-        active:
-          entry.consumers > 0 && selectCurrentWorkspaceTabId.select(store.state) === workspaceId,
-        invalidate: () => {
-          entry.generation++;
-          entry.dirty = true;
-        },
-        apply: (status) => {
-          entry.dirty = false;
-          const current = selectPostMergeState.select(store.state, workspaceId);
-          store.dispatch(setAcceptChangesStatus(workspaceId, status));
-          store.dispatch(setAcceptChangesStatusLoading(workspaceId, false));
-          store.dispatch(
-            setPostMergeState(workspaceId, {
-              ...current,
-              aheadOfTrunk: status.aheadOfTrunk,
-              behindTrunk: status.behindTrunk,
-              hasConflicts: status.hasConflicts ?? false,
-              hasRemote: status.hasRemote,
-              isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-            }),
-          );
-        },
-        retire: () => {
-          store.dispatch(clearAcceptSnapshot(workspaceId));
-        },
-      });
-      entry.recovery = handle;
-      return () => {
-        if (entry.recovery === handle) entry.recovery = undefined;
-        handle.dispose();
-      };
-    });
-  entry.recovery?.setActive(
-    entry.consumers > 0 && selectCurrentWorkspaceTabId.select(store.state) === workspaceId,
-  );
 }
 
 function* isVisible(entry: Entry, workspaceId: string): SagaGenerator<boolean> {
@@ -112,7 +47,6 @@ type RefreshAction =
 function refreshContext(coordinator: Coordinator, action: RefreshAction) {
   const [workspaceId] = action.payload;
   if (action.type === workspaceUnmounted.type) {
-    coordinator.get(workspaceId)?.stopRecovery?.();
     coordinator.delete(workspaceId);
     return { context: workspaceId, cancel: true as const };
   }
@@ -126,37 +60,30 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
   if (action.type === workspaceUnmounted.type) return;
   const [workspaceId] = action.payload;
   const entry = entryFor(coordinator, workspaceId);
-  ensureRecovery(coordinator, workspaceId, entry);
-  if (!entry.dirty || entry.recovery?.status.stale) return;
-  const receipt = rendererEventRecovery.capture(acceptStatusRecoveryKey(workspaceId));
+  if (!entry.dirty) return;
   const generation = entry.generation;
   const context = yield* selectPrincipalActionContext.effect();
   entry.dirty = false;
-  yield* put(withRecoveryLifetime(setAcceptChangesStatusLoading(workspaceId, true), receipt));
+  yield* put(setAcceptChangesStatusLoading(workspaceId, true));
   try {
-    const status = yield* call(() =>
-      trackWorktreeSnapshotRead(acceptStatusRecoveryKey(workspaceId), () => {
-        if (!receipt.commit(() => undefined)) throw new Error('Accept status authority expired');
-        return AcceptChangesClient.getStatus(workspaceId as WorkspaceId);
-      }),
+    const status = yield* call(
+      [AcceptChangesClient, AcceptChangesClient.getStatus],
+      workspaceId as WorkspaceId,
     );
     if ((yield* selectPrincipalActionContext.effect()) !== context) return;
     const visible = yield* isVisible(entry, workspaceId);
     if (visible && entry.generation === generation && !entry.dirty) {
       const current = yield* selectPostMergeState.effect(workspaceId);
-      yield* put(withRecoveryLifetime(setAcceptChangesStatus(workspaceId, status), receipt));
+      yield* put(setAcceptChangesStatus(workspaceId, status));
       yield* put(
-        withRecoveryLifetime(
-          setPostMergeState(workspaceId, {
-            ...current,
-            aheadOfTrunk: status.aheadOfTrunk,
-            behindTrunk: status.behindTrunk,
-            hasConflicts: status.hasConflicts ?? false,
-            hasRemote: status.hasRemote,
-            isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-          }),
-          receipt,
-        ),
+        setPostMergeState(workspaceId, {
+          ...current,
+          aheadOfTrunk: status.aheadOfTrunk,
+          behindTrunk: status.behindTrunk,
+          hasConflicts: status.hasConflicts ?? false,
+          hasRemote: status.hasRemote,
+          isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+        }),
       );
     } else if (!visible) {
       entry.dirty = true;
@@ -169,7 +96,7 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
       entry.generation === generation &&
       (yield* selectPrincipalActionContext.effect()) === context
     ) {
-      yield* put(withRecoveryLifetime(setAcceptChangesStatusLoading(workspaceId, false), receipt));
+      yield* put(setAcceptChangesStatusLoading(workspaceId, false));
     }
   }
 }
@@ -192,7 +119,6 @@ function* consumerMounted(
   const [workspaceId] = action.payload;
   const entry = entryFor(coordinator, workspaceId);
   entry.consumers += 1;
-  ensureRecovery(coordinator, workspaceId, entry);
   const cached = yield* selectAcceptChangesStatus.effect(workspaceId);
   if (entry.consumers === 1 && (!cached || entry.dirty))
     yield* refreshIfVisible(coordinator, workspaceId);
@@ -205,7 +131,6 @@ function consumerUnmounted(
   const [workspaceId] = action.payload;
   const entry = entryFor(coordinator, workspaceId);
   entry.consumers = Math.max(0, entry.consumers - 1);
-  ensureRecovery(coordinator, workspaceId, entry);
 }
 
 function* invalidate(coordinator: Coordinator, workspaceId: string): SagaGenerator<void> {
@@ -221,7 +146,6 @@ function* invalidated(
 }
 
 function* activeWorkspaceChanged(coordinator: Coordinator): SagaGenerator<void> {
-  for (const [id, entry] of coordinator) ensureRecovery(coordinator, id, entry);
   const workspaceId = yield* selectCurrentWorkspaceTabId.effect();
   if (!workspaceId) return;
   const entry = entryFor(coordinator, workspaceId);
@@ -243,55 +167,39 @@ function* received(
   const [workspaceId, type, data] = action.payload;
   if (type !== 'changes:git-status' || data.gitRootId || !isPushedAcceptChangesStatus(data.status))
     return;
-  const admitted = getRecoveryAdmission(action, acceptStatusRecoveryKey(workspaceId));
-  if (
-    admitted === null ||
-    (admitted
-      ? !admitted.commit(() => undefined)
-      : !rendererEventRecovery.push(acceptStatusRecoveryKey(workspaceId)))
-  )
-    return;
-  const receipt = admitted ?? rendererEventRecovery.capture(acceptStatusRecoveryKey(workspaceId));
   const entry = entryFor(coordinator, workspaceId);
   entry.generation++;
   entry.dirty = false;
   const status = data.status;
   const current = yield* selectPostMergeState.effect(workspaceId);
-  yield* put(withRecoveryLifetime(setAcceptChangesStatus(workspaceId, status), receipt));
-  yield* put(withRecoveryLifetime(setAcceptChangesStatusLoading(workspaceId, false), receipt));
+  yield* put(setAcceptChangesStatus(workspaceId, status));
+  yield* put(setAcceptChangesStatusLoading(workspaceId, false));
   yield* put(
-    withRecoveryLifetime(
-      setPostMergeState(workspaceId, {
-        ...current,
-        aheadOfTrunk: status.aheadOfTrunk,
-        behindTrunk: status.behindTrunk,
-        hasConflicts: status.hasConflicts ?? false,
-        hasRemote: status.hasRemote,
-        isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
-      }),
-      receipt,
-    ),
+    setPostMergeState(workspaceId, {
+      ...current,
+      aheadOfTrunk: status.aheadOfTrunk,
+      behindTrunk: status.behindTrunk,
+      hasConflicts: status.hasConflicts ?? false,
+      hasRemote: status.hasRemote,
+      isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+    }),
   );
 }
 
 export function* acceptChangesStatusSaga(): SagaGenerator<void> {
   const coordinator: Coordinator = new Map();
-  try {
-    yield* all([
-      takeSingleFlightInContext(
-        [refreshAcceptChangesStatus, workspaceUnmounted],
-        (action) => refreshContext(coordinator, action),
-        refreshStatus,
-        coordinator,
-      ),
-      takeEvery(acceptChangesConsumerMounted, consumerMounted, coordinator),
-      takeEvery(acceptChangesConsumerUnmounted, consumerUnmounted, coordinator),
-      takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
-      takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
-      takeEvery(backendReconnected, reconnected, coordinator),
-      takeEvery(changesEventReceived, received, coordinator),
-    ]);
-  } finally {
-    for (const entry of coordinator.values()) entry.stopRecovery?.();
-  }
+  yield* all([
+    takeSingleFlightInContext(
+      [refreshAcceptChangesStatus, workspaceUnmounted],
+      (action) => refreshContext(coordinator, action),
+      refreshStatus,
+      coordinator,
+    ),
+    takeEvery(acceptChangesConsumerMounted, consumerMounted, coordinator),
+    takeEvery(acceptChangesConsumerUnmounted, consumerUnmounted, coordinator),
+    takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
+    takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
+    takeEvery(backendReconnected, reconnected, coordinator),
+    takeEvery(changesEventReceived, received, coordinator),
+  ]);
 }

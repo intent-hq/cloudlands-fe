@@ -54,7 +54,6 @@ vi.mock('../backend-connection', async (original) => {
         name,
         destroyed: false,
         writes: [] as Array<any>,
-        heldMethods: new Set<string>(),
         next: 0,
         destroy() {
           this.destroyed = true;
@@ -62,7 +61,6 @@ vi.mock('../backend-connection', async (original) => {
         write(text: string) {
           const request = JSON.parse(text);
           this.writes.push(request);
-          if (this.heldMethods.has(request.method)) return true;
           const result =
             request.method === 'client.hello'
               ? { clientId: 'confirmed', server: { capabilities: { repositoryContext: 1 } } }
@@ -257,111 +255,4 @@ describe('production repository IPC chain with controlled socket I/O', () => {
         call(channels.REQUEST, a.event, { id: capture.result.id, root, method, params }),
       ).resolves.toMatchObject({ ok: false });
   });
-});
-
-for (const outcome of ['forbidden', 'transient', 'replacement'] as const)
-  it(`production ordinary Electron route carries ${outcome} physical completion after caller timeout`, async () => {
-    const { a, b, remote } = await setup();
-    const socket = data.sockets.find((entry) => entry.name === 'host-A');
-    socket.heldMethods.add('comment.list');
-    const previous = globalThis.window.electronAPI;
-    globalThis.window.electronAPI = {
-      invoke: (channel: string, payload: unknown) => call(channel, a.event, payload),
-    } as typeof previous;
-    vi.useFakeTimers();
-    try {
-      const { createElectronIpcBackendTransport } =
-        await import('$lib/client/live/electron-ipc-transport');
-      const transport = createElectronIpcBackendTransport();
-      const pending = transport
-        .request('comment.list', { workspaceId: 'equal-id', noteId: 'n' }, { timeoutMs: 50 })
-        .catch((error) => error);
-      await vi.advanceTimersByTimeAsync(51);
-      const timeout = await pending;
-      expect(timeout.completion).toBeInstanceOf(Promise);
-      const first = socket.writes.find(
-        (frame: { method: string }) => frame.method === 'comment.list',
-      );
-      if (outcome === 'replacement') await remote.request('client.hello', {});
-      let settled = false;
-      void timeout.completion.then(() => {
-        settled = true;
-      });
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(settled).toBe(false);
-      expect(
-        socket.writes.filter((frame: { method: string }) => frame.method === 'comment.list'),
-      ).toHaveLength(1);
-      socket.emit(
-        'data',
-        Buffer.from(
-          JSON.stringify({
-            id: first.id,
-            error: {
-              code: outcome === 'transient' ? -32603 : -32003,
-              message: 'original private outcome',
-              data: { code: outcome === 'transient' ? 'internal' : 'forbidden' },
-            },
-          }) + '\n',
-        ),
-      );
-      const completion = await timeout.completion;
-      if (outcome === 'replacement') expect(completion).toEqual({ retired: true, errors: [] });
-      else
-        expect(completion).toMatchObject({
-          retired: false,
-          errors: [{ rpcCode: outcome === 'transient' ? -32603 : -32003 }],
-        });
-      expect(b.sender.mainFrame.send).not.toHaveBeenCalled();
-    } finally {
-      globalThis.window.electronAPI = previous;
-      vi.useRealTimers();
-    }
-  });
-
-it('production capability observation preserves full confirmed capabilities without renewing hello', async () => {
-  const { a, remote } = await setup();
-  const socket = data.sockets.find((entry) => entry.name === 'host-A');
-  const count = () =>
-    socket.writes.filter((frame: { method: string }) => frame.method === 'client.hello').length;
-  const before = count();
-  const connection = remote.getRepositoryConnection();
-  const observed = await call(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, a.event, undefined);
-  expect(observed).toMatchObject({
-    ok: true,
-    result: { clientId: 'confirmed', server: { capabilities: { repositoryContext: 1 } } },
-  });
-  expect(count()).toBe(before);
-  expect(remote.getRepositoryConnection()).toBe(connection);
-  socket.heldMethods.add('client.hello');
-  const renewing = remote.request('client.hello', {});
-  await vi.waitFor(() => expect(count()).toBe(before + 1));
-  const frame = socket.writes
-    .filter((entry: { method: string }) => entry.method === 'client.hello')
-    .at(-1);
-  expect(await call(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, a.event, undefined)).toMatchObject({
-    ok: false,
-    error: { code: 'UNAVAILABLE' },
-  });
-  socket.emit(
-    'data',
-    Buffer.from(
-      JSON.stringify({
-        id: frame.id,
-        result: {
-          clientId: 'renewed',
-          server: { capabilities: { hostMembership: 1, liveState: true } },
-        },
-      }) + '\n',
-    ),
-  );
-  await renewing;
-  expect(await call(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, a.event, undefined)).toMatchObject({
-    ok: true,
-    result: {
-      clientId: 'renewed',
-      server: { capabilities: { hostMembership: 1, liveState: true } },
-    },
-  });
-  expect(count()).toBe(before + 1);
 });

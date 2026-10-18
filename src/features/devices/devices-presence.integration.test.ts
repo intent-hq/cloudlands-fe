@@ -49,19 +49,6 @@ const wire = vi.hoisted(() => ({
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
   backendRequest: wire.request,
-  observeBackendNodeCapabilities: () => wire.request('client.hello', {}),
-  onEventRecoveryReady: () => () => {},
-  captureBackendEventRecovery: async () => {
-    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
-    return createEventRecoverySession({
-      supported: false,
-      isCurrent: () => true,
-      request: wire.request,
-      onNotification: () => () => {},
-      onRetired: () => () => {},
-      dispose: () => {},
-    });
-  },
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: wire.unsubscribe,
   onBackendNotification: (handler: (notification: BackendNotification) => void) => {

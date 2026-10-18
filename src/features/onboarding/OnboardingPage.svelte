@@ -1359,6 +1359,11 @@
           ...lastSubmittedAgent,
           selectedSpecialist: specialistId,
         },
+        // Remember the base branch for the repo once the workspace is created.
+        rememberBranch:
+          !treatAsNewRepo && projectSelection.repoPath && effectiveBranch.trim()
+            ? { repoPath: projectSelection.repoPath, branch: effectiveBranch }
+            : undefined,
         selectedPrNumber: selectedPRNumber ?? undefined,
       };
       const result = await submitWorkspaceInitialization(request, resourceId);

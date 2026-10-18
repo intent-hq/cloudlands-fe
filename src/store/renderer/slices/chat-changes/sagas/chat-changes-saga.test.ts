@@ -294,27 +294,23 @@ describe('chat changes production owners against mock transport', () => {
 
   it('coalesces event bursts to one trailing refresh and keeps fresh results during parent refresh', async () => {
     send(input());
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.runAllTimersAsync();
     vi.mocked(backendRequest).mockClear();
     const pending = Promise.withResolvers<unknown>();
     handlers.set('git.diffs', () => pending.promise);
     appStore.dispatch(agentFileRefreshTriggered('ws', 'a.ts'));
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.runAllTimersAsync();
     for (let i = 0; i < 8; i++) appStore.dispatch(agentFileRefreshTriggered('ws', 'a.ts'));
     expect(calls('git.diffs')).toHaveLength(2);
     pending.resolve([{ path: 'a.ts', hunks: [hunk] }]);
-    // A future timer must not drain the two-second freshness window.
-    const unrelatedTimer = vi.fn();
-    setTimeout(unrelatedTimer, 2500);
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.runAllTimersAsync();
     expect(calls('git.diffs')).toHaveLength(4);
     send(input([change(), change('b.ts')]));
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.runAllTimersAsync();
     expect(calls('git.diffs').slice(4)).toEqual([
       ['git.diffs', { workspaceId: 'ws', paths: ['b.ts'] }],
     ]);
     expect(rows().filter((row) => row.filePath === 'a.ts')).toHaveLength(2);
-    expect(unrelatedTimer).not.toHaveBeenCalled();
   });
 
   it('retries failed enrichment without changing identity', async () => {

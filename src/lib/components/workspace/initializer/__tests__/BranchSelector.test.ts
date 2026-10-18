@@ -230,7 +230,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
         await settle(150);
         expect.soft(requests).toEqual(['host-a', 'host-b']);
         expect.soft(onBranchesLoaded.mock.lastCall?.[0].branches).toEqual(['host-b-main']);
-        expect(savedBranchByRepo['/tmp/repo']).toBe('host-b-main');
+        // Selecting a branch never saves it; New space saves the branch only on create.
+        expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
       },
     );
 
@@ -257,7 +258,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
         expect(mockGetBranches).toHaveBeenCalledTimes(change === 'changed' ? 2 : 1);
         if (change === 'changed') {
           expect(mockGetBranches).toHaveBeenLastCalledWith('/tmp/other', true);
-          expect(savedBranchByRepo['/tmp/other']).toBe('new-main');
+          expect(onchange.mock.lastCall?.[0].detail.branch).toBe('new-main');
+          expect(savedBranchByRepo['/tmp/other']).toBeUndefined();
         }
       },
     );
@@ -272,7 +274,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       switchHost();
       await settle(150);
       expect(mockGetBranches).toHaveBeenCalledTimes(1);
-      expect(savedBranchByRepo['/tmp/repo']).toBe('connected-main');
+      expect(document.querySelector('button')?.textContent).toContain('connected-main');
+      expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
     });
 
     it('rejects the previous connection generation when the same host reconnects', async () => {
@@ -291,7 +294,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       expect
         .soft(onchange.mock.calls.map(([event]) => event.detail.branch))
         .toEqual(['reconnected-main']);
-      expect(savedBranchByRepo['/tmp/repo']).toBe('reconnected-main');
+      expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
     });
 
     it('ignores a previous-host remote listing while the new host remote request is pending', async () => {
@@ -392,6 +395,28 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/non-main-repo', true));
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
+  });
+
+  it('local repo: an explicit branch pick is reported but not saved as the repo preference', async () => {
+    debugFlags.enableFormPersistence = true;
+    mockGetBranches.mockResolvedValue({
+      branches: ['main', 'feature'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, {
+      props: { repoPath: '/tmp/repo', repoType: 'local', value: '', onchange },
+    });
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    await openDropdown(container);
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: /^feature/ }), {
+      pointerType: 'mouse',
+    });
+    expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' });
+    // New space saves the branch for the repo only when a workspace is created.
+    expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
   });
 
   it('Escape dismisses the whole picker without dismissing its parent or accepting composition', async () => {
@@ -715,7 +740,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       ),
     );
     expect(onchange.mock.lastCall![0].detail.branch).toBe('main');
-    expect(savedBranchByRepo[githubProps.repoPath]).toBe('main');
+    expect(savedBranchByRepo[githubProps.repoPath]).toBeUndefined();
   });
 
   it.each([
@@ -753,7 +778,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
         ),
       );
       expect(onchange.mock.lastCall![0].detail.branch).toBe(freshDefault);
-      expect(savedBranchByRepo[githubProps.repoPath]).toBe(freshDefault);
+      expect(savedBranchByRepo[githubProps.repoPath]).toBeUndefined();
     },
   );
 
@@ -949,7 +974,8 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
         ),
       );
       expect(onchange.mock.lastCall![0].detail.branch).toBe(expectedBranch);
-      expect(savedBranchByRepo[githubProps.repoPath]).toBe(expectedBranch);
+      // The saved preference is read, never rewritten by the picker.
+      expect(savedBranchByRepo[githubProps.repoPath]).toBe(savedBranch);
     },
   );
 
@@ -1021,14 +1047,14 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       ),
     );
     expect(onchange.mock.lastCall![0].detail.branch).toBe('main');
-    expect(savedBranchByRepo['octo/other']).toBe('main');
+    expect(savedBranchByRepo['octo/other']).toBeUndefined();
   });
 
   it('stale cache: the saved branch missing from the cache is re-selected once the fresh list has it', async () => {
     // The user's saved branch exists on GitHub but is absent from the stale
-    // local cache. The cached paint auto-selects the default (persisting it,
-    // which clobbers the live saved value) â€” reconciliation must still find
-    // the pre-paint saved branch and switch back to it.
+    // local cache. The cached paint auto-selects the default without touching
+    // the saved value; reconciliation must still find the saved branch and
+    // switch back to it.
     debugFlags.enableFormPersistence = true;
     savedBranchByRepo['octo/intent'] = 'feat/saved';
     mockGithubBranchesCached.mockResolvedValue({
@@ -1041,11 +1067,11 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const onchange = vi.fn();
     const { rerender } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
-    // Cached paint: saved branch not in the cached list â†’ default selected
-    // (and persisted, overwriting the saved map entry).
+    // Cached paint: saved branch not in the cached list â†’ default selected,
+    // and the saved preference is left as it was.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    expect(savedBranchByRepo['octo/intent']).toBe('dev');
+    expect(savedBranchByRepo['octo/intent']).toBe('feat/saved');
     await rerender({ value: onchange.mock.lastCall![0].detail.branch });
 
     fresh.resolve({ branches: ['dev', 'feat/x', 'feat/saved'], defaultBranch: 'dev' });

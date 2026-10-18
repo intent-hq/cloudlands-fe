@@ -8,13 +8,6 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.request,
-  // These suites exercise the legacy subscription path on an explicitly unsupported peer.
-  onEventRecoveryReady: () => () => {},
-  captureBackendEventRecovery: async () => ({
-    supported: false,
-    isCurrent: () => true,
-    dispose: () => {},
-  }),
   backendSubscribe: async () => ({ subscriptionId: 'fast-mode-test' }),
   backendUnsubscribe: async () => {},
   onBackendNotification: (

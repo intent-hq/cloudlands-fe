@@ -1,10 +1,3 @@
-import { trackRuntimeRead } from '$features/events/runtime-read-lane';
-import {
-  isRecoverySessionRetired,
-  rendererEventRecovery,
-  type RendererRecoveryScope,
-  type RendererRecoveryHandle,
-} from '$features/events/renderer-event-recovery';
 import {
   backendRequest,
   backendSubscribe,
@@ -70,35 +63,9 @@ export function subscribeScriptMonitors(
   sharedConnection?: ReturnType<typeof createScriptMonitorConnection>,
 ) {
   const connection = sharedConnection ?? createScriptMonitorConnection();
-  const key = 'script-monitors:' + JSON.stringify([workspaceId]);
-  let adopted = false;
-  let recoveryScope: RendererRecoveryScope | undefined;
-  let recovery: RendererRecoveryHandle | undefined;
-  let controller: AbortController | undefined;
-  let loadedPages = 1;
-  const selectedDetails = new Set<string>();
-  const request = <T>(method: string, params?: unknown): Promise<T> => {
-    const scope = recoveryScope;
-    const invoke = () =>
-      scope ? scope.request<T>(method, params) : backendRequest<T>(method, params);
-    if (!['scriptMonitor.list', 'scriptMonitor.get', 'script.get'].includes(method))
-      return invoke();
-    const token = rendererEventRecovery.capture(key);
-    return trackRuntimeRead(
-      key,
-      () => {
-        if (disposed || recoveryScope !== scope || !token.commit(() => {}))
-          throw new Error('Script monitor read superseded');
-        return invoke();
-      },
-      method === 'scriptMonitor.list',
-    );
-  };
   let disposed = false;
   let epoch = 0;
   let subscriptionId: string | undefined;
-  /** The recovery scope that made `subscriptionId`; undefined for a direct backend lease. */
-  let subscriptionScope: RendererRecoveryScope | undefined;
   let supported = false;
   let snapshot: ScriptMonitorSnapshot = { monitors: [], scripts: [], status: 'loading' };
   let pageRead: { epoch: number; journal: Map<string, ScriptMonitor | null> } | undefined;
@@ -123,28 +90,16 @@ export function subscribeScriptMonitors(
       scripts: snapshot.scripts.filter((row) => scriptIds.has(row.id)),
     };
   };
-  /** Release through whichever owner made the lease, so a recovery coordinator never keeps it. */
-  const releaseSubscription = () => {
-    if (!subscriptionId) return;
-    if (subscriptionScope) void subscriptionScope.unsubscribe(subscriptionId);
-    else void backendUnsubscribe(subscriptionId, workspaceId);
-    subscriptionId = undefined;
-    subscriptionScope = undefined;
-  };
   const disable = () => {
     supported = false;
     detailReads.clear();
-    releaseSubscription();
+    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
+    subscriptionId = undefined;
     snapshot = { monitors: [], scripts: [], status: 'unsupported' };
     emit();
   };
   const readPage = async (append = false) => {
     if (!supported || disposed || pageRead?.epoch === epoch) return;
-    if (recovery?.status.stale) {
-      recovery.refresh();
-      return;
-    }
-    const token = rendererEventRecovery.capture(key);
     const cursor = append ? snapshot.nextCursor : undefined;
     if (append && !cursor) return;
     const read = { epoch, journal: new Map<string, ScriptMonitor | null>() };
@@ -152,7 +107,7 @@ export function subscribeScriptMonitors(
     snapshot = { ...snapshot, loadingMore: append };
     emit();
     try {
-      const result = await request<{
+      const result = await backendRequest<{
         view: 'summary';
         monitors: ScriptMonitorSummary[];
         nextCursor?: string;
@@ -180,24 +135,16 @@ export function subscribeScriptMonitors(
         if (!row || row.state !== 'active') rows.delete(id);
         else rows.set(id, row);
       }
-      const committed = token.commit(() => {
-        if (append) loadedPages++;
-        else loadedPages = 1;
-        snapshot = {
-          ...snapshot,
-          monitors: [...rows.values()],
-          nextCursor: result.nextCursor,
-          status: 'ready',
-          loadingMore: false,
-        };
-        emit();
-      });
-      if (!committed && current(read.epoch) && !recovery?.status.stale)
-        queueMicrotask(() => {
-          void readPage();
-        });
+      snapshot = {
+        ...snapshot,
+        monitors: [...rows.values()],
+        nextCursor: result.nextCursor,
+        status: 'ready',
+        loadingMore: false,
+      };
+      emit();
     } catch (error) {
-      if (!current(read.epoch) || !token.isCurrent() || recovery?.status.stale) return;
+      if (!current(read.epoch)) return;
       if (isMonitorMethodMissing(error)) connection.reject();
       else {
         // A failed extra page keeps the loaded rows usable; Load more stays the retry.
@@ -215,9 +162,8 @@ export function subscribeScriptMonitors(
     retired.clear();
     supported = false;
     detailReads.clear();
-    selectedDetails.clear();
-    loadedPages = 1;
-    releaseSubscription();
+    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
+    subscriptionId = undefined;
     snapshot = { monitors: [], scripts: [], status: 'loading' };
     emit();
     if (connection.isRejected()) {
@@ -225,7 +171,7 @@ export function subscribeScriptMonitors(
       return;
     }
     try {
-      const hello = await request<{
+      const hello = await backendRequest<{
         server?: { capabilities?: { scriptMonitors?: number } };
       }>('client.hello', {});
       if (disposed || version !== epoch) return;
@@ -235,27 +181,15 @@ export function subscribeScriptMonitors(
         return;
       }
       supported = true;
-      const params = {
+      const result = await backendSubscribe({
         workspaceId,
         eventTypes: ['scriptMonitor:*', 'script:changed', 'script:removed'],
-      };
-      const scope = recoveryScope;
-      const result = scope
-        ? {
-            subscriptionId: (
-              await scope.subscribe(params, { recover: true, signal: controller?.signal })
-            )?.id,
-          }
-        : await backendSubscribe(params);
+      });
       if (!current(version)) {
-        if (result.subscriptionId)
-          void (scope
-            ? scope.unsubscribe(result.subscriptionId)
-            : backendUnsubscribe(result.subscriptionId, workspaceId));
+        if (result.subscriptionId) void backendUnsubscribe(result.subscriptionId, workspaceId);
         return;
       }
       subscriptionId = result.subscriptionId;
-      subscriptionScope = scope;
       await readPage();
     } catch (error) {
       if (disposed || version !== epoch) return;
@@ -266,7 +200,7 @@ export function subscribeScriptMonitors(
       }
     }
   };
-  const receive = (notification: import('$shared/event-recovery/session').RecoveryNotification) => {
+  const offNotification = onBackendNotification((notification) => {
     if (disposed || !supported || notification.method !== 'events.event') return;
     const params = notification.params as {
       subscriptionId?: string;
@@ -314,121 +248,16 @@ export function subscribeScriptMonitors(
       };
       emit();
     }
-  };
-  const offNotification = onBackendNotification((notification) => {
-    if (!adopted) receive(notification);
   });
   const offReconnect = connection.listen(disable, () => {
-    if (!disposed && !adopted) void register();
+    if (!disposed) void register();
   });
-  const offRecovery = rendererEventRecovery.onSession((scope) => {
-    adopted = true;
-    recoveryScope = scope;
-    controller = new AbortController();
-    const abort = controller;
-    const owner = scope.registerResource({
-      key,
-      workspaceId,
-      eventTypes: ['scriptMonitor:*', 'script:changed', 'script:removed'],
-      isCurrent: () => !disposed && recoveryScope === scope,
-      read: (reader) =>
-        trackRuntimeRead(key, async () => {
-          const monitors: ScriptMonitorSummary[] = [];
-          let nextCursor: string | undefined;
-          for (let page = 0; page < loadedPages; page++) {
-            const result = await reader.request<{
-              view: string;
-              monitors: ScriptMonitorSummary[];
-              nextCursor?: string;
-            }>('scriptMonitor.list', {
-              workspaceId,
-              state: 'active',
-              view: 'summary',
-              limit: 100,
-              ...(nextCursor ? { cursor: nextCursor } : {}),
-            });
-            if (result.view !== 'summary' || !Array.isArray(result.monitors))
-              throw new Error('Invalid script monitor summary');
-            monitors.push(
-              ...result.monitors.filter(
-                (row) => row.workspaceId === workspaceId && row.state === 'active',
-              ),
-            );
-            nextCursor = result.nextCursor;
-            if (!nextCursor) break;
-          }
-          const details: Record<string, ActiveScriptMonitor | null> = {};
-          const scripts: ScriptWithState[] = [];
-          for (const row of monitors) {
-            if (!selectedDetails.has(row.monitorId)) continue;
-            const monitor = await reader.request<ActiveScriptMonitor>('scriptMonitor.get', {
-              workspaceId,
-              monitorId: row.monitorId,
-            });
-            const script = await reader.request<ScriptWithState>('script.get', {
-              workspaceId,
-              scriptId: row.scriptId,
-            });
-            if (monitor.state === 'active') details[row.monitorId] = monitor;
-            if (!script.archivedAt && !scripts.some((item) => item.id === script.id))
-              scripts.push(script);
-          }
-          return {
-            monitors,
-            details,
-            scripts,
-            nextCursor,
-            status: 'ready' as const,
-            loadingMore: false,
-          };
-        }),
-      apply: (value) => {
-        retired.clear();
-        snapshot = value;
-        emit();
-      },
-      invalidate: () => {
-        retired.clear();
-        pageRead?.journal.clear();
-      },
-      retire: (error) => {
-        epoch++;
-        supported = false;
-        detailReads.clear();
-        retired.clear();
-        selectedDetails.clear();
-        // An ended session is not a failure: the next session re-registers, so the chat
-        // card stays quiet. Lost authority does not resume on its own, so it is 'failed'
-        // and the card offers Retry instead of silently dropping the rows (intent-hq/intent#7206).
-        snapshot = {
-          monitors: [],
-          scripts: [],
-          status: isRecoverySessionRetired(error) ? 'loading' : 'failed',
-        };
-        emit();
-      },
-      onEvent: (notification) => receive(notification),
-    });
-    recovery = owner;
-    void register();
-    return () => {
-      abort.abort();
-      owner.dispose();
-      if (subscriptionId) void scope.unsubscribe(subscriptionId);
-      subscriptionId = undefined;
-      subscriptionScope = undefined;
-      if (recovery === owner) {
-        recovery = undefined;
-        recoveryScope = undefined;
-      }
-    };
-  });
-  if (!adopted) void register();
+  void register();
   return {
     loadMore: () => readPage(true),
     /**
      * Recover from a failed read: re-read the first page on a healthy subscription,
-     * otherwise register again. A no-op unless the snapshot failed.
+     * otherwise register again. A no-op unless the snapshot failed (intent-hq/intent#7206).
      */
     retry() {
       if (disposed || snapshot.status !== 'failed') return;
@@ -439,21 +268,13 @@ export function subscribeScriptMonitors(
       if (!supported || disposed || detailReads.has(monitorId)) return;
       const row = snapshot.monitors.find((item) => item.monitorId === monitorId);
       if (!row) return;
-      selectedDetails.add(monitorId);
-      if (recovery?.status.stale) {
-        recovery.refresh();
-        return;
-      }
-      const lifetime = rendererEventRecovery.capture(key);
       const version = epoch;
       const token: { script?: ScriptWithState | null } = {};
       detailReads.set(monitorId, token);
       try {
         const [monitor, script] = await Promise.all([
-          request<ActiveScriptMonitor>('scriptMonitor.get', { workspaceId, monitorId }),
-          recoveryScope
-            ? request<ScriptWithState>('script.get', { workspaceId, scriptId: row.scriptId })
-            : new LiveScriptsClient().get(workspaceId, row.scriptId),
+          backendRequest<ActiveScriptMonitor>('scriptMonitor.get', { workspaceId, monitorId }),
+          new LiveScriptsClient().get(workspaceId, row.scriptId),
         ]);
         if (
           !current(version) ||
@@ -463,19 +284,16 @@ export function subscribeScriptMonitors(
           return;
         if (monitor.state !== 'active') return;
         const latestScript = token.script === undefined ? script : token.script;
-        lifetime.commit(() => {
-          snapshot = {
-            ...snapshot,
-            details: { ...snapshot.details, [monitorId]: monitor },
-            scripts: [
-              ...snapshot.scripts.filter((item) => item.id !== row.scriptId),
-              ...(latestScript ? [latestScript] : []),
-            ],
-          };
-          emit();
-        });
+        snapshot = {
+          ...snapshot,
+          details: { ...snapshot.details, [monitorId]: monitor },
+          scripts: [
+            ...snapshot.scripts.filter((item) => item.id !== row.scriptId),
+            ...(latestScript ? [latestScript] : []),
+          ],
+        };
+        emit();
       } catch (error) {
-        if (!lifetime.isCurrent() || recovery?.status.stale) return;
         if (current(version) && isMonitorMethodMissing(error)) connection.reject();
         else if (current(version) && detailReads.get(monitorId) === token) {
           snapshot = { ...snapshot, details: { ...snapshot.details, [monitorId]: null } };
@@ -492,20 +310,14 @@ export function subscribeScriptMonitors(
       if (!supported || disposed || !snapshot.monitors.some((row) => row.monitorId === monitorId))
         return;
       const version = epoch;
-      const lifetime = rendererEventRecovery.capture(key);
       try {
-        const result = await request<ScriptMonitorMutationResult>(
+        const result = await backendRequest<ScriptMonitorMutationResult>(
           cancelRun ? 'scriptMonitor.cancelRun' : 'scriptMonitor.cancel',
           { workspaceId, monitorId },
         );
         if (!current(version)) return;
-        if (
-          !lifetime.commit(() => {
-            remove(result.monitorId);
-            emit();
-          })
-        )
-          recovery?.refresh();
+        remove(result.monitorId);
+        emit();
         return result;
       } catch (error) {
         if (current(version) && isMonitorMethodMissing(error)) connection.reject();
@@ -514,7 +326,6 @@ export function subscribeScriptMonitors(
     },
     dispose() {
       disposed = true;
-      offRecovery();
       detailReads.clear();
       offNotification();
       offReconnect();

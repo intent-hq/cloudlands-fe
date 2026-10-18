@@ -1,4 +1,3 @@
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -43,12 +42,12 @@ const details = {
 };
 type Action = Parameters<typeof gitReducer>[1];
 const tasks: ReturnType<typeof runSaga>[] = [];
-function start(extraState: Record<string, unknown> = {}) {
+function start() {
   const channel = stdChannel();
-  let state = { ...extraState, git: gitReducer(undefined, { type: 'test/init' }) };
+  let state = { git: gitReducer(undefined, { type: 'test/init' }) };
   const actions: Action[] = [];
   const dispatch = (action: Action) => {
-    state = { ...state, git: gitReducer(state.git, action) };
+    state = { git: gitReducer(state.git, action) };
     actions.push(action);
     channel.put(action);
   };
@@ -56,10 +55,6 @@ function start(extraState: Record<string, unknown> = {}) {
   tasks.push(task);
   return {
     dispatch,
-    change: (patch: Record<string, unknown>) => {
-      state = { ...state, ...patch };
-      channel.put({ type: 'gitRoots/updated' });
-    },
     actions,
     read: (ws: string, consumer: string) =>
       selectGitRead.select(state as Parameters<typeof selectGitRead.select>[0], ws, consumer),
@@ -385,40 +380,4 @@ describe('gitConsumerReadSaga', () => {
       }),
     ]);
   });
-});
-
-describe('Git file navigation authority', () => {
-  it.each(['backend', 'root'] as const)(
-    'does not open old content after %s replacement',
-    async (kind) => {
-      const held = deferred<{ content: string }>();
-      vi.mocked(backendRequest).mockReset().mockReturnValue(held.promise);
-      const owner = start({
-        connections: { windowBackendId: 'local' },
-        gitRoots: {
-          byWorkspaceId: {
-            ws: {
-              gitRoots: createCollection('id', [{ id: 'root', path: '/old', createdAt: 'first' }]),
-            },
-          },
-        },
-      });
-      owner.dispatch(openGitCommitFileRequested('ws', 'sha', 'a.ts', 0, 0, 'root'));
-      owner.change(
-        kind === 'backend'
-          ? { connections: { windowBackendId: 'remote' } }
-          : { gitRoots: { byWorkspaceId: { ws: { gitRoots: createCollection('id', []) } } } },
-      );
-      held.resolve({ content: 'late' });
-      await settle();
-      expect(backendRequest).toHaveBeenCalledTimes(1);
-      expect(
-        owner.actions.filter((a) => a.type === 'workspaceNavigation/openWorkspaceDiff'),
-      ).toEqual([]);
-      for (const task of tasks.splice(0)) {
-        task.cancel();
-        await task.toPromise();
-      }
-    },
-  );
 });

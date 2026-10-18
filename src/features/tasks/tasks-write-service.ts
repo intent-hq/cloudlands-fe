@@ -1,4 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 /**
  * Tasks write service — the sanctioned post-saga task-mutation mechanism.
  *
@@ -34,7 +33,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('TasksWriteService');
-const statusCommands = new Map<string, object>();
 
 /** Dispatch the optimistic status into both the notes and tasks slices. */
 function applyStatus(workspaceId: string, noteId: string, status: TaskStatus): void {
@@ -98,70 +96,21 @@ export async function updateTaskNoteStatus(
   noteId: string,
   status: TaskStatus,
 ): Promise<void> {
-  const commandKey = JSON.stringify([workspaceId, noteId]);
-  const command = {};
-  // These are the notesRecoveryKey/tasksRecoveryKey domains; keep this command
-  // service independent of the read sagas and live-client adapters.
-  const receipts = ['notes', 'tasks']
-    .map((domain) => `${domain}:${JSON.stringify([workspaceId])}`)
-    .map((key) => ({
-      key,
-      authority: rendererEventRecovery.captureAuthority(key),
-      mutation: rendererEventRecovery.capture(key),
-    }));
-  statusCommands.set(commandKey, command);
-  const currentAuthority = () =>
-    statusCommands.get(commandKey) === command &&
-    receipts.every(({ authority }) => authority.isCurrent());
   const previous = readCurrentStatus(workspaceId, noteId);
   // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
   // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
   const rev = readCurrentRev(workspaceId, noteId);
   applyStatus(workspaceId, noteId, status);
-  const optimisticNote = selectNoteById.select(appStore.state, workspaceId, noteId);
-  const optimisticTask = selectWorkspaceTasks
-    .select(appStore.state, workspaceId)
-    .find((task) => task.id === noteId);
 
-  try {
-    const result =
-      rev !== undefined
-        ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
-        : await appClient.tasks.updateNoteStatus(noteId, status);
-    if (!currentAuthority()) return;
-    if (!result.success) {
-      const originalMutation = receipts.every(({ mutation }) => mutation.commit(() => {}));
-      // A sibling push advances workspace receipts without changing this task.
-      // Only unchanged, still-present entities may settle under fresh receipts.
-      const unchangedEntities =
-        optimisticNote &&
-        optimisticTask &&
-        selectNoteById.select(appStore.state, workspaceId, noteId) === optimisticNote &&
-        selectWorkspaceTasks
-          .select(appStore.state, workspaceId)
-          .find((task) => task.id === noteId) === optimisticTask;
-      if (
-        !originalMutation &&
-        !(
-          unchangedEntities &&
-          receipts.every(({ key }) => rendererEventRecovery.capture(key).commit(() => {}))
-        )
-      ) {
-        // When target ownership is ambiguous, converge through the bounded read
-        // owners; never guess a rollback over a newer target push or snapshot.
-        for (const { key, authority } of receipts)
-          authority.commit(() => {
-            rendererEventRecovery.invalidate(key);
-          });
-        return;
-      }
-      if (reconcileTaskConflict(workspaceId, noteId, result)) return;
-      if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
-      logger.error('Failed to update task status', result.error);
-      notify.error(m.notes_writeService_updateFailed_error());
-    }
-  } finally {
-    if (statusCommands.get(commandKey) === command) statusCommands.delete(commandKey);
+  const result =
+    rev !== undefined
+      ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
+      : await appClient.tasks.updateNoteStatus(noteId, status);
+  if (!result.success) {
+    if (reconcileTaskConflict(workspaceId, noteId, result)) return;
+    if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
+    logger.error('Failed to update task status', result.error);
+    notify.error(m.notes_writeService_updateFailed_error());
   }
 }
 

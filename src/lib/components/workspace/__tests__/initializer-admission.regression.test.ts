@@ -340,34 +340,17 @@ describe('actual initializer submission admission', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
   });
   it('does not persist the old branch after held validation crosses readmission', async () => {
+    // Keep the branch picker's independent autosave out of this submission check.
+    mocks.getBranches.mockReturnValue(new Promise(() => {}));
     let resolve!: (v: unknown) => void;
-    let resolveBranches!: (v: unknown) => void;
-    const branches = new Promise((r) => (resolveBranches = r));
-    // The selector owns connection-bound default persistence independently of
-    // submission admission. Hold its reply until the component is disposed.
-    mocks.getBranches.mockReturnValue(branches);
     mocks.validate.mockReturnValue(new Promise((r) => (resolve = r)));
-    try {
-      await submit();
-      await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
-      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-      store.dispatch(backendReconnected());
-      resolve({ valid: true });
-      await new Promise((r) => setTimeout(r, 20));
-      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-      expect(mocks.pull).not.toHaveBeenCalled();
-      expect(mocks.create).not.toHaveBeenCalled();
-    } finally {
-      cleanup();
-      resolveBranches({
-        branches: ['main'],
-        remoteBranches: [],
-        defaultBranch: 'main',
-        currentBranch: 'main',
-      });
-      await branches;
-    }
+    await submit();
+    store.dispatch(backendReconnected());
+    resolve({ valid: true });
+    await new Promise((r) => setTimeout(r, 20));
     expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+    expect(mocks.pull).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });
 
@@ -439,34 +422,19 @@ it('drops an original submission held by setup-probe settlement after readmissio
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it('does not create after validation completes on an unmounted initializer', async () => {
-  let resolveBranches!: (v: unknown) => void;
-  const branches = new Promise((r) => (resolveBranches = r));
-  // Isolate submission from the selector, then settle its read after disposal.
-  mocks.getBranches.mockReturnValue(branches);
+  // Keep the branch picker's independent autosave out of this submission check.
+  mocks.getBranches.mockReturnValue(new Promise(() => {}));
   let release!: (v: unknown) => void;
   mocks.validate.mockReturnValue(
     new Promise((r) => {
       release = r;
     }),
   );
-  try {
-    await submit();
-    await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledTimes(1));
-    cleanup();
-    release({ valid: true });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(mocks.create).not.toHaveBeenCalled();
-    expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-  } finally {
-    cleanup();
-    resolveBranches({
-      branches: ['main'],
-      remoteBranches: [],
-      defaultBranch: 'main',
-      currentBranch: 'main',
-    });
-    await branches;
-  }
+  await submit();
+  cleanup();
+  release({ valid: true });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(mocks.create).not.toHaveBeenCalled();
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
 });
 
@@ -1034,6 +1002,20 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const form = getItems(store.state.repositoryCheckout.forms)[0];
       store.dispatch(urlSubmitted(form.formId, form.scopeKey!, projectUrl));
       await waitFor(() => expect(session.project).toHaveBeenCalledWith({ url: projectUrl }));
+      // The selection is saved for the next form only once a workspace is created.
+      expect(
+        store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft,
+      ).not.toEqual(expect.objectContaining({ contextUrl: projectUrl }));
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: { id: 'created-gitlab', title: '', branch: 'work/new' } },
+      });
+      const firstCreate = document.querySelector<HTMLButtonElement>(
+        '[data-dialog-primary-action]',
+      )!;
+      await waitFor(() => expect(firstCreate.disabled).toBe(false));
+      await fireEvent.click(firstCreate);
+      await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/created-gitlab'));
       await waitFor(() =>
         expect(store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft).toEqual({
           instanceBaseUrl,
@@ -1063,8 +1045,8 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
       await waitFor(() => expect(button.disabled).toBe(false));
       await fireEvent.click(button);
-      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
-      expect(mocks.create.mock.calls[0][0].repositoryCheckout).toEqual({
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+      expect(mocks.create.mock.calls[1][0].repositoryCheckout).toEqual({
         checkoutId: 'restored-lease',
         revision: 'new-account',
         projectPath,

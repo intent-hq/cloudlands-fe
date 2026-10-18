@@ -254,6 +254,32 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
     expect(outcome()).toMatchObject({ seq: resume.seq, status: 'success', workspaceId: 'ws-1' });
   });
 
+  it('remembers the base branch for the repo only once the workspace is fully created', async () => {
+    const rememberBranch = { repoPath: '/repo', branch: 'feature' };
+    mocks.redeem.mockResolvedValue({ items: failed, fileBlocks: [], failedCount: 1 });
+    const action = workspaceInitializationRequested(request({ rememberBranch }), consumer);
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow('attachment-placement-failed');
+    expect(appStore.state.workspaceInitializer.branchByRepo['/repo']).toBeUndefined();
+
+    mocks.redeem.mockResolvedValue({
+      items: placed,
+      fileBlocks: [{ id: 'block' }],
+      failedCount: 0,
+    });
+    const resume = workspaceInitializationRequested(
+      request({
+        rememberBranch,
+        resume: { workspaceId: 'ws-1', agentId: 'agent-1', workspacePath: '/wt/ws-1' },
+        stagedItems: failed,
+      }),
+      consumer,
+    );
+    appStore.dispatch(resume);
+    await expect(resume.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.branchByRepo['/repo']).toBe('feature');
+  });
+
   it('retains redeemed files when the held first message fails', async () => {
     mocks.send.mockResolvedValue({ sent: false, errorDetail: 'send failed' });
     const action = workspaceInitializationRequested(request(), consumer);

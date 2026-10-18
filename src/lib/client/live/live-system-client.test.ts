@@ -60,7 +60,6 @@ describe('LiveSystemClient', () => {
       await client.status();
 
       expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-        observeCompletion: true,
         method: 'system.status',
         params: undefined,
       });
@@ -148,7 +147,6 @@ describe('LiveSystemClient', () => {
       await client.capabilities();
 
       expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-        observeCompletion: true,
         method: 'system.capabilities',
         params: undefined,
       });
@@ -158,7 +156,6 @@ describe('LiveSystemClient', () => {
       mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: false } });
       expect(await client.capabilities('workspace-A')).toEqual({ cowSupported: false });
       expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-        observeCompletion: true,
         method: 'system.capabilities',
         params: { workspaceId: 'workspace-A' },
       });

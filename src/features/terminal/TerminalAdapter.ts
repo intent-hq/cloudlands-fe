@@ -14,11 +14,6 @@ import '@xterm/xterm/css/xterm.css';
 import { Logger } from '../../shared/logger';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { appClient as defaultAppClient } from '$lib/client';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import {
-  terminalRuntimeKey,
-  terminalRuntimeReady,
-} from '$lib/client/live/terminal-runtime-recovery';
 import type { AppClient, TerminalsClient } from '$lib/client';
 import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
 import { TerminalBufferManager } from './terminal-buffer-manager';
@@ -74,7 +69,6 @@ export interface TerminalInfo {
   workspaceId: string;
   state: TerminalState;
   cwd?: string;
-  title?: string;
   isExecuting: boolean;
   stats?: {
     bufferSize: number;
@@ -142,8 +136,6 @@ export class TerminalAdapter {
   private exitedNormally: boolean = false; // Track normal shell exit vs unexpected disconnect
 
   private lastCwd: string | undefined;
-  private lastTitle: string | undefined;
-  private metadataEpoch = 0;
   private isExecuting: boolean = false;
   private startTime: number = Date.now();
 
@@ -295,7 +287,6 @@ export class TerminalAdapter {
 
     this.stateMachine.transition('initialize');
 
-    let isCurrent = this.captureMetadataRead();
     try {
       // Open XTerm in the container - only if not already opened
       if (!this.isXtermOpened) {
@@ -342,17 +333,10 @@ export class TerminalAdapter {
       const cols = this.xterm.cols;
       const rows = this.xterm.rows;
 
-      if (!this.ipcCleanup) this.setupIpcEventHandlers();
-      const attachment = this.metadataEpoch;
-      await terminalRuntimeReady(this.workspaceId);
-      if (this.isDisposed || attachment !== this.metadataEpoch) return;
-      isCurrent = this.captureMetadataRead();
-
       // Check if terminal exists on backend (daemon `terminal.list` per
       // PROTOCOL §5.9; entries are `{ id, name, cwd, isExecutingCommand }`,
       // matched on `TerminalTab.id`).
       const backendTerminal = await this.findBackendTerminal();
-      if (!isCurrent()) return;
       const terminalExists = backendTerminal !== null;
 
       // Restore buffer based on whether terminal exists on backend
@@ -368,20 +352,17 @@ export class TerminalAdapter {
               undefined,
               this.workspaceId,
             );
-            if (!isCurrent()) return;
             if (buffer) {
               logger.info(`Restoring ${buffer.length} bytes of buffered output from backend`);
               this.xterm.write(buffer);
               this.parseTerminalOutput(buffer);
             }
           } catch (error) {
-            if (!isCurrent()) return;
             logger.warn('Could not restore terminal buffer from backend:', error);
           }
         } else {
           // Terminal doesn't exist on backend - try local buffer
           const snapshot = await this.bufferManager.restoreBuffer();
-          if (!isCurrent()) return;
           if (snapshot) {
             logger.info('Restoring terminal buffer from local storage');
             this.restoreFromSnapshot(snapshot);
@@ -401,7 +382,7 @@ export class TerminalAdapter {
         await this.openPtyConnection(cols, rows);
       } else {
         // Terminal already exists on backend - reconnect to it
-        if (!this.ipcCleanup) this.setupIpcEventHandlers();
+        this.setupIpcEventHandlers();
 
         // Mark as connected
         this.stateMachine.transition('connected');
@@ -427,7 +408,6 @@ export class TerminalAdapter {
         }
       });
     } catch (error) {
-      if (!isCurrent()) return;
       this.stateMachine.reportError(error as Error);
       throw error;
     }
@@ -439,7 +419,6 @@ export class TerminalAdapter {
    * subsequent `terminal.write/resize/kill/getBuffer` calls hit the same PTY.
    */
   private async openPtyConnection(cols: number, rows: number): Promise<void> {
-    const isCurrent = this.captureMetadataRead();
     try {
       const result = await this.terminals.create({
         workspaceId: this.workspaceId,
@@ -447,7 +426,6 @@ export class TerminalAdapter {
         rows,
       });
 
-      if (!isCurrent()) return;
       if (!result.success) {
         throw new Error(result.error || m.terminal_adapter_openFailed_error());
       }
@@ -468,7 +446,6 @@ export class TerminalAdapter {
       // Notify ready
       this.callbacks.onReady?.();
     } catch (error) {
-      if (!isCurrent()) return;
       this.stateMachine.reportError(error as Error);
       throw error;
     }
@@ -648,18 +625,6 @@ export class TerminalAdapter {
     this.selectionDisposable = this.xterm.onSelectionChange(() => {});
   }
 
-  /** Captures attachment and daemon authority before an asynchronous read. */
-  private captureMetadataRead(): () => boolean {
-    const epoch = this.metadataEpoch;
-    const runtime = rendererEventRecovery.capture(terminalRuntimeKey(this.workspaceId));
-    const list = rendererEventRecovery.capture('terminals:' + JSON.stringify([this.workspaceId]));
-    return () =>
-      !this.isDisposed &&
-      epoch === this.metadataEpoch &&
-      runtime.commit(() => {}) &&
-      list.commit(() => {});
-  }
-
   /**
    * Subscribe to daemon `terminal:*` events for this PTY (PROTOCOL §6.5):
    * `terminal:data` (decoded chunk), `terminal:exit`, and `terminal:cwd`. The
@@ -680,20 +645,14 @@ export class TerminalAdapter {
     const unsubscribe = this.terminals.subscribeEvents(
       this.terminalId,
       {
-        onData: ({ chunk, metadataAllowed }) => {
+        onData: ({ chunk }) => {
           if (handlerDisabled || this.isDisposed) return;
           if (!this.stateMachine.canAcceptInput()) return;
           this.xterm.write(chunk);
-          if (metadataAllowed !== false) this.parseTerminalOutput(chunk);
-          else this.parseTransientIndicators(chunk);
+          this.parseTerminalOutput(chunk);
         },
-        onExit: ({ exitCode, metadataAllowed }) => {
+        onExit: ({ exitCode }) => {
           if (handlerDisabled || this.isDisposed) return;
-          if (metadataAllowed === false) {
-            this.callbacks.onExit?.(exitCode);
-            return;
-          }
-          this.metadataEpoch++;
           this.exitedNormally = true;
           this.hideCursorOnExit();
           this.callbacks.onExit?.(exitCode);
@@ -701,42 +660,8 @@ export class TerminalAdapter {
         },
         onCwd: ({ cwd }) => {
           if (handlerDisabled || this.isDisposed) return;
-          this.metadataEpoch++;
           this.lastCwd = cwd;
           this.callbacks.onCwdChanged?.(cwd);
-        },
-        onTitle: ({ title }) => {
-          if (handlerDisabled || this.isDisposed) return;
-          this.metadataEpoch++;
-          this.lastTitle = title;
-        },
-        onMetadata: ({ isConnected, clearTransient }) => {
-          if (handlerDisabled || this.isDisposed) return;
-          this.metadataEpoch++;
-          if (clearTransient) {
-            this.lastCwd = undefined;
-            this.lastTitle = undefined;
-            this.isExecuting = false;
-          }
-          if (isConnected === undefined) return;
-          // Reconciliation never replays exit/command effects or creates a PTY.
-          this.cancelAutoReconnect();
-          this.exitedNormally = !isConnected;
-          if (this.stateMachine.canTransition('connect')) this.stateMachine.transition('connect');
-          if (isConnected) {
-            if (this.stateMachine.canTransition('reconnect'))
-              this.stateMachine.transition('reconnect');
-            if (this.stateMachine.canTransition('reconnected'))
-              this.stateMachine.transition('reconnected');
-            else if (this.stateMachine.canTransition('connected'))
-              this.stateMachine.transition('connected');
-          } else {
-            if (this.stateMachine.canTransition('reconnected'))
-              this.stateMachine.transition('reconnected');
-            if (this.stateMachine.canTransition('disconnect'))
-              this.stateMachine.transition('disconnect');
-            this.stopHeartbeat();
-          }
         },
       },
       this.workspaceId,
@@ -744,7 +669,6 @@ export class TerminalAdapter {
 
     this.ipcCleanup = () => {
       handlerDisabled = true;
-      this.metadataEpoch++;
       try {
         unsubscribe();
       } catch (error) {
@@ -1097,16 +1021,11 @@ export class TerminalAdapter {
       }
     }
 
-    this.parseTransientIndicators(data);
-  }
-
-  /** Live cwd observations do not reconstruct commands or command-history effects. */
-  private parseTransientIndicators(data: string): void {
+    // Check for CWD changes
     const cwdMatch = data.match(/\x1b\]7;file:\/\/[^/]*([^\x07]*)\x07/);
     if (cwdMatch) {
       const cwd = decodeURIComponent(cwdMatch[1]);
       if (cwd !== this.lastCwd) {
-        this.metadataEpoch++;
         this.lastCwd = cwd;
         this.callbacks.onCwdChanged?.(cwd);
       }
@@ -1479,13 +1398,8 @@ export class TerminalAdapter {
     // Ensure IPC handlers are set up (they may have been cleaned up on detach or during refresh)
     this.setupIpcEventHandlers();
 
-    const attachment = this.metadataEpoch;
-    await terminalRuntimeReady(this.workspaceId);
-    if (this.isDisposed || attachment !== this.metadataEpoch) return;
-
     // Ensure state machine is in CONNECTED state for input to work
     // This handles the case where the terminal was reattached after a renderer refresh
-    const isCurrent = this.captureMetadataRead();
     const currentState = this.stateMachine.getState();
     if (currentState !== TerminalState.CONNECTED) {
       logger.info(
@@ -1493,7 +1407,6 @@ export class TerminalAdapter {
       );
       // Check if terminal exists on backend and transition accordingly
       const backendTerminal = await this.findBackendTerminal();
-      if (!isCurrent()) return;
       if (backendTerminal) {
         if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
           this.stateMachine.transition('reconnect');
@@ -1708,7 +1621,6 @@ export class TerminalAdapter {
       workspaceId: this.workspaceId,
       state: this.stateMachine.getState(),
       cwd: this.lastCwd,
-      title: this.lastTitle,
       isExecuting: this.isExecuting,
       stats: bufferStats
         ? {
@@ -1768,7 +1680,6 @@ export class TerminalAdapter {
     }
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const isCurrent = this.captureMetadataRead();
     try {
       // Race the existence check against a timeout — the daemon either lists
       // the PTY in `terminal.list` (PROTOCOL §5.9) or it has been killed/lost.
@@ -1784,7 +1695,7 @@ export class TerminalAdapter {
 
       if (timeoutId) clearTimeout(timeoutId);
 
-      if (!isCurrent()) return;
+      if (this.isDisposed) return;
 
       if (!alive) {
         logger.warn(
@@ -1796,7 +1707,7 @@ export class TerminalAdapter {
     } catch (error) {
       if (timeoutId) clearTimeout(timeoutId);
 
-      if (!isCurrent()) return;
+      if (this.isDisposed) return;
 
       logger.warn(`[heartbeat] Terminal ${this.terminalId}: health check failed:`, error);
       this.stopHeartbeat();
@@ -1871,11 +1782,11 @@ export class TerminalAdapter {
       `[auto-reconnect] Terminal ${this.terminalId}: attempting reconnect (attempt ${this.autoReconnectAttempts})`,
     );
 
-    const isCurrent = this.captureMetadataRead();
     try {
       // Check if PTY still exists on backend via daemon `terminal.list`
       const backendTerminal = await this.findBackendTerminal();
-      if (!isCurrent()) return;
+
+      if (this.isDisposed) return; // Check again after async call
 
       if (backendTerminal) {
         // PTY exists — re-setup IPC handlers and transition back to CONNECTED
@@ -1909,7 +1820,6 @@ export class TerminalAdapter {
         logger.info(`[auto-reconnect] Terminal ${this.terminalId}: new PTY created successfully`);
       }
     } catch (error) {
-      if (!isCurrent()) return;
       logger.error(
         `[auto-reconnect] Terminal ${this.terminalId}: attempt ${this.autoReconnectAttempts} failed:`,
         error,
@@ -2001,14 +1911,9 @@ export class TerminalAdapter {
       throw new Error(`Cannot reconnect in state ${this.stateMachine.getState()}`);
     }
 
-    if (!this.ipcCleanup) this.setupIpcEventHandlers();
-    const attachment = this.metadataEpoch;
-    await terminalRuntimeReady(this.workspaceId);
-    if (this.isDisposed || attachment !== this.metadataEpoch) return;
     this.exitedNormally = false;
     this.stateMachine.transition('reconnect');
 
-    const isCurrent = this.captureMetadataRead();
     try {
       const cols = this.xterm.cols;
       const rows = this.xterm.rows;
@@ -2020,7 +1925,6 @@ export class TerminalAdapter {
         rows,
       });
 
-      if (!isCurrent()) return;
       if (!result.success) {
         throw new Error(result.error || m.terminal_adapter_reconnectFailed_error());
       }
@@ -2033,7 +1937,6 @@ export class TerminalAdapter {
       this.restoreCursor();
       this.callbacks.onReady?.();
     } catch (error) {
-      if (!isCurrent()) return;
       this.stateMachine.reportError(error as Error);
       throw error;
     }

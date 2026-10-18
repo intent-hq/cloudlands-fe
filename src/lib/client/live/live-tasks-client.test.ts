@@ -1,4 +1,3 @@
-import { BackendError } from './backend-transport-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the backend bridge is mocked so no task mutation ever
@@ -904,16 +903,4 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
       { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
-});
-
-it('preserves Electron physical completion despite serialized TRANSPORT_ERROR', async () => {
-  mockedResolve.mockResolvedValueOnce('ws-1');
-  const completion = Promise.resolve({ errors: [{ rpcCode: -32003 }], retired: false });
-  const failure = new BackendError(
-    { code: 'TRANSPORT_ERROR', message: 'Request deadline' },
-    completion,
-  );
-  mockedRequest.mockRejectedValueOnce(failure);
-  await expect(new LiveTasksClient().get('note-1')).rejects.toBe(failure);
-  expect(failure.completion).toBe(completion);
 });

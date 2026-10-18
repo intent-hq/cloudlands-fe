@@ -73,7 +73,6 @@ describe('AutoSaveTextarea persistence timing', () => {
       source: 'user' as const,
     };
     const request = {
-      observeCompletion: true,
       method: 'specialist.edit',
       params: { id: 'reviewer', spec, scope: 'user' },
     };
