@@ -608,6 +608,22 @@ function command(id, label, args, lockKind = null) {
   };
 }
 
+// Playwright's html reporter defaults to `open: 'on-failure'`, which serves the
+// report and waits for Ctrl+C: a local run with one failure sat ~2 h on
+// "Serving HTML report" and never exited (cloudlands-fe#3392). Every browser
+// stage therefore runs non-interactively and retries like CI (retries: 2 in
+// both Playwright configs under CI), without CI=1's other effects
+// (forbidOnly, one worker).
+// CT stages pass it after `--`: npm drops unknown flags before the separator,
+// pnpm forwards the separator literally, and the CT launcher strips it only as
+// its first argument (a later `--` would turn `--retries=2` into a file filter).
+export const PLAYWRIGHT_RETRIES_ARG = '--retries=2';
+export const PLAYWRIGHT_CHECK_ENV = Object.freeze({ PLAYWRIGHT_HTML_OPEN: 'never' });
+
+function playwrightCommand(id, label, args, lockKind = null) {
+  return { ...command(id, label, args, lockKind), env: { ...PLAYWRIGHT_CHECK_ENV } };
+}
+
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const declared = options.declaredSuites
@@ -832,31 +848,38 @@ export function createVerificationPlan(files, options = {}) {
       });
   if (fullCt)
     checks.push(
-      command('ct-full', 'Playwright component suite (safe fallback)', ['run', 'test:ct'], 'ct'),
+      playwrightCommand(
+        'ct-full',
+        'Playwright component suite (safe fallback)',
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG],
+        'ct',
+      ),
     );
   else if (relatedCt.length) {
     checks.push(
-      command(
+      playwrightCommand(
         'ct-related',
         'Playwright component tests (colocated imports)',
-        ['run', 'test:ct', '--', ...relatedCt],
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG, ...relatedCt],
         'ct',
       ),
     );
   }
   if (fullPlaywright)
     checks.push(
-      command('playwright-full', 'Playwright browser suite (config changed)', [
+      playwrightCommand('playwright-full', 'Playwright browser suite (config changed)', [
         'run',
         'test:playwright',
+        PLAYWRIGHT_RETRIES_ARG,
       ]),
     );
   else if (directPlaywright.length) {
     checks.push(
-      command('playwright-direct', 'Playwright browser tests (changed specs)', [
+      playwrightCommand('playwright-direct', 'Playwright browser tests (changed specs)', [
         'exec',
         'playwright',
         'test',
+        PLAYWRIGHT_RETRIES_ARG,
         ...directPlaywright,
       ]),
     );
@@ -981,8 +1004,9 @@ export function printPlan(plan, dryRun, log = console.log) {
     const dependencies = check.dependsOn?.length
       ? ` [requires: ${check.dependsOn.join(', ')}]`
       : '';
+    const env = Object.entries(check.env ?? {}).map(([key, value]) => `${key}=${value}`);
     log(
-      `  - ${check.label}${dependencies}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`,
+      `  - ${check.label}${dependencies}: ${[...env, check.executable, ...check.args].map(shellQuote).join(' ')}`,
     );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
@@ -991,6 +1015,18 @@ export function printPlan(plan, dryRun, log = console.log) {
 const activeChildren = new Set();
 // Set once a termination signal arrives; no further check starts afterwards.
 let terminating = false;
+
+/**
+ * The environment a check's child process runs with: the caller's env, no git
+ * prompts, the check's own pinned variables (which win, so an inherited
+ * `PLAYWRIGHT_HTML_OPEN=always` cannot reintroduce the hang), and the
+ * held-lock marker when the parent already owns the lock.
+ */
+export function checkEnvironment(check, { heldLock = null, baseEnv = process.env } = {}) {
+  const env = { ...baseEnv, GIT_TERMINAL_PROMPT: '0', ...(check.env ?? {}) };
+  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  return env;
+}
 
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
@@ -1001,8 +1037,7 @@ async function runCheck(check, root, { heldLock = null } = {}) {
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(check.env ?? {}) };
-  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  const env = checkEnvironment(check, { heldLock });
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
