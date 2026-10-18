@@ -37,6 +37,12 @@
      * chats are visible at once — matches the shortcut's runtime gating.
      */
     showShortcutHints?: boolean;
+    /**
+     * Keep the hint slots in the layout while hints are hidden, so a focus change only
+     * toggles their visibility. An unfocused chat gains focus on pointerdown, so inserting
+     * the hints then would reflow the rows mid-click and the click could miss its prompt.
+     */
+    reserveShortcutHintSpace?: boolean;
     /** Workspace the prompts belong to; routes markdown-link clicks like chat links. */
     workspaceId?: WorkspaceId;
   }
@@ -47,6 +53,7 @@
     onEdit,
     compact = false,
     showShortcutHints = false,
+    reserveShortcutHintSpace = false,
     workspaceId,
   }: Props = $props();
 
@@ -147,10 +154,14 @@
                   onkeydown={(e) => handleLinkKeyDown(e, url)}>{part.label}</a
                 >{:else}{part.content}{/if}{/each}</span
           >
-          {#if hasShortcutHint(index) && showShortcutHints}
+          {#if hasShortcutHint(index) && (showShortcutHints || reserveShortcutHintSpace)}
             <kbd
-              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px inline-flex h-5 items-center self-start border-0 bg-transparent p-0 font-sans font-normal text-muted-foreground! opacity-100"
+              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px inline-flex h-5 items-center self-start border-0 bg-transparent p-0 font-sans font-normal text-muted-foreground! opacity-100 {showShortcutHints
+                ? ''
+                : 'invisible'}"
+              aria-hidden={showShortcutHints ? undefined : 'true'}
               data-suggested-prompt-hint
+              data-hint-visible={showShortcutHints}
             >
               {modifierSymbol}{index + 1}
             </kbd>
