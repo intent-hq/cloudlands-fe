@@ -2,7 +2,7 @@ import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 import { setEventSubscriptionsExpanded } from '../agent-subscriptions-view-state';
 import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 /** Real monitor transport, saga, selectors, row, and navigation. Only the daemon is mocked. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   backendRequest,
@@ -84,7 +84,8 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          // The current daemon generation: a protocol-major gate would hide every row (intent-hq/intent#7206).
+          protocolVersion: '15.0',
           capabilities: { scriptMonitors: supported ? 2 : undefined, scriptActiveLists: 1 },
         },
       };
@@ -129,16 +130,62 @@ async function mount() {
 async function menu() {
   await fireEvent.click(await screen.findByRole('button', { name: /Actions for/ }));
 }
-function event(row: ScriptMonitor) {
+function event(row: ScriptMonitor, type = `scriptMonitor:${row.state}`) {
   emit({
     method: 'events.event',
     params: {
       subscriptionId: 'sub',
-      event: { workspaceId: ws, type: `scriptMonitor:${row.state}`, data: { monitor: row } },
+      event: { workspaceId: ws, type, data: { monitor: row } },
     },
   });
 }
 describe('script monitor controls', () => {
+  it('shows a live registration only in its owner chat card and retires it on completion without a re-read', async () => {
+    monitors = [];
+    for (const agentId of [active.agentId, 'other-agent']) {
+      store.dispatch(
+        setSubscriptionSnapshot(ws, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      setEventSubscriptionsExpanded(ws, agentId, true);
+    }
+    const owner = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId }).container,
+    );
+    const other = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: 'other-agent' }).container,
+    );
+    await waitFor(() =>
+      expect(selectScriptMonitors.select(store.state, ws).status).toBe('ready'),
+    );
+    const area = (view: typeof owner) => view.getByTestId('subscription-utility-area');
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('false');
+    const reads = () =>
+      vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'scriptMonitor.list')
+        .length;
+    const readsBefore = reads();
+
+    event(active, 'scriptMonitor:registered');
+
+    const row = await owner.findByTestId('script-monitor-row');
+    expect(row.textContent).toContain(active.scriptName);
+    expect(row.textContent).toContain('Monitoring');
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('true');
+    expect(other.queryByTestId('script-monitor-row')).toBeNull();
+    expect(area(other).getAttribute('data-has-subscriptions')).toBe('false');
+    await fireEvent.click(owner.getAllByRole('button', { name: active.scriptName })[0]);
+    expect(await owner.findByText(/Monitoring ends at/)).toBeTruthy();
+
+    event(settled);
+
+    await waitFor(() => expect(owner.queryByTestId('script-monitor-row')).toBeNull());
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('false');
+    expect(reads()).toBe(readsBefore);
+  });
   it('keeps Load more accessible when the initial page belongs to other agents', async () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     let pages = 0;
