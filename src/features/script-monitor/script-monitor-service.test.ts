@@ -287,3 +287,66 @@ describe('script monitor wire and connection lifecycle', () => {
     expect(backendRequest).toHaveBeenCalledTimes(before);
   });
 });
+
+describe('script monitor read failures (intent-hq/intent#7206)', () => {
+  const calls = (method: string) =>
+    vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method).length;
+
+  it('retries a failed first page on the healthy subscription without re-registering', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list' && fail
+        ? Promise.reject(new Error('Timed out'))
+        : original(method, params),
+    );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    const hellos = calls('client.hello');
+    fail = false;
+    service.retry();
+    await ready();
+    expect(rows.monitors.map((row) => row.monitorId)).toEqual([active.monitorId]);
+    expect(calls('client.hello')).toBe(hellos);
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(backendUnsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('re-registers when the hello itself failed', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'client.hello' && fail
+        ? Promise.reject(new Error('Socket closed'))
+        : original(method, params),
+    );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+    fail = false;
+    service.retry();
+    await ready();
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(rows.monitors).toHaveLength(1);
+  });
+
+  it('keeps loaded rows usable when only an extra page fails', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method !== 'scriptMonitor.list') return original(method, params);
+      return (params as { cursor?: string }).cursor
+        ? Promise.reject(new Error('Timed out'))
+        : Promise.resolve({ view: 'summary', monitors: [summary], nextCursor: 'more' });
+    });
+    const service = start();
+    await ready();
+    await service.loadMore();
+    expect(rows.status).toBe('ready');
+    expect(rows.loadingMore).toBe(false);
+    expect(rows.nextCursor).toBe('more');
+    expect(rows.monitors).toHaveLength(1);
+    service.retry();
+    expect(calls('scriptMonitor.list')).toBe(2);
+  });
+});
