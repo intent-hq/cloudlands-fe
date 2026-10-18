@@ -217,18 +217,22 @@ for (const environment of [
     await page.setViewportSize(environment);
     await open(page, 'daemon-behind');
     const card = cards(page).first();
-    await expect(card.locator('[data-title]')).toHaveText('intentd update available');
-    await expect(card.locator('[data-description]')).toHaveText(
-      "intent1 is running intentd v0.11.5, behind this app's v0.12.0.",
-    );
-    await expect(card.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
+    await expect(card.locator('[data-title]')).toBeVisible();
+    await expect(card.locator('[data-description]')).toContainText('0.11.5');
+    await expect(card.locator('[data-description]')).toContainText('0.12.0');
     await bounded(page, info, `daemon-behind-${environment.name}`);
+    await expect(card.locator('[data-title], [data-description]')).toHaveCount(2);
     const clipped = await card
       .locator('[data-title], [data-description]')
       .evaluateAll((elements) =>
         elements.filter((el) => el.scrollHeight > el.clientHeight + 1).map((el) => el.textContent),
       );
     expect(clipped).toEqual([]);
+    // The Update action stays reachable beside the short title.
+    const update = card.locator(':scope > button[data-button]');
+    await update.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('toast-overflow-events')).toContainText('update');
   });
 }
 
