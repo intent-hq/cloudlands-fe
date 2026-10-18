@@ -34,13 +34,18 @@
 //
 // Pin-bump shape (all must hold; mutually exclusive with the release shape —
 // a diff mixing intentd.version with any other file matches neither):
-//   1. The diff is exactly one file, intentd.version, a pure modification.
+//   1. The diff is intentd.version, a pure modification, optionally plus the
+//      generated src/test/current-protocol-version.ts (also a modification).
 //   2. Base and head each contain exactly one non-comment, non-blank pin
 //      line; both parse as a bare X.Y.Z(-prerelease) version (no leading
 //      'v'; same grammar as parseVersionPin), and old pin A != new pin B.
 //   3. The head file is byte-identical to the base file after replacing the
 //      new pin line B with the old pin line A — i.e. nothing but the pin
 //      value changed (a comment edit or added line breaks the match).
+//   4. When the generated protocol-version module changed, only its
+//      `// source-pin: A` line moved to `// source-pin: B`. A changed
+//      CURRENT_PROTOCOL_VERSION is a protocol bump: every fake-hello test must
+//      re-run against it (intent-hq/intent#7206), so it takes full CI.
 //
 // Git history requirements (shallow CI checkouts): the <base> and <head>
 // commits — and ideally their merge-base — must be present locally. With
@@ -57,6 +62,8 @@ import { fileURLToPath } from 'node:url';
 const ALLOWED_FILES = new Set(['CHANGELOG.md', 'package.json', '.release-please-manifest.json']);
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 const PIN_FILE = 'intentd.version';
+// Regenerated with every pin bump by scripts/sync-intentd-protocol-version.mjs.
+const PROTOCOL_VERSION_FILE = 'src/test/current-protocol-version.ts';
 // Pins are bare X.Y.Z(-prerelease) versions (no leading 'v'); same grammar as
 // the canonical pin parser (parseVersionPin in scripts/fetch-sidecar-lib.mjs
 // and src/features/backend/main/intentd-version-pin.ts).
@@ -112,9 +119,15 @@ export function evaluateFastPath(
   const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
 
   // --- Pin-bump shape: intentd.version alone, pure modification --------------
-  if (!releaseOnly && diff.length === 1 && diff[0][1] === PIN_FILE) {
-    const [status] = diff[0];
-    if (status !== 'M') return noMatch(`non-modification change (${status} ${PIN_FILE})`);
+  const diffPaths = diff.map(([, path]) => path);
+  const isPinBumpDiff =
+    diffPaths.includes(PIN_FILE) &&
+    diffPaths.every((path) => path === PIN_FILE || path === PROTOCOL_VERSION_FILE) &&
+    (diff.length === 1 || diff.length === 2);
+  if (!releaseOnly && isPinBumpDiff) {
+    for (const [status, path] of diff) {
+      if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
+    }
     const pinBase = show(mergeBase, PIN_FILE);
     const pinHead = show(head, PIN_FILE);
     const baseLines = pinLines(pinBase);
@@ -138,6 +151,21 @@ export function evaluateFastPath(
       .map((line) => (line === pinB ? pinA : line))
       .join('\n');
     if (reverted !== pinBase) return noMatch(`non-pin change in ${PIN_FILE}`);
+    if (diffPaths.includes(PROTOCOL_VERSION_FILE)) {
+      const moduleBase = show(mergeBase, PROTOCOL_VERSION_FILE);
+      const moduleHead = show(head, PROTOCOL_VERSION_FILE);
+      const pinLine = (pin) => `// source-pin: ${pin}`;
+      const moduleLines = moduleHead.split('\n');
+      if (!moduleBase.split('\n').includes(pinLine(pinA)) || !moduleLines.includes(pinLine(pinB))) {
+        return noMatch(`${PROTOCOL_VERSION_FILE} source-pin does not move ${pinA} -> ${pinB}`);
+      }
+      const revertedModule = moduleLines
+        .map((line) => (line === pinLine(pinB) ? pinLine(pinA) : line))
+        .join('\n');
+      if (revertedModule !== moduleBase) {
+        return noMatch(`protocol version change in ${PROTOCOL_VERSION_FILE}`);
+      }
+    }
     return { fastPath: true };
   }
 

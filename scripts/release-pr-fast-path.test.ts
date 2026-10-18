@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
@@ -284,6 +285,57 @@ describe('release-pr-fast-path', () => {
     writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
     commit(dir);
     expect(evaluate(dir)).toEqual({ fastPath: true });
+  });
+
+  describe('with the generated protocol-version module', () => {
+    const MODULE = 'src/test/current-protocol-version.ts';
+    const moduleFile = (pin: string, version: string) =>
+      `// GENERATED header.\n// source-pin: ${pin}\nexport const CURRENT_PROTOCOL_VERSION = '${version}';\n`;
+    const repoWithModule = () => {
+      const dir = initRepo();
+      mkdirSync(join(dir, 'src/test'), { recursive: true });
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_A, '15.0'));
+      commit(dir, 'add module');
+      execFileSync('git', ['branch', '-f', 'base'], { cwd: dir });
+      return dir;
+    };
+
+    it('matches a pin bump that only moves the module source-pin', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '15.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({ fastPath: true });
+    });
+
+    it('takes full CI when the pin bump changes the protocol version', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '16.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `protocol version change in ${MODULE}`,
+      });
+    });
+
+    it('rejects a module source-pin that disagrees with the new pin', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile('0.7.99', '15.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `${MODULE} source-pin does not move ${PIN_A} -> ${PIN_B}`,
+      });
+    });
+
+    it('rejects a module-only change without a pin bump', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_A, '16.0'));
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(false);
+    });
   });
 
   it('rejects a comment-only edit to intentd.version (identical pin)', () => {
