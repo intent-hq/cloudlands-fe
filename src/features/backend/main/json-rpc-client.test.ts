@@ -5,7 +5,7 @@ import type { JsonRpcRetirement } from './json-rpc-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
-import { captureRecoveryRequests, JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
+import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -939,7 +939,9 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       ['13.0.1', true],
       ['14.0', true],
       ['15.0', true],
-      ['16.0', false],
+      // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+      ['16.0', true],
+      ['99.3', true],
       ['12', false],
       ['12.0-preview', false],
       [undefined, false],
@@ -1037,7 +1039,8 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         nextVersion === '12.0' ||
         nextVersion === '13.0' ||
         nextVersion === '14.0' ||
-        nextVersion === '15.0'
+        nextVersion === '15.0' ||
+        nextVersion === '16.0'
       ) {
         expect(result).toEqual(response);
         expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
@@ -1326,62 +1329,11 @@ describe('captured repository socket dispatch', () => {
     await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
     return { client, sockets, factory };
   }
-  it('keeps recovery correlation past a logical deadline while ordinary requests still time out', async () => {
-    const { client, sockets } = await connected();
-    vi.useFakeTimers();
-    const connection = client.getRepositoryConnection()!;
-    const observed = vi.fn();
-    let completed = false;
-    const recovery = client
-      .requestOnCapturedConnection(
-        connection,
-        'data.read',
-        {},
-        {
-          waitForReply: true,
-          observe: observed,
-        },
-      )
-      .then((value) => {
-        completed = true;
-        return value;
-      });
-    const frame = JSON.parse(sockets[0].writes.at(-1)!);
-    const ordinary = client.request('ping', {}, { timeoutMs: 100 }).catch((error) => error);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(await ordinary).toBeInstanceOf(Error);
-    expect(completed).toBe(false);
-    expect(observed).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
-    sockets[0].receive(JSON.stringify({ id: frame.id, result: 'late' }) + '\n');
-    expect(await recovery).toBe('late');
-    expect(observed).toHaveBeenCalledExactlyOnceWith('late');
-  });
-  it('settles a retained recovery request when its physical connection is disposed', async () => {
-    const { client } = await connected();
-    vi.useFakeTimers();
-    const recovery = client
-      .requestOnCapturedConnection(
-        client.getRepositoryConnection()!,
-        'data.read',
-        {},
-        { waitForReply: true },
-      )
-      .catch((error) => error);
-    await vi.advanceTimersByTimeAsync(60_000);
-    client.dispose();
-    expect(await recovery).toBeInstanceOf(Error);
-    expect(vi.getTimerCount()).toBe(0);
-  });
   it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
     const { client, sockets } = await connected({
       clientId: 'confirmed-client',
       server: {
         capabilities: {
-          hostMembership: 1,
-          personalPairing: 1,
-          liveState: true,
-          futureCapability: 2,
           agentNodes: 1,
           localNodeIsolation: 1,
           agentPlatformRouting: 1,
@@ -1390,12 +1342,7 @@ describe('captured repository socket dispatch', () => {
       },
     });
     const connection = client.getRepositoryConnection();
-    expect(client.getConfirmedClientId()).toBe('confirmed-client');
     expect(client.getNodeCapabilities()).toEqual({
-      hostMembership: 1,
-      personalPairing: 1,
-      liveState: true,
-      futureCapability: 2,
       agentNodes: 1,
       localNodeIsolation: 1,
       agentPlatformRouting: 1,
@@ -1405,13 +1352,11 @@ describe('captured repository socket dispatch', () => {
     expect(sockets[0].writes).toHaveLength(1);
     const hello = client.request('client.hello');
     expect(client.getNodeCapabilities()).toBeNull();
-    expect(client.getConfirmedClientId()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
       '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
     );
     await hello;
-    expect(client.getConfirmedClientId()).toBe('confirmed-client');
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 0,
       localNodeIsolation: 0,
@@ -1420,7 +1365,6 @@ describe('captured repository socket dispatch', () => {
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();
-    expect(client.getConfirmedClientId()).toBeNull();
   });
   it('requires a positive current hello and sends synchronously on the first connection', async () => {
     const { client, sockets } = await connected();
@@ -1446,30 +1390,6 @@ describe('captured repository socket dispatch', () => {
       expect(sockets[0].writes).toHaveLength(1);
     },
   );
-  it('releases physical recovery ownership on socket retirement and admits a fresh capture', async () => {
-    const { client, sockets } = await connected();
-    const original = client.getRepositoryConnection()!;
-    const capture = captureRecoveryRequests(client, original)!;
-    const pending = capture.request('data.read').catch((error) => error);
-    capture.dispose();
-    expect(captureRecoveryRequests(client, original)).toBeUndefined();
-    sockets[0].emit('close');
-    expect(await pending).toBeInstanceOf(Error);
-    await vi.waitFor(() => expect(sockets).toHaveLength(2));
-    sockets[1].open();
-    await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));
-    const hello = JSON.parse(sockets[1].writes[0]);
-    sockets[1].receive(
-      JSON.stringify({ id: hello.id, result: { clientId: 'confirmed-client' } }) + '\n',
-    );
-    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
-    const next = captureRecoveryRequests(client, client.getRepositoryConnection()!)!;
-    const fresh = next.request('data.read');
-    const frame = JSON.parse(sockets[1].writes.at(-1)!);
-    sockets[1].receive(JSON.stringify({ id: frame.id, result: 'fresh' }) + '\n');
-    expect(await fresh).toBe('fresh');
-    next.dispose();
-  });
   it('rejects captured work across reconnect on the same client object without another dial', async () => {
     const { client, sockets, factory } = await connected();
     const original = client.getRepositoryConnection()!;
@@ -1838,12 +1758,6 @@ describe('private repository connection evidence', () => {
 
   it('stamps notifications with the physical source and retires identity before re-hello', async () => {
     const { client, sockets, events } = await start();
-    const confirmed = vi.fn();
-    const stopConfirmed = client.onRepositoryIdentityConfirmed(confirmed);
-    const statuses = vi.fn();
-    const reconnected = vi.fn();
-    client.on('status', statuses);
-    client.on('reconnected', reconnected);
     const original = client.getRepositoryConnection()!;
     expect(original.repositoryContext).toBe(true);
     const notification = {
@@ -1871,11 +1785,6 @@ describe('private repository connection evidence', () => {
     await hello;
     expect(client.getRepositoryConnection()?.incarnation).toBe(original.incarnation);
     expect(client.getRepositoryConnection()).not.toBe(original);
-    expect(confirmed).toHaveBeenCalledExactlyOnceWith(client.getRepositoryConnection());
-    expect(statuses).not.toHaveBeenCalled();
-    expect(reconnected).not.toHaveBeenCalled();
-    stopConfirmed();
-
     expect(events.filter((event) => (event as { type: string }).type === 'opened')).toHaveLength(1);
   });
 
@@ -1927,7 +1836,6 @@ describe('private repository connection evidence', () => {
     );
     await first;
     expect(client.getRepositoryConnection()).toBe(current);
-    expect(client.getConfirmedClientId()).toBe('current');
     expect(onHelloResult).toHaveBeenCalledTimes(2);
     expect(onHelloResult).toHaveBeenLastCalledWith({
       clientId: 'current',

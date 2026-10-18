@@ -3,10 +3,11 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main', 'feat/up-clean-3-shared-controls']
-  # Type/lint, build, unit and consumer checks run on PRs and the merged tree.
-  # Integration runs only in the queue. Browser suites run on relevant PR diffs
-  # and nightly/manual runs, never in merge_group. Release-shaped diffs retain
-  # the existing fast path; CI Gate rejects all other unexpected skips.
+  # PRs run metadata, static consumer contracts, the CI policy test, type/lint
+  # and unit tests. The merge queue reruns type/lint and unit tests on the
+  # merged tree and adds build, integration and relevant browser/native suites
+  # (browser suites also run nightly/manually). Release-shaped diffs retain the
+  # existing fast path; CI Gate rejects all other unexpected skips.
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -496,7 +497,7 @@ jobs:
     # alone would run it without runner labels); the gate still fails on such
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -714,7 +715,7 @@ jobs:
     # exist — "CI Gate" is the only required check).
     name: Unit Tests (shard ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     strategy:
       # Let the sibling shard finish so one flaky leg doesn't hide the
@@ -1069,14 +1070,29 @@ jobs:
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
-          # Only the small Linux policy job and static consumer contracts run
-          # before queueing. Failed/missing results are never intentional skips.
+          # Heavy jobs required on this event: success, or skipped ONLY via the
+          # release-PR fast path. Shared by the PR suites and the queue jobs.
+          check_heavy() {
+            if [ "$2" = "success" ]; then
+              return 0
+            fi
+            if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
+              echo "$1 skipped via release-PR fast path — accepted"
+              return 0
+            fi
+            echo "$1 result '$2' not acceptable on ${{ github.event_name }} (fast_path='$FAST_PATH')"
+            exit 1
+          }
+          # PRs run the Linux policy job, static consumer contracts, type/lint
+          # and unit tests before queueing. Type/lint and unit tests may skip
+          # only via the release-PR fast path; the remaining heavy jobs are
+          # queue-only. Failed/missing results are never intentional skips.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             check_pr_meta "pr-static" "${{ needs.pr-static.result }}"
             check_pr_meta "monorepo-consumer-checks" "${{ needs.monorepo-consumer-checks.result }}"
-            case "${{ needs.checks.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            check_heavy "checks" "${{ needs.checks.result }}"
+            check_heavy "test" "${{ needs.test.result }}"
             case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
-            case "${{ needs.test.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
@@ -1086,18 +1102,7 @@ jobs:
           fi
           case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # Queued heavy jobs (checks / build-web / test): success, or
-          # skipped ONLY via the release-PR fast path.
-          check_heavy() {
-            if [ "$2" = "success" ]; then
-              return 0
-            fi
-            if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-              echo "$1 skipped via release-PR fast path — accepted"
-              return 0
-            fi
-            echo "$1 result '$2' not acceptable (fast_path='$FAST_PATH')"
-            exit 1
-          }
+          # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"

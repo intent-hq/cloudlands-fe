@@ -656,13 +656,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   or, if it needs more time, tag the individual test
   `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
-  PRs that touch CT-contract paths, specs or their direct local imports also require it
-  (classified by `scripts/ct-contract-paths.mjs`, shared with `verify:changed`).
-  Root Playwright test/config/fixture changes require its four shards on the PR;
-  Electron lifetime test/harness/config changes require its Electron suite.
-  Both also run nightly/manual. Browser suites never run in the merge queue;
-  ordinary application changes can therefore reveal browser regressions after merge.
-  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from PR or nightly artifacts.
+  Merge-queue entries that touch CT-contract paths, specs or their direct local imports
+  also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`). Root Playwright test/config/fixture changes require its four shards
+  in the queue; Electron lifetime test/harness/config changes require its Electron suite.
+  Both also run nightly/manual. Browser suites never run on PR updates (PRs run only
+  type/lint, unit tests and static checks); ordinary application changes can therefore
+  reveal browser regressions in the queue or after merge.
+  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from queue or nightly artifacts.
   All browser lanes retain JSON, HTML and traces for seven days; the nightly
   manifest and per-lane outcomes distinguish missing reports from successful runs.
   `nightly-browser-report.yml` processes every nightly/main manual completion,

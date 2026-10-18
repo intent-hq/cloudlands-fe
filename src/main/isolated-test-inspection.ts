@@ -4,6 +4,7 @@ import { getBackendClient } from '../features/backend/main/backend.ipc';
 import { getSidecarRunLog } from '../features/backend/main/intentd-sidecar';
 import { BUILD_CONFIG } from './build-config.generated.js';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile';
+import { protocolVersionAtLeast } from '../shared/protocol-version';
 
 /** CI-only caller: observes original exported APIs; never starts or substitutes a daemon. */
 export async function inspectIsolatedTestPackage(
@@ -40,7 +41,8 @@ export async function inspectIsolatedTestPackage(
     };
   }>('client.hello');
   assert.ok(typeof hello?.clientId === 'string' && hello.clientId.length > 0);
-  assert.equal(hello.server?.protocolVersion, '13.3'); // protocol-version-ok: integrated GitLab candidate contract
+  // The integrated GitLab contract or newer; never an exact or maximum protocol version.
+  assert.ok(protocolVersionAtLeast(hello.server?.protocolVersion, 13, 3)); // protocol-version-ok: integrated GitLab minimum
   assert.equal(hello.server?.locality, 'local');
   for (const capability of [
     'collaborationIdentity',

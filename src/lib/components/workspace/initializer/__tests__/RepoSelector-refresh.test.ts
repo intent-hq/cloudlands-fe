@@ -103,8 +103,7 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
   selectGithubRepoSearchResults: mocks.selector(() => []),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
+vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   replaceWorkspaceList: (workspaces: unknown) => ({
     type: 'workspace/replace',
     payload: workspaces,

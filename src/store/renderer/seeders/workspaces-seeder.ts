@@ -1,4 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { store as appStore } from '../store';
 import {
   selectCanAdministerHost,
@@ -268,8 +267,6 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspaceId }) => {
-  const lifetime = rendererEventRecovery.capture('workspace-list');
-  if (!lifetime.commit(() => {})) return;
   let workspaces: Workspace[] = [];
   let recentViews: Record<string, number> = {};
 
@@ -283,20 +280,13 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
   } catch (error) {
     console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
-    lifetime.commit(() => {
-      store.dispatch(replaceWorkspaceList([]));
-      store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
-    });
+    store.dispatch(replaceWorkspaceList([]));
+    store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
     return;
   }
 
-  if (
-    !lifetime.commit(() => {
-      store.dispatch(replaceWorkspaceList(workspaces));
-      store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
-    })
-  )
-    return;
+  store.dispatch(replaceWorkspaceList(workspaces));
+  store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
 
   try {
     recentViews = await client.workspaces.recentViews();
@@ -306,12 +296,7 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     recentViews = {};
   }
 
-  if (
-    !lifetime.commit(() => {
-      store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
-    })
-  )
-    return;
+  store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
   // Auto-select the first non-archived workspace (skip archived since they're hidden by default).
   // Fall back to workspaces[0] if all are archived (edge case).
@@ -326,9 +311,7 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     const hasCurrentTab = tabState.currentTabId !== null;
 
     if (!hasActiveWorkspace && !hasCurrentTab) {
-      lifetime.commit(() => {
-        store.dispatch(openWorkspaceTab(firstWorkspace.id));
-      });
+      store.dispatch(openWorkspaceTab(firstWorkspace.id));
     }
   }
 });

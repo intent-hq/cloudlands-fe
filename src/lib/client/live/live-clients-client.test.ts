@@ -1,16 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// Fake transport boundary; observing identity must never send a hello.
+// FAKE transport only: `client.list` / `client.hello` never reach a daemon.
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
-  observeBackendNodeCapabilities: vi.fn(),
 }));
 
-import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
+import { backendRequest } from './backend-transport';
 import { __resetOwnClientIdForTesting, LiveClientsClient } from './live-clients-client';
 
 const mockedRequest = vi.mocked(backendRequest);
-const observeIdentity = vi.mocked(observeBackendNodeCapabilities);
 
 /** PROTOCOL §5.17 `client.list` row as the daemon returns it. */
 const DESKTOP_ROW = {
@@ -27,7 +25,7 @@ const DESKTOP_ROW = {
 
 afterEach(() => {
   __resetOwnClientIdForTesting();
-  vi.resetAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('LiveClientsClient (REV-2 PROTOCOL §5.17, fake transport)', () => {
@@ -59,48 +57,36 @@ describe('LiveClientsClient (REV-2 PROTOCOL §5.17, fake transport)', () => {
     await expect(client.list()).rejects.toThrow('Invalid client.list response shape');
   });
 
-  it('observes current confirmed identity without a hello or process-wide value cache', async () => {
-    observeIdentity.mockResolvedValue({ clientId: 'cli-desk', server: { capabilities: {} } });
+  it('ownClientId probes client.hello once and shares the echoed clientId across callers', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      clientId: 'cli-desk',
+      capabilities: { browserExec: true },
+      subscriptions: [],
+    });
     const client = new LiveClientsClient();
-    expect(await client.ownClientId()).toBe('cli-desk');
-    observeIdentity.mockResolvedValue({ clientId: 'replacement', server: { capabilities: {} } });
-    expect(await new LiveClientsClient().ownClientId()).toBe('replacement');
-    expect(observeIdentity).toHaveBeenCalledTimes(2);
-    expect(mockedRequest).not.toHaveBeenCalled();
+
+    const [a, b] = await Promise.all([client.ownClientId(), client.ownClientId()]);
+    expect(a).toBe('cli-desk');
+    expect(b).toBe('cli-desk');
+    expect(await new LiveClientsClient().ownClientId()).toBe('cli-desk');
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('client.hello', {});
   });
 
-  it('rejects unconfirmed observation without fallback and accepts a later confirmed identity', async () => {
-    observeIdentity.mockRejectedValueOnce(new Error('Backend identity is not confirmed'));
-    observeIdentity.mockResolvedValueOnce({ clientId: 'cli-desk' });
+  it('ownClientId does not cache a failed probe, so the next caller retries', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('transport down'));
+    mockedRequest.mockResolvedValueOnce({ clientId: 'cli-desk', subscriptions: [] });
     const client = new LiveClientsClient();
-    await expect(client.ownClientId()).rejects.toThrow('not confirmed');
+
+    await expect(client.ownClientId()).rejects.toThrow('transport down');
     expect(await client.ownClientId()).toBe('cli-desk');
-    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
   });
 
-  it.each([{}, { clientId: '' }, { clientId: 3 }])(
-    'rejects missing or invalid confirmed identity %j',
-    async (value) => {
-      observeIdentity.mockResolvedValue(value);
-      await expect(new LiveClientsClient().ownClientId()).rejects.toThrow('clientId missing');
-      expect(mockedRequest).not.toHaveBeenCalled();
-    },
-  );
+  it('ownClientId rejects a hello result without a clientId', async () => {
+    mockedRequest.mockResolvedValueOnce({ subscriptions: [] });
+    const client = new LiveClientsClient();
 
-  it('rejects held identity after invalidation while a new observation succeeds', async () => {
-    let resolve!: (value: unknown) => void;
-    observeIdentity.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const old = new LiveClientsClient().ownClientId();
-    const rejected = expect(old).rejects.toThrow('changed');
-    __resetOwnClientIdForTesting();
-    observeIdentity.mockResolvedValue({ clientId: 'current' });
-    expect(await new LiveClientsClient().ownClientId()).toBe('current');
-    resolve({ clientId: 'obsolete' });
-    await rejected;
-    expect(mockedRequest).not.toHaveBeenCalled();
+    await expect(client.ownClientId()).rejects.toThrow('clientId missing');
   });
 });

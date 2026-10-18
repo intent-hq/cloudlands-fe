@@ -21,7 +21,6 @@
   import { parseGitHubUrl } from '$lib/utils/workspace-validation';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
-  import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -350,12 +349,6 @@
       return '';
     }
     return $branchByRepo$[targetRepoPath] || '';
-  }
-
-  function saveBranchForRepo(targetRepoPath: string, branch: string) {
-    if (debugConfig.get('enableFormPersistence') && targetRepoPath) {
-      appStore.dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
-    }
   }
 
   // Update internal state when value prop changes
@@ -777,8 +770,7 @@
             explicitBranchSelectionRevision === cachedSelection.explicitSelectionRevision &&
             (!value || value === cachedSelection.autoSelectedBranch)
           ) {
-            // Use the saved value captured BEFORE the cached paint — the
-            // cached auto-selection persisted itself via saveBranchForRepo.
+            // Use the saved value captured before the cached paint.
             const saved = cachedSelection.savedBranchBeforePaint;
             const preferred =
               saved && (branches.includes(saved) || remoteBranches.includes(saved))
@@ -1060,8 +1052,6 @@
     }
 
     if (!isCurrentBranchContext(context)) return;
-    // Persist auto-selected/default branches the same way explicit selections are persisted.
-    saveBranchForRepo(context.repoPath, branchName);
 
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branchName);
@@ -1094,9 +1084,6 @@
         logger.error('Error in onSkipIsolationChange callback', e);
       }
     }
-
-    // Save via Redux if persistence is enabled (per-repo branch only).
-    saveBranchForRepo(repoPath, branch);
 
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branch);

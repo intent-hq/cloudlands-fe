@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.20](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.19...v2.219.20) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.7 ([#3483](https://github.com/intent-hq/cloudlands-fe/issues/3483)) ([872bf6f](https://github.com/intent-hq/cloudlands-fe/commit/872bf6f76da927f177f63f691ef3c7551b23e2c3))
+* make script monitor and script list load failures visible ([#3476](https://github.com/intent-hq/cloudlands-fe/issues/3476)) ([812663f](https://github.com/intent-hq/cloudlands-fe/commit/812663fbdf6789511dbc3650465064680d9df554))
+* remove protocol version upper bounds and lint against hand parsing ([#3478](https://github.com/intent-hq/cloudlands-fe/issues/3478)) ([0cc3e11](https://github.com/intent-hq/cloudlands-fe/commit/0cc3e1187aff41f5f99b498cdfb38645a06b9ce2))
+* show the full intentd-behind toast message ([#3474](https://github.com/intent-hq/cloudlands-fe/issues/3474)) ([bffb520](https://github.com/intent-hq/cloudlands-fe/commit/bffb520f6a43512d02513e1621210b07af472ac1))
+* size command palette to fit its filter strip ([#3471](https://github.com/intent-hq/cloudlands-fe/issues/3471)) ([558c5ff](https://github.com/intent-hq/cloudlands-fe/commit/558c5ff98fcc644148ad860103d4c610278cd626))
+
+## [2.219.19](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.18...v2.219.19) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* focus the right window when a macOS notification is clicked ([#3464](https://github.com/intent-hq/cloudlands-fe/issues/3464)) ([a06a57c](https://github.com/intent-hq/cloudlands-fe/commit/a06a57c925c977343c2b6e378ef70c9997fc8152))
+* revert generic event-loss recovery ([#3392](https://github.com/intent-hq/cloudlands-fe/issues/3392)) to restore startup ([#3473](https://github.com/intent-hq/cloudlands-fe/issues/3473)) ([685540a](https://github.com/intent-hq/cloudlands-fe/commit/685540a2a6e2cc07b1a4d6a23dd816acc7ba10f5))
+* save New space choices only when a workspace is created ([#3468](https://github.com/intent-hq/cloudlands-fe/issues/3468)) ([a453636](https://github.com/intent-hq/cloudlands-fe/commit/a45363688b9265b92dbb31695c2cbf71ed9040d2))
+
 ## [2.219.18](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.17...v2.219.18) (2026-10-18)
 
 

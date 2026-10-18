@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { scriptsClient } from './scripts.client';
 import { store } from '$store/renderer/store';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import {
   setScriptsData,
   scriptSnapshotReceived,
@@ -69,7 +68,6 @@ beforeEach(() => {
 afterEach(() => {
   stop();
   store.dispose();
-  rendererEventRecovery.dispose();
 });
 it('edits only a selected complete definition and never writes its preview', async () => {
   expect((await scriptsClient.update('ws', 'script', { name: 'Renamed' })).success).toBe(true);
@@ -263,43 +261,3 @@ it.each(['update', 'remove'] as const)(
     expect(backendRequest).not.toHaveBeenCalledWith('script.remove', expect.anything());
   },
 );
-
-it('does not publish a removal response captured before generic loss', async () => {
-  const scope = rendererEventRecovery.attach({
-    supported: true,
-    isCurrent: () => true,
-    request: async <T>() => ({}) as T,
-    fence: async (_ids, observe) => {
-      observe();
-    },
-    dispose: () => {},
-    onNotification: () => () => {},
-    onRetired: () => () => {},
-  });
-  const owner = scope.registerResource({
-    key: 'scripts:' + JSON.stringify(['ws']),
-    workspaceId: 'ws',
-    eventTypes: ['script:*'],
-    isCurrent: () => true,
-    read: async () => [],
-    apply: () => {},
-    invalidate: () => {},
-    retire: () => {},
-  });
-  let finish!: (value: unknown) => void;
-  const original = vi.mocked(backendRequest).getMockImplementation()!;
-  vi.mocked(backendRequest).mockImplementation((method, params) =>
-    method === 'script.remove'
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : original(method, params),
-  );
-  const pending = scriptsClient.remove('ws', 'script');
-  await vi.waitFor(() => expect(finish).toBeDefined());
-  owner.invalidate();
-  store.dispatch(setScriptsData('ws', [full]));
-  finish({ ok: true });
-  await pending;
-  expect(store.state.scripts.byWorkspaceId.ws.scripts.script).toEqual(full);
-});

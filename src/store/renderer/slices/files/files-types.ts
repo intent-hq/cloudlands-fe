@@ -26,10 +26,6 @@ export type FileContentEntry = FileContentData & {
   lastUpdated: number;
   loading: boolean;
   saving: boolean;
-  /** Request ownership for settlement after an invalidated snapshot. */
-  saveGeneration?: number;
-  /** Unsaved text retained while the disk representation cannot be edited. */
-  preservedDraft?: string;
   error: string | null;
   truncated: boolean;
   /** [] = suffix resolution attempted, no matches; null/absent = not attempted. */

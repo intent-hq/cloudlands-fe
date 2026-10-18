@@ -1,19 +1,5 @@
-import { trackRuntimeRead } from '$features/events/runtime-read-lane';
-import {
-  rendererEventRecovery,
-  type RendererRecoveryHandle,
-  type RendererRecoveryScope,
-} from '$features/events/renderer-event-recovery';
 import { END, buffers, channel as createChannel, type Channel } from 'redux-saga';
-import {
-  call,
-  delay,
-  put,
-  take,
-  takeEvery,
-  getContext,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { call, delay, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 
 import {
@@ -70,16 +56,10 @@ interface ActiveWorkspace {
   generation: number;
   lease?: SubscriptionLease;
   hooks: BackgroundHook[];
-  adopted?: boolean;
-  recovery?: RendererRecoveryHandle;
-  scope?: RendererRecoveryScope;
-  offRecovery?: () => void;
-  pendingRead?: Promise<BackgroundHook[]>;
 }
 
 interface TransportRuntime {
   unsubscribe?: () => void;
-  dispatch: (action: { type: string; payload?: unknown }) => unknown;
 }
 
 function openTransport(
@@ -93,7 +73,6 @@ function openTransport(
   });
   const offReconnect = onBackendReconnected(() => {
     for (const entry of active.values()) {
-      if (entry.adopted) continue;
       entry.generation += 1;
       if (entry.lease) {
         entry.lease.cancelled = true;
@@ -159,7 +138,6 @@ function* subscribeActiveWorkspace(
   workspaceId: string,
   entry: ActiveWorkspace,
 ): SagaGenerator<void> {
-  if (entry.adopted) return;
   const generation = ++entry.generation;
   const lease: SubscriptionLease = { cancelled: false };
   entry.lease = lease;
@@ -187,7 +165,6 @@ function* subscribeActiveWorkspace(
 
 function* refetchWorkspace(
   active: Map<string, ActiveWorkspace>,
-  transport: TransportRuntime,
   message: RefetchMessage,
 ): SagaGenerator<void> {
   if (message.kind !== 'refetch') return;
@@ -195,37 +172,12 @@ function* refetchWorkspace(
   const [workspaceId] = action.payload;
   const entry = active.get(workspaceId);
   if (!entry) return;
-  if (entry.recovery?.status.stale) {
-    entry.recovery.refresh();
-    return;
-  }
-  const token = rendererEventRecovery.capture('background-hooks:' + JSON.stringify([workspaceId]));
   const generation = entry.generation;
   try {
-    const request = trackRuntimeRead(
-      'background-hooks:' + JSON.stringify([workspaceId]),
-      () => {
-        if (
-          active.get(workspaceId) !== entry ||
-          entry.generation !== generation ||
-          !token.commit(() => {})
-        )
-          throw new Error('Hook read superseded');
-        return entry.scope
-          ? entry.scope
-              .request<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId })
-              .then((result) => (Array.isArray(result?.hooks) ? result.hooks : []))
-          : listHooks(workspaceId);
-      },
-      true,
-    );
-    entry.pendingRead = request;
-    const hooks = yield* call(() => request);
+    const hooks = yield* call(listHooks, workspaceId);
     if (active.get(workspaceId) === entry && entry.generation === generation) {
-      token.commit(() => {
-        entry.hooks = hooks;
-        transport.dispatch(backgroundHooksUpdated(workspaceId, hooks));
-      });
+      entry.hooks = hooks;
+      yield* put(backgroundHooksUpdated(workspaceId, hooks));
     }
   } catch (error) {
     logger.warn('hook.list failed', { workspaceId, error });
@@ -233,13 +185,9 @@ function* refetchWorkspace(
     // PROVISIONAL: the cached rows are not a fresh snapshot, so a retained
     // stale flag must survive this delivery.
     if (active.get(workspaceId) === entry && entry.generation === generation) {
-      token.commit(() => {
-        transport.dispatch(backgroundHooksUpdated(workspaceId, entry.hooks, true));
-        transport.dispatch(backgroundHooksSnapshotFailed(workspaceId));
-      });
+      yield* put(backgroundHooksUpdated(workspaceId, entry.hooks, true));
+      yield* put(backgroundHooksSnapshotFailed(workspaceId));
     }
-  } finally {
-    entry.pendingRead = undefined;
   }
 }
 
@@ -265,7 +213,6 @@ function* closeWorkspace(
   const entry = active.get(workspaceId);
   if (!entry) return;
   active.delete(workspaceId);
-  entry.offRecovery?.();
   entry.generation += 1;
   if (entry.lease) entry.lease.cancelled = true;
   yield* put(refetchEvents, { kind: 'cancel', workspaceId });
@@ -295,73 +242,6 @@ function* handleSubscribe(
   const retained = yield* selectBackgroundHooks.effect(workspaceId);
   const entry: ActiveWorkspace = { count: 1, generation: 0, hooks: retained };
   active.set(workspaceId, entry);
-  entry.offRecovery = rendererEventRecovery.onSession((scope) => {
-    entry.adopted = true;
-    entry.scope = scope;
-    if (entry.lease) void unsubscribeWorkspace(workspaceId, entry.lease);
-    const generation = ++entry.generation;
-    const controller = new AbortController();
-    let subscriptionId: string | undefined;
-    const handle = scope.registerResource({
-      key: 'background-hooks:' + JSON.stringify([workspaceId]),
-      workspaceId,
-      eventTypes: ['hook:*'],
-      isCurrent: () => active.get(workspaceId) === entry && entry.generation === generation,
-      read: async (reader) => {
-        if (entry.pendingRead) await entry.pendingRead.catch(() => {});
-        const result = await trackRuntimeRead(
-          'background-hooks:' + JSON.stringify([workspaceId]),
-          () =>
-            reader.request<{ hooks?: BackgroundHook[] }>('hook.list', {
-              workspaceId,
-            }),
-          true,
-        );
-        return Array.isArray(result?.hooks) ? result.hooks : [];
-      },
-      apply: (hooks) => {
-        entry.hooks = hooks;
-        transport.dispatch(backgroundHooksUpdated(workspaceId, hooks));
-      },
-      invalidate: () => {
-        transport.dispatch(backgroundHooksMarkedStale(workspaceId));
-      },
-      retire: () => {
-        ++entry.generation;
-        entry.hooks = [];
-        transport.dispatch(backgroundHooksUpdated(workspaceId, []));
-        transport.dispatch(backgroundHooksMarkedStale(workspaceId));
-      },
-      onEvent: (notification) => {
-        const event = (notification.params as HookEventNotification)?.event;
-        if (!event?.type) return;
-        const folded = foldHookEvent(entry.hooks, event.type, event.data ?? {});
-        entry.hooks = folded.hooks;
-        transport.dispatch(backgroundHooksUpdated(workspaceId, entry.hooks, true));
-        if (folded.needsRefetch || entry.pendingRead)
-          transport.dispatch(backgroundHooksRefetchRequested(workspaceId));
-      },
-    });
-    entry.recovery = handle;
-    void scope
-      .subscribe(
-        { workspaceId, eventTypes: ['hook:*'] },
-        { recover: true, signal: controller.signal },
-      )
-      .then((lease) => {
-        if (active.get(workspaceId) !== entry || entry.generation !== generation) return;
-        subscriptionId = lease?.id;
-        transport.dispatch(backgroundHooksRefetchRequested(workspaceId));
-      })
-      .catch((error) => logger.warn('hook recovery subscribe failed', { workspaceId, error }));
-    return () => {
-      controller.abort();
-      handle.dispose();
-      if (subscriptionId) void scope.unsubscribe(subscriptionId);
-      entry.recovery = undefined;
-      entry.scope = undefined;
-    };
-  });
   yield* call(subscribeActiveWorkspace, active, workspaceId, entry);
 }
 
@@ -387,7 +267,7 @@ function* handleNotification(
   const event = params?.event;
   if (!event?.type?.startsWith('hook:') || !event.workspaceId) return;
   const entry = active.get(event.workspaceId);
-  if (!entry || entry.adopted) return;
+  if (!entry) return;
   const subscriptionId = entry.lease?.subscriptionId;
   if (subscriptionId && params?.subscriptionId && params.subscriptionId !== subscriptionId) return;
   const folded = foldHookEvent(entry.hooks, event.type, event.data ?? {});
@@ -469,8 +349,7 @@ function* watchActiveWorkspaceLease(): SagaGenerator<void> {
 
 export function* backgroundHooksSaga(): SagaGenerator<void> {
   const active = new Map<string, ActiveWorkspace>();
-  const reduxStore = yield* getContext<{ dispatch: TransportRuntime['dispatch'] }>('reduxStore');
-  const transport: TransportRuntime = { dispatch: (action) => reduxStore.dispatch(action) };
+  const transport: TransportRuntime = {};
   const transportEvents = createChannel(buffers.expanding<TransportMessage>());
   const refetchEvents = createChannel(buffers.expanding<RefetchMessage>());
   yield* takeEvery(
@@ -488,13 +367,7 @@ export function* backgroundHooksSaga(): SagaGenerator<void> {
     refetchEvents,
   );
   yield* takeEvery(backgroundHooksRefetchRequested, queueRefetch, refetchEvents);
-  yield* takeSingleFlightInContext(
-    refetchEvents,
-    refetchContext,
-    refetchWorkspace,
-    active,
-    transport,
-  );
+  yield* takeSingleFlightInContext(refetchEvents, refetchContext, refetchWorkspace, active);
   yield* takeEvery(runBackgroundHookRequested, runHookWorker);
   yield* takeEvery(cancelBackgroundHookRequested, cancelHookWorker);
   yield* watchActiveWorkspaceLease();

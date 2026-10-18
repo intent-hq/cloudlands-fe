@@ -46,7 +46,7 @@
     workspaceInitializerGitCheckRequested,
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
-    setWorkspaceInitializerBranchForRepo,
+    setWorkspaceInitializerLastSelectedRepo,
     workspaceInitializerDraftClearRequested,
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
@@ -1030,37 +1030,9 @@
     }
   });
 
-  // Save form state through Redux whenever it changes. Persistence is handled by the saga.
-  $effect(() => {
-    if (!$workspaceInitializerHydrated$ && !modelPickedThisSession && !effortPickedThisSession)
-      return;
-    // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel || selectedReasoningEffort !== undefined) {
-      const formState: CompactWorkspaceInitializerFormState = {
-        repositoryCheckoutDraft:
-          repoType === 'gitlab' ? readRepositoryCheckoutDraft($checkoutForm$?.draft) : undefined,
-        repoPath,
-        repoType,
-        githubUrl,
-        branch,
-        isNewRepo,
-        isValidPath,
-        scope,
-        scopeRepoPath: scope ? repoPath : undefined, // Track which repo the scope belongs to
-        remoteSetup,
-        selectedSpecialist,
-        selectedModel,
-        modelWasOverridden,
-        selectedReasoningEffort,
-        isTeamMode,
-        selectedProvider,
-        skipIsolation,
-      };
-      // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
-      // structured-cloneable for daemon persistence (src/store/renderer/AGENTS.md §2).
-      appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(formState)));
-    }
-  });
+  // Repo, branch and agent choices are saved only after a successful create
+  // (clearForm), so cancelling New space keeps the last-created choices. The
+  // message and attachment draft above is saved as the user types.
 
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
@@ -2378,19 +2350,6 @@
       };
 
       if (!current()) return;
-      // Save branch per repo for persistence - ensures branch is remembered even if user
-      // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
-      if (
-        !repositoryCheckout &&
-        debugConfig.get('enableFormPersistence') &&
-        repoPath &&
-        baseBranch &&
-        !isNewRepo
-      ) {
-        appStore.dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
-        logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
-      }
-
       // Picked repo (GitHub selection): the daemon hydrates the checkout
       // from its repo cache — send githubUrl + branch fields ONLY, no
       // repositoryPath (repoPath holds the owner/repo shorthand, not a
@@ -2486,6 +2445,16 @@
           isTeamMode,
           selectedProvider,
         },
+        // Remembered for the repo only once the workspace is created (including
+        // an accepted auto-selected default branch).
+        rememberBranch:
+          !repositoryCheckout &&
+          debugConfig.get('enableFormPersistence') &&
+          repoPath &&
+          baseBranch &&
+          !isNewRepo
+            ? { repoPath, branch: baseBranch }
+            : undefined,
         selectedPrNumber: !repositoryCheckout && selectedPRNumber ? selectedPRNumber : undefined,
         recentGitHubRepository: ghInfo
           ? {
@@ -2624,6 +2593,28 @@
     // remoteSetup.workspacePath/environmentConfig, and isValid waives the
     // branch requirement for remote), a remote selection cannot be preserved —
     // reset it to defaults instead of leaving a valid-looking broken form.
+    // This runs only after a successful create, so it is where the repo,
+    // branch and agent choices are saved for the next form. A newly created
+    // repository now exists, so the next form opens it as an existing repo.
+    if (isNewRepo && repoPath) {
+      isNewRepo = false;
+      isValidPath = true;
+    }
+    if (
+      debugConfig.get('enableFormPersistence') &&
+      repoPath &&
+      (repoType === 'local' || repoType === 'github')
+    ) {
+      appStore.dispatch(
+        setWorkspaceInitializerLastSelectedRepo({
+          path: repoPath,
+          type: repoType,
+          ...(githubUrl ? { githubUrl } : {}),
+          isValidPath,
+          ...(scope ? { scope } : {}),
+        }),
+      );
+    }
     if (repoType === 'remote') {
       repoPath = '';
       repoType = 'local';
@@ -2668,10 +2659,8 @@
     showPullConflictDialog = false;
     // Note: intentionally not resetting shouldPullBeforeCreate — this preference should persist.
 
-    // Immediately write the cleaned form state to Redux so that even if the
-    // $effect doesn't fire before the component unmounts (e.g. navigation
-    // happens right after oncreate?.()), stale remoteSetup state won't be
-    // restored and the preserved repo selection is persisted.
+    // Save the created choices for the next form now, before navigation can
+    // unmount the component. remoteSetup is already cleared above.
     const cleanedState: CompactWorkspaceInitializerFormState = {
       repositoryCheckoutDraft:
         repoType === 'gitlab'
@@ -2687,7 +2676,7 @@
       isTeamMode,
       selectedProvider,
       skipIsolation,
-      remoteSetup, // null at this point, but keeps parity with $effect's formState
+      remoteSetup, // null at this point
       // Repo selection — preserved so the next form re-opens on the same repo
       repoPath,
       repoType,
@@ -2698,7 +2687,8 @@
       scope,
       scopeRepoPath: scope ? repoPath : undefined,
     };
-    // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
+    // Snapshot to strip $state proxies: Redux state must be structured-cloneable
+    // for daemon persistence (src/store/renderer/AGENTS.md §2).
     appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
   }
 

@@ -28,7 +28,6 @@
   import {
     dismissWorkspaceInitializerRecentRepo,
     setWorkspaceInitializerDefaultParentPath,
-    setWorkspaceInitializerLastSelectedRepo,
     setWorkspaceInitializerRemoteSetups,
     workspaceInitializerDirectoryStatusReleased,
     workspaceInitializerDirectoryStatusRequested,
@@ -82,7 +81,6 @@
     selectGithubRepoSearchResults,
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { debugConfig } from '$lib/config/debug';
   import {
     isolationNoun,
     resolveEffectiveIsolationMode,
@@ -435,12 +433,6 @@
   // Load default parent path from Redux; persistence is handled by the saga.
   function getDefaultParentPath(): string {
     return $defaultParentPath$ || '~/Developer';
-  }
-
-  function saveLastSelectedRepo(detail: RepoChangeDetail) {
-    if (debugConfig.get('enableFormPersistence')) {
-      appStore.dispatch(setWorkspaceInitializerLastSelectedRepo(detail));
-    }
   }
 
   function saveDefaultParentPath(path: string) {
@@ -1086,8 +1078,6 @@
     };
     onchangeWithTracking(detail);
 
-    saveLastSelectedRepo(detail);
-
     // Close the dropdown
     isOpen = false;
   }
@@ -1138,8 +1128,6 @@
     }
 
     onchangeWithTracking(detail);
-
-    saveLastSelectedRepo(detail);
 
     // Close the dropdown
     isOpen = false;
@@ -1206,7 +1194,6 @@
       };
       onchangeWithTracking(detail);
 
-      saveLastSelectedRepo(detail);
       // Close the dropdown
       isOpen = false;
     } catch (err) {
@@ -1257,7 +1244,6 @@
     onchangeWithTracking(detail);
 
     saveDefaultParentPath(newRepoParentPath);
-    saveLastSelectedRepo(detail);
 
     // Reset and close
     showCreateNewMode = false;
@@ -1331,8 +1317,6 @@
 
     onchangeWithTracking(detail);
 
-    saveLastSelectedRepo(detail);
-
     // Close the dropdown
     isOpen = false;
   }
@@ -1360,8 +1344,6 @@
       isValidPath: true,
     };
     onchangeWithTracking(detail);
-
-    saveLastSelectedRepo(detail);
 
     showNonGitFolderPrompt = false;
     nonGitFolderPath = '';

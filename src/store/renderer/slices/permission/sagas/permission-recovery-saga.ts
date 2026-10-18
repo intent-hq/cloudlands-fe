@@ -1,8 +1,3 @@
-import { trackAgentRecoveryRead } from '$features/agent/agent-recovery-read-lane';
-import { agentRecoveryWorkspaceCurrent } from '$features/agent/agent-recovery-workspace-scope';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { AGENT_PERMISSIONS_RECOVERY_KEY } from '$features/agent/agent-recovery-keys';
-import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import {
   createChannelFromSelector,
@@ -30,8 +25,6 @@ import {
 function* recoverPendingPermissions(): SagaGenerator<void> {
   const context = yield* selectPermissionRecoveryScope.effect();
   if (!context) return;
-  const recovery = rendererEventRecovery.capture(AGENT_PERMISSIONS_RECOVERY_KEY);
-  if (!recovery.commit(() => undefined)) return;
   const pending = new Map<string, PermissionRequest>();
   const changedDuringRead = new Set<string>();
   let reading = true;
@@ -50,22 +43,12 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
   try {
     // The aggregate is routed to this window's backend and filtered by the
     // server's current workspace management grants before returning any prompts.
-    const result = yield* call(() =>
-      trackAgentRecoveryRead(
-        AGENT_PERMISSIONS_RECOVERY_KEY,
-        () => {
-          if (!recovery.commit(() => undefined))
-            throw new Error('Permission read authority retired');
-          return backendRequest<{ requests: PermissionRequest[] }>('agent.pendingPermissions', {});
-        },
-        rendererEventRecovery.hasOwner(AGENT_PERMISSIONS_RECOVERY_KEY) ? recovery : undefined,
-      ),
+    const result = yield* call(
+      backendRequest<{ requests: PermissionRequest[] }>,
+      'agent.pendingPermissions',
+      {},
     );
-    if (
-      !recovery.commit(() => undefined) ||
-      context !== (yield* selectPermissionRecoveryScope.effect())
-    )
-      return;
+    if (context !== (yield* selectPermissionRecoveryScope.effect())) return;
     if (
       !Array.isArray(result.requests) ||
       result.requests.some(
@@ -97,16 +80,12 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
   try {
     while (true) {
       yield* take(identities);
-      if (
-        !recovery.commit(() => undefined) ||
-        context !== (yield* selectPermissionRecoveryScope.effect())
-      )
-        return;
+      if (context !== (yield* selectPermissionRecoveryScope.effect())) return;
       const agents = yield* selectAgentSessionsById.effect();
       const recovered: PermissionRequest[] = [];
       for (const request of pending.values()) {
         const workspaceId = agents[request.sessionId]?.workspaceId;
-        if (!workspaceId || !agentRecoveryWorkspaceCurrent(workspaceId)) continue;
+        if (!workspaceId) continue;
         if (!(yield* selectWorkspacePermissionContext.effect(workspaceId))) {
           // Confirmed denial invalidates a snapshot. Unknown capabilities can
           // hydrate later, but a later grant must not revive an old prompt.
@@ -117,8 +96,7 @@ function* recoverPendingPermissions(): SagaGenerator<void> {
         pending.delete(request.requestId);
         recovered.push({ ...request, workspaceId });
       }
-      if (recovered.length)
-        yield* put(withRecoveryLifetime(setPendingRequests(recovered), recovery));
+      if (recovered.length) yield* put(setPendingRequests(recovered));
     }
   } finally {
     identities.close();

@@ -329,43 +329,6 @@ describe('LiveSkillsClient', () => {
         unsubscribe();
       });
 
-      it('rejects a held skill snapshot from the previous connection after reconnect', async () => {
-        let notify: ((n: { method: string; params?: unknown }) => void) | undefined;
-        let reconnect: (() => void) | undefined;
-        vi.spyOn(backendTransport, 'onBackendNotification').mockImplementation((cb) => {
-          notify = cb;
-          return vi.fn();
-        });
-        vi.spyOn(backendTransport, 'onBackendReconnected').mockImplementation((cb) => {
-          reconnect = cb;
-          return vi.fn();
-        });
-        vi.spyOn(backendTransport, 'backendSubscribe').mockResolvedValue({ subscriptionId: 'sub' });
-        vi.spyOn(backendTransport, 'backendUnsubscribe').mockResolvedValue(undefined);
-        let release!: (value: unknown) => void;
-        const old = new Promise((resolve) => {
-          release = resolve;
-        });
-        const skill = (name: string) => [
-          { name, description: '', location: '/skill', scope: 'user' },
-        ];
-        vi.spyOn(backendTransport, 'backendRequest')
-          .mockReturnValueOnce(old)
-          .mockResolvedValueOnce(skill('current'));
-        let visible: unknown;
-        const stop = client.subscribe((value) => {
-          visible = value;
-        });
-        notify?.({ method: 'skills:changed', params: { workspaceId: 'workspace' } });
-        reconnect?.();
-        await vi.waitFor(() => expect(visible).toEqual(skill('current')));
-        release(skill('retired'));
-        await old;
-        await Promise.resolve();
-        expect(visible).toEqual(skill('current'));
-        stop();
-      });
-
       it('does nothing when a reconnect races a dispose', async () => {
         let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
         vi.spyOn(backendTransport, 'onBackendNotification').mockImplementation((cb) => {

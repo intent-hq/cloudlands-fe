@@ -31,7 +31,6 @@ import { providerSettingsSaga } from '../../provider-settings/sagas/provider-set
 import { modelReloadSaga } from './model-reload-saga';
 import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydration-saga';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
-import { installSettingsRecovery } from '../../settings-events/sagas/settings-recovery';
 import { hydrateSettingsOnceSaga } from '../../settings-events/sagas/settings-hydration-saga';
 import { loadModelsOnBootWorker, modelBootSaga } from './model-boot-saga';
 import type { AppSettingChange } from '$lib/client/app-client';
@@ -419,7 +418,6 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
 it('rehydrates a fresh renderer from the saved Grok pair before boot catalog loading', async () => {
   dispose = store.init();
   admitLegacyPrincipal();
-  cancelSagas.push(installSettingsRecovery());
   // Serialized shape persisted by the selection path and retained in the
   // independently captured daemon restart evidence. No optimistic state.
   const saved = JSON.stringify([

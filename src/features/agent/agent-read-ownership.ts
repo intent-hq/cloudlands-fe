@@ -1,5 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { agentMetadataRecoveryKey } from './agent-recovery-keys';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 
@@ -45,12 +43,10 @@ function claimOwner(agentId: string, workspaceId?: string) {
 
 /** A mutation must keep the same owner across every await, including reconnects. */
 export function captureAgentMutationOwnership(agentId: string, workspaceId?: string) {
-  const metadata = rendererEventRecovery.captureAuthority(agentMetadataRecoveryKey(workspaceId));
   const captured = claimOwner(agentId, workspaceId);
   return {
     key: captured.key,
     isCurrent: (storedWorkspaceId: string | undefined) =>
-      metadata.commit(() => undefined) &&
       owners.get(agentId) === captured &&
       captured.context === getAgentReadContext() &&
       (storedWorkspaceId === undefined ||

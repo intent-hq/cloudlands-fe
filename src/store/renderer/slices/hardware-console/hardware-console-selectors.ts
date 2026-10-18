@@ -1,6 +1,6 @@
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
-import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
+import { usesLegacyReasoningEffort } from '$features/agent/utils/reasoning-effort-protocol';
 import { selectCurrentWorkspaceTabId } from '../tab-state/tab-state-selectors';
 import { selectActiveTab } from '../panel-layout/panel-layout-selectors';
 import { selectAgentProvider } from '../agent-session/agent-session-selectors';
@@ -186,10 +186,9 @@ export const selectEncoderAgentIdentity = store.createSelector(
     const model = session.model ?? selectSelectedModel.select(state, provider);
     const protocolVersion = state.daemonHealth.stats?.protocolVersion;
     // Legacy effort echoes change the suffix, not the selected base model.
-    const modelIdentity =
-      protocolVersion && !supportsReasoningEffortProtocol(protocolVersion)
-        ? buildLegacyReasoningEffortModelId(model, null, levels)
-        : model;
+    const modelIdentity = usesLegacyReasoningEffort(protocolVersion)
+      ? buildLegacyReasoningEffortModelId(model, null, levels)
+      : model;
     return {
       key: JSON.stringify([workspaceId, agentId, provider, modelIdentity, levels]),
       workspaceId,

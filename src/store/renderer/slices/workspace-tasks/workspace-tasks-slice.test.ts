@@ -21,7 +21,6 @@ import {
   loadWorkspaceTasksSucceeded,
   workspaceTasksReducer,
   workspaceTasksReadStarted,
-  workspaceTasksReadAbandoned,
 } from './workspace-tasks-slice';
 
 const WS = 'ws-1';
@@ -357,20 +356,4 @@ describe('workspaceTasksReducer', () => {
       expect(state.byWorkspaceId[WS].initialized).toBe(true);
     });
   });
-});
-
-it('settles only the abandoned task read without replacing data or a newer read', () => {
-  const initial = workspaceTasksReducer(
-    loadedState([makeTask('kept')]),
-    workspaceTasksReadStarted(WS),
-  );
-  const revision = initial.byWorkspaceId[WS].readRevision;
-  const dirty = workspaceTasksReducer(initial, invalidateWorkspaceTasks(WS));
-  const abandoned = workspaceTasksReducer(dirty, workspaceTasksReadAbandoned(WS, revision));
-  expect(abandoned.byWorkspaceId[WS]).toMatchObject({ loading: false, stale: true, error: null });
-  expect(abandoned.byWorkspaceId[WS].tasks).toBe(initial.byWorkspaceId[WS].tasks);
-  const newer = workspaceTasksReducer(abandoned, workspaceTasksReadStarted(WS));
-  expect(workspaceTasksReducer(newer, workspaceTasksReadAbandoned(WS, revision))).toBe(newer);
-  const removed = workspaceTasksReducer(newer, clearWorkspaceTasks(WS));
-  expect(workspaceTasksReducer(removed, workspaceTasksReadAbandoned(WS, revision))).toBe(removed);
 });

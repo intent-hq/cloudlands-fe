@@ -1,7 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { gitStatusRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
-import { changesRecoveryKey } from '$features/file-tracking/changes-event-recovery';
-import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { appClient, type MutationResult } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -184,22 +180,15 @@ function* reconcile(
   requestId: string,
   lease: GitMutationLease,
 ): SagaGenerator<void> {
-  const gitReceipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspaceId));
-  const changesReceipt = rendererEventRecovery.capture(changesRecoveryKey(workspaceId));
   try {
     const status = yield* call(() =>
       lease.run(() => appClient.git.status(workspaceId, { forceRefresh: true })),
     );
     if (!status || !(yield* selectGitWriteOperation.effect(workspaceId, requestId))) return;
-    yield* put(withRecoveryLifetime(setGitStatus(workspaceId, status), gitReceipt));
+    yield* put(setGitStatus(workspaceId, status));
     const tracked = yield* selectFileTrackingChanges.effect(workspaceId);
     const changes = reconcileGitStatusChanges(status.files, tracked);
-    yield* put(
-      withRecoveryLifetime(
-        setChangesData(workspaceId, changes, false, changes.length),
-        changesReceipt,
-      ),
-    );
+    yield* put(setChangesData(workspaceId, changes, false, changes.length));
   } catch (error) {
     logger.error('Failed to reconcile Git mutation', error);
   }
@@ -277,7 +266,6 @@ function* notifyOutcome(operation: GitWriteOperation, result: MutationResult): S
 
 function* gitWriteWorker(action: ReturnType<typeof gitWriteRequested>): SagaGenerator<void> {
   const [workspaceId, requestId, operation] = action.payload;
-  const writeReceipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspaceId));
   const lease = reserveGitMutation(workspaceId);
   let result: MutationResult = {
     success: false,
@@ -349,15 +337,12 @@ function* gitWriteWorker(action: ReturnType<typeof gitWriteRequested>): SagaGene
           if (snapshot) {
             const paths = new Set(operation.paths);
             yield* put(
-              withRecoveryLifetime(
-                setGitStatus(workspaceId, {
-                  ...snapshot,
-                  files: snapshot.files.map((file) =>
-                    paths.has(file.path) ? { ...file, staged: operation.kind === 'stage' } : file,
-                  ),
-                }),
-                writeReceipt,
-              ),
+              setGitStatus(workspaceId, {
+                ...snapshot,
+                files: snapshot.files.map((file) =>
+                  paths.has(file.path) ? { ...file, staged: operation.kind === 'stage' } : file,
+                ),
+              }),
             );
           }
         }
@@ -370,8 +355,7 @@ function* gitWriteWorker(action: ReturnType<typeof gitWriteRequested>): SagaGene
     }
     try {
       const current = yield* selectGitWriteOperation.effect(workspaceId, requestId);
-      if (current && snapshot && !result.success)
-        yield* put(withRecoveryLifetime(setGitStatus(workspaceId, snapshot), writeReceipt));
+      if (current && snapshot && !result.success) yield* put(setGitStatus(workspaceId, snapshot));
       if (started) {
         yield* call(() => gitCache.invalidateWorkspace(workspaceId));
         // Preserve the compatibility contract: failed unstage restores the

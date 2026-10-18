@@ -1,4 +1,3 @@
-import { BackendError } from './backend-transport-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the backend bridge is mocked so no comment mutation ever
@@ -1047,16 +1046,4 @@ describe('qualified comment wire projections', () => {
     expect(result[1]).toMatchObject({ author: 'unknown' });
     expect(result[1]).not.toHaveProperty('authorIdentity');
   });
-});
-
-it('preserves Electron physical completion despite serialized TRANSPORT_ERROR', async () => {
-  mockedResolve.mockResolvedValueOnce('ws-1');
-  const completion = Promise.resolve({ errors: [{ rpcCode: -32003 }], retired: false });
-  const failure = new BackendError(
-    { code: 'TRANSPORT_ERROR', message: 'Request deadline' },
-    completion,
-  );
-  mockedRequest.mockRejectedValueOnce(failure);
-  await expect(new LiveCommentsClient().list('note-1', 'ws-1')).rejects.toBe(failure);
-  expect(failure.completion).toBe(completion);
 });
