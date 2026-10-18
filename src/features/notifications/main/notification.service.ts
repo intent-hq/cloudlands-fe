@@ -678,8 +678,15 @@ export class NotificationService {
       // pop-out does NOT count as frontmost: the HUD renders no toast UI and
       // is never a notification target, so HUD-focused delivery stays on the
       // OS-banner path (whose click goes through the HUD-excluding picker).
-      const appFrontmost = focusedWindow !== null && !isHudWindow(focusedWindow);
-      if (appFrontmost) {
+      // The focused window must also be on the emitting host: a toast is only
+      // useful in the window the user is looking at, and a window on another
+      // host cannot open this workspace. Otherwise the OS banner is shown
+      // (visible even if, on macOS while frontmost, its click may not fire).
+      const appFrontmostOnHost =
+        focusedWindow !== null &&
+        !isHudWindow(focusedWindow) &&
+        getBackendIdForWindow(focusedWindow) === backendId;
+      if (appFrontmostOnHost) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,
           agentName: event.data.agentName,
@@ -849,7 +856,11 @@ export class NotificationService {
     // No window is connected to the emitting host: keep the sound, drop the
     // click target (see the doc comment).
     const { navigateTarget: _dropped, ...soundOnly } = payload;
-    send(focused ?? BrowserWindow.getAllWindows()[0], soundOnly);
+    const usable = (w: BrowserWindow): boolean => !w.isDestroyed() && !isHudWindow(w);
+    send(
+      focused && usable(focused) ? focused : BrowserWindow.getAllWindows().find(usable),
+      soundOnly,
+    );
   }
 
   /**

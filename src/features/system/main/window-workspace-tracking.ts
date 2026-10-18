@@ -44,8 +44,8 @@ export interface OpenWorkspaceTabsEntry {
 }
 
 export interface WindowHostChecker extends WindowChecker {
-  /** The backend id the live window is connected to right now. */
-  backendIdOf(windowId: number): string;
+  /** The backend id the window is connected to right now, or null if it is gone. */
+  backendIdOf(windowId: number): string | null;
 }
 
 /**
@@ -54,13 +54,14 @@ export interface WindowHostChecker extends WindowChecker {
  * host it was recorded on: a window that reconnected to another host no
  * longer holds the old host's workspace, even if it has not re-reported yet.
  */
-function entryMatchesScope(
+export function entryMatchesScope(
   windowId: number,
   recordedBackendId: string,
   scope: WindowHostScope,
   checker: WindowHostChecker,
 ): boolean {
-  if (checker.backendIdOf(windowId) !== recordedBackendId) return false;
+  const currentBackendId = checker.backendIdOf(windowId);
+  if (currentBackendId === null || currentBackendId !== recordedBackendId) return false;
   return scope === ANY_HOST || scope === recordedBackendId;
 }
 

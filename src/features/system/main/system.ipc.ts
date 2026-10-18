@@ -11,6 +11,7 @@ import {
   ANY_HOST,
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
+  entryMatchesScope,
   type ActiveWorkspaceEntry,
   type OpenWorkspaceTabsEntry,
   type WindowHostChecker,
@@ -204,9 +205,21 @@ const liveWindowHostChecker: WindowHostChecker = {
   },
   backendIdOf(windowId: number) {
     const win = BrowserWindow.fromId(windowId);
-    return win ? getBackendIdForWindow(win) : LOCAL_CONNECTION_ID;
+    return win && !win.isDestroyed() ? getBackendIdForWindow(win) : null;
   },
 };
+
+/**
+ * The workspace a window is viewing, only while the window is still on the
+ * host it reported from (a window that switched hosts has not re-reported).
+ */
+function currentViewedWorkspaceId(windowId: number): string | undefined {
+  const entry = windowWorkspaceIds.get(windowId);
+  if (!entry) return undefined;
+  return entryMatchesScope(windowId, entry.backendId, ANY_HOST, liveWindowHostChecker)
+    ? entry.workspaceId
+    : undefined;
+}
 
 /**
  * Check if the currently focused window is in a workspace.
@@ -225,7 +238,7 @@ export function isFocusedWindowInWorkspace(): boolean {
 export function getFocusedWindowWorkspaceId(): string | undefined {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return undefined;
-  return windowWorkspaceIds.get(focusedWindow.id)?.workspaceId;
+  return currentViewedWorkspaceId(focusedWindow.id);
 }
 
 /**
@@ -235,7 +248,7 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
  * hold it in a background tab.
  */
 export function getViewedWorkspaceIdForWindow(windowId: number): string | undefined {
-  return windowWorkspaceIds.get(windowId)?.workspaceId;
+  return currentViewedWorkspaceId(windowId);
 }
 
 /**
@@ -280,9 +293,9 @@ export function getWindowIdForWorkspace(
       windowWorkspaceIds.delete(windowId);
       continue;
     }
-    const currentBackendId = liveWindowHostChecker.backendIdOf(windowId);
-    if (currentBackendId !== entry.backendId) continue;
-    if (scope === ANY_HOST || scope === entry.backendId) return windowId;
+    if (entryMatchesScope(windowId, entry.backendId, scope, liveWindowHostChecker)) {
+      return windowId;
+    }
   }
   return undefined;
 }
