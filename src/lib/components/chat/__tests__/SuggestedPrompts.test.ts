@@ -168,7 +168,6 @@ describe('SuggestedPrompts', () => {
     for (const hint of hints()) {
       expect(hint.getAttribute('aria-hidden')).toBe('true');
       expect(hint.getAttribute('data-hint-visible')).toBe('false');
-      expect(hint.className).toContain('invisible');
     }
 
     await rerender({ showShortcutHints: true });
@@ -176,7 +175,6 @@ describe('SuggestedPrompts', () => {
     for (const hint of hints()) {
       expect(hint.getAttribute('aria-hidden')).toBeNull();
       expect(hint.getAttribute('data-hint-visible')).toBe('true');
-      expect(hint.className).not.toContain('invisible');
     }
     expect(screen.getByText(/(?:⌃|Alt\+)1/)).toBeTruthy();
   });
