@@ -114,8 +114,14 @@ tester.run('no-class-name-assertions-in-tests', rule, {
     { code: "expect(buildClasses('x')).toContain('x');", filename: testFile },
     // `contains` on something other than a classList (DOM containment is behaviour).
     { code: 'expect(container.contains(child)).toBe(true);', filename: testFile },
-    // Matchers that do not compare the class spelling.
+    // Matchers that only check the value exists or has a type.
     { code: 'expect(el.className).toBeDefined();', filename: testFile },
+    { code: "expect(el.className).toBeTypeOf('string');", filename: testFile },
+    // Attribute / property matchers on something other than the class.
+    { code: "expect(el).toHaveAttribute('aria-expanded', 'true');", filename: testFile },
+    { code: "expect(el).toHaveProperty('checked', true);", filename: testFile },
+    // Destructuring a non-class key.
+    { code: "const { textContent } = el;\nexpect(textContent).toBe('x');", filename: testFile },
     // Class reads outside an assertion are not reported.
     { code: "const isActive = el.classList.contains('active');", filename: testFile },
     { code: "el.classList.add('x');\nexpect(onChange).toHaveBeenCalled();", filename: testFile },
@@ -134,6 +140,23 @@ tester.run('no-class-name-assertions-in-tests', rule, {
       code: "expect(a.className).toContain('x');\nexpect(b.classList.contains('y')).toBe(true);",
       filename: testFile,
       options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 2 } }],
+    },
+    // A suppressed assertion does not use up the baseline allowance (the ratchet counts
+    // only unsuppressed reports).
+    {
+      code: "// eslint-disable-next-line rule-to-test/no-class-name-assertions-in-tests -- theme contract\nexpect(root.classList.contains('dark')).toBe(true);\nexpect(a.className).toContain('x');",
+      filename: testFile,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
+    },
+    {
+      code: "expect(root.classList.contains('dark')).toBe(true); // eslint-disable-line rule-to-test/no-class-name-assertions-in-tests\nexpect(a.className).toContain('x');",
+      filename: testFile,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
+    },
+    {
+      code: "/* eslint-disable rule-to-test/no-class-name-assertions-in-tests */\nexpect(root.classList.contains('dark')).toBe(true);\n/* eslint-enable rule-to-test/no-class-name-assertions-in-tests */\nexpect(a.className).toContain('x');",
+      filename: testFile,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
     },
   ],
   invalid: [
@@ -198,6 +221,75 @@ tester.run('no-class-name-assertions-in-tests', rule, {
     },
     {
       code: "const list = el.classList;\nexpect(list.contains('x')).toBe(true);",
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    // Any comparing matcher on a derived value.
+    {
+      code: "expect(el.className.includes('invisible')).toBeTruthy();",
+      filename: testFile,
+      errors: [error],
+    },
+    {
+      code: 'expect(el.className.match(/hidden/)).not.toBeNull();',
+      filename: testFile,
+      errors: [error],
+    },
+    {
+      code: "expect(el.className.split(' ')).toHaveLength(2);",
+      filename: testFile,
+      errors: [error],
+    },
+    // Operators around a class read.
+    {
+      code: "expect(!el.classList.contains('hidden')).toBe(true);",
+      filename: testFile,
+      errors: [error],
+    },
+    { code: "expect(el.className === 'a b').toBe(true);", filename: testFile, errors: [error] },
+    {
+      code: "expect(ready && el.classList.contains('x')).toBe(true);",
+      filename: testFile,
+      errors: [error],
+    },
+    {
+      code: "expect(open ? el.className : '').toContain('x');",
+      filename: testFile,
+      errors: [error],
+    },
+    // expect.soft and class matchers on the element itself.
+    { code: "expect.soft(el).toHaveClass('active');", filename: testFile, errors: [error] },
+    {
+      code: "expect.soft(el.className).toContain('active');",
+      filename: testFile,
+      errors: [error],
+    },
+    { code: "expect(el).toHaveAttribute('class', 'a b');", filename: testFile, errors: [error] },
+    { code: "expect(el).toHaveProperty('className', 'x');", filename: testFile, errors: [error] },
+    {
+      code: "expect(el).toHaveProperty(['classList', 'length'], 1);",
+      filename: testFile,
+      errors: [error],
+    },
+    // Destructured class reads.
+    {
+      code: "const { className } = el;\nexpect(className).toContain('invisible');",
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    {
+      code: "const { classList: list } = el;\nexpect(list.contains('x')).toBe(true);",
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    {
+      code: "const [first] = el.classList;\nexpect(first).toBe('x');",
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    // An eslint-disable for a different rule does not suppress this one.
+    {
+      code: "// eslint-disable-next-line no-console\nexpect(el.className).toContain('x');",
       filename: testFile,
       errors: [{ ...error, line: 2 }],
     },
