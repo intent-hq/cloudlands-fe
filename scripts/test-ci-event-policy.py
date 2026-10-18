@@ -98,6 +98,13 @@ class EventPolicy(unittest.TestCase):
         self.assertEqual(caller['with']['component'], 'cloudlands-fe')
         self.assertEqual(caller['with']['head-sha'], '${{ github.event.pull_request.head.sha || github.sha }}')
 
+    def test_consumer_caller_tracks_monorepo_main(self):
+        # A SHA pin also pins the protocol docs the checks read, so docs merged
+        # first (the documented fix order) stay invisible until a hand bump
+        # (intentd#2476). @main resolves the monorepo tip per run.
+        caller = self.workflow['jobs']['monorepo-consumer-checks']
+        self.assertEqual(caller['uses'], 'intent-hq/intent/.github/workflows/consumer-checks.yml@main')
+
     def test_gate_rejects_failed_cancelled_missing_and_required_skips(self):
         for event in ('pull_request', 'merge_group'):
             results = schedule(self.workflow, event)
