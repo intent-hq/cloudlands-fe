@@ -14,12 +14,7 @@
 
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type {
-  BrowserTab,
-  BrowserTabInput,
-  LiveClient,
-  WorkspaceBrowserClient,
-} from '$shared/types/browser-clients';
+import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -101,8 +96,6 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
-export const browserClientsRetired = createAction<[workspaceId?: string]>('browserClients/retired');
-
 export const browserConnectionInvalidated = createAction(
   'browserClients/browserConnectionInvalidated',
 );
@@ -145,19 +138,6 @@ export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
   'browserClients/browserTabClosed',
 );
 
-/** One state-only snapshot: no command edges, routing requests or host reports. */
-export const browserTabSnapshotReceived = createAction<
-  [
-    workspaceId: string,
-    rows: BrowserTab[],
-    ownClientId: string,
-    closing: string[],
-    reported: Record<string, BrowserTabInput>,
-    timestamp: number,
-    retired?: boolean,
-  ]
->('browserTabRegistry/snapshotReceived');
-
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -167,16 +147,6 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 );
 
 export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
-browserClientsReducer.with(browserClientsRetired, (state, { payload: [workspaceId] }) =>
-  workspaceId
-    ? clearWorkspaceState(state, workspaceId)
-    : {
-        ...state,
-        liveClients: createLiveClientCollection(),
-        liveClientsLoaded: false,
-      },
-);
-
 browserClientsReducer.with(browserClientsConsumerMounted, (state, { payload: [wsId, id] }) => {
   const entry = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, {

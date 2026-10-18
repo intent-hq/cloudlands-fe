@@ -1,5 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { agentQueueRecoveryKey } from './agent-recovery-keys';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 /**
  * Wire-level regression suite for the agent send pipeline (`agent-send.ts`),
@@ -608,55 +606,6 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     await sendMessage(AGENT, second.content, workspace());
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([alice, bob, second]);
   });
-
-  it('keeps a successful send but drops its queue echo after generic loss', async () => {
-    appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
-    const scope = rendererEventRecovery.attach({
-      supported: false,
-      isCurrent: () => true,
-      request: vi.fn(),
-      fence: vi.fn(),
-      onNotification: () => () => {},
-      onRetired: () => () => {},
-      dispose: () => {},
-    });
-    const key = agentQueueRecoveryKey(WS, AGENT);
-    scope.registerResource({
-      key,
-      workspaceId: WS,
-      eventTypes: ['agent:queue:*'],
-      isCurrent: () => true,
-      read: async () => [],
-      apply: () => {},
-      invalidate: () => {},
-      retire: () => {},
-    });
-    backendRequestMock.mockImplementation(async (method: string) => {
-      if (method === 'agent.get') return { agent: daemonPendingAgent };
-      if (method === 'agent.sendMessage') {
-        rendererEventRecovery.invalidate(key);
-        return {
-          success: true,
-          queued: true,
-          turnId: 'lost-turn',
-          queuedMessage: { id: 'lost-echo', content: 'sent', queuedAt: '2026-01-01', position: 0 },
-        };
-      }
-      return {};
-    });
-    try {
-      await expect(sendMessage(AGENT, 'sent', workspace(), {})).resolves.toBeUndefined();
-      expect(
-        backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
-      ).toHaveLength(1);
-      expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
-      expect(
-        appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords['lost-echo'],
-      ).toBeUndefined();
-    } finally {
-      rendererEventRecovery.dispose();
-    }
-  }, 30000);
 
   it('does not re-seed the queue when a live agent:queue:updated snapshot superseded the send (monorepo#2481)', async () => {
     // The daemon delivered the queued entry and emitted an EMPTY

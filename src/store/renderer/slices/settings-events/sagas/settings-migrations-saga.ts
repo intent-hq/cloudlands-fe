@@ -1,4 +1,3 @@
-import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { buffers } from 'redux-saga';
 import { actionChannel, call, put, take } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
@@ -25,8 +24,6 @@ function candidate(
 }
 
 function* seedDefaultProvider() {
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) return;
   const state = yield* selectSettingsMigrationContext.effect();
   if (!state.connectionsReady) return;
   if (state.backendId !== LOCAL_CONNECTION_ID) return;
@@ -34,7 +31,6 @@ function* seedDefaultProvider() {
   if (!initial || state.providerSettings.enabledProviders[initial] !== undefined) return;
   try {
     const catalog = yield* call([appClient.providers, appClient.providers.catalog]);
-    if (!work.isCurrent()) return;
     const live = yield* selectSettingsMigrationContext.effect();
     if (live.backendId !== LOCAL_CONNECTION_ID) return;
     const providerId = candidate(

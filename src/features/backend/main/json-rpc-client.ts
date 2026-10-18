@@ -1,4 +1,3 @@
-import { RecoveryWirePool } from '../../../shared/event-recovery/wire-pool';
 /**
  * Main-process JSON-RPC 2.0 client for the live intentd daemon.
  *
@@ -40,7 +39,6 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
-  readonly eventStreamRecovery?: boolean;
   readonly repositoryResourceRead?: boolean;
   readonly gitlabCheckout?: boolean;
   readonly gitlabCheckoutOwnerAvatar?: boolean;
@@ -48,88 +46,6 @@ export interface RepositoryConnection {
   readonly repositorySelection: boolean;
   readonly nativeReview: boolean;
   readonly nativeReviewCompanion: boolean;
-}
-
-type RecoveryClient = Pick<
-  JsonRpcClient,
-  'getRepositoryConnection' | 'requestOnCapturedConnection'
->;
-const recoveryWirePools = new WeakMap<RecoveryClient, WeakMap<object, RecoveryWirePool>>();
-
-function recoveryPoolForSocket(client: RecoveryClient, incarnation: object) {
-  const sockets = recoveryWirePools.get(client) ?? new WeakMap<object, RecoveryWirePool>();
-  recoveryWirePools.set(client, sockets);
-  const pool = sockets.get(incarnation) ?? new RecoveryWirePool();
-  sockets.set(incarnation, pool);
-  return pool;
-}
-
-function recoveryPool(client: RecoveryClient, connection: RepositoryConnection) {
-  return recoveryPoolForSocket(client, connection.incarnation);
-}
-
-/** Shared physical accounting, including lease cleanup, for main and renderer captures. */
-export function captureRecoveryRequests(client: RecoveryClient, connection: RepositoryConnection) {
-  if (client.getRepositoryConnection() !== connection) return undefined;
-  return recoveryPool(client, connection).capture(
-    connection,
-    () => client.getRepositoryConnection() === connection,
-    (method, params, observe) =>
-      client.requestOnCapturedConnection(connection, method, params, {
-        waitForReply: true,
-        observe,
-      }),
-  );
-}
-
-/** Subscribe before capture. Replays current readiness once, then only ready transitions. */
-export function onRecoveryRequestsReady(client: JsonRpcClient, handler: () => void): () => void {
-  let stopped = false,
-    scheduled = false;
-  let previous: RepositoryConnection | undefined;
-  let listeningPool: RecoveryWirePool | undefined;
-  let offPool: (() => void) | undefined;
-  const check = () => {
-    if (stopped) return;
-    const connection = client.getRepositoryConnection();
-    const pool = connection ? recoveryPool(client, connection) : undefined;
-    if (pool !== listeningPool) {
-      offPool?.();
-      listeningPool = pool;
-      offPool = pool?.onChange(check);
-    }
-    const ready = connection && pool?.canCapture(connection) ? connection : undefined;
-    if (!ready) {
-      previous = undefined;
-      return;
-    }
-    if (previous === ready || scheduled) return;
-    scheduled = true;
-    queueMicrotask(() => {
-      scheduled = false;
-      if (stopped) return;
-      const now = client.getRepositoryConnection();
-      if (now !== ready || !pool?.canCapture(ready)) {
-        check();
-        return;
-      }
-      previous = ready;
-      handler();
-    });
-  };
-  const offConnection = client.onRepositoryConnectionEvent((event) => {
-    if (event.type !== 'notification') check();
-  });
-  const offIdentity = client.onRepositoryIdentityConfirmed(check);
-  client.on('status', check);
-  check();
-  return () => {
-    stopped = true;
-    offPool?.();
-    offConnection();
-    offIdentity();
-    client.removeListener('status', check);
-  };
 }
 
 /** Main-private physical evidence, never sent to the renderer. */
@@ -167,7 +83,7 @@ interface PendingRequest {
   method: string;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout> | undefined;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 export interface JsonRpcClientOptions {
@@ -285,12 +201,8 @@ export class JsonRpcClient extends EventEmitter {
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
-  private readonly identityConfirmedObservers = new Set<
-    (connection: RepositoryConnection) => void
-  >();
   private helloAttempt: object | null = null;
-  private confirmedClientId: string | null = null;
-  private nodeCapabilities: Readonly<Record<string, unknown>> | null = null;
+  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -572,33 +484,14 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Observe only the current acknowledged identity; never send or renew hello. */
-  getNodeCapabilities(): Readonly<Record<string, unknown>> | null {
+  getNodeCapabilities(): Readonly<Record<string, number>> | null {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
-  }
-
-  /** Identity from the same positively acknowledged hello as getNodeCapabilities. */
-  getConfirmedClientId(): string | null {
-    return this.getRepositoryConnection() ? this.confirmedClientId : null;
   }
 
   /** Subscribe before start: no replay can establish a missed physical feed. */
   onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
     this.repositoryObservers.add(listener);
     return () => this.repositoryObservers.delete(listener);
-  }
-
-  /** Main-only identity renewal on a connected socket; physical reconnect uses status. */
-  onRepositoryIdentityConfirmed(listener: (connection: RepositoryConnection) => void): () => void {
-    this.identityConfirmedObservers.add(listener);
-    return () => {
-      this.identityConfirmedObservers.delete(listener);
-    };
-  }
-
-  private emitIdentityConfirmed(): void {
-    const connection = this.getRepositoryConnection();
-    if (connection)
-      for (const listener of [...this.identityConfirmedObservers]) listener(connection);
   }
 
   private emitRepositoryEvent(event: RepositoryConnectionEvent): void {
@@ -609,7 +502,6 @@ export class JsonRpcClient extends EventEmitter {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
     this.nodeCapabilities = null;
-    this.confirmedClientId = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
 
@@ -626,7 +518,7 @@ export class JsonRpcClient extends EventEmitter {
     captured: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number; observe?: (result: unknown) => void; waitForReply?: boolean },
+    options?: { timeoutMs?: number },
     parent?: object,
   ): Promise<T> {
     const refused = this.refuseIndependent(parent);
@@ -640,7 +532,7 @@ export class JsonRpcClient extends EventEmitter {
     connection: object,
     method: string,
     params?: unknown,
-    options?: { timeoutMs?: number; observe?: (result: unknown) => void; waitForReply?: boolean },
+    options?: { timeoutMs?: number },
   ): Promise<T> {
     if (!connection || connection !== this.getRepositoryConnection() || method === HELLO_METHOD) {
       return Promise.reject(new Error('Captured repository connection is unavailable'));
@@ -650,13 +542,7 @@ export class JsonRpcClient extends EventEmitter {
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
-    // Recovery owns its logical deadline; retain correlation until physical completion.
-    return this.sendNow<T>(
-      method,
-      params,
-      options?.waitForReply ? undefined : timeout,
-      options?.observe,
-    );
+    return this.sendNow<T>(method, params, timeout);
   }
 
   private beginHello(): object {
@@ -677,9 +563,7 @@ export class JsonRpcClient extends EventEmitter {
       return;
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
-    this.confirmedClientId = result.clientId;
     this.nodeCapabilities = Object.freeze({
-      ...capabilities,
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
       agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
@@ -687,7 +571,6 @@ export class JsonRpcClient extends EventEmitter {
     });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
-      eventStreamRecovery: capabilities?.eventStreamRecovery === 1,
       identity: Object.freeze({}),
       repositorySelection:
         (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
@@ -714,7 +597,6 @@ export class JsonRpcClient extends EventEmitter {
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
     });
-    this.emitIdentityConfirmed();
   }
 
   /**
@@ -827,7 +709,6 @@ export class JsonRpcClient extends EventEmitter {
     this.failWaiters(new Error('JSON-RPC client disposed'));
     this.teardownSocket();
     this.repositoryObservers.clear();
-    this.identityConfirmedObservers.clear();
     this.setStatus('disconnected');
     this.removeAllListeners();
     this.finishConnectionOwner();
@@ -948,123 +829,48 @@ export class JsonRpcClient extends EventEmitter {
    * after the call is correlated correctly. Callers must ensure the socket is
    * usable: either `status === 'connected'` or the §5.17 handshake window.
    */
-  private sendNow<T>(
-    method: string,
-    params: unknown,
-    timeoutMs: number | undefined,
-    observe?: (result: unknown) => void,
-  ): Promise<T> {
+  private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
     const socket = this.socket;
-    const incarnation = this.socketIncarnation;
-    const identity = this.repositoryConnection ?? incarnation;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
-      let payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
-      let physical: ReturnType<RecoveryWirePool['trackOrdinary']> | undefined;
-      let waiting: ReturnType<RecoveryWirePool['waitForOrdinary']>;
-      let timedOut = false;
-      const timeout =
-        timeoutMs === undefined
-          ? undefined
-          : setTimeout(() => {
-              timedOut = true;
-              waiting?.cancel();
-              physical?.timeout();
-              if (!physical) this.pending.delete(id);
-              this.observeFrame(() => ({
-                type: 'response',
-                key: `out:${id}`,
-                status: 'timeout',
-                payload: undefined,
-              }));
-              reject(
-                Object.assign(new Error(`JSON-RPC request timed out: ${method}`), {
-                  completion: physical?.completion,
-                  drained: physical?.drained,
-                }),
-              );
-            }, timeoutMs);
-      const fail = (error: unknown) => {
-        clearTimeout(timeout);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      };
-      const send = () => {
-        if (timedOut) return;
-        if (
-          this.socket !== socket ||
-          this.socketIncarnation !== incarnation ||
-          this.disposed ||
-          (method !== HELLO_METHOD && (this.repositoryConnection ?? incarnation) !== identity)
-        ) {
-          fail(new Error('JSON-RPC connection changed before dispatch'));
-          return;
-        }
-        if (timeoutMs !== undefined && method !== HELLO_METHOD && incarnation) {
-          const pool = recoveryPoolForSocket(this, incarnation);
-          try {
-            waiting = pool.waitForOrdinary(identity);
-            if (waiting) {
-              void waiting.promise.then(() => {
-                waiting = undefined;
-                send();
-              }, fail);
-              return;
-            }
-            physical = pool.trackOrdinary(
-              identity,
-              () =>
-                !this.disposed &&
-                this.socketIncarnation === incarnation &&
-                (this.repositoryConnection ?? incarnation) === identity,
-            );
-          } catch (error) {
-            fail(error);
-            return;
+      const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
+      this.observeOutboundRequest(id, method, payload);
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        this.observeFrame(() => ({
+          type: 'response',
+          key: `out:${id}`,
+          status: 'timeout',
+          payload: undefined,
+        }));
+        reject(new Error(`JSON-RPC request timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        method,
+        timeout,
+        resolve: (result) => {
+          if (method === HELLO_METHOD && this.socket === socket) {
+            this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+              ?.protocolVersion;
           }
-        }
-        this.observeOutboundRequest(id, method, payload);
-        this.pending.set(id, {
-          method,
-          timeout,
-          resolve: (result) => {
-            physical?.settle();
-            if (timedOut) return;
-            if (method === HELLO_METHOD && this.socket === socket)
-              this.protocolVersion = (result as { protocolVersion?: unknown } | null)
-                ?.protocolVersion;
-            try {
-              observe?.(result);
-            } catch (error) {
-              fail(error);
-              return;
-            }
-            resolve(result as T);
-          },
-          reject: (error) => {
-            physical?.settle(error);
-            reject(error);
-          },
-        });
-        try {
-          socket?.write(payload);
-          // Retained correlation must not retain a potentially large serialized request body.
-          payload = '';
-        } catch (error) {
-          payload = '';
-          clearTimeout(timeout);
-          this.pending.delete(id);
-          physical?.settle(error);
-          this.observeFrame(() => ({
-            type: 'response',
-            key: `out:${id}`,
-            status: 'send-error',
-            payload: { message: error instanceof Error ? error.message : String(error) },
-          }));
-          fail(error);
-        }
-      };
-      send();
+          resolve(result as T);
+        },
+        reject,
+      });
+      try {
+        socket?.write(payload);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        this.observeFrame(() => ({
+          type: 'response',
+          key: `out:${id}`,
+          status: 'send-error',
+          payload: { message: error instanceof Error ? error.message : String(error) },
+        }));
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 

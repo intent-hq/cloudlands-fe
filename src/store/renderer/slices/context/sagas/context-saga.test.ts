@@ -9,12 +9,6 @@ vi.mock('$lib/client', () => ({
 
 import { addContextItem, updateContextItem } from '../context-slice';
 import { contextSaga } from './context-saga';
-import {
-  beginLifecycleMetadataMutation,
-  contextRecoveryKey,
-  runLifecycleMetadataRead,
-} from '$features/events/lifecycle-metadata-recovery';
-import { RendererEventRecovery } from '$features/events/renderer-event-recovery';
 
 const settle = async () => {
   await Promise.resolve();
@@ -30,24 +24,8 @@ describe('contextSaga', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(undefined);
     const channel = stdChannel();
-    const first = {
-      id: 'first',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'one',
-    };
-    const second = {
-      id: 'second',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'two',
-    };
+    const first = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
+    const second = { id: 'second', kind: 'text' as const, content: 'two', position: 0 };
     const state = {
       byWorkspaceId: {
         'ws-1': { items: createCollection('id', [first]), loading: false, error: null },
@@ -76,24 +54,8 @@ describe('contextSaga', () => {
     Object.assign(firstWrite, { [CANCEL]: cancelFirst });
     mocks.updateContext.mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
     const channel = stdChannel();
-    const first = {
-      id: 'first',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'one',
-    };
-    const second = {
-      id: 'second',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'two',
-    };
+    const first = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
+    const second = { id: 'second', kind: 'text' as const, content: 'two', position: 0 };
     const state = {
       byWorkspaceId: {
         'ws-1': { items: createCollection('id', [first]), loading: false, error: null },
@@ -129,16 +91,8 @@ describe('contextSaga', () => {
     Object.assign(firstWrite, { [CANCEL]: cancelFirst });
     mocks.updateContext.mockReturnValueOnce(firstWrite).mockResolvedValue(undefined);
     const channel = stdChannel();
-    const first = {
-      id: 'first',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'one',
-    };
-    const latest = { ...first, title: 'latest' };
+    const first = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
+    const latest = { ...first, content: 'latest' };
     let items = [first];
     const task = runSaga(
       {
@@ -158,8 +112,8 @@ describe('contextSaga', () => {
     channel.put(addContextItem('ws-1', first));
     await settle();
     items = [latest];
-    channel.put(updateContextItem('ws-1', 'first', { title: 'middle' }));
-    channel.put(updateContextItem('ws-1', 'first', { title: 'latest' }));
+    channel.put(updateContextItem('ws-1', 'first', { content: 'middle' }));
+    channel.put(updateContextItem('ws-1', 'first', { content: 'latest' }));
     await settle();
     expect(cancelFirst).toHaveBeenCalledTimes(1);
     expect(mocks.updateContext).toHaveBeenCalledTimes(3);
@@ -186,15 +140,7 @@ describe('contextSaga', () => {
     Object.assign(secondWrite, { [CANCEL]: cancelSecond });
     mocks.updateContext.mockReturnValueOnce(firstWrite).mockReturnValueOnce(secondWrite);
     const channel = stdChannel();
-    const item = {
-      id: 'first',
-      type: 'note' as const,
-      provider: 'internal' as const,
-      noteId: 'note',
-      createdAt: '',
-      updatedAt: '',
-      title: 'one',
-    };
+    const item = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
     const state = {
       byWorkspaceId: {
         'ws-1': { items: createCollection('id', [item]), loading: false, error: null },
@@ -217,72 +163,4 @@ describe('contextSaga', () => {
     await settle();
     expect(mocks.updateContext).toHaveBeenCalledTimes(2);
   });
-});
-
-describe('context recovery mutation barriers', () => {
-  afterEach(() => vi.clearAllMocks());
-  it.each(['success', 'failure', 'cancel'] as const)(
-    'drains actual persistence after %s without blocking future reads',
-    async (outcome) => {
-      let resolve!: () => void;
-      let reject!: (error: Error) => void;
-      const physical = new Promise<void>((yes, no) => {
-        resolve = yes;
-        reject = no;
-      });
-      mocks.updateContext.mockReturnValue(physical);
-      const item = {
-        id: 'leased',
-        type: 'note' as const,
-        provider: 'internal' as const,
-        noteId: 'note',
-        createdAt: '',
-        updatedAt: '',
-        title: 'new',
-      };
-      const action = addContextItem('lease-context-' + outcome, item);
-      const ws = action.payload[0];
-      const lease = beginLifecycleMetadataMutation(action)!;
-      const channel = stdChannel();
-      const task = runSaga(
-        {
-          channel,
-          dispatch: vi.fn(),
-          getState: () => ({
-            context: {
-              byWorkspaceId: {
-                [ws]: { items: createCollection('id', [item]), loading: false, error: null },
-              },
-            },
-          }),
-        },
-        contextSaga,
-      );
-      const registry = new RendererEventRecovery();
-      const read = vi.fn(async () => []);
-      try {
-        channel.put(action);
-        await settle();
-        const pending = runLifecycleMetadataRead(
-          contextRecoveryKey(ws),
-          registry.capture(contextRecoveryKey(ws)),
-          read,
-        );
-        if (outcome === 'cancel') task.cancel();
-        await settle();
-        expect(read).not.toHaveBeenCalled();
-        if (outcome === 'failure') reject(new Error('offline'));
-        else resolve();
-        await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
-        await pending;
-        expect(mocks.updateContext).toHaveBeenCalledWith(ws, [item]);
-      } finally {
-        resolve();
-        lease.finish();
-        task.cancel();
-        await task.toPromise();
-        registry.dispose();
-      }
-    },
-  );
 });

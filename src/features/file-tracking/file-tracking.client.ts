@@ -1,6 +1,3 @@
-import { trackWorktreeSnapshotRead } from './worktree-read-lane';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { agentLocksRecoveryKey } from './worktree-recovery-keys';
 /** Agent-lock hydration from the daemon (PROTOCOL §5.19). */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -33,7 +30,9 @@ export function toLockRecord(value: unknown): Record<string, true> {
  * A failed read degrades to unlocked (empty records), matching the daemon's
  * own store-failure behavior — a stale locked snapshot must never outlive a
  * hydration attempt; the `changes:agent-locks` event converges it later.
- * The captured owner receipt rejects a reply superseded by a push or loss.
+ * Note: an event landing while this read is in flight is overwritten by the
+ * (older) read response; the daemon only re-emits on diff, so the window is
+ * tiny and self-heals on the next real change.
  */
 function lockReadContext(workspaceId: string): string | null {
   const state = appStore.state;
@@ -54,15 +53,11 @@ function lockReadContext(workspaceId: string): string | null {
 export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
   const context = lockReadContext(workspaceId);
   if (!context) return;
-  const receipt = rendererEventRecovery.capture(agentLocksRecoveryKey(workspaceId));
   let lockedAgentIds: Record<string, true> = {};
   let lockedFilePaths: Record<string, true> = {};
   try {
-    const result = await trackWorktreeSnapshotRead(agentLocksRecoveryKey(workspaceId), () => {
-      if (!receipt.commit(() => undefined)) throw new Error('Lock authority expired');
-      return backendRequest<Record<string, unknown>>('file-tracking.getAgentLocks', {
-        workspaceId,
-      });
+    const result = await backendRequest<Record<string, unknown>>('file-tracking.getAgentLocks', {
+      workspaceId,
     });
     lockedAgentIds = toLockRecord(result?.lockedAgentIds);
     lockedFilePaths = toLockRecord(result?.lockedFilePaths);
@@ -70,7 +65,5 @@ export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
     // Degrade to unlocked; the `changes:agent-locks` event converges it later.
   }
   if (lockReadContext(workspaceId) !== context) return;
-  receipt.commit(() => {
-    appStore.dispatch(setAgentLockState(workspaceId, lockedAgentIds, lockedFilePaths));
-  });
+  appStore.dispatch(setAgentLockState(workspaceId, lockedAgentIds, lockedFilePaths));
 }

@@ -1,6 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { AGENT_PERMISSIONS_RECOVERY_KEY } from '$features/agent/agent-recovery-keys';
-import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import { permissionRecoverySaga } from './permission-recovery-saga';
 import { call, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -25,8 +22,6 @@ function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<
   if (!request?.workspaceId) return;
   const context = yield* selectWorkspacePermissionContext.effect(request.workspaceId);
   if (!context) return;
-  const recovery = rendererEventRecovery.capture(AGENT_PERMISSIONS_RECOVERY_KEY);
-  if (!recovery.commit(() => undefined)) return;
   try {
     const result = yield* call(
       [appClient.agents, appClient.agents.respondPermission],
@@ -34,14 +29,9 @@ function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<
       outcome,
       request.workspaceId,
     );
-    if (
-      !recovery.commit(() => undefined) ||
-      context !== (yield* selectWorkspacePermissionContext.effect(request.workspaceId))
-    )
-      return;
+    if (context !== (yield* selectWorkspacePermissionContext.effect(request.workspaceId))) return;
     if (getItem(yield* selectPermissionRequestsCollection.effect(), requestId) !== request) return;
-    if (result.success)
-      yield* put(withRecoveryLifetime(removePermissionRequest(requestId), recovery));
+    if (result.success) yield* put(removePermissionRequest(requestId));
     else logger.error('Permission response failed', { requestId, outcome, error: result.error });
   } catch (error) {
     logger.error('Permission response threw', { requestId, outcome, error });

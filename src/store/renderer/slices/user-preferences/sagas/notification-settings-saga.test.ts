@@ -1,8 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { retireSettingsWork } from '$features/settings/settings-recovery-lifetime';
-
 const mocks = vi.hoisted(() => ({ backendRequest: vi.fn(), warn: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
@@ -12,7 +10,6 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
 import {
-  initialState,
   notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
@@ -41,7 +38,6 @@ const settle = async () => {
 
 describe('notificationSettingsSaga', () => {
   beforeEach(() => {
-    retireSettingsWork(true);
     vi.useFakeTimers();
     vi.clearAllMocks();
     __resetSettingsReadCacheForTests();
@@ -68,7 +64,7 @@ describe('notificationSettingsSaga', () => {
     );
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, getState: () => ({}) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
 
@@ -97,13 +93,13 @@ describe('notificationSettingsSaga', () => {
       }),
     );
     await runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, getState: () => ({}) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
     mocks.backendRequest.mockReset().mockRejectedValue(new Error('offline'));
     __resetSettingsReadCacheForTests();
     await runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, getState: () => ({}) },
       hydrateNotificationSettingsWorker,
     ).toPromise();
 
@@ -245,53 +241,4 @@ describe('notificationSettingsSaga', () => {
       paths.map((path) => ['settings.get', { path }]),
     );
   });
-});
-
-it('drops a notification edit queued before recovery', async () => {
-  vi.useFakeTimers();
-  retireSettingsWork(true);
-  mocks.backendRequest.mockClear();
-  const dispatch = vi.fn();
-  const task = runSaga(
-    { dispatch, getState: () => ({ userPreferences: { volume: 0.9 } }) },
-    persistNotificationSettingsWorker,
-  );
-  retireSettingsWork(true);
-  await vi.advanceTimersByTimeAsync(100);
-  await task.toPromise();
-  expect(mocks.backendRequest).not.toHaveBeenCalled();
-  expect(dispatch).not.toHaveBeenCalled();
-  vi.useRealTimers();
-});
-
-it('does not settle a notification write after its authority retires', async () => {
-  vi.useFakeTimers();
-  retireSettingsWork(true);
-  let resolve!: (value: { revision: number }) => void;
-  mocks.backendRequest.mockReturnValue(
-    new Promise((done) => {
-      resolve = done;
-    }),
-  );
-  const dispatch = vi.fn();
-  const task = runSaga(
-    {
-      dispatch,
-      getState: () => ({
-        userPreferences: {
-          volume: 0.9,
-          pendingNotificationVolumeEditId: 1,
-          notificationVolumeHydrationEpoch: 0,
-        },
-      }),
-    },
-    persistNotificationSettingsWorker,
-  );
-  await vi.advanceTimersByTimeAsync(100);
-  retireSettingsWork(false);
-  resolve({ revision: 20 });
-  await task.toPromise();
-  expect(dispatch).not.toHaveBeenCalled();
-  retireSettingsWork(true);
-  vi.useRealTimers();
 });

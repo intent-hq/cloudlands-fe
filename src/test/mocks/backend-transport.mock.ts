@@ -185,18 +185,6 @@ function mockIsBackendAvailable(): boolean {
  * write the module-level `state` so `installMockBackend()` can drive them.
  */
 export const mockBackendTransportModule = {
-  onEventRecoveryReady: () => () => {},
-  async captureBackendEventRecovery() {
-    const { createEventRecoverySession } = await import('$shared/event-recovery/session');
-    return createEventRecoverySession({
-      supported: false,
-      isCurrent: () => true,
-      request: (method, params) => mockBackendRequest(method, params),
-      onNotification: mockOnBackendNotification,
-      onRetired: () => () => {},
-      dispose: () => {},
-    });
-  },
   async prepareBackendNativeReview(input: NativeReviewInput): Promise<NativeReviewSession> {
     if (!state.nativePrepare)
       throw new BackendError({

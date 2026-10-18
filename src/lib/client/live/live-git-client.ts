@@ -1,6 +1,3 @@
-import { trackWorktreeSnapshotRead } from '$features/file-tracking/worktree-read-lane';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { gitStatusRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
 /**
  * Live git domain backed by the intentd daemon.
  *
@@ -141,13 +138,9 @@ function fetchStatus(
     if (existing) return existing;
   }
 
-  const receipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspaceId));
-  const request = trackWorktreeSnapshotRead(gitStatusRecoveryKey(workspaceId), () => {
-    if (!receipt.commit(() => undefined)) throw new Error('Git status authority expired');
-    return backendRequest<unknown>('git.status', {
-      workspaceId,
-      ...(options?.forceRefresh ? { forceRefresh: true } : {}),
-    });
+  const request = backendRequest<unknown>('git.status', {
+    workspaceId,
+    ...(options?.forceRefresh ? { forceRefresh: true } : {}),
   })
     .then((result) => {
       if (!result || typeof result !== 'object') return null;
@@ -180,7 +173,7 @@ function toDiffLine(raw: unknown): DiffLine {
 }
 
 /** Map the daemon `git.diffs` bare-array result into renderer `DiffChunk[]`. */
-export function toDiffChunks(result: unknown): DiffChunk[] {
+function toDiffChunks(result: unknown): DiffChunk[] {
   const entries = Array.isArray(result) ? result : [];
   const chunks: DiffChunk[] = [];
   for (const entry of entries) {
@@ -231,7 +224,7 @@ function toCommitFile(raw: unknown): CommitFile | null {
  * metadata-only list payload — carried through as absent (not healed to `[]`)
  * so consumers lazily fetch `git.commitDetails` on demand.
  */
-export function toCommitInfo(raw: unknown): CommitInfo | null {
+function toCommitInfo(raw: unknown): CommitInfo | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const hash = typeof r.hash === 'string' ? r.hash : '';
@@ -256,7 +249,7 @@ export function toCommitInfo(raw: unknown): CommitInfo | null {
 }
 
 /** Map a daemon `git.commitDetails` entry into a renderer `CommitDetailsResult`. */
-export function normalizeCommitDetails(
+function normalizeCommitDetails(
   raw: Record<string, unknown>,
   fallbackHash: string,
 ): CommitDetailsResult {
