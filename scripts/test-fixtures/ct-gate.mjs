@@ -36,11 +36,22 @@ module.exports = {
 `,
   );
   const script = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).scripts['test:ct'];
+  // Like the real script, the launcher must receive the forwarded args first,
+  // so a leading `--` from the package manager stays strippable; the control
+  // config is appended after them.
+  const entry = join(root, 'test-ct.cjs');
+  writeFileSync(
+    entry,
+    `const { spawnSync } = require('node:child_process');
+const result = spawnSync(process.execPath, [${JSON.stringify(launcher)}, ...process.argv.slice(2), '-c', ${JSON.stringify(config)}], { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`,
+  );
   writeFileSync(
     join(root, 'package.json'),
     JSON.stringify({
       scripts: {
-        'test:ct': `${script.replace('scripts/run-ct-tests.mjs', JSON.stringify(launcher))} -c ${JSON.stringify(config)}`,
+        'test:ct': script.replace('node scripts/run-ct-tests.mjs', `node ${JSON.stringify(entry)}`),
       },
     }),
   );
