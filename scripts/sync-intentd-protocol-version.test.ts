@@ -1,3 +1,5 @@
+// @verify-changed-triggers: intentd.version, src/test/current-protocol-version.ts
+
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';

@@ -53,7 +53,10 @@ const NON_VERSION_SHAPES = [
 // block comment, so a bare token, `token:` alone, or the token inside a string does not
 // exempt — every exemption stays auditable.
 const escapePattern = (token, openers) => new RegExp(`(?:${openers})\\s*${token}:\\s*(?!\\*/)\\S`);
-const LINE_ESCAPE_PATTERN = escapePattern(ESCAPE_TOKEN, '//|/\\*');
+// A reasoned `fixture-protocol-version:` comment (scripts/check-fixture-protocol-versions.mjs)
+// already marks a deliberate test-fixture version, so it exempts the line here too.
+const FIXTURE_ESCAPE_TOKEN = 'fixture-protocol-version';
+const LINE_ESCAPE_PATTERN = escapePattern(`(?:${ESCAPE_TOKEN}|${FIXTURE_ESCAPE_TOKEN})`, '//|/\\*');
 const FILE_ESCAPE_PATTERN = escapePattern(FILE_ESCAPE_TOKEN, '//|/\\*|^\\s*\\*');
 
 const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
