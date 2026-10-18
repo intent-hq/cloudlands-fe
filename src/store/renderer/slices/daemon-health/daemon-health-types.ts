@@ -229,6 +229,12 @@ export interface DaemonHealthStats {
    * both as unproven.
    */
   protocolVersion?: ProtocolVersion;
+  /**
+   * The `system.status` protocol version exactly as reported, for the status
+   * panel only — including a malformed one, which is useful when debugging.
+   * Never gate on it: use {@link DaemonHealthStats.protocolVersion}.
+   */
+  protocolVersionText?: string;
   uptimeSeconds?: number;
   /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). Optional for older daemons. */
   cpuPercent?: number;

@@ -1,7 +1,6 @@
 <script lang="ts" module>
   import { Button } from '$lib/components/ui/button';
   import { formatDateTime, formatNumber } from '$lib/i18n/format';
-  import { formatProtocolVersion } from '$shared/protocol-version';
 
   /**
    * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
@@ -680,10 +679,10 @@
                   {/if}
 
                   <!-- Protocol version -->
-                  {#if $stats$.protocolVersion !== undefined}
+                  {#if $stats$.protocolVersionText !== undefined}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
-                      <span class="text-xs">{formatProtocolVersion($stats$.protocolVersion)}</span>
+                      <span class="text-xs">{$stats$.protocolVersionText}</span>
                     </div>
                   {/if}
 

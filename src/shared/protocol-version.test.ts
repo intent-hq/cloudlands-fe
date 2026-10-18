@@ -1,10 +1,10 @@
 // protocol-version-ok-file: version-gate boundary fixtures under test.
 import { describe, expect, it } from 'vitest';
 import {
-  formatProtocolVersion,
   parseProtocolVersion,
   protocolMajor,
   protocolVersionAtLeast,
+  protocolVersionBelow,
   type ProtocolVersion,
 } from './protocol-version';
 import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
@@ -17,8 +17,8 @@ import { assertScopedFileReadSupport } from './root-file-read-support';
 
 describe('parseProtocolVersion', () => {
   it('accepts major.minor with an optional patch, trimmed', () => {
-    expect(formatProtocolVersion(parseProtocolVersion('15.0')!)).toBe('15.0');
-    expect(formatProtocolVersion(parseProtocolVersion(' 10.12.3 ')!)).toBe('10.12.3');
+    expect(parseProtocolVersion('15.0') as unknown).toBe('15.0');
+    expect(parseProtocolVersion(' 10.12.3 ') as unknown).toBe('10.12.3');
   });
 
   it('is a plain string at runtime, so it crosses IPC and the store unchanged', () => {
@@ -105,6 +105,22 @@ describe('protocolVersionAtLeast boundaries', () => {
 
 describe('a value forced past the parser still fails closed', () => {
   it.each(['dev', '14', 'v15.0', ''])('rejects %j cast to ProtocolVersion', (raw) => {
-    expect(protocolVersionAtLeast(raw as unknown as ProtocolVersion, 0)).toBe(false);
+    const forced = raw as unknown as ProtocolVersion;
+    expect(protocolVersionAtLeast(forced, 0)).toBe(false);
+    // Nor is it mistaken for a proven-old daemon.
+    expect(protocolVersionBelow(forced, 99)).toBe(false);
+  });
+});
+
+describe('protocolVersionBelow (proven-old daemons only)', () => {
+  const below = (raw: unknown) => protocolVersionBelow(parseProtocolVersion(raw), 10, 4);
+  it('is true only for a well-formed version under the minimum', () => {
+    expect(below('10.3')).toBe(true);
+    expect(below('9.99')).toBe(true);
+    expect(below('10.4')).toBe(false);
+    expect(below('16.0')).toBe(false);
+  });
+  it.each([undefined, null, '', '10', '10.x'])('is false for unknown %j', (raw) => {
+    expect(below(raw)).toBe(false);
   });
 });

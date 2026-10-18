@@ -29,8 +29,9 @@ declare const protocolVersionBrand: unique symbol;
  * renderer store unchanged. To the type checker it is opaque: it has no string
  * methods and does not compare with `===`, `<` or `>` against a literal, so a
  * cap like `/^14\./.test(version)` or `major === 15` cannot compile. The only
- * question it answers is {@link protocolVersionAtLeast}; show it to users with
- * {@link formatProtocolVersion}.
+ * questions it answers are {@link protocolVersionAtLeast} and its negation for
+ * a proven-old daemon, {@link protocolVersionBelow}. There is deliberately no
+ * way back to a string: display the wire text the version arrived as.
  */
 export type ProtocolVersion = { readonly [protocolVersionBrand]: 'ProtocolVersion' };
 
@@ -69,9 +70,19 @@ export function protocolVersionAtLeast(
   return parsed.minor >= minor;
 }
 
-/** The version text, for display only — never parse or compare it. */
-export function formatProtocolVersion(version: ProtocolVersion): string {
-  return version as unknown as string;
+/**
+ * Whether `version` is a proven-old daemon: well-formed and below
+ * `major.minor`. An unknown version is `false`, so a missing or malformed
+ * report never downgrades a modern daemon to a legacy contract — the opposite
+ * default from {@link protocolVersionAtLeast}, which never sends a new feature
+ * to an unproven daemon.
+ */
+export function protocolVersionBelow(
+  version: ProtocolVersion | null | undefined,
+  major: number,
+  minor = 0,
+): boolean {
+  return !!version && segments(version) !== null && !protocolVersionAtLeast(version, major, minor);
 }
 
 /**

@@ -1,4 +1,8 @@
-import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
+import {
+  protocolVersionAtLeast,
+  protocolVersionBelow,
+  type ProtocolVersion,
+} from '$shared/protocol-version';
 
 /** First protocol version whose daemon accepts the separate reasoning-effort field. */
 const REASONING_EFFORT_MIN_PROTOCOL = { major: 5, minor: 2 } as const;
@@ -19,5 +23,6 @@ export function supportsReasoningEffortProtocol(protocolVersion?: ProtocolVersio
  * model-id suffix.
  */
 export function usesLegacyReasoningEffort(protocolVersion?: ProtocolVersion | null): boolean {
-  return !!protocolVersion && !supportsReasoningEffortProtocol(protocolVersion);
+  const { major, minor } = REASONING_EFFORT_MIN_PROTOCOL;
+  return protocolVersionBelow(protocolVersion, major, minor);
 }

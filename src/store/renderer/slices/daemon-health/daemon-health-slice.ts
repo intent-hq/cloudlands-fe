@@ -392,6 +392,7 @@ daemonHealthReducer.with(
       version: wirePayload.version,
       buildCommit: wirePayload.buildCommit,
       protocolVersion: parseProtocolVersion(wirePayload.protocolVersion) ?? undefined,
+      protocolVersionText: wirePayload.protocolVersion,
       uptimeSeconds: wirePayload.uptimeSeconds,
       cpuPercent: wirePayload.cpuPercent,
       memoryBytes: wirePayload.memoryBytes,
