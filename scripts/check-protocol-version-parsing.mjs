@@ -21,23 +21,31 @@ export const REMEDIATION_HINT = [
 const SCAN_ROOT = 'src';
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const GENERATED_FILES = new Set(['src/preload/index.ts']);
-// Tests and fixtures feed versions into gates on purpose; the gates they exercise are scanned.
+// Tests, fixtures and component previews feed versions into gates on purpose; the
+// gates they exercise are scanned.
 const TEST_PATH_PATTERN =
-  /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]s$|\.fixtures?\.[cm]?[jt]s$/;
+  /(?:^|\/)__tests__\/|\.(?:test|spec)\.[cm]?[jt]s$|\.fixtures?\.[cm]?[jt]s$|\.preview\.(?:svelte|[cm]?[jt]s)$/;
 
 // A daemon protocol version, named as `protocolVersion` / `protocol_version` (any
-// casing or suffix) or `protocolMajor`. MCP/ACP handshakes also say `protocolVersion`
-// but are never parsed, so they do not trip the operations below.
-const VERSION_REFERENCE_PATTERN = /protocol_?(?:version|major)/i;
-// Hand parsing or comparison of that value: regex use, splitting, string slicing,
-// numeric coercion, or a comparison against a quoted number.
+// casing or suffix), `protocolMajor`, or a bare `protocol` variable (not a URL's
+// `.protocol` property). MCP/ACP handshakes also say `protocolVersion` but are never
+// parsed or compared, so they do not trip the operations below. A value aliased to an
+// unrelated name escapes this line-level check; route it through the helper anyway.
+const VERSION_REFERENCE_PATTERN = /protocol_?(?:version|major)|(?<![.\w])protocol\b/i;
+// Hand parsing, comparison or pinning of that value: regex use, splitting, string
+// slicing, numeric coercion, allowlists, `case` labels, comparison against a number or
+// a quoted number (`(?<!=)>` keeps arrow functions out), or a quoted `major.minor` literal.
 const PARSE_PATTERNS = [
-  /\.(?:match|matchAll|test|exec|split|startsWith|endsWith|localeCompare|slice|substring|substr|charAt|indexOf)\(/,
+  /\.(?:match|matchAll|test|exec|split|startsWith|endsWith|localeCompare|slice|substring|substr|charAt|indexOf|includes)\(/,
   /\bnew\s+RegExp\(|\bRegExp\(/,
   /\bparse(?:Int|Float)\(|\bNumber\(/,
-  /(?:===|!==|==|!=|<=|>=|<|>)\s*['"`]\d/,
-  /['"`]\d[\d.]*['"`]\s*(?:===|!==|==|!=|<=|>=|<|>)/,
+  /(?:===|!==|==|!=|<=|>=|<|(?<!=)>)\s*['"`]?\d/,
+  /\d['"`]?\s*(?:===|!==|==|!=|<=|>=|<|(?<!=)>)/,
+  /\bcase\s+['"`]?\d/,
+  /['"`]\d+\.\d+(?:\.\d+)?['"`]/,
 ];
+// Plain string contents ("dangerous protocol", 'protocol') are not references to a version.
+const QUOTED_PATTERN = /(['"])(?:\\.|(?!\1)[^\\])*\1/g; // template literals may hold `${code}`
 const COMMENT_LINE_PATTERN = /^\s*(?:\/\/|\/\*|\*)/;
 // An escape counts only as a comment with a non-empty reason.
 const LINE_ESCAPE_PATTERN = new RegExp(`(?://|/\\*)\\s*${ESCAPE_TOKEN}:\\s*(?!\\*/)\\S`);
@@ -53,7 +61,7 @@ export const isScannedPath = (filePath) =>
 /** Whether one source line parses or compares a protocol version by hand. */
 export function isHandParsedProtocolVersion(text) {
   if (COMMENT_LINE_PATTERN.test(text) || LINE_ESCAPE_PATTERN.test(text)) return false;
-  if (!VERSION_REFERENCE_PATTERN.test(text)) return false;
+  if (!VERSION_REFERENCE_PATTERN.test(text.replace(QUOTED_PATTERN, '""'))) return false;
   return PARSE_PATTERNS.some((pattern) => pattern.test(text));
 }
 

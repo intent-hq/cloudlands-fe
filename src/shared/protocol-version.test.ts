@@ -42,10 +42,46 @@ describe('protocol gates have no upper bound (intent-hq/intent#7206)', () => {
   });
 });
 
-describe('protocolMajor', () => {
-  it('reads the leading segment for the warn-only mismatch notice', () => {
-    expect(protocolMajor('15.0')).toBe(15);
+describe('protocolMajor (warn-only mismatch notice)', () => {
+  it('extracts the leading integer segment', () => {
     expect(protocolMajor('1')).toBe(1);
+    expect(protocolMajor('2.2')).toBe(2);
+    expect(protocolMajor('10.4.1')).toBe(10);
+    expect(protocolMajor(' 3.0 ')).toBe(3);
+  });
+
+  it('returns null for absent or non-numeric majors', () => {
+    expect(protocolMajor(null)).toBeNull();
+    expect(protocolMajor(undefined)).toBeNull();
+    expect(protocolMajor('')).toBeNull();
     expect(protocolMajor('v2')).toBeNull();
+    expect(protocolMajor('beta')).toBeNull();
+  });
+});
+
+describe('protocolVersionAtLeast boundaries', () => {
+  it('compares major.minor numerically, not lexically', () => {
+    expect(protocolVersionAtLeast('10.4', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.10', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.4.1', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast(' 10.5 ', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.3', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('10', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('10.0', 10, 0)).toBe(true);
+  });
+
+  it('passes any greater major regardless of minor', () => {
+    expect(protocolVersionAtLeast('11.0', 10, 4)).toBe(true);
+    // A bare major is malformed: daemons always report major.minor.
+    expect(protocolVersionAtLeast('11', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('9.99', 10, 4)).toBe(false);
+  });
+
+  it('is false for absent or unparsable versions', () => {
+    expect(protocolVersionAtLeast(null, 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast(undefined, 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('v10.4', 10, 4)).toBe(false); // protocol-version-ok: malformed-input fixture
+    expect(protocolVersionAtLeast('10.x', 10, 4)).toBe(false);
   });
 });

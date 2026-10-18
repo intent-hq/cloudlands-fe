@@ -59,6 +59,9 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
     ['0.9.136', '11.2'],
     ['0.9.86', '10.3'],
     [undefined, '11.2'],
+    // No upper bound; a bare major is malformed metadata and defers to principal.me.
+    [undefined, '16.0'],
+    [undefined, '16'],
   ])(
     'accepts identity-compatible daemon %s regardless of product version age',
     async (version, protocolVersion) => {

@@ -47,6 +47,13 @@ describe('isHandParsedProtocolVersion', () => {
     'const major = Number(protocolVersion.trim().slice(0, 2));',
     'const major = parseInt(state.protocol_version, 10);',
     'const pattern = new RegExp(`^${protocolMajor}\\\\.`);',
+    // Review follow-ups: numeric caps on the helper, allowlists, pins, case labels, aliases.
+    'if (protocolMajor(hello.server.protocolVersion) === 15) return true;',
+    'return protocolMajor(protocolVersion) <= 15;',
+    "if (['14.0', '15.0'].includes(protocolVersion)) return true;",
+    "assert.equal(hello.server?.protocolVersion, '13.3');",
+    "switch (protocolVersion) { case '15.0': return true; }",
+    '/^\\d+(?:\\.\\d+)*$/.test(protocol.trim()) &&',
   ])('flags %s', (line) => {
     expect(isHandParsedProtocolVersion(line)).toBe(true);
   });
@@ -59,6 +66,9 @@ describe('isHandParsedProtocolVersion', () => {
     '// protocolVersion.match(/^14\\./) is how the cap crept in',
     ' * `protocolVersion.split(".")` — prose in a doc comment',
     "const parts = url.split('/');",
+    "logger.warn('Blocked dangerous protocol navigation', { url: url.substring(0, 100) });",
+    "const secure = new URL(target).protocol.startsWith('https');",
+    "const label = (protocolVersion: string) => 'unknown';",
     `if (protocolVersion.startsWith('15.')) return true; // ${ESCAPE_TOKEN}: fixture for a migration shim`,
   ])('allows %s', (line) => {
     expect(isHandParsedProtocolVersion(line)).toBe(false);
@@ -90,6 +100,8 @@ describe('findProtocolVersionParsingHits', () => {
     'src/lib/a.test.ts',
     'src/lib/__tests__/a.ts',
     'src/features/x/x.fixture.ts',
+    'src/lib/components/x/x.preview.svelte',
+    'src/lib/components/x/x.preview.ts',
     'src/preload/index.ts',
     'src/lib/a.json',
   ])('skips %s', (path) => {
