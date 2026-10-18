@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.18](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.17...v2.219.18) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep suggested prompt rows still when shortcut hints appear ([#3463](https://github.com/intent-hq/cloudlands-fe/issues/3463)) ([722258c](https://github.com/intent-hq/cloudlands-fe/commit/722258cc55ca34267e8a8d0282088c9bfaddfb05))
+* **chat:** match attention notices by kind and timestamp only ([#3465](https://github.com/intent-hq/cloudlands-fe/issues/3465)) ([da8e6af](https://github.com/intent-hq/cloudlands-fe/commit/da8e6af6a2516130f7f884be4de2db696dabf48b))
+
 ## [2.219.17](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.16...v2.219.17) (2026-10-18)
 
 
