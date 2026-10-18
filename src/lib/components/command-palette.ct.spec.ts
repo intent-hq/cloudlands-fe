@@ -173,27 +173,44 @@ test('palette widens to show every filter without scrolling at 1280px', async ({
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(1280);
+  expect(Math.abs(box.x + box.width / 2 - 640)).toBeLessThanOrEqual(1);
   await testInfo.attach('palette-all-filters-1280px', {
     body: await dialog.screenshot(),
     contentType: 'image/png',
   });
+
+  // Entering and leaving go-to-line mode must not make the palette jump in width.
+  const input = dialog.getByRole('textbox');
+  await input.fill(':');
+  await expect(filters).toBeHidden();
+  expect((await dialog.boundingBox())!.width).toBeCloseTo(box.width, 0);
+  await input.fill('');
+  await expect(filters).toBeVisible();
+  expect((await dialog.boundingBox())!.width).toBeCloseTo(box.width, 0);
 });
 
-// A long result title is truncated rather than stretching the palette past its filter row.
-test('long result titles do not widen the palette beyond its filter row', async ({
+// Long result titles and long queries truncate rather than stretching the palette past
+// its filter row, and a narrower filter row keeps the palette at its 640px floor.
+test('long result titles and queries do not widen the palette beyond its filter row', async ({
   mount,
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(CommandPalettePreview, {
+  const component = await mount(CommandPalettePreview, {
+    props: { initialQuery: '#' },
     hooksConfig: { previewScene: { scene: 'command-palette', state: 'long-names' } },
   });
   const dialog = page.getByRole('dialog');
   await expect(dialog.locator('[data-palette-result]').first()).toBeVisible();
   const geometry = await filterStripGeometry(page);
   expect(geometry.overflow).toBeLessThanOrEqual(1);
+  expect(geometry.dialogWidth).toBeGreaterThanOrEqual(639);
   expect(geometry.dialogWidth).toBeLessThanOrEqual(Math.max(geometry.stripContentWidth, 640) + 2);
+
+  await component.update({ props: { initialQuery: `no-match-${'x'.repeat(240)}` } });
+  await expect(dialog.locator('[data-palette-result]')).toHaveCount(0);
+  expect((await dialog.boundingBox())!.width).toBeCloseTo(geometry.dialogWidth, 0);
 });
 
 test('palette show-more filtering preserves keyboard focus and scrolls the current row into view', async ({

@@ -1004,9 +1004,10 @@
 
 {#if isOpen}
   <!-- Width follows the filter strip (640px floor, viewport cap); other sections use
-       contain-inline-size so long titles or queries truncate instead of widening it. -->
+       contain-inline-size so long titles or queries truncate instead of widening it.
+       Centered with auto margins, not a translate, so odd widths avoid half-pixel offsets. -->
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-max min-w-[min(640px,calc(100%-1rem))] max-w-[calc(100%-1rem)] z-50"
+    class="fixed inset-x-0 top-[12%] mx-auto w-max min-w-[min(640px,calc(100%-1rem))] max-w-[calc(100%-1rem)] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
@@ -1044,7 +1045,11 @@
 
       <div class="h-px shrink-0 bg-border"></div>
 
-      {#if !isGoToLineMode}
+      <!-- Go-to-line hides the strip but keeps it mounted, so the palette width does not jump. -->
+      <div
+        class={isGoToLineMode ? 'invisible h-0 overflow-hidden' : 'contents'}
+        inert={isGoToLineMode}
+      >
         <CommandPaletteFilters
           bind:this={filtersRef}
           {workspaceId}
@@ -1052,7 +1057,7 @@
           isCollaborator={$isCollaborator$}
           onFilter={applyFilter}
         />
-      {/if}
+      </div>
 
       {#if isGoToLineMode}
         <div class="min-h-0 max-h-[480px] overflow-y-auto p-1 contain-inline-size">
