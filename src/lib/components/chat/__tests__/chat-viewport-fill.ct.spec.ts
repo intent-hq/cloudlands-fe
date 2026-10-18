@@ -565,11 +565,13 @@ test('unread entry holds at the oldest loaded unseen row, then never jumps at co
     await component.update({ props: unreadProps('m-6', received) });
     const oldest = `[data-message-id="m-${21 - received}"]`;
     await expect(component.locator(oldest).first()).toHaveCount(1);
-    // The oldest loaded row (the earliest unseen row so far) stays in view.
+    // The oldest loaded row (the earliest unseen row so far) stays in view —
+    // with the bottom pinned it would scroll above the viewport.
     await expect
       .poll(async () => {
         const offset = await offsetFromViewportTop(viewport, oldest);
-        return offset !== null && offset >= -2 && offset < 120;
+        const height = await viewport.evaluate((node) => node.clientHeight);
+        return offset !== null && offset >= -2 && offset < height - 40;
       })
       .toBe(true);
   }
@@ -639,4 +641,35 @@ test('unread entry with the marker older than the initial window stays at the ol
   const after = await offsetFromViewportTop(viewport, '[data-message-id="m-1"]');
   expect(Math.abs(after! - before!)).toBeLessThanOrEqual(2);
   expect(await distanceFromBottom(viewport)).toBeGreaterThan(40);
+});
+
+test('user scroll during the unread entry hold keeps the reader position through completion', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ChatViewportFillHost, { props: unreadProps('m-6', 12) });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  await expect(component.locator('[data-message-id="m-9"]').first()).toHaveCount(1);
+  await expect.poll(() => distanceFromBottom(viewport)).toBeGreaterThan(200);
+  // Stay clearly away from the bottom so the read position is row-anchored.
+  await viewport.hover();
+  await page.mouse.wheel(0, 60);
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(20);
+  const reading = await viewport.evaluate((node) => {
+    const top = node.getBoundingClientRect().top;
+    const row = [...node.querySelectorAll<HTMLElement>('[data-message-id]')].find(
+      (row) => row.getBoundingClientRect().top >= top,
+    )!;
+    return { id: row.dataset.messageId, top: row.getBoundingClientRect().top };
+  });
+  for (let received = 13; received <= 20; received++) {
+    await component.update({ props: unreadProps('m-6', received) });
+    await expect(component.locator(`[data-message-id="m-${21 - received}"]`).first()).toHaveCount(
+      1,
+    );
+  }
+  await component.update({ props: unreadProps('m-6', 20, true) });
+  await page.waitForTimeout(1200);
+  const row = component.locator(`[data-message-id="${reading.id}"]`).first();
+  expect(Math.abs((await row.boundingBox())!.y - reading.top)).toBeLessThan(5);
 });

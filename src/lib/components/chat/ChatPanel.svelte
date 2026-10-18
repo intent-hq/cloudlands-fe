@@ -204,6 +204,7 @@
     dividerVisibleWhenScrolledToBottom,
     dividerDefersToTurnBoundary,
     dividerEntryScrollTop,
+    resolveUnreadEntryPhase,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
@@ -3549,6 +3550,12 @@
     // positions the viewport at the target; restoring the pre-landing
     // anchor would fight it.
     if (untrack(() => seekLandingPending || $fetchingHistorySeek$)) return;
+    // Unread entry hold: every loaded row is unseen, so the prepend keeps the
+    // top of the content in view instead of a row anchor (see the hold).
+    if (untrack(() => unreadEntryHold !== null)) {
+      void tick().then(settleUnreadEntryHold);
+      return;
+    }
     const following = untrack(() => shouldFollowBottom && !showSearch);
     const anchor = following ? null : captureScrollAnchor(container);
     const navigationId = scrollNavigationId;
@@ -3586,12 +3593,33 @@
   // stop-looking boundaries (tab close / active-workspace switch — see
   // divider-session-boundary-service).
   let latchedDividerSessionAgentId: string | null = null;
+  const seenMarkerId = $derived(
+    typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
+      ? $agentSession$.metadata.lastSeenMessageId
+      : undefined,
+  );
+  function unreadEntryPhaseFor(marker: string | undefined) {
+    return resolveUnreadEntryPhase(
+      $agentMessages$.map((message) => message.id),
+      marker,
+      {
+        complete: !$initialHistoryPending$,
+        truncated: $transcriptSnapshotMeta$?.truncated === true,
+      },
+    );
+  }
   $effect(() => {
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
+    // While progressive initial history is still streaming (hydration only
+    // settles at completion), latch as soon as the seen-marker row has
+    // arrived: rows arrive newest-first, so every unseen row is already
+    // loaded and the anchor is final (never from the newest row alone — a
+    // marker AT the newest row stays 'none').
+    const earlyLatch =
+      $initialHistoryPending$ && unreadEntryPhaseFor(seenMarkerId) === 'marker-loaded';
     if (
-      $transcriptHydration$ !== 'settled' ||
-      $initialHistoryPending$ ||
-      $awaitingSwitchBackSnapshot$
+      $awaitingSwitchBackSnapshot$ ||
+      (!earlyLatch && ($transcriptHydration$ !== 'settled' || $initialHistoryPending$))
     )
       return;
     latchedDividerSessionAgentId = agentId;
@@ -3600,9 +3628,7 @@
         agentId,
         resolveNewMessagesDividerAnchor(
           $agentMessages$.map((message) => message.id),
-          typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
-            ? $agentSession$.metadata.lastSeenMessageId
-            : undefined,
+          seenMarkerId,
         ),
       ),
     );
@@ -3634,6 +3660,116 @@
     hasAppliedNewMessagesEntryScroll = true;
     void scrollToNewMessagesDivider(anchor);
   });
+
+  // ── Unread entry hold while progressive initial history streams (§7.1) ──
+  // Rows arrive newest-first, so until the seen-marker row lands every loaded
+  // row is unseen and the reading point is the TOP of the loaded content.
+  // Following the bottom here and only scrolling to the divider on completion
+  // produced a late jump. Instead, entry holds the viewport at the top of the
+  // loaded rows (follow off) while older unseen rows prepend; when the marker
+  // row lands (the divider latches early, above) it settles ONCE: follow the
+  // bottom when the unseen tail fits on screen, otherwise put the divider at
+  // the top of the viewport. Completion then never re-scrolls. If the transfer
+  // completes without the marker, a truncated transcript means the marker is
+  // older than the initial window (stay at the oldest loaded unseen row); a
+  // whole loaded transcript means a dangling marker (follow the bottom).
+  // User scroll input, re-enabled follow (send, scroll-to-bottom), or search
+  // release the hold. The captured marker is used throughout so a mark-seen
+  // landing at completion cannot reclassify the entry.
+  let unreadEntryHold = $state<{ marker: string } | null>(null);
+  let unreadEntryHoldConsidered = false;
+  $effect(() => {
+    if (unreadEntryHoldConsidered || !$initialHistoryPending$ || $agentMessages$.length === 0)
+      return;
+    unreadEntryHoldConsidered = true;
+    untrack(() => {
+      const marker = seenMarkerId;
+      if (
+        !marker ||
+        hasAppliedNewMessagesEntryScroll ||
+        cachedScrollRestoreTop !== null ||
+        showSearch
+      )
+        return;
+      const phase = unreadEntryPhaseFor(marker);
+      if (phase !== 'marker-pending' && phase !== 'marker-loaded') return;
+      unreadEntryHold = { marker };
+      shouldFollowBottom = false;
+      void tick().then(settleUnreadEntryHold);
+    });
+  });
+  // Settle points while holding: the latched divider rendering, and transfer
+  // completion.
+  $effect(() => {
+    if (!unreadEntryHold) return;
+    if (!newMessagesDividerAnchorId && $initialHistoryPending$) return;
+    void tick().then(settleUnreadEntryHold);
+  });
+  function releaseUnreadEntryHold() {
+    unreadEntryHold = null;
+    hasAppliedNewMessagesEntryScroll = true;
+  }
+  function settleUnreadEntryHold() {
+    const hold = unreadEntryHold;
+    const container = scrollContainer;
+    if (!hold || isComponentDestroyed || !container) return;
+    if (shouldFollowBottom || showSearch) {
+      releaseUnreadEntryHold();
+      return;
+    }
+    const phase = unreadEntryPhaseFor(hold.marker);
+    if (phase === 'marker-pending') {
+      container.scrollTop = 0;
+      return;
+    }
+    if (phase === 'marker-beyond-window') {
+      releaseUnreadEntryHold();
+      return;
+    }
+    if (phase === 'none') {
+      releaseUnreadEntryHold();
+      shouldFollowBottom = true;
+      followToBottom(container);
+      return;
+    }
+    const target =
+      container.querySelector<HTMLElement>('[data-new-messages-divider]') ??
+      (newMessagesDividerAnchorId
+        ? container.querySelector<HTMLElement>(
+            `[data-message-id="${CSS.escape(newMessagesDividerAnchorId)}"]`,
+          )
+        : null);
+    if (!target) {
+      // Latched anchor whose turn is not rendered (virtualized): hand off to
+      // the force-rendering entry scroll. Otherwise the latch has not landed
+      // yet — keep holding the top; the anchor change settles again.
+      if (newMessagesDividerAnchorId) {
+        const anchor = newMessagesDividerAnchorId;
+        releaseUnreadEntryHold();
+        void scrollToNewMessagesDivider(anchor);
+      } else container.scrollTop = 0;
+      return;
+    }
+    releaseUnreadEntryHold();
+    const containerRect = container.getBoundingClientRect();
+    const targetOffsetTop =
+      container.scrollTop + (target.getBoundingClientRect().top - containerRect.top);
+    if (
+      dividerVisibleWhenScrolledToBottom(
+        targetOffsetTop,
+        container.scrollHeight,
+        container.clientHeight,
+      )
+    ) {
+      shouldFollowBottom = true;
+      followToBottom(container);
+      return;
+    }
+    container.scrollTop = Math.min(
+      targetOffsetTop,
+      Math.max(0, container.scrollHeight - container.clientHeight),
+    );
+  }
   // One-shot guard: the cached scroll position is applied once on the first
   // transcript availability after remount, never again on later hydrations.
   let hasConsumedCachedScrollRestore = false;
@@ -3725,6 +3861,7 @@
     if (!isActive || !container) return;
     const cancel = () => {
       if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
+      unreadEntryHold = null;
       cancelPendingCachedScrollRestore();
     };
     const onPointerDown = (event: PointerEvent) => {
@@ -3844,7 +3981,8 @@
     const shouldScroll =
       hasNewMessages &&
       (isFirstMessage || shouldFollowBottom) &&
-      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll);
+      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll) &&
+      untrack(() => unreadEntryHold === null);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -4210,6 +4348,8 @@
             // Restore the previous instance's reading position (no-op when
             // the hydration effect already did).
             applyCachedScrollRestore();
+          } else if (unreadEntryHold) {
+            // The unread entry hold owns the entry position.
           } else {
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
