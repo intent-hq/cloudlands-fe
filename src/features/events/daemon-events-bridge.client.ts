@@ -246,7 +246,10 @@ import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
-import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  proposalWorkspaceCreated,
+  restoreWorkspaceTab,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   commentEventReceived,
   noteEventReceived,
@@ -3808,6 +3811,12 @@ export function routeDaemonEventsNotification(
   }
   if (type === 'workspace:created') {
     handleWorkspaceCreatedEvent(workspaceId);
+    // §6.5 `data.origin`: a proposal-created workspace opens as a
+    // background tab beside the conversation that proposed it.
+    const origin = event.data?.origin;
+    if (origin?.kind === 'proposal' && typeof origin.sourceWorkspaceId === 'string') {
+      appStore.dispatch(proposalWorkspaceCreated(workspaceId, origin.sourceWorkspaceId));
+    }
     // fall through so the activity timeline records the creation.
   }
   // Delete grace window (§5.1/§5.5 `pendingDeleteAt`): schedule events hide the pending

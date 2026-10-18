@@ -34,7 +34,7 @@ import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/type
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { removeRepo } from '../../known-repos/known-repos-slice';
-import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
@@ -735,6 +735,9 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       return;
     }
     yield* put(setWorkspaceEntity(result.data.workspace));
+    // Show the new workspace in the tab strip without focusing it: the user
+    // stays in the conversation that proposed it.
+    yield* put(restoreWorkspaceTab(result.data.workspace.id));
     yield* put(
       proposalApplySucceeded({
         proposalId,

@@ -106,6 +106,7 @@ import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalo
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { proposalWorkspaceTabSaga } from './slices/tab-state/sagas/proposal-workspace-tab-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
@@ -241,6 +242,7 @@ export const sagas = [
   uiLayoutPersistenceSaga,
   tabStateSaga,
   workspaceTabReconciliationSaga,
+  proposalWorkspaceTabSaga,
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,
