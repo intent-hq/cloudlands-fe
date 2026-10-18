@@ -4,8 +4,6 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const APPROVED_MIDDLEWARE = new Map([
-  // Synchronous lifetime admission at the actual reducer boundary; no I/O or replay.
-  ['src/store/renderer/middlewares/event-recovery.ts', 'createEventRecoveryMiddleware'],
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
   ['src/store/renderer/middlewares/batch.ts', 'createBatchingMiddleware'],
   ['src/store/renderer/middlewares/action-ring-buffer.ts', 'createActionRingBufferMiddleware'],

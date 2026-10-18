@@ -77,9 +77,6 @@ export const initialState: GitState = {
 // ── Actions ──
 
 /** Trigger saga to load git status for a workspace */
-export const clearAcceptSnapshot = createAction<[wsId: string]>('git/clearAcceptSnapshot');
-export const clearGitSnapshot = createAction<[wsId: string]>('git/clearSnapshot');
-
 export const loadGitStatus = createAction<[wsId: string, forceRefresh?: boolean]>('git/loadStatus');
 
 export const gitReadRequested =
@@ -94,9 +91,6 @@ export const gitReadRequested =
   >('git/readRequested');
 export const releaseGitRead =
   createAction<[wsId: string, consumerId: string, requestId: string]>('git/releaseRead');
-export const gitReadCleared = createAction<[wsId: string, readKey: string]>('git/readCleared');
-export const clearSecondaryRootGit =
-  createAction<[wsId: string, rootId: string]>('git/clearSecondaryRoot');
 export const gitReadStarted =
   createAction<[wsId: string, readKey: string, generation: string]>('git/readStarted');
 export const gitReadCompleted =
@@ -232,27 +226,6 @@ gitReducer.with(releaseGitRead, (state, { payload: [wsId, consumerId, requestId]
     : removeItem(ws.reads, consumer.readKey);
   return setWorkspaceState(state, wsId, { ...ws, readConsumers, reads });
 });
-gitReducer.with(gitReadCleared, (state, { payload: [wsId, readKey] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  const entry = getItem(ws.reads, readKey);
-  if (!entry) return state;
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    reads: upsertItem(ws.reads, {
-      ...entry,
-      generation: `${entry.generation}:retired`,
-      result: null,
-      error: null,
-      loading: false,
-    }),
-  });
-});
-gitReducer.with(clearSecondaryRootGit, (state, { payload: [wsId, rootId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (!(rootId in ws.secondaryRoots)) return state;
-  const { [rootId]: _retired, ...secondaryRoots } = ws.secondaryRoots;
-  return setWorkspaceState(state, wsId, { ...ws, secondaryRoots });
-});
 gitReducer.with(gitReadStarted, (state, { payload: [wsId, readKey, generation] }) => {
   const ws = getWorkspaceState(state, wsId);
   const entry = getItem(ws.reads, readKey);
@@ -295,27 +268,6 @@ gitReducer.with(
     });
   },
 );
-gitReducer.with(clearAcceptSnapshot, (state, { payload: [wsId] }) => {
-  const current = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...current,
-    acceptChangesStatus: null,
-    acceptChangesStatusLoading: false,
-    postMergeState: null,
-  });
-});
-
-gitReducer.with(clearGitSnapshot, (state, { payload: [wsId] }) => {
-  const current = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...current,
-    status: null,
-    branch: null,
-    ahead: 0,
-    behind: 0,
-  });
-});
-
 gitReducer.with(setGitStatus, (state, action) => {
   const { wsId, status } = action.payload;
   const ws = getWorkspaceState(state, wsId);

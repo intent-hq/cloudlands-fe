@@ -1,5 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { withRecoveryLifetime } from '$store/renderer/middlewares/event-recovery';
 import {
   all,
   call,
@@ -365,8 +363,6 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     }
     return;
   }
-  const recoveryKey = 'scripts:' + JSON.stringify([workspaceId]);
-  const lifetime = rendererEventRecovery.capture(recoveryKey);
   const before = yield* selectScriptById.effect(workspaceId, scriptId);
   const stoppedRead =
     operation === 'stop' && before?.runtime.status === 'exited'
@@ -403,10 +399,6 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       if (failureMessage) yield* call([notify, notify.error], message);
       return;
     }
-    if (!lifetime.commit(() => {})) {
-      rendererEventRecovery.invalidate(recoveryKey);
-      return;
-    }
     if (
       stoppedRead &&
       (yield* isScriptReadCurrent(stoppedRead)) &&
@@ -423,20 +415,14 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
           (yield* isScriptReadCurrent(stoppedRead)) &&
           before === (yield* selectScriptById.effect(workspaceId, scriptId))
         ) {
-          yield* put(
-            withRecoveryLifetime(
-              updateRuntimeState(workspaceId, scriptId, runtime, true),
-              lifetime,
-            ),
-          );
+          yield* put(updateRuntimeState(workspaceId, scriptId, runtime, true));
         }
       } catch {
         // A compatibility status failure does not turn a successful stop into a failure.
       }
     }
     if (stoppedRead && !(yield* isScriptReadCurrent(stoppedRead))) return;
-    if (operation === 'delete')
-      yield* put(withRecoveryLifetime(removeScript(workspaceId, scriptId), lifetime));
+    if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
     else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
     if (cleanedUp || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
@@ -648,18 +634,12 @@ function* removeDefinition(
     ) {
       throw new Error(m.scripts_pendingChange_error());
     }
-    const recoveryKey = 'scripts:' + JSON.stringify([workspaceId]);
-    const lifetime = rendererEventRecovery.capture(recoveryKey);
     const result = yield* call(() => scriptDefinitionTransport.remove(workspaceId, scriptId));
     yield* requireAuthority(workspaceId, authority);
     if (!result.success) throw new Error(result.error ?? 'Script removal failed');
     const canPublish =
       (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId] === reservation;
-    if (canPublish) {
-      if (lifetime.commit(() => {}))
-        yield* put(withRecoveryLifetime(removeScript(workspaceId, scriptId), lifetime));
-      else rendererEventRecovery.invalidate(recoveryKey);
-    }
+    if (canPublish) yield* put(removeScript(workspaceId, scriptId));
     yield* put(action.success(undefined));
     yield* finishWorkflow(workspaceId, consumer, canPublish ? 'success' : 'cancelled');
     settled = true;
@@ -682,8 +662,6 @@ function* removeDefinitions(
 ): SagaGenerator<void> {
   const [workspaceId, targets, failureMessage, consumer] = action.payload;
   const outcome: ScriptBulkRemovalOutcome = { removed: [], failed: [] };
-  const recoveryKey = 'scripts:' + JSON.stringify([workspaceId]);
-  const lifetime = rendererEventRecovery.capture(recoveryKey);
   let settled = false;
   try {
     for (const target of targets) {
@@ -717,9 +695,7 @@ function* removeDefinitions(
         if (!result.success) throw new Error(result.error ?? failureMessage);
         outcome.removed.push(target.id);
         if ((yield* selectWorkspaceActionContext.effect(workspaceId)) === authority) {
-          if (lifetime.commit(() => {}))
-            yield* put(withRecoveryLifetime(removeScript(workspaceId, target.id), lifetime));
-          else rendererEventRecovery.invalidate(recoveryKey);
+          yield* put(removeScript(workspaceId, target.id));
         }
       } catch (error) {
         const message = errorMessage(error) || failureMessage;

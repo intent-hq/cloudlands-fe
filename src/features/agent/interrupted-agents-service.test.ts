@@ -385,11 +385,7 @@ describe('interrupted-agents-service', () => {
         expect(channel).toBe('backend:request');
         if (payload.method === 'agent.resolveInterrupted')
           return { ok: true, result: { resumed: [candidate.agentId], abandoned: [], failed: [] } };
-        expect(payload).toEqual({
-          observeCompletion: true,
-          method: 'agent.listInterrupted',
-          params: {},
-        });
+        expect(payload).toEqual({ method: 'agent.listInterrupted', params: {} });
         return { ok: true, result: { agents } };
       });
       const client = { agents: new LiveAgentsClient() };
@@ -402,7 +398,6 @@ describe('interrupted-agents-service', () => {
       expect(showHandler).toHaveBeenCalledExactlyOnceWith([candidate]);
       await resolveInterruptedAgents(client, [candidate.agentId], []);
       expect(mockElectronAPI.invoke).toHaveBeenCalledWith('backend:request', {
-        observeCompletion: true,
         method: 'agent.resolveInterrupted',
         params: { resume: [candidate.agentId] },
       });

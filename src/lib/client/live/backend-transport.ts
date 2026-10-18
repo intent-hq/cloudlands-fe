@@ -21,18 +21,6 @@ import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 
-/** Confirmed identity and drained physical work; distinct from immediate retirement. */
-export function onEventRecoveryReady(handler: () => void): () => void {
-  return resolveBackendTransport().onEventRecoveryReady?.(handler) ?? (() => {});
-}
-
-/** Capture the physical backend/principal session once for loss-aware subscriptions and reads. */
-export function captureBackendEventRecovery() {
-  const transport = resolveBackendTransport();
-  if (!transport.captureEventRecovery) return Promise.resolve(undefined);
-  return transport.captureEventRecovery();
-}
-
 /** Separate explicit resource lifetime, bound to this exact transport. */
 export function captureBackendRepositoryResource(workspaceId: string) {
   const transport = resolveBackendTransport();

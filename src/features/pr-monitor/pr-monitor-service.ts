@@ -1,9 +1,3 @@
-import { trackRuntimeRead } from '$features/events/runtime-read-lane';
-import {
-  rendererEventRecovery,
-  type RendererRecoveryHandle,
-  type RendererRecoveryScope,
-} from '$features/events/renderer-event-recovery';
 /**
  * PR-monitor read/cancel/flush surface (PROTOCOL §5.42, §6.9).
  *
@@ -234,15 +228,10 @@ export function subscribePrMonitors(
   handler: (monitors: PrMonitorRow[]) => void,
   statusHandler?: (status: 'failed') => void,
 ): PrMonitorsSubscription {
-  const key = 'pr-monitors:' + JSON.stringify([workspaceId]);
-  let recovery: RendererRecoveryHandle | undefined;
-  let recoveryScope: RendererRecoveryScope | undefined;
-  let adopted = false;
   let disposed = false;
   let subscriptionId: string | undefined;
   let monitors: PrMonitorRow[] = [];
   let refetchInFlight = false;
-  let pendingRead: Promise<void> | undefined;
   let refetchQueued = false;
   // Monitors cancelled by a fold: a `prMonitor.list` response that was already
   // in flight when the `prMonitor:cancelled` event arrived can still carry the
@@ -258,58 +247,35 @@ export function subscribePrMonitors(
 
   const refetch = (): Promise<void> => {
     if (disposed) return Promise.resolve();
-    if (recovery?.status.stale) {
-      recovery.refresh();
-      return Promise.resolve();
-    }
     if (refetchInFlight) {
       refetchQueued = true;
       return Promise.resolve();
     }
     refetchInFlight = true;
-    const epoch = registerEpoch;
-    const token = rendererEventRecovery.capture(key);
-    pendingRead = trackRuntimeRead(
-      key,
-      () => {
-        if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
-          throw new Error('Runtime read superseded');
-        return recoveryScope
-          ? recoveryScope
-              .request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', { workspaceId })
-              .then((result) => (Array.isArray(result?.monitors) ? result.monitors : []))
-          : listPrMonitors(workspaceId);
-      },
-      true,
-    )
+    return listPrMonitors(workspaceId)
       .then((fetched) => {
-        if (disposed || epoch !== registerEpoch) return;
-        token.commit(() => {
-          // Prune ids the server no longer returns (converged), then drop rows
-          // cancelled locally while this list was in flight.
-          for (const id of [...locallyCancelled]) {
-            if (!fetched.some((m) => m.monitorId === id)) locallyCancelled.delete(id);
-          }
-          monitors = fetched.filter((m) => !locallyCancelled.has(m.monitorId));
-          emit();
-        });
+        if (disposed) return;
+        // Prune ids the server no longer returns (converged), then drop rows
+        // cancelled locally while this list was in flight.
+        for (const id of [...locallyCancelled]) {
+          if (!fetched.some((m) => m.monitorId === id)) locallyCancelled.delete(id);
+        }
+        monitors = fetched.filter((m) => !locallyCancelled.has(m.monitorId));
+        emit();
       })
       .catch((error) => {
-        if (disposed || epoch !== registerEpoch) return;
         logger.warn('prMonitor.list failed', { workspaceId, error });
         // Preserve cached rows, then independently surface the failed read.
         emit();
         statusHandler?.('failed');
       })
       .finally(() => {
-        pendingRead = undefined;
         refetchInFlight = false;
         if (refetchQueued) {
           refetchQueued = false;
           refetch();
         }
       });
-    return pendingRead;
   };
 
   const register = () => {
@@ -342,7 +308,7 @@ export function subscribePrMonitors(
       });
   };
 
-  const receive = (n: import('$shared/event-recovery/session').RecoveryNotification) => {
+  const offNotification = onBackendNotification((n) => {
     if (disposed || n.method !== 'events.event') return;
     const params = n.params as PrMonitorEventNotification | undefined;
     const event = params?.event;
@@ -363,94 +329,22 @@ export function subscribePrMonitors(
     // that older response — queue a trailing refetch (single-flight,
     // coalesced) so the list converges.
     if (result.needsRefetch || refetchInFlight) refetch();
-  };
-  const offNotification = onBackendNotification((n) => {
-    if (!adopted) receive(n);
   });
 
   // Subscriptions are per-connection (§6.1) — replay after a reconnect and
   // re-seed so anything missed during the outage converges.
   const offReconnected = onBackendReconnected(() => {
-    if (disposed || adopted) return;
+    if (disposed) return;
     subscriptionId = undefined;
-    locallyCancelled.clear();
     register();
   });
 
-  const offRecovery = rendererEventRecovery.onSession((scope) => {
-    adopted = true;
-    recoveryScope = scope;
-    const epoch = ++registerEpoch;
-    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
-    subscriptionId = undefined;
-    locallyCancelled.clear();
-    const controller = new AbortController();
-    const owner = scope.registerResource({
-      key,
-      workspaceId,
-      eventTypes: ['prMonitor:*'],
-      isCurrent: () => !disposed && epoch === registerEpoch,
-      read: async (reader) => {
-        if (pendingRead) await pendingRead;
-        const result = await trackRuntimeRead(
-          key,
-          () =>
-            reader.request<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
-              workspaceId,
-            }),
-          true,
-        );
-        return Array.isArray(result?.monitors) ? result.monitors : [];
-      },
-      apply: (rows) => {
-        locallyCancelled.clear();
-        monitors = rows;
-        emit();
-      },
-      invalidate: () => {
-        locallyCancelled.clear();
-      },
-      retire: () => {
-        ++registerEpoch;
-        locallyCancelled.clear();
-        monitors = [];
-        emit();
-      },
-      onEvent: (notification) => receive(notification),
-    });
-    recovery = owner;
-    void scope
-      .subscribe(
-        { workspaceId, eventTypes: ['prMonitor:*'] },
-        { recover: true, signal: controller.signal },
-      )
-      .then((lease) => {
-        if (disposed || epoch !== registerEpoch) return;
-        subscriptionId = lease?.id;
-        refetch();
-      })
-      .catch((error) => {
-        if (!disposed && epoch === registerEpoch)
-          logger.warn('prMonitor recovery subscribe failed', { workspaceId, error });
-      });
-    return () => {
-      controller.abort();
-      owner.dispose();
-      if (subscriptionId) void scope.unsubscribe(subscriptionId);
-      subscriptionId = undefined;
-      if (recovery === owner) {
-        recovery = undefined;
-        recoveryScope = undefined;
-      }
-    };
-  });
-  if (!adopted) register();
+  register();
 
   return {
     refetch,
     dispose: () => {
       disposed = true;
-      offRecovery();
       offNotification();
       offReconnected();
       if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);

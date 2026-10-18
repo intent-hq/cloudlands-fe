@@ -1,6 +1,3 @@
-import type { RecoveryLifetime } from '$shared/event-recovery/resource';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { gitStatusRecoveryKey } from '$features/file-tracking/worktree-recovery-keys';
 /**
  * Context preparation utilities for background agent execution.
  *
@@ -38,35 +35,22 @@ export async function prepareContext(
   resultTag?: string,
   context?: AgentExecutorContext,
 ): Promise<string> {
-  const lifetime = rendererEventRecovery.captureAuthority(gitStatusRecoveryKey(workspace.id));
-  const requireCurrent = () => {
-    if (!lifetime.isCurrent()) throw new Error('Context preparation authority retired');
-  };
-  requireCurrent();
-  let message: string;
   switch (type) {
     case 'commit':
     case 'commit-merge':
-      message = await prepareCommitContext(workspace, resultTag, context);
-      break;
+      return await prepareCommitContext(workspace, resultTag, context);
     case 'pr':
-      message = await preparePRContext(workspace, context);
-      break;
+      return await preparePRContext(workspace, context);
     case 'review':
-      message = await prepareReviewContext(workspace, resultTag, context, lifetime);
-      break;
+      return await prepareReviewContext(workspace, resultTag, context);
     case 'walkthrough':
-      message = await prepareWalkthroughContext(workspace, context);
-      break;
+      return await prepareWalkthroughContext(workspace, context);
     default:
-      message =
-        typeof context?.message === 'string'
-          ? context.message
-          : // i18n-ignore (LLM prompt content, not user-facing UI)
-            'Please analyze the current context and provide assistance.';
+      return typeof context?.message === 'string'
+        ? context.message
+        : // i18n-ignore (LLM prompt content, not user-facing UI)
+          'Please analyze the current context and provide assistance.';
   }
-  requireCurrent();
-  return message;
 }
 
 /**
@@ -193,15 +177,12 @@ async function prepareCommitContext(
 
   _context?: AgentExecutorContext,
 ): Promise<string> {
-  const statusReceipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspace.id));
   const statusResult = await gitClient.getStatus(workspace.id);
   if (!statusResult.ok) {
     throw new Error("Unable to get git status. Please ensure you're in a git repository.");
   }
   const status = statusResult.data;
-  statusReceipt.commit(() => {
-    appStore.dispatch(setGitStatus(workspace.id, status));
-  });
+  appStore.dispatch(setGitStatus(workspace.id, status));
 
   const stagedFiles = status.files.filter((file) => file.staged);
   if (stagedFiles.length === 0) {
@@ -357,12 +338,9 @@ async function preparePRContext(
     }
   }
 
-  const statusReceipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspace.id));
   const statusResult2 = await gitClient.getStatus(workspace.id);
   if (statusResult2.ok) {
-    statusReceipt.commit(() => {
-      appStore.dispatch(setGitStatus(workspace.id, statusResult2.data));
-    });
+    appStore.dispatch(setGitStatus(workspace.id, statusResult2.data));
   }
   const status = statusResult2.ok ? statusResult2.data : null;
 
@@ -421,7 +399,6 @@ async function prepareReviewContext(
   workspace: Workspace,
   resultTag?: string,
   context?: AgentExecutorContext,
-  lifetime?: RecoveryLifetime,
 ): Promise<string> {
   const filesToReview = context?.reviewFiles || context?.files;
 
@@ -443,8 +420,6 @@ Wrap your final review in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
     const codeBasePath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
 
     for (const fileEntry of filesToReview) {
-      if (lifetime && !lifetime.isCurrent())
-        throw new Error('Context preparation authority retired');
       const filePath = typeof fileEntry === 'string' ? fileEntry : fileEntry.path;
       const fileContent = typeof fileEntry === 'object' ? fileEntry.content : undefined;
       const fileDiff = typeof fileEntry === 'object' ? fileEntry.diff : undefined;
@@ -456,8 +431,6 @@ Wrap your final review in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
             path: `${codeBasePath}/${filePath}`,
           })) as { success: boolean; data?: { content: string }; error?: { message: string } };
 
-          if (lifetime && !lifetime.isCurrent())
-            throw new Error('Context preparation authority retired');
           if (fileResult.success && fileResult.data?.content) {
             content = fileResult.data.content;
           }
@@ -490,15 +463,12 @@ async function prepareWalkthroughContext(
 
   _context?: AgentExecutorContext,
 ): Promise<string> {
-  const statusReceipt = rendererEventRecovery.capture(gitStatusRecoveryKey(workspace.id));
   const walkthroughStatusResult = await gitClient.getStatus(workspace.id);
   if (!walkthroughStatusResult.ok) {
     throw new Error("Unable to get git status. Please ensure you're in a git repository.");
   }
   const status = walkthroughStatusResult.data;
-  statusReceipt.commit(() => {
-    appStore.dispatch(setGitStatus(workspace.id, status));
-  });
+  appStore.dispatch(setGitStatus(workspace.id, status));
 
   const stagedFiles = status.files.filter((file) => file.staged);
   if (stagedFiles.length === 0) {

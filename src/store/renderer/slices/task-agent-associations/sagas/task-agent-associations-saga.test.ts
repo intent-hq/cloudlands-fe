@@ -9,19 +9,13 @@ import {
   applyTaskAgentLinked,
   applyTaskAgentUnlinked,
   hydrateTaskAgentAssociations,
-  initialState as initialTaskAgentAssociationsState,
+  initialTaskAgentAssociationsState,
   pruneTaskAgentAssociationsForNote,
   removeTaskAgentAssociation,
   taskAgentAssociationsReducer,
 } from '../task-agent-associations-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { taskAgentAssociationsSaga } from './task-agent-associations-saga';
-import {
-  beginLifecycleMetadataMutation,
-  taskAgentLinksRecoveryKey,
-  runLifecycleMetadataRead,
-} from '$features/events/lifecycle-metadata-recovery';
-import { RendererEventRecovery } from '$features/events/renderer-event-recovery';
 
 const settle = async () => {
   await Promise.resolve();
@@ -70,20 +64,8 @@ describe('taskAgentAssociationsSaga', () => {
       initialTaskAgentAssociationsState,
       hydrateTaskAgentAssociations('ws-1', {
         'note-1': {
-          first: {
-            taskKey: 'first',
-            noteId: 'note-1',
-            createdAt: 1,
-            taskText: 'First',
-            agentId: 'agent-1',
-          },
-          second: {
-            taskKey: 'second',
-            noteId: 'note-1',
-            createdAt: 1,
-            taskText: 'Second',
-            agentId: 'agent-2',
-          },
+          first: { taskKey: 'first', taskText: 'First', agentId: 'agent-1' },
+          second: { taskKey: 'second', taskText: 'Second', agentId: 'agent-2' },
         },
       }),
     );
@@ -94,13 +76,7 @@ describe('taskAgentAssociationsSaga', () => {
     );
     await settle();
 
-    const added = {
-      taskKey: 'third',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Third',
-      agentId: 'agent-3',
-    };
+    const added = { taskKey: 'third', taskText: 'Third', agentId: 'agent-3' };
     const addAction = addTaskAgentAssociation('ws-1', 'note-1', added);
     associations = taskAgentAssociationsReducer(associations, addAction);
     channel.put(addAction);
@@ -125,20 +101,8 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.unlinkAgent.mockResolvedValue(undefined);
     const run = harness({
       'note-1': {
-        'key-alpha': {
-          taskKey: 'key-alpha',
-          noteId: 'note-1',
-          createdAt: 1,
-          taskText: 'Alpha',
-          agentId: 'agent-1',
-        },
-        'key-beta': {
-          taskKey: 'key-beta',
-          noteId: 'note-1',
-          createdAt: 1,
-          taskText: 'Beta',
-          agentId: 'agent-2',
-        },
+        'key-alpha': { taskKey: 'key-alpha', taskText: 'Alpha', agentId: 'agent-1' },
+        'key-beta': { taskKey: 'key-beta', taskText: 'Beta', agentId: 'agent-2' },
       },
     });
     await settle();
@@ -161,8 +125,6 @@ describe('taskAgentAssociationsSaga', () => {
     run.send(
       applyTaskAgentLinked('ws-1', 'note-1', {
         taskKey: 'linked',
-        noteId: 'note-1',
-        createdAt: 1,
         taskText: 'Linked',
         agentId: 'agent-1',
       }),
@@ -171,13 +133,7 @@ describe('taskAgentAssociationsSaga', () => {
     run.send(
       hydrateTaskAgentAssociations('ws-1', {
         'note-2': {
-          hydrated: {
-            taskKey: 'hydrated',
-            noteId: 'note-1',
-            createdAt: 1,
-            taskText: 'Hydrated',
-            agentId: 'agent-2',
-          },
+          hydrated: { taskKey: 'hydrated', taskText: 'Hydrated', agentId: 'agent-2' },
         },
       }),
     );
@@ -191,26 +147,14 @@ describe('taskAgentAssociationsSaga', () => {
   it('replaces workspace snapshots on hydration so omitted notes cannot unlink later', async () => {
     const run = harness({
       'note-old': {
-        stale: {
-          taskKey: 'stale',
-          noteId: 'note-1',
-          createdAt: 1,
-          taskText: 'Stale',
-          agentId: 'agent-old',
-        },
+        stale: { taskKey: 'stale', taskText: 'Stale', agentId: 'agent-old' },
       },
     });
     await settle();
     run.send(
       hydrateTaskAgentAssociations('ws-1', {
         'note-new': {
-          fresh: {
-            taskKey: 'fresh',
-            noteId: 'note-1',
-            createdAt: 1,
-            taskText: 'Fresh',
-            agentId: 'agent-new',
-          },
+          fresh: { taskKey: 'fresh', taskText: 'Fresh', agentId: 'agent-new' },
         },
       }),
     );
@@ -227,13 +171,7 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
     const run = harness();
     await settle();
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
     await settle();
@@ -254,13 +192,7 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.linkAgent.mockResolvedValue(undefined);
     const queueCounts: number[] = [];
     const run = harness({}, (count) => queueCounts.push(count));
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
 
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
@@ -285,8 +217,6 @@ describe('taskAgentAssociationsSaga', () => {
       run.send(
         addTaskAgentAssociation('ws-1', `note-${index}`, {
           taskKey: `task-${index}`,
-          noteId: 'note-1',
-          createdAt: 1,
           taskText: `Task ${index}`,
           agentId: `agent-${index}`,
         }),
@@ -302,13 +232,7 @@ describe('taskAgentAssociationsSaga', () => {
   it('does not lose a same-key action dispatched at the retirement boundary', async () => {
     mocks.linkAgent.mockResolvedValue(undefined);
     const queueCounts: number[] = [];
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     let sentRacingAction = false;
     const racing = { send: undefined as ReturnType<typeof harness>['send'] | undefined };
@@ -337,13 +261,7 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
     const run = harness();
     await settle();
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
     await settle();
@@ -365,30 +283,12 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.unlinkAgent.mockResolvedValue(undefined);
     const run = harness({
       'note-1': {
-        first: {
-          taskKey: 'first',
-          noteId: 'note-1',
-          createdAt: 1,
-          taskText: 'First',
-          agentId: 'agent-1',
-        },
-        second: {
-          taskKey: 'second',
-          noteId: 'note-1',
-          createdAt: 1,
-          taskText: 'Second',
-          agentId: 'agent-2',
-        },
+        first: { taskKey: 'first', taskText: 'First', agentId: 'agent-1' },
+        second: { taskKey: 'second', taskText: 'Second', agentId: 'agent-2' },
       },
     });
     await settle();
-    const relinked = {
-      taskKey: 'first',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'First',
-      agentId: 'agent-3',
-    };
+    const relinked = { taskKey: 'first', taskText: 'First', agentId: 'agent-3' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', relinked));
     await settle();
     run.send(pruneTaskAgentAssociationsForNote('ws-1', 'note-1', []));
@@ -408,13 +308,7 @@ describe('taskAgentAssociationsSaga', () => {
     mocks.linkAgent.mockRejectedValueOnce(new Error('first failed')).mockResolvedValue(undefined);
     const run = harness();
     await settle();
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
     run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
@@ -434,13 +328,7 @@ describe('taskAgentAssociationsSaga', () => {
     const queueCounts: number[] = [];
     const run = harness({}, (count) => queueCounts.push(count));
     await settle();
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
     run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
@@ -452,13 +340,7 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
 
-    const restored = {
-      taskKey: 'restored',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Restored',
-      agentId: 'agent-3',
-    };
+    const restored = { taskKey: 'restored', taskText: 'Restored', agentId: 'agent-3' };
     run.send(hydrateTaskAgentAssociations('ws-1', { 'note-2': { restored } }));
     run.send(removeTaskAgentAssociation('ws-1', 'note-2', 'restored'));
     await settle();
@@ -473,13 +355,7 @@ describe('taskAgentAssociationsSaga', () => {
     const queueCounts: number[] = [];
     const run = harness({}, (count) => queueCounts.push(count));
     await settle();
-    const first = {
-      taskKey: 'same',
-      noteId: 'note-1',
-      createdAt: 1,
-      taskText: 'Same',
-      agentId: 'agent-1',
-    };
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
     run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
     run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
@@ -491,83 +367,4 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
   });
-});
-
-describe('task link recovery mutation barriers', () => {
-  afterEach(() => vi.clearAllMocks());
-  it('finishes no-op removal ingress so future reads proceed', async () => {
-    const run = harness();
-    const action = removeTaskAgentAssociation('ws-1', 'absent', 'absent');
-    const lease = beginLifecycleMetadataMutation(action)!;
-    const registry = new RendererEventRecovery();
-    const read = vi.fn(async () => ({}));
-    try {
-      run.send(action);
-      const pending = runLifecycleMetadataRead(
-        taskAgentLinksRecoveryKey('ws-1'),
-        registry.capture(taskAgentLinksRecoveryKey('ws-1')),
-        read,
-      );
-      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
-      await pending;
-      expect(mocks.unlinkAgent).not.toHaveBeenCalled();
-    } finally {
-      lease.finish();
-      run.task.cancel();
-      await run.task.toPromise();
-      registry.dispose();
-    }
-  });
-  it.each(['unmount', 'root'] as const)(
-    'drains queued reservations on %s but waits for the physical write',
-    async (stop) => {
-      const held = deferred();
-      mocks.linkAgent.mockReturnValue(held.promise);
-      const run = harness();
-      const first = addTaskAgentAssociation('ws-1', 'note', {
-        taskKey: 'key',
-        noteId: 'note-1',
-        createdAt: 1,
-        taskText: 'Task',
-        agentId: 'one',
-      });
-      const second = addTaskAgentAssociation('ws-1', 'note', {
-        taskKey: 'key',
-        noteId: 'note-1',
-        createdAt: 1,
-        taskText: 'Task',
-        agentId: 'two',
-      });
-      const leases = [
-        beginLifecycleMetadataMutation(first)!,
-        beginLifecycleMetadataMutation(second)!,
-      ];
-      const registry = new RendererEventRecovery();
-      const read = vi.fn(async () => ({}));
-      try {
-        run.send(first);
-        run.send(second);
-        await settle();
-        const pending = runLifecycleMetadataRead(
-          taskAgentLinksRecoveryKey('ws-1'),
-          registry.capture(taskAgentLinksRecoveryKey('ws-1')),
-          read,
-        );
-        if (stop === 'root') run.task.cancel();
-        else run.send(workspaceUnmounted('ws-1'));
-        await settle();
-        expect(read).not.toHaveBeenCalled();
-        held.resolve();
-        await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
-        await pending;
-        expect(mocks.linkAgent).toHaveBeenCalledTimes(1);
-      } finally {
-        held.resolve();
-        leases.forEach((lease) => lease.finish());
-        run.task.cancel();
-        await run.task.toPromise();
-        registry.dispose();
-      }
-    },
-  );
 });
