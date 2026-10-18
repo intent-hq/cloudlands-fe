@@ -35,6 +35,7 @@ import {
   type TunnelFrame,
   type TunnelSocketLike,
 } from './tunnel-manager';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 /** Scripted stand-in for the `/tunnel` `ws.WebSocket`. */
 class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
@@ -191,7 +192,7 @@ function makeManager(
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
     refusedPorts?: Set<number>;
-    /** Daemon hello protocolVersion; defaults to the first CREDIT-capable version. */
+    /** Daemon hello protocolVersion; defaults to the bundled daemon's current protocol. */
     protocolVersion?: string | null;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
@@ -199,7 +200,7 @@ function makeManager(
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
     getProtocolVersion: () =>
-      options.protocolVersion === undefined ? '10.4' : options.protocolVersion,
+      options.protocolVersion === undefined ? CURRENT_PROTOCOL_VERSION : options.protocolVersion,
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
@@ -1089,7 +1090,7 @@ describe('TunnelManager', () => {
     let holdOpen = false;
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         attachFakeDaemon(ws);
@@ -1482,7 +1483,7 @@ describe('TunnelManager', () => {
 
         // The daemon is upgraded and the tunnel reconnects: the next socket
         // sees the new version and starts granting.
-        protocolVersion = '10.4';
+        protocolVersion = CURRENT_PROTOCOL_VERSION;
         created[0].drop();
         await waitFor(() => manager.getDiagnostics().streams.length === 0);
         const secondClient = await connectClient(localPort);
@@ -1702,7 +1703,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1722,7 +1723,7 @@ describe('TunnelManager', () => {
     const created: Array<{ host: string | undefined; ws: FakeTunnelSocket }> = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: '10.0.0.1', hosts: ['10.0.0.1', '127.0.0.1'] }),
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       socketFactory: (config) => {
         const ws = new FakeTunnelSocket();
         created.push({ host: config.host, ws });
@@ -1755,7 +1756,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: 'a', hosts: ['a', 'b'] }),
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1970,7 +1971,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // No socketFactory override: the REAL createTunnelSocket dials the fake
     // daemon over TLS, so the handshake-level pin is what's under test.
     const manager = new TunnelManager({
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       getConfig: () => ({
         transport: 'wss',
         host: daemon.host,
@@ -2033,7 +2034,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     await rejecting.start();
     onCleanup(() => rejecting.stop());
     const manager = new TunnelManager({
-      getProtocolVersion: () => '10.4',
+      getProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
       getConfig: () => ({
         transport: 'wss',
         host: rejecting.host,

@@ -20,6 +20,7 @@ import {
   resolveBrowserWsUrl,
   sanitizeWsUrlForDisplay,
 } from './browser-websocket-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 class FakeWebSocket implements BrowserWebSocketLike {
   onopen: ((event?: unknown) => void) | null = null;
@@ -90,13 +91,13 @@ async function flush(): Promise<void> {
 function helloResult(clientId = 'browser-1') {
   return {
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: false,
       osArch: 'linux/x86_64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   };

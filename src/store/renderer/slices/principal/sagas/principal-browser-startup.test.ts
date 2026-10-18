@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 /** Mock only the daemon wire: browser bridge, connection binding and role sagas are real. */
 describe('principal discovery through browser startup', () => {
@@ -44,7 +45,7 @@ describe('principal discovery through browser startup', () => {
           listenMode: 'wss',
           transports: ['wss'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
         };
       if (frame.method === 'events.subscribe')

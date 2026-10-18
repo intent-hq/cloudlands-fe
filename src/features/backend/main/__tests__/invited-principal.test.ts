@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 const rpc = vi.hoisted(() => ({
   request: vi.fn(),
   dispose: vi.fn(),
@@ -44,7 +45,7 @@ beforeEach(() => {
 describe('pinned remote personal identity (wire-shaped fixtures)', () => {
   it('rejects the reported old protocol before principal.me and names both daemon versions', async () => {
     rpc.request.mockResolvedValue({
-      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } },
+      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } }, // fixture-protocol-version: old intentd 0.9.12 predates principal.me
     });
     const error = await inspectPersonalCredential(candidate).catch((error: unknown) => error);
     expect(error).toBeInstanceOf(Error);
@@ -83,7 +84,7 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
     async (capability) => {
       rpc.request.mockResolvedValue({
         server: {
-          protocolVersion: '10.2',
+          protocolVersion: '10.2', // fixture-protocol-version: below 10.3 predates principal.me
           capabilities: { collaborationIdentity: capability, hostMembership: capability },
         },
       });
@@ -97,7 +98,12 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
     async (capability) => {
       rpc.request.mockImplementation(async (method) =>
         method === 'client.hello'
-          ? { server: { protocolVersion: '10.2', capabilities: { [capability]: 1 } } }
+          ? {
+              server: {
+                protocolVersion: CURRENT_PROTOCOL_VERSION,
+                capabilities: { [capability]: 1 },
+              },
+            }
           : { ...principal, isAdministrator: undefined },
       );
       await expect(inspectPersonalCredential(candidate)).rejects.toThrow('identity unavailable');
@@ -132,7 +138,7 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
   it.each([undefined, null, 12, 'not-a-version'])(
     'does not invent a target version for %s metadata',
     async (version) => {
-      rpc.request.mockResolvedValue({ server: { version, protocolVersion: '9.4' } });
+      rpc.request.mockResolvedValue({ server: { version, protocolVersion: '9.4' } }); // fixture-protocol-version: old daemon predates principal.me
       const error = await inspectPersonalCredential(candidate).catch((error: unknown) => error);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain('0.9.137');
@@ -144,7 +150,7 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
 
   it('does not fabricate an unavailable bundled pin', async () => {
     rpc.bundledVersion = null;
-    rpc.request.mockResolvedValue({ server: { version: '0.9.12', protocolVersion: '9.4' } });
+    rpc.request.mockResolvedValue({ server: { version: '0.9.12', protocolVersion: '9.4' } }); // fixture-protocol-version: old daemon predates principal.me
     const error = await inspectPersonalCredential(candidate).catch((error: unknown) => error);
     expect((error as Error).message).toContain('0.9.12');
     expect((error as Error).message).not.toContain('0.9.137');

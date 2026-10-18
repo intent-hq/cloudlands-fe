@@ -17,6 +17,8 @@ import {
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
@@ -59,7 +61,12 @@ beforeEach(() => {
   );
   vi.mocked(backendRequest).mockImplementation(async (method) => {
     if (method === 'client.hello')
-      return { server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } };
+      return {
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      };
     if (method === 'script.get') return full;
     if (method === 'script.create') return full;
     throw new Error('unexpected ' + method);

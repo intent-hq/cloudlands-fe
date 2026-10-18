@@ -118,7 +118,7 @@ describe('handlePairDeepLink', () => {
       const request = vi.spyOn(JsonRpcClient.prototype, 'request').mockResolvedValue({
         server: {
           version: '0.9.12',
-          protocolVersion: '9.4',
+          protocolVersion: '9.4', // fixture-protocol-version: old intentd 0.9.12 predates principal.me
           capabilities: { liveState: true },
         },
       });

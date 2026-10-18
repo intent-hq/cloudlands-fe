@@ -39,6 +39,7 @@ import type {
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
 } from './daemon-health-types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 describe('daemonHealthReducer', () => {
   it('has the correct initial state', () => {
@@ -658,7 +659,7 @@ describe('daemonHealthReducer', () => {
         agentProcessCount: 2,
         fingerprint: 'abc123',
         hostname: 'studio.local',
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'macos',
           arch: 'aarch64',
@@ -679,8 +680,8 @@ describe('daemonHealthReducer', () => {
         port: null,
         version: '0.1.0',
         buildCommit: '0123456789abcdef',
-        protocolVersion: '2.0',
-        protocolVersionText: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: 120,
         cpuPercent: 12.34,
         memoryBytes: 104857600,
@@ -795,7 +796,7 @@ describe('daemonHealthReducer', () => {
         // maxAgents, version, uptimeSeconds, cpuPercent, memoryBytes,
         // workspacesDisk* missing (older daemon)
         fingerprint: null,
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'linux',
           arch: 'x86_64',
@@ -818,8 +819,8 @@ describe('daemonHealthReducer', () => {
         port: 9000,
         version: undefined,
         buildCommit: undefined,
-        protocolVersion: '2.0',
-        protocolVersionText: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: undefined,
         cpuPercent: undefined,
         memoryBytes: undefined,
@@ -840,7 +841,7 @@ describe('daemonHealthReducer', () => {
         transports: ['uds'],
         clients: 1,
         agents: 0,
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true },
       } as unknown as SystemStatusWirePayload;
       const state = { ...initialState, hostLocality: 'local' as const };
@@ -879,7 +880,7 @@ describe('daemonHealthReducer', () => {
         cpuPercent: 1.0,
         memoryBytes: 1024,
         fingerprint: 'abc123',
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'macos',
           arch: 'aarch64',
@@ -904,7 +905,7 @@ describe('daemonHealthReducer', () => {
       port: null,
       clients: 1,
       agents: 0,
-      protocolVersion: '2.0',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
     };
     const failure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:00.000Z' };
@@ -1160,7 +1161,7 @@ describe('daemonHealthReducer', () => {
       port: null,
       clients: 1,
       agents: 0,
-      protocolVersion: '2.0',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
     };
 

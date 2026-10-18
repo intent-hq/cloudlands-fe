@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { BackendConnectionConfig } from '../../backend/main/backend-connection';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   forwardPort: vi.fn(),
@@ -344,9 +345,9 @@ describe('browser:resolve-url IPC handler', () => {
     // The CREDIT gate reads the ORIGINATING backend's live hello version,
     // re-evaluated on each call so a tunnel reconnect sees an upgrade.
     mocks.getConnectedDaemonProtocolVersion.mockImplementation((id: string) =>
-      id === 'remote-saved' ? '10.4' : null,
+      id === 'remote-saved' ? CURRENT_PROTOCOL_VERSION : null,
     );
-    expect(tunnelOptions.getProtocolVersion()).toBe('10.4');
+    expect(tunnelOptions.getProtocolVersion()).toBe(CURRENT_PROTOCOL_VERSION);
     expect(mocks.getConnectedDaemonProtocolVersion).toHaveBeenLastCalledWith('remote-saved');
     mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
     expect(tunnelOptions.getProtocolVersion()).toBeNull();
