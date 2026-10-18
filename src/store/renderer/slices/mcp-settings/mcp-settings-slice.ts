@@ -1,7 +1,3 @@
-import {
-  settingsAuthorityRetired,
-  settingsSnapshotReplacing,
-} from '../settings-events/settings-events-slice';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 /**
  * MCP Settings Slice
@@ -309,20 +305,3 @@ mcpSettingsReducer.with(
 mcpSettingsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
   return clearWorkspaceState(state, workspaceId);
 });
-
-// Workspace catalogs have independent owners and authority boundaries.
-mcpSettingsReducer.with(settingsAuthorityRetired, (state) => ({
-  ...initialState,
-  byWorkspaceId: state.byWorkspaceId,
-}));
-mcpSettingsReducer.with(settingsSnapshotReplacing, (state) => ({
-  ...state,
-  disabledServers: {},
-  enabled: false,
-}));
-
-export const mcpGlobalStateRetired = createAction('mcpSettings/globalStateRetired');
-mcpSettingsReducer.with(mcpGlobalStateRetired, (state) => ({
-  ...initialState,
-  byWorkspaceId: state.byWorkspaceId,
-}));

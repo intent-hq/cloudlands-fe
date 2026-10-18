@@ -1,9 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import {
-  agentQueueRecoveryKey,
-  agentMetadataRecoveryKey,
-} from '$features/agent/agent-recovery-keys';
-import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { selectQueueMutationBlocked } from '../../pending-submissions/pending-submissions-selectors';
 import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
@@ -225,7 +219,6 @@ function* sendQueuedNow(
   if (yield* selectQueueMutationBlocked.effect(agentId, wsId, messageId))
     throw new Error(m.agent_chatSend_sendNowRejected_error());
   const ownership = captureAgentMutationOwnership(agentId, wsId);
-  const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
   const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
     agentId,
     workspaceId: wsId,
@@ -239,9 +232,7 @@ function* sendQueuedNow(
   if (result.quarantined) return 'quarantined';
   if (result.queued) return 'queued';
   if ((yield* mutationIsCurrent(agentId, ownership)) && typeof result.turnId === 'string') {
-    yield* put(
-      withRecoveryLifetime(chatQueueProcessingReceived(agentId, result.turnId), queueRecovery),
-    );
+    yield* put(chatQueueProcessingReceived(agentId, result.turnId));
   }
   return 'delivered';
 }
@@ -280,7 +271,6 @@ function* editQueued(
 ): SagaGenerator<QueuedMessageMutationResult> {
   const { agentId, workspaceId, messageId } = request;
   const ownership = captureAgentMutationOwnership(agentId, workspaceId);
-  const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(workspaceId, agentId));
   const queueSeqAtEdit = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
   const result = yield* call(
     [appClient.agents, appClient.agents.editQueued],
@@ -301,16 +291,9 @@ function* editQueued(
       getAgentQueueEventSnapshotSeq(agentId, workspaceId) === queueSeqAtEdit &&
       existing.some((message) => message.id === echoed.id)
     ) {
-      yield* put(
-        withRecoveryLifetime(upsertQueuedMessageInAgentQueue(agentId, echoed), queueRecovery),
-      );
+      yield* put(upsertQueuedMessageInAgentQueue(agentId, echoed));
     }
-    yield* put(
-      withRecoveryLifetime(
-        chatQueuedRetryRecordUpdated(agentId, messageId, echoed.content),
-        queueRecovery,
-      ),
-    );
+    yield* put(chatQueuedRetryRecordUpdated(agentId, messageId, echoed.content));
   }
   return { status: 'succeeded' };
 }
@@ -414,7 +397,6 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
       if (yield* selectQueueMutationBlocked.effect(agentId, wsId))
         throw new Error(m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
-      const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
       const result = yield* call(
         { context: appClient.agents, fn: appClient.agents.removeQueued },
         agentId,
@@ -424,9 +406,7 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
       if (!result.success)
         throw new Error(result.error ?? m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
-      yield* put(
-        withRecoveryLifetime(removeQueuedMessageFromAgentQueue(agentId, messageId), queueRecovery),
-      );
+      yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
     }
     yield* put(action.success(undefined as void));
     settled = true;
@@ -544,7 +524,6 @@ function* dispatchToLifecycle(
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
       yield* put(chatQueuedSendStarted(agentId));
-      const queueRecovery = rendererEventRecovery.capture(agentQueueRecoveryKey(wsId, agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       if (submission) yield* put(pendingSubmissionSending(submission.scope, submission.id));
       const result = yield* call(
@@ -571,15 +550,12 @@ function* dispatchToLifecycle(
             (message) => message.id === queuedMessage.id || message.turnId === turnId,
           );
           yield* put(
-            withRecoveryLifetime(
-              chatQueuedRetryRecordSet(
-                agentId,
-                queuedMessage.id,
-                buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt),
-                turnId,
-                !retryMessage && (yield* selectSubmissionObserved.effect(submission!)),
-              ),
-              queueRecovery,
+            chatQueuedRetryRecordSet(
+              agentId,
+              queuedMessage.id,
+              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt),
+              turnId,
+              !retryMessage && (yield* selectSubmissionObserved.effect(submission!)),
             ),
           );
         }
@@ -600,7 +576,7 @@ function* dispatchToLifecycle(
         if ((yield* current()) && getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
           const next = reconcileQueuedMessage(existing, queuedMessage);
-          yield* put(withRecoveryLifetime(replaceAgentQueue(agentId, next, wsId), queueRecovery));
+          yield* put(replaceAgentQueue(agentId, next, wsId));
         } else if (yield* current()) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
@@ -624,14 +600,8 @@ function* dispatchToLifecycle(
           const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
           yield* put(
             retryMessage
-              ? withRecoveryLifetime(
-                  chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId),
-                  queueRecovery,
-                )
-              : withRecoveryLifetime(
-                  chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
-                  queueRecovery,
-                ),
+              ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
+              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
           );
         }
       }
@@ -706,17 +676,17 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
  * put exactly once on every path (success, throw, cancellation).
  */
 function* performStop(agentId: string): SagaGenerator<void> {
-  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
-  const ownership = captureAgentMutationOwnership(agentId, workspaceId);
-  const completion = rendererEventRecovery.captureAuthority(agentMetadataRecoveryKey(workspaceId));
   yield* put(chatStopInitiated(agentId));
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId, workspaceId);
+    const result = yield* call(
+      [appClient.agents, appClient.agents.stop],
+      agentId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
+    );
     if (!result.success)
       logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
   } finally {
-    if (yield* mutationIsCurrent(agentId, ownership))
-      yield* put(withRecoveryLifetime(chatStopCompleted(agentId), completion));
+    yield* put(chatStopCompleted(agentId));
   }
 }
 

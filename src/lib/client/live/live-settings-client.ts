@@ -1,12 +1,3 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import {
-  GLOBAL_SETTINGS_RECOVERY_KEY,
-  captureSettingsWork,
-  GLOBAL_MCP_RECOVERY_KEY,
-  trackSettingsRead,
-  isSettingsAuthorityError,
-  reportSettingsAuthorityFailure,
-} from '$features/settings/settings-recovery-lifetime';
 import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import { validateMcpServerIdentities } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 /**
@@ -77,35 +68,11 @@ type UserPrefsResult = UserPreferencesState | null;
 const GLOBAL_RULES_WORKSPACE_ID = 'global';
 
 type PendingSettingRead = {
-  receipt: SettingsReceipt;
   generation: number;
   promise: Promise<SettingDefinitionWithValue | null>;
 };
 
-type SettingsReceipt = ReturnType<typeof rendererEventRecovery.capture>;
-const settingCache = new Map<
-  string,
-  { value: SettingDefinitionWithValue | null; receipt: SettingsReceipt }
->();
-function captureSettings(workspaceId?: string) {
-  return rendererEventRecovery.capture(
-    workspaceId
-      ? `workspace-catalog:${JSON.stringify([workspaceId])}`
-      : GLOBAL_SETTINGS_RECOVERY_KEY,
-  );
-}
-function assertSettingsCurrent(receipt: SettingsReceipt): void {
-  if (!receipt.commit(() => {})) throw new Error('Settings request lifetime retired');
-}
-function assertSettingsScopeCurrent(receipt: SettingsReceipt, workspaceId?: string): void {
-  const current = captureSettings(workspaceId);
-  if (current.key !== receipt.key) throw new Error('Settings request scope retired');
-  assertSettingsCurrent(current);
-}
-const pendingSnapshots = new Map<
-  string,
-  { receipt: SettingsReceipt; promise: Promise<SettingsSnapshot>; trailing?: boolean }
->();
+const settingCache = new Map<string, SettingDefinitionWithValue | null>();
 const pendingSettingReads = new Map<string, PendingSettingRead>();
 const trailingSettingReads = new Map<string, Promise<SettingDefinitionWithValue | null>>();
 let settingsGeneration = 0;
@@ -173,19 +140,9 @@ export function readSetting(
 ): Promise<SettingDefinitionWithValue | null> {
   ensureSettingsLifecycle();
   const key = settingKey(path, workspaceId);
-  const receipt = captureSettings(workspaceId);
-  if (!receipt.commit(() => {}))
-    return Promise.reject(new Error('Settings request lifetime retired'));
-  const cached = settingCache.get(key);
-  if (cached?.receipt.commit(() => {})) return Promise.resolve(cached.value);
-  settingCache.delete(key);
+  if (settingCache.has(key)) return Promise.resolve(settingCache.get(key) ?? null);
 
-  let pending = pendingSettingReads.get(key);
-  if (pending && pending.receipt.key !== receipt.key) {
-    pendingSettingReads.delete(key);
-    trailingSettingReads.delete(key);
-    pending = undefined;
-  }
+  const pending = pendingSettingReads.get(key);
   if (pending?.generation === settingsGeneration) return pending.promise;
   if (pending) {
     const trailing = trailingSettingReads.get(key);
@@ -193,7 +150,7 @@ export function readSetting(
     const run = pending.promise
       .catch(() => null)
       .then(() => {
-        if (trailingSettingReads.get(key) !== run || !receipt.commit(() => {})) return null;
+        if (trailingSettingReads.get(key) !== run) return null;
         trailingSettingReads.delete(key);
         return readSetting(path, workspaceId);
       })
@@ -205,48 +162,31 @@ export function readSetting(
   }
 
   const generation = settingsGeneration;
-  const authority = rendererEventRecovery.captureAuthority(GLOBAL_SETTINGS_RECOVERY_KEY);
-  const run = trackSettingsRead(
-    workspaceId
-      ? `workspace-catalog:${JSON.stringify([workspaceId])}`
-      : GLOBAL_SETTINGS_RECOVERY_KEY,
-    () =>
-      backendRequest<{
-        value?: unknown;
-        definition?: Omit<SettingDefinitionWithValue, 'value'>;
-        origin?: SettingDefinitionWithValue['origin'];
-        revision?: unknown;
-      }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) }),
-  )
+  const run = backendRequest<{
+    value?: unknown;
+    definition?: Omit<SettingDefinitionWithValue, 'value'>;
+    origin?: SettingDefinitionWithValue['origin'];
+    revision?: unknown;
+  }>('settings.get', { path, ...(workspaceId ? { workspaceId } : {}) })
     .then(parseSettingResult)
     .then((setting) => {
-      assertSettingsScopeCurrent(receipt, workspaceId);
-      if (generation === settingsGeneration && receipt.commit(() => {}))
-        settingCache.set(key, { value: setting, receipt });
+      if (generation === settingsGeneration) settingCache.set(key, setting);
       return setting;
-    })
-    .catch((error) => {
-      if (!workspaceId && isSettingsAuthorityError(error))
-        authority.commit(reportSettingsAuthorityFailure);
-      throw error;
     })
     .finally(() => {
       if (pendingSettingReads.get(key)?.promise === run) pendingSettingReads.delete(key);
     });
-  pendingSettingReads.set(key, { generation, promise: run, receipt });
+  pendingSettingReads.set(key, { generation, promise: run });
   return run;
 }
 
 /** Strict shared settings.update mutation with immediate read-cache invalidation. */
 export async function updateSettings(changes: AppSettingChange[]): Promise<SettingsUpdateResult> {
   if (changes.length === 0) return { applied: [], revision: 0 };
-  const receipt = captureSettings();
-  assertSettingsCurrent(receipt);
   const result = await backendRequest<{
     applied?: AppliedSettingChange[];
     revision?: unknown;
   }>('settings.update', { changes });
-  assertSettingsCurrent(receipt);
   invalidateSettingsReadCache(changes.map(({ path }) => path));
   return {
     applied: Array.isArray(result?.applied) ? result.applied : [],
@@ -254,23 +194,10 @@ export async function updateSettings(changes: AppSettingChange[]): Promise<Setti
   };
 }
 
-/** Revision-only acknowledgement for journals that order intervening push values themselves. */
-export async function updateSettingsRevision(changes: AppSettingChange[]): Promise<number> {
-  if (changes.length === 0) return 0;
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) throw new Error('Settings request lifetime retired');
-  const result = await backendRequest<{ revision?: unknown }>('settings.update', { changes });
-  if (!work.isSameScope()) throw new Error('Settings request scope retired');
-  invalidateSettingsReadCache(changes.map(({ path }) => path));
-  // Applied values deliberately stay behind the stricter updateSettings guard.
-  return typeof result?.revision === 'number' ? result.revision : 0;
-}
-
 /** A new connection must neither reuse nor wait on the previous host's reads. */
 export function resetSettingsConnectionCache(): void {
   invalidateSettingsReadCache();
   pendingSettingReads.clear();
-  pendingSnapshots.clear();
   trailingSettingReads.clear();
 }
 
@@ -293,67 +220,25 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async listSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
-    const key = workspaceId ?? '';
-    const receipt = captureSettings(workspaceId);
-    const current = pendingSnapshots.get(key);
-    if (current && current.receipt.key === receipt.key) {
-      if (current.trailing || current.receipt.commit(() => {})) return current.promise;
-      const promise = current.promise
-        .then(() => {
-          assertSettingsCurrent(receipt);
-          return this.readSnapshot(workspaceId);
-        })
-        .catch((error) => {
-          if (isSettingsAuthorityError(error)) throw error;
-          return { settings: [], revision: 0 };
-        })
-        .finally(() => {
-          if (pendingSnapshots.get(key)?.promise === promise) pendingSnapshots.delete(key);
-        });
-      pendingSnapshots.set(key, { receipt, promise, trailing: true });
-      return promise;
-    }
-    const promise = this.readSnapshot(workspaceId).finally(() => {
-      if (pendingSnapshots.get(key)?.promise === promise) pendingSnapshots.delete(key);
-    });
-    pendingSnapshots.set(key, { receipt, promise });
-    return promise;
-  }
-
-  private async readSnapshot(workspaceId?: string): Promise<SettingsSnapshot> {
     ensureSettingsLifecycle();
     const generation = settingsGeneration;
-    const receipt = captureSettings(workspaceId);
-    const authority = rendererEventRecovery.captureAuthority(GLOBAL_SETTINGS_RECOVERY_KEY);
     try {
-      assertSettingsCurrent(receipt);
-      const result = await trackSettingsRead(
-        workspaceId
-          ? `workspace-catalog:${JSON.stringify([workspaceId])}`
-          : GLOBAL_SETTINGS_RECOVERY_KEY,
-        () =>
-          backendRequest<{ settings?: unknown[]; revision?: unknown }>(
-            'settings.list',
-            ...(workspaceId ? [{ workspaceId }] : []),
-          ),
+      const result = await backendRequest<{ settings?: unknown[]; revision?: unknown }>(
+        'settings.list',
+        ...(workspaceId ? [{ workspaceId }] : []),
       );
-      assertSettingsScopeCurrent(receipt, workspaceId);
       const snapshot = {
         settings: Array.isArray(result?.settings)
           ? (result.settings as SettingDefinitionWithValue[])
           : [],
         revision: typeof result?.revision === 'number' ? result.revision : 0,
       };
-      if (generation === settingsGeneration && receipt.commit(() => {})) {
+      if (generation === settingsGeneration) {
         for (const setting of snapshot.settings)
-          settingCache.set(settingKey(setting.path, workspaceId), { value: setting, receipt });
+          settingCache.set(settingKey(setting.path, workspaceId), setting);
       }
       return snapshot;
-    } catch (error) {
-      if (isSettingsAuthorityError(error)) {
-        if (!workspaceId) authority.commit(reportSettingsAuthorityFailure);
-        throw error;
-      }
+    } catch {
       return { settings: [], revision: 0 };
     }
   }
@@ -375,13 +260,10 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async reset(path: string): Promise<AppliedSettingChange | null> {
-    const receipt = captureSettings();
     try {
-      assertSettingsCurrent(receipt);
       const result = await backendRequest<{ path?: string; value?: unknown }>('settings.reset', {
         path,
       });
-      assertSettingsCurrent(receipt);
       if (typeof result?.path !== 'string') return null;
       invalidateSettingsReadCache([result.path]);
       return { path: result.path, value: result.value };
@@ -540,18 +422,9 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
-    const receipt = rendererEventRecovery.capture(GLOBAL_MCP_RECOVERY_KEY);
-    const request = async (method: string, params: unknown) => {
-      assertSettingsCurrent(receipt);
-      const result = await backendRequest(method, params);
-      assertSettingsCurrent(receipt);
-      return result;
-    };
     try {
-      assertSettingsCurrent(receipt);
       validateMcpServerIdentities(servers);
       const existing = await listWireMcpServers();
-      assertSettingsCurrent(receipt);
       const existingById = new Map(existing.map((server) => [server.id, server]));
       const desired = servers.map((config) => {
         if (config.id !== undefined) return { config, current: existingById.get(config.id) };
@@ -568,12 +441,12 @@ export class LiveSettingsClient implements SettingsClient {
       }
       for (const server of existing) {
         if (server.id && !desiredIds.has(server.id)) {
-          await request('mcp.servers.delete', { serverId: server.id });
+          await backendRequest('mcp.servers.delete', { serverId: server.id });
         }
       }
       for (const { config, current } of desired) {
         if (!current?.id) {
-          await request('mcp.servers.create', {
+          await backendRequest('mcp.servers.create', {
             config: toWireMcpConfig(config, config.id),
           });
           continue;
@@ -586,7 +459,7 @@ export class LiveSettingsClient implements SettingsClient {
           headers: config.headers ?? current.headers,
         };
         if (!sameMcpConfigBody(current, desiredConfig)) {
-          await request('mcp.servers.update', {
+          await backendRequest('mcp.servers.update', {
             serverId: current.id,
             config: toWireMcpConfig(desiredConfig, current.id),
           });
@@ -594,7 +467,7 @@ export class LiveSettingsClient implements SettingsClient {
         const desiredEnabled = config.disabled !== true;
         const currentEnabled = current.enabled !== false;
         if (currentEnabled !== desiredEnabled) {
-          await request('mcp.servers.toggle', {
+          await backendRequest('mcp.servers.toggle', {
             serverId: current.id,
             enabled: desiredEnabled,
           });
@@ -726,7 +599,7 @@ interface WireMcpServerStatus {
  * the same id back (§5.22), so correlation must not depend on the echo; a
  * mismatched echo is dropped rather than mis-correlated.
  */
-export function fromWireMcpStatus(
+function fromWireMcpStatus(
   serverId: string,
   wire: WireMcpServerStatus | undefined,
 ): McpServerRuntimeStatus | null {
@@ -761,7 +634,7 @@ async function listWireMcpServers(workspaceId?: string): Promise<WireMcpServerCo
 }
 
 /** Map a wire config (§5.22) to the FE `McpServerConfig` shape; `null` when nameless. */
-export function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
+function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   if (typeof wire?.name !== 'string' || !wire.name) return null;
   const type = wire.transport === 'http' || wire.transport === 'sse' ? wire.transport : 'stdio';
   const config: McpServerConfig = { name: wire.name, type };

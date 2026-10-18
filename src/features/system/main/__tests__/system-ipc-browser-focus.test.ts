@@ -43,6 +43,7 @@ vi.mock('$lib/electron-bridge', () => ({ isElectron: () => true }));
 
 import {
   getFocusedWindowWorkspaceId,
+  getViewedWorkspaceIdForWindow,
   getWorkspaceIdForWindow,
   isFocusedWindowBrowserActive,
   setupSystemIPC,
@@ -119,6 +120,22 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
 
   it('returns undefined for a window that never reported a workspace', () => {
     expect(getWorkspaceIdForWindow(4242)).toBeUndefined();
+  });
+
+  it('reports the workspace a window is viewing now, independent of focus, and clears it when the window leaves', async () => {
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+    // Notification clicks rank windows while Intent is in the background,
+    // so the lookup must not depend on which window is focused.
+    electronMocks.getFocusedWindow.mockReturnValue(null);
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-a' });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-a');
+
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-b' });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-b');
+
+    await handle(event, { inWorkspace: false });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBeUndefined();
+    expect(getViewedWorkspaceIdForWindow(4243)).toBeUndefined();
   });
 });
 

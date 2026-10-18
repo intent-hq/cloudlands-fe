@@ -113,6 +113,32 @@ describe('script monitor wire and connection lifecycle', () => {
     connection.dispose();
   });
 
+  it('loads monitors from a protocol 15 daemon that advertises capability v2', async () => {
+    vi.mocked(backendRequest).mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            protocolVersion: '15.0',
+            capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
+          },
+        };
+      if (method === 'scriptMonitor.list') return { view: 'summary', monitors: [summary] };
+      throw new Error(`Unexpected wire call ${method}`);
+    });
+    start();
+    await ready();
+    expect(rows.status).toBe('ready');
+    expect(rows.monitors).toEqual([summary]);
+  });
+  it('still rejects a protocol 15 daemon without monitor capability v2', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({
+      server: { protocolVersion: '15.0', capabilities: { scriptMonitors: 1 } },
+    });
+    start();
+    await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 0, 1, 3])(
     'never subscribes or reads monitors without capability v2 (%s)',
     async (version) => {

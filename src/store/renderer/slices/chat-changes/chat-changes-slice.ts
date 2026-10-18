@@ -64,7 +64,6 @@ export const chatChangesEnriched =
       changes: LocalFileChange[],
       now: number,
       error?: string,
-      recoveryVersion?: number,
     ]
   >('chatChanges/enriched');
 export const chatChangesFileRefreshStarted = createAction<
@@ -100,21 +99,6 @@ export const chatChangesHunkRequested = createAction<
   ]
 >('chatChanges/hunkRequested');
 
-export const chatChangesRecovered =
-  createAction<
-    [
-      wsId: string,
-      id: string,
-      requestId: string,
-      resourceKey: string,
-      changes: LocalFileChange[],
-      retired?: boolean,
-    ]
-  >('chatChanges/recovered');
-export const chatChangesRecoveryInvalidated = createAction<
-  [wsId: string, id: string, requestId: string]
->('chatChanges/recoveryInvalidated');
-
 function entries(changes: LocalFileChange[]) {
   return createCollection<ChatChangeEntry, 'id'>(
     'id',
@@ -148,7 +132,6 @@ chatChangesReducer.with(
       changesKey,
       requestId,
       options,
-      inputChanges: entries(changes),
       status: raw || !changes.length ? 'ready' : 'pending',
       changes: !sameResource || raw || !changes.length ? entries(changes) : current.changes,
       fileRefreshes: sameResource
@@ -167,17 +150,9 @@ chatChangesReducer.with(chatChangesConsumerReleased, (state, { payload: [wsId, i
 });
 chatChangesReducer.with(
   chatChangesEnriched,
-  (
-    state,
-    { payload: [wsId, id, requestId, resourceKey, changes, now, error, recoveryVersion] },
-  ) => {
+  (state, { payload: [wsId, id, requestId, resourceKey, changes, now, error] }) => {
     const current = getItem(getWorkspaceState(state, wsId).consumers, id);
-    if (
-      !current ||
-      current.requestId !== requestId ||
-      current.resourceKey !== resourceKey ||
-      (current.recoveryVersion ?? 0) !== (recoveryVersion ?? 0)
-    )
+    if (!current || current.requestId !== requestId || current.resourceKey !== resourceKey)
       return state;
     const protectedPaths = new Set(
       getItems(current.fileRefreshes)
@@ -291,32 +266,3 @@ chatChangesReducer.with(agentFileRefreshTriggered, (state, { payload: [wsId, pat
     refreshes: upsertItem(workspaceState.refreshes, next),
   });
 });
-
-chatChangesReducer.with(
-  chatChangesRecoveryInvalidated,
-  (state, { payload: [wsId, id, requestId] }) => {
-    const current = getItem(getWorkspaceState(state, wsId).consumers, id);
-    if (!current || current.requestId !== requestId) return state;
-    return updateConsumer(state, wsId, {
-      ...current,
-      recoveryVersion: (current.recoveryVersion ?? 0) + 1,
-      fileRefreshes: createCollection<ChatFileRefresh, 'path'>('path'),
-    });
-  },
-);
-chatChangesReducer.with(
-  chatChangesRecovered,
-  (state, { payload: [wsId, id, requestId, resourceKey, changes, retired] }) => {
-    const current = getItem(getWorkspaceState(state, wsId).consumers, id);
-    if (!current || current.requestId !== requestId || current.resourceKey !== resourceKey)
-      return state;
-    return updateConsumer(state, wsId, {
-      ...current,
-      changes: entries(changes),
-      status: retired ? 'failed' : 'ready',
-      recoveryVersion: (current.recoveryVersion ?? 0) + (retired ? 1 : 0),
-      error: undefined,
-      fileRefreshes: createCollection<ChatFileRefresh, 'path'>('path'),
-    });
-  },
-);

@@ -1,12 +1,7 @@
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { fileContentRecoveryKey } from '$features/file/file-recovery-keys';
-import { demandFileRead } from '$features/file/file-recovery-demand';
-import { putFileRecovery, readFileSnapshot } from '$features/file/file-recovery-effects';
-import type { RecoveryLifetime } from '$shared/event-recovery/resource';
 import type { FileContent } from '../files-types';
 import { editableText } from '$features/file/utils/file-content';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { call, join, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, join, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { mutationErrorMessage } from '$lib/client/live/live-support';
@@ -37,18 +32,14 @@ type ReadResult =
 function* loadFileContentWorker(
   workspaceId: string,
   path: string,
-  receipt: RecoveryLifetime,
   gitRoot?: { id: string; relativePath: string },
 ): SagaGenerator<ReadResult> {
   try {
     const entry: Awaited<ReturnType<typeof appClient.files.read>> = yield* call(
-      readFileSnapshot<Awaited<ReturnType<typeof appClient.files.read>>>,
-      fileContentRecoveryKey(workspaceId, path),
-      receipt,
-      () =>
-        gitRoot
-          ? appClient.files.read(workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id })
-          : appClient.files.read(workspaceId, path),
+      [appClient.files, appClient.files.read],
+      ...(gitRoot
+        ? ([workspaceId, gitRoot.relativePath, { gitRootId: gitRoot.id }] as const)
+        : ([workspaceId, path] as const)),
     );
     if (!entry) {
       if (gitRoot) return { kind: 'failure', message: m.files_read_notFound_error() };
@@ -56,12 +47,7 @@ function* loadFileContentWorker(
       // worktree-relative (see monorepo#2059). Attempt suffix resolution.
       // Candidates never include the requested path itself (the helper
       // excludes the self-match), so a single candidate is a real retarget.
-      const { candidates, truncated } = yield* call(
-        readFileSnapshot<Awaited<ReturnType<typeof resolveFileBySuffix>>>,
-        fileContentRecoveryKey(workspaceId, path),
-        receipt,
-        (onFailure: (error: unknown) => void) => resolveFileBySuffix(workspaceId, path, onFailure),
-      );
+      const { candidates, truncated } = yield* call(resolveFileBySuffix, workspaceId, path);
       if (!truncated && candidates.length === 1) {
         // Provably unique match (search not truncated): retarget open file
         // tabs to the resolved path; the tab component re-issues the read
@@ -91,23 +77,17 @@ function* loadFileContentWorker(
   }
 }
 
-function* applyReadResult(
-  action: ReadAction,
-  result: ReadResult,
-  receipt: RecoveryLifetime,
-): SagaGenerator<void> {
+function* applyReadResult(action: ReadAction, result: ReadResult): SagaGenerator<void> {
   const [workspaceId, path, absolutePath] = action.payload;
   if (result.kind === 'retarget') {
-    yield* putFileRecovery(receipt, updateFileTabPath(workspaceId, path, result.path));
-    yield* putFileRecovery(receipt, removeFileContentEntry(workspaceId, path));
+    yield* put(removeFileContentEntry(workspaceId, path));
+    yield* put(updateFileTabPath(workspaceId, path, result.path));
   } else if (result.kind === 'failure') {
-    yield* putFileRecovery(
-      receipt,
+    yield* put(
       loadFileContentFailed(workspaceId, path, absolutePath, result.message, result.candidates),
     );
   } else {
-    yield* putFileRecovery(
-      receipt,
+    yield* put(
       loadFileContentSucceeded(workspaceId, path, absolutePath, result.content, result.truncated),
     );
   }
@@ -120,7 +100,6 @@ function* readWithPermit(
   generation: number,
   workspaceId: string,
   path: string,
-  receipt: RecoveryLifetime,
   gitRoot?: { id: string; relativePath: string },
 ): SagaGenerator<ReadResult | undefined> {
   let acquired = false;
@@ -139,7 +118,7 @@ function* readWithPermit(
     if (generations.get(key) !== generation) return undefined;
 
     const read = yield* race({
-      result: call(loadFileContentWorker, workspaceId, path, receipt, gitRoot),
+      result: call(loadFileContentWorker, workspaceId, path, gitRoot),
       cleanup: take(matchesReadCleanup(workspaceId, path)),
     });
     if (read.cleanup) {
@@ -197,8 +176,6 @@ function* loadFileContentRequestWorker(
   const generation = requestGenerations.get(action);
   if (!generation || generations.get(key) !== generation) return;
 
-  demandFileRead(workspaceId, path, action.payload[3]);
-  const receipt = rendererEventRecovery.capture(fileContentRecoveryKey(workspaceId, path));
   const result = yield* call(
     readWithPermit,
     permits,
@@ -207,12 +184,11 @@ function* loadFileContentRequestWorker(
     generation,
     workspaceId,
     path,
-    receipt,
     action.payload[3]?.gitRoot,
   );
   if (!result || generations.get(key) !== generation) return;
 
-  yield* call(applyReadResult, action, result, receipt);
+  yield* call(applyReadResult, action, result);
   if (generations.get(key) === generation) {
     generations.delete(key);
   }

@@ -47,7 +47,6 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { mockInvoke, UNBRIDGED_INVOKE_ALLOWLIST } from '$shared/ipc-mock-router';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -600,19 +599,6 @@ describe('workspaces-seeder legacy IPC bridges', () => {
   });
 
   describe('seeder respects existing route-driven state', () => {
-    it('rejects a pending seed after its captured session retires', async () => {
-      const store = new StreamingStore(reducers, []);
-      store.init();
-      const list = deferred<Workspace[]>();
-      mockedAppClient.workspaces.list.mockReturnValueOnce(list.promise);
-      const seeding = seedMockStore(store, appClient, null);
-      rendererEventRecovery.dispose();
-      list.resolve([{ id: 'retired', title: 'Retired', status: 'Active' } as Workspace]);
-      await seeding;
-      expect(store.state.workspace.workspaces.ids).toEqual([]);
-      expect(store.state.tabState.currentTabId).toBeNull();
-    });
-
     it('does not auto-select over an existing route workspace', async () => {
       const store = new StreamingStore(reducers, []);
       store.init();

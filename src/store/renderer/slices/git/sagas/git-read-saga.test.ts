@@ -1,8 +1,3 @@
-import {
-  bindGitReadTransport,
-  secondaryRootRecoveryKey,
-} from '$features/file-tracking/git-recovery-read-lane';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,9 +10,6 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  clearSecondaryRootGit,
-  gitReducer,
-  getGitWorkspaceState,
   loadGitStatus,
   loadSecondaryRootCommitFiles,
   loadSecondaryRootGit,
@@ -857,108 +849,5 @@ describe('gitReadSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
-  });
-});
-
-describe('secondary root admitted commit detail reads', () => {
-  it('retires the actual root projection on a canonical commit-detail denial', async () => {
-    let git = gitReducer(
-      gitReducer.initialState,
-      setSecondaryRootGit('ws-denied', 'root', {
-        status: {
-          branch: 'protected',
-          ahead: 0,
-          behind: 0,
-          files: [],
-          diverged: false,
-          hasUncommittedChanges: false,
-          hasUntrackedFiles: false,
-        },
-        commits: [],
-        commitFiles: {},
-        loading: false,
-        error: null,
-      }),
-    );
-    const denial = Object.assign(new Error('denied'), { rpcCode: -32003 });
-    const request = vi.fn().mockRejectedValue(denial);
-    const failed = vi.fn((error: unknown) => {
-      if (error === denial) git = gitReducer(git, clearSecondaryRootGit('ws-denied', 'root'));
-    });
-    const off = bindGitReadTransport(
-      secondaryRootRecoveryKey('ws-denied', 'root'),
-      { key: {}, request },
-      failed,
-    );
-    const channel = stdChannel();
-    const task = runSaga(
-      {
-        channel,
-        getState: () => withLegacyPrincipal({ git }),
-        dispatch: (action) => {
-          git = gitReducer(git, action);
-        },
-      },
-      gitReadSaga,
-    );
-    try {
-      channel.put(loadSecondaryRootCommitFiles('ws-denied', 'root', 'sha'));
-      for (let i = 0; i < 80; i++) await Promise.resolve();
-      expect(request).toHaveBeenCalledExactlyOnceWith('git.commitDetails', {
-        workspaceId: 'ws-denied',
-        gitRootId: 'root',
-        commitHash: 'sha',
-      });
-      expect(failed).toHaveBeenCalledWith(denial);
-      expect(getGitWorkspaceState(git, 'ws-denied').secondaryRoots.root).toBeUndefined();
-    } finally {
-      task.cancel();
-      await task.toPromise();
-      off();
-    }
-  });
-  it('retains the original authority while waiting for a root mutation', async () => {
-    let current = true;
-    const capture = vi.spyOn(rendererEventRecovery, 'capture').mockImplementation(() => ({
-      key: {},
-      isCurrent: () => current,
-      commit: (fn) => {
-        if (!current) return false;
-        fn();
-        return true;
-      },
-    }));
-    const request = vi.fn().mockResolvedValue({ files: [], fileDetails: [] });
-    const off = bindGitReadTransport(secondaryRootRecoveryKey('ws-queued', 'root'), {
-      key: {},
-      request,
-    });
-    const mutation = reserveGitMutation('ws-queued', 'root');
-    const channel = stdChannel();
-    const actions: unknown[] = [];
-    const task = runSaga(
-      {
-        channel,
-        getState: () => withLegacyPrincipal({}),
-        dispatch: (action) => actions.push(action),
-      },
-      gitReadSaga,
-    );
-    try {
-      channel.put(loadSecondaryRootCommitFiles('ws-queued', 'root', 'sha'));
-      for (let i = 0; i < 20; i++) await Promise.resolve();
-      current = false;
-      await mutation.release();
-      for (let i = 0; i < 80; i++) await Promise.resolve();
-      expect(request).not.toHaveBeenCalled();
-      expect(actions).toEqual([]);
-      expect(capture).toHaveBeenCalledTimes(1);
-    } finally {
-      await mutation.release();
-      task.cancel();
-      await task.toPromise();
-      off();
-      capture.mockRestore();
-    }
   });
 });

@@ -43,7 +43,6 @@ function start() {
     for (const listener of listeners) listener();
   };
   const reduxStore = {
-    dispatch,
     getState: () => state,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -110,10 +109,7 @@ it('a list resolving after the view is released cannot replace a reacquired snap
     await settle();
     run.dispatch(gitRootsConsumerMounted('ws', 'sidebar'));
     await settle();
-    // The remount shares the physical read lane: its list waits for the
-    // released request to settle instead of overlapping it.
-    expect(wire.request).toHaveBeenCalledTimes(1);
-    expect(run.roots()?.map.secondary).toBeUndefined();
+    expect(run.roots()?.map.secondary).toEqual(root);
     resolve({ gitRoots: [{ ...root, path: '/obsolete' }] });
     await settle();
     expect(run.roots()?.map.secondary).toEqual(root);

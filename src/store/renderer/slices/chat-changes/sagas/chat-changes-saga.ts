@@ -1,11 +1,3 @@
-import {
-  captureGitRead,
-  gitReadFailureDrained,
-  chatContentRecoveryKey,
-} from '$features/file-tracking/git-recovery-read-lane';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { getRecoveryAdmission, withRecoveryLifetime } from '../../../middlewares/event-recovery';
-import type { GitReadTransport } from '$features/file-tracking/components/diff/diff-ipc-batcher';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   actionChannel,
@@ -82,31 +74,24 @@ type Lifetime = {
   resourceKey: string;
   wsId: string;
   id: string;
-  lane: ReturnType<typeof captureGitRead>;
-  recoveryVersion?: number;
 };
 type RefreshRequest = {
   wsId: string;
   id: string;
   resourceKey: string;
   path: string;
-  lane: ReturnType<typeof captureGitRead>;
 };
 
-export function* readChange(
+function* readChange(
   wsId: string,
   input: ChatChangesInput,
   change: LocalFileChange,
   signal: AbortSignal,
   branchFallbacks?: LocalFileChange[],
-  transport?: GitReadTransport,
-  canRead: () => boolean = () => true,
-  recovering = false,
 ): SagaGenerator<LocalFileChange[]> {
-  const policy = { signal, transport, canRead: () => !signal.aborted && canRead() };
-  if (signal.aborted || !canRead()) return [];
+  const policy = { signal, canRead: () => !signal.aborted };
+  if (signal.aborted) return [];
   if (branchFallbacks) {
-    if (input.gitRootId) throw new Error('Secondary-root branch-base diffs are not supported');
     const chunk = yield* call(
       batchedGitBranchBaseDiff,
       wsId,
@@ -117,7 +102,7 @@ export function* readChange(
       },
       change.filePath,
     );
-    if (!chunk) return recovering ? [] : branchFallbacks;
+    if (!chunk) return branchFallbacks;
     const chunks = chunk.chunks as DiffHunk[] | undefined;
     return [
       {
@@ -131,15 +116,12 @@ export function* readChange(
     ];
   }
   if (input.showStagingControls && getChangeCategory(change) === 'committed' && change.commitHash) {
-    const commitHash = change.commitHash;
     const path = toGitRootRelativePath(change.filePath, input.gitRootPath);
-    const options = { gitRootId: input.gitRootId, transport };
-    const [newSide, oldSide] = yield* call(() =>
-      settleReads([
-        dedupedShowFile(wsId, commitHash, path, options),
-        dedupedShowFile(wsId, `${commitHash}^`, path, options),
-      ]),
-    );
+    const options = input.gitRootId ? { gitRootId: input.gitRootId } : undefined;
+    const [newSide, oldSide] = yield* all([
+      call(dedupedShowFile, wsId, change.commitHash, path, options),
+      call(dedupedShowFile, wsId, `${change.commitHash}^`, path, options),
+    ]);
     return [
       {
         ...change,
@@ -171,9 +153,7 @@ export function* readChange(
           isFullFileContent: true,
         },
       ]
-    : recovering
-      ? []
-      : [change];
+    : [change];
 }
 
 function* enrich(
@@ -184,11 +164,7 @@ function* enrich(
   const { wsId, id, resourceKey, controller } = lifetime;
   let error: string | undefined;
   try {
-    if (
-      !lifetime.lane.receipt.commit(() => undefined) ||
-      !(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))
-    )
-      return;
+    if (!(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))) return;
     const consumer = yield* selectChatChangesConsumer.effect(wsId, id);
     const now = Date.now();
     const protectedPaths = new Set(
@@ -225,16 +201,7 @@ function* enrich(
         if (getChangeCategory(change) !== 'committed' && change.chunks?.length) return [change];
       }
       try {
-        return yield* call(
-          readChange,
-          wsId,
-          input,
-          change,
-          controller.signal,
-          branchFallbacks,
-          lifetime.lane.transport,
-          () => lifetime.lane.receipt.commit(() => undefined),
-        );
+        return yield* call(readChange, wsId, input, change, controller.signal, branchFallbacks);
       } catch (caught) {
         error = caught instanceof Error ? caught.message : String(caught);
         return branchFallbacks ?? [change];
@@ -242,8 +209,6 @@ function* enrich(
     }
     function* numstat(committed: boolean) {
       if (
-        input.gitRootId ||
-        !lifetime.lane.receipt.commit(() => undefined) ||
         !input.showStagingControls ||
         (committed && (input.groupByCommit || !(input.branchBaseRef || input.branchBaseCommitSha)))
       )
@@ -257,9 +222,8 @@ function* enrich(
                 baseRef: input.branchBaseRef,
                 baseCommitSha: input.branchBaseCommitSha,
                 targetRef: 'HEAD',
-                transport: lifetime.lane.transport,
               }
-            : { transport: lifetime.lane.transport },
+            : {},
         );
       } catch {
         return [];
@@ -272,43 +236,31 @@ function* enrich(
     });
     if (
       !controller.signal.aborted &&
-      lifetime.lane.receipt.commit(() => undefined) &&
       (yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))
     ) {
       yield* put(
-        withRecoveryLifetime(
-          chatChangesEnriched(
-            wsId,
-            id,
-            requestId,
-            resourceKey,
-            applyNumstatStats(results.flat(), localStats, committedStats),
-            Date.now(),
-            error,
-            lifetime.recoveryVersion,
-          ),
-          lifetime.lane.receipt,
+        chatChangesEnriched(
+          wsId,
+          id,
+          requestId,
+          resourceKey,
+          applyNumstatStats(results.flat(), localStats, committedStats),
+          Date.now(),
+          error,
         ),
       );
     }
   } catch (caught) {
-    if (
-      lifetime.lane.receipt.commit(() => undefined) &&
-      (yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))
-    ) {
+    if (yield* selectChatChangesCanRead.effect(wsId, id, resourceKey)) {
       yield* put(
-        withRecoveryLifetime(
-          chatChangesEnriched(
-            wsId,
-            id,
-            requestId,
-            resourceKey,
-            input.changes,
-            Date.now(),
-            caught instanceof Error ? caught.message : String(caught),
-            lifetime.recoveryVersion,
-          ),
-          lifetime.lane.receipt,
+        chatChangesEnriched(
+          wsId,
+          id,
+          requestId,
+          resourceKey,
+          input.changes,
+          Date.now(),
+          caught instanceof Error ? caught.message : String(caught),
         ),
       );
     }
@@ -320,11 +272,7 @@ function* enrich(
 function* refreshFile(lifetime: Lifetime, path: string): SagaGenerator<void> {
   const { wsId, id, resourceKey, controller } = lifetime;
   try {
-    if (
-      !lifetime.lane.receipt.commit(() => undefined) ||
-      !(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))
-    )
-      return;
+    if (!(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))) return;
     const consumer = yield* selectChatChangesConsumer.effect(wsId, id);
     if (!consumer) return;
     const refresh: ChatFileRefresh = {
@@ -334,34 +282,22 @@ function* refreshFile(lifetime: Lifetime, path: string): SagaGenerator<void> {
       refreshedAt: Date.now(),
       mutationRequestId: getItem(consumer.fileRefreshes, path)?.queuedMutationRequestId,
     };
-    yield* put(
-      withRecoveryLifetime(
-        chatChangesFileRefreshStarted(wsId, id, resourceKey, refresh),
-        lifetime.lane.receipt,
-      ),
-    );
+    yield* put(chatChangesFileRefreshStarted(wsId, id, resourceKey, refresh));
     try {
       const before = yield* selectChatChanges.effect(wsId, id);
       const gitlink = before.find((change) => change.filePath === path)?.gitlink;
       const options = {
         signal: controller.signal,
-        canRead: () => !controller.signal.aborted && lifetime.lane.receipt.commit(() => undefined),
-        transport: lifetime.lane.transport,
+        canRead: () => !controller.signal.aborted,
         gitRootId: consumer.options.gitRootId,
         gitRootPath: consumer.options.gitRootPath,
         gitlink,
       };
-      const [staged, unstaged] = yield* call(() =>
-        settleReads([
-          batchedGitDiff(wsId, true, path, options),
-          batchedGitDiff(wsId, false, path, options),
-        ]),
-      );
-      if (
-        !lifetime.lane.receipt.commit(() => undefined) ||
-        !(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))
-      )
-        return;
+      const [staged, unstaged] = yield* all([
+        call(batchedGitDiff, wsId, true, path, options),
+        call(batchedGitDiff, wsId, false, path, options),
+      ]);
+      if (!(yield* selectChatChangesCanRead.effect(wsId, id, resourceKey))) return;
       const existing = yield* selectChatChanges.effect(wsId, id);
       const changes: LocalFileChange[] = [];
       for (const [isStaged, chunk] of [
@@ -389,27 +325,21 @@ function* refreshFile(lifetime: Lifetime, path: string): SagaGenerator<void> {
         });
       }
       yield* put(
-        withRecoveryLifetime(
-          chatChangesFileRefreshed(
-            wsId,
-            id,
-            resourceKey,
-            { ...refresh, status: 'ready', refreshedAt: Date.now() },
-            changes,
-          ),
-          lifetime.lane.receipt,
+        chatChangesFileRefreshed(
+          wsId,
+          id,
+          resourceKey,
+          { ...refresh, status: 'ready', refreshedAt: Date.now() },
+          changes,
         ),
       );
     } catch {
       yield* put(
-        withRecoveryLifetime(
-          chatChangesFileRefreshed(wsId, id, resourceKey, {
-            ...refresh,
-            status: 'failed',
-            refreshedAt: Date.now(),
-          }),
-          lifetime.lane.receipt,
-        ),
+        chatChangesFileRefreshed(wsId, id, resourceKey, {
+          ...refresh,
+          status: 'failed',
+          refreshedAt: Date.now(),
+        }),
       );
     }
   } finally {
@@ -436,20 +366,15 @@ function* waitForInvalidation(lifetime: Lifetime): SagaGenerator<void> {
   }
 }
 
-const admittedReads = new WeakMap<object, ReturnType<typeof captureGitRead>>();
 function* inputWorker(action: ReturnType<typeof chatChangesInputChanged>): SagaGenerator<void> {
   const [wsId, id, requestId, input] = action.payload;
   const consumer = yield* selectChatChangesConsumer.effect(wsId, id);
   if (!consumer || consumer.requestId !== requestId) return;
-  const lane = admittedReads.get(action);
-  if (!lane) return;
   const lifetime: Lifetime = {
     wsId,
     id,
     resourceKey: consumer.resourceKey,
     controller: new AbortController(),
-    lane,
-    recoveryVersion: consumer.recoveryVersion,
   };
   try {
     yield* race({
@@ -494,25 +419,13 @@ function* fileChanged(
     if (!consumer.options.showStagingControls) continue;
     const changes = yield* selectChatChanges.effect(wsId, consumer.id);
     const change = changes.find((change) => pathsMatch(path, change.filePath));
-    if (change) {
-      const key = chatContentRecoveryKey(
-        wsId,
-        consumer.id,
-        consumer.resourceKey,
-        consumer.requestId,
-      );
-      const admission = getRecoveryAdmission(action, key);
-      if (admission === null || (admission && !admission.commit(() => undefined))) continue;
-      const lane = captureGitRead(key);
-      if (admission) lane.receipt = admission;
+    if (change)
       yield* put(refreshes, {
         wsId,
         id: consumer.id,
         resourceKey: consumer.resourceKey,
         path: change.filePath,
-        lane,
       });
-    }
   }
 }
 
@@ -553,9 +466,6 @@ function* hunkFinished(
   const consumers = yield* selectChatChangesConsumers.effect(wsId);
   const consumer = consumers.find((consumer) => writeConsumer(consumer) === operation.consumerId);
   if (consumer) {
-    const key = chatContentRecoveryKey(wsId, consumer.id, consumer.resourceKey, consumer.requestId);
-    if (!rendererEventRecovery.capture(key).commit(() => undefined))
-      rendererEventRecovery.invalidate(key);
     yield* put(
       chatChangesMutationRefreshQueued(
         wsId,
@@ -571,9 +481,6 @@ function* hunkFinished(
       id: consumer.id,
       resourceKey: consumer.resourceKey,
       path: operation.filePath,
-      lane: captureGitRead(
-        chatContentRecoveryKey(wsId, consumer.id, consumer.resourceKey, consumer.requestId),
-      ),
     });
   }
 }
@@ -601,13 +508,7 @@ export function* chatChangesSaga(): SagaGenerator<void> {
       const action = yield* take(inputs);
       const [wsId, id, requestId] = action.payload;
       const consumer = yield* selectChatChangesConsumer.effect(wsId, id);
-      if (consumer?.requestId === requestId) {
-        admittedReads.set(
-          action,
-          captureGitRead(chatContentRecoveryKey(wsId, id, consumer.resourceKey, requestId)),
-        );
-        yield* put(admitted, action);
-      }
+      if (consumer?.requestId === requestId) yield* put(admitted, action);
     }
   } finally {
     inputs.close();
@@ -619,15 +520,4 @@ export function* chatChangesSaga(): SagaGenerator<void> {
       yield* put(chatChangesConsumerReleased(wsId, consumer.id));
     }
   }
-}
-
-export async function settleReads<T>(reads: Promise<T>[]): Promise<T[]> {
-  const values = await Promise.allSettled(reads);
-  await Promise.all(
-    values.map((value) =>
-      value.status === 'rejected' ? gitReadFailureDrained(value.reason) : undefined,
-    ),
-  );
-  for (const value of values) if (value.status === 'rejected') throw value.reason;
-  return values.map((value) => (value as PromiseFulfilledResult<T>).value);
 }

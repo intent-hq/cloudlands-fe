@@ -45,7 +45,6 @@ describe('appClient seam (all domains live)', () => {
     const skills = await appClient.skills.list('ws-123');
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-      observeCompletion: true,
       method: 'skill.list',
       params: { workspaceId: 'ws-123' },
     });
@@ -67,7 +66,6 @@ describe('appClient seam (all domains live)', () => {
     await appClient.system.status();
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
-      observeCompletion: true,
       method: 'system.status',
       params: undefined,
     });

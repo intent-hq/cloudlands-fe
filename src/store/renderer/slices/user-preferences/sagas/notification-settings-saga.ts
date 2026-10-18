@@ -1,11 +1,9 @@
-import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
 import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
 
-import { readSetting, updateSettingsRevision } from '$lib/client/live/live-settings-client';
+import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
-  selectNotificationFieldEdits,
   selectNotificationVolume,
   selectNotificationVolumeWrite,
   selectSoundEnabled,
@@ -31,9 +29,6 @@ const NOTIFICATION_PATHS = {
 type SettingResponse = { value?: unknown };
 
 export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) return;
-  const initial = yield* selectNotificationFieldEdits.effect();
   try {
     // Volume is hydrated by the revision-ordered settings snapshot/event saga.
     // A separate settings.get here could complete after a newer live update.
@@ -42,31 +37,17 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
       call(readSetting, NOTIFICATION_PATHS.soundEnabled),
       call(readSetting, NOTIFICATION_PATHS.soundOnlyWhenUnfocused),
     ]);
-    if (!work.isSameScope()) return;
-    if (
-      work.isSameScope() &&
-      (yield* selectNotificationFieldEdits.effect())?.enabled === initial?.enabled &&
-      typeof (enabled as SettingResponse).value === 'boolean'
-    ) {
+    if (typeof (enabled as SettingResponse).value === 'boolean') {
       const action = setNotificationEnabled((enabled as { value: boolean }).value);
       suppressedActions?.add(action);
       yield* put(action);
     }
-    if (
-      work.isSameScope() &&
-      (yield* selectNotificationFieldEdits.effect())?.soundEnabled === initial?.soundEnabled &&
-      typeof (soundEnabled as SettingResponse).value === 'boolean'
-    ) {
+    if (typeof (soundEnabled as SettingResponse).value === 'boolean') {
       const action = setSoundEnabled((soundEnabled as { value: boolean }).value);
       suppressedActions?.add(action);
       yield* put(action);
     }
-    if (
-      work.isSameScope() &&
-      (yield* selectNotificationFieldEdits.effect())?.soundOnlyWhenUnfocused ===
-        initial?.soundOnlyWhenUnfocused &&
-      typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean'
-    ) {
+    if (typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean') {
       const action = setSoundOnlyWhenUnfocused(
         (soundOnlyWhenUnfocused as { value: boolean }).value,
       );
@@ -79,20 +60,15 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
 }
 
 export function* persistNotificationSettingsWorker() {
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) return;
-  const queued = yield* selectNotificationVolumeWrite.effect();
   yield* delay(100);
-  if (!work.isSameScope()) return;
-  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
-  if (queued.editId !== editId || queued.hydrationEpoch !== hydrationEpoch) return;
   const enabled = yield* selectNotificationEnabled.effect();
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
+  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
   let revision: number | undefined;
   try {
-    revision = yield* call(updateSettingsRevision, [
+    const result = yield* call(updateSettings, [
       { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
       { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
       {
@@ -101,15 +77,13 @@ export function* persistNotificationSettingsWorker() {
       },
       { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
     ]);
+    revision = result.revision;
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
   // A cancelled older save must not release a newer edit's hydration guard.
   // Success and failure both settle the matching write; cancellation skips this put.
-  if (!work.isSameScope()) return;
-  const current = yield* selectNotificationVolumeWrite.effect();
-  if (editId != null && current.editId === editId && current.hydrationEpoch === hydrationEpoch)
-    yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
+  if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
 }
 
 /** Unregistered until the S20 middleware cutover. */

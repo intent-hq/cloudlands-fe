@@ -16,7 +16,6 @@ import {
   openShareDialog,
   shareAccessWithheld,
   shareActionSettled,
-  shareCommandDiscarded,
   shareDataFailed,
   shareDataLoaded,
   shareDataRequested,
@@ -860,44 +859,4 @@ describe('sharing prerequisite settlements', () => {
     );
     expect(reduce(reopened, stale)).toBe(reopened);
   });
-});
-it('discards only the originating create or accepted member operation', () => {
-  let state = reduce(
-    opened(),
-    shareInviteCreateRequested({ pinLogin: '' }),
-    shareMemberAddRequested('guest'),
-  );
-  const firstCreate = state.createRequest;
-  const firstAction = state.actionOperationId!;
-  state = reduce(state, shareInviteCreateRequested({ pinLogin: 'new' }));
-  expect(
-    reduce(state, shareCommandDiscarded(target(state), { kind: 'create', request: firstCreate })),
-  ).toBe(state);
-  state = reduce(
-    state,
-    shareCommandDiscarded(target(state), { kind: 'create', request: state.createRequest }),
-  );
-  expect(state).toMatchObject({
-    creating: false,
-    addingPrincipalId: 'guest',
-    actionOperationId: firstAction,
-  });
-  state = reduce(
-    state,
-    shareCommandDiscarded(target(state), { kind: 'action', operationId: firstAction }),
-  );
-  state = reduce(state, shareMemberAddRequested('guest'));
-  expect(state.actionOperationId).not.toBe(firstAction);
-  expect(
-    reduce(
-      state,
-      shareCommandDiscarded(target(state), { kind: 'action', operationId: firstAction }),
-    ),
-  ).toBe(state);
-  expect(
-    reduce(
-      state,
-      shareActionSettled({ target: target(state), operationId: firstAction, error: null }),
-    ),
-  ).toBe(state);
 });

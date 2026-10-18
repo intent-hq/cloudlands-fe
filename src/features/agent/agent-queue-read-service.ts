@@ -1,6 +1,3 @@
-import { trackAgentRecoveryRead } from './agent-recovery-read-lane';
-import { agentQueueRecoveryKey } from './agent-recovery-keys';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { beginSubmissionRead } from './submission-evidence';
 import { sameSubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import { claimAgentReadOwnership } from './agent-read-ownership';
@@ -115,35 +112,13 @@ async function runHydrateAgentQueueFetch(
     hydrateFollowUpWantedByAgent.delete(key);
     return;
   }
-  if (!ownership.isCurrent()) return;
   appStore.dispatch(hydrateAgentQueueRequested(agentId, workspaceId));
-  const recovery = rendererEventRecovery.capture(agentQueueRecoveryKey(workspaceId, agentId));
-  if (!recovery.commit(() => undefined)) return;
   const seqAtFetchStart = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
   const submissionScope = appStore.state.pendingSubmissions?.byAgentId[agentId]?.scope;
   const submissionRead = beginSubmissionRead(agentId, workspaceId, 'queue');
   try {
-    const queue = await trackAgentRecoveryRead(
-      agentQueueRecoveryKey(workspaceId, agentId),
-      () => {
-        if (
-          connection !== connectionGeneration ||
-          !ownership.isCurrent() ||
-          !recovery.commit(() => undefined)
-        )
-          throw new Error('Queue read authority retired');
-        return appClient.agents.getQueue(agentId, workspaceId);
-      },
-      rendererEventRecovery.hasOwner(agentQueueRecoveryKey(workspaceId, agentId))
-        ? recovery
-        : undefined,
-    );
-    if (
-      connection !== connectionGeneration ||
-      !ownership.isCurrent() ||
-      !recovery.commit(() => undefined)
-    )
-      return;
+    const queue = await appClient.agents.getQueue(agentId, workspaceId);
+    if (connection !== connectionGeneration || !ownership.isCurrent()) return;
     if (!submissionRead.isCurrent()) {
       const current = appStore.state.pendingSubmissions?.byAgentId[agentId];
       // A newer full push satisfies this queue read within the same admission
@@ -182,12 +157,7 @@ async function runHydrateAgentQueueFetch(
       noteAgentQueueEventSnapshotApplied(agentId, workspaceId);
     }
   } catch (error) {
-    if (
-      connection !== connectionGeneration ||
-      !ownership.isCurrent() ||
-      !recovery.commit(() => undefined)
-    )
-      return;
+    if (connection !== connectionGeneration || !ownership.isCurrent()) return;
     logger.error(`Failed to hydrate agent queue for ${agentId}`, error);
     if (isAgentDeletionPending(agentId)) {
       // Don't create/keep an error entry for a soft-hidden session.
@@ -205,7 +175,6 @@ async function runHydrateAgentQueueFetch(
     // follow-ups queued during the trailing fetch) has finished.
     if (
       connection === connectionGeneration &&
-      recovery.commit(() => undefined) &&
       ownership.isCurrent() &&
       hydrateFollowUpWantedByAgent.delete(key)
     ) {

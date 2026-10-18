@@ -42,18 +42,6 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     window.electronAPI = originalElectronAPI;
   });
 
-  it('replaces workspace membership when an authoritative snapshot moves an existing stream id', () => {
-    tracker.replaceSnapshot([
-      { agentId: 'same', sessionId: 'session', workspaceId: 'old', startTime: 1 },
-    ]);
-    tracker.replaceSnapshot([
-      { agentId: 'same', sessionId: 'session', workspaceId: 'new', startTime: 1 },
-    ]);
-    expect(tracker.getStreamingAgentIdsForWorkspace('old')).toEqual([]);
-    expect(tracker.getStreamingAgentIdsForWorkspace('new')).toEqual(['same']);
-    expect(bridge.invoke).not.toHaveBeenCalled();
-  });
-
   it('keeps concurrent fetches to one underlying scan while in flight', async () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke

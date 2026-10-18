@@ -1,4 +1,3 @@
-import { readTerminalRuntimeList, subscribeTerminalRuntime } from './terminal-runtime-recovery';
 /**
  * Live terminals domain backed by the intentd daemon (PROTOCOL §5.13).
  *
@@ -61,7 +60,7 @@ function decodeBase64(value: unknown): string {
  * flows straight into `TerminalTab.name`; display fallbacks live in the
  * selectors (`customName || name || 'Terminal'`), never a raw id-derived label.
  */
-export function toTerminalTab(raw: unknown, fallbackWorkspaceId?: string): TerminalTab | null {
+function toTerminalTab(raw: unknown, fallbackWorkspaceId?: string): TerminalTab | null {
   if (!raw || typeof raw !== 'object') return null;
   const entry = raw as Record<string, unknown>;
   const id = String(entry.terminalId ?? entry.id ?? '');
@@ -103,12 +102,9 @@ function extractSubscriptionId(params: unknown): string | undefined {
 
 export class LiveTerminalsClient implements TerminalsClient {
   async list(workspaceId: string): Promise<TerminalListResult> {
-    const result = await readTerminalRuntimeList(workspaceId, () =>
-      backendRequest<{ terminals?: unknown[]; daemonBootId?: unknown } | unknown[]>(
-        'terminal.list',
-        { workspaceId },
-      ),
-    );
+    const result = await backendRequest<
+      { terminals?: unknown[]; daemonBootId?: unknown } | unknown[]
+    >('terminal.list', { workspaceId });
     // Envelope shape (PROTOCOL §5.13): { terminals, daemonBootId }. A legacy
     // pre-envelope daemon returns a bare array — tolerated by shape detection
     // and treated as carrying no boot metadata (daemonBootId omitted), which
@@ -211,13 +207,6 @@ export class LiveTerminalsClient implements TerminalsClient {
     let disposed = false;
     let generation = 0;
     let subscriptionId: string | undefined;
-    const recovery = workspaceId
-      ? subscribeTerminalRuntime(workspaceId, terminalId, handlers, () => {
-          generation++;
-          if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
-          subscriptionId = undefined;
-        })
-      : undefined;
 
     // Daemon fan-out is one `events.event` per matching subscription on the
     // socket, each tagged with `params.subscriptionId` (PROTOCOL §5.13 /
@@ -229,7 +218,7 @@ export class LiveTerminalsClient implements TerminalsClient {
     // input flows, so the only events crossing the wire before resolution
     // belong to other subscriptions and were never ours to process.
     const off = onBackendNotification((n) => {
-      if (disposed || recovery?.isAdopted() || n.method !== 'events.event') return;
+      if (n.method !== 'events.event') return;
       const tag = extractSubscriptionId(n.params);
       if (subscriptionId === undefined || tag !== subscriptionId) return;
       const event = extractEvent(n.params);
@@ -278,20 +267,18 @@ export class LiveTerminalsClient implements TerminalsClient {
         });
     };
 
-    if (!recovery?.isAdopted()) void doSubscribe();
+    doSubscribe();
 
     // On reconnect the daemon dropped its subscription registry; re-subscribe
     // on the same handler so this terminal's events keep flowing. The scope
     // gate above rekeys on the fresh id (RESUB-1).
     const offReconnect = onBackendReconnected(() => {
-      if (recovery?.isAdopted()) return;
       subscriptionId = undefined;
       void doSubscribe();
     });
 
     return () => {
       disposed = true;
-      recovery?.dispose();
       off();
       offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);

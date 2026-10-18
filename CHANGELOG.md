@@ -4,6 +4,38 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.219.18](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.17...v2.219.18) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** keep suggested prompt rows still when shortcut hints appear ([#3463](https://github.com/intent-hq/cloudlands-fe/issues/3463)) ([722258c](https://github.com/intent-hq/cloudlands-fe/commit/722258cc55ca34267e8a8d0282088c9bfaddfb05))
+* **chat:** match attention notices by kind and timestamp only ([#3465](https://github.com/intent-hq/cloudlands-fe/issues/3465)) ([da8e6af](https://github.com/intent-hq/cloudlands-fe/commit/da8e6af6a2516130f7f884be4de2db696dabf48b))
+
+## [2.219.17](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.16...v2.219.17) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* gate script lists and monitors on capabilities, not protocol 14 ([#3461](https://github.com/intent-hq/cloudlands-fe/issues/3461)) ([7c3d51e](https://github.com/intent-hq/cloudlands-fe/commit/7c3d51e2cd9b23025dd8a4123e4133b7eb31df5a))
+
+## [2.219.16](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.15...v2.219.16) (2026-10-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.6 ([#3459](https://github.com/intent-hq/cloudlands-fe/issues/3459)) ([63a10fe](https://github.com/intent-hq/cloudlands-fe/commit/63a10fe29e25762fac90ef34d4483a299edc8323))
+
+## [2.219.15](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.14...v2.219.15) (2026-10-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.5 ([#3458](https://github.com/intent-hq/cloudlands-fe/issues/3458)) ([921c0c2](https://github.com/intent-hq/cloudlands-fe/commit/921c0c2008e5f848c7009f8e453579b2fa5e6ebf))
+* **chat:** retry wake-started quota failures on another provider ([#3451](https://github.com/intent-hq/cloudlands-fe/issues/3451)) ([1487c4d](https://github.com/intent-hq/cloudlands-fe/commit/1487c4d9391e75d5dd6fdd4586a1b1b670a4a31a))
+* recover authorized stores after generic event loss ([#3392](https://github.com/intent-hq/cloudlands-fe/issues/3392)) ([7de4594](https://github.com/intent-hq/cloudlands-fe/commit/7de4594f31ea51a9ff9efec924a07be2e0afdba4))
+* stop Home New workspace from overwriting the last-used repo ([#3455](https://github.com/intent-hq/cloudlands-fe/issues/3455)) ([17eb598](https://github.com/intent-hq/cloudlands-fe/commit/17eb5989fc263c3455bbf1d873b961f6af278645))
+
 ## [2.219.14](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.13...v2.219.14) (2026-10-17)
 
 

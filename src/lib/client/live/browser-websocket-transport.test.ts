@@ -1,5 +1,3 @@
-import { RecoveryRequestTimeoutError } from '$shared/event-recovery/session';
-import { RecoveryResource } from '$shared/event-recovery/resource';
 /**
  * Unit tests for the browser WebSocket `BackendTransport`.
  *
@@ -105,26 +103,13 @@ function helloResult(clientId = 'browser-1') {
 }
 
 /** Complete the real connect handshake for tests exercising unrelated RPC behavior. */
-async function connect(socket: FakeWebSocket, recovery = false): Promise<void> {
+async function connect(socket: FakeWebSocket): Promise<void> {
   socket.open();
   await flush();
   const hello = socket.lastFrame();
   expect(hello).toMatchObject({ method: 'client.hello' });
   socket.sent.pop();
-  const result = helloResult();
-  socket.receive({
-    jsonrpc: '2.0',
-    id: hello.id,
-    result: recovery
-      ? {
-          ...result,
-          server: {
-            ...result.server,
-            capabilities: { ...result.server.capabilities, eventStreamRecovery: 1 },
-          },
-        }
-      : result,
-  });
+  socket.receive({ jsonrpc: '2.0', id: hello.id, result: helloResult() });
   await flush();
 }
 
@@ -952,44 +937,30 @@ describe('observational node capabilities', () => {
       result: {
         clientId: 'A',
         server: {
-          capabilities: {
-            agentNodes: 1,
-            agentPlatformRouting: 1,
-            workspaceMembershipEvents: 1,
-            hostMembership: 1,
-            personalPairing: 1,
-            liveState: true,
-            futureCapability: 2,
-          },
+          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
         },
       },
     });
     await expect(observing).resolves.toEqual({
-      clientId: 'A',
       server: {
         capabilities: {
-          hostMembership: 1,
-          personalPairing: 1,
-          liveState: true,
-          futureCapability: 2,
           agentNodes: 1,
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
-          eventStreamRecovery: 0,
         },
       },
     });
     await h.transport.observeNodeCapabilities();
     expect(socket.sent).toHaveLength(1);
     const rehello = h.transport.request('client.hello', {});
-    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
-      code: 'UNAVAILABLE',
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
     });
     socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'rejected' } });
     await expect(rehello).rejects.toThrow('rejected');
-    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
-      code: 'UNAVAILABLE',
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
     });
     socket.drop();
     const reconnecting = h.transport.observeNodeCapabilities();
@@ -1006,14 +977,12 @@ describe('observational node capabilities', () => {
       },
     });
     await expect(reconnecting).resolves.toEqual({
-      clientId: 'B',
       server: {
         capabilities: {
           agentNodes: 0,
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
-          eventStreamRecovery: 0,
         },
       },
     });
@@ -1044,14 +1013,12 @@ describe('observational node capabilities', () => {
     });
     await older;
     await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
-      clientId: 'new',
       server: {
         capabilities: {
           agentNodes: 0,
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
-          eventStreamRecovery: 0,
         },
       },
     });
@@ -1092,674 +1059,4 @@ describe('binary file reads through browser transport normalization', () => {
       request.mockRestore();
     }
   });
-});
-
-describe('captured generic recovery transport', () => {
-  it('propagates losses and orders fences through async owner processing', async () => {
-    const h = createHarness();
-    const boot = h.transport.request('ping');
-    await connect(h.socket(), true);
-    h.socket().receive({ jsonrpc: '2.0', id: h.socket().lastFrame().id, result: {} });
-    await boot;
-    const session = await h.transport.captureEventRecovery();
-    let release!: () => void;
-    const order: string[] = [];
-    session.onNotification(
-      (n) =>
-        new Promise<void>((resolve) => {
-          release = () => {
-            order.push(n.method);
-            resolve();
-          };
-        }),
-    );
-    const fence = session.fence(['a'], () => {
-      order.push('fence');
-    });
-    const wire = h.socket().lastFrame();
-    expect(wire).toMatchObject({ method: 'events.fence', params: { subscriptionIds: ['a'] } });
-    h.socket().receive({
-      jsonrpc: '2.0',
-      method: 'events.lost',
-      params: { subscriptionId: 'a', generation: '1', scope: { workspaceId: null } },
-    });
-    h.socket().receive({ jsonrpc: '2.0', id: wire.id, result: { subscriptionIds: ['a'] } });
-    expect(order).toEqual([]);
-    release();
-    await fence;
-    expect(order).toEqual(['events.lost', 'fence']);
-    h.socket().drop();
-    expect(session.isCurrent()).toBe(false);
-    await expect(session.request('file.read', {})).rejects.toThrow();
-    session.dispose();
-    h.transport.dispose();
-  });
-});
-
-it('cleans up a captured recovery lease whose ack arrives after disposal', async () => {
-  const h = createHarness();
-  const boot = h.transport.request('ping');
-  await connect(h.socket(), true);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-  await boot;
-  const session = await h.transport.captureEventRecovery();
-  const subscribe = session.request('events.subscribe', {
-    eventTypes: ['file:*'],
-    workspaceId: 'ws-a',
-    lossRecovery: 1,
-  });
-  const failed = expect(subscribe).rejects.toThrow();
-  const request = h.socket().lastFrame();
-  session.dispose();
-  await failed;
-  h.socket().receive({ id: request.id, result: { subscriptionId: 'late', lossRecovery: 1 } });
-  await flush();
-  expect(h.socket().lastFrame()).toMatchObject({
-    method: 'events.unsubscribe',
-    params: { subscriptionId: 'late' },
-  });
-  h.transport.dispose();
-});
-
-it.each([
-  [-32602, 'not-found'],
-  [-32003, 'forbidden'],
-  [-32001, 'unauthorized'],
-] as const)(
-  'retires a recovery resource on canonical browser error %s/%s',
-  async (rpcCode, code) => {
-    const h = createHarness();
-    const boot = h.transport.request('ping');
-    await connect(h.socket(), true);
-    h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-    await boot;
-    const session = await h.transport.captureEventRecovery();
-    const retired = vi.fn(),
-      apply = vi.fn();
-    const resource = new RecoveryResource({
-      read: () => session.request('file.read', { workspaceId: 'ws-a' }),
-      fence: (ids, observe) => session.fence(ids, observe),
-      apply,
-      invalidate: vi.fn(),
-      retire: retired,
-    });
-    resource.setLeases([{ id: 'a', lifetime: {} }]);
-    resource.invalidate();
-    expect(h.socket().lastFrame().method).toBe('events.fence');
-    h.socket().receive({ id: h.socket().lastFrame().id, result: { subscriptionIds: ['a'] } });
-    for (let i = 0; i < 20; i++) await Promise.resolve();
-    expect(h.socket().lastFrame().method).toBe('file.read');
-    h.socket().receive({
-      id: h.socket().lastFrame().id,
-      error: { code: rpcCode, message: 'Unavailable', data: { code } },
-    });
-    for (let i = 0; i < 20; i++) await Promise.resolve();
-    expect(retired).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ rpcCode, code, data: { code } }),
-    );
-    expect(resource.status).toMatchObject({ stale: false, suspended: true });
-    expect(apply).not.toHaveBeenCalled();
-    resource.dispose();
-    session.dispose();
-    h.transport.dispose();
-  },
-);
-
-describe('physical recovery timeout ownership', () => {
-  for (const phase of ['begin', 'read', 'end'] as const)
-    it(`keeps the real browser ${phase} request outstanding until reply and blocks replacement capture`, async () => {
-      vi.useFakeTimers();
-      const h = createHarness();
-      const boot = h.transport.request('ping');
-      await connect(h.socket(), true);
-      h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-      await boot;
-      const socket = h.socket();
-      const capture = () => h.transport.captureEventRecovery();
-      const shutdown = () => h.transport.dispose();
-      const frames: Array<{ id: number; method: string; params: unknown }> = [];
-      const original = socket.send.bind(socket);
-      const install = (respond: (frame: (typeof frames)[number]) => void) => {
-        socket.send = (line) => {
-          original(line);
-          const frame = JSON.parse(line);
-          frames.push(frame);
-          respond(frame);
-        };
-      };
-      const reply = (id: number, result: unknown) => socket.receive({ id, result });
-
-      let fences = 0;
-      let reads = 0;
-      let held: (typeof frames)[number] | undefined;
-      install((frame) => {
-        if (frame.method === 'events.subscribe')
-          queueMicrotask(() => reply(frame.id, { subscriptionId: 'a', lossRecovery: 1 }));
-        else if (frame.method === 'events.fence') {
-          if ((phase === 'begin' && ++fences === 1) || (phase === 'end' && ++fences === 2))
-            held = frame;
-          else queueMicrotask(() => reply(frame.id, { subscriptionIds: ['a'] }));
-        } else if (frame.method === 'data.read') {
-          if (phase === 'read' && ++reads === 1) held = frame;
-          else queueMicrotask(() => reply(frame.id, 'fresh'));
-        } else queueMicrotask(() => reply(frame.id, {}));
-      });
-      const session = await capture();
-      await session.request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 });
-      const apply = vi.fn();
-      const resource = new RecoveryResource({
-        read: () => session.request('data.read'),
-        fence: (ids, observe) => session.fence(ids, observe),
-        apply,
-        invalidate: () => {},
-        retire: () => {},
-      });
-      resource.setLeases([{ id: 'a', lifetime: {} }]);
-      resource.invalidate();
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const requests = frames.length;
-      expect(held).toBeDefined();
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(frames).toHaveLength(requests);
-      expect(resource.status).toMatchObject({ running: true, suspended: true, stale: true });
-      await expect(capture()).rejects.toThrow();
-      expect(vi.getTimerCount()).toBe(0);
-      reply(held!.id, phase === 'read' ? 'expired' : { subscriptionIds: ['a'] });
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(frames).toHaveLength(requests + 3);
-      expect(apply).toHaveBeenCalledExactlyOnceWith('fresh');
-      resource.dispose();
-      session.dispose();
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const next = await capture();
-      next.dispose();
-      shutdown();
-    });
-
-  it('keeps a released capture quarantined until its physical read completes', async () => {
-    vi.useFakeTimers();
-    const h = createHarness();
-    const boot = h.transport.request('ping');
-    await connect(h.socket(), true);
-    h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-    await boot;
-    const socket = h.socket();
-    const capture = () => h.transport.captureEventRecovery();
-    const shutdown = () => h.transport.dispose();
-    const frames: Array<{ id: number; method: string; params: unknown }> = [];
-    const original = socket.send.bind(socket);
-    const install = (respond: (frame: (typeof frames)[number]) => void) => {
-      socket.send = (line) => {
-        original(line);
-        const frame = JSON.parse(line);
-        frames.push(frame);
-        respond(frame);
-      };
-    };
-    const reply = (id: number, result: unknown) => socket.receive({ id, result });
-
-    let held: (typeof frames)[number] | undefined;
-    install((frame) => {
-      if (!held) held = frame;
-      else queueMicrotask(() => reply(frame.id, 'fresh'));
-    });
-    const session = await capture();
-    const pending = session.request('data.read').catch(() => {});
-    session.dispose();
-    await pending;
-    await expect(capture()).rejects.toThrow();
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(frames).toHaveLength(1);
-    await expect(capture()).rejects.toThrow();
-    reply(held!.id, 'expired');
-    for (let i = 0; i < 30; i++) await Promise.resolve();
-    const next = await capture();
-    expect(await next.request('data.read')).toBe('fresh');
-    expect(frames).toHaveLength(2);
-    expect(frames[1].id).not.toBe(held!.id);
-    next.dispose();
-    shutdown();
-  });
-});
-
-it('bounds outstanding recovery wire requests across captures without deadline churn', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const boot = h.transport.request('ping');
-  await connect(h.socket(), true);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-  await boot;
-  const capture = () => h.transport.captureEventRecovery();
-  const frames: Array<{ id: number; method: string }> = [];
-  const socket = h.socket();
-  const send = socket.send.bind(socket);
-  socket.send = (line) => {
-    send(line);
-    frames.push(JSON.parse(line));
-  };
-  const reply = (id: number) => socket.receive({ id, result: 'expired' });
-  const shutdown = () => h.transport.dispose();
-  const a = await capture();
-  const b = await capture();
-  const before = frames.length;
-  const pending = Array.from({ length: 64 }, () => a.request('data.read').catch((error) => error));
-  await expect(b.request('data.read')).rejects.toThrow();
-  expect(frames.length - before).toBe(64);
-  await vi.advanceTimersByTimeAsync(60_000);
-  await Promise.all(pending);
-  expect(vi.getTimerCount()).toBe(0);
-  await expect(b.request('data.read')).rejects.toThrow();
-  expect(frames.length - before).toBe(64);
-  for (const frame of frames.slice(before)) reply(frame.id);
-  for (let i = 0; i < 30; i++) await Promise.resolve();
-  const next = b.request('data.read');
-  expect(frames.length - before).toBe(65);
-  reply(frames.at(-1)!.id);
-  expect(await next).toBe('expired');
-  a.dispose();
-  b.dispose();
-  shutdown();
-});
-
-it('preserves a canonical physical denial after the recovery read deadline', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const boot = h.transport.request('ping');
-  await connect(h.socket(), true);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-  await boot;
-  const session = await h.transport.captureEventRecovery();
-  const lastFrame = () => h.socket().lastFrame();
-  const reply = (frame: unknown) => h.socket().receive(frame);
-  const shutdown = () => h.transport.dispose();
-  const pending = session.request('data.read').catch((error) => error);
-  const frame = lastFrame();
-  await vi.advanceTimersByTimeAsync(60_000);
-  const timeout = (await pending) as RecoveryRequestTimeoutError;
-  expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
-  reply({
-    id: frame.id,
-    error: { code: -32003, message: 'Unavailable', data: { code: 'forbidden' } },
-  });
-  expect(await timeout.completion).toEqual({
-    retired: false,
-    errors: [
-      expect.objectContaining({ rpcCode: -32003, code: 'forbidden', data: { code: 'forbidden' } }),
-    ],
-  });
-  await timeout.drained;
-  session.dispose();
-  shutdown();
-});
-
-it('blocks a same-socket new browser identity until the previous recovery request drains', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const boot = h.transport.request('ping');
-  await connect(h.socket(), true);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-  await boot;
-  const session = await h.transport.captureEventRecovery();
-  const pending = session.request('data.read').catch((error) => error);
-  const oldRequest = h.socket().lastFrame();
-  await vi.advanceTimersByTimeAsync(60_000);
-  const hello = h.transport.request('client.hello', {});
-  h.socket().receive({
-    id: h.socket().lastFrame().id,
-    result: { clientId: 'new', server: { capabilities: { eventStreamRecovery: 1 } } },
-  });
-  await hello;
-  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
-  h.socket().receive({ id: oldRequest.id, result: 'expired' });
-  await pending;
-  for (let i = 0; i < 30; i++) await Promise.resolve();
-  const next = await h.transport.captureEventRecovery();
-  const fresh = next.request('data.read');
-  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
-  expect(await fresh).toBe('fresh');
-  session.dispose();
-  next.dispose();
-  h.transport.dispose();
-});
-
-it('releases physical browser recovery ownership on close and captures the new socket', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const boot = h.transport.request('ping');
-  await connect(h.socket(), true);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: {} });
-  await boot;
-  const session = await h.transport.captureEventRecovery();
-  const pending = session.request('data.read').catch((error) => error);
-  await vi.advanceTimersByTimeAsync(60_000);
-  const timeout = (await pending) as RecoveryRequestTimeoutError;
-  const old = h.socket();
-  old.drop();
-  await timeout.drained;
-  expect(session.isCurrent()).toBe(false);
-  await vi.advanceTimersByTimeAsync(1000);
-  const nextSocket = h.socket();
-  expect(nextSocket).not.toBe(old);
-  await connect(nextSocket, true);
-  const next = await h.transport.captureEventRecovery();
-  const fresh = next.request('data.read');
-  nextSocket.receive({ id: nextSocket.lastFrame().id, result: 'fresh' });
-  expect(await fresh).toBe('fresh');
-  session.dispose();
-  next.dispose();
-  h.transport.dispose();
-});
-
-describe('bounded lease cleanup browser', () => {
-  it('queues cleanup within the physical cap and drains every admitted lease once', async () => {
-    vi.useFakeTimers();
-    const h = createHarness();
-    const initial = h.transport.captureEventRecovery();
-    await connect(h.socket(), true);
-    const first = await initial;
-    first.dispose();
-    const getSession = () => h.transport.captureEventRecovery();
-    const frames = (): Array<{ id: number; method: string; params: unknown }> =>
-      h.socket().sent.map((line) => JSON.parse(line));
-    const reply = (id: number, result: unknown) => h.socket().receive({ id, result });
-    const stop = () => h.transport.dispose();
-    const session = await getSession();
-    for (let i = 0; i < 70; i++) {
-      const pending = session.request('events.subscribe', {
-        eventTypes: ['file:*'],
-        lossRecovery: 1,
-      });
-      reply(frames().at(-1)!.id, { subscriptionId: `lease-${i}`, lossRecovery: 1 });
-      await pending;
-    }
-    session.dispose();
-    for (let i = 0; i < 30; i++) await Promise.resolve();
-    const sent = () => frames().filter((frame) => frame.method === 'events.unsubscribe');
-    expect(sent()).toHaveLength(64);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(sent()).toHaveLength(64);
-    expect(vi.getTimerCount()).toBe(0);
-    await expect(getSession()).rejects.toThrow();
-    const firstBatch = [...sent()];
-    for (const frame of firstBatch) reply(frame.id, {});
-    for (let i = 0; i < 40; i++) await Promise.resolve();
-    expect(sent()).toHaveLength(70);
-    expect(
-      new Set(sent().map((frame) => (frame.params as { subscriptionId: string }).subscriptionId))
-        .size,
-    ).toBe(70);
-    for (const frame of sent().slice(64)) reply(frame.id, {});
-    for (let i = 0; i < 40; i++) await Promise.resolve();
-    const next = await getSession();
-    next.dispose();
-    stop();
-  });
-  for (const method of ['events.subscribe', 'note.subscribe'])
-    it(`cleans abandoned ${method} once across late ack and disposal`, async () => {
-      vi.useFakeTimers();
-      const h = createHarness();
-      const initial = h.transport.captureEventRecovery();
-      await connect(h.socket(), true);
-      const first = await initial;
-      first.dispose();
-      const getSession = () => h.transport.captureEventRecovery();
-      const frames = (): Array<{ id: number; method: string; params: unknown }> =>
-        h.socket().sent.map((line) => JSON.parse(line));
-      const reply = (id: number, result: unknown) => h.socket().receive({ id, result });
-      const stop = () => h.transport.dispose();
-      const session = await getSession();
-      const pending = session
-        .request(method, { workspaceId: 'w', eventTypes: ['file:*'], lossRecovery: 1 })
-        .catch((error) => error);
-      const frame = frames().at(-1)!;
-      await vi.advanceTimersByTimeAsync(35_000);
-      const timeout = await pending;
-      expect(timeout).toBeInstanceOf(RecoveryRequestTimeoutError);
-      reply(frame.id, { subscriptionId: 'orphan', lossRecovery: 1 });
-      await timeout.completion;
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const unsubscribe = method === 'events.subscribe' ? 'events.unsubscribe' : 'note.unsubscribe';
-      const sent = () => frames().filter((frame) => frame.method === unsubscribe);
-      expect(sent()).toHaveLength(1);
-      expect(sent()[0].params).toMatchObject({ subscriptionId: 'orphan' });
-      session.dispose();
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      expect(sent()).toHaveLength(1);
-      await expect(getSession()).rejects.toThrow();
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(sent()).toHaveLength(1);
-      reply(sent()[0].id, {});
-      for (let i = 0; i < 30; i++) await Promise.resolve();
-      const next = await getSession();
-      next.dispose();
-      stop();
-    });
-});
-
-it('announces recovery readiness only after confirmed hello and old wire drain', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const first = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const old = await first;
-  const ready = vi.fn();
-  const off = h.transport.onEventRecoveryReady(ready);
-  for (let i = 0; i < 30; i++) await Promise.resolve();
-  ready.mockClear();
-  const pending = old.request('data.read').catch((error) => error);
-  const frame = h.socket().lastFrame();
-  await vi.advanceTimersByTimeAsync(60_000);
-  const hello = h.transport.request('client.hello');
-  expect(ready).not.toHaveBeenCalled();
-  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
-  h.socket().receive({
-    id: h.socket().lastFrame().id,
-    result: { clientId: 'renewed', server: { capabilities: { eventStreamRecovery: 1 } } },
-  });
-  await hello;
-  expect(ready).not.toHaveBeenCalled();
-  h.socket().receive({ id: frame.id, result: 'stale' });
-  await pending;
-  for (let i = 0; i < 30; i++) await Promise.resolve();
-  expect(ready).toHaveBeenCalledTimes(1);
-  const next = await h.transport.captureEventRecovery();
-  const read = next.request('data.read');
-  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
-  expect(await read).toBe('fresh');
-  expect(ready).toHaveBeenCalledTimes(1);
-  off();
-  next.dispose();
-  old.dispose();
-  h.transport.dispose();
-  expect(ready).toHaveBeenCalledTimes(1);
-});
-
-it('cleans an acknowledged browser lease when its owner barrier times out', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const first = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const session = await first;
-  const held = Promise.withResolvers<void>();
-  session.onNotification(() => held.promise);
-  h.socket().receive({ method: 'events.event', params: { subscriptionId: 'existing' } });
-  const pending = session
-    .request('events.subscribe', { eventTypes: ['file:*'], lossRecovery: 1 })
-    .catch((error) => error);
-  h.socket().receive({
-    id: h.socket().lastFrame().id,
-    result: { subscriptionId: 'blocked-ack', lossRecovery: 1 },
-  });
-  await vi.advanceTimersByTimeAsync(35_000);
-  expect(await pending).toBeInstanceOf(RecoveryRequestTimeoutError);
-  const cleanups = () =>
-    h
-      .socket()
-      .sent.map((line) => JSON.parse(line))
-      .filter((frame) => frame.method === 'events.unsubscribe');
-  expect(cleanups()).toHaveLength(1);
-  h.socket().receive({ id: cleanups()[0].id, result: {} });
-  held.resolve();
-  await (
-    await pending
-  ).completion;
-  session.dispose();
-  expect(cleanups()).toHaveLength(1);
-  h.transport.dispose();
-});
-
-it('ordinary browser timeout retains physical occupancy before recovery and recapture', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const capture = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const session = await capture;
-  const original = h.transport
-    .request('note.get', { workspaceId: 'w', noteId: 'n' }, { timeoutMs: 50 })
-    .catch((e) => e);
-  const frame = h.socket().lastFrame();
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(await original).toMatchObject({ code: 'TIMEOUT' });
-  const fresh = session.request('note.get', { workspaceId: 'w', noteId: 'n' });
-  void fresh.catch(() => {});
-  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
-  const count = () =>
-    h
-      .socket()
-      .sent.map((s) => JSON.parse(s))
-      .filter((f) => f.method === 'note.get').length;
-  expect(count()).toBe(1);
-  h.socket().receive({ id: frame.id, result: 'stale' });
-  for (let i = 0; i < 40; i++) await Promise.resolve();
-  expect(count()).toBe(2);
-  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
-  expect(await fresh).toBe('fresh');
-  session.dispose();
-  h.transport.dispose();
-});
-
-it('ordinary browser completion preserves late denial and fences queued work across same-socket hello', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const initial = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const old = await initial;
-  const pending = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
-  const first = h.socket().lastFrame();
-  await vi.advanceTimersByTimeAsync(51);
-  const timeout = await pending;
-  let drained = false;
-  void timeout.completion.then(() => {
-    drained = true;
-  });
-  expect(drained).toBe(false);
-  const queued = h.transport.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
-  const hello = h.transport.request('client.hello');
-  h.socket().receive({
-    id: h.socket().lastFrame().id,
-    result: { clientId: 'replacement', server: { capabilities: { eventStreamRecovery: 1 } } },
-  });
-  await hello;
-  await expect(h.transport.captureEventRecovery()).rejects.toThrow();
-  const ready = vi.fn();
-  const off = h.transport.onEventRecoveryReady(ready);
-  h.socket().receive({
-    id: first.id,
-    error: { code: -32003, message: 'Forbidden', data: { code: 'forbidden' } },
-  });
-  const completion = await timeout.completion;
-  expect(completion.retired).toBe(true);
-  expect(completion.errors[0]).toMatchObject({ rpcCode: -32003 });
-  expect(await queued).toBeInstanceOf(Error);
-  expect(
-    h
-      .socket()
-      .sent.map((s) => JSON.parse(s))
-      .filter((f) => f.method === 'note.list'),
-  ).toHaveLength(0);
-  for (let i = 0; i < 30; i++) await Promise.resolve();
-  expect(ready).toHaveBeenCalledTimes(1);
-  const next = await h.transport.captureEventRecovery();
-  next.dispose();
-  old.dispose();
-  off();
-  h.transport.dispose();
-});
-
-it('ordinary browser callers keep deadlines while timed-out correlation stays bounded', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const initial = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const session = await initial;
-  const pending = Array.from({ length: 256 }, () =>
-    h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e),
-  );
-  const frames = h
-    .socket()
-    .sent.map((s) => JSON.parse(s))
-    .filter((f) => f.method === 'note.get');
-  expect(frames).toHaveLength(256);
-  await expect(h.transport.request('note.get', {}, { timeoutMs: 50 })).rejects.toThrow('limit');
-  await vi.advanceTimersByTimeAsync(51);
-  expect((await Promise.all(pending)).every((e) => e.code === 'TIMEOUT')).toBe(true);
-  for (let i = 0; i < 70; i++) {
-    const retry = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
-    await vi.advanceTimersByTimeAsync(51);
-    expect(await retry).toMatchObject({ code: 'TIMEOUT' });
-  }
-  expect(
-    h
-      .socket()
-      .sent.map((s) => JSON.parse(s))
-      .filter((f) => f.method === 'note.get'),
-  ).toHaveLength(256);
-  for (const frame of frames) h.socket().receive({ id: frame.id, result: 'expired' });
-  const next = h.transport.request('note.get');
-  h.socket().receive({ id: h.socket().lastFrame().id, result: 'fresh' });
-  expect(await next).toBe('fresh');
-  expect(vi.getTimerCount()).toBe(0);
-  session.dispose();
-  h.transport.dispose();
-});
-
-it('socket retirement settles ordinary browser timeout receipts and cancels unsent retries', async () => {
-  vi.useFakeTimers();
-  const h = createHarness();
-  const boot = h.transport.captureEventRecovery();
-  await connect(h.socket(), true);
-  const session = await boot;
-  const ordinary = h.transport.request('note.get', {}, { timeoutMs: 50 }).catch((e) => e);
-  await vi.advanceTimersByTimeAsync(51);
-  const timeout = await ordinary;
-  const queued = h.transport.request('note.list', {}, { timeoutMs: 100_000 }).catch((e) => e);
-  h.transport.dispose();
-  expect((await timeout.completion).retired).toBe(true);
-  expect(await queued).toBeInstanceOf(Error);
-  expect(
-    h
-      .socket()
-      .sent.map((s) => JSON.parse(s))
-      .filter((f) => f.method === 'note.list'),
-  ).toHaveLength(0);
-  expect(vi.getTimerCount()).toBe(0);
-  session.dispose();
-});
-
-it('never reports an unconfirmed browser capability bag as explicit legacy support', async () => {
-  const h = createHarness();
-  const observing = h.transport.observeNodeCapabilities();
-  h.socket().open();
-  await flush();
-  h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult() });
-  await observing;
-  const hello = h.transport.request('client.hello', {}).catch((error) => error);
-  try {
-    await expect(h.transport.observeNodeCapabilities()).rejects.toMatchObject({
-      code: 'UNAVAILABLE',
-    });
-  } finally {
-    h.transport.dispose();
-    await hello;
-  }
 });

@@ -1,5 +1,3 @@
-import type { RecoveryLifetime } from '$shared/event-recovery/resource';
-import { getRecoveryLifetime, withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { principalReceived, hostMembershipChanged } from '../../principal/principal-slice';
 import {
   call,
@@ -336,10 +334,6 @@ function* routeTabToRightmostColumn(
   action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
   const { wsId, tab, force, allowDuplicate, newTabId, timestamp, agentDriven } = action.payload;
-  const receipt = getRecoveryLifetime(action);
-  if (receipt && !receipt.commit(() => undefined)) return;
-  const owned = <T extends object>(value: T): T =>
-    receipt ? withRecoveryLifetime(value, receipt) : value;
   // Every "new browser" / "new terminal" entry point that does not go through
   // its owning saga (application menu, global shortcut) lands here, so this is
   // where a collaborator's owner-only open is dropped (multiplayer w3).
@@ -350,16 +344,14 @@ function* routeTabToRightmostColumn(
     return;
   }
   yield* put(
-    owned(reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp)),
+    reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );
   yield* put(
-    owned(
-      openTabInRightmostColumn(
-        wsId,
-        tab,
-        { force, allowDuplicate, newTabId, preserveFocus: agentDriven === true },
-        timestamp,
-      ),
+    openTabInRightmostColumn(
+      wsId,
+      tab,
+      { force, allowDuplicate, newTabId, preserveFocus: agentDriven === true },
+      timestamp,
     ),
   );
   // An agent-driven open activates the tab without moving focus; the queued
@@ -695,7 +687,6 @@ export function* rehydrateTunneledBrowserTabs(
   tabs: RehydratableBrowserTab[],
   stillCurrent?: () => SagaGenerator<boolean>,
   onResolved?: (tab: RehydratableBrowserTab, resolved: ResolvedBrowserLink) => SagaGenerator<void>,
-  lifetime?: RecoveryLifetime,
 ): SagaGenerator<void> {
   for (const tab of tabs) {
     try {
@@ -722,8 +713,7 @@ export function* rehydrateTunneledBrowserTabs(
       ) {
         continue;
       }
-      const action = updateTabBrowserUrl(wsId, tab.tabId, resolved.url, tab.requestedUrl);
-      yield* put(lifetime ? withRecoveryLifetime(action, lifetime) : action);
+      yield* put(updateTabBrowserUrl(wsId, tab.tabId, resolved.url, tab.requestedUrl));
     } catch {
       // Best-effort: a failed resolution leaves the tab on its stored URL.
     }

@@ -1,9 +1,3 @@
-import { trackRuntimeRead } from '$features/events/runtime-read-lane';
-import {
-  rendererEventRecovery,
-  type RendererRecoveryHandle,
-  type RendererRecoveryScope,
-} from '$features/events/renderer-event-recovery';
 /**
  * Workspace git-root read surface (multi git root tracking,
  * intent-hq/monorepo#2053).
@@ -145,15 +139,10 @@ export function subscribeGitRoots(
   workspaceId: string,
   handler: (gitRoots: GitRootRow[]) => void,
 ): GitRootsSubscription {
-  const key = 'git-roots:' + JSON.stringify([workspaceId]);
-  let recovery: RendererRecoveryHandle | undefined;
-  let recoveryScope: RendererRecoveryScope | undefined;
-  let adopted = false;
   let disposed = false;
   let subscriptionId: string | undefined;
   let gitRoots: GitRootRow[] = [];
   let refetchInFlight = false;
-  let pendingRead: Promise<void> | undefined;
   let refetchQueued = false;
   // Roots removed by a fold: a `gitRoot.list` response that was already in
   // flight when the `gitRoot:unregistered` event arrived can still carry the
@@ -169,48 +158,26 @@ export function subscribeGitRoots(
 
   const refetch = () => {
     if (disposed) return;
-    if (recovery?.status.stale) {
-      recovery.refresh();
-      return;
-    }
     if (refetchInFlight) {
       refetchQueued = true;
       return;
     }
     refetchInFlight = true;
-    const epoch = registerEpoch;
-    const token = rendererEventRecovery.capture(key);
-    pendingRead = trackRuntimeRead(
-      key,
-      () => {
-        if (disposed || epoch !== registerEpoch || !token.commit(() => {}))
-          throw new Error('Runtime read superseded');
-        return recoveryScope
-          ? recoveryScope
-              .request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', { workspaceId })
-              .then((result) => (Array.isArray(result?.gitRoots) ? result.gitRoots : []))
-          : listGitRoots(workspaceId);
-      },
-      true,
-    )
+    listGitRoots(workspaceId)
       .then((fetched) => {
-        if (disposed || epoch !== registerEpoch) return;
-        token.commit(() => {
-          // Prune ids the server no longer returns (converged), then drop rows
-          // removed locally while this list was in flight.
-          for (const id of [...locallyRemoved]) {
-            if (!fetched.some((r) => r.id === id)) locallyRemoved.delete(id);
-          }
-          gitRoots = fetched.filter((r) => !locallyRemoved.has(r.id));
-          emit();
-        });
+        if (disposed) return;
+        // Prune ids the server no longer returns (converged), then drop rows
+        // removed locally while this list was in flight.
+        for (const id of [...locallyRemoved]) {
+          if (!fetched.some((r) => r.id === id)) locallyRemoved.delete(id);
+        }
+        gitRoots = fetched.filter((r) => !locallyRemoved.has(r.id));
+        emit();
       })
       .catch((error) => {
-        if (disposed || epoch !== registerEpoch) return;
         logger.warn('gitRoot.list failed', { workspaceId, error });
       })
       .finally(() => {
-        pendingRead = undefined;
         refetchInFlight = false;
         if (refetchQueued) {
           refetchQueued = false;
@@ -242,7 +209,7 @@ export function subscribeGitRoots(
       });
   };
 
-  const receive = (n: import('$shared/event-recovery/session').RecoveryNotification) => {
+  const offNotification = onBackendNotification((n) => {
     if (disposed || n.method !== 'events.event') return;
     const params = n.params as GitRootEventNotification | undefined;
     const event = params?.event;
@@ -263,94 +230,22 @@ export function subscribeGitRoots(
     // that older response — queue a trailing refetch (single-flight,
     // coalesced) so the list converges.
     if (result.needsRefetch || refetchInFlight) refetch();
-  };
-  const offNotification = onBackendNotification((n) => {
-    if (!adopted) receive(n);
   });
 
   // Subscriptions are per-connection (§6.1) — replay after a reconnect and
   // re-seed so anything missed during the outage converges.
   const offReconnected = onBackendReconnected(() => {
-    if (disposed || adopted) return;
+    if (disposed) return;
     subscriptionId = undefined;
-    locallyRemoved.clear();
     register();
   });
 
-  const offRecovery = rendererEventRecovery.onSession((scope) => {
-    adopted = true;
-    recoveryScope = scope;
-    const epoch = ++registerEpoch;
-    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
-    subscriptionId = undefined;
-    locallyRemoved.clear();
-    const controller = new AbortController();
-    const owner = scope.registerResource({
-      key,
-      workspaceId,
-      eventTypes: ['gitRoot:*'],
-      isCurrent: () => !disposed && epoch === registerEpoch,
-      read: async (reader) => {
-        if (pendingRead) await pendingRead;
-        const result = await trackRuntimeRead(
-          key,
-          () =>
-            reader.request<{ gitRoots?: GitRootRow[] }>('gitRoot.list', {
-              workspaceId,
-            }),
-          true,
-        );
-        return Array.isArray(result?.gitRoots) ? result.gitRoots : [];
-      },
-      apply: (rows) => {
-        locallyRemoved.clear();
-        gitRoots = rows;
-        emit();
-      },
-      invalidate: () => {
-        locallyRemoved.clear();
-      },
-      retire: () => {
-        ++registerEpoch;
-        locallyRemoved.clear();
-        gitRoots = [];
-        emit();
-      },
-      onEvent: (notification) => receive(notification),
-    });
-    recovery = owner;
-    void scope
-      .subscribe(
-        { workspaceId, eventTypes: ['gitRoot:*'] },
-        { recover: true, signal: controller.signal },
-      )
-      .then((lease) => {
-        if (disposed || epoch !== registerEpoch) return;
-        subscriptionId = lease?.id;
-        refetch();
-      })
-      .catch((error) => {
-        if (!disposed && epoch === registerEpoch)
-          logger.warn('gitRoot recovery subscribe failed', { workspaceId, error });
-      });
-    return () => {
-      controller.abort();
-      owner.dispose();
-      if (subscriptionId) void scope.unsubscribe(subscriptionId);
-      subscriptionId = undefined;
-      if (recovery === owner) {
-        recovery = undefined;
-        recoveryScope = undefined;
-      }
-    };
-  });
-  if (!adopted) register();
+  register();
 
   return {
     refetch,
     dispose: () => {
       disposed = true;
-      offRecovery();
       offNotification();
       offReconnected();
       if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);

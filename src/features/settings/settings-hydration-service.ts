@@ -20,7 +20,6 @@ import { settingsChanged } from '$store/renderer/slices/settings-events/settings
 import {
   hydrateProviderFastMode,
   loadEnabledProvidersFromStorage,
-  providerConfiguredPathsLoaded,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
   hydrateSettings as hydrateBackgroundAgentSettings,
@@ -68,19 +67,6 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
           ([id, enabled]) => ['claude-code', 'codex'].includes(id) && typeof enabled === 'boolean',
         );
         appStore.dispatch(hydrateProviderFastMode(Object.fromEntries(entries), revision));
-      }
-      return;
-    }
-    case 'providers.paths': {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const paths = Object.fromEntries(
-          Object.entries(value).filter(
-            (entry): entry is [string, string] => typeof entry[1] === 'string',
-          ),
-        );
-        appStore.dispatch(
-          providerConfiguredPathsLoaded(appStore.state.providerSettings.pathsRevision, paths),
-        );
       }
       return;
     }
@@ -134,11 +120,7 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
 /**
  * Reconcile provider identity and the quick-action model/effort bundle together.
  */
-function applyBackgroundAgentBundle(
-  byPath: Map<string, unknown>,
-  revision?: number,
-  authoritative = false,
-): void {
+function applyBackgroundAgentBundle(byPath: Map<string, unknown>, revision?: number): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
@@ -180,7 +162,7 @@ function applyBackgroundAgentBundle(
         ? { ...fallback, ...(typeOverrides as Record<string, string>) }
         : fallback;
     appStore.dispatch(
-      (authoritative ? hydrateBackgroundAgentSettings : backgroundSettingsHydrationRequested)({
+      backgroundSettingsHydrationRequested({
         defaultModel,
         typeOverrides: overrides,
         revision,
@@ -222,8 +204,6 @@ function applyBackgroundAgentBundle(
 export function applySettingsChanges(
   changes: readonly AppliedSettingChange[],
   revision?: number,
-  authoritative = false,
-  completeSnapshot = false,
 ): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
@@ -237,9 +217,7 @@ export function applySettingsChanges(
   }
   // Provider-only deltas must also reconcile the bundle's authoritative identity.
   if (hasBackgroundAgentPaths) {
-    applyBackgroundAgentBundle(bundle, revision, authoritative);
+    applyBackgroundAgentBundle(bundle, revision);
   }
-  appStore.dispatch(
-    completeSnapshot ? settingsChanged([...changes], true) : settingsChanged([...changes]),
-  );
+  appStore.dispatch(settingsChanged([...changes]));
 }
