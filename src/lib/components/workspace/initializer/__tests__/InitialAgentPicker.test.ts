@@ -383,6 +383,21 @@ describe('InitialAgentPicker stale model override clearing', () => {
       expect(selection().selectedProvider).toBe(WORK.providerRef);
     });
 
+    // This harness has no userPreferences slice, so the Provider profiles
+    // Labs toggle reads as off: a saved default profile still runs.
+    it('keeps an existing profile selection available while the Provider profiles Labs toggle is off', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { auggie: { available: true }, codex: { available: true } },
+      });
+      await flush();
+      expect(selection().selectedProvider).toBe(WORK.providerRef);
+    });
+
     it('moves a new agent off a profile whose base provider is disabled', async () => {
       render(ProviderSelectionHarness);
       await flush();

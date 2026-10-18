@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../test/warm-import';
+import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -334,8 +335,17 @@ describe('ProviderSelector profiles entry point', () => {
   });
   afterEach(() => cleanup());
 
-  async function renderWithCatalog(supportsProfiles: Record<string, boolean>) {
+  async function renderWithCatalog(
+    supportsProfiles: Record<string, boolean>,
+    labsProviderProfilesEnabled = true,
+  ) {
     const state = await buildState([]);
+    const { initialState: userPreferencesInitialState } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    (state as Record<string, unknown>).userPreferences = {
+      ...userPreferencesInitialState,
+      labsProviderProfilesEnabled,
+    };
     const { MOCK_PROVIDER_CATALOG } =
       await import('../../../test/fixtures/provider-catalog.fixture');
     const { providerCatalogLoaded, providerCatalogReducer, initialState } =
@@ -374,5 +384,23 @@ describe('ProviderSelector profiles entry point', () => {
     ).toHaveLength(1);
     expect(result.queryByTestId('provider-profiles-claude-code')).toBeNull();
     expect(result.queryByTestId('provider-profiles-auggie')).toBeNull();
+  });
+
+  it('hides profile management and skips the profile read while the Labs toggle is off', async () => {
+    const result = await renderWithCatalog({ codex: true }, false);
+    expect(result.queryByTestId('provider-profiles-codex')).toBeNull();
+    expect(
+      result.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: providerProfilesRequested.type }),
+    );
+  });
+
+  it('requests saved profiles when the Labs toggle is on', async () => {
+    await renderWithCatalog({ codex: true }, true);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: providerProfilesRequested.type }),
+    );
   });
 });

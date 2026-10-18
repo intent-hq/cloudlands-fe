@@ -6877,6 +6877,8 @@
   "lib_commandPalette_disableExperimentalGitlab_label": "Experimentelles GitLab deaktivieren",
   "lib_commandPalette_enableExperimentalRemoteAgents_label": "Experimentelle Remote-Agenten aktivieren",
   "lib_commandPalette_disableExperimentalRemoteAgents_label": "Experimentelle Remote-Agenten deaktivieren",
+  "lib_commandPalette_enableExperimentalProviderProfiles_label": "Experimentelle Anbieterprofile aktivieren",
+  "lib_commandPalette_disableExperimentalProviderProfiles_label": "Experimentelle Anbieterprofile deaktivieren",
   "inviteNotice_modal_findGitlabCommand_label": "GitLab-Befehl suchen",
   "modals_retireAgent_title": "Agent stilllegen",
   "modals_retireAgent_description": "„{name}“ stilllegen? Dadurch werden laufende Durchläufe gestoppt und Hooks, PR-Monitore sowie andere Aufweck-Abonnements beendet. Die Unterhaltung bleibt erhalten und der Agent kann später wiederhergestellt werden. Beendete Hooks oder Monitore werden dabei nicht neu gestartet.",

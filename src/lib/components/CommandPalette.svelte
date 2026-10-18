@@ -38,11 +38,13 @@
   import {
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
+    selectLabsProviderProfilesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     setLabsGitLabEnabled,
     setLabsRemoteAgentsEnabled,
+    setLabsProviderProfilesEnabled,
     setLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -142,6 +144,7 @@
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
+  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -170,7 +173,13 @@
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
+        !(
+          $labsProviderProfilesEnabled$ && command.id === 'enable-experimental-provider-profiles'
+        ) &&
+        !(
+          !$labsProviderProfilesEnabled$ && command.id === 'disable-experimental-provider-profiles'
+        ),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -873,6 +882,12 @@
         return true;
       case 'disable-experimental-remote-agents':
         appStore.dispatch(setLabsRemoteAgentsEnabled(false));
+        return true;
+      case 'enable-experimental-provider-profiles':
+        appStore.dispatch(setLabsProviderProfilesEnabled(true));
+        return true;
+      case 'disable-experimental-provider-profiles':
+        appStore.dispatch(setLabsProviderProfilesEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {

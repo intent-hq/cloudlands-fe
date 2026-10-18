@@ -43,6 +43,9 @@ const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
 const mockCatalogProfiles = vi.hoisted(() => ({
   current: [] as { id: string; providerRef: string; baseProviderId: string; name: string }[],
 }));
+// Settings → Labs → Provider profiles. On by default here so the profile
+// tests exercise the enabled picker; the Labs-off block flips it.
+const mockLabsProviderProfiles = vi.hoisted(() => ({ current: true }));
 const mockDaemonAppOwned = vi.hoisted(() => ({ current: true }));
 // providerSettings slice state (profile sign-in statuses, §5.54).
 const mockProviderSettingsState = vi.hoisted(() => ({ current: undefined as unknown }));
@@ -168,6 +171,10 @@ vi.mock('$store/renderer/store', async () => {
       },
       daemonHealth: {},
       ...mockRoleState.current,
+      userPreferences: {
+        ...(mockRoleState.current as { userPreferences?: object }).userPreferences,
+        labsProviderProfilesEnabled: mockLabsProviderProfiles.current,
+      },
     }),
     dispatch: mockSvelteDispatch,
     // Match the production selector stream: observer actions must not emit an
@@ -5945,6 +5952,94 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
         }),
       ),
     );
+  });
+
+  describe('with the Provider profiles Labs toggle off', () => {
+    beforeEach(() => {
+      mockLabsProviderProfiles.current = false;
+    });
+    afterEach(() => {
+      mockLabsProviderProfiles.current = true;
+    });
+
+    it('offers no profile groups, keeps bare labels, and neither fetches nor probes profiles', async () => {
+      mockCatalogProfiles.current = [WORK, PERSONAL];
+      render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
+      await fireEvent.click(screen.getByRole('button'));
+      const tabs = within(screen.getByTestId('model-provider-tabs')).getAllByRole('tab');
+      expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
+        expect.not.stringMatching(/·/),
+        expect.not.stringMatching(/·/),
+      ]);
+      expect(screen.queryByRole('tab', { name: /Work|Personal/ })).toBeNull();
+      expect(screen.queryByTestId('model-picker-profile-group')).toBeNull();
+      expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
+        expect.stringContaining('@'),
+      );
+      expect(mockSvelteDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'providerProfiles/summaryStatusesEnsured' }),
+      );
+    });
+
+    it('shows a base selection without a Default label', async () => {
+      mockCatalogProfiles.current = [WORK];
+      render(ModelPicker, {
+        props: { selectedModel: 'gpt-5', providerId: 'codex', portal: false },
+      });
+      await waitFor(() => expect(screen.getByRole('button').textContent).toMatch(/GPT-5/));
+      expect(screen.queryByTestId('model-picker-profile')).toBeNull();
+    });
+
+    it('keeps an existing profile selection labelled and running without asking for a replacement', async () => {
+      mockCatalogProfiles.current = [WORK];
+      mockAgentSession$.set({
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        provider: WORK.providerRef,
+        model: 'gpt-5-work',
+      });
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'gpt-5-work',
+          providerId: WORK.providerRef,
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          portal: false,
+        },
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('model-picker-profile').textContent).toBe('Work'),
+      );
+      await fireEvent.click(screen.getByRole('button'));
+      await screen.findByRole('listbox');
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByTestId('model-picker-profile-group')).toBeNull();
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      const { agentClient } = await import('$features/agent/agent.client');
+      expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    });
+
+    it('still asks for a replacement when the selected profile was removed', async () => {
+      mockCatalogProfiles.current = [];
+      mockAgentSession$.set({
+        id: 'agent-1',
+        workspaceId: 'ws-1',
+        provider: WORK.providerRef,
+        model: 'gpt-5-work',
+      });
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'gpt-5-work',
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          updateGlobalStore: true,
+          portal: false,
+        },
+      });
+      await fireEvent.click(screen.getByRole('button'));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toMatch(/Choose another model/);
+    });
   });
 
   it('shows the Codex default-list notice for a profile catalog, and not for a stale one', async () => {
