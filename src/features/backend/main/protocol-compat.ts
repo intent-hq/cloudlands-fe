@@ -17,8 +17,6 @@
 
 import { protocolMajor } from '$shared/protocol-version';
 
-export { protocolMajor, protocolVersionAtLeast } from '$shared/protocol-version';
-
 /** Outcome of comparing two protocolVersions by major segment. */
 export type ProtocolComparison = 'match' | 'mismatch' | 'unknown';
 

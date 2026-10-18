@@ -73,7 +73,7 @@ import {
   PinMismatchError,
   type BackendConnectionConfig,
 } from './backend-connection';
-import { protocolVersionAtLeast } from './protocol-compat';
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 
 const logger = new Logger('TunnelManager');
 

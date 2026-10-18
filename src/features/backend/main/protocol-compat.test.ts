@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { protocolMajor, compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
+import { compareProtocolMajor } from './protocol-compat';
+import { protocolMajor, protocolVersionAtLeast } from '$shared/protocol-version';
 
 describe('protocolMajor', () => {
   it('extracts the leading integer segment', () => {

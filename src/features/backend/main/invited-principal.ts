@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { compareToPinnedVersion } from '../../../shared/intentd-version-compare';
 import { readPinnedVersion } from './intentd-version-pin';
-import { protocolVersionAtLeast } from './protocol-compat';
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import { parsePrincipalSnapshot, type PrincipalSnapshot } from '../../../shared/types/principal';
 import { m } from '../../../shared/paraglide/messages.js';
 import { JsonRpcError } from './json-rpc-errors';

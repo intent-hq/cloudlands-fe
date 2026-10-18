@@ -161,7 +161,8 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
+import { compareProtocolMajor } from './protocol-compat';
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
