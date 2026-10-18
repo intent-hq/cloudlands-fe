@@ -6,7 +6,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
-import { setWorkspaceEntity } from '../../workspace/workspace-slice';
+import { setWorkspaceEntity, updateWorkspaceEntity } from '../../workspace/workspace-slice';
 import type { WorkspaceEvent } from '$features/events/types';
 import { LiveEventsClient } from '$lib/client/live/live-events-client';
 import { getPeopleActivity } from '$features/presence/components/people-activity';
@@ -403,6 +403,126 @@ describe('lifecycleReadSaga', () => {
       await settle();
       expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
       expect(run.getWorkspaceState().workspaces.ids).toEqual([WS, 'unaffected-sibling']);
+    } finally {
+      await stop(run.task);
+      owner.dispose();
+      rendererEventRecovery.dispose();
+    }
+  });
+
+  it('loads the workspace list while workspace events keep arriving during every read', async () => {
+    rendererEventRecovery.dispose();
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const owner = scope.registerResource({
+      key: 'workspace-list',
+      workspaceId: null,
+      eventTypes: ['workspace:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    // A busy daemon: an activity/update push for the list lands while each
+    // workspace.list reply is in flight (#7249 startup skeleton).
+    // Bounded so the pre-fix livelock fails on the call count, not on OOM.
+    let calls = 0;
+    let run!: ReturnType<typeof startWithLoopback>;
+    mocks.workspaceServiceList.mockImplementation(async () => {
+      if (++calls < 50) rendererEventRecovery.push('workspace-list');
+      // The push's projection lands mid-read and must be replayed onto the reply.
+      if (calls === 1) run.dispatch(updateWorkspaceEntity(WS, { title: 'pushed' }));
+      // The trailing refetch sees a newer list than the first reply.
+      return {
+        ok: true,
+        data:
+          calls === 1
+            ? [{ id: WS, title: 'stale' }]
+            : [{ id: WS, title: 'pushed' }, { id: 'later' }],
+      };
+    });
+    mocks.workspaces.recentViews.mockImplementation(async () => {
+      rendererEventRecovery.push('workspace-list');
+      return { [WS]: 7 };
+    });
+    run = startWithLoopback();
+    try {
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      // The first reply is published even though a push overtook it, with
+      // the mid-read projection replayed over its stale field.
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+      expect(run.getWorkspaceState().workspaces.map[WS]?.title).toBe('pushed');
+      for (let i = 0; i < 10; i++) {
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      await settle();
+      // Exactly one trailing refetch, and its newer reply wins.
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().workspaces.ids).toEqual([WS, 'later']);
+      // Recency is not discarded by list pushes during its own read.
+      expect(run.actions).toContainEqual({
+        type: 'workspace/loadRecencyData',
+        payload: [{ lastViewedAt: { [WS]: 7 } }],
+      });
+    } finally {
+      await stop(run.task);
+      owner.dispose();
+      rendererEventRecovery.dispose();
+    }
+  });
+
+  it('does not refetch in a loop when a loss discards the in-flight reply', async () => {
+    rendererEventRecovery.dispose();
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const owner = scope.registerResource({
+      key: 'workspace-list',
+      workspaceId: null,
+      eventTypes: ['workspace:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    let calls = 0;
+    mocks.workspaceServiceList.mockImplementation(async () => {
+      if (++calls < 50) {
+        rendererEventRecovery.push('workspace-list');
+        owner.invalidate();
+      }
+      return { ok: true, data: [{ id: WS }] };
+    });
+    const run = startWithLoopback();
+    try {
+      run.channel.put(loadWorkspacesRequested());
+      for (let i = 0; i < 10; i++) {
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      await settle();
+      // The stale resource belongs to recovery; the ordinary read stops.
+      expect(mocks.workspaceServiceList.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
     } finally {
       await stop(run.task);
       owner.dispose();
