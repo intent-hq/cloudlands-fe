@@ -159,9 +159,7 @@ describe('script monitor controls', () => {
     const other = within(
       render(EventSubscriptionsCard, { workspaceId: ws, agentId: 'other-agent' }).container,
     );
-    await waitFor(() =>
-      expect(selectScriptMonitors.select(store.state, ws).status).toBe('ready'),
-    );
+    await waitFor(() => expect(selectScriptMonitors.select(store.state, ws).status).toBe('ready'));
     const area = (view: typeof owner) => view.getByTestId('subscription-utility-area');
     expect(area(owner).getAttribute('data-has-subscriptions')).toBe('false');
     const reads = () =>
