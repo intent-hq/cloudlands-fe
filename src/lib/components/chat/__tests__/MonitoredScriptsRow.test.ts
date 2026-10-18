@@ -438,6 +438,38 @@ describe('script monitor controls', () => {
     supported = false;
     await mount();
     expect(screen.queryByTestId('script-monitor-row')).toBeNull();
+    expect(screen.queryByTestId('script-monitor-load-failed')).toBeNull();
     expect(backendSubscribe).not.toHaveBeenCalled();
+  });
+  it('shows a failed monitor read in the chat card and recovers the real list on Retry', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method === 'scriptMonitor.list' && fail) return Promise.reject(new Error('Timed out'));
+      return original(method, params);
+    });
+    store.dispatch(
+      setSubscriptionSnapshot(ws, active.agentId, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    setEventSubscriptionsExpanded(ws, active.agentId, true);
+    render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId });
+    const failure = await screen.findByTestId('script-monitor-load-failed');
+    expect(failure.getAttribute('role')).toBe('alert');
+    expect(failure.textContent).toContain("Couldn't load script monitors.");
+    expect(
+      screen.getByTestId('subscription-utility-area').getAttribute('data-has-subscriptions'),
+    ).toBe('true');
+    expect(screen.queryByTestId('script-monitor-row')).toBeNull();
+    fail = false;
+    await fireEvent.click(within(failure).getByRole('button', { name: 'Retry' }));
+    expect((await screen.findByTestId('script-monitor-row')).textContent).toContain(
+      active.scriptName,
+    );
+    expect(screen.queryByTestId('script-monitor-load-failed')).toBeNull();
   });
 });

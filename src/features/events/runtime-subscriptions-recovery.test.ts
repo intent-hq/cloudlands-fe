@@ -325,7 +325,7 @@ describe('script monitor recovery', () => {
     expect(listReads).toBe(2);
     expect(state.monitors).toEqual([]);
     h.retire();
-    expect(state.status).toBe('failed');
+    expect(state.status).toBe('loading');
     finish({ view: 'summary', monitors: [monitorSummaryFixture] });
     await settle();
     expect(state.monitors).toEqual([]);

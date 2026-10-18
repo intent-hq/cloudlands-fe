@@ -18,6 +18,7 @@
     scriptMonitorActionRequested,
     scriptMonitorDetailsRequested,
     scriptMonitorsLoadMoreRequested,
+    scriptMonitorsRetryRequested,
   } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import {
     safeSubscriptionSlide,
@@ -60,6 +61,33 @@
     store.dispatch(scriptMonitorActionRequested(workspaceId, monitorId, action));
   }
 </script>
+
+{#if $snapshot$.status === 'failed'}
+  <!-- A failed read must not look like "no monitors" (intent-hq/intent#7206). -->
+  <div
+    class="flex min-w-0 items-center gap-2 {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+    role="alert"
+    data-testid="script-monitor-load-failed"
+  >
+    <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true"
+      ><Fa
+        icon={faTerminal}
+        size={16}
+        class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+      /></span
+    >
+    <span class="min-w-0 flex-1 truncate text-muted-foreground"
+      >{m.chat_scriptMonitor_loadFailed_error()}</span
+    >
+    <Button
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      onclick={() => store.dispatch(scriptMonitorsRetryRequested(workspaceId))}
+      >{m.chat_scriptMonitor_retry_label()}</Button
+    >
+  </div>
+{/if}
 
 {#each activeMonitors as monitor (monitor.monitorId)}
   {@const script = $snapshot$.scripts.find((item) => item.id === monitor.scriptId)}

@@ -380,7 +380,9 @@ export function subscribeScriptMonitors(
         detailReads.clear();
         retired.clear();
         selectedDetails.clear();
-        snapshot = { monitors: [], scripts: [], status: 'failed' };
+        // A lost session is not a failed read: the next session re-registers. Only a
+        // read error is 'failed', which the chat card shows (intent-hq/intent#7206).
+        snapshot = { monitors: [], scripts: [], status: 'loading' };
         emit();
       },
       onEvent: (notification) => receive(notification),
@@ -401,6 +403,11 @@ export function subscribeScriptMonitors(
   if (!adopted) void register();
   return {
     loadMore: () => readPage(true),
+    /** Re-run registration after a failed read; a no-op otherwise. */
+    retry() {
+      if (disposed || snapshot.status !== 'failed') return;
+      void register();
+    },
     async details(monitorId: string) {
       if (!supported || disposed || detailReads.has(monitorId)) return;
       const row = snapshot.monitors.find((item) => item.monitorId === monitorId);

@@ -18,6 +18,7 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   scriptMonitorActionRequested,
   scriptMonitorsLoadMoreRequested,
+  scriptMonitorsRetryRequested,
   scriptMonitorDetailsRequested,
   scriptMonitorOperationUpdated,
   scriptMonitorsSubscribeRequested,
@@ -74,6 +75,13 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
       function* ({ payload: [workspaceId] }): SagaGenerator<void> {
         const service = leases.get(workspaceId)?.service;
         if (service) yield* call([service, service.loadMore]);
+      },
+    );
+    yield* takeEvery(
+      scriptMonitorsRetryRequested,
+      function* ({ payload: [workspaceId] }): SagaGenerator<void> {
+        const service = leases.get(workspaceId)?.service;
+        if (service) yield* call([service, service.retry]);
       },
     );
     yield* takeEvery(
