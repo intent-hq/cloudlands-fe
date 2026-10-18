@@ -179,3 +179,51 @@ for (const scenario of scenarios) {
     }
   });
 }
+
+for (const scenario of scenarios) {
+  // Regression: an unfocused chat gains focus on pointerdown (Panel capture handler and
+  // focusin on the prompt's send control), so the hints appear mid-click. Inserting them
+  // reflowed rows between mousedown and mouseup and the click could miss its prompt.
+  test(`keeps prompt rows still when shortcut hints appear in ${scenario.name}`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(SuggestedPromptsGeometryHost, {
+      props: { ...scenario, showShortcutHints: false, reserveShortcutHintSpace: true },
+    });
+    const rows = component.locator('[data-suggested-prompt-row]');
+    const hints = component.locator('[data-suggested-prompt-hint]');
+    await expect(rows).toHaveCount(2);
+    await page.evaluate(() => document.fonts.ready);
+
+    const readGeometry = () =>
+      component.getByTestId('suggested-prompts-list').evaluate((list) => {
+        const box = (target: Element) => {
+          const { x, y, width, height } = target.getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        return Array.from(list.querySelectorAll('[data-suggested-prompt-row]')).map((row) => ({
+          row: box(row),
+          label: box(row.querySelector('[data-suggested-prompt-label]')!),
+        }));
+      });
+
+    const unfocused = await readGeometry();
+    await component.update({ props: { showShortcutHints: true } });
+    await expect(hints).toHaveCount(2);
+    for (let index = 0; index < 2; index += 1) {
+      await expect(hints.nth(index)).toBeVisible();
+      await expect(hints.nth(index)).not.toHaveAttribute('aria-hidden', 'true');
+    }
+    // The label shares the row with the hint, so any reflow shows up in its box.
+    expect(await readGeometry()).toEqual(unfocused);
+
+    await component.update({ props: { showShortcutHints: false } });
+    await expect(hints).toHaveCount(2);
+    for (let index = 0; index < 2; index += 1) {
+      await expect(hints.nth(index)).toBeHidden();
+      await expect(hints.nth(index)).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(await readGeometry()).toEqual(unfocused);
+  });
+}
