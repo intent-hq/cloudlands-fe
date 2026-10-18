@@ -35,6 +35,7 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
+import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
 
 const models = [
@@ -154,7 +155,7 @@ const previewProfiles = [
 ];
 const PROFILE_AGENT_ID = 'preview-profile-agent';
 
-function setupProfiles(agent?: Record<string, unknown>) {
+function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []) {
   return () => {
     const cleanupModels = setupModels(true)();
     const rows = selectProviderCatalogEntries.select(appStore.state);
@@ -183,6 +184,8 @@ function setupProfiles(agent?: Record<string, unknown>) {
         providerModelsLoaded(profile.providerRef, { models: rowsFor(profile.providerRef) }, epoch),
       );
     }
+    for (const profileId of signedOut)
+      appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'error'));
     if (agent) {
       appStore.dispatch(
         bulkUpsertSessions(
@@ -200,6 +203,8 @@ function setupProfiles(agent?: Record<string, unknown>) {
       );
     }
     return () => {
+      for (const profileId of signedOut)
+        appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'configured'));
       if (agent) appStore.dispatch(removeSession(PROFILE_AGENT_ID));
       for (const restore of restoreHandlers) restore();
       cleanupModels();
@@ -304,6 +309,20 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         showManageLink: false,
       },
       setup: setupProfiles(),
+    },
+    'profile-signed-out': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        selectedModel: 'pwork00000001-preview-balanced',
+        providerId: 'codex@pwork00000001',
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupProfiles(undefined, ['pwork00000001']),
     },
     'profile-selected': {
       props: {

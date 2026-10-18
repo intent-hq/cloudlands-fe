@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "Esta conversación empezó antes de que se editara su perfil. Reinicia intentd en el host del proveedor para usar la configuración guardada.",
   "chat_modelPicker_replacementRequired_title": "Elige otro modelo para continuar",
   "chat_modelPicker_replacementProfileMissing_description": "Se eliminó el perfil de {provider} que usaba esta conversación. Elige un modelo antes de enviar otro mensaje.",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} está desactivado en Configuración > Agentes. Elige un modelo antes de enviar otro mensaje."
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} está desactivado en Configuración > Agentes. Elige un modelo antes de enviar otro mensaje.",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Sin iniciar sesión",
+  "chat_modelPicker_profileSignedOut_hint": "Inicia sesión en la cuenta de este perfil fuera de Intent. Hasta entonces, es posible que sus modelos no funcionen."
 }

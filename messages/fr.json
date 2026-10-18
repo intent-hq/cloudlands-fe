@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "Cette conversation a démarré avant la modification de son profil. Redémarrez intentd sur l’hôte du fournisseur pour utiliser les paramètres enregistrés.",
   "chat_modelPicker_replacementRequired_title": "Choisissez un autre modèle pour continuer",
   "chat_modelPicker_replacementProfileMissing_description": "Le profil {provider} utilisé par cette conversation a été supprimé. Choisissez un modèle avant d’envoyer un autre message.",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} est désactivé dans Paramètres > Agents. Choisissez un modèle avant d’envoyer un autre message."
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} est désactivé dans Paramètres > Agents. Choisissez un modèle avant d’envoyer un autre message.",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Non connecté",
+  "chat_modelPicker_profileSignedOut_hint": "Connectez le compte de ce profil en dehors d’Intent. Ses modèles risquent de ne pas fonctionner d’ici là."
 }

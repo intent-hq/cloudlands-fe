@@ -184,6 +184,14 @@ export const profileHandlers = {
     getItem(state.items, profileId)
       ? { ...state, status: { ...state.status, [profileId]: status } }
       : state) as Handler<[string, ProviderProfileStatus]>,
+  // Catalog summaries are not in `items` for members; the saga only records a
+  // verdict for a profile the catalog still lists.
+  summaryStatusChanged: ((state, [profileId, status]) =>
+    state.status[profileId] === status
+      ? state
+      : { ...state, status: { ...state.status, [profileId]: status } }) as Handler<
+    [string, ProviderProfileStatus]
+  >,
   activationDismissed: ((state, [profileId]) => {
     if (!(profileId in state.activation)) return state;
     const activation = { ...state.activation };

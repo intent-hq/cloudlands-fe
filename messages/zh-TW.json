@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "此對話在其設定檔被編輯之前開始。在提供者主機上重新啟動 intentd 以使用已儲存的設定。",
   "chat_modelPicker_replacementRequired_title": "請選擇其他模型以繼續",
   "chat_modelPicker_replacementProfileMissing_description": "此對話使用的 {provider} 設定檔已被刪除。傳送下一則訊息前請選擇模型。",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在「設定 > 代理程式」中停用。傳送下一則訊息前請選擇模型。"
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在「設定 > 代理程式」中停用。傳送下一則訊息前請選擇模型。",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未登入",
+  "chat_modelPicker_profileSignedOut_hint": "請在 Intent 之外登入此設定檔的帳戶。在此之前，其模型可能無法執行。"
 }

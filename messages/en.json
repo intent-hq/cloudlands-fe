@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "This conversation started before its profile was edited. Restart intentd on the provider host to use the saved settings.",
   "chat_modelPicker_replacementRequired_title": "Choose another model to continue",
   "chat_modelPicker_replacementProfileMissing_description": "The {provider} profile this conversation used was removed. Pick a model before sending another message.",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} is disabled in Settings > Agents. Pick a model before sending another message."
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} is disabled in Settings > Agents. Pick a model before sending another message.",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Not signed in",
+  "chat_modelPicker_profileSignedOut_hint": "Sign this profile's account in outside Intent. Its models may not run until then."
 }

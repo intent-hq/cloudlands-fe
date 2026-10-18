@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "この会話はプロファイルの編集前に開始されました。保存した設定を使うにはプロバイダーのホストで intentd を再起動してください。",
   "chat_modelPicker_replacementRequired_title": "続行するには別のモデルを選択してください",
   "chat_modelPicker_replacementProfileMissing_description": "この会話で使用していた {provider} のプロファイルは削除されました。次のメッセージを送る前にモデルを選択してください。",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} は 設定 > エージェント で無効になっています。次のメッセージを送る前にモデルを選択してください。"
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} は 設定 > エージェント で無効になっています。次のメッセージを送る前にモデルを選択してください。",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未サインイン",
+  "chat_modelPicker_profileSignedOut_hint": "このプロファイルのアカウントに Intent の外でサインインしてください。それまではモデルが動作しない場合があります。"
 }

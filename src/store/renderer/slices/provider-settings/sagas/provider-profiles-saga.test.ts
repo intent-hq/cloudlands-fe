@@ -31,6 +31,7 @@ import {
   providerProfileDeleteRequested,
   providerProfilesChanged,
   providerProfilesRequested,
+  providerProfileSummaryStatusesEnsured,
   providerProfileUpdateRequested,
   providerSettingsReducer,
   providerSettingsSessionOpened,
@@ -47,6 +48,7 @@ import {
   selectProviderProfileStatusMap,
 } from '../provider-settings-selectors';
 import { providerProfilesSaga } from './provider-profiles-saga';
+import { selectProfileSignInStatuses } from '../provider-profile-status-selectors';
 import { selectProviderCatalogProfiles } from '../../provider-catalog/provider-catalog-selectors';
 
 const settle = async () => {
@@ -372,5 +374,46 @@ describe('model picker catalog refresh (§5.54)', () => {
     await settle();
     expect(mocks.catalog).toHaveBeenCalledTimes(2);
     expect(selectProviderCatalogProfiles.select(h.state())).toEqual([work]);
+  });
+});
+
+describe('picker sign-in statuses (§5.54)', () => {
+  const work = { id: 'pwork', providerRef: 'codex@pwork', baseProviderId: 'codex', name: 'Work' };
+  // A member cannot list profiles; only the catalog summaries are known.
+  beforeEach(() => {
+    mocks.list.mockRejectedValue(new Error('-32003 forbidden'));
+  });
+
+  it('probes each listed profile once without forcing and records signed-out', async () => {
+    const auth = vi.fn(async () => false as boolean | undefined);
+    const h = setup({ auth });
+    task = h.task;
+    h.dispatch(providerCatalogLoaded({ providers: [row('codex', true)], profiles: [work] }));
+    const refs = [{ id: work.id, providerRef: work.providerRef }];
+    h.dispatch(providerProfileSummaryStatusesEnsured(refs));
+    h.dispatch(providerProfileSummaryStatusesEnsured(refs));
+    await settle();
+    expect(auth.mock.calls).toEqual([[work.providerRef, false]]);
+    expect(selectProfileSignInStatuses.select(h.state())).toEqual({ [work.id]: 'error' });
+
+    h.dispatch(providerProfileSummaryStatusesEnsured(refs));
+    await settle();
+    expect(auth).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a verdict for a profile the catalog no longer lists', async () => {
+    const pending = deferred<boolean | undefined>();
+    const auth = vi.fn(() => pending.promise);
+    const h = setup({ auth });
+    task = h.task;
+    h.dispatch(providerCatalogLoaded({ providers: [row('codex', true)], profiles: [work] }));
+    h.dispatch(
+      providerProfileSummaryStatusesEnsured([{ id: work.id, providerRef: work.providerRef }]),
+    );
+    await settle();
+    h.dispatch(providerCatalogLoaded({ providers: [row('codex', true)], profiles: [] }));
+    pending.resolve(false);
+    await settle();
+    expect(selectProfileSignInStatuses.select(h.state())).toEqual({});
   });
 });

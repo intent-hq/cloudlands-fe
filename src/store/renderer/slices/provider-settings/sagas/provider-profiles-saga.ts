@@ -30,6 +30,8 @@ import {
   providerProfilesLoaded,
   providerProfilesRequested,
   providerProfileStatusChanged,
+  providerProfileSummaryStatusChanged,
+  providerProfileSummaryStatusesEnsured,
   providerProfileUpdateRequested,
 } from '../provider-settings-slice';
 import {
@@ -43,6 +45,8 @@ import type { ProviderProfileStatus } from '../provider-settings-types';
 import { takeStagedProfileEnv } from '../provider-profiles-state';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { hydrateProviderCatalog } from '../../provider-catalog/sagas/provider-catalog-saga';
+import { selectProviderCatalogProfiles } from '../../provider-catalog/provider-catalog-selectors';
+import { selectProfileSignInStatuses } from '../provider-profile-status-selectors';
 
 const logger = createLogger('ProviderProfilesSaga');
 
@@ -216,6 +220,37 @@ function* mutationLoop(deps: ProviderProfilesSagaDeps) {
   }
 }
 
+/**
+ * Probe each listed profile once (not forced) so pickers can flag a signed-out
+ * profile. A profile already probed, or in flight, is skipped; a verdict for a
+ * profile the catalog no longer lists is dropped.
+ */
+function* ensureSummaryStatuses(
+  deps: ProviderProfilesSagaDeps,
+  inFlight: Set<string>,
+  action: ReturnType<typeof providerProfileSummaryStatusesEnsured>,
+) {
+  const known = yield* selectProfileSignInStatuses.effect();
+  for (const profile of action.payload[0]) {
+    if (known[profile.id] || inFlight.has(profile.id)) continue;
+    inFlight.add(profile.id);
+    yield* fork(function* () {
+      let status: ProviderProfileStatus = 'configured';
+      try {
+        status = toStatus(yield* call([deps, deps.authStatus], profile.providerRef, false));
+      } catch (error) {
+        logger.warn('Provider profile status check failed', { profileId: profile.id, error });
+      } finally {
+        inFlight.delete(profile.id);
+      }
+      const listed = (yield* selectProviderCatalogProfiles.effect()).some(
+        (summary) => summary.id === profile.id,
+      );
+      if (listed) yield* put(providerProfileSummaryStatusChanged(profile.id, status));
+    });
+  }
+}
+
 function* onCheckRequested(
   deps: ProviderProfilesSagaDeps,
   action: ReturnType<typeof providerProfileCheckRequested>,
@@ -232,5 +267,11 @@ export function* providerProfilesSaga(deps: ProviderProfilesSagaDeps = defaultDe
     takeEvery(providerProfilesChanged, onProfilesChanged),
     takeEvery(providerCatalogLoaded, onCatalogLoaded),
     takeEvery(providerProfileCheckRequested, onCheckRequested, deps),
+    takeEvery(
+      providerProfileSummaryStatusesEnsured,
+      ensureSummaryStatuses,
+      deps,
+      new Set<string>(),
+    ),
   ]);
 }

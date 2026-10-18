@@ -7588,5 +7588,7 @@
   "chat_modelPicker_earlierSettingsRemote_description": "Diese Unterhaltung wurde gestartet, bevor ihr Profil bearbeitet wurde. Starte intentd auf dem Provider-Host neu, um die gespeicherten Einstellungen zu verwenden.",
   "chat_modelPicker_replacementRequired_title": "Wähle ein anderes Modell, um fortzufahren",
   "chat_modelPicker_replacementProfileMissing_description": "Das {provider}-Profil dieser Unterhaltung wurde entfernt. Wähle ein Modell, bevor du eine weitere Nachricht sendest.",
-  "chat_modelPicker_replacementProviderDisabled_description": "{provider} ist unter Einstellungen > Agents deaktiviert. Wähle ein Modell, bevor du eine weitere Nachricht sendest."
+  "chat_modelPicker_replacementProviderDisabled_description": "{provider} ist unter Einstellungen > Agents deaktiviert. Wähle ein Modell, bevor du eine weitere Nachricht sendest.",
+  "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Nicht angemeldet",
+  "chat_modelPicker_profileSignedOut_hint": "Melde das Konto dieses Profils außerhalb von Intent an. Bis dahin laufen seine Modelle möglicherweise nicht."
 }

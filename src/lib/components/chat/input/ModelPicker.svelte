@@ -83,6 +83,8 @@
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { selectProviderCatalogProfiles } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
+  import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     expandProviderIdsWithProfiles,
     findProfileByRef,
@@ -175,6 +177,16 @@
   function baseProviderDisplayName(providerId: string): string {
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
     return $providerCatalogEntries$.find((p) => p.id === baseId)?.displayName ?? baseId;
+  }
+  function isProfileSignedOut(providerRef: string): boolean {
+    const profile = findProfileByRef($providerProfiles$, providerRef);
+    return !!profile && $profileSignInStatuses$[profile.id] === 'error';
+  }
+  function providerTabLabel(providerId: string): string {
+    const label = providerDisplayName(providerId);
+    return isProfileSignedOut(providerId)
+      ? m.chat_modelPicker_profileSignedOut_ariaLabel({ provider: label })
+      : label;
   }
   function baseHasProfiles(providerId: string): boolean {
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
@@ -379,6 +391,18 @@
   const providerProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
   const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
   const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
+  // A signed-out profile stays selectable but is flagged (§5.54 status mapping:
+  // `error` = signed out). Each listed profile is probed once, not forced.
+  const profileSignInStatuses$ = selectProfileSignInStatuses();
+  $effect(() => {
+    const profiles = $providerProfiles$;
+    if (profiles.length === 0 || isGuestLocked) return;
+    appStore.dispatch(
+      providerProfileSummaryStatusesEnsured(
+        profiles.map(({ id, providerRef }) => ({ id, providerRef })),
+      ),
+    );
+  });
   const modelFetchProviderIds$ = derived(
     [baseModelFetchProviderIds$, providerProfiles$],
     ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
@@ -2336,6 +2360,22 @@
       >
         {group.label}
       </div>
+      {#if isProfileSignedOut(group.key)}
+        <!-- Same cue as a provider's sign-in failure; the models stay selectable. -->
+        <div
+          class="flex items-start gap-2 px-2 pb-1 text-xs"
+          role="status"
+          data-testid="model-picker-profile-signed-out"
+        >
+          <ModelProviderErrorItem
+            providerId={group.key}
+            providerLabel={group.label}
+            error={m.settings_providerProfiles_statusError_label()}
+            hint={m.chat_modelPicker_profileSignedOut_hint()}
+            compact={true}
+          />
+        </div>
+      {/if}
     {/if}
   {/snippet}
 
@@ -2515,8 +2555,8 @@
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
-              aria-label={providerDisplayName(providerTabId)}
-              title={providerDisplayName(providerTabId)}
+              aria-label={providerTabLabel(providerTabId)}
+              title={providerTabLabel(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'relative text-muted-foreground hover:bg-muted/40',
@@ -2526,6 +2566,12 @@
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
+              {#if isProfileSignedOut(providerTabId)}
+                <span
+                  class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
+                  aria-hidden="true"
+                ></span>
+              {/if}
               {#if isProviderProfileRef(providerTabId)}
                 <!-- Tells same-provider profile tabs apart; the tab's label names it. -->
                 <span

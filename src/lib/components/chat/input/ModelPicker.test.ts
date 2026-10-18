@@ -44,6 +44,8 @@ const mockCatalogProfiles = vi.hoisted(() => ({
   current: [] as { id: string; providerRef: string; baseProviderId: string; name: string }[],
 }));
 const mockDaemonAppOwned = vi.hoisted(() => ({ current: true }));
+// providerSettings slice state (profile sign-in statuses, §5.54).
+const mockProviderSettingsState = vi.hoisted(() => ({ current: undefined as unknown }));
 
 // Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
 // (guest window / collaborator seat / unsettled identity). Defaults to a
@@ -144,7 +146,9 @@ vi.mock('$store/renderer/store', async () => {
       },
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
-      providerSettings: { enabledProviders: {} },
+      providerSettings: (mockProviderSettingsState.current as object | undefined) ?? {
+        enabledProviders: {},
+      },
       model: { defaultProviderId: mockModelState.defaultProviderId },
       // Selector-channel memoization needs immutable snapshots like real Redux.
       providerModels: { ...mockProviderModelsState },
@@ -461,6 +465,7 @@ afterEach(() => {
   providerEntriesOverride$.set(null);
   mockCatalogProfiles.current = [];
   mockDaemonAppOwned.current = true;
+  mockProviderSettingsState.current = undefined;
 });
 
 describe('ModelPicker locked state', () => {
@@ -5903,6 +5908,43 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     await fireEvent.click(screen.getByRole('button'));
     await screen.findByRole('listbox');
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('marks a signed-out profile in its tab and group without hiding it', async () => {
+    mockCatalogProfiles.current = [WORK, PERSONAL];
+    const { providerSettingsReducer, initialState, providerProfileSummaryStatusChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    mockProviderSettingsState.current = providerSettingsReducer(
+      initialState,
+      providerProfileSummaryStatusChanged(WORK.id, 'error'),
+    );
+    render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+
+    const workTab = screen.getByRole('tab', { name: /Work/ });
+    expect(workTab.getAttribute('aria-label')).toMatch(/Not signed in/);
+    expect(screen.getByRole('tab', { name: /Personal/ }).getAttribute('aria-label')).not.toMatch(
+      /Not signed in/,
+    );
+
+    await fireEvent.click(workTab);
+    const notice = await screen.findByTestId('model-picker-profile-signed-out');
+    expect(notice.textContent).toMatch(/Not signed in/);
+    // Still selectable: the cue never hides the profile's models.
+    expect(await screen.findByRole('option', { name: /GPT-5 Work row/ })).toBeTruthy();
+  });
+
+  it('asks for a non-forced sign-in check of each listed profile', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, { props: { selectedModel: 'gpt5.4', portal: false } });
+    await waitFor(() =>
+      expect(mockSvelteDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'providerProfiles/summaryStatusesEnsured',
+          payload: [[{ id: WORK.id, providerRef: WORK.providerRef }]],
+        }),
+      ),
+    );
   });
 
   it('shows the Codex default-list notice for a profile catalog, and not for a stale one', async () => {

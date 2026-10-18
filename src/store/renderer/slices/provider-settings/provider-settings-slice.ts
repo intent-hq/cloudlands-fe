@@ -433,6 +433,17 @@ export const providerProfileCheckRequested = createAction<[profileId: string]>(
 export const providerProfileStatusChanged = createAction<
   [profileId: string, status: ProviderProfileStatus]
 >('providerProfiles/statusChanged');
+/**
+ * Model pickers (members included) need each listed profile's sign-in state
+ * without opening Settings: probe the catalog's profile references once,
+ * without forcing, and keep the verdict by profile id.
+ */
+export const providerProfileSummaryStatusesEnsured = createAction<
+  [profiles: { id: string; providerRef: string }[]]
+>('providerProfiles/summaryStatusesEnsured');
+export const providerProfileSummaryStatusChanged = createAction<
+  [profileId: string, status: ProviderProfileStatus]
+>('providerProfiles/summaryStatusChanged');
 /** Clear a shown activation notice once acknowledged. */
 export const providerProfileActivationDismissed = createAction<[profileId: string]>(
   'providerProfiles/activationDismissed',
@@ -469,6 +480,9 @@ providerSettingsReducer.with(providerProfileMutationDismissed, (state, { payload
 );
 providerSettingsReducer.with(providerProfileStatusChanged, (state, { payload }) =>
   withProfiles(state, profileHandlers.statusChanged(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileSummaryStatusChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.summaryStatusChanged(state.profiles, payload)),
 );
 providerSettingsReducer.with(providerProfileActivationDismissed, (state, { payload }) =>
   withProfiles(state, profileHandlers.activationDismissed(state.profiles, payload)),
