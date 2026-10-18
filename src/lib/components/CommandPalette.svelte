@@ -1003,8 +1003,10 @@
 {/if}
 
 {#if isOpen}
+  <!-- Width follows the filter strip (640px floor, viewport cap); other sections use
+       contain-inline-size so long titles or queries truncate instead of widening it. -->
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[640px] z-50"
+    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-max min-w-[min(640px,calc(100%-1rem))] max-w-[calc(100%-1rem)] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
@@ -1017,7 +1019,7 @@
       role="document"
       tabindex="-1"
     >
-      <div class="flex shrink-0 items-center gap-3 px-5 py-3">
+      <div class="flex shrink-0 items-center gap-3 px-5 py-3 contain-inline-size">
         <Fa icon={faSearch} class="size-5 shrink-0 text-muted-foreground" />
 
         <Input
@@ -1053,7 +1055,7 @@
       {/if}
 
       {#if isGoToLineMode}
-        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
+        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1 contain-inline-size">
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
               <Button
@@ -1080,7 +1082,7 @@
       {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || $noteResults.loading}
         <div
           bind:this={resultsRef}
-          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2"
+          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2 contain-inline-size"
           data-palette-results
         >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
@@ -1166,7 +1168,10 @@
           {/if}
         </div>
       {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !$noteResults.loading}
-        <EmptyState class="min-h-0 flex-1 overflow-y-auto py-10" contentClass="break-words">
+        <EmptyState
+          class="min-h-0 flex-1 overflow-y-auto py-10 contain-inline-size"
+          contentClass="break-words"
+        >
           {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
           {#snippet title()}
             {parsedQuery.searchTerm
@@ -1175,7 +1180,7 @@
           {/snippet}
         </EmptyState>
       {:else if !searchQuery}
-        <div class="px-3 py-6 text-center">
+        <div class="px-3 py-6 text-center contain-inline-size">
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
         </div>
       {/if}

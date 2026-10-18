@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { ContentType, NoteVisibility, type Note } from '$shared/types';
+  import { ContentType, NoteVisibility, WorkspaceStatus, type Note } from '$shared/types';
   import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { ChangeStage } from '$features/file-tracking/types';
   import { store as appStore } from '$store/renderer/store';
@@ -10,6 +10,12 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    removeWorkspaceEntity,
+    setWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
+  import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
 
   const workspaceId = WorkspaceId('preview-command-palette');
@@ -59,6 +65,30 @@
     };
   }
 
+  /** The workspace owner sees every filter, including Terminals and Browser. */
+  function setupOwner() {
+    const stop = setup();
+    admitLegacyPrincipal('owner');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: workspaceId,
+        title: 'Command palette preview',
+        repositoryName: 'intent',
+        branch: 'preview/command-palette',
+        status: WorkspaceStatus.Active,
+        myRole: 'owner',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        ...PREVIEW_FIXTURE_TIMESTAMPS,
+      }),
+    );
+    return () => {
+      stop();
+      appStore.dispatch(removeWorkspaceEntity(workspaceId));
+    };
+  }
+
   function setupGitLab(enabled: boolean) {
     return () => {
       const before = appStore.state.userPreferences.labsGitLabEnabled;
@@ -77,6 +107,7 @@
     defaultState: 'grouped',
     states: {
       grouped: { props: { initialQuery: '' }, setup },
+      owner: { props: { initialQuery: '' }, setup: setupOwner },
       context: { props: { initialQuery: '#' }, setup },
       search: { props: { initialQuery: 'context' }, setup },
       empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },
