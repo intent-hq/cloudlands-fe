@@ -582,6 +582,9 @@ These rules apply to unit tests and browser tests alike:
   a decorative assertion a behavioral contract.
 - **Do not use source text, markup order, or CSS-class strings to prove appearance.**
   Those checks constrain implementation spelling without establishing browser behavior.
+  `intent/no-class-name-assertions-in-tests` rejects new `className` / `classList` /
+  `toHaveClass` assertions in `src/**/*.test.ts`; existing ones are counted in
+  `eslint-rules/baselines/no-class-name-assertions-in-tests/`, which may only shrink.
 - **Do not claim layout coverage from jsdom dimensions.** jsdom does not perform layout;
   assigning a width or mocking a bounding box and checking it cannot prove containment.
 - **Do not build circular style oracles:** importing a production class constant and
