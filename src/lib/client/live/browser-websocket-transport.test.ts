@@ -927,7 +927,9 @@ describe('root file reads on the sending connection', () => {
         nextVersion === '12.0' ||
         nextVersion === '13.0' ||
         nextVersion === '14.0' ||
-        nextVersion === '15.0'
+        nextVersion === '15.0' ||
+        // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+        nextVersion === '16.0'
       ) {
         expect(result).toEqual(response);
         expect(sockets[1].lastFrame()).toMatchObject({ method, params });

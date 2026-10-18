@@ -16,6 +16,7 @@
  * surfaced; a same-key retry against the daemon replays the bound placement
  * instead of placing a collision-suffixed duplicate.
  */
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
@@ -96,12 +97,7 @@ export function isRemoteBackend(): boolean {
  * is never sent to them.
  */
 export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
-  if (!protocolVersion) return false;
-  const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2] ?? 0);
-  return major > 9 || (major === 9 && minor >= 13);
+  return protocolVersionAtLeast(protocolVersion, 9, 13);
 }
 
 /** Whether the daemon connected right now accepts keyed placement. */

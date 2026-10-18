@@ -60,7 +60,8 @@ describe('protocolVersionAtLeast', () => {
 
   it('passes any greater major regardless of minor', () => {
     expect(protocolVersionAtLeast('11.0', 10, 4)).toBe(true);
-    expect(protocolVersionAtLeast('11', 10, 4)).toBe(true);
+    // A bare major is malformed: daemons always report major.minor.
+    expect(protocolVersionAtLeast('11', 10, 4)).toBe(false);
     expect(protocolVersionAtLeast('9.99', 10, 4)).toBe(false);
   });
 
