@@ -561,9 +561,7 @@
   function isVisibleTopLevelBlock(block: RenderContentBlock): boolean {
     if (block.type === 'content_group') return true;
     const contentBlock = block as ContentBlock;
-    if (isNavLinkBlock(contentBlock)) {
-      return true;
-    }
+    if (isNavLinkBlock(contentBlock)) return true;
     if (contentBlock.type === 'text') {
       const text = contentBlock.text || (contentBlock as any).content || '';
       return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
@@ -587,6 +585,7 @@
     return block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block);
   }
 
+  const streamingCursor = $derived(isStreaming && groupedBlocks.length === 0);
   let lastVisibleTopLevelBlockIndex = $derived.by(() => {
     for (let i = groupedBlocks.length - 1; i >= 0; i--) {
       if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
@@ -1147,11 +1146,12 @@
   style="contain: layout style paint;"
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
   data-operational-stack
+  data-operational-stack-empty={windowItems.length || streamingCursor ? undefined : ''}
 >
   <OperationalWindow items={windowItems} scope={rowScope} row={renderWindowItem} />
 
   <!-- Show streaming cursor if streaming but no content yet -->
-  {#if isStreaming && groupedBlocks.length === 0}
+  {#if streamingCursor}
     <div
       class="w-full {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
       data-assistant-prose="streaming-empty"
