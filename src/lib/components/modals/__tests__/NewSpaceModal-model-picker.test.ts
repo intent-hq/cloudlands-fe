@@ -286,7 +286,11 @@ import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace
 import { WorkspaceStatusEnum } from '$shared/types';
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
-import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import {
+  setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerBranchForRepo,
+  setWorkspaceInitializerLastSelectedRepo,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { store as appStore } from '$store/renderer/store';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
@@ -300,6 +304,37 @@ function persistedStates() {
     .map(([action]) => action)
     .filter((action) => action?.type === setCompactWorkspaceInitializerFormState.type)
     .map((action) => action.payload[0]);
+}
+
+/** The repository fields the form currently shows (via the mock picker props). */
+function shownSelection() {
+  const text = (id: string) => screen.getByTestId(id).textContent ?? '';
+  return {
+    repoPath: text('picker-repo-path'),
+    repoType: text('picker-repo-type'),
+    githubUrl: text('picker-github-url'),
+    branch: text('picker-branch'),
+    skipIsolation: text('picker-skip-isolation') === 'true',
+  };
+}
+
+/** Pick a repo and branch through the mock picker, click Create, return the request. */
+async function submitWithRepo() {
+  const picker = (
+    window as unknown as {
+      __mockRepoAndBranchPicker: {
+        onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+        onBranchChange: (event: { detail: { branch: string } }) => void;
+      };
+    }
+  ).__mockRepoAndBranchPicker;
+  picker.onRepoChange({ detail: { path: '/tmp/test-repo', type: 'local', isValidPath: true } });
+  picker.onBranchChange({ detail: { branch: 'main' } });
+  const create = screen.getByRole('button', { name: /^Create workspace/ });
+  await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+  await fireEvent.click(create);
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+  return mocks.create.mock.calls[0][0];
 }
 
 function modeCard(name: RegExp) {
@@ -404,14 +439,8 @@ describe('NewSpaceModal model-picker composition', () => {
       await fireEvent.click(
         await within(dialog).findByRole('option', { name: 'Codex model', exact: true }),
       );
-      await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
-          selectedProvider: 'codex',
-          selectedModel: 'codex-model',
-          modelWasOverridden: true,
-          isTeamMode: mode === 'team',
-        }),
-      );
+      await waitFor(() => expect(pickerTrigger(card).textContent).toContain('Codex model'));
+      expect(card.getAttribute('aria-pressed')).toBe('true');
       expect(pickerTrigger(card).getAttribute('aria-expanded')).toBe('true');
       const effort = await within(dialog).findByTestId('effort-picker-trigger');
       await fireEvent.click(effort);
@@ -420,13 +449,18 @@ describe('NewSpaceModal model-picker composition', () => {
         pointerType: 'mouse',
       });
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
-          selectedProvider: 'codex',
-          selectedModel: 'codex-model',
-          selectedReasoningEffort: 'high',
-        }),
+        expect(within(pickerTrigger(card)).getByLabelText('Codex model · High')).toBeTruthy(),
       );
       expect(mocks.onClose).not.toHaveBeenCalled();
+      await fireEvent.click(pickerTrigger(card));
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+      const request = await submitWithRepo();
+      expect(request.initialAgent).toMatchObject({
+        provider: 'codex',
+        model: 'codex-model',
+        reasoningEffort: 'high',
+      });
+      expect(request.initialAgent.metadata.workMode).toBe(mode);
     },
   );
 
@@ -482,15 +516,29 @@ describe('NewSpaceModal model-picker composition', () => {
       };
       render(NewSpaceModal, { props: { open: true } });
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
+        expect(shownSelection()).toMatchObject({
           repoPath: '/repos/sidebar',
           repoType: 'local',
+          githubUrl: 'https://github.com/acme/sidebar',
           branch: '',
-          scope: '',
-          remoteSetup: null,
-          selectedSpecialist: 'spec-writer',
         }),
       );
+      const picker = (
+        window as unknown as {
+          __mockRepoAndBranchPicker: {
+            onBranchChange: (event: { detail: { branch: string } }) => void;
+          };
+        }
+      ).__mockRepoAndBranchPicker;
+      picker.onBranchChange({ detail: { branch: 'main' } });
+      const create = screen.getByRole('button', { name: /^Create workspace/ });
+      await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+      await fireEvent.click(create);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      const request = mocks.create.mock.calls[0][0];
+      expect(request).toMatchObject({ repositoryPath: '/repos/sidebar', baseRef: 'main' });
+      expect(request.isRemote).toBeFalsy();
+      expect(request.initialAgent.specialist).toBe('spec-writer');
     });
 
     it('retains the saved branch for the same repository', async () => {
@@ -502,10 +550,7 @@ describe('NewSpaceModal model-picker composition', () => {
       };
       render(NewSpaceModal, { props: { open: true } });
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
-          repoPath: '/repos/sidebar',
-          branch: 'feature',
-        }),
+        expect(shownSelection()).toMatchObject({ repoPath: '/repos/sidebar', branch: 'feature' }),
       );
     });
 
@@ -568,7 +613,7 @@ describe('NewSpaceModal model-picker composition', () => {
       expect(screen.getByTestId('mock-rich-textarea').textContent).toContain(
         'ENG-123: Fix the issue',
       );
-      expect(persistedStates().at(-1)).toMatchObject({ repoPath: '/repos/sidebar', branch: '' });
+      expect(shownSelection()).toMatchObject({ repoPath: '/repos/sidebar', branch: '' });
     });
 
     it('keeps explicit session repository and branch prefills', async () => {
@@ -578,10 +623,7 @@ describe('NewSpaceModal model-picker composition', () => {
       );
       render(NewSpaceModal, { props: { open: true } });
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
-          repoPath: '/repos/explicit',
-          branch: 'feature',
-        }),
+        expect(shownSelection()).toMatchObject({ repoPath: '/repos/explicit', branch: 'feature' }),
       );
     });
 
@@ -598,7 +640,7 @@ describe('NewSpaceModal model-picker composition', () => {
       selectSidebarRepo('acme/cloud');
       render(NewSpaceModal, { props: { open: true } });
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
+        expect(shownSelection()).toMatchObject({
           repoPath: 'acme/cloud',
           repoType: 'github',
           githubUrl: 'https://github.com/acme/cloud',
@@ -622,7 +664,7 @@ describe('NewSpaceModal model-picker composition', () => {
         );
         render(NewSpaceModal, { props: { open: true } });
         await waitFor(() =>
-          expect(persistedStates().at(-1)).toMatchObject({
+          expect(shownSelection()).toMatchObject({
             repoPath: 'acme/cloud',
             repoType: 'github',
             skipIsolation: false,
@@ -683,7 +725,7 @@ describe('NewSpaceModal model-picker composition', () => {
         selectClonedSidebarRepo();
         render(NewSpaceModal, { props: { open: true } });
         await waitFor(() =>
-          expect(persistedStates().at(-1)).toMatchObject({
+          expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
             repoType: 'github',
             githubUrl: 'https://github.com/intent-hq/intent',
@@ -703,7 +745,7 @@ describe('NewSpaceModal model-picker composition', () => {
         selectClonedSidebarRepo();
         render(NewSpaceModal, { props: { open: true } });
         await waitFor(() =>
-          expect(persistedStates().at(-1)).toMatchObject({
+          expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
             repoType: 'github',
             branch: 'release',
@@ -722,7 +764,7 @@ describe('NewSpaceModal model-picker composition', () => {
         selectClonedSidebarRepo();
         render(NewSpaceModal, { props: { open: true } });
         await waitFor(() =>
-          expect(persistedStates().at(-1)).toMatchObject({
+          expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
             repoType: 'github',
             branch: '',
@@ -742,7 +784,7 @@ describe('NewSpaceModal model-picker composition', () => {
         };
         render(NewSpaceModal, { props: { open: true } });
         await waitFor(() =>
-          expect(persistedStates().at(-1)).toMatchObject({
+          expect(shownSelection()).toMatchObject({
             repoPath: '/repos/sidebar',
             repoType: 'local',
             skipIsolation: true,
@@ -769,7 +811,7 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(focus.mock.contexts).toContain(inlinePrompt);
   });
 
-  it('selects models in both modes without bubbling, closing, or losing persisted state', async () => {
+  it('selects models in both modes without bubbling or closing', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
     const team = modeCard(/Agent orchestration/i);
@@ -794,12 +836,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await waitFor(() => {
       expect(pickerTrigger(team).textContent).toContain('GPT 5.6');
-      expect(persistedStates().at(-1)).toMatchObject({
-        selectedModel: 'gpt5.6',
-        modelWasOverridden: true,
-        selectedProvider: 'auggie',
-        isTeamMode: true,
-      });
+      expect(team.getAttribute('aria-pressed')).toBe('true');
     });
 
     expect(pickerTrigger(team).getAttribute('aria-expanded')).toBe('true');
@@ -814,7 +851,6 @@ describe('NewSpaceModal model-picker composition', () => {
       pointerType: 'mouse',
     });
     await waitFor(() => {
-      expect(persistedStates().at(-1)).toMatchObject({ selectedReasoningEffort: 'high' });
       const updatedTeamTrigger = pickerTrigger(team);
       expect(within(updatedTeamTrigger).getByLabelText('GPT 5.6 · High')).toBeTruthy();
       expect(updatedTeamTrigger.textContent).not.toContain('High');
@@ -826,14 +862,7 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(team.getAttribute('aria-pressed')).toBe('true');
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    expect(
-      persistedStates().filter(
-        (state) =>
-          state.selectedModel === 'gpt5.6' &&
-          state.isTeamMode === true &&
-          state.selectedReasoningEffort === undefined,
-      ),
-    ).toHaveLength(1);
+    expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy();
     expect(mocks.onClose).not.toHaveBeenCalled();
 
     await fireEvent.click(single);
@@ -851,21 +880,15 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await waitFor(() => {
       expect(pickerTrigger(single).textContent).toContain('GPT 5.5');
-      expect(persistedStates().at(-1)).toMatchObject({
-        selectedModel: 'gpt5.5',
-        modelWasOverridden: true,
-        selectedProvider: 'auggie',
-        isTeamMode: false,
-      });
     });
     expect(single.getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
-    expect(
-      persistedStates().filter(
-        (state) => state.selectedModel === 'gpt5.5' && state.isTeamMode === false,
-      ),
-    ).toHaveLength(1);
     expect(mocks.onClose).not.toHaveBeenCalled();
+    await fireEvent.click(pickerTrigger(single));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    const request = await submitWithRepo();
+    expect(request.initialAgent).toMatchObject({ provider: 'auggie', model: 'gpt5.5' });
+    expect(request.initialAgent.metadata.workMode).toBe('single');
   });
 
   it.each([
@@ -888,7 +911,7 @@ describe('NewSpaceModal model-picker composition', () => {
       otherDefaultProvider: true,
     },
   ])(
-    'persists and submits Auto after displaying $name',
+    'submits Auto after displaying $name',
     async ({ explicitModel, foreignPin, otherDefaultProvider }) => {
       mocks.specialist.resolvedModel = 'gpt5.6';
       if (explicitModel) {
@@ -914,13 +937,9 @@ describe('NewSpaceModal model-picker composition', () => {
         await fireEvent.click(pickerTrigger(team));
         const modelListbox = await screen.findByRole('listbox');
         await fireEvent.click(within(modelListbox).getByRole('option', { name: /GPT 5\.6/ }));
-        await waitFor(() => {
-          expect(persistedStates().at(-1)).toMatchObject({
-            selectedModel: 'gpt5.6',
-            modelWasOverridden: true,
-          });
-          expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy();
-        });
+        await waitFor(() =>
+          expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
+        );
       }
 
       if (!explicitModel) await fireEvent.click(pickerTrigger(team));
@@ -932,13 +951,9 @@ describe('NewSpaceModal model-picker composition', () => {
       await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'Auto' }), {
         pointerType: 'mouse',
       });
-      await waitFor(() => {
-        expect(persistedStates().at(-1)).toMatchObject({
-          selectedReasoningEffort: '',
-          selectedProvider: 'auggie',
-        });
-        expect(within(pickerTrigger(team)).queryByLabelText('GPT 5.6 · High')).toBeNull();
-      });
+      await waitFor(() =>
+        expect(within(pickerTrigger(team)).queryByLabelText('GPT 5.6 · High')).toBeNull(),
+      );
       await fireEvent.click(pickerTrigger(team));
 
       sessionStorage.setItem(
@@ -976,6 +991,123 @@ describe('NewSpaceModal model-picker composition', () => {
       });
     },
   );
+
+  describe('choices are saved only when a workspace is created', () => {
+    beforeEach(() => {
+      mocks.formPersistence = true;
+      mocks.compactFormState = {
+        repoPath: '/repos/created',
+        repoType: 'local',
+        isValidPath: true,
+        branch: 'main',
+      };
+    });
+
+    function savedSelections() {
+      return mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) =>
+          [
+            setCompactWorkspaceInitializerFormState.type,
+            setWorkspaceInitializerLastSelectedRepo.type,
+            setWorkspaceInitializerBranchForRepo.type,
+          ].includes(action?.type),
+        );
+    }
+
+    it('does not save repo, branch or model changes when New space is cancelled', async () => {
+      const view = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/created'),
+      );
+      const picker = (
+        window as unknown as {
+          __mockRepoAndBranchPicker: {
+            onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+            onBranchChange: (event: { detail: { branch: string } }) => void;
+          };
+        }
+      ).__mockRepoAndBranchPicker;
+      picker.onRepoChange({ detail: { path: '/repos/other', type: 'local', isValidPath: true } });
+      picker.onBranchChange({ detail: { branch: 'feature' } });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/other'),
+      );
+      const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
+      await fireEvent.click(trigger);
+      await fireEvent.click(
+        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+      );
+      await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
+
+      await view.rerender({ open: false });
+      await waitFor(() => expect(screen.queryByTestId('picker-repo-path')).toBeNull());
+
+      expect(savedSelections()).toEqual([]);
+    });
+
+    it('saves the created repo, branch and model after a successful create', async () => {
+      mocks.create.mockResolvedValue({
+        ok: true,
+        data: {
+          workspace: {
+            id: 'ws-created',
+            title: 'Created',
+            status: WorkspaceStatusEnum.Active,
+            createdAt: '',
+            updatedAt: '',
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            repositoryPath: '/repos/other',
+          },
+          initialAgent: { id: 'agent-created' },
+        },
+      });
+      render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/created'),
+      );
+      const picker = (
+        window as unknown as {
+          __mockRepoAndBranchPicker: {
+            onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+            onBranchChange: (event: { detail: { branch: string } }) => void;
+          };
+        }
+      ).__mockRepoAndBranchPicker;
+      picker.onRepoChange({ detail: { path: '/repos/other', type: 'local', isValidPath: true } });
+      picker.onBranchChange({ detail: { branch: 'feature' } });
+      const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
+      await fireEvent.click(trigger);
+      await fireEvent.click(
+        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+      );
+      await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
+      expect(savedSelections()).toEqual([]);
+
+      const create = screen.getByRole('button', { name: /^Create workspace/ });
+      await waitFor(() => expect(create.hasAttribute('disabled')).toBe(false));
+      await fireEvent.click(create);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          repoPath: '/repos/other',
+          repoType: 'local',
+          branch: 'feature',
+          selectedModel: 'gpt5.6',
+        }),
+      );
+      const lastRepo = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action?.type === setWorkspaceInitializerLastSelectedRepo.type)
+        .at(-1);
+      expect(lastRepo?.payload[0]).toMatchObject({ path: '/repos/other', type: 'local' });
+    });
+  });
 
   it('keeps keyboard and dismissal behavior inside the open dialog', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
@@ -1024,7 +1156,10 @@ describe('NewSpaceModal model-picker composition', () => {
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
     await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(2));
-    const persistedCount = persistedStates().length;
+    // Escape must not commit the highlighted reasoning level.
+    const effortShown = () =>
+      within(modelTrigger).queryByTestId('model-reasoning-effort-gauge')?.dataset.gaugeValue;
+    const effortBefore = effortShown();
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
     expect(screen.getAllByRole('listbox')).toHaveLength(2);
@@ -1035,14 +1170,14 @@ describe('NewSpaceModal model-picker composition', () => {
       expect(reasoningTrigger.getAttribute('aria-expanded')).toBe('false');
     });
     expect(document.activeElement).toBe(reasoningTrigger);
-    expect(persistedStates()).toHaveLength(persistedCount);
+    expect(effortShown()).toBe(effortBefore);
     expect(mocks.onClose).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(modelTrigger);
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
-    expect(persistedStates()).toHaveLength(persistedCount);
+    expect(effortShown()).toBe(effortBefore);
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 

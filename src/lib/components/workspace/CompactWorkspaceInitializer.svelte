@@ -47,6 +47,7 @@
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
     setWorkspaceInitializerBranchForRepo,
+    setWorkspaceInitializerLastSelectedRepo,
     workspaceInitializerDraftClearRequested,
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
@@ -1030,37 +1031,9 @@
     }
   });
 
-  // Save form state through Redux whenever it changes. Persistence is handled by the saga.
-  $effect(() => {
-    if (!$workspaceInitializerHydrated$ && !modelPickedThisSession && !effortPickedThisSession)
-      return;
-    // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel || selectedReasoningEffort !== undefined) {
-      const formState: CompactWorkspaceInitializerFormState = {
-        repositoryCheckoutDraft:
-          repoType === 'gitlab' ? readRepositoryCheckoutDraft($checkoutForm$?.draft) : undefined,
-        repoPath,
-        repoType,
-        githubUrl,
-        branch,
-        isNewRepo,
-        isValidPath,
-        scope,
-        scopeRepoPath: scope ? repoPath : undefined, // Track which repo the scope belongs to
-        remoteSetup,
-        selectedSpecialist,
-        selectedModel,
-        modelWasOverridden,
-        selectedReasoningEffort,
-        isTeamMode,
-        selectedProvider,
-        skipIsolation,
-      };
-      // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
-      // structured-cloneable for daemon persistence (src/store/renderer/AGENTS.md §2).
-      appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(formState)));
-    }
-  });
+  // Repo, branch and agent choices are saved only after a successful create
+  // (clearForm), so cancelling New space keeps the last-created choices. The
+  // message and attachment draft above is saved as the user types.
 
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
@@ -2624,6 +2597,22 @@
     // remoteSetup.workspacePath/environmentConfig, and isValid waives the
     // branch requirement for remote), a remote selection cannot be preserved —
     // reset it to defaults instead of leaving a valid-looking broken form.
+    if (
+      debugConfig.get('enableFormPersistence') &&
+      repoPath &&
+      !isNewRepo &&
+      (repoType === 'local' || repoType === 'github')
+    ) {
+      appStore.dispatch(
+        setWorkspaceInitializerLastSelectedRepo({
+          path: repoPath,
+          type: repoType,
+          ...(githubUrl ? { githubUrl } : {}),
+          isValidPath,
+          ...(scope ? { scope } : {}),
+        }),
+      );
+    }
     if (repoType === 'remote') {
       repoPath = '';
       repoType = 'local';

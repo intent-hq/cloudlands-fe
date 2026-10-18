@@ -147,7 +147,9 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ success: true, data: [] })),
   shell: { open: vi.fn(async () => {}) },
 }));
-vi.mock('$lib/config/debug', () => ({ debugConfig: { get: () => false } }));
+vi.mock('$lib/config/debug', () => ({
+  debugConfig: { get: (key: string) => key === 'enableFormPersistence' },
+}));
 vi.mock('$lib/utils/performance', () => ({
   performanceMonitor: { start: vi.fn(), end: vi.fn() },
 }));
@@ -760,6 +762,20 @@ describe('RepoSelector recent forge identity', () => {
       type: 'local',
     });
     expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('reports a picked repo without saving it as the last-used repo', async () => {
+    const onchange = vi.fn();
+    mocks.state.recentRepos = [{ path: '/owned/local-app', type: 'local', name: 'local-app' }];
+    await openDropdown({ onchange });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo', exact: true }));
+    await fireEvent.click(await screen.findByRole('button', { name: /^local-app/ }));
+    expect(onchange.mock.calls[0][0].detail).toMatchObject({
+      path: '/owned/local-app',
+      type: 'local',
+    });
+    // New space saves the last-used repo only when a workspace is created.
+    expect(mocks.dispatch.mock.calls.map(([action]) => action.type)).not.toContain('wi/last');
   });
 
   it('uses observed Recent owner metadata only for the same provider, root and project', async () => {
