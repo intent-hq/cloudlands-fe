@@ -433,24 +433,37 @@ describe('lifecycleReadSaga', () => {
       retire: () => {},
     });
     // A busy daemon: an activity/update push for the list lands while each
-    // workspace.list reply is in flight (#7248 startup skeleton).
+    // workspace.list reply is in flight (#7249 startup skeleton).
     // Bounded so the pre-fix livelock fails on the call count, not on OOM.
     let calls = 0;
     mocks.workspaceServiceList.mockImplementation(async () => {
       if (++calls < 50) rendererEventRecovery.push('workspace-list');
-      return { ok: true, data: [{ id: WS }] };
+      // The trailing refetch sees a newer list than the first reply.
+      return { ok: true, data: calls === 1 ? [{ id: WS }] : [{ id: WS }, { id: 'later' }] };
+    });
+    mocks.workspaces.recentViews.mockImplementation(async () => {
+      rendererEventRecovery.push('workspace-list');
+      return { [WS]: 7 };
     });
     const run = startWithLoopback();
     try {
       run.channel.put(loadWorkspacesRequested());
+      await settle();
+      // The first reply is published even though a push overtook it.
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
       for (let i = 0; i < 10; i++) {
         await settle();
         await vi.advanceTimersByTimeAsync(1000);
       }
       await settle();
-      expect(run.getWorkspaceState().workspaces.ids).toEqual([WS]);
-      expect(run.getWorkspaceState().hasLoaded).toBe(true);
-      expect(mocks.workspaceServiceList.mock.calls.length).toBeLessThanOrEqual(2);
+      // Exactly one trailing refetch, and its newer reply wins.
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().workspaces.ids).toEqual([WS, 'later']);
+      // Recency is not discarded by list pushes during its own read.
+      expect(run.actions).toContainEqual({
+        type: 'workspace/loadRecencyData',
+        payload: [{ lastViewedAt: { [WS]: 7 } }],
+      });
     } finally {
       await stop(run.task);
       owner.dispose();

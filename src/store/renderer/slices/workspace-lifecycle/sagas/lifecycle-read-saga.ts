@@ -366,8 +366,12 @@ function* refreshWorkspaces(): SagaGenerator<boolean> {
     );
     // On a busy daemon an ordinary list push (workspace activity, PR, task
     // stats) lands during nearly every read. Requiring an untouched receipt
-    // then refetched forever and never published (#7248). Only a loss
+    // then refetched forever and never published (#7249). Only a loss
     // (stale resource) or an authority change still discards the reply.
+    // "Not stale now" suffices to tell a push from a loss: runRecoveryRead
+    // starts a recovery read only after this ordinary read drains, and this
+    // check runs synchronously when the saga resumes, so a loss during the
+    // read cannot have been recovered (stale cleared) before this point.
     if (!receipt.commit(() => undefined) && authority.isCurrent()) {
       const fresh = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
       if (fresh.commit(() => undefined)) {
