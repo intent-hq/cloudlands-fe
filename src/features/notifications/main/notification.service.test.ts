@@ -1112,17 +1112,20 @@ describe('NotificationService showNotification click behavior', () => {
   });
 
   /**
-   * Helper: call the private showNotification method directly,
-   * then trigger the click handler on the created Notification.
+   * Helper: register `mockWindow` as the live window holding the workspace,
+   * call the private showNotification method directly, then trigger the
+   * click handler on the created Notification (the click resolves its
+   * target window at click time).
    */
   function triggerNotificationClick(workspaceId: string, mockWindow: any) {
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === mockWindow.id ? mockWindow : null) as never,
+    );
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow] as never);
     const service = new NotificationService();
     // Access private method via bracket notation
-    (service as any).showNotification(
-      { title: 'Test', body: 'Test notification' },
-      mockWindow,
-      workspaceId,
-    );
+    (service as any).showNotification({ title: 'Test', body: 'Test notification' }, workspaceId);
 
     // Get the created notification instance and trigger click
     expect(mockNotificationInstances.length).toBeGreaterThan(0);
@@ -1180,10 +1183,8 @@ describe('NotificationService showNotification click behavior', () => {
     const mockWindow = createMockWindow(false);
     // Override isDestroyed to return true
     mockWindow.isDestroyed = () => true;
-    // No other window is live: the click-time re-pick finds nothing.
-    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    // No other window is live: the click-time pick finds nothing.
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
 
     triggerNotificationClick('workspace-1', mockWindow);
     await flush();
@@ -1195,6 +1196,7 @@ describe('NotificationService showNotification click behavior', () => {
     expect(createWindowForSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ route: '/workspace/workspace-1' }),
       true,
+      LOCAL_ID,
     );
   });
 
@@ -1210,14 +1212,9 @@ describe('NotificationService showNotification click behavior', () => {
   });
 
   it('stores notification in activeNotifications set and removes after click', () => {
-    const mockWindow = createMockWindow(false);
     const service = new NotificationService();
 
-    (service as any).showNotification(
-      { title: 'Test', body: 'Test notification' },
-      mockWindow,
-      'workspace-1',
-    );
+    (service as any).showNotification({ title: 'Test', body: 'Test notification' }, 'workspace-1');
 
     // Notification should be stored in the set
     expect((service as any).activeNotifications.size).toBe(1);
@@ -1231,14 +1228,9 @@ describe('NotificationService showNotification click behavior', () => {
   });
 
   it('removes notification from activeNotifications set after close', () => {
-    const mockWindow = createMockWindow(false);
     const service = new NotificationService();
 
-    (service as any).showNotification(
-      { title: 'Test', body: 'Test notification' },
-      mockWindow,
-      'workspace-1',
-    );
+    (service as any).showNotification({ title: 'Test', body: 'Test notification' }, 'workspace-1');
 
     expect((service as any).activeNotifications.size).toBe(1);
 
@@ -1250,14 +1242,9 @@ describe('NotificationService showNotification click behavior', () => {
   });
 
   it('removes notification from activeNotifications set after failed event', () => {
-    const mockWindow = createMockWindow(false);
     const service = new NotificationService();
 
-    (service as any).showNotification(
-      { title: 'Test', body: 'Test notification' },
-      mockWindow,
-      'workspace-1',
-    );
+    (service as any).showNotification({ title: 'Test', body: 'Test notification' }, 'workspace-1');
 
     expect((service as any).activeNotifications.size).toBe(1);
 
@@ -1268,14 +1255,12 @@ describe('NotificationService showNotification click behavior', () => {
   });
 
   it('removes notification from activeNotifications set when show() throws', () => {
-    const mockWindow = createMockWindow(false);
     const service = new NotificationService();
 
     mockShowShouldThrow.value = true;
     try {
       (service as any).showNotification(
         { title: 'Test', body: 'Test notification' },
-        mockWindow,
         'workspace-1',
       );
     } finally {
@@ -1452,6 +1437,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     expect(createWindowForSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ route: '/workspace/workspace-1' }),
       true,
+      LOCAL_ID,
     );
   });
 
@@ -1471,6 +1457,7 @@ describe('NotificationService click-target selection excludes the HUD window', (
     expect(createWindowForSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ route: '/workspace/workspace-1' }),
       true,
+      LOCAL_ID,
     );
   });
 
@@ -2516,7 +2503,9 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     mockNotificationInstances[0].handlers['click']();
 
     expect(windowB.focus).toHaveBeenCalled();
-    expect(navigateCalls(windowB)).toEqual([['notification:navigate', { workspaceId: 'workspace-1' }]]);
+    expect(navigateCalls(windowB)).toEqual([
+      ['notification:navigate', { workspaceId: 'workspace-1' }],
+    ]);
     expect(windowA.focus).not.toHaveBeenCalled();
     expect(navigateCalls(windowA)).toEqual([]);
   });

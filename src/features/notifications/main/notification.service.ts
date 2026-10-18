@@ -22,6 +22,7 @@
 
 import { app, BrowserWindow, Notification, screen } from 'electron';
 import { isHudWindow } from '../../../main/hud-window';
+import { getBackendIdForWindow } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -40,6 +41,7 @@ import {
 } from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
+  getViewedWorkspaceIdForWindow,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
@@ -150,18 +152,42 @@ interface NotificationContent {
 }
 
 /**
- * Pick the window a notification click should focus/navigate: prefer a
- * window with the workspace open, then the focused window, then any other
- * window — never the HUD pop-out (detected by the shared `isHudWindow`
- * helper in main/hud-window.ts). Returns undefined when only HUD (or no)
- * windows are live; the click handler then opens a fresh main window instead.
+ * Pick the window a notification click should focus/navigate. Resolved at
+ * CLICK time — a banner can sit in Notification Center while the user moves
+ * the workspace between windows — in this order:
+ *   1. a window actively viewing the workspace,
+ *   2. a window holding the workspace in a background tab,
+ *      (within each tier, windows connected to the emitting backend first),
+ *   3. the focused window connected to the emitting backend,
+ *   4. any window connected to the emitting backend.
+ * Each window is bound to one daemon connection (`getBackendIdForWindow`),
+ * so a window on another host must never be asked to open the workspace.
+ * Notifications without a workspace (test notifications) accept any window.
+ * The HUD pop-out is never a target (shared `isHudWindow` helper). Returns
+ * undefined when no window qualifies; the click handler then opens a fresh
+ * window on the emitting backend instead.
  */
-function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): BrowserWindow | undefined {
-  const nonHudWorkspaceWindow = workspaceWindows.find((w) => !w.isDestroyed() && !isHudWindow(w));
-  if (nonHudWorkspaceWindow) return nonHudWorkspaceWindow;
+function pickNotificationClickTarget(
+  workspaceId: string | undefined,
+  backendId: string,
+): BrowserWindow | undefined {
+  const isCandidate = (w: BrowserWindow): boolean => !w.isDestroyed() && !isHudWindow(w);
+  const onHost = (w: BrowserWindow): boolean =>
+    !workspaceId || getBackendIdForWindow(w) === backendId;
+
+  if (workspaceId) {
+    const rank = (w: BrowserWindow): number =>
+      (getViewedWorkspaceIdForWindow(w.id) === workspaceId ? 0 : 2) + (onHost(w) ? 0 : 1);
+    const workspaceWindows = getWindowIdsForWorkspace(workspaceId)
+      .map((id) => BrowserWindow.fromId(id))
+      .filter((w): w is BrowserWindow => w !== null && isCandidate(w))
+      .sort((a, b) => rank(a) - rank(b));
+    if (workspaceWindows[0]) return workspaceWindows[0];
+  }
+
   const focused = BrowserWindow.getFocusedWindow();
-  if (focused && !focused.isDestroyed() && !isHudWindow(focused)) return focused;
-  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !isHudWindow(w));
+  if (focused && isCandidate(focused) && onHost(focused)) return focused;
+  return BrowserWindow.getAllWindows().find((w) => isCandidate(w) && onHost(w));
 }
 
 /**
@@ -611,10 +637,6 @@ export class NotificationService {
       // workspace; OFF shows it even when focused. The `notification:show`
       // renderer event is ALWAYS sent regardless of focus so the renderer
       // sound gate decides on its own.
-      const workspaceWindowIds = getWindowIdsForWorkspace(workspaceId);
-      const workspaceWindows = workspaceWindowIds
-        .map((id) => BrowserWindow.fromId(id))
-        .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed());
       const focusedViewingWorkspace = getFocusedWindowWorkspaceId() === workspaceId;
       if (focusedViewingWorkspace && prefs.soundOnlyWhenUnfocused) {
         logger.debug('Focused window is viewing the workspace, suppressing OS banner', {
@@ -652,13 +674,10 @@ export class NotificationService {
         return;
       }
 
-      // Show notification — prefer a window with the workspace open for
-      // click-to-focus; otherwise fall back to the focused (or any) window,
-      // which navigates to the workspace on click. The HUD pop-out is never
-      // a valid click target: when only the HUD is live the click opens a
-      // fresh main window instead (see showNotification).
-      const focusWindow = pickNotificationClickTarget(workspaceWindows);
-      this.showNotification(content, focusWindow, workspaceId, event.data.agentId);
+      // Show the OS banner. The click target is resolved when the user
+      // clicks (see pickNotificationClickTarget), scoped to the emitting
+      // backend so remote-host workspaces open in a window on that host.
+      this.showNotification(content, workspaceId, event.data.agentId, backendId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
     }
@@ -806,13 +825,14 @@ export class NotificationService {
    * The backend id is deliberately NOT folded into the stable id: workspace
    * ids are daemon-generated UUIDs, so two backends only share one when they
    * point at the SAME daemon — and there, native replacement coalescing the
-   * duplicate banners is the desired behavior.
+   * duplicate banners is the desired behavior. `backendId` (the emitting
+   * backend) is used only to route the click to a window on that host.
    */
   private showNotification(
     content: NotificationContent,
-    mainWindow?: BrowserWindow,
     workspaceId?: string,
     agentId?: string,
+    backendId: string = LOCAL_CONNECTION_ID,
   ): void {
     try {
       // Check if notifications are supported
@@ -854,29 +874,24 @@ export class NotificationService {
 
         if (process.platform === 'darwin') {
           app.show();
+          // A plain window focus() from an inactive app may not activate
+          // it under macOS cooperative activation; bring Intent forward
+          // explicitly so the chosen window ends up in front.
+          app.focus({ steal: true });
         }
 
-        // Re-validate at click time: the window picked at show time may
-        // have closed or navigated to /hud while the notification sat in
-        // the notification center — selection always goes through the
-        // picker, so a HUD window can never be the click target.
-        let target = mainWindow;
-        if (!target || target.isDestroyed() || isHudWindow(target)) {
-          const workspaceWindows = workspaceId
-            ? getWindowIdsForWorkspace(workspaceId)
-                .map((id) => BrowserWindow.fromId(id))
-                .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
-            : [];
-          target = pickNotificationClickTarget(workspaceWindows);
-        }
+        // Resolve the target NOW, not when the banner appeared: windows may
+        // have closed, navigated to /hud, or moved the workspace while the
+        // notification sat in Notification Center. The picker never returns
+        // the HUD or a window on another backend.
+        const target = pickNotificationClickTarget(workspaceId, backendId);
 
-        if (!target || target.isDestroyed()) {
-          // No regular window is live (e.g. only the HUD pop-out is open,
-          // or no windows at all): open a fresh app window directly on the
-          // workspace route rather than navigating the HUD (simplest
-          // correct behavior — no IPC races against a still-loading
-          // renderer).
-          this.openWindowForNotificationClick(workspaceId);
+        if (!target) {
+          // No suitable window is live (e.g. only the HUD pop-out, no window
+          // on the emitting host, or no windows at all): open a fresh app
+          // window on that backend, directly on the workspace route (no IPC
+          // race against a still-loading renderer).
+          this.openWindowForNotificationClick(workspaceId, backendId);
           return;
         }
 
@@ -929,13 +944,17 @@ export class NotificationService {
   }
 
   /**
-   * Notification-click fallback when no regular (non-HUD) window is live:
-   * open a fresh app window loaded directly on the workspace route (home for
+   * Notification-click fallback when no suitable window is live: open a
+   * fresh app window bound to the emitting backend, loaded directly on the
+   * workspace route (home for
    * chief completions, whose workspace page is hidden). Loading the route
    * up-front avoids racing a `notification:navigate` IPC against a renderer
    * that has not registered its listeners yet.
    */
-  private openWindowForNotificationClick(workspaceId?: string): void {
+  private openWindowForNotificationClick(
+    workspaceId?: string,
+    backendId: string = LOCAL_CONNECTION_ID,
+  ): void {
     void (async () => {
       try {
         const { createWindowForSession } = await import('../../../main/window');
@@ -945,9 +964,10 @@ export class NotificationService {
         const existingMain = getMainWindow();
         const setAsMain = !existingMain || existingMain.isDestroyed();
         const { workArea } = screen.getPrimaryDisplay();
-        await createWindowForSession({ route, bounds: workArea }, setAsMain);
-        logger.info('Notification click opened a new window (no regular window was live)', {
+        await createWindowForSession({ route, bounds: workArea }, setAsMain, backendId);
+        logger.info('Notification click opened a new window (no suitable window was live)', {
           workspaceId,
+          backendId,
           route,
         });
       } catch (error) {
@@ -971,13 +991,11 @@ export class NotificationService {
         };
       }
 
-      // Same non-HUD click-target rules as real notifications.
-      const focusWindow = pickNotificationClickTarget([]);
-
-      this.showNotification(
-        { title: m.notification_specialist_agent(), body: m.notification_test_body() },
-        focusWindow,
-      );
+      // No workspace: the click focuses any regular (non-HUD) window.
+      this.showNotification({
+        title: m.notification_specialist_agent(),
+        body: m.notification_test_body(),
+      });
       return { success: true };
     } catch (error) {
       const errorMessage =
