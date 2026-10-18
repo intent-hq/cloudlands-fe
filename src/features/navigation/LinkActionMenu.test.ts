@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/svelte';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
+import type { PullRequestWorkspace } from '$lib/client/app-client';
 import {
   showLinkActionMenu,
   hideLinkActionMenu,
   linkActionMenuState,
+  setLinkActionMenuLinkedWorkspaces,
 } from './link-action-menu-state.svelte';
 
 const reduxDispatchMock = vi.hoisted(() => vi.fn());
@@ -22,9 +24,11 @@ vi.mock('$store/renderer/store', async () => {
 
 const openInBrowserPanelMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const openInExternalBrowserMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const openLinkedWorkspaceMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 vi.mock('./link-handler', () => ({
   openInBrowserPanel: openInBrowserPanelMock,
   openInExternalBrowser: openInExternalBrowserMock,
+  openLinkedWorkspace: openLinkedWorkspaceMock,
 }));
 
 const writeTextToClipboardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -32,6 +36,43 @@ vi.mock('$lib/utils/clipboard', () => ({ writeTextToClipboard: writeTextToClipbo
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const ISSUE_URL = 'https://github.com/acme/widgets/issues/42';
+
+const PR_URL = 'https://github.com/acme/widgets/pull/7';
+const linked = (id: string, title: string, archived = false): PullRequestWorkspace => ({
+  id,
+  title,
+  archived,
+  linkedAt: '2026-10-18T05:00:00.000Z',
+});
+
+/** Open the menu on a PR link, then deliver a lookup result the way the loader does. */
+async function showPrMenu(workspaces: PullRequestWorkspace[], workspaceId = TEST_WORKSPACE_ID) {
+  const openingId = showLinkActionMenu({
+    url: PR_URL,
+    gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+    x: 10,
+    y: 10,
+    workspaceId,
+  });
+  await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+  setLinkActionMenuLinkedWorkspaces(openingId, workspaces);
+}
+
+const ORIGINAL = /open in original workspace/i;
+
+/** Open the "Open in Original Workspace" submenu by keyboard and return its entries in order. */
+async function openOriginalSubmenu(): Promise<HTMLElement[]> {
+  const trigger = await screen.findByRole('menuitem', { name: ORIGINAL });
+  expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+  trigger.focus();
+  await fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  const submenu = await waitFor(() => {
+    const menus = screen.getAllByRole('menu');
+    expect(menus).toHaveLength(2);
+    return menus[1];
+  });
+  return within(submenu).getAllByRole('menuitem');
+}
 
 function showIssueMenu(workspaceId?: WorkspaceId) {
   showLinkActionMenu({
@@ -160,6 +201,90 @@ describe('LinkActionMenu', () => {
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
     expect(screen.getAllByRole('menuitem')[0].textContent).toContain('PR #7');
+  });
+
+  describe('Open in Original Workspace', () => {
+    it('one linked workspace: a plain item that opens it and closes the menu', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked('ws-origin', 'Origin')]);
+
+      const item = await screen.findByRole('menuitem', { name: ORIGINAL });
+      expect(item.getAttribute('aria-haspopup')).toBeNull();
+      await fireEvent.click(item);
+
+      expect(openLinkedWorkspaceMock).toHaveBeenCalledWith('ws-origin');
+      expect(linkActionMenuState.visible).toBe(false);
+    });
+
+    it('several linked workspaces: a submenu listing them in daemon order', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([
+        linked('ws-new', 'Newest'),
+        linked('ws-mid', 'Middle'),
+        linked('ws-old', 'Oldest'),
+      ]);
+
+      const entries = await openOriginalSubmenu();
+      expect(entries.map((el) => el.textContent?.trim())).toEqual(['Newest', 'Middle', 'Oldest']);
+
+      await fireEvent.click(entries[1]);
+
+      expect(openLinkedWorkspaceMock).toHaveBeenCalledWith('ws-mid');
+      expect(linkActionMenuState.visible).toBe(false);
+    });
+
+    it('marks archived workspaces in the submenu', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked('ws-a', 'Alpha'), linked('ws-b', 'Beta', true)]);
+
+      const [active, archived] = await openOriginalSubmenu();
+      expect(active.textContent?.trim()).toBe('Alpha');
+      expect(archived.textContent?.trim()).not.toBe('Beta');
+      expect(archived.textContent).toContain('Beta');
+    });
+
+    it('marks an archived single workspace', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked('ws-a', 'Alpha')]);
+      const plain = (await screen.findByRole('menuitem', { name: ORIGINAL })).textContent?.trim();
+
+      hideLinkActionMenu();
+      await showPrMenu([linked('ws-a', 'Alpha', true)]);
+      const marked = (await screen.findByRole('menuitem', { name: ORIGINAL })).textContent?.trim();
+
+      expect(marked).not.toBe(plain);
+      expect(marked?.startsWith(plain ?? '')).toBe(true);
+    });
+
+    it('leaves out the workspace the click came from', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked(TEST_WORKSPACE_ID, 'Here'), linked('ws-other', 'Elsewhere')]);
+
+      const item = await screen.findByRole('menuitem', { name: ORIGINAL });
+      expect(item.getAttribute('aria-haspopup')).toBeNull();
+      await fireEvent.click(item);
+      expect(openLinkedWorkspaceMock).toHaveBeenCalledWith('ws-other');
+    });
+
+    it('is absent when only the current workspace, or no workspace, is linked', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked(TEST_WORKSPACE_ID, 'Here')]);
+      expect(screen.queryByRole('menuitem', { name: ORIGINAL })).toBeNull();
+      expect(screen.getAllByRole('menuitem')).toHaveLength(4);
+
+      hideLinkActionMenu();
+      await showPrMenu([]);
+      expect(screen.queryByRole('menuitem', { name: ORIGINAL })).toBeNull();
+    });
+
+    it('is absent for issue links even when given linked workspaces', async () => {
+      render(LinkActionMenu);
+      showIssueMenu(TEST_WORKSPACE_ID);
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      setLinkActionMenuLinkedWorkspaces(linkActionMenuState.openingId, [linked('ws-x', 'X')]);
+
+      expect(screen.queryByRole('menuitem', { name: ORIGINAL })).toBeNull();
+    });
   });
 
   it('uses canonical arrow navigation and restores focus to the invoking element', async () => {

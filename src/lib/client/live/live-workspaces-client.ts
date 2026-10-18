@@ -41,6 +41,7 @@ import {
 } from '$shared/types/browser-clients';
 import type {
   MutationResult,
+  PullRequestWorkspace,
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCancelDeleteResult,
@@ -350,6 +351,17 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
+  }
+
+  /** Workspaces linked to a PR URL (`workspace.findByPullRequest`, §5.1). */
+  async findByPullRequest(url: string): Promise<PullRequestWorkspace[]> {
+    const result = await backendRequest<{ workspaces?: unknown }>('workspace.findByPullRequest', {
+      url,
+    });
+    if (!Array.isArray(result?.workspaces)) {
+      throw new Error('Invalid workspace.findByPullRequest response shape');
+    }
+    return result.workspaces as PullRequestWorkspace[];
   }
 
   /** Cancel a daemon-owned workspace delete grace window (§5.1). */

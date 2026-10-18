@@ -6,7 +6,9 @@
   import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
-  import { openInBrowserPanel, openInExternalBrowser } from './link-handler';
+  import type { PullRequestWorkspace } from '$lib/client/app-client';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
+  import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
   const menuAnchor = $derived.by(() => {
@@ -68,6 +70,24 @@
         }),
   );
 
+  // The workspace the click came from is never offered: the user is already there.
+  const originalWorkspaces = $derived(
+    linkActionMenuState.gitHubRef?.kind === 'pr'
+      ? linkActionMenuState.linkedWorkspaces.filter(
+          (workspace) => workspace.id !== linkActionMenuState.workspaceId,
+        )
+      : [],
+  );
+
+  function workspaceName(workspace: PullRequestWorkspace): string {
+    return workspace.title.trim() || m.navigation_linkActionMenu_untitledWorkspace_label();
+  }
+
+  async function handleOpenOriginalWorkspace(workspace: PullRequestWorkspace) {
+    hideLinkActionMenu();
+    await openLinkedWorkspace(workspace.id as WorkspaceId);
+  }
+
   function handleStartWorkspace() {
     const ref = linkActionMenuState.gitHubRef;
     const { url } = linkActionMenuState;
@@ -128,6 +148,37 @@
       class="min-w-40"
       aria-label={m.navigation_linkActionMenu_menu_ariaLabel()}
     >
+      {#if originalWorkspaces.length === 1}
+        {@const workspace = originalWorkspaces[0]}
+        <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+          <span class="min-w-0 flex-1">
+            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
+          </span>
+          {#if workspace.archived}
+            <span class="shrink-0 text-muted-foreground">
+              {m.navigation_linkActionMenu_archivedWorkspace_label()}
+            </span>
+          {/if}
+        </Menu.Item>
+      {:else if originalWorkspaces.length > 1}
+        <Menu.Sub>
+          <Menu.SubTrigger>
+            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
+          </Menu.SubTrigger>
+          <Menu.SubContent class="max-w-72">
+            {#each originalWorkspaces as workspace (workspace.id)}
+              <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+                <span class="min-w-0 flex-1 truncate">{workspaceName(workspace)}</span>
+                {#if workspace.archived}
+                  <span class="shrink-0 text-muted-foreground">
+                    {m.navigation_linkActionMenu_archivedWorkspace_label()}
+                  </span>
+                {/if}
+              </Menu.Item>
+            {/each}
+          </Menu.SubContent>
+        </Menu.Sub>
+      {/if}
       {#if linkActionMenuState.gitHubRef}
         <Menu.Item onSelect={handleStartWorkspace}>{startWorkspaceLabel}</Menu.Item>
         <Menu.Separator />

@@ -476,7 +476,7 @@ async function openLinkActionMenu(
       x = rect.left;
       y = rect.bottom;
     }
-    showLinkActionMenu({
+    const openingId = showLinkActionMenu({
       url,
       gitHubRef,
       x,
@@ -484,6 +484,11 @@ async function openLinkActionMenu(
       workspaceId,
       anchorElement,
     });
+    if (gitHubRef.kind === 'pr') {
+      const { loadLinkActionMenuLinkedWorkspaces } =
+        await import('./link-action-menu-linked-workspaces');
+      void loadLinkActionMenuLinkedWorkspaces(openingId, url);
+    }
     logger.debug('Opened link action menu', { url, workspaceId });
     return true;
   } catch (error) {
@@ -492,6 +497,21 @@ async function openLinkActionMenu(
       error,
     });
     return await openInExternalBrowser(url);
+  }
+}
+
+/**
+ * Navigate to a workspace picked from the link action menu ("Open in Original
+ * Workspace"). Archived workspaces open like any other; nothing is unarchived.
+ */
+export async function openLinkedWorkspace(workspaceId: WorkspaceId): Promise<boolean> {
+  try {
+    await activateLinkWorkspace(workspaceId, { openInWorkspace: true });
+    return true;
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to open linked workspace', { workspaceId, error });
+    return false;
   }
 }
 
