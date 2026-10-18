@@ -108,6 +108,10 @@
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   const logger = createLogger('ChatMessage');
+  // Status rows separate themselves from reply content above them; directly
+  // after an empty reply there is nothing to separate from, so the turn seam
+  // alone spaces them and they sit centered between the surrounding cards.
+  const TRAILING_STATUS_ROW_CLASS = 'mt-5 [[data-operational-stack-empty]+&]:mt-0';
 
   function getOwningWorkspaceId(): string | undefined {
     return workspace?.id ? String(workspace.id) : routeWorkspaceId;
@@ -1905,7 +1909,7 @@
           <ChatOperationalRow
             leading={stoppedIndicatorLeading}
             summary={stoppedIndicatorSummary}
-            class="mt-5"
+            class={TRAILING_STATUS_ROW_CLASS}
             testId="stopped-indicator"
           />
         {/if}
@@ -1915,7 +1919,7 @@
           <ChatOperationalRow
             leading={finishReasonLeading}
             summary={finishReasonSummary}
-            class="mt-5"
+            class={TRAILING_STATUS_ROW_CLASS}
             testId="finish-reason-notice"
           />
         {/if}
