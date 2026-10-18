@@ -6359,7 +6359,7 @@
   "layout_daemonStatus_updateFailed_toast": "El backend no pudo iniciar la actualización: {message}",
   "layout_daemonStatus_updateRequestError_toast": "No se pudo enviar la solicitud de actualización. Inténtalo de nuevo.",
   "layout_daemonStatus_daemonBehind_title": "Actualización de intentd disponible",
-  "layout_daemonStatus_daemonBehind_toast": "{name} ejecuta intentd v{daemonVersion}, por detrás de la v{pinnedVersion} de esta aplicación.",
+  "layout_daemonStatus_daemonBehind_description": "{name} ejecuta intentd v{daemonVersion}, por detrás de la v{pinnedVersion} de esta aplicación.",
   "layout_daemonStatus_forget_action": "Olvidar",
   "layout_daemonStatus_forgetConfirm_title": "Olvidar backend",
   "layout_daemonStatus_forgetConfirm_description": "“{name}” se eliminará de las conexiones guardadas de esta máquina.",

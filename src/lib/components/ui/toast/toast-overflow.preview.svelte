@@ -167,7 +167,7 @@
       // to Update + close, version sentence in the full-width description.
       toast.warning(m.layout_daemonStatus_daemonBehind_title(), {
         ...common,
-        description: m.layout_daemonStatus_daemonBehind_toast({
+        description: m.layout_daemonStatus_daemonBehind_description({
           name: 'intent1',
           daemonVersion: '0.11.5',
           pinnedVersion: '0.12.0',

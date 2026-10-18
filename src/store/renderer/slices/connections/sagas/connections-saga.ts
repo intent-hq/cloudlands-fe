@@ -309,7 +309,7 @@ async function showDaemonBehindPinToast(
   // with the Update and close buttons and is clamped to two lines, so the
   // version sentence would be truncated there.
   notify.warning(m.layout_daemonStatus_daemonBehind_title(), {
-    description: m.layout_daemonStatus_daemonBehind_toast({
+    description: m.layout_daemonStatus_daemonBehind_description({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
       name: conn.isLocal
