@@ -93,6 +93,7 @@ class EventPolicy(unittest.TestCase):
         self.assertEqual(caller['secrets'], {
             'CI_QUEUE_READ_TOKEN': '${{ secrets.CI_QUEUE_READ_TOKEN }}',
             'DEPOT_TOKEN': '${{ secrets.DEPOT_TOKEN }}',
+            'INTENT_SCCACHE_TOKEN': '${{ secrets.INTENT_SCCACHE_TOKEN }}',
         })
         self.assertEqual(caller['with']['component'], 'cloudlands-fe')
         self.assertEqual(caller['with']['head-sha'], '${{ github.event.pull_request.head.sha || github.sha }}')
