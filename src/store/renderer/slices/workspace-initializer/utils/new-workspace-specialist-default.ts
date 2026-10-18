@@ -2,7 +2,7 @@ import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists'
 import type { WorkspaceInitializerAgentSettings } from '../workspace-initializer-types';
 
 export interface ResolveNewWorkspaceSpecialistDefaultInput {
-  /** In-progress New Workspace modal form state (wins over `lastSubmittedAgent`). */
+  /** Form state saved by the last successful New Workspace create (wins over `lastSubmittedAgent`). */
   compactFormState: WorkspaceInitializerAgentSettings | null | undefined;
   /** Agent settings of the last submitted New Workspace form. */
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null | undefined;
@@ -14,7 +14,7 @@ export interface ResolveNewWorkspaceSpecialistDefaultInput {
 
 /**
  * The specialist the New Workspace modal would start with right now, mirroring
- * its own precedence: in-progress form state → last submitted agent → the
+ * its own precedence: saved form state → last submitted agent → the
  * first-launch default (`DEFAULT_NEW_WORKSPACE_SPECIALIST_ID` when present in
  * `specialists`, else General). Team mode resolves to the orchestrator.
  *
