@@ -36,6 +36,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
 import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { setProviderProfilesLabForPreview } from '../../../../test/provider-profiles-preview';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
 
 const models = [
@@ -155,9 +156,14 @@ const previewProfiles = [
 ];
 const PROFILE_AGENT_ID = 'preview-profile-agent';
 
-function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []) {
+function setupProfiles(
+  agent?: Record<string, unknown>,
+  signedOut: string[] = [],
+  labsEnabled = true,
+) {
   return () => {
     const cleanupModels = setupModels(true)();
+    const restoreLab = setProviderProfilesLabForPreview(labsEnabled);
     const rows = selectProviderCatalogEntries.select(appStore.state);
     appStore.dispatch(
       providerCatalogLoaded({
@@ -207,6 +213,7 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
         appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'configured'));
       if (agent) appStore.dispatch(removeSession(PROFILE_AGENT_ID));
       for (const restore of restoreHandlers) restore();
+      restoreLab();
       cleanupModels();
     };
   };
@@ -309,6 +316,22 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         showManageLink: false,
       },
       setup: setupProfiles(),
+    },
+    // Settings → Labs → Provider profiles off: no profile tabs or groups, but
+    // the selection that already uses the Work profile keeps its label.
+    'profiles-labs-off-open': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        selectedModel: 'pwork00000001-preview-balanced',
+        providerId: 'codex@pwork00000001',
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupProfiles(undefined, [], false),
     },
     'profile-signed-out': {
       props: {
