@@ -1,5 +1,6 @@
 import { trackRuntimeRead } from '$features/events/runtime-read-lane';
 import {
+  isRecoverySessionRetired,
   rendererEventRecovery,
   type RendererRecoveryScope,
   type RendererRecoveryHandle,
@@ -96,6 +97,8 @@ export function subscribeScriptMonitors(
   let disposed = false;
   let epoch = 0;
   let subscriptionId: string | undefined;
+  /** The recovery scope that made `subscriptionId`; undefined for a direct backend lease. */
+  let subscriptionScope: RendererRecoveryScope | undefined;
   let supported = false;
   let snapshot: ScriptMonitorSnapshot = { monitors: [], scripts: [], status: 'loading' };
   let pageRead: { epoch: number; journal: Map<string, ScriptMonitor | null> } | undefined;
@@ -120,11 +123,18 @@ export function subscribeScriptMonitors(
       scripts: snapshot.scripts.filter((row) => scriptIds.has(row.id)),
     };
   };
+  /** Release through whichever owner made the lease, so a recovery coordinator never keeps it. */
+  const releaseSubscription = () => {
+    if (!subscriptionId) return;
+    if (subscriptionScope) void subscriptionScope.unsubscribe(subscriptionId);
+    else void backendUnsubscribe(subscriptionId, workspaceId);
+    subscriptionId = undefined;
+    subscriptionScope = undefined;
+  };
   const disable = () => {
     supported = false;
     detailReads.clear();
-    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
-    subscriptionId = undefined;
+    releaseSubscription();
     snapshot = { monitors: [], scripts: [], status: 'unsupported' };
     emit();
   };
@@ -190,7 +200,10 @@ export function subscribeScriptMonitors(
       if (!current(read.epoch) || !token.isCurrent() || recovery?.status.stale) return;
       if (isMonitorMethodMissing(error)) connection.reject();
       else {
-        snapshot = { ...snapshot, status: 'failed', loadingMore: false };
+        // A failed extra page keeps the loaded rows usable; Load more stays the retry.
+        snapshot = append
+          ? { ...snapshot, loadingMore: false }
+          : { ...snapshot, status: 'failed', loadingMore: false };
         emit();
       }
     } finally {
@@ -204,8 +217,7 @@ export function subscribeScriptMonitors(
     detailReads.clear();
     selectedDetails.clear();
     loadedPages = 1;
-    if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
-    subscriptionId = undefined;
+    releaseSubscription();
     snapshot = { monitors: [], scripts: [], status: 'loading' };
     emit();
     if (connection.isRejected()) {
@@ -227,18 +239,23 @@ export function subscribeScriptMonitors(
         workspaceId,
         eventTypes: ['scriptMonitor:*', 'script:changed', 'script:removed'],
       };
-      const result = recoveryScope
+      const scope = recoveryScope;
+      const result = scope
         ? {
             subscriptionId: (
-              await recoveryScope.subscribe(params, { recover: true, signal: controller?.signal })
+              await scope.subscribe(params, { recover: true, signal: controller?.signal })
             )?.id,
           }
         : await backendSubscribe(params);
       if (!current(version)) {
-        if (result.subscriptionId) void backendUnsubscribe(result.subscriptionId, workspaceId);
+        if (result.subscriptionId)
+          void (scope
+            ? scope.unsubscribe(result.subscriptionId)
+            : backendUnsubscribe(result.subscriptionId, workspaceId));
         return;
       }
       subscriptionId = result.subscriptionId;
+      subscriptionScope = scope;
       await readPage();
     } catch (error) {
       if (disposed || version !== epoch) return;
@@ -374,15 +391,20 @@ export function subscribeScriptMonitors(
         retired.clear();
         pageRead?.journal.clear();
       },
-      retire: () => {
+      retire: (error) => {
         epoch++;
         supported = false;
         detailReads.clear();
         retired.clear();
         selectedDetails.clear();
-        // A lost session is not a failed read: the next session re-registers. Only a
-        // read error is 'failed', which the chat card shows (intent-hq/intent#7206).
-        snapshot = { monitors: [], scripts: [], status: 'loading' };
+        // An ended session is not a failure: the next session re-registers, so the chat
+        // card stays quiet. Lost authority does not resume on its own, so it is 'failed'
+        // and the card offers Retry instead of silently dropping the rows (intent-hq/intent#7206).
+        snapshot = {
+          monitors: [],
+          scripts: [],
+          status: isRecoverySessionRetired(error) ? 'loading' : 'failed',
+        };
         emit();
       },
       onEvent: (notification) => receive(notification),
@@ -394,6 +416,7 @@ export function subscribeScriptMonitors(
       owner.dispose();
       if (subscriptionId) void scope.unsubscribe(subscriptionId);
       subscriptionId = undefined;
+      subscriptionScope = undefined;
       if (recovery === owner) {
         recovery = undefined;
         recoveryScope = undefined;
@@ -403,10 +426,14 @@ export function subscribeScriptMonitors(
   if (!adopted) void register();
   return {
     loadMore: () => readPage(true),
-    /** Re-run registration after a failed read; a no-op otherwise. */
+    /**
+     * Recover from a failed read: re-read the first page on a healthy subscription,
+     * otherwise register again. A no-op unless the snapshot failed.
+     */
     retry() {
       if (disposed || snapshot.status !== 'failed') return;
-      void register();
+      if (supported && subscriptionId) void readPage();
+      else void register();
     },
     async details(monitorId: string) {
       if (!supported || disposed || detailReads.has(monitorId)) return;

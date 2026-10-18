@@ -123,7 +123,9 @@
   const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
   const scriptPage$ = selectScriptMonitors(workspaceIdStore);
-  const scriptsFailed = $derived($scriptPage$.status === 'failed');
+  // Only a chat the user is viewing holds the monitor lease that Retry acts on, and the
+  // failure is workspace-wide: background chats stay quiet instead of all showing it.
+  const scriptsFailed = $derived(!isolatedPreview && isActive && $scriptPage$.status === 'failed');
   const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
   // "+": more script monitors may exist than this chat has read.
   const countSuffix = $derived($scriptPage$.nextCursor || scriptsFailed ? '+' : '');
@@ -395,7 +397,7 @@
               class={isSingleEvent ? '' : 'border-t border-border'}
               data-testid="event-subscriptions-scripts"
             >
-              <MonitoredScriptsRow {workspaceId} {agentId} />
+              <MonitoredScriptsRow {workspaceId} {agentId} showLoadFailure={scriptsFailed} />
             </div>
           {/if}
           <div

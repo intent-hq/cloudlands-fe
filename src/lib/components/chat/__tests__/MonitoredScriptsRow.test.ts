@@ -455,19 +455,28 @@ describe('script monitor controls', () => {
       }),
     );
     setEventSubscriptionsExpanded(ws, active.agentId, true);
-    render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId });
-    const failure = await screen.findByTestId('script-monitor-load-failed');
+    const background = render(EventSubscriptionsCard, {
+      workspaceId: ws,
+      agentId: active.agentId,
+      isActive: false,
+    });
+    const viewed = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId }).container,
+    );
+    const failure = await viewed.findByTestId('script-monitor-load-failed');
+    // The failure is workspace-wide: only chats the user is viewing show it.
+    expect(within(background.container).queryByTestId('script-monitor-load-failed')).toBeNull();
     expect(failure.getAttribute('role')).toBe('alert');
     expect(failure.textContent).toContain("Couldn't load script monitors.");
     expect(
-      screen.getByTestId('subscription-utility-area').getAttribute('data-has-subscriptions'),
+      viewed.getByTestId('subscription-utility-area').getAttribute('data-has-subscriptions'),
     ).toBe('true');
-    expect(screen.queryByTestId('script-monitor-row')).toBeNull();
+    expect(viewed.queryByTestId('script-monitor-row')).toBeNull();
     fail = false;
     await fireEvent.click(within(failure).getByRole('button', { name: 'Retry' }));
-    expect((await screen.findByTestId('script-monitor-row')).textContent).toContain(
+    expect((await viewed.findByTestId('script-monitor-row')).textContent).toContain(
       active.scriptName,
     );
-    expect(screen.queryByTestId('script-monitor-load-failed')).toBeNull();
+    expect(viewed.queryByTestId('script-monitor-load-failed')).toBeNull();
   });
 });

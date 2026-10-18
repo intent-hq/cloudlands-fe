@@ -7,7 +7,7 @@ import {
   agentLockReducer,
   setAgentLockState,
 } from '$store/renderer/slices/agent-lock/agent-lock-slice';
-import { RendererEventRecovery } from './renderer-event-recovery';
+import { RendererEventRecovery, isRecoverySessionRetired } from './renderer-event-recovery';
 
 function harness() {
   vi.useFakeTimers();
@@ -514,6 +514,32 @@ describe('captured resource retirement', () => {
       expect(captured(denial)).toBe(false);
       expect(retire).toHaveBeenCalledTimes(1);
     }
+    registry.dispose();
+  });
+});
+
+describe('session retirement is distinguishable from lost authority', () => {
+  it('marks owners retired by an ended session, not by a denied read', () => {
+    const registry = new RendererEventRecovery();
+    const scope = registry.attach(harness().session);
+    const retire = vi.fn();
+    scope.registerResource({
+      key: 'session-retirement',
+      workspaceId: 'ws',
+      eventTypes: ['agent:*'],
+      isCurrent: () => true,
+      read: async () => null,
+      apply: () => undefined,
+      invalidate: () => undefined,
+      retire,
+    });
+    registry.retireWorkspace('ws');
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(isRecoverySessionRetired(retire.mock.calls[0][0])).toBe(true);
+    expect(isRecoverySessionRetired(Object.assign(new Error('denied'), { rpcCode: -32003 }))).toBe(
+      false,
+    );
+    expect(isRecoverySessionRetired(undefined)).toBe(false);
     registry.dispose();
   });
 });

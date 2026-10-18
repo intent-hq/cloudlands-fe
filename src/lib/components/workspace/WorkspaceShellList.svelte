@@ -391,15 +391,23 @@
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={$scriptPage$.loading}
                 onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
                 >{m.terminal_sidebar_retryScripts_label()}</Button
               >
             </div>
           {:else if $scriptPage$.loading || !$scriptsInitialized$}
-            <p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">
-              {m.terminal_sidebar_loadingScripts_label()}
-            </p>
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 text-sm" role="status">
+              <p class="text-muted-foreground">{m.terminal_sidebar_loadingScripts_label()}</p>
+              {#if !$scriptPage$.loading}
+                <!-- Nothing in flight: a retired or never-started read must stay recoverable here. -->
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+                  >{m.terminal_sidebar_retryScripts_label()}</Button
+                >
+              {/if}
+            </div>
           {:else}
             <p class="px-2 py-1.5 text-sm text-muted-foreground">
               {m.terminal_sidebar_noScriptsAddManually_label()}

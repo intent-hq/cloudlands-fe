@@ -34,7 +34,11 @@
   } from './subscription-disclosure';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
-  let { workspaceId, agentId }: { workspaceId: string; agentId: string } = $props();
+  let {
+    workspaceId,
+    agentId,
+    showLoadFailure = false,
+  }: { workspaceId: string; agentId: string; showLoadFailure?: boolean } = $props();
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
   $effect(() => {
@@ -62,7 +66,7 @@
   }
 </script>
 
-{#if $snapshot$.status === 'failed'}
+{#if showLoadFailure && $snapshot$.status === 'failed'}
   <!-- A failed read must not look like "no monitors" (intent-hq/intent#7206). -->
   <div
     class="flex min-w-0 items-center gap-2 {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"

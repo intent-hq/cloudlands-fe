@@ -14,7 +14,7 @@ import {
   setScriptListState,
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { ScriptWithState } from '$store/renderer/slices/scripts/scripts-types';
 
 vi.mock('svelte-fa', async () => ({
@@ -43,7 +43,8 @@ beforeAll(() => store.init());
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  store.dispatch(removeWorkspaceEntity(WS));
+  // The scripts slice resets on workspaceDeleted; each test starts from an unread list.
+  store.dispatch(workspaceDeleted(WS, []));
 });
 
 function mount() {
@@ -51,17 +52,21 @@ function mount() {
 }
 
 describe('WorkspaceShellList script list states', () => {
-  it('shows loading, not "No scripts found", before the first read settles', () => {
+  it('shows loading, not "No scripts found", before any read, with a way to start one', async () => {
+    const dispatch = vi.spyOn(store, 'dispatch');
     mount();
     expect(screen.getByText(LOADING)).toBeTruthy();
     expect(screen.queryByText(EMPTY)).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(dispatch).toHaveBeenCalledWith(refreshScripts(WS));
   });
 
-  it('shows loading while a read is in flight', async () => {
+  it('shows loading without Retry while a read is in flight', async () => {
     store.dispatch(setScriptListState(WS, true));
     mount();
     expect(await screen.findByText(LOADING)).toBeTruthy();
     expect(screen.queryByText(EMPTY)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('shows a failed read with its reason and a working Retry instead of the empty state', async () => {

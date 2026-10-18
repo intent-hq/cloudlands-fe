@@ -38,8 +38,21 @@ type Attachment = {
   offRetired: () => void;
   observers: Set<() => void>;
 };
+const SESSION_RETIRED = Symbol('renderer-recovery-session-retired');
 const unavailable = () =>
-  Object.assign(new Error('Event recovery authority retired'), { rpcCode: -32003 });
+  Object.assign(new Error('Event recovery authority retired'), {
+    rpcCode: -32003,
+    [SESSION_RETIRED]: true,
+  });
+
+/**
+ * Whether an owner was retired because its renderer session ended (disconnect,
+ * authority refresh, workspace removal) — a new session re-registers it — rather
+ * than because a read lost authority for good.
+ */
+export function isRecoverySessionRetired(error: unknown): boolean {
+  return !!error && typeof error === 'object' && SESSION_RETIRED in error;
+}
 
 /**
  * One renderer session and one registered owner per read key. Domain factories
