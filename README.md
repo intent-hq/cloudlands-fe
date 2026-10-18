@@ -275,7 +275,10 @@ and Apple Silicon jobs use Depot’s latest macOS. Mac desktop release and manua
 packaging builds target ARM64 only.
 
 From-source Rust sidecars use managed sccache without Rust cache actions.
-The setup script installs a pinned, checksum-verified binary. Depot supplies
-cache access automatically. Without credentials, compilation proceeds uncached
-with a notice.
+The setup script installs a pinned, checksum-verified binary. When the
+`INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
+cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
+`INTENT_SCCACHE_MODE` says otherwise); deleting the variable falls back to
+Depot, which supplies cache access automatically. Without credentials (for
+example fork pull requests), compilation proceeds uncached with a notice.
 pnpm dependency caching remains unchanged.
