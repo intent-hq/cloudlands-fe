@@ -1,4 +1,3 @@
-import { allFileReads } from '$features/file/file-read-completion';
 /**
  * Utility for tracking and displaying agent file edits in the file tree
  */
@@ -15,7 +14,6 @@ const logger = new Logger('AgentFileEdits');
 export async function getAgentFileEdits(
   workspaceId: string,
   filesPerAgent: number = 3,
-  onFailure?: (error: unknown) => void,
 ): Promise<Map<string, string[]>> {
   try {
     // Query the daemon for agent-authored file events (`event.query`, PROTOCOL
@@ -23,21 +21,18 @@ export async function getAgentFileEdits(
     // are fetched in parallel and merged newest-first (each stream already
     // arrives in wire order, newest→oldest).
     logger.info('[AgentEdits] Querying events', { workspaceId });
-    const [changed, created] = await allFileReads(
-      [
-        appClient.events.query(workspaceId, {
-          eventType: 'file:changed',
-          actorType: 'agent',
-          limit: 100,
-        }),
-        appClient.events.query(workspaceId, {
-          eventType: 'file:created',
-          actorType: 'agent',
-          limit: 100,
-        }),
-      ],
-      onFailure,
-    );
+    const [changed, created] = await Promise.all([
+      appClient.events.query(workspaceId, {
+        eventType: 'file:changed',
+        actorType: 'agent',
+        limit: 100,
+      }),
+      appClient.events.query(workspaceId, {
+        eventType: 'file:created',
+        actorType: 'agent',
+        limit: 100,
+      }),
+    ]);
     const events = [...changed, ...created].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
     logger.info('[AgentEdits] Query result', {
@@ -103,7 +98,7 @@ export async function getAgentFileEdits(
     return fileToAgents;
   } catch (error) {
     logger.error('Failed to get agent file edits', error as Error, { workspaceId });
-    throw error;
+    return new Map();
   }
 }
 

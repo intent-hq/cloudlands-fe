@@ -1,4 +1,3 @@
-import { BackendError } from './backend-transport-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateNoteRequest } from '$shared/types';
 
@@ -479,8 +478,7 @@ describe('LiveNotesClient mutations (fake transport)', () => {
 
   it('listVersions calls note.listVersions then batches note.getVersion per entry (FE-shape)', async () => {
     // First call â†’ summaries; the client then batches getVersion for each `v`.
-    mockedRequest.mockImplementation(async (method, rawParams) => {
-      const params = rawParams as Record<string, unknown>;
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'note.listVersions') {
         return [
           {
@@ -562,8 +560,7 @@ describe('LiveNotesClient mutations (fake transport)', () => {
   });
 
   it('listVersions drops a per-version getVersion failure but keeps the rest', async () => {
-    mockedRequest.mockImplementation(async (method, rawParams) => {
-      const params = rawParams as Record<string, unknown>;
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'note.listVersions') {
         return [
           {
@@ -932,16 +929,4 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
       { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
-});
-
-it('preserves Electron physical completion despite serialized TRANSPORT_ERROR', async () => {
-  mockedResolve.mockResolvedValueOnce('ws-1');
-  const completion = Promise.resolve({ errors: [{ rpcCode: -32003 }], retired: false });
-  const failure = new BackendError(
-    { code: 'TRANSPORT_ERROR', message: 'Request deadline' },
-    completion,
-  );
-  mockedRequest.mockRejectedValueOnce(failure);
-  await expect(new LiveNotesClient().get('note-1', 'ws-1')).rejects.toBe(failure);
-  expect(failure.completion).toBe(completion);
 });

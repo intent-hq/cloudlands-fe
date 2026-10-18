@@ -12,6 +12,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 LIGHT = {'route', 'release-fast-path', 'pr-static', 'pr-title', 'conflict-markers', 'monorepo-consumer-checks'}
 HEAVY = {'checks', 'build-web', 'test', 'test-integration', 'test-portable-fixtures', 'test-ct', 'test-playwright', 'test-electron'}
+PR_SUITES = {'checks', 'test'}
+QUEUE_ONLY = HEAVY - PR_SUITES
 
 
 def evaluate(expression, values, success=True):
@@ -61,16 +63,29 @@ class EventPolicy(unittest.TestCase):
     def setUpClass(cls):
         cls.workflow = yaml.safe_load((ROOT / '.github/workflows/intent-pr.yml').read_text())
 
-    def test_pr_is_light_and_queue_retains_all_suites(self):
-        for event, expected in [('pull_request', LIGHT), ('merge_group', (LIGHT - {'pr-static', 'pr-title', 'conflict-markers'}) | HEAVY)]:
+    def test_pr_runs_type_check_and_unit_tests_and_queue_retains_all_suites(self):
+        for event, expected in [('pull_request', LIGHT | PR_SUITES), ('merge_group', (LIGHT - {'pr-static', 'pr-title', 'conflict-markers'}) | HEAVY)]:
             results = schedule(self.workflow, event)
             self.assertEqual({n for n, r in results.items() if r == 'success'}, expected | {'gate'})
             self.assertTrue(gate(self.workflow, event, results))
-        for job in HEAVY:
+        for job in QUEUE_ONLY:
             mutated = copy.deepcopy(self.workflow)
             mutated['jobs'][job]['if'] = True
             self.assertEqual(schedule(mutated, 'pull_request')[job], 'success')
-            self.assertNotEqual({n for n, r in schedule(mutated, 'pull_request').items() if r == 'success'}, LIGHT | {'gate'})
+            self.assertNotEqual({n for n, r in schedule(mutated, 'pull_request').items() if r == 'success'}, LIGHT | PR_SUITES | {'gate'})
+
+    def test_pr_gate_requires_type_check_and_unit_tests(self):
+        results = schedule(self.workflow, 'pull_request')
+        for job in PR_SUITES:
+            for outcome in ('skipped', 'failure', 'cancelled', ''):
+                with self.subTest(job=job, outcome=outcome):
+                    self.assertFalse(gate(self.workflow, 'pull_request', {**results, job: outcome}))
+
+    def test_release_shaped_pr_skips_type_check_and_unit_tests(self):
+        results = schedule(self.workflow, 'pull_request', fast='true')
+        for job in PR_SUITES:
+            self.assertEqual(results[job], 'skipped', job)
+        self.assertTrue(gate(self.workflow, 'pull_request', results, fast='true'))
 
     def test_consumer_caller_grants_only_declared_permissions_and_secrets(self):
         caller = self.workflow['jobs']['monorepo-consumer-checks']

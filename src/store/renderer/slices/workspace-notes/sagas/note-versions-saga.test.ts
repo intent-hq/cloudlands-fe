@@ -2,7 +2,6 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { all, call } from 'typed-redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { StoreState } from '../../../types';
 import { appClient } from '$lib/client';
 import {
   AuthorType,
@@ -81,14 +80,8 @@ function harness(seed: Note | Note[] = note()) {
     channel.put(action);
     return action;
   };
-  const store = {
-    get state() {
-      return { workspaceNotes } as StoreState;
-    },
-    dispatch,
-  };
   function* saga() {
-    yield* all([call(noteVersionsSaga, store), call(notesWriteSaga, store)]);
+    yield* all([call(noteVersionsSaga), call(notesWriteSaga)]);
   }
   const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, saga);
   return { actions, channel, getState: () => workspaceNotes, task };

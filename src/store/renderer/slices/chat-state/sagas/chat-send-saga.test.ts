@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import {
-  createCollection,
-  getItem,
-  getItems,
-} from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
@@ -122,9 +118,6 @@ import {
   streamStatusReceived,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { agentQueueRecoveryKey } from '$features/agent/agent-recovery-keys';
-import { createEventRecoveryMiddleware } from '../../../middlewares/event-recovery';
 import { selectChatError } from '../chat-state-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { chatSendSaga } from './chat-send-saga';
@@ -209,15 +202,13 @@ function harness(
       workspace,
       model: { providerModels },
     });
-  const dispatch = vi.fn(
-    createEventRecoveryMiddleware()({} as never)((action) => {
-      agentSessions = agentSessionReducer(agentSessions, action);
-      chatState = chatStateReducer(chatState, action);
-      agentQueue = agentQueueReducer(agentQueue, action);
-      pendingSubmissions = pendingSubmissionsReducer(pendingSubmissions, action);
-      return action;
-    }),
-  );
+  const dispatch = vi.fn((action) => {
+    agentSessions = agentSessionReducer(agentSessions, action);
+    chatState = chatStateReducer(chatState, action);
+    agentQueue = agentQueueReducer(agentQueue, action);
+    pendingSubmissions = pendingSubmissionsReducer(pendingSubmissions, action);
+    return action;
+  });
   const task = runSaga(
     {
       channel,
@@ -261,7 +252,6 @@ function harness(
 
 describe('chatSendSaga', () => {
   afterEach(() => {
-    rendererEventRecovery.dispose();
     vi.clearAllMocks();
     __resetAgentQueueReadServiceForTests();
   });
@@ -1792,86 +1782,4 @@ describe('chatSendSaga', () => {
       });
     });
   });
-});
-
-it.each(['loss', 'retirement'])(
-  'does not restore queue or retry metadata from a send echo after %s',
-  async (mode) => {
-    const scope = rendererEventRecovery.attach({
-      supported: false,
-      isCurrent: () => true,
-      request: vi.fn(),
-      fence: vi.fn(),
-      onNotification: () => () => {},
-      onRetired: () => () => {},
-      dispose: () => {},
-    });
-    const key = agentQueueRecoveryKey(WS, AGENT);
-    scope.registerResource({
-      key,
-      workspaceId: WS,
-      eventTypes: ['agent:queue:*'],
-      isCurrent: () => true,
-      read: async () => [],
-      apply: () => {},
-      invalidate: () => {},
-      retire: () => {},
-    });
-    let resolve!: (value: unknown) => void;
-    mocks.queue.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = harness(
-      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
-    );
-    try {
-      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
-      await settle();
-      expect(mocks.queue).toHaveBeenCalledTimes(1);
-      if (mode === 'loss') rendererEventRecovery.invalidate(key);
-      else rendererEventRecovery.dispose();
-      resolve({
-        success: true,
-        turnId: 'lost-turn',
-        queuedMessage: { id: 'lost-echo', content: 'later', queuedAt: '2026-01-01', position: 0 },
-      });
-      await settle();
-      await settle();
-      expect(getItems(run.queue().byAgentId[AGENT]?.messages ?? createCollection('id'))).toEqual(
-        [],
-      );
-      expect(run.state().chatState.byAgentId[AGENT]?.queuedRetryRecords ?? {}).toEqual({});
-    } finally {
-      run.task.cancel();
-      await run.task.toPromise();
-      rendererEventRecovery.dispose();
-      vi.clearAllMocks();
-    }
-  },
-);
-
-it('does not apply an old stop completion after recovery authority replacement', async () => {
-  let finish!: (value: { success: boolean }) => void;
-  mocks.stop.mockReset().mockReturnValueOnce(
-    new Promise((done) => {
-      finish = done;
-    }),
-  );
-  const run = harness();
-  try {
-    const stop = agentSessionStopChatRequested(AGENT);
-    run.channel.put(stop);
-    await settle();
-    expect(run.state().chatState.byAgentId[AGENT].isInterrupting).toBe(true);
-    rendererEventRecovery.dispose();
-    finish({ success: true });
-    await expect(stop.promise).resolves.toBeUndefined();
-    expect(run.state().chatState.byAgentId[AGENT].isInterrupting).toBe(true);
-  } finally {
-    run.task.cancel();
-    await run.task.toPromise();
-    vi.clearAllMocks();
-  }
 });

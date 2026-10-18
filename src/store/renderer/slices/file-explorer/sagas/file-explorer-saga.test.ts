@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -47,14 +47,7 @@ function startExplorer() {
     fileExplorer = fileExplorerReducer(fileExplorer, action);
     channel.put(action);
   };
-  const task = runSaga(
-    {
-      channel,
-      dispatch,
-      getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-    },
-    fileExplorerSaga,
-  );
+  const task = runSaga({ channel, dispatch, getState: () => ({ fileExplorer }) }, fileExplorerSaga);
   return {
     dispatch,
     task,
@@ -201,11 +194,7 @@ describe('fileExplorerSaga', () => {
       fileExplorer = fileExplorerReducer(fileExplorer, action);
     };
     const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-      },
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
       fileExplorerSaga,
     );
 
@@ -241,11 +230,7 @@ describe('fileExplorerSaga', () => {
       fileExplorer = fileExplorerReducer(fileExplorer, action);
     };
     const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-      },
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
       fileExplorerSaga,
     );
 
@@ -275,11 +260,7 @@ describe('fileExplorerSaga', () => {
       fileExplorer = fileExplorerReducer(fileExplorer, action);
     };
     const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-      },
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
       fileExplorerSaga,
     );
 
@@ -315,7 +296,7 @@ describe('fileExplorerSaga', () => {
         dispatch: (action: Parameters<typeof fileExplorerReducer>[1]) => {
           fileExplorer = fileExplorerReducer(fileExplorer, action);
         },
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
+        getState: () => ({ fileExplorer }),
       },
       fileExplorerSaga,
     );
@@ -355,7 +336,7 @@ describe('fileExplorerSaga', () => {
         dispatch: (action: Parameters<typeof fileExplorerReducer>[1]) => {
           fileExplorer = fileExplorerReducer(fileExplorer, action);
         },
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
+        getState: () => ({ fileExplorer }),
       },
       fileExplorerSaga,
     );
@@ -396,11 +377,7 @@ describe('fileExplorerSaga', () => {
       fileExplorer = fileExplorerReducer(fileExplorer, action);
     };
     const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-      },
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
       fileExplorerSaga,
     );
 
@@ -443,11 +420,7 @@ describe('fileExplorerSaga', () => {
       fileExplorer = fileExplorerReducer(fileExplorer, action);
     };
     const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({ fileExplorer, workspace: { workspaces: createCollection('id') } }),
-      },
+      { channel, dispatch, getState: () => ({ fileExplorer }) },
       fileExplorerSaga,
     );
 

@@ -210,11 +210,6 @@ export const initialState: HudState = {
 
 export const hudActivated = createAction('hud/activated');
 export const hudDeactivated = createAction('hud/deactivated');
-/** Clear retired session data without ending the route-owned HUD lifetime. */
-export const hudRecoveryReset = createAction('hud/recoveryReset');
-export const hudWorkspaceStateCleared = createAction<[workspaceId: string]>(
-  'hud/workspaceStateCleared',
-);
 export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
   createAction<[workspaceId: string, attention: string, raisedAtTs: string]>(
@@ -237,7 +232,7 @@ export const hudQuestionCaptured =
   createAction<[question: HudCapturedQuestion]>('hud/questionCaptured');
 /**
  * The workspace's daemon display-status rollup left the attention statuses
- * (`hudSaga` dispatches this off `workspace:updated` /
+ * (`hud-subscription` dispatches this off `workspace:updated` /
  * `agent:status-changed`): a pending question set keeps the rollup in
  * `needs_attention` until it is answered or dismissed (PROTOCOL §7.1), so a
  * non-attention rollup means the captured question is resolved/moot and must
@@ -321,25 +316,6 @@ export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]):
 export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
-hudReducer.with(hudRecoveryReset, (state) => ({
-  ...initialState,
-  active: state.active,
-  gridFilter: state.gridFilter,
-}));
-hudReducer.with(hudWorkspaceStateCleared, (state, { payload: [id] }) => {
-  const attentionByWorkspaceId = { ...state.attentionByWorkspaceId };
-  const displayStatusByWorkspaceId = { ...state.displayStatusByWorkspaceId };
-  const displayStatusOverridesContradicted = { ...state.displayStatusOverridesContradicted };
-  delete attentionByWorkspaceId[id];
-  delete displayStatusByWorkspaceId[id];
-  delete displayStatusOverridesContradicted[id];
-  return {
-    ...state,
-    attentionByWorkspaceId,
-    displayStatusByWorkspaceId,
-    displayStatusOverridesContradicted,
-  };
-});
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;

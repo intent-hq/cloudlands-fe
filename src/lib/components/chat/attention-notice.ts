@@ -69,11 +69,13 @@ export function hasMatchingAttentionNotice(
   if (timestamp === null) return false;
   const kind = request.kind === 'blocker' ? 'blocker-report' : 'discussion-request';
 
-  // The daemon uses the same saved_at for the pending request and its notice.
+  // The daemon uses the same saved_at for the pending request and its notice,
+  // and every new request gets a new one, so kind + timestamp is the identity.
+  // The reason is not compared: `agent.list` caps the pending reason at its
+  // preview budget while the notice keeps the full text (intent-hq/intent#7250).
   return messages.some((message) => {
     const messageTimestamp = timestampIdentity(message.timestamp);
     if (messageTimestamp !== timestamp) return false;
-    const notice = getAttentionNotice(message);
-    return notice?.kind === kind && notice.reason === (request.reason ?? '');
+    return getAttentionNotice(message)?.kind === kind;
   });
 }

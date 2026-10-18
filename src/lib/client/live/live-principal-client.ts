@@ -1,5 +1,5 @@
 import { parsePrincipalSnapshot, type PrincipalSnapshot } from '$shared/types/principal';
-import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
+import { backendRequest } from './backend-transport';
 import { isDaemonErrorResponse } from './backend-transport-types';
 
 export class IncompatiblePrincipalResponse extends Error {}
@@ -17,7 +17,7 @@ export function isRetryablePrincipalError(error: unknown): boolean {
 /** No process cache: both reads must belong to the window's current connection. */
 export async function readConnectedPrincipal(): Promise<PrincipalSnapshot> {
   const [hello, principal] = await Promise.allSettled([
-    observeBackendNodeCapabilities(),
+    backendRequest<unknown>('client.hello', {}),
     backendRequest<unknown>('principal.me', {}),
   ]);
   // A refusal on either read wins over a concurrent timeout on the other.

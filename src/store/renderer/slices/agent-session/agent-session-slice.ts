@@ -1,6 +1,3 @@
-import { getRecoveryAdmission } from '../../middlewares/event-recovery';
-import { agentMetadataRecoveryKey } from '$features/agent/agent-recovery-keys';
-
 import { applyAgentMetadataPatch } from './agent-metadata-patch';
 import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
 import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
@@ -1872,13 +1869,7 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
   if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
   return next;
 });
-agentSessionReducer.with(eventReceived, (state, action) => {
-  const [workspaceId, event, applyAgentMetadata] = action.payload;
-  const userMessage = userMessageFromWorkspaceEvent(event);
-  if (userMessage) {
-    return addMessageToSession(state, userMessage[0], userMessage[1]);
-  }
-  if (applyAgentMetadata === false || !canApplyAgentMetadata(action, workspaceId)) return state;
+agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
     const agentId = event.data?.agentId;
     const existing = typeof agentId === 'string' ? getSession(state, agentId) : undefined;
@@ -1887,6 +1878,11 @@ agentSessionReducer.with(eventReceived, (state, action) => {
       if (Object.keys(fields).length) state = updateSessionFields(state, agentId, fields);
     }
   }
+  const userMessage = userMessageFromWorkspaceEvent(event);
+  if (userMessage) {
+    return addMessageToSession(state, userMessage[0], userMessage[1]);
+  }
+
   const statsUpdate = statsFromWorkspaceEvent(event);
   if (statsUpdate) {
     const [agentId, stats] = statsUpdate;
@@ -2047,14 +2043,7 @@ agentSessionReducer.with(renameAgent, (state, { payload: [, agentId, name] }) =>
 // Cross-slice: handle chat-state actions for isStreaming/isProcessing
 // agent-session is the single source of truth for these flags.
 // -----------------------------------------------------------------------
-function canApplyAgentMetadata(action: object, workspaceId?: string): boolean {
-  const receipt = getRecoveryAdmission(action, agentMetadataRecoveryKey(workspaceId));
-  return receipt === undefined || (receipt !== null && receipt.commit(() => undefined));
-}
-
-agentSessionReducer.with(chatSendStarted, (state, action) => {
-  const { agentId, wsId, timestampIso } = action.payload;
-  if (!canApplyAgentMetadata(action, wsId ?? getSession(state, agentId)?.workspaceId)) return state;
+agentSessionReducer.with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
   const existing = getSession(state, agentId);
   if (existing) {
     return updateSessionFields(state, agentId, {
@@ -2083,15 +2072,13 @@ agentSessionReducer.with(chatSendStarted, (state, action) => {
   next = registerInWorkspaceIndex(next, agentId, wsId);
   return next;
 });
-agentSessionReducer.with(chatSendFailed, (state, action) => {
-  const [agentId] = action.payload;
-  if (!canApplyAgentMetadata(action, getSession(state, agentId)?.workspaceId)) return state;
-  return updateSessionFields(state, agentId, {
+agentSessionReducer.with(chatSendFailed, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, {
     isStreaming: false,
     isProcessing: false,
     isResponding: false,
-  });
-});
+  }),
+);
 agentSessionReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
   updateSessionFields(state, agentId, {
     isStreaming: false,
@@ -2134,9 +2121,7 @@ agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId }
 // first of them is concrete evidence the turn got past the gate — drop the
 // hint there too. Canonical isResponding alone still never clears it (see
 // canonicalSessionUpdates).
-agentSessionReducer.with(agentStreamUpdateReceived, (state, action) => {
-  const [update] = action.payload;
-  if (!canApplyAgentMetadata(action, update.workspaceId)) return state;
+agentSessionReducer.with(agentStreamUpdateReceived, (state, { payload: [update] }) => {
   if (update.eventType !== 'chunk' && update.eventType !== 'content-blocks') return state;
   return updateSessionFields(
     state,
@@ -2144,11 +2129,9 @@ agentSessionReducer.with(agentStreamUpdateReceived, (state, action) => {
     streamingStartedFields(getSession(state, update.agentId)),
   );
 });
-agentSessionReducer.with(streamStatusReceived, (state, action) => {
-  const [agentId] = action.payload;
-  if (!canApplyAgentMetadata(action, getSession(state, agentId)?.workspaceId)) return state;
-  return updateSessionFields(state, agentId, streamingStartedFields(getSession(state, agentId)));
-});
+agentSessionReducer.with(streamStatusReceived, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, streamingStartedFields(getSession(state, agentId))),
+);
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
@@ -2164,24 +2147,20 @@ agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) 
   }
   return state;
 });
-agentSessionReducer.with(streamCompleted, (state, action) => {
-  const [agentId] = action.payload;
-  if (!canApplyAgentMetadata(action, getSession(state, agentId)?.workspaceId)) return state;
-  return updateSessionFields(state, agentId, {
+agentSessionReducer.with(streamCompleted, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, {
     isStreaming: false,
     isProcessing: false,
     isResponding: false,
-  });
-});
-agentSessionReducer.with(streamTimedOut, (state, action) => {
-  const [agentId] = action.payload;
-  if (!canApplyAgentMetadata(action, getSession(state, agentId)?.workspaceId)) return state;
-  return updateSessionFields(state, agentId, {
+  }),
+);
+agentSessionReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, {
     isStreaming: false,
     isProcessing: false,
     isResponding: false,
-  });
-});
+  }),
+);
 agentSessionReducer.with(setProcessQueueHint, (state, { payload: [agentId, used, cap, reason] }) =>
   updateSessionFields(state, agentId, {
     processQueueHint: { waiting: true, used, cap, reason },

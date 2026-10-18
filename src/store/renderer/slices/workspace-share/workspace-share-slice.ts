@@ -69,7 +69,6 @@ export interface WorkspaceRosterState {
   withheld: boolean;
   removingPrincipalId: string | null;
   removeError: string | null;
-  removeOperationId: number | null;
 }
 
 export const initialRosterState: WorkspaceRosterState = {
@@ -78,7 +77,6 @@ export const initialRosterState: WorkspaceRosterState = {
   withheld: false,
   removingPrincipalId: null,
   removeError: null,
-  removeOperationId: null,
 };
 
 export interface WorkspaceShareState {
@@ -138,7 +136,6 @@ export interface WorkspaceShareState {
   /** `workspace.members.add` in flight for this host principal. */
   addingPrincipalId: string | null;
   actionError: string | null;
-  actionOperationId: number | null;
 }
 
 export const initialState: WorkspaceShareState = {
@@ -165,7 +162,6 @@ export const initialState: WorkspaceShareState = {
   removingPrincipalId: null,
   addingPrincipalId: null,
   actionError: null,
-  actionOperationId: null,
 };
 
 /** Open the Share dialog for a workspace; the saga loads the roster + invites. */
@@ -218,13 +214,6 @@ export const shareDataFailed = createAction<
   [payload: { target: WorkspaceShareTarget; error: string }]
 >('workspaceShare/dataFailed');
 
-/** A completed command whose response was superseded by recovery must not stay busy. */
-export const shareCommandDiscarded = createAction<
-  [
-    target: WorkspaceShareTarget,
-    operation: { kind: 'create'; request: number } | { kind: 'action'; operationId: number },
-  ]
->('workspaceShare/commandDiscarded');
 /** Saga: the caller may not manage sharing for `target` (see `withheld`). */
 export const shareAccessWithheld = createAction<[payload: { target: WorkspaceShareTarget }]>(
   'workspaceShare/accessWithheld',
@@ -248,49 +237,32 @@ export const shareInviteCreateFailed = createAction<
   [payload: { target: WorkspaceShareTarget; request: number; error: string }]
 >('workspaceShare/inviteCreateFailed');
 
-let nextShareOperationId = 0;
-
 /** Revoke an open invite. */
-export const shareInviteRevokeRequested = createAction<
-  [inviteId: string],
-  [inviteId: string, operationId: number]
->('workspaceShare/inviteRevokeRequested', (inviteId) => [inviteId, ++nextShareOperationId]);
+export const shareInviteRevokeRequested = createAction<[inviteId: string]>(
+  'workspaceShare/inviteRevokeRequested',
+);
 
 /** Remove a collaborator from the roster. */
-export const shareMemberRemoveRequested = createAction<
-  [principalId: string],
-  [principalId: string, operationId: number]
->('workspaceShare/memberRemoveRequested', (principalId) => [principalId, ++nextShareOperationId]);
+export const shareMemberRemoveRequested = createAction<[principalId: string]>(
+  'workspaceShare/memberRemoveRequested',
+);
 
 /** Attach a `principal.list` guest as a collaborator (`workspace.members.add`). */
-export const shareMemberAddRequested = createAction<
-  [principalId: string],
-  [principalId: string, operationId: number]
->('workspaceShare/memberAddRequested', (principalId) => [principalId, ++nextShareOperationId]);
+export const shareMemberAddRequested = createAction<[principalId: string]>(
+  'workspaceShare/memberAddRequested',
+);
 
 /**
  * Saga: a revoke/remove/add settled (`error` null on success). A successful
  * revoke names `revokedInviteId` so the matching one-time link retires at once.
  */
 export const shareActionSettled = createAction<
-  [
-    payload: {
-      target: WorkspaceShareTarget;
-      error: string | null;
-      revokedInviteId?: string;
-      operationId?: number;
-    },
-  ]
+  [payload: { target: WorkspaceShareTarget; error: string | null; revokedInviteId?: string }]
 >('workspaceShare/actionSettled');
 
 /** Hover card: read (or re-read) the roster of `workspaceId`. */
 export const shareRosterRequested = createAction<[payload: { workspaceId: string }]>(
   'workspaceShare/rosterRequested',
-);
-
-/** Retired authority must not leave protected hover rows cached. */
-export const shareRosterRetired = createAction<[payload: { workspaceId: string }]>(
-  'workspaceShare/rosterRetired',
 );
 
 /** Saga: the roster of `workspaceId` arrived. */
@@ -310,13 +282,12 @@ export const shareRosterWithheld = createAction<[payload: { workspaceId: string 
 
 /** Hover card: remove a collaborator (after the card's own confirmation step). */
 export const shareRosterMemberRemoveRequested = createAction<
-  [payload: { workspaceId: string; principalId: string }],
-  [payload: { workspaceId: string; principalId: string }, operationId: number]
->('workspaceShare/rosterMemberRemoveRequested', (payload) => [payload, ++nextShareOperationId]);
+  [payload: { workspaceId: string; principalId: string }]
+>('workspaceShare/rosterMemberRemoveRequested');
 
 /** Saga: a hover-card removal settled (`error` null on success). */
 export const shareRosterActionSettled = createAction<
-  [payload: { workspaceId: string; error: string | null; operationId?: number }]
+  [payload: { workspaceId: string; error: string | null }]
 >('workspaceShare/rosterActionSettled');
 
 function targets(state: WorkspaceShareState, target: WorkspaceShareTarget): boolean {
@@ -337,7 +308,6 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
     revokingInviteId: null,
     removingPrincipalId: null,
     addingPrincipalId: null,
-    actionOperationId: null,
     actionError: null,
   };
 }
@@ -372,11 +342,6 @@ workspaceShareReducer.with(closeShareDialog, (state) => ({
   byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
-workspaceShareReducer.with(shareRosterRetired, (state, { payload: [{ workspaceId }] }) => {
-  const byWorkspaceId = { ...state.byWorkspaceId };
-  delete byWorkspaceId[workspaceId];
-  return { ...state, byWorkspaceId };
-});
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
@@ -402,33 +367,29 @@ workspaceShareReducer.with(shareRosterWithheld, (state, { payload: [{ workspaceI
     loadStatus: 'loaded',
     withheld: true,
     removingPrincipalId: null,
-    removeOperationId: null,
     removeError: null,
   }),
 );
 workspaceShareReducer.with(
   shareRosterMemberRemoveRequested,
-  (state, { payload: [{ workspaceId, principalId }, operationId] }) => {
+  (state, { payload: [{ workspaceId, principalId }] }) => {
     const roster = getRosterState(state, workspaceId);
     if (roster.withheld || roster.removingPrincipalId) return state;
     return setRosterState(state, workspaceId, {
       ...roster,
       removingPrincipalId: principalId,
-      removeOperationId: operationId,
       removeError: null,
     });
   },
 );
 workspaceShareReducer.with(
   shareRosterActionSettled,
-  (state, { payload: [{ workspaceId, error, operationId }] }) => {
+  (state, { payload: [{ workspaceId, error }] }) => {
     const roster = getRosterState(state, workspaceId);
-    if (roster.withheld || (operationId !== undefined && roster.removeOperationId !== operationId))
-      return state;
+    if (roster.withheld) return state;
     return setRosterState(state, workspaceId, {
       ...roster,
       removingPrincipalId: null,
-      removeOperationId: null,
       removeError: error,
     });
   },
@@ -471,20 +432,6 @@ workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error 
   if (!targets(state, target) || state.withheld) return state;
   return { ...state, loadStatus: 'error', loadError: error };
 });
-workspaceShareReducer.with(shareCommandDiscarded, (state, { payload: [target, operation] }) => {
-  if (!targets(state, target)) return state;
-  if (operation.kind === 'create')
-    return state.createRequest === operation.request ? { ...state, creating: false } : state;
-  return state.actionOperationId === operation.operationId
-    ? {
-        ...state,
-        actionOperationId: null,
-        revokingInviteId: null,
-        removingPrincipalId: null,
-        addingPrincipalId: null,
-      }
-    : state;
-});
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
   return { ...withoutRows(state), withheld: true, loadStatus: 'loaded', loadError: null };
@@ -518,51 +465,22 @@ workspaceShareReducer.with(
     return { ...state, creating: false, createError: error };
   },
 );
-workspaceShareReducer.with(
-  shareInviteRevokeRequested,
-  (state, { payload: [inviteId, operationId] }) => {
-    if (!state.open || state.withheld || mutating(state)) return state;
-    return {
-      ...state,
-      revokingInviteId: inviteId,
-      actionOperationId: operationId,
-      actionError: null,
-    };
-  },
-);
-workspaceShareReducer.with(
-  shareMemberRemoveRequested,
-  (state, { payload: [principalId, operationId] }) => {
-    if (!state.open || state.withheld || mutating(state)) return state;
-    return {
-      ...state,
-      removingPrincipalId: principalId,
-      actionOperationId: operationId,
-      actionError: null,
-    };
-  },
-);
-workspaceShareReducer.with(
-  shareMemberAddRequested,
-  (state, { payload: [principalId, operationId] }) => {
-    if (!state.open || state.withheld || mutating(state)) return state;
-    return {
-      ...state,
-      addingPrincipalId: principalId,
-      actionOperationId: operationId,
-      actionError: null,
-    };
-  },
-);
+workspaceShareReducer.with(shareInviteRevokeRequested, (state, { payload: [inviteId] }) => {
+  if (!state.open || state.withheld || mutating(state)) return state;
+  return { ...state, revokingInviteId: inviteId, actionError: null };
+});
+workspaceShareReducer.with(shareMemberRemoveRequested, (state, { payload: [principalId] }) => {
+  if (!state.open || state.withheld || mutating(state)) return state;
+  return { ...state, removingPrincipalId: principalId, actionError: null };
+});
+workspaceShareReducer.with(shareMemberAddRequested, (state, { payload: [principalId] }) => {
+  if (!state.open || state.withheld || mutating(state)) return state;
+  return { ...state, addingPrincipalId: principalId, actionError: null };
+});
 workspaceShareReducer.with(
   shareActionSettled,
-  (state, { payload: [{ target, error, revokedInviteId, operationId }] }) => {
-    if (
-      !targets(state, target) ||
-      state.withheld ||
-      (operationId !== undefined && state.actionOperationId !== operationId)
-    )
-      return state;
+  (state, { payload: [{ target, error, revokedInviteId }] }) => {
+    if (!targets(state, target) || state.withheld) return state;
     const createdLink =
       revokedInviteId && state.createdLink?.inviteId === revokedInviteId ? null : state.createdLink;
     // One mutation at a time (`mutating`): an in-flight add is the one settling.
@@ -574,7 +492,6 @@ workspaceShareReducer.with(
       revokingInviteId: null,
       removingPrincipalId: null,
       addingPrincipalId: null,
-      actionOperationId: null,
       actionError: error,
     };
   },

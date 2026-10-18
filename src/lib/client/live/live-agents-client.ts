@@ -175,24 +175,6 @@ function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefine
   return { total, running };
 }
 
-export function normalizeAgentListResult(value: unknown): AgentListResult {
-  const result = value as {
-    agents?: unknown[];
-    retiredCount?: number;
-    scopeCounts?: unknown;
-    delegatedCounts?: unknown;
-  } | null;
-  const agents = Array.isArray(result?.agents) ? result.agents : [];
-  const scopeCounts = readScopeCounts(result?.scopeCounts);
-  const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
-  return {
-    agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
-    retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
-    ...(scopeCounts ? { scopeCounts } : {}),
-    ...(delegatedCounts ? { delegatedCounts } : {}),
-  };
-}
-
 export class LiveAgentsClient implements AgentsClient {
   private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
     null;
@@ -244,7 +226,15 @@ export class LiveAgentsClient implements AgentsClient {
       scopeCounts?: unknown;
       delegatedCounts?: unknown;
     }>('agent.list', params);
-    return normalizeAgentListResult(result);
+    const agents = Array.isArray(result?.agents) ? result.agents : [];
+    const scopeCounts = readScopeCounts(result?.scopeCounts);
+    const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
+    return {
+      agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
+      retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
+      ...(scopeCounts ? { scopeCounts } : {}),
+      ...(delegatedCounts ? { delegatedCounts } : {}),
+    };
   }
 
   async get(agentId: string, workspaceId?: string): Promise<AgentSession | null> {
@@ -1132,17 +1122,6 @@ export class LiveAgentsClient implements AgentsClient {
    */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
     return createDeltaSubscription<AgentSession>({
-      recovery: {
-        eventTypes: ['agent:*'],
-        read: async ({ request }, params) => {
-          // The typed channel calls agent_list: all non-retired bins in this workspace.
-          const result = await request<{ agents: unknown[] }>('agent.list', {
-            ...params,
-            scope: 'all',
-          });
-          return result.agents;
-        },
-      },
       channel: {
         subscribeMethod: 'agent.subscribe',
         unsubscribeMethod: 'events.unsubscribe',

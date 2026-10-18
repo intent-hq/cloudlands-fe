@@ -9,13 +9,6 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.request,
-  // These suites exercise the legacy subscription path on an explicitly unsupported peer.
-  onEventRecoveryReady: () => () => {},
-  captureBackendEventRecovery: async () => ({
-    supported: false,
-    isCurrent: () => true,
-    dispose: () => {},
-  }),
   backendSubscribe: async () => ({ subscriptionId: 'notification-test' }),
   backendUnsubscribe: async () => {},
   onBackendNotification: (
@@ -107,12 +100,10 @@ async function settle() {
 
 async function start() {
   stops.push(appStore.runSaga(daemonEventsSaga));
-  await settle();
-  admitLegacyPrincipal();
-  await settle();
-  // Match the production host-owner lifecycle: settings readers start after admission.
   stops.push(appStore.runSaga(settingsHydrationSaga));
   stops.push(appStore.runSaga(notificationSettingsSaga));
+  await settle();
+  admitLegacyPrincipal();
   await settle();
 }
 

@@ -1,5 +1,3 @@
-import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
-import { settingsWorkScope } from '../../settings-events/sagas/settings-work-scope';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
 import { waitFor } from '@themislib/themis/saga';
@@ -55,8 +53,6 @@ export function* persistSelectedModelsWorker(
   connection?: string | null,
   waitForBackground = false,
 ) {
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) return false;
   const admittedConnection =
     connection === undefined
       ? (yield* selectModelSelectionState.effect()).selectionConnection
@@ -80,20 +76,14 @@ export function* persistSelectedModelsWorker(
   try {
     if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
       return false;
-    if (!work.isCurrent()) return false;
     const snapshot = yield* call(readSettingsSnapshot);
-    if (!work.isCurrent()) return false;
     if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
       return false;
     if (!snapshot.settings.length) throw new Error('Settings snapshot was empty');
     changes = modelSettingsChanges(snapshot.settings, picks, atomicProviderId);
     yield* call([appClient.settings, appClient.settings.update], changes);
-    return (
-      work.isCurrent() &&
-      admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection
-    );
+    return admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection;
   } catch (error) {
-    if (!work.isCurrent()) return false;
     logger.error('Failed to persist default model settings', { error });
     if (changes.length)
       yield* put(
@@ -118,8 +108,6 @@ export function* persistSelectedModelsWorker(
  * echo of an older value can never displace a newer queued pick.
  */
 export function* persistDefaultReasoningEffortWorker(effort: string, connection?: string | null) {
-  const work = captureSettingsWork();
-  if (!work.isCurrent()) return;
   const admittedConnection =
     connection === undefined
       ? (yield* selectModelSelectionState.effect()).selectionConnection
@@ -132,7 +120,6 @@ export function* persistDefaultReasoningEffortWorker(effort: string, connection?
       [{ path: 'model.defaultReasoningEffort', value: effort }],
     );
   } catch (error) {
-    if (!work.isCurrent()) return;
     logger.error('Failed to persist model.defaultReasoningEffort', { error });
     yield* put(
       settingsFieldsRefreshRequested(['model.defaultReasoningEffort'], admittedConnection),
@@ -171,12 +158,8 @@ function* watchDefaultReasoningEffortPersistence() {
   }
 }
 
-function* modelSelectionSagaWork() {
+export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
   // Atomic defaults share providerSettingsSaga's ordered default-provider queue.
   yield* call(watchDefaultReasoningEffortPersistence);
-}
-
-export function* modelSelectionSaga() {
-  yield* settingsWorkScope(modelSelectionSagaWork);
 }

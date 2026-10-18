@@ -204,6 +204,16 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
 }
 
 /**
+ * Get the workspace ID a specific window is viewing right now (focused or
+ * not). Returns undefined when the window is not in a workspace view. Lets
+ * callers rank windows that actively show a workspace above windows that only
+ * hold it in a background tab.
+ */
+export function getViewedWorkspaceIdForWindow(windowId: number): string | undefined {
+  return windowWorkspaceIds.get(windowId);
+}
+
+/**
  * Get the last-known workspace ID viewed by a specific window, for diagnostics.
  * Unlike the current-workspace maps this survives the window navigating away
  * from the workspace; it returns undefined only when the window has never

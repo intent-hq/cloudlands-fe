@@ -1,9 +1,3 @@
-import {
-  readCollaboration,
-  admitCollaborationCommand,
-} from '$features/presence/collaboration-recovery';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
-import { withRecoveryLifetime } from '../../../middlewares/event-recovery';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { all, call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { hostMembershipClient } from '$features/host-membership/host-membership.client';
@@ -110,15 +104,11 @@ function safeInvite(row: HostInviteRow): HostInvite {
   };
 }
 
-let nextOperationId = 0;
-
 function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGenerator<void> {
   let [target, command] = action.payload;
   if (!(yield* current(target)) || (yield* selectHostMembershipState.effect()).busy) return;
   const authority = yield* selectPrincipalState.effect();
-  let commandReceipt = rendererEventRecovery.capture('host-membership');
-  const operationId = ++nextOperationId;
-  yield* put(hostMembershipStarted(target, command.kind === 'create', operationId));
+  yield* put(hostMembershipStarted(target, command.kind === 'create'));
   let refreshing = false;
   let created: { id: string; url: string } | undefined;
   try {
@@ -129,6 +119,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       const settled = yield* commandTarget(target, authority);
       if (settled) {
         target = settled;
+        yield* put(hostMembershipFinished(target));
         yield* call(notify.success, m.workspace_share_linkCopied_toast());
       }
       return;
@@ -151,12 +142,9 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       const settled = yield* commandTarget(target, authority);
       if (!settled) return;
       target = settled;
-      const admitted = admitCollaborationCommand('host-membership', commandReceipt);
-      if (!admitted) return;
-      commandReceipt = admitted;
       created = { id: result.invite.id, url: result.url };
       retainHostInviteLink(target.session, created.id, created.url);
-      yield* put(withRecoveryLifetime(hostMembershipCreated(target, created.id), commandReceipt));
+      yield* put(hostMembershipCreated(target, created.id));
     } else if (command.kind === 'remove') {
       const state = yield* selectHostMembershipState.effect();
       const member = getItem(state.members, command.principalId);
@@ -179,27 +167,12 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       target = settled;
     }
     if (!(yield* current(target))) return;
-    if (command.kind === 'remove' || command.kind === 'revoke') {
-      const admitted = admitCollaborationCommand('host-membership', commandReceipt);
-      if (!admitted) return;
-      commandReceipt = admitted;
-    }
     refreshing = true;
-    const receipt = rendererEventRecovery.capture('host-membership');
-    const lists = yield* call(() =>
-      readCollaboration('host-membership', async () => {
-        const reads = [
-          hostMembershipClient.listMembers(),
-          hostMembershipClient.listInvites(),
-        ] as const;
-        const results = await Promise.allSettled(reads);
-        for (const result of results) if (result.status === 'rejected') throw result.reason;
-        const [roster, invitationList] = await Promise.all(reads);
-        return { roster, invitationList };
-      }),
-    );
-    if (!lists || !(yield* current(target)) || !receipt.commit(() => undefined)) return;
-    const { roster, invitationList } = lists;
+    const { roster, invitationList } = yield* all({
+      roster: call(hostMembershipClient.listMembers),
+      invitationList: call(hostMembershipClient.listInvites),
+    });
+    if (!(yield* current(target))) return;
     const retained = invitationList.invites.map((invite) => ({
       id: invite.id,
       url: invite.url ?? readHostInviteLink(target.session, invite.id),
@@ -211,14 +184,11 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
         retainHostInviteLink(target.session, invite.id, created.url);
     }
     yield* put(
-      withRecoveryLifetime(
-        hostMembershipLoaded(
-          target,
-          roster.members,
-          invitationList.invites.map(safeInvite),
-          roster.revision,
-        ),
-        receipt,
+      hostMembershipLoaded(
+        target,
+        roster.members,
+        invitationList.invites.map(safeInvite),
+        roster.revision,
       ),
     );
   } catch (error) {
@@ -227,7 +197,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       if (!settled) return;
       target = settled;
     }
-    if (!(yield* current(target)) || !commandReceipt.commit(() => undefined)) return;
+    if (!(yield* current(target))) return;
     const code =
       error &&
       typeof error === 'object' &&
@@ -260,8 +230,8 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
     const state = yield* selectHostMembershipState.effect();
     // A same-owner revision rebind keeps this flight busy until it settles.
     // Never settle a response into another presentation session.
-    if (state.target?.session === target.session && state.operationId === operationId) {
-      yield* put(hostMembershipFinished(state.target, operationId));
+    if (state.target?.session === target.session) {
+      if (state.busy) yield* put(hostMembershipFinished(state.target));
       if (state.reloadPending && (yield* current(state.target)))
         yield* put(hostMembershipRequested(state.target, { kind: 'load' }));
     }

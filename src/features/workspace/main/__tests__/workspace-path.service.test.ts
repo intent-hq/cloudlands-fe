@@ -273,7 +273,7 @@ describe('workspace-path.service', () => {
     emitWorkspaceEvent('workspace:updated', 'ws-1');
     // …then the (possibly pre-update) response resolves.
     resolveGet?.({ workspace: { worktreePath: '/checkouts/stale' } });
-    expect(await lookup).toBeNull();
+    expect(await lookup).toBe('/checkouts/stale');
 
     // The stale value must not have been cached: the next lookup re-fetches.
     mockDaemon({ 'ws-1': { worktreePath: '/checkouts/fresh' } });
