@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.220.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.1...v2.220.2) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** land unread entry at new messages without a late jump ([#3496](https://github.com/intent-hq/cloudlands-fe/issues/3496)) ([cf5136f](https://github.com/intent-hq/cloudlands-fe/commit/cf5136f1749c118950680d81215e3ca640a48bbd))
+
 ## [2.220.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.0...v2.220.1) (2026-10-18)
 
 
