@@ -76,6 +76,26 @@ describe('AttentionRequestBanner', () => {
     },
   );
 
+  // intent-hq/intent#7250: a reason over the 400-byte agent.list cap reaches
+  // the banner shortened while the saved notice keeps the full text.
+  it('hides the fallback when the pending reason is a shortened copy of the saved notice', async () => {
+    const fullReason = `Provider stalled. ${'Retry the turn to continue. '.repeat(20)}`;
+    const timestamp = '2026-10-17T16:00:00.123456Z';
+    attentionRequest.set({ kind: 'blocker', reason: fullReason.slice(0, 400), timestamp });
+    render(AttentionRequestBanner, { props: { agentId: 'agent-1' } });
+    expect(screen.getByTestId('attention-request-banner')).toBeTruthy();
+
+    messages.set([
+      {
+        id: 'notice-long',
+        role: 'system',
+        timestamp,
+        contentBlocks: [{ type: 'text', text: fullReason, meta: { kind: 'blocker-report' } }],
+      },
+    ]);
+    await waitFor(() => expect(screen.queryByTestId('attention-request-banner')).toBeNull());
+  });
+
   it('updates pending attention in both directions and removes it when resolved', async () => {
     attentionRequest.set({ kind: 'discussion', reason: 'Choose the scope' });
     render(AttentionRequestBanner, { props: { agentId: 'agent-1' } });
