@@ -18,10 +18,13 @@
     faTableColumns,
   } from '$lib/icons/phosphor-icons';
   import {
+    selectScriptListPageState,
     selectWorkspaceScriptEntries,
     selectWorkspaceScriptOperations,
+    selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
+    refreshScripts,
     restartScriptRequested,
     startScriptRequested,
     stopScriptRequested,
@@ -47,6 +50,8 @@
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
+  const scriptPage$ = selectScriptListPageState(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -378,9 +383,28 @@
             </div>
           </div>
         {:else}
-          <p class="px-2 py-1.5 text-sm text-muted-foreground">
-            {m.terminal_sidebar_noScriptsAddManually_label()}
-          </p>
+          <!-- Only a successful, empty read may claim there are no scripts (intent-hq/intent#7206). -->
+          {#if $scriptPage$.error}
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 text-sm" role="alert">
+              <p class="text-danger">{m.terminal_sidebar_scriptsLoadFailed_error()}</p>
+              <p class="break-words text-xs text-muted-foreground">{$scriptPage$.error}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={$scriptPage$.loading}
+                onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+                >{m.terminal_sidebar_retryScripts_label()}</Button
+              >
+            </div>
+          {:else if $scriptPage$.loading || !$scriptsInitialized$}
+            <p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">
+              {m.terminal_sidebar_loadingScripts_label()}
+            </p>
+          {:else}
+            <p class="px-2 py-1.5 text-sm text-muted-foreground">
+              {m.terminal_sidebar_noScriptsAddManually_label()}
+            </p>
+          {/if}
         {/each}
       </div>
     {/if}
