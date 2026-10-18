@@ -206,6 +206,32 @@ for (const environment of [
   });
 }
 
+// Regression: the intentd-behind toast once put its whole version sentence in
+// the title, which shares the header row with Update + close and is clamped
+// to two lines, so "behind this app's v…" was cut off.
+for (const environment of [
+  { name: 'desktop', width: 1024, height: 768 },
+  { name: 'narrow', width: 360, height: 400 },
+]) {
+  test(`shows the full daemon-behind message: ${environment.name}`, async ({ page }, info) => {
+    await page.setViewportSize(environment);
+    await open(page, 'daemon-behind');
+    const card = cards(page).first();
+    await expect(card.locator('[data-title]')).toHaveText('intentd update available');
+    await expect(card.locator('[data-description]')).toHaveText(
+      "intent1 is running intentd v0.11.5, behind this app's v0.12.0.",
+    );
+    await expect(card.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
+    await bounded(page, info, `daemon-behind-${environment.name}`);
+    const clipped = await card
+      .locator('[data-title], [data-description]')
+      .evaluateAll((elements) =>
+        elements.filter((el) => el.scrollHeight > el.clientHeight + 1).map((el) => el.textContent),
+      );
+    expect(clipped).toEqual([]);
+  });
+}
+
 test('keeps Undo, long actions, custom callbacks, copy, details and close usable', async ({
   page,
   context,

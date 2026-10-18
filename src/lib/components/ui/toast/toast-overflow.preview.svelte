@@ -21,6 +21,7 @@
     'update-downloading',
     'update-downloaded',
     'update-error',
+    'daemon-behind',
     'mixed',
     'burst',
     'keyboard-stack',
@@ -46,6 +47,7 @@
   } from '$lib/components/ui/toast';
   import { notify } from '$lib/components/patterns/notify';
   import type { UpdateStatus } from '$features/auto-update/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   let { scenario = 'deleted' }: Props = $props();
   let events = $state<string[]>([]);
@@ -159,6 +161,18 @@
           onDismiss: close,
           onAutoDismiss: () => undefined,
         },
+      });
+    } else if (kind === 'daemon-behind') {
+      // Mirrors connections-saga's showDaemonBehindPinToast: short title next
+      // to Update + close, version sentence in the full-width description.
+      toast.warning(m.layout_daemonStatus_daemonBehind_title(), {
+        ...common,
+        description: m.layout_daemonStatus_daemonBehind_toast({
+          name: 'intent1',
+          daemonVersion: '0.11.5',
+          pinnedVersion: '0.12.0',
+        }),
+        action: { label: m.layout_daemonStatus_update_action(), onClick: () => record('update') },
       });
     } else if (kind === 'short-action') {
       toast.success('Changes saved', {
