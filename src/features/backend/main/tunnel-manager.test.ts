@@ -35,6 +35,7 @@ import {
   type TunnelFrame,
   type TunnelSocketLike,
 } from './tunnel-manager';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 /** Scripted stand-in for the `/tunnel` `ws.WebSocket`. */
 class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
@@ -191,7 +192,7 @@ function makeManager(
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
     refusedPorts?: Set<number>;
-    /** Daemon hello protocolVersion; defaults to the first CREDIT-capable version. */
+    /** Daemon hello protocolVersion; defaults to the bundled daemon's current protocol. */
     protocolVersion?: string | null;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
@@ -199,7 +200,7 @@ function makeManager(
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
     getProtocolVersion: () =>
-      options.protocolVersion === undefined ? '10.4' : options.protocolVersion,
+      options.protocolVersion === undefined ? CURRENT_PROTOCOL_VERSION : options.protocolVersion,
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
@@ -1482,7 +1483,7 @@ describe('TunnelManager', () => {
 
         // The daemon is upgraded and the tunnel reconnects: the next socket
         // sees the new version and starts granting.
-        protocolVersion = '10.4';
+        protocolVersion = CURRENT_PROTOCOL_VERSION;
         created[0].drop();
         await waitFor(() => manager.getDiagnostics().streams.length === 0);
         const secondClient = await connectClient(localPort);

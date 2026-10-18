@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import type { StoreAction } from '@themislib/themis/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const transport = vi.hoisted(() => ({
   request: vi.fn(),
@@ -117,13 +118,13 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         clientId: currentClient.clientId,
-        protocolVersion: '10.4',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         server: {
           locality: 'remote',
           hasDisplay: false,
           osArch: 'linux/x86_64',
           version: '0.10.33',
-          protocolVersion: '10.4',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: {},
         },
       };
