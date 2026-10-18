@@ -334,11 +334,18 @@ type WorkspaceProjectionAction = ReturnType<
   | typeof workspaceDeleted
 >;
 
-function* refreshWorkspaces(): SagaGenerator<void> {
+/**
+ * Reads and publishes the workspace list. Returns true when an ordinary push
+ * for the list landed while the reply was in flight: the reply is still
+ * published (projection actions from that window are replayed onto it), and
+ * the caller owes one trailing refetch for pushes that carry no projection.
+ */
+function* refreshWorkspaces(): SagaGenerator<boolean> {
   const authority = rendererEventRecovery.captureAuthority(WORKSPACE_LIST_RECOVERY_KEY);
   let published = false;
-  const receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
-  if (!receipt.commit(() => undefined)) return;
+  let superseded = false;
+  let receipt = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+  if (!receipt.commit(() => undefined)) return false;
   const dispatch = store.dispatch;
   const backendId = yield* selectActiveBackendId();
   const context = yield* selectPrincipalActionContext.effect();
@@ -357,13 +364,24 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     const result = yield* call(() =>
       runWorkspaceListRead(receipt, () => workspaceClient.list({ lite: true })),
     );
+    // On a busy daemon an ordinary list push (workspace activity, PR, task
+    // stats) lands during nearly every read. Requiring an untouched receipt
+    // then refetched forever and never published (#7248). Only a loss
+    // (stale resource) or an authority change still discards the reply.
+    if (!receipt.commit(() => undefined) && authority.isCurrent()) {
+      const fresh = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
+      if (fresh.commit(() => undefined)) {
+        receipt = fresh;
+        superseded = true;
+      }
+    }
     if (
       !receipt.commit(() => undefined) ||
       store.dispatch !== dispatch ||
       backendId !== (yield* selectActiveBackendId()) ||
       context !== (yield* selectPrincipalActionContext.effect())
     )
-      return;
+      return false;
     if (!result.ok) throw new Error(result.error);
     // Replay only fields carried by current events. A title-only event must not
     // copy a prior admission's capability fields over the fresh list projection.
@@ -393,15 +411,20 @@ function* refreshWorkspaces(): SagaGenerator<void> {
     );
     published = receipt.commit(() => undefined);
     yield* put(withRecoveryLifetime(setWorkspaceHasLoaded(true, backendId, context), receipt));
+    if (!published) return false;
     const recentViews = yield* call([appClient.workspaces, appClient.workspaces.recentViews]);
+    // Recency is not part of the list projection; list pushes during this
+    // read must not discard it.
+    const recency = rendererEventRecovery.capture(WORKSPACE_LIST_RECOVERY_KEY);
     if (
-      !receipt.commit(() => undefined) ||
+      !authority.isCurrent() ||
       store.dispatch !== dispatch ||
       backendId !== (yield* selectActiveBackendId()) ||
       context !== (yield* selectPrincipalActionContext.effect())
     )
-      return;
-    yield* put(withRecoveryLifetime(loadRecencyData({ lastViewedAt: recentViews }), receipt));
+      return superseded;
+    yield* put(withRecoveryLifetime(loadRecencyData({ lastViewedAt: recentViews }), recency));
+    return superseded;
   } finally {
     changes.close();
     if (!published && !receipt.isCurrent() && authority.isCurrent()) {
@@ -2156,7 +2179,9 @@ function isStableWorkspaceListFailure(error: unknown): boolean {
 function* loadWorkspacesWorker() {
   for (let attempt = 0; ; attempt++) {
     try {
-      yield* refreshWorkspaces();
+      // One trailing refetch, never a chain: a busy daemon pushes during
+      // every read, and the published reply already replays projections.
+      if (yield* refreshWorkspaces()) yield* refreshWorkspaces();
       return;
     } catch (error) {
       const backendId = yield* selectActiveBackendId();

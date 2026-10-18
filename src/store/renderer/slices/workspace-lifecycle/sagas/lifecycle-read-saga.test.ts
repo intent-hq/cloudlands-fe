@@ -410,6 +410,102 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
+  it('loads the workspace list while workspace events keep arriving during every read', async () => {
+    rendererEventRecovery.dispose();
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const owner = scope.registerResource({
+      key: 'workspace-list',
+      workspaceId: null,
+      eventTypes: ['workspace:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    // A busy daemon: an activity/update push for the list lands while each
+    // workspace.list reply is in flight (#7248 startup skeleton).
+    // Bounded so the pre-fix livelock fails on the call count, not on OOM.
+    let calls = 0;
+    mocks.workspaceServiceList.mockImplementation(async () => {
+      if (++calls < 50) rendererEventRecovery.push('workspace-list');
+      return { ok: true, data: [{ id: WS }] };
+    });
+    const run = startWithLoopback();
+    try {
+      run.channel.put(loadWorkspacesRequested());
+      for (let i = 0; i < 10; i++) {
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      await settle();
+      expect(run.getWorkspaceState().workspaces.ids).toEqual([WS]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+      expect(mocks.workspaceServiceList.mock.calls.length).toBeLessThanOrEqual(2);
+    } finally {
+      await stop(run.task);
+      owner.dispose();
+      rendererEventRecovery.dispose();
+    }
+  });
+
+  it('does not refetch in a loop when a loss discards the in-flight reply', async () => {
+    rendererEventRecovery.dispose();
+    const scope = rendererEventRecovery.attach(
+      createEventRecoverySession({
+        supported: true,
+        isCurrent: () => true,
+        onRetired: () => () => {},
+        onNotification: () => () => {},
+        dispose: () => {},
+        request: async () => ({}),
+      }),
+    );
+    const owner = scope.registerResource({
+      key: 'workspace-list',
+      workspaceId: null,
+      eventTypes: ['workspace:*'],
+      isCurrent: () => true,
+      read: async () => [],
+      apply: () => {},
+      invalidate: () => {},
+      retire: () => {},
+    });
+    let calls = 0;
+    mocks.workspaceServiceList.mockImplementation(async () => {
+      if (++calls < 50) {
+        rendererEventRecovery.push('workspace-list');
+        owner.invalidate();
+      }
+      return { ok: true, data: [{ id: WS }] };
+    });
+    const run = startWithLoopback();
+    try {
+      run.channel.put(loadWorkspacesRequested());
+      for (let i = 0; i < 10; i++) {
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      await settle();
+      // The stale resource belongs to recovery; the ordinary read stops.
+      expect(mocks.workspaceServiceList.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+    } finally {
+      await stop(run.task);
+      owner.dispose();
+      rendererEventRecovery.dispose();
+    }
+  });
+
   it('loads the workspace list and recency in middleware order', async () => {
     const workspace = { id: WS, branch: 'main', wire_only: 'drop' };
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [workspace] });
