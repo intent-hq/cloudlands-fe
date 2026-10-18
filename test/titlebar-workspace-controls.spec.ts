@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
@@ -20,9 +20,11 @@ let baseUrl = '';
 const SPEC_PATH = fileURLToPath(import.meta.url);
 const BROWSER_ENTRIES = [
   ...new Set(
-    [...readFileSync(SPEC_PATH, 'utf8').matchAll(/import\('\/((?:src|test)\/[^']+)'\)/g)].map(
-      ([, path]) => path,
-    ),
+    [
+      ...readFileSync(SPEC_PATH, 'utf8').matchAll(
+        /import\(\s*(['"`])\/((?:src|test)\/[^'"`]+)\1\s*\)/g,
+      ),
+    ].map(([, , path]) => path),
   ),
 ];
 
@@ -32,7 +34,7 @@ test.beforeAll(async () => {
   // Guard the self-scan: an empty or stale list would silently fall back to the full scan.
   expect(BROWSER_ENTRIES).toContain('test/fixtures/TitlebarWorkspaceControlsHarness.svelte');
   for (const entry of BROWSER_ENTRIES) {
-    expect(() => readFileSync(resolve(process.cwd(), entry)), entry).not.toThrow();
+    expect(existsSync(resolve(process.cwd(), entry)), entry).toBe(true);
   }
   server = await createServer({
     configFile: false,
