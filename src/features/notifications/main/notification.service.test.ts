@@ -8,6 +8,7 @@ import {
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import {
   getFocusedWindowWorkspaceId,
+  getViewedWorkspaceIdForWindow,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
@@ -208,6 +209,7 @@ vi.mock('electron', () => ({
     off: vi.fn(),
     emit: vi.fn(),
     show: vi.fn(),
+    focus: vi.fn(),
     getName: vi.fn(() => 'test-app'),
     getVersion: vi.fn(() => '1.0.0'),
     getPath: vi.fn(() => '/tmp/test'),
@@ -253,6 +255,7 @@ vi.mock('electron', () => ({
 vi.mock('../../system/main/system.ipc', () => ({
   getFocusedWindowWorkspaceId: vi.fn(() => undefined),
   getWindowIdsForWorkspace: vi.fn(() => []),
+  getViewedWorkspaceIdForWindow: vi.fn(() => undefined),
   sendToWorkspaceWindows: vi.fn(),
 }));
 
@@ -2415,5 +2418,188 @@ describe('NotificationService structured notification:show payload', () => {
 
     const payload = showPayload(onlyWindow);
     expect(payload).not.toHaveProperty('structured');
+  });
+});
+
+describe('NotificationService click-time window targeting (multiple windows, remote hosts)', () => {
+  const REMOTE_ID = 'remote-1';
+
+  function buildIdleEvent(workspaceId = 'workspace-1'): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent;
+  }
+
+  /** A regular (non-HUD) app window stamped with the backend its renderer talks to. */
+  function makeWindow(id: number, backendId?: string) {
+    return {
+      id,
+      ...(backendId ? { backendId } : {}),
+      webContents: {
+        send: vi.fn(),
+        isDestroyed: () => false,
+        getURL: () => 'http://127.0.0.1:5190/',
+      },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  type MockWindow = ReturnType<typeof makeWindow>;
+
+  /** Register the live windows: fromId / getAllWindows resolve over this set. */
+  function setLiveWindows(windows: MockWindow[]) {
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (windows.find((w) => w.id === id) ?? null) as never,
+    );
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue(windows as never);
+  }
+
+  function navigateCalls(window: MockWindow) {
+    return window.webContents.send.mock.calls.filter(
+      ([channel]: unknown[]) => channel === 'notification:navigate',
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetBackendMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    // OS-banner path: Intent is not frontmost when the agent goes idle.
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+    resetBackendMocks();
+  });
+
+  it('focuses the window that has the workspace open at click time, not the one picked when the banner appeared', async () => {
+    const windowA = makeWindow(1);
+    const windowB = makeWindow(2);
+    setLiveWindows([windowA, windowB]);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([windowA.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === windowA.id ? 'workspace-1' : undefined,
+    );
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    expect(mockNotificationInstances.length).toBe(1);
+
+    // While the banner sits in Notification Center the user moves the
+    // workspace from window A to window B.
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([windowB.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === windowB.id ? 'workspace-1' : undefined,
+    );
+
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(windowB.focus).toHaveBeenCalled();
+    expect(navigateCalls(windowB)).toEqual([['notification:navigate', { workspaceId: 'workspace-1' }]]);
+    expect(windowA.focus).not.toHaveBeenCalled();
+    expect(navigateCalls(windowA)).toEqual([]);
+  });
+
+  it('prefers the window actively viewing the workspace over one holding it in a background tab', async () => {
+    const backgroundTabWindow = makeWindow(1);
+    const viewingWindow = makeWindow(2);
+    setLiveWindows([backgroundTabWindow, viewingWindow]);
+    // Both windows have the workspace open; tracking order puts the
+    // background-tab window first.
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([backgroundTabWindow.id, viewingWindow.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === viewingWindow.id ? 'workspace-1' : 'some-other-workspace',
+    );
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(viewingWindow.focus).toHaveBeenCalled();
+    expect(navigateCalls(viewingWindow)).toEqual([
+      ['notification:navigate', { workspaceId: 'workspace-1' }],
+    ]);
+    expect(backgroundTabWindow.focus).not.toHaveBeenCalled();
+    expect(navigateCalls(backgroundTabWindow)).toEqual([]);
+  });
+
+  it('routes a remote-host notification to a window connected to that host, never a local window', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    expect(mockNotificationInstances.length).toBe(1);
+
+    // macOS activates Intent's last key window (a local one) before the
+    // click handler runs.
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(remoteWindow.focus).toHaveBeenCalled();
+    expect(navigateCalls(remoteWindow)).toEqual([
+      ['notification:navigate', { workspaceId: 'remote-workspace' }],
+    ]);
+    expect(localWindow.focus).not.toHaveBeenCalled();
+    expect(navigateCalls(localWindow)).toEqual([]);
+  });
+
+  it('opens a new window on the remote host when no window is connected to it', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const localWindow = makeWindow(1);
+    setLiveWindows([localWindow]);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    mockNotificationInstances[0].handlers['click']();
+    await flush();
+
+    expect(navigateCalls(localWindow)).toEqual([]);
+    expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
+    const [session, , backendId] = createWindowForSessionMock.mock.calls[0];
+    expect(session).toEqual(expect.objectContaining({ route: '/workspace/remote-workspace' }));
+    expect(backendId).toBe(REMOTE_ID);
+  });
+
+  it('brings Intent to the front with app.focus({ steal: true }) on macOS', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    try {
+      const window = makeWindow(1);
+      setLiveWindows([window]);
+      vi.mocked(getWindowIdsForWorkspace).mockReturnValue([window.id]);
+
+      const service = new NotificationService();
+      await service.handleAgentIdle(buildIdleEvent());
+      mockNotificationInstances[0].handlers['click']();
+
+      expect(app.focus).toHaveBeenCalledWith({ steal: true });
+      expect(window.focus).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
   });
 });
