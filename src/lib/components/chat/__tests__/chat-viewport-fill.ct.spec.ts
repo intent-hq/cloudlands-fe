@@ -673,3 +673,57 @@ test('user scroll during the unread entry hold keeps the reader position through
   const row = component.locator(`[data-message-id="${reading.id}"]`).first();
   expect(Math.abs((await row.boundingBox())!.y - reading.top)).toBeLessThan(5);
 });
+
+test('unread entry hold releases when the seen marker converges to the newest row mid-transfer', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ChatViewportFillHost, { props: unreadProps('m-6', 12) });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  await expect(component.locator('[data-message-id="m-9"]').first()).toHaveCount(1);
+  // markSeen lands before the original marker row arrives: no divider will
+  // ever render, so entry must not stay pinned to the top.
+  await component.update({ props: { ...unreadProps('m-6', 12), advanceSeenTo: 'm-20' } });
+  for (let received = 13; received <= 20; received++) {
+    await component.update({
+      props: { ...unreadProps('m-6', received), advanceSeenTo: 'm-20' },
+    });
+    await expect(component.locator(`[data-message-id="m-${21 - received}"]`).first()).toHaveCount(
+      1,
+    );
+  }
+  await component.update({ props: { ...unreadProps('m-6', 20, true), advanceSeenTo: 'm-20' } });
+  await expect.poll(() => distanceFromBottom(viewport), { timeout: 3000 }).toBeLessThan(3);
+  await page.waitForTimeout(300);
+  await expect(component.locator('[data-new-messages-divider]')).toHaveCount(0);
+});
+
+test('keyboard scrolling releases the unread entry hold', async ({ mount, page }) => {
+  const component = await mount(ChatViewportFillHost, { props: unreadProps('m-6', 12) });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  await expect(component.locator('[data-message-id="m-9"]').first()).toHaveCount(1);
+  await expect.poll(() => distanceFromBottom(viewport)).toBeGreaterThan(200);
+  // A scroll key pressed with focus inside the transcript (the container's
+  // keyboard scroll-intent contract, shared with followBottom).
+  await component
+    .locator('[data-message-id="m-10"]')
+    .first()
+    .dispatchEvent('keydown', { key: 'PageDown', bubbles: true });
+  await viewport.evaluate((node) => {
+    node.scrollTop = 60;
+  });
+  await page.waitForTimeout(100);
+  const reading = await viewport.evaluate((node) => {
+    const top = node.getBoundingClientRect().top;
+    const row = [...node.querySelectorAll<HTMLElement>('[data-message-id]')].find(
+      (row) => row.getBoundingClientRect().top >= top,
+    )!;
+    return { id: row.dataset.messageId, top: row.getBoundingClientRect().top };
+  });
+  // The next prepend must not snap the viewport back to the top.
+  await component.update({ props: unreadProps('m-6', 13) });
+  await expect(component.locator('[data-message-id="m-8"]').first()).toHaveCount(1);
+  await page.waitForTimeout(300);
+  const row = component.locator(`[data-message-id="${reading.id}"]`).first();
+  expect(Math.abs((await row.boundingBox())!.y - reading.top)).toBeLessThan(5);
+});

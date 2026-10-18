@@ -277,6 +277,7 @@
   import {
     animateScrollTo,
     captureScrollAnchor,
+    canRestoreScrollAnchor,
     followBottom,
     followToBottom,
     hasActiveFollowBottomMutation,
@@ -3155,7 +3156,7 @@
         // A tick-only write can clamp against the old extent, land in the
         // tail, and discard the very history page navigation just opened.
         // Restore the visible row so native anchoring isn't counted twice.
-        if (anchor.element?.isConnected) restoreScrollAnchor(container, anchor);
+        if (canRestoreScrollAnchor(container, anchor)) restoreScrollAnchor(container, anchor);
         else container.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
@@ -3684,10 +3685,15 @@
     unreadEntryHoldConsidered = true;
     untrack(() => {
       const marker = seenMarkerId;
+      // A remount (cached scroll) keeps the previous instance's position or
+      // follow; a divider session already latched without an anchor (first
+      // write wins) will never render a divider to settle on.
+      const latched = $dividerSession$;
       if (
         !marker ||
         hasAppliedNewMessagesEntryScroll ||
-        cachedScrollRestoreTop !== null ||
+        cachedScroll ||
+        (latched && !latched.anchorId) ||
         showSearch
       )
         return;
@@ -3702,7 +3708,7 @@
   // completion.
   $effect(() => {
     if (!unreadEntryHold) return;
-    if (!newMessagesDividerAnchorId && $initialHistoryPending$) return;
+    if (!newMessagesDividerAnchorId && !$dividerSession$ && $initialHistoryPending$) return;
     void tick().then(settleUnreadEntryHold);
   });
   function releaseUnreadEntryHold() {
@@ -3740,14 +3746,28 @@
           )
         : null);
     if (!target) {
-      // Latched anchor whose turn is not rendered (virtualized): hand off to
-      // the force-rendering entry scroll. Otherwise the latch has not landed
-      // yet — keep holding the top; the anchor change settles again.
-      if (newMessagesDividerAnchorId) {
-        const anchor = newMessagesDividerAnchorId;
+      const anchor = newMessagesDividerAnchorId;
+      const latched = $dividerSession$;
+      if (anchor) {
+        // Latched anchor whose turn is not rendered (virtualized): hand off
+        // to the force-rendering entry scroll.
         releaseUnreadEntryHold();
         void scrollToNewMessagesDivider(anchor);
-      } else container.scrollTop = 0;
+      } else if (latched) {
+        // Latched without a (present) anchor — e.g. the live marker advanced
+        // to the newest row mid-transfer: no divider will render, so enter
+        // like a normal open.
+        releaseUnreadEntryHold();
+        shouldFollowBottom = true;
+        followToBottom(container);
+      } else if ($initialHistoryPending$) {
+        // The early latch has not landed yet; its anchor change settles again.
+        container.scrollTop = 0;
+      } else if ($transcriptHydration$ === 'error') {
+        releaseUnreadEntryHold();
+      }
+      // Otherwise the completion latch lands once hydration settles; the
+      // divider-session change settles again.
       return;
     }
     releaseUnreadEntryHold();
@@ -5297,6 +5317,8 @@
         )
       )
         return;
+      // Keyboard scrolling is user scroll intent: release the unread entry hold.
+      unreadEntryHold = null;
       cancel();
     };
     const onPointerDown = (event: PointerEvent) => {
