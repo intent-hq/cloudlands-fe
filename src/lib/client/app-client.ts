@@ -1,3 +1,4 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -411,7 +412,7 @@ export type RepositoryContextUpdate =
 
 /** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
 export interface PullRequestWorkspace {
-  id: string;
+  id: WorkspaceId;
   title: string;
   archived: boolean;
   /** RFC 3339 time the daemon first linked this workspace to the PR. */

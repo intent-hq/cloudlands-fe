@@ -484,11 +484,7 @@ async function openLinkActionMenu(
       workspaceId,
       anchorElement,
     });
-    if (gitHubRef.kind === 'pr') {
-      const { loadLinkActionMenuLinkedWorkspaces } =
-        await import('./link-action-menu-linked-workspaces');
-      void loadLinkActionMenuLinkedWorkspaces(openingId, url);
-    }
+    if (gitHubRef.kind === 'pr') loadLinkedWorkspaces(openingId, url);
     logger.debug('Opened link action menu', { url, workspaceId });
     return true;
   } catch (error) {
@@ -498,6 +494,21 @@ async function openLinkActionMenu(
     });
     return await openInExternalBrowser(url);
   }
+}
+
+/**
+ * Optional "Open in Original Workspace" lookup for an open link menu. Kept out
+ * of the menu's fallback path: if its chunk fails to load, the menu stays as is
+ * and no external browser opens.
+ */
+function loadLinkedWorkspaces(openingId: number, url: string): void {
+  import('./link-action-menu-linked-workspaces')
+    .then(({ loadLinkActionMenuLinkedWorkspaces }) =>
+      loadLinkActionMenuLinkedWorkspaces(openingId, url),
+    )
+    .catch((error: unknown) => {
+      logger.debug('PR workspace lookup unavailable', { url, error });
+    });
 }
 
 /**

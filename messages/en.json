@@ -1100,7 +1100,7 @@
   "navigation_linkActionMenu_openInBrowser_label": "Open in browser",
   "navigation_linkActionMenu_openInApp_label": "Open in app",
   "navigation_linkActionMenu_copyLink_label": "Copy link",
-  "navigation_linkActionMenu_openInOriginalWorkspace_label": "Open in Original Workspace",
+  "navigation_linkActionMenu_openInOriginalWorkspace_label": "Open in original workspace",
   "navigation_linkActionMenu_archivedWorkspace_label": "Archived",
   "navigation_linkActionMenu_untitledWorkspace_label": "Untitled workspace",
   "ui_tooltipRich_close_ariaLabel": "Close tooltip",

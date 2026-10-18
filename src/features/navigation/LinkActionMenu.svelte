@@ -7,7 +7,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
   import type { PullRequestWorkspace } from '$lib/client/app-client';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
@@ -85,7 +84,7 @@
 
   async function handleOpenOriginalWorkspace(workspace: PullRequestWorkspace) {
     hideLinkActionMenu();
-    await openLinkedWorkspace(workspace.id as WorkspaceId);
+    await openLinkedWorkspace(workspace.id);
   }
 
   function handleStartWorkspace() {
@@ -128,6 +127,14 @@
   }
 </script>
 
+{#snippet archivedTag(workspace: PullRequestWorkspace)}
+  {#if workspace.archived}
+    <span class="shrink-0 text-muted-foreground">
+      {m.navigation_linkActionMenu_archivedWorkspace_label()}
+    </span>
+  {/if}
+{/snippet}
+
 {#if linkActionMenuState.visible}
   <Menu.Root
     open={linkActionMenuState.visible}
@@ -148,37 +155,6 @@
       class="min-w-40"
       aria-label={m.navigation_linkActionMenu_menu_ariaLabel()}
     >
-      {#if originalWorkspaces.length === 1}
-        {@const workspace = originalWorkspaces[0]}
-        <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
-          <span class="min-w-0 flex-1">
-            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
-          </span>
-          {#if workspace.archived}
-            <span class="shrink-0 text-muted-foreground">
-              {m.navigation_linkActionMenu_archivedWorkspace_label()}
-            </span>
-          {/if}
-        </Menu.Item>
-      {:else if originalWorkspaces.length > 1}
-        <Menu.Sub>
-          <Menu.SubTrigger>
-            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
-          </Menu.SubTrigger>
-          <Menu.SubContent class="max-w-72">
-            {#each originalWorkspaces as workspace (workspace.id)}
-              <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
-                <span class="min-w-0 flex-1 truncate">{workspaceName(workspace)}</span>
-                {#if workspace.archived}
-                  <span class="shrink-0 text-muted-foreground">
-                    {m.navigation_linkActionMenu_archivedWorkspace_label()}
-                  </span>
-                {/if}
-              </Menu.Item>
-            {/each}
-          </Menu.SubContent>
-        </Menu.Sub>
-      {/if}
       {#if linkActionMenuState.gitHubRef}
         <Menu.Item onSelect={handleStartWorkspace}>{startWorkspaceLabel}</Menu.Item>
         <Menu.Separator />
@@ -195,6 +171,34 @@
       <Menu.Item onSelect={handleCopyLink}>
         {m.navigation_linkActionMenu_copyLink_label()}
       </Menu.Item>
+      <!-- Last, so a lookup that resolves while the menu is open never shifts the items above. -->
+      {#if originalWorkspaces.length === 1}
+        {@const workspace = originalWorkspaces[0]}
+        <Menu.Separator />
+        <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+          <span class="shrink-0">{m.navigation_linkActionMenu_openInOriginalWorkspace_label()}</span
+          >
+          <span class="min-w-0 flex-1 truncate text-muted-foreground">
+            {workspaceName(workspace)}
+          </span>
+          {@render archivedTag(workspace)}
+        </Menu.Item>
+      {:else if originalWorkspaces.length > 1}
+        <Menu.Separator />
+        <Menu.Sub>
+          <Menu.SubTrigger>
+            {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
+          </Menu.SubTrigger>
+          <Menu.SubContent class="max-w-72">
+            {#each originalWorkspaces as workspace (workspace.id)}
+              <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
+                <span class="min-w-0 flex-1 truncate">{workspaceName(workspace)}</span>
+                {@render archivedTag(workspace)}
+              </Menu.Item>
+            {/each}
+          </Menu.SubContent>
+        </Menu.Sub>
+      {/if}
     </Menu.Content>
   </Menu.Root>
 {/if}

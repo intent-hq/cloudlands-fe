@@ -39,7 +39,7 @@ const ISSUE_URL = 'https://github.com/acme/widgets/issues/42';
 
 const PR_URL = 'https://github.com/acme/widgets/pull/7';
 const linked = (id: string, title: string, archived = false): PullRequestWorkspace => ({
-  id,
+  id: id as WorkspaceId,
   title,
   archived,
   linkedAt: '2026-10-18T05:00:00.000Z',
@@ -214,6 +214,34 @@ describe('LinkActionMenu', () => {
 
       expect(openLinkedWorkspaceMock).toHaveBeenCalledWith('ws-origin');
       expect(linkActionMenuState.visible).toBe(false);
+    });
+
+    it('names the single workspace it opens', async () => {
+      render(LinkActionMenu);
+      await showPrMenu([linked('ws-origin', 'Origin project')]);
+
+      const item = await screen.findByRole('menuitem', { name: ORIGINAL });
+      expect(item.textContent).toContain('Origin project');
+    });
+
+    it('a late lookup result never moves the existing items', async () => {
+      render(LinkActionMenu);
+      const openingId = showLinkActionMenu({
+        url: PR_URL,
+        gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+        x: 10,
+        y: 10,
+        workspaceId: TEST_WORKSPACE_ID,
+      });
+      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+      const before = screen.getAllByRole('menuitem');
+
+      setLinkActionMenuLinkedWorkspaces(openingId, [linked('ws-origin', 'Origin')]);
+      await screen.findByRole('menuitem', { name: ORIGINAL });
+
+      const after = screen.getAllByRole('menuitem');
+      expect(after.slice(0, before.length)).toEqual(before);
+      expect(after).toHaveLength(before.length + 1);
     });
 
     it('several linked workspaces: a submenu listing them in daemon order', async () => {

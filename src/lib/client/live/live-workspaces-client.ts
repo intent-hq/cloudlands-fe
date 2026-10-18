@@ -161,6 +161,19 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
   return value;
 }
 
+/** One documented `workspace.findByPullRequest` row (§5.1); anything else is a contract violation. */
+function isPullRequestWorkspace(row: unknown): row is PullRequestWorkspace {
+  if (row === null || typeof row !== 'object') return false;
+  const r = row as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    r.id.length > 0 &&
+    typeof r.title === 'string' &&
+    typeof r.archived === 'boolean' &&
+    typeof r.linkedAt === 'string'
+  );
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -358,10 +371,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     const result = await backendRequest<{ workspaces?: unknown }>('workspace.findByPullRequest', {
       url,
     });
-    if (!Array.isArray(result?.workspaces)) {
+    const rows = result?.workspaces;
+    if (!Array.isArray(rows) || !rows.every(isPullRequestWorkspace)) {
       throw new Error('Invalid workspace.findByPullRequest response shape');
     }
-    return result.workspaces as PullRequestWorkspace[];
+    return rows;
   }
 
   /** Cancel a daemon-owned workspace delete grace window (§5.1). */

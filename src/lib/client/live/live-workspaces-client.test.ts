@@ -491,17 +491,23 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     });
   });
 
-  it('findByPullRequest rejects a malformed result and transport errors', async () => {
-    mockedRequest.mockResolvedValueOnce({}).mockRejectedValueOnce(
-      new BackendError({
-        code: 'INVALID_PARAMS',
-        message: 'url is not a pull-request URL',
-        data: { code: 'invalid-params' },
-        rpcCode: -32602,
-      }),
-    );
+  it('findByPullRequest rejects malformed results and rows, and transport errors', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        workspaces: [{ id: 'ws-1', title: null, archived: false, linkedAt: 'x' }],
+      })
+      .mockRejectedValueOnce(
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          message: 'url is not a pull-request URL',
+          data: { code: 'invalid-params' },
+          rpcCode: -32602,
+        }),
+      );
     const client = new LiveWorkspacesClient();
 
+    await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
     await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
     await expect(client.findByPullRequest('https://github.com/o/r/issues/7')).rejects.toThrow(
       'url is not a pull-request URL',
