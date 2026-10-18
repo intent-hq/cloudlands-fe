@@ -13,7 +13,8 @@ import {
   renderVersionModule,
 } from './sync-intentd-protocol-version.mjs';
 
-const PIN_FILE_CONTENT = (pin: string) => `# Exact intentd version bundled as the sidecar.\n${pin}\n`;
+const PIN_FILE_CONTENT = (pin: string) =>
+  `# Exact intentd version bundled as the sidecar.\n${pin}\n`;
 const RUST_SOURCE = (version: string) =>
   `/// Wire protocol.\npub const PROTOCOL_VERSION: &str = "${version}";\npub const OTHER: &str = "1.0";\n`;
 
@@ -43,13 +44,17 @@ describe('parseRustProtocolVersion', () => {
 
   it('rejects a source without exactly one constant', () => {
     expect(() => parseRustProtocolVersion('pub const OTHER: &str = "1.0";')).toThrow(/found 0/);
-    expect(() => parseRustProtocolVersion(RUST_SOURCE('15.0') + RUST_SOURCE('16.0'))).toThrow(/found 2/);
+    expect(() => parseRustProtocolVersion(RUST_SOURCE('15.0') + RUST_SOURCE('16.0'))).toThrow(
+      /found 2/,
+    );
   });
 });
 
 describe('generated module', () => {
   it('round-trips pin and version', () => {
-    expect(parseVersionModule(renderVersionModule({ pin: '0.12.0-beta.1', version: '16.0' }))).toEqual({
+    expect(
+      parseVersionModule(renderVersionModule({ pin: '0.12.0-beta.1', version: '16.0' })),
+    ).toEqual({
       pin: '0.12.0-beta.1',
       version: '16.0',
     });
@@ -119,7 +124,9 @@ describe('checkProtocolPin (offline lint)', () => {
   });
 
   it('fails when the module is missing or hand-edited', () => {
-    expect(checkProtocolPin(tree({ 'intentd.version': PIN_FILE_CONTENT('0.11.7') })).ok).toBe(false);
+    expect(checkProtocolPin(tree({ 'intentd.version': PIN_FILE_CONTENT('0.11.7') })).ok).toBe(
+      false,
+    );
     const handEdited = tree({
       'intentd.version': PIN_FILE_CONTENT('0.11.7'),
       [OUTPUT_FILE]: "export const CURRENT_PROTOCOL_VERSION = '15.0';\n",

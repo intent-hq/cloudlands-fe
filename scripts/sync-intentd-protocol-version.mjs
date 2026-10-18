@@ -50,7 +50,10 @@ export function parseVersionModule(content) {
   return pin && version ? { pin, version } : null;
 }
 
-export async function fetchProtocolSource(pin, { repo = 'intent-hq/intentd', fetchImpl = fetch } = {}) {
+export async function fetchProtocolSource(
+  pin,
+  { repo = 'intent-hq/intentd', fetchImpl = fetch } = {},
+) {
   const url = `https://api.github.com/repos/${repo}/contents/${PROTOCOL_SOURCE_PATH}?ref=v${pin}`;
   const headers = {
     accept: 'application/vnd.github.raw',
@@ -96,7 +99,9 @@ export async function main(argv = process.argv.slice(2), root = process.cwd(), d
     console.log(`Wrote ${OUTPUT_FILE}: intentd v${pin} PROTOCOL_VERSION ${version}.`);
     return 0;
   } catch (error) {
-    console.error(`sync-intentd-protocol-version: ${error instanceof Error ? error.message : error}`);
+    console.error(
+      `sync-intentd-protocol-version: ${error instanceof Error ? error.message : error}`,
+    );
     return 1;
   }
 }

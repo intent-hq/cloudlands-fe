@@ -14,7 +14,8 @@ const FIX_HINT = 'Run `node scripts/sync-intentd-protocol-version.mjs` and commi
 export function checkProtocolPin(root = process.cwd()) {
   const pin = parseVersionPin(fs.readFileSync(path.join(root, PIN_FILE), 'utf8'));
   const modulePath = path.join(root, OUTPUT_FILE);
-  if (!fs.existsSync(modulePath)) return { ok: false, message: `${OUTPUT_FILE} is missing. ${FIX_HINT}` };
+  if (!fs.existsSync(modulePath))
+    return { ok: false, message: `${OUTPUT_FILE} is missing. ${FIX_HINT}` };
   const recorded = parseVersionModule(fs.readFileSync(modulePath, 'utf8'));
   if (!recorded) {
     return { ok: false, message: `${OUTPUT_FILE} is not in the generated format. ${FIX_HINT}` };
@@ -33,7 +34,9 @@ export function checkProtocolPin(root = process.cwd()) {
 
 export function main(argv = process.argv.slice(2), root = process.cwd()) {
   if (argv.length) {
-    console.error(`Unknown argument(s): ${argv.join(' ')}\nUsage: node scripts/check-intentd-protocol-pin.mjs`);
+    console.error(
+      `Unknown argument(s): ${argv.join(' ')}\nUsage: node scripts/check-intentd-protocol-pin.mjs`,
+    );
     return 2;
   }
   try {
