@@ -2617,7 +2617,7 @@
               {#if isProviderProfileRef(providerTabId)}
                 <!-- Tells same-provider profile tabs apart; the tab's label names it. -->
                 <span
-                  class="absolute right-0 bottom-0 min-w-3 rounded-sm bg-popover px-0.5 text-[9px] leading-3 font-medium text-foreground"
+                  class="absolute right-0 bottom-0 min-w-3 rounded-sm bg-popover px-0.5 text-ui-sm leading-3 font-medium text-foreground"
                   aria-hidden="true">{profileInitial(providerTabId)}</span
                 >
               {/if}
