@@ -6,23 +6,29 @@ import type { Locator } from '@playwright/experimental-ct-svelte';
  * Reads the segment boxes once the overlay layout has settled. Right after opening,
  * the first frame can still lay sections out with the narrow container-query padding
  * (the portal is inserted before its width is set), shifting segments by 8px; hover
- * samples aimed at that stale geometry land on padding. Reads are separated by a
- * rendering update and must agree before the boxes are used.
+ * samples aimed at that stale geometry land on padding. Radios are re-queried on every
+ * read (a re-render cannot leave detached, zero-size boxes looking stable), and three
+ * consecutive reads separated by rendering updates must agree before the boxes are used.
  */
-async function settledSegmentBoxes(controls: Locator) {
-  return controls.evaluateAll(async (elements) => {
+async function settledSegmentBoxes(group: Locator) {
+  return group.evaluate(async (groupElement) => {
     const read = () =>
-      elements.map((element) => {
+      Array.from(groupElement.querySelectorAll('[role="radio"]'), (element) => {
         const box = element.getBoundingClientRect();
         return { left: box.left, right: box.right, y: box.top + box.height / 2 };
       });
     const afterRenderingUpdate = () =>
       new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const requiredStableReads = 2;
     let previous = read();
+    let stableReads = 0;
     for (let attempt = 0; attempt < 30; attempt++) {
       await afterRenderingUpdate();
       const current = read();
-      if (JSON.stringify(current) === JSON.stringify(previous)) return current;
+      const laidOut = current.length > 0 && current.every((box) => box.right > box.left);
+      stableReads =
+        laidOut && JSON.stringify(current) === JSON.stringify(previous) ? stableReads + 1 : 0;
+      if (stableReads >= requiredStableReads) return current;
       previous = current;
     }
     throw new Error('token usage segment geometry did not settle within 30 rendering updates');
@@ -48,7 +54,7 @@ for (const scenario of [
       const group = details.getByRole('radiogroup', { name });
       const controls = group.getByRole('radio');
       await expect(controls).toHaveCount(4);
-      const boxes = await settledSegmentBoxes(controls);
+      const boxes = await settledSegmentBoxes(group);
       const samples = boxes.flatMap((box, index) => {
         const center = (box.left + box.right) / 2;
         if (index === 0) return [center];
