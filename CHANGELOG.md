@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.220.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.0...v2.220.1) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* route workspace window lookups and the in-app popup by host ([#3485](https://github.com/intent-hq/cloudlands-fe/issues/3485)) ([d9c3e70](https://github.com/intent-hq/cloudlands-fe/commit/d9c3e700e28d6514e2c86cfab1842b32a6c1c930))
+
 ## [2.220.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.20...v2.220.0) (2026-10-18)
 
 
