@@ -699,6 +699,24 @@ describe('daemonHealthReducer', () => {
       expect(next.hostLocality).toBe('local');
     });
 
+    it('parses protocolVersion once, storing a malformed one as absent', () => {
+      const poll = (protocolVersion: unknown) =>
+        daemonHealthReducer(
+          { ...initialState, polling: true },
+          systemStatusSuccess(
+            {
+              ...collaboratorSystemStatusProjection,
+              protocolVersion,
+            } as unknown as SystemStatusWirePayload,
+            '2026-09-16T13:00:00.000Z',
+            0,
+          ),
+        ).stats?.protocolVersion;
+      expect(poll(' 16.0 ')).toBe('16.0');
+      expect(poll('16-dev')).toBeUndefined();
+      expect(poll(undefined)).toBeUndefined();
+    });
+
     it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
       // Exactly the guest-safe key set a Collaborator caller receives — the
       // typed literal lives in a check-covered module so a re-required wire

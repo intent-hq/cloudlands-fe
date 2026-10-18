@@ -1,4 +1,4 @@
-import { protocolVersionAtLeast } from './protocol-version';
+import { protocolVersionAtLeast, type ProtocolVersion } from './protocol-version';
 import { m } from './paraglide/messages.js';
 
 /**
@@ -7,7 +7,7 @@ import { m } from './paraglide/messages.js';
  * there is no upper bound — clients never cap the protocol version
  * (intent-hq/intent#7206).
  */
-function assertRootFileSupport(protocolVersion: unknown): void {
+function assertRootFileSupport(protocolVersion: ProtocolVersion | null | undefined): void {
   if (!protocolVersionAtLeast(protocolVersion, 11, 1)) {
     throw new Error(m.files_secondaryRoot_unsupported_error());
   }
@@ -17,7 +17,7 @@ function assertRootFileSupport(protocolVersion: unknown): void {
 export function assertScopedFileReadSupport(
   method: string,
   params: unknown,
-  protocolVersion: unknown,
+  protocolVersion: ProtocolVersion | null | undefined,
 ): void {
   if (isScopedFileRead(method, params)) assertRootFileSupport(protocolVersion);
 }

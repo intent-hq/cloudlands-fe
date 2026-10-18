@@ -5,6 +5,8 @@
  * Safe to import from any process.
  */
 
+import type { ProtocolVersion } from '$shared/protocol-version';
+
 /**
  * Tri-state health value derived from connection + heartbeat status.
  */
@@ -221,8 +223,12 @@ export interface DaemonHealthStats {
   version?: string;
   /** Source commit embedded in the running daemon build. */
   buildCommit?: string;
-  /** Optional for backward compatibility with older daemons. */
-  protocolVersion?: string;
+  /**
+   * Parsed once from the `system.status` wire string. Absent when the daemon
+   * omits it (older daemons) or reports a malformed version — gates treat
+   * both as unproven.
+   */
+  protocolVersion?: ProtocolVersion;
   uptimeSeconds?: number;
   /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). Optional for older daemons. */
   cpuPercent?: number;
