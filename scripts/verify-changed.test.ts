@@ -173,8 +173,21 @@ describe('verify-changed arguments and paths', () => {
       dryRun: true,
       help: false,
       paths: ['src/a.ts'],
+      resume: false,
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
+  });
+
+  it('parses --resume, allows a resolved-plan preview and rejects it with --dry-run', () => {
+    expect(parseArgs(['--resume', 'src/a.ts'])).toMatchObject({
+      resume: true,
+      paths: ['src/a.ts'],
+    });
+    expect(parseArgs(['--resolved-plan', '--resume'])).toMatchObject({
+      resolvedPlan: true,
+      resume: true,
+    });
+    expect(() => parseArgs(['--dry-run', '--resume'])).toThrow(/--resolved-plan --resume/);
   });
 
   it('parses --base in both spellings and requires a value', () => {
@@ -2304,6 +2317,22 @@ describe('dependency freshness gate', () => {
       `ensureI18n:${root}`,
       'runPlan',
     ]);
+  });
+
+  it('always records the attempt and passes --resume through to the plan runner', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const received: Array<Record<string, unknown>> = [];
+    const { options } = cliOptions(PASSING);
+    const runPlan = async (_plan: unknown, _root: string, planOptions: Record<string, unknown>) => {
+      received.push(planOptions);
+    };
+    await runCli(['src/lib/example.ts'], root, { ...options, runPlan });
+    await runCli(['--resume', 'src/lib/example.ts'], root, { ...options, runPlan });
+    expect(received.map(({ record, resume }) => ({ record, resume }))).toEqual([
+      { record: true, resume: false },
+      { record: true, resume: true },
+    ]);
+    expect(received[1].argv).toEqual(['--resume', 'src/lib/example.ts']);
   });
 
   it('refuses before touching node_modules when the running Node is unsupported', async () => {
