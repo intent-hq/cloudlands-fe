@@ -43,7 +43,7 @@ describe('LiveProvidersClient profiles', () => {
     await expect(client.listProfiles()).resolves.toEqual({ profiles: [PROFILE], revision: 3 });
     expect(lastRequest()).toEqual([
       IPC_CHANNELS.BACKEND.REQUEST,
-      { method: 'providers.profiles.list', params: {}, observeCompletion: true },
+      { method: 'providers.profiles.list', params: {} },
     ]);
     await client.listProfiles('claude-code');
     expect(lastRequest()).toEqual([
@@ -51,7 +51,6 @@ describe('LiveProvidersClient profiles', () => {
       {
         method: 'providers.profiles.list',
         params: { baseProviderId: 'claude-code' },
-        observeCompletion: true,
       },
     ]);
   });
@@ -85,14 +84,12 @@ describe('LiveProvidersClient profiles', () => {
       {
         method: 'providers.profiles.create',
         params: { baseProviderId: 'codex', name: 'Work', env },
-        observeCompletion: true,
       },
     ]);
     await client.createProfile({ baseProviderId: 'codex', name: 'Bare' });
     expect(lastRequest()?.[1]).toEqual({
       method: 'providers.profiles.create',
       params: { baseProviderId: 'codex', name: 'Bare' },
-      observeCompletion: true,
     });
   });
 
@@ -107,13 +104,11 @@ describe('LiveProvidersClient profiles', () => {
     expect(lastRequest()?.[1]).toEqual({
       method: 'providers.profiles.update',
       params: { profileId: PROFILE.id, env: [{ key: 'CODEX_HOME', kind: 'keep' }] },
-      observeCompletion: true,
     });
     await client.updateProfile({ profileId: PROFILE.id, name: 'Personal' });
     expect(lastRequest()?.[1]).toEqual({
       method: 'providers.profiles.update',
       params: { profileId: PROFILE.id, name: 'Personal' },
-      observeCompletion: true,
     });
   });
 
@@ -126,7 +121,6 @@ describe('LiveProvidersClient profiles', () => {
     expect(lastRequest()?.[1]).toEqual({
       method: 'providers.profiles.delete',
       params: { profileId: PROFILE.id },
-      observeCompletion: true,
     });
   });
 
