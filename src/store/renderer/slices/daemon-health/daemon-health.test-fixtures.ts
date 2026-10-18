@@ -28,7 +28,7 @@ const rawCollaboratorSystemStatusProjection = {
   port: 5180,
   version: '0.0.0-test',
   buildCommit: '0123456789abcdef',
-  protocolVersion: '15.0', // protocol-version-parse-ok: wire payload value, parsed by the reducer under test
+  protocolVersion: '15.0.0', // protocol-version-parse-ok: wire payload value, parsed by the reducer under test
   fingerprint: 'AB:CD',
   localIps: ['192.0.2.10'],
   tcAddress: null,
