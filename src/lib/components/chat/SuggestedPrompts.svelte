@@ -156,9 +156,8 @@
           >
           {#if hasShortcutHint(index) && (showShortcutHints || reserveShortcutHintSpace)}
             <kbd
-              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px inline-flex h-5 items-center self-start border-0 bg-transparent p-0 font-sans font-normal text-muted-foreground! opacity-100 {showShortcutHints
-                ? ''
-                : 'invisible'}"
+              class="{SUGGESTED_PROMPT_HINT_CLASS} mt-px inline-flex h-5 items-center self-start border-0 bg-transparent p-0 font-sans font-normal text-muted-foreground! opacity-100"
+              class:invisible={!showShortcutHints}
               aria-hidden={showShortcutHints ? undefined : 'true'}
               data-suggested-prompt-hint
               data-hint-visible={showShortcutHints}
