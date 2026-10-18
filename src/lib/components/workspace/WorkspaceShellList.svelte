@@ -3,6 +3,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
+  import ScriptDetectionControls from '$features/scripts/components/ScriptDetectionControls.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
@@ -20,6 +21,7 @@
   import {
     selectWorkspaceScriptEntries,
     selectWorkspaceScriptOperations,
+    selectScriptListPageState,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
     restartScriptRequested,
@@ -47,6 +49,7 @@
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
+  const scriptPage$ = selectScriptListPageState(workspaceIdStore);
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -204,6 +207,14 @@
       onclick={() => (scriptsExpanded = !scriptsExpanded)}
     />
     {#if scriptsExpanded}
+      <div class="px-2 py-1.5">
+        <ScriptDetectionControls {workspaceId} />
+      </div>
+      {#if $scriptPage$.error}
+        <p role="alert" class="px-2 py-1.5 type-caption text-muted-foreground break-words">
+          {$scriptPage$.error}
+        </p>
+      {/if}
       <div class="flex flex-col gap-0">
         {#each orderedScripts as script (script.id)}
           {@const live = isLiveScriptStatus(script.runtime.status)}
@@ -378,9 +389,11 @@
             </div>
           </div>
         {:else}
-          <p class="px-2 py-1.5 text-sm text-muted-foreground">
-            {m.terminal_sidebar_noScriptsAddManually_label()}
-          </p>
+          {#if !$scriptPage$.error}
+            <p class="px-2 py-1.5 type-caption text-muted-foreground">
+              {m.terminal_quakeOverlay_noScriptsYet_label()}
+            </p>
+          {/if}
         {/each}
       </div>
     {/if}

@@ -5,7 +5,6 @@
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
-  /* eslint-disable max-lines */
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
   import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
