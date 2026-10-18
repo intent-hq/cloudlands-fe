@@ -351,6 +351,7 @@ authorization; ending Intel support does not authorize stranding native Apple Si
 
 ## Verification
 
+Run long `verify:changed`/`test:ct`/`test:unit` runs as a saved script awaited with `ws.script.monitor` ([rule](../../AGENTS.md#long-running-checks)).
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
 staged, unstaged, deleted, and untracked frontend files, plus the commits since
 `git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given. When
@@ -364,10 +365,10 @@ prerequisites and Vitest discovery only: it prints every selected unit-test path
 lane and the unique file count, including UI invariants and full-risk fallbacks.
 Normal execution resolves this same plan before any selected check runs.
 `--max-unit-files N` rejects the entire run when the unique count exceeds N; it never
-truncates coverage. Review the resolved plan, then raise or omit the limit to run all
-selected checks. Discovery failures also stop before checks; fix the reported config
-or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
-unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+truncates coverage (pair it with `--resolved-plan` for a budgeted preview). Review the
+resolved plan, then raise or omit the limit to run all selected checks. Discovery failures
+also stop before checks; fix the reported config or source error and retry.
+`pnpm run test:unit --maxWorkers=1` explicitly runs the full unit suite.
 
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`:
 `run.json` holds the source, configuration, command and resolved-selection identities;
