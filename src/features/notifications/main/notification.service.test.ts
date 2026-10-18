@@ -2573,6 +2573,79 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     expect(backendId).toBe(REMOTE_ID);
   });
 
+  it('ignores a window on another host that holds a workspace id shared across hosts (the Assistant id)', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    // The Assistant's virtual workspace id is the same constant on every
+    // daemon, so a LOCAL window holding it says nothing about the remote one.
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([localWindow.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === localWindow.id ? CHIEF_WORKSPACE_ID : undefined,
+    );
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(remoteWindow.focus).toHaveBeenCalled();
+    expect(navigateCalls(remoteWindow)).toEqual([
+      [
+        'notification:navigate',
+        { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
+      ],
+    ]);
+    expect(localWindow.focus).not.toHaveBeenCalled();
+    expect(navigateCalls(localWindow)).toEqual([]);
+  });
+
+  it('does not open a window on a remote host whose connection was closed before the click', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const localWindow = makeWindow(1);
+    setLiveWindows([localWindow]);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    expect(mockNotificationInstances.length).toBe(1);
+
+    // The user closes the remote host's last window: its client is disposed.
+    liveBackendIds.splice(liveBackendIds.indexOf(REMOTE_ID), 1);
+    mockNotificationInstances[0].handlers['click']();
+    await flush();
+
+    expect(createWindowForSessionMock).not.toHaveBeenCalled();
+    // The click still brings Intent forward, without navigating a window on
+    // another host to the remote workspace.
+    expect(localWindow.focus).toHaveBeenCalled();
+    expect(navigateCalls(localWindow)).toEqual([]);
+  });
+
+  it('on macOS, activates Intent only after the new window for the host exists', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    try {
+      liveBackendIds.push(REMOTE_ID);
+      const localWindow = makeWindow(1);
+      setLiveWindows([localWindow]);
+
+      const service = new NotificationService();
+      await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+      mockNotificationInstances[0].handlers['click']();
+      await flush();
+
+      expect(createWindowForSessionMock).toHaveBeenCalledTimes(1);
+      expect(app.focus).toHaveBeenCalledWith({ steal: true });
+      // Activating first would raise the last key window (on the wrong host)
+      // while the new window is still being created.
+      expect(vi.mocked(app.focus).mock.invocationCallOrder[0]).toBeGreaterThan(
+        createWindowForSessionMock.mock.invocationCallOrder[0],
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
+  });
+
   it('brings Intent to the front with app.focus({ steal: true }) on macOS', async () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });

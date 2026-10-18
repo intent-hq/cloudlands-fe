@@ -157,37 +157,52 @@ interface NotificationContent {
  * the workspace between windows — in this order:
  *   1. a window actively viewing the workspace,
  *   2. a window holding the workspace in a background tab,
- *      (within each tier, windows connected to the emitting backend first),
- *   3. the focused window connected to the emitting backend,
- *   4. any window connected to the emitting backend.
- * Each window is bound to one daemon connection (`getBackendIdForWindow`),
- * so a window on another host must never be asked to open the workspace.
- * Notifications without a workspace (test notifications) accept any window.
- * The HUD pop-out is never a target (shared `isHudWindow` helper). Returns
- * undefined when no window qualifies; the click handler then opens a fresh
- * window on the emitting backend instead.
+ *   3. the focused window,
+ *   4. any window.
+ * When `backendId` is given, only windows bound to that daemon connection
+ * (`getBackendIdForWindow`) qualify at every tier: a window on another host
+ * must never be asked to open the workspace, and workspace ids are not unique
+ * across hosts (the Assistant's virtual workspace id is the same constant on
+ * every daemon). Without `backendId` (test notifications) any window
+ * qualifies. The HUD pop-out is never a target (shared `isHudWindow`
+ * helper). Returns undefined when no window qualifies.
  */
 function pickNotificationClickTarget(
   workspaceId: string | undefined,
-  backendId: string,
+  backendId: string | undefined,
 ): BrowserWindow | undefined {
-  const isCandidate = (w: BrowserWindow): boolean => !w.isDestroyed() && !isHudWindow(w);
-  const onHost = (w: BrowserWindow): boolean =>
-    !workspaceId || getBackendIdForWindow(w) === backendId;
+  const usable = (w: BrowserWindow): boolean =>
+    !w.isDestroyed() &&
+    !isHudWindow(w) &&
+    (backendId === undefined || getBackendIdForWindow(w) === backendId);
 
   if (workspaceId) {
-    const rank = (w: BrowserWindow): number =>
-      (getViewedWorkspaceIdForWindow(w.id) === workspaceId ? 0 : 2) + (onHost(w) ? 0 : 1);
     const workspaceWindows = getWindowIdsForWorkspace(workspaceId)
       .map((id) => BrowserWindow.fromId(id))
-      .filter((w): w is BrowserWindow => w !== null && isCandidate(w))
-      .sort((a, b) => rank(a) - rank(b));
-    if (workspaceWindows[0]) return workspaceWindows[0];
+      .filter((w): w is BrowserWindow => w !== null && usable(w));
+    const viewing = workspaceWindows.find(
+      (w) => getViewedWorkspaceIdForWindow(w.id) === workspaceId,
+    );
+    const holding = viewing ?? workspaceWindows[0];
+    if (holding) return holding;
   }
 
   const focused = BrowserWindow.getFocusedWindow();
-  if (focused && isCandidate(focused) && onHost(focused)) return focused;
-  return BrowserWindow.getAllWindows().find((w) => isCandidate(w) && onHost(w));
+  if (focused && usable(focused)) return focused;
+  return BrowserWindow.getAllWindows().find(usable);
+}
+
+/**
+ * Bring Intent to the front on macOS once the click target is known. A plain
+ * window focus() from an inactive app may not activate it under macOS
+ * cooperative activation. Called only AFTER the target window exists:
+ * activating earlier raises the last key window, which may be on the wrong
+ * host, while a new window is still being created.
+ */
+function activateAppOnMac(): void {
+  if (process.platform !== 'darwin') return;
+  app.show();
+  app.focus({ steal: true });
 }
 
 /**
@@ -826,13 +841,14 @@ export class NotificationService {
    * ids are daemon-generated UUIDs, so two backends only share one when they
    * point at the SAME daemon — and there, native replacement coalescing the
    * duplicate banners is the desired behavior. `backendId` (the emitting
-   * backend) is used only to route the click to a window on that host.
+   * backend) is used only to route the click to a window on that host;
+   * omitted for test notifications, whose click accepts any window.
    */
   private showNotification(
     content: NotificationContent,
     workspaceId?: string,
     agentId?: string,
-    backendId: string = LOCAL_CONNECTION_ID,
+    backendId?: string,
   ): void {
     try {
       // Check if notifications are supported
@@ -872,21 +888,28 @@ export class NotificationService {
       notification.on('click', () => {
         release();
 
-        if (process.platform === 'darwin') {
-          app.show();
-          // A plain window focus() from an inactive app may not activate
-          // it under macOS cooperative activation; bring Intent forward
-          // explicitly so the chosen window ends up in front.
-          app.focus({ steal: true });
-        }
+        // The emitting host's connection may have been closed while the
+        // banner sat in Notification Center (closing a host's last window
+        // disposes its client). Never open or navigate a window for a
+        // closed host: just bring Intent forward on any regular window.
+        const hostLive = backendId === undefined || this.clientFor(backendId) !== undefined;
 
         // Resolve the target NOW, not when the banner appeared: windows may
         // have closed, navigated to /hud, or moved the workspace while the
         // notification sat in Notification Center. The picker never returns
         // the HUD or a window on another backend.
-        const target = pickNotificationClickTarget(workspaceId, backendId);
+        const target = hostLive
+          ? pickNotificationClickTarget(workspaceId, backendId)
+          : pickNotificationClickTarget(undefined, undefined);
 
         if (!target) {
+          if (!hostLive) {
+            logger.info('Notification click for a closed host; no window to focus', {
+              workspaceId,
+              backendId,
+            });
+            return;
+          }
           // No suitable window is live (e.g. only the HUD pop-out, no window
           // on the emitting host, or no windows at all): open a fresh app
           // window on that backend, directly on the workspace route (no IPC
@@ -895,11 +918,19 @@ export class NotificationService {
           return;
         }
 
+        activateAppOnMac();
         if (target.isMinimized()) {
           target.restore();
         }
         target.show();
         target.focus();
+        if (!hostLive) {
+          logger.info('Notification click for a closed host; focused a window without navigating', {
+            workspaceId,
+            backendId,
+          });
+          return;
+        }
         if (workspaceId && !target.webContents.isDestroyed()) {
           // Chief completions route to the sidebar Assistant panel (the
           // chief workspace page is hidden); everything else keeps the
@@ -965,6 +996,7 @@ export class NotificationService {
         const setAsMain = !existingMain || existingMain.isDestroyed();
         const { workArea } = screen.getPrimaryDisplay();
         await createWindowForSession({ route, bounds: workArea }, setAsMain, backendId);
+        activateAppOnMac();
         logger.info('Notification click opened a new window (no suitable window was live)', {
           workspaceId,
           backendId,
