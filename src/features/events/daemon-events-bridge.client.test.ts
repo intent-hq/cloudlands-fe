@@ -203,6 +203,7 @@ import { store as appStore } from '$store/renderer/store';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { githubAuthSaga } from '$store/renderer/slices/github-auth/sagas/github-auth-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+import { proposalWorkspaceTabSaga } from '$store/renderer/slices/tab-state/sagas/proposal-workspace-tab-saga';
 import {
   bulkUpsertSessions,
   clearAllSessions,
@@ -418,6 +419,7 @@ beforeAll(() => {
     appStore.runSaga(agentStreamSaga),
     appStore.runSaga(lifecycleReadSaga),
     appStore.runSaga(githubAuthSaga),
+    appStore.runSaga(proposalWorkspaceTabSaga),
   );
 });
 
@@ -7540,6 +7542,86 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     expect(workspaceServiceListSpy).toHaveBeenCalledWith({ lite: true });
     const state = appStore.state as { workspace: { workspaces: { ids: string[] } } };
     expect(state.workspace.workspaces.ids).toContain(REMOTE_WS);
+  });
+
+  it('opens a proposal-created workspace as a background tab beside its source workspace', async () => {
+    const SOURCE_WS = 'ws-bridge-proposal-source';
+    const PROPOSED_WS = '88888888-8888-4888-8888-888888888888';
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(SOURCE_WS));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    workspaceServiceListSpy.mockResolvedValueOnce({
+      ok: true,
+      data: [{ id: PROPOSED_WS, title: 'Follow-up', branch: 'main', status: 'Active' }],
+    });
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-created-from-proposal',
+          workspaceId: PROPOSED_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:created',
+          actor: { type: 'system', id: 'intentd' },
+          data: {
+            workspaceId: PROPOSED_WS,
+            workspace: { id: PROPOSED_WS },
+            origin: {
+              kind: 'proposal',
+              proposalId: 'proposal-1',
+              agentId: 'agent-1',
+              sourceWorkspaceId: SOURCE_WS,
+            },
+          },
+        },
+      },
+    });
+    await flush();
+
+    const tabs = (
+      appStore.state as {
+        tabState: { workspaceStacks: string[][]; currentTabId: string | null };
+      }
+    ).tabState;
+    expect(tabs.workspaceStacks.flat()).toEqual(expect.arrayContaining([SOURCE_WS, PROPOSED_WS]));
+    expect(tabs.currentTabId).toBe(SOURCE_WS);
+  });
+
+  it('does not open a tab for a created workspace without a proposal origin', async () => {
+    const SOURCE_WS = 'ws-bridge-plain-source';
+    const PLAIN_WS = '77777777-7777-4777-8777-777777777777';
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(SOURCE_WS));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    workspaceServiceListSpy.mockResolvedValueOnce({
+      ok: true,
+      data: [{ id: PLAIN_WS, title: 'Plain', branch: 'main', status: 'Active' }],
+    });
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-created-plain',
+          workspaceId: PLAIN_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:created',
+          actor: { type: 'system', id: 'intentd' },
+          data: { workspaceId: PLAIN_WS, workspace: { id: PLAIN_WS } },
+        },
+      },
+    });
+    await flush();
+
+    const state = appStore.state as {
+      tabState: { workspaceStacks: string[][] };
+      workspace: { workspaces: { ids: string[] } };
+    };
+    expect(state.workspace.workspaces.ids).toContain(PLAIN_WS);
+    expect(state.tabState.workspaceStacks.flat()).not.toContain(PLAIN_WS);
   });
 
   it('does not refetch the workspace list when the created ID is already in the collection', async () => {
