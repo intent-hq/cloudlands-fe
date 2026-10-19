@@ -169,7 +169,7 @@ export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
 );
 
 export const workspaceInitializerDraftRestoreRequested = createAction<
-  [id: string, requestId: string, legacyKey: string]
+  [id: string, requestId: string, legacyKey: string, admission?: string]
 >('workspaceInitializer/draftRestoreRequested');
 export const workspaceInitializerDraftRestoreFinished = createAction<
   [
@@ -181,19 +181,33 @@ export const workspaceInitializerDraftRestoreFinished = createAction<
   ]
 >('workspaceInitializer/draftRestoreFinished');
 export const workspaceInitializerDraftSaveScheduled = createAction<
-  [id: string, payload: WorkspaceInitializerDraftPayload]
+  [
+    id: string,
+    payload: WorkspaceInitializerDraftPayload,
+    ownerRequestId?: string,
+    admission?: string,
+  ]
 >('workspaceInitializer/draftSaveScheduled');
+export const workspaceInitializerDraftLegacyMigrationRequested = createAction<
+  [
+    id: string,
+    requestId: string,
+    admission: string | undefined,
+    restoreEpoch: number,
+    payload: WorkspaceInitializerDraftPayload,
+  ]
+>('workspaceInitializer/draftLegacyMigrationRequested');
 export const workspaceInitializerDraftSaveDebounceElapsed = createAction<
   [id: string, version: number]
 >('workspaceInitializer/draftSaveDebounceElapsed');
-export const workspaceInitializerDraftFlushRequested = createAction<[id: string]>(
-  'workspaceInitializer/draftFlushRequested',
-);
-export const workspaceInitializerDraftSaveCancelled = createAction<[id: string]>(
-  'workspaceInitializer/draftSaveCancelled',
-);
+export const workspaceInitializerDraftFlushRequested = createAction<
+  [id: string, ownerRequestId?: string, admission?: string]
+>('workspaceInitializer/draftFlushRequested');
+export const workspaceInitializerDraftSaveCancelled = createAction<
+  [id: string, ownerRequestId?: string, admission?: string]
+>('workspaceInitializer/draftSaveCancelled');
 export const workspaceInitializerDraftClearRequested = createAction<
-  [id: string, requestId: string]
+  [id: string, requestId: string, ownerRequestId?: string, admission?: string]
 >('workspaceInitializer/draftClearRequested');
 export const workspaceInitializerDraftClearFinished = createAction<
   [id: string, requestId: string, status: 'success' | 'failure']
@@ -588,4 +602,14 @@ workspaceInitializerReducer.with(
 workspaceInitializerReducer.with(hostExecutionConnectionChanged, (state) => ({
   ...initialState,
   gitCheckRequest: state.gitCheckRequest ? state.gitCheckRequest + 1 : 0,
+  initializationOutcomes: getItems(state.initializationOutcomes).reduce(
+    (outcomes, outcome) =>
+      upsertItem(
+        outcomes,
+        outcome.status === 'pending'
+          ? { ...outcome, status: 'cancelled', error: 'initialization-cancelled' }
+          : outcome,
+      ),
+    initialState.initializationOutcomes,
+  ),
 }));
