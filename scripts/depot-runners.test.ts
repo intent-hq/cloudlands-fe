@@ -108,6 +108,21 @@ describe('Depot CI runners', () => {
     expect(killed.queried).toEqual([]);
   });
 
+  it('counts only heavy intent-cache slots, not the fast pool that shares the generic labels', async () => {
+    const small = {
+      status: 'online',
+      labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-small'],
+    };
+    const smallOnly = await route({ runners: Array.from({ length: 6 }, () => small) });
+    expect(smallOnly.labels).toEqual(['depot-ubuntu-24.04-8']);
+    const fastJobs = Array.from({ length: 6 }, () =>
+      running(['self-hosted', 'Linux', 'X64', 'intent-cache-small']),
+    );
+    const r = await route({ runners: [slot, slot, small], jobs: fastJobs });
+    expect(r.labels).toEqual(CACHE);
+    expect(r.messages.some((m) => m.includes('queue depth=0 threshold=2 online=2'))).toBe(true);
+  });
+
   it('never routes to tinybox', () => {
     expect(readFileSync('.github/workflows/intent-pr.yml', 'utf8')).not.toMatch(/tinybox/i);
   });
