@@ -11,7 +11,7 @@ import {
   newestPersistedMessageId,
   releaseViewAwaitingTranscript,
 } from '$features/agent/mark-agent-seen';
-import { hasChatInterestLease } from '$features/agent/utils/chat-interest-leases';
+import { hasPanelChatInterestLease } from '$features/agent/utils/chat-interest-leases';
 import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
   selectAgentMessages,
@@ -239,15 +239,17 @@ function* handleChiefUnmount(
  * transcript hydration latched a divider session) is affected, and never one
  * another live panel still shows (e.g. its agent tab in a split): that
  * panel's latched session must survive, and its own tab-close / workspace
- * boundary ends it later. The host dispatches after its teardown flush, so
- * the departing panel has already released its interest lease.
+ * boundary ends it later. Only panel leases count: a background history
+ * hydration lease outliving the departed panel must not swallow the boundary.
+ * The host dispatches after its teardown flush, so the departing panel has
+ * already released its interest lease.
  */
 function* handleChatViewEnded({
   payload: [agentId],
 }: ReturnType<typeof chatViewEnded>): SagaGenerator<void> {
   if (!agentId) return;
   if ((yield* selectDividerSession.effect(agentId)) === null) return;
-  if (hasChatInterestLease(agentId)) return;
+  if (hasPanelChatInterestLease(agentId)) return;
   const boundary: DividerSessionBoundary = { kind: 'view-end', agentIds: [agentId] };
   yield* call(finishBoundary, boundary);
 }

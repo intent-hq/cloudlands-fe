@@ -27,6 +27,7 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
 
 import {
   acquireChatInterestLease,
+  HYDRATION_LEASE_HOLDER_PREFIX,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
 import {
@@ -341,6 +342,31 @@ describe('unreadTrackingSaga', () => {
     expect(getCachedChatScroll('ws-1', 'a1')).toEqual({
       scrollTop: 987,
       shouldFollowBottom: false,
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  // Review regression: a background history hydration still holding its
+  // lease after the user left must not swallow the boundary for good.
+  it('still ends the divider session while only a hydration lease is held', async () => {
+    const channel = stdChannel();
+    const current = snapshot({ activeWorkspaceId: null, dividerSessionAgentIds: ['a1'] });
+    const dispatch = vi.fn();
+    const { task } = startSaga(channel, dispatch, () => state(current));
+    await settle();
+    const hydrationHolder = `${HYDRATION_LEASE_HOLDER_PREFIX}7`;
+    acquireChatInterestLease('a1', hydrationHolder);
+    try {
+      channel.put(chatViewEnded('a1'));
+      await settle();
+    } finally {
+      releaseChatInterestLease('a1', hydrationHolder);
+    }
+    expect(marks.boundary).toHaveBeenCalledWith(['a1']);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/endDividerSession',
+      payload: ['a1'],
     });
     task.cancel();
     await task.toPromise();
