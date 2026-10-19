@@ -53,6 +53,12 @@ const mocks = vi.hoisted(() => {
     defaultReasoningEffort$: writable(''),
     compactFormState$: writable<unknown>(null),
     lastSubmittedAgent$: writable<unknown>(null),
+    initializationOutcome$: writable<
+      | Partial<
+          import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializationOutcome
+        >
+      | undefined
+    >(undefined),
     agentByRepo: {} as Record<string, unknown>,
     // Never resolves: provider availability stays unknown, so it is never
     // clearing evidence — the provider-models catalog below decides validity.
@@ -117,7 +123,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
-  selectWorkspaceInitializationOutcome: { select: () => undefined },
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -363,8 +369,12 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.selectedModel$.set('');
@@ -676,8 +686,12 @@ describe('initializer remembers the agent setup per repository', () => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.selectedModel$.set('');
     mocks.configuredModels$.set({});

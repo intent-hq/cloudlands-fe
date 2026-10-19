@@ -2,6 +2,7 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
+import { isFastModeSettingKey } from '$shared/provider-profiles';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   addItem,
@@ -362,7 +363,7 @@ providerSettingsReducer.with(
 );
 providerSettingsReducer.with(setProviderFastMode, (state, { payload: [providerId, enabled] }) => {
   const fastMode = state.fastMode;
-  if (!fastMode.supported || !['claude-code', 'codex'].includes(providerId)) return state;
+  if (!fastMode.supported || !isFastModeSettingKey(providerId)) return state;
   const editId = fastMode.nextEditId + 1;
   return {
     ...state,

@@ -93,6 +93,7 @@ import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
 import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
+import { videoPreviewReducer } from './slices/video-preview/video-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -217,6 +218,7 @@ export const reducers = {
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
   pdfPreview: pdfPreviewReducer,
+  videoPreview: videoPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   pendingSubmissions: pendingSubmissionsReducer,

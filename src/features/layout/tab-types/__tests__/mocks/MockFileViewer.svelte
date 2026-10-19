@@ -5,6 +5,9 @@
     sourceUrl = '',
     language = '',
     isBinary = false,
+    onDownload,
+    allowDownload = true,
+    downloading = false,
   } = $props();
 </script>
 
@@ -16,4 +19,7 @@
   data-is-binary={isBinary}
 >
   {fileContent}
+  {#if onDownload && allowDownload}
+    <button onclick={onDownload} disabled={downloading}>Download original video</button>
+  {/if}
 </div>

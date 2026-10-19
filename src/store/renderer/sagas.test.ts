@@ -60,6 +60,7 @@ describe('renderer app saga registry', () => {
       'fileExplorerSaga',
       'filesReadSaga',
       'pdfPreviewSaga',
+      'videoPreviewSaga',
       'filesWriteSaga',
       'workspaceNotesSaga',
       'noteReadTrackingSaga',

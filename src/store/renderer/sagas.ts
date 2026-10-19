@@ -59,6 +59,7 @@ import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
 import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
+import { videoPreviewSaga } from './slices/video-preview/sagas/video-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
@@ -189,6 +190,7 @@ export const sagas = [
   fileExplorerSaga,
   filesReadSaga,
   pdfPreviewSaga,
+  videoPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,

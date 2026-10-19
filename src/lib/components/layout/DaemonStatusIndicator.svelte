@@ -511,6 +511,7 @@
 <DropdownMenu
   align="end"
   side="bottom"
+  alignIconColumn={false}
   bind:open={dropdownOpen}
   contentClass="px-0"
   contentMaxHeight="var(--bits-dropdown-menu-content-available-height)"
@@ -546,9 +547,11 @@
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
-        <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
-          {detailsStatusLabel}
-        </Menu.SubTrigger>
+        <div class="px-1">
+          <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
+            {detailsStatusLabel}
+          </Menu.SubTrigger>
+        </div>
         <!-- This details panel aligns to the whole menu, not the triggering row. -->
         <Menu.SubContent
           side="left"

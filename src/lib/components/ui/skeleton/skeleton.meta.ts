@@ -29,7 +29,6 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/notes/primitives/ReferenceBlock.svelte',
     'src/lib/components/patterns/screen/LoadingState.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
-    'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/ui/sidebar/sidebar-menu-skeleton.svelte',
     'src/lib/components/ui/tooltip/GitHubLinkCard.svelte',
     'src/lib/components/workspace/CheckoutModePill.svelte',
