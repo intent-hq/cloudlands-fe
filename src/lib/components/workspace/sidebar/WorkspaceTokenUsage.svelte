@@ -173,13 +173,16 @@
   // stable id order.
   const agentLabelById = $derived.by(() => {
     // Number only agents that render a row, so a visible "2" always has a "1".
-    const ids = Object.entries($usage$.byAgentId)
-      .filter(([, entry]) => tokenCount(entry) > 0)
-      .map(([id]) => id);
+    const ids = new Set(
+      Object.entries($usage$.byAgentId)
+        .filter(([, entry]) => tokenCount(entry) > 0)
+        .map(([id]) => id),
+    );
+    for (const row of crossFilterRows) if (tokenCount(row.totals) > 0) ids.add(row.agentId);
     const daemonNames = $usage$.agentNames ?? {};
     const labels = new Map<string, string>();
     const unnamed: string[] = [];
-    for (const id of ids.sort()) {
+    for (const id of [...ids].sort()) {
       const name = loadedAgentNameById.get(id) || daemonNames[id];
       if (name) labels.set(id, name);
       else unnamed.push(id);
