@@ -15,6 +15,7 @@
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { chatViewEnded } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
   import type { ChatAttentionFocusRequest } from '$lib/components/chat/chat-attention-focus';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
@@ -41,11 +42,19 @@
   // tab, so report when it stops showing a conversation (agent/workspace
   // switch, preview close, leaving Home): the unread-tracking saga treats it
   // as a stop-looking boundary that advances the seen marker and ends the
-  // "New messages" divider session.
+  // "New messages" divider session. A view shorter than the view trigger's
+  // debounce (a fallback agent flashed while the active agent resolves, or a
+  // quick skim) was never reading, so it is not reported. The dispatch waits
+  // for the teardown flush so the departing ChatPanel has released its chat
+  // interest lease and written its scroll cache first.
   $effect(() => {
     const agentId = shownAgentId;
     if (!agentId) return;
-    return () => store.dispatch(chatViewEnded(agentId));
+    const shownAt = Date.now();
+    return () => {
+      if (Date.now() - shownAt < MARK_AGENT_SEEN_DEBOUNCE_MS) return;
+      setTimeout(() => store.dispatch(chatViewEnded(agentId)), 0);
+    };
   });
   let attentionFocus = $state<ChatAttentionFocusRequest & { agentId: string }>();
   let nextFocusRequest = 0;

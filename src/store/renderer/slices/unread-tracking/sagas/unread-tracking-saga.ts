@@ -11,6 +11,7 @@ import {
   newestPersistedMessageId,
   releaseViewAwaitingTranscript,
 } from '$features/agent/mark-agent-seen';
+import { hasChatInterestLease } from '$features/agent/utils/chat-interest-leases';
 import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
   selectAgentMessages,
@@ -37,6 +38,7 @@ import {
 import {
   selectCurrentlyViewedAgentId,
   selectDividerBoundaryStateSnapshot,
+  selectDividerSession,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
 import {
@@ -150,7 +152,9 @@ function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> 
   // here because its destroy-time cache write is suppressed state-side:
   // endDividerSession (dispatched below, in this same tick) ends the
   // agent's divider session, and canRecordChatScroll refuses to record
-  // once the session has ended.
+  // once the session has ended. A 'view-end' boundary is the exception: its
+  // host dispatches AFTER the teardown flush, so the departing panel has
+  // already written its destroy-time cache entry and this clear removes it.
   if (boundary.kind !== 'chief-card-close') {
     yield* call(clearCachedChatScroll, boundary.agentIds);
   }
@@ -232,18 +236,20 @@ function* handleChiefUnmount(
  * workspace tab, so without this boundary the seen marker never advanced past
  * a reply watched mid-turn and the divider session stayed latched at its
  * stale anchor. Only an agent whose viewing session actually started (first
- * transcript hydration latched a divider session) is affected.
+ * transcript hydration latched a divider session) is affected, and never one
+ * another live panel still shows (e.g. its agent tab in a split): that
+ * panel's latched session must survive, and its own tab-close / workspace
+ * boundary ends it later. The host dispatches after its teardown flush, so
+ * the departing panel has already released its interest lease.
  */
-function* handleChatViewEnded(
-  tracker: BoundarySnapshotTracker,
-  { payload: [agentId] }: ReturnType<typeof chatViewEnded>,
-): SagaGenerator<void> {
+function* handleChatViewEnded({
+  payload: [agentId],
+}: ReturnType<typeof chatViewEnded>): SagaGenerator<void> {
   if (!agentId) return;
-  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
-  if (!current.dividerSessionAgentIds.includes(agentId)) return;
+  if ((yield* selectDividerSession.effect(agentId)) === null) return;
+  if (hasChatInterestLease(agentId)) return;
   const boundary: DividerSessionBoundary = { kind: 'view-end', agentIds: [agentId] };
   yield* call(finishBoundary, boundary);
-  tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
 }
 
 function* handleSend(action: ReturnType<typeof sendMessage>): SagaGenerator<void> {
@@ -311,7 +317,7 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     call(watchWorkspaceBoundaries, tracker),
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
     takeEvery(workspaceUnmounted, handleChiefUnmount, tracker),
-    takeEvery(chatViewEnded, handleChatViewEnded, tracker),
+    takeEvery(chatViewEnded, handleChatViewEnded),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),

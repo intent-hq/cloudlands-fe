@@ -26,6 +26,10 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
 });
 
 import {
+  acquireChatInterestLease,
+  releaseChatInterestLease,
+} from '$features/agent/utils/chat-interest-leases';
+import {
   clearChatScrollCacheForTests,
   getCachedChatScroll,
   setCachedChatScroll,
@@ -311,6 +315,32 @@ describe('unreadTrackingSaga', () => {
     expect(dispatch).toHaveBeenCalledWith({
       type: 'unreadTracking/recordWatchedStreamingTail',
       payload: ['a1', 'msg-1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the divider session when another live panel still shows the agent', async () => {
+    setCachedChatScroll('ws-1', 'a1', { scrollTop: 987, shouldFollowBottom: false });
+    const channel = stdChannel();
+    const current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
+    const dispatch = vi.fn();
+    const { task } = startSaga(channel, dispatch, () => state(current));
+    await settle();
+    acquireChatInterestLease('a1', 'split-panel');
+    try {
+      channel.put(chatViewEnded('a1'));
+      await settle();
+    } finally {
+      releaseChatInterestLease('a1', 'split-panel');
+    }
+    expect(marks.boundary).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'unreadTracking/endDividerSession' }),
+    );
+    expect(getCachedChatScroll('ws-1', 'a1')).toEqual({
+      scrollTop: 987,
+      shouldFollowBottom: false,
     });
     task.cancel();
     await task.toPromise();
