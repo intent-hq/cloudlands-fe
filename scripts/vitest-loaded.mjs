@@ -208,7 +208,8 @@ function main(argv, env) {
   const loops = plan.busy.map(({ executable, args }) =>
     spawn(executable, args, { cwd: root, stdio: 'ignore' }),
   );
-  // spawn() returns once the exec has succeeded, so these pids are live loops.
+  // spawn() returns once the exec has succeeded, so each pid is a started loop
+  // process (`taskset` when pinned, which execs node under the same pid).
   console.error(formatLoopPids(loops.map((loop) => loop.pid).filter((pid) => pid !== undefined)));
   const vitest = spawn(plan.vitest.executable, plan.vitest.args, { cwd: root, stdio: 'inherit' });
   let signalled;

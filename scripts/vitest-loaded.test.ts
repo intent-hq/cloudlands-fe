@@ -262,18 +262,22 @@ describe.runIf(hasTaskset)('harness end to end', () => {
   const cheapFile = 'scripts/check-package-scripts.test.ts';
 
   /**
-   * Whether `pid` is gone: no `/proc/<pid>` entry, or a zombie (`Z`) — killed
-   * and only waiting to be reaped by whoever adopted it.
+   * Whether busy loop `pid` is gone: no `/proc/<pid>` entry, a zombie (`Z`,
+   * killed and only waiting to be reaped), or a pid since reused by a process
+   * that is not a busy loop.
    */
   function isGone(pid: number): boolean {
     let stat: string;
+    let cmdline: string;
     try {
       stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8');
     } catch {
       return true;
     }
     // `pid (comm) state ...`; comm may hold spaces or parens, so read after the last `)`.
-    return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
+    const state = stat.charAt(stat.lastIndexOf(')') + 2);
+    return state === 'Z' || !cmdline.includes(BUSY_LOOP_SOURCE);
   }
 
   // The harness has already SIGKILLed the loops by the time it exits; this only
@@ -289,9 +293,9 @@ describe.runIf(hasTaskset)('harness end to end', () => {
   }
 
   /**
-   * Runs the harness with one busy loop and waits for it to finish (`close`,
-   * so all of stderr has arrived). The loops are the ones the harness itself
-   * announced, so nothing depends on how fast it got round to spawning them.
+   * Runs the harness with one busy loop. Waits for the harness's own pid
+   * announcement (or for its stderr to close without one) and for its exit, so
+   * nothing depends on how fast it got round to spawning the loops.
    */
   async function runHarness(vitestArgs: string[]) {
     const child = spawn(process.execPath, [harness, ...vitestArgs], {
@@ -304,11 +308,19 @@ describe.runIf(hasTaskset)('harness end to end', () => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
     });
     let stderr = '';
-    child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-    const code = await new Promise<number | null>((resolve) =>
-      child.once('close', (exitCode) => resolve(exitCode)),
+    const exited = new Promise<number | null>((resolve) =>
+      child.once('exit', (code) => resolve(code)),
     );
-    const loopPids = parseLoopPids(stderr);
+    const announced = new Promise<number[] | null>((resolve) => {
+      child.stderr!.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+        const pids = parseLoopPids(stderr);
+        if (pids) resolve(pids);
+      });
+      child.stderr!.once('close', () => resolve(parseLoopPids(stderr)));
+    });
+    const loopPids = await announced;
+    const code = await exited;
     const survivors = loopPids ? await untilGone(loopPids, 10_000) : [];
     return { code, stderr, loopPids, survivors };
   }
