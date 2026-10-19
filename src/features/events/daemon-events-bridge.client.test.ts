@@ -200,6 +200,7 @@ vi.mock('$lib/utils/navigation.client', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { githubAuthSaga } from '$store/renderer/slices/github-auth/sagas/github-auth-saga';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
@@ -11437,6 +11438,49 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
       appStore.state.agentSessions.byAgentId[AGENT]?.metadata?.attentionRequestKind,
     ).toBeUndefined();
     expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+  });
+
+  // A list row's shortened-reason flag describes only that shortened copy:
+  // the live event carries the full reason, and a clear retires both.
+  it('drops the shortened-reason flag when a fresh request or a clear arrives', async () => {
+    seedSession({
+      metadata: {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Provider stal',
+        attentionRequestReasonTruncated: true,
+      },
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const fullReason = `Provider stalled. ${'Retry the turn. '.repeat(40)}`;
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'blocker',
+        reason: fullReason,
+        timestamp: '2026-10-18T00:00:00Z',
+      }),
+    );
+    await flush();
+    let stored = appStore.state.agentSessions.byAgentId[AGENT];
+    expect(stored?.metadata?.attentionRequestReasonTruncated).toBeUndefined();
+    expect(getAgentAttentionRequest(stored)).toEqual({
+      kind: 'blocker',
+      reason: fullReason,
+      timestamp: '2026-10-18T00:00:00Z',
+    });
+
+    appStore.dispatch(
+      updateSession(AGENT, {
+        metadataPatch: { attentionRequestReasonTruncated: { op: 'set', value: true } },
+      }),
+    );
+    handler(notification('agent:updated', { agentId: AGENT, attentionRequestCleared: true }));
+    stored = appStore.state.agentSessions.byAgentId[AGENT];
+    expect(stored?.metadata?.attentionRequestReasonTruncated).toBeUndefined();
+    expect(getAgentAttentionRequest(stored)).toBeNull();
   });
 
   it('projects complete proposal snapshots and preserves unknown mutation recovery', async () => {

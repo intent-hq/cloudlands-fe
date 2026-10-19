@@ -1231,6 +1231,16 @@ export interface AgentMetadata {
   // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
   // AgentCard's effectiveCompletionReport preview.
   completionReport?: string;
+  // `true` only on an agent.list row whose `completionReport` the daemon's
+  // list-row preview cap shortened (PROTOCOL §5.5 truncation flags); omitted
+  // otherwise. The value is then a prefix; agent.get serves the full text.
+  completionReportTruncated?: boolean;
+  // Pending attention request reason as served on AgentLite metadata (see
+  // AgentSession.attentionRequestReason for the lifecycle).
+  attentionRequestReason?: string;
+  // `true` only when the list-row cap shortened `attentionRequestReason`; the
+  // reason is then a prefix and agent.get serves the full text.
+  attentionRequestReasonTruncated?: boolean;
   // Id of the parent agent that delegated/created this session (PROTOCOL §5.5,
   // served on AgentLite metadata). Absent on top-level agents; drives the
   // Agents-panel tree nesting, hud-selectors' top-level gating, and the
