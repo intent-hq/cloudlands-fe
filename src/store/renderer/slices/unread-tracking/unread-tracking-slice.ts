@@ -38,6 +38,15 @@ export const clearCurrentlyViewedAgent = createAction<[agentId?: string]>(
 );
 
 /**
+ * A chat surface outside the panel-layout agent tabs (the Home preview's
+ * conversation, and the workspace tab type that reuses it) stopped showing an
+ * agent's conversation: the user switched workspace or agent there, closed
+ * the preview, or navigated away. The unread-tracking saga treats it as a
+ * stop-looking boundary, exactly like closing that agent's tab.
+ */
+export const chatViewEnded = createAction<[agentId: string]>('unreadTracking/chatViewEnded');
+
+/**
  * Latch the "New messages" divider anchor for an agent's viewing session,
  * derived once at conversation entry (first transcript hydration).
  * First-write-wins: a second start for the same agent is a no-op, so cached
