@@ -21,6 +21,7 @@
  */
 
 import { app, BrowserWindow, Notification, screen } from 'electron';
+import { claimActivationFocus } from '../../../main/activation-focus-claim';
 import { isHudWindow } from '../../../main/hud-window';
 import { getBackendIdForWindow } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
@@ -953,6 +954,9 @@ export class NotificationService {
           return;
         }
 
+        // Activating the app also emits `activate`, whose handler would
+        // otherwise raise the main window over this target.
+        claimActivationFocus(target);
         activateAppOnMac();
         if (target.isMinimized()) {
           target.restore();

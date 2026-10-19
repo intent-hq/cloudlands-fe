@@ -144,6 +144,7 @@ import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
+import { getActivationFocusClaim } from './activation-focus-claim';
 import { createBootWindowsGate, handleActivate } from './app-activate';
 import { markRendererWindowsAllowed } from './renderer-window-gate';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
@@ -2112,6 +2113,7 @@ app.on('activate', async () => {
     whenBootWindowsReady: () => bootWindowsGate.ready,
     getAllWindows: () => BrowserWindow.getAllWindows(),
     getMainWindow,
+    getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
     focusWindow: (targetWindow) => {
       if (targetWindow.isMinimized()) targetWindow.restore();
       targetWindow.show();
