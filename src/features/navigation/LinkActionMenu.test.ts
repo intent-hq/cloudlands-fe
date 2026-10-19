@@ -4,6 +4,7 @@ import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-n
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import type { PullRequestWorkspace } from '$lib/client/app-client';
 import {
   showLinkActionMenu,
@@ -219,13 +220,16 @@ describe('LinkActionMenu', () => {
     it('shows only the label on the single item, without name or Archived tag', async () => {
       render(LinkActionMenu);
       await showPrMenu([linked('ws-origin', 'Origin project')]);
+      const label = m.navigation_linkActionMenu_openInOriginalWorkspace_label();
       const item = await screen.findByRole('menuitem', { name: ORIGINAL });
-      expect(item.textContent?.trim()).toBe('Open in original workspace');
+      expect(item.textContent?.trim()).toBe(label);
 
       hideLinkActionMenu();
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
       await showPrMenu([linked('ws-origin', 'Origin project', true)]);
       const archived = await screen.findByRole('menuitem', { name: ORIGINAL });
-      expect(archived.textContent?.trim()).toBe('Open in original workspace');
+      expect(archived).not.toBe(item);
+      expect(archived.textContent?.trim()).toBe(label);
     });
 
     it('a late lookup result never moves the existing items', async () => {
