@@ -28,6 +28,7 @@ import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
 import {
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerLastSubmittedAgent,
   workspaceInitializationFinished,
@@ -262,6 +263,14 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     }
     stage = 'post-create';
     yield* put(setWorkspaceInitializerLastSubmittedAgent(request.lastSubmittedAgent));
+    if (request.rememberAgentRepoKey) {
+      yield* put(
+        setWorkspaceInitializerAgentForRepo(
+          request.rememberAgentRepoKey,
+          request.lastSubmittedAgent,
+        ),
+      );
+    }
     if (request.rememberBranch) {
       yield* put(
         setWorkspaceInitializerBranchForRepo(

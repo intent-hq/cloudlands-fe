@@ -2817,6 +2817,8 @@
   "chat_proposalCard_task_label": "タスク",
   "chat_proposalCard_project_label": "プロジェクト",
   "chat_proposalCard_initialAgent_label": "初期エージェント",
+  "chat_proposalCard_agentSetup_label": "{setup}（このリポジトリで前回使用）",
+  "chat_proposalCard_agentSetupModelEffort_label": "{model} · {effort}",
   "chat_proposalCard_proposalFile_fallback": "提案",
   "chat_proposalCard_creatingWorkspace_label": "ワークスペースを作成中…",
   "chat_proposalCard_workspaceCreationFailed_label": "ワークスペースの作成に失敗しました",
