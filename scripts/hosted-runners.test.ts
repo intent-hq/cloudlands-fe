@@ -17,6 +17,7 @@ const HOSTED = new Set([
   'gh-linux-arm64-8x',
   'gh-windows-16x',
   'macos-26-xlarge',
+  'macos-15-xlarge',
 ]);
 // Runners chosen through a matrix: `runner: <label>` rows and JSON `"runner":"<label>"` targets.
 const matrixRunners = (text: string) => [
@@ -113,13 +114,24 @@ describe('GitHub-hosted CI runners', () => {
         })),
       );
     expect(found.map(({ runner }) => runner)).toEqual(
-      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-26-xlarge']),
+      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-15-xlarge']),
     );
     for (const { file, runner } of found)
       expect(HOSTED.has(runner), `${file} matrix uses ${runner}`).toBe(true);
     expect(matrixRunners('          runner: depot-ubuntu-24.04-arm-8\n')).toEqual([
       'depot-ubuntu-24.04-arm-8',
     ]);
+  });
+
+  it('keeps signed desktop Mac builds off macos-26 images', () => {
+    // electron-builder's keychain step fails there (SecKeychainUnlock); see cloudlands-fe#3500.
+    for (const file of ['release-alpha.yml', 'manual-signed-build.yml']) {
+      const macRows = [
+        ...readFileSync(`.github/workflows/${file}`, 'utf8').matchAll(/"runner":"(macos-[^"]+)"/g),
+      ];
+      expect(macRows.length, file).toBeGreaterThan(0);
+      for (const [, runner] of macRows) expect(runner, file).toBe('macos-15-xlarge');
+    }
   });
 
   it('configures managed caching without Rust cache actions', () => {

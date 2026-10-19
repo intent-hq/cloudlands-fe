@@ -121,7 +121,9 @@ jobs:
             echo "::error::This tag uses the retired alpha Mac feed. Publish a new build using latest-mac.yml."
             exit 1
           fi
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-26-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
+          # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do

@@ -277,7 +277,9 @@ GitHub larger runner when unavailable or busy. Other checks and automation use
 GitHub-hosted runners (`ubuntu-24.04`, or `gh-linux-8x` for heavier jobs). Linux
 ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
 `gh-windows-16x` (Windows Server 2022, 16 CPUs), and Apple Silicon jobs use
-`macos-26-xlarge`. The larger runners' group must allow public repositories.
+`macos-26-xlarge`, except signed desktop Mac builds, which stay on `macos-15-xlarge`
+(electron-builder's keychain step fails on macOS 26 images). The larger runners'
+group must allow public repositories.
 Mac desktop release and manual packaging builds target ARM64 only.
 
 From-source Rust sidecars use the self-hosted sccache without Rust cache actions.
