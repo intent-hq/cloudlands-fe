@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/svelte';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import type { PullRequestWorkspace } from '$lib/client/app-client';
@@ -23,11 +23,11 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-const openInBrowserPanelMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const openLinkInAppMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const openInExternalBrowserMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const openLinkedWorkspaceMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 vi.mock('./link-handler', () => ({
-  openInBrowserPanel: openInBrowserPanelMock,
+  openLinkInApp: openLinkInAppMock,
   openInExternalBrowser: openInExternalBrowserMock,
   openLinkedWorkspace: openLinkedWorkspaceMock,
 }));
@@ -75,13 +75,17 @@ async function openOriginalSubmenu(): Promise<HTMLElement[]> {
   return within(submenu).getAllByRole('menuitem');
 }
 
-function showIssueMenu(workspaceId?: WorkspaceId) {
+function showIssueMenu(
+  workspaceId?: WorkspaceId,
+  source: { openInWorkspace?: boolean; sourcePanelId?: string } = {},
+) {
   showLinkActionMenu({
     url: ISSUE_URL,
     gitHubRef: { owner: 'acme', repo: 'widgets', number: 42, kind: 'issue' },
     x: 50,
     y: 60,
     workspaceId,
+    ...source,
   });
 }
 
@@ -147,15 +151,43 @@ describe('LinkActionMenu', () => {
     expect(linkActionMenuState.visible).toBe(false);
   });
 
-  it('open in app routes to the embedded browser panel', async () => {
+  it('open in app stays in the current workspace beside the source panel', async () => {
     render(LinkActionMenu);
-    showIssueMenu(TEST_WORKSPACE_ID);
+    showIssueMenu(TEST_WORKSPACE_ID, { openInWorkspace: false, sourcePanelId: 'panel-chat' });
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
     await fireEvent.click(screen.getAllByRole('menuitem')[2]);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(ISSUE_URL, TEST_WORKSPACE_ID);
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(ISSUE_URL, TEST_WORKSPACE_ID, {
+      openInWorkspace: false,
+      sourcePanelId: 'panel-chat',
+    });
     expect(linkActionMenuState.visible).toBe(false);
+  });
+
+  it('open in app enters the workspace when the link came from its Home preview', async () => {
+    render(LinkActionMenu);
+    showIssueMenu(TEST_WORKSPACE_ID, { openInWorkspace: true });
+    await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+
+    await fireEvent.click(screen.getAllByRole('menuitem')[2]);
+
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(ISSUE_URL, TEST_WORKSPACE_ID, {
+      openInWorkspace: true,
+      sourcePanelId: undefined,
+    });
+    expect(linkActionMenuState.visible).toBe(false);
+  });
+
+  it('offers no in-app action for a link in the Assistant', async () => {
+    render(LinkActionMenu);
+    showIssueMenu(CHIEF_WORKSPACE_ID);
+    await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    expect(
+      screen.queryByRole('menuitem', { name: m.navigation_linkActionMenu_openInApp_label() }),
+    ).toBeNull();
   });
 
   it('copy link writes the URL to the clipboard', async () => {

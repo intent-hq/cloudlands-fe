@@ -5,6 +5,7 @@ import {
   createGlobalLinkClickHandler,
   createLinkClickHandler,
   createLinkTooltipHandler,
+  openLinkInApp,
 } from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
@@ -157,6 +158,8 @@ describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in
         url,
         workspaceId: options.workspaceId,
         gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+        // Only a workspace preview has a workspace for Open in app to enter.
+        openInWorkspace: surface === 'workspace preview',
       }),
     );
     expect(showAssistantContentMock).not.toHaveBeenCalled();
@@ -1112,9 +1115,25 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
       y: 200,
       workspaceId: TEST_WORKSPACE_ID,
       anchorElement: null,
+      openInWorkspace: false,
     });
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('passes the source panel to the menu for a click inside a workspace panel', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    expect(await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event })).toBe(true);
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ openInWorkspace: false, sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
   });
 
   it('keyboard activation (0,0 click) anchors the menu to the link element rect', async () => {
@@ -1307,5 +1326,50 @@ describe('chat and note resource hover context', () => {
       stop();
       container.remove();
     }
+  });
+});
+
+describe('openLinkInApp', () => {
+  const url = 'https://github.com/acme/widgets/pull/7';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enters the owning workspace before opening its browser panel', async () => {
+    const order: string[] = [];
+    gotoMock.mockImplementationOnce(async () => {
+      order.push('goto');
+    });
+    openBrowserPanelMock.mockImplementationOnce(() => order.push('panel'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(getPanelLayoutManagerMock).toHaveBeenCalledWith(TEST_WORKSPACE_ID);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+    expect(order).toEqual(['goto', 'panel']);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('stays in the current workspace and opens beside the source panel', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, 'panel-chat', undefined);
+  });
+
+  it('opens nothing when entering the workspace fails', async () => {
+    gotoMock.mockRejectedValueOnce(new Error('route rejected'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(false);
+
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
   });
 });

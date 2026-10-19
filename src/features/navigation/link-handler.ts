@@ -138,8 +138,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       // Home defaults must not override the configured GitHub action.
       if ((openInWorkspace && useHomeBrowser) || isCmdClickModifier(options)) {
         if (options.workspaceId) {
-          await activateLinkWorkspace(options.workspaceId, options);
-          return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
+          return await openLinkInApp(url, options.workspaceId, options);
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
@@ -168,7 +167,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return true;
           }
           case 'show-choices':
-            return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
+            return await openLinkActionMenu(url, gitHubRef, event, options);
         }
       }
 
@@ -464,7 +463,7 @@ async function openLinkActionMenu(
   url: string,
   gitHubRef: GitHubIssueOrPrRef,
   event: MouseEvent | KeyboardEvent,
-  workspaceId?: WorkspaceId,
+  { workspaceId, openInWorkspace, sourcePanelId }: LinkHandlerOptions,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
@@ -483,6 +482,8 @@ async function openLinkActionMenu(
       y,
       workspaceId,
       anchorElement,
+      openInWorkspace: openInWorkspace ?? false,
+      sourcePanelId,
     });
     if (gitHubRef.kind === 'pr') loadLinkedWorkspaces(openingId, url);
     logger.debug('Opened link action menu', { url, workspaceId });
@@ -524,6 +525,27 @@ export async function openLinkedWorkspace(workspaceId: WorkspaceId): Promise<boo
     logger.warn('Failed to open linked workspace', { workspaceId, error });
     return false;
   }
+}
+
+/**
+ * Open a URL in a workspace's embedded browser panel. A link clicked in that
+ * workspace's Home preview (`openInWorkspace`) enters the workspace first, so
+ * the panel is visible; otherwise it opens beside `sourcePanelId` in place.
+ * Opens nothing if entering the workspace fails (the user is notified).
+ */
+export async function openLinkInApp(
+  url: string,
+  workspaceId: WorkspaceId,
+  source: Pick<LinkHandlerOptions, 'openInWorkspace' | 'sourcePanelId'> = {},
+): Promise<boolean> {
+  try {
+    await activateLinkWorkspace(workspaceId, source);
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to enter workspace for in-app link', { url, workspaceId, error });
+    return false;
+  }
+  return await openInBrowserPanel(url, workspaceId, source.sourcePanelId);
 }
 
 /**
