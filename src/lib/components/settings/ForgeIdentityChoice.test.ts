@@ -15,6 +15,7 @@ import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-
 import { initialState as guestSessionsDefaults } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { initialState as connectionDefaults } from '$store/renderer/slices/connections/connections-slice';
 import { initialState as workspaceDefaults } from '$store/renderer/slices/workspace/workspace-slice';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -81,7 +82,7 @@ beforeEach(() => {
       user: { id: '7', login: 'mara' },
       method: 'pat',
     },
-    daemonHealth: { stats: { protocolVersion: '10.8' } }, // protocol-version-ok: identity-seam fixture.
+    daemonHealth: { stats: { protocolVersion: CURRENT_PROTOCOL_VERSION } }, // protocol-version-ok: identity-seam fixture.
   };
 });
 

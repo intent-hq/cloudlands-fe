@@ -23,9 +23,9 @@ describe('parseArgs', () => {
   });
 
   it('keeps a user-written "--" and everything after it verbatim', () => {
-    expect(parseArgs(['test:ct', '--', '--grep', 'geometry snapshot', '--'])).toEqual({
+    expect(parseArgs(['test:ct', '--', '--grep', 'keyboard access', '--'])).toEqual({
       script: 'test:ct',
-      forwarded: ['--', '--grep', 'geometry snapshot', '--'],
+      forwarded: ['--', '--grep', 'keyboard access', '--'],
     });
     expect(parseArgs(['lint', '--', 'x'])).toEqual({ script: 'lint', forwarded: ['--', 'x'] });
   });

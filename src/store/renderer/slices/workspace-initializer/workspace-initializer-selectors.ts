@@ -58,6 +58,15 @@ export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector
   (state) => state.workspaceInitializer.lastSubmittedAgent,
 );
 
+export const selectWorkspaceInitializerAgentByRepo = store.createSelector(
+  (state) => state.workspaceInitializer.agentByRepo,
+);
+
+/** The agent setup last used to create a workspace in `repoKey` (`agentSettingsRepoKey`). */
+export const selectWorkspaceInitializerAgentForRepo = store.createSelector(
+  (state, repoKey: string) => state.workspaceInitializer.agentByRepo[repoKey] ?? null,
+);
+
 export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelector(
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
 );

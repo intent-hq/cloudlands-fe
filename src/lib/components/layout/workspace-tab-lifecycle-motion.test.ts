@@ -94,4 +94,52 @@ describe('workspace tab lifecycle motion', () => {
     followerMotion.tick?.(0.5, 0.5);
     expect(controls.style.getPropertyValue('--workspace-tab-launcher-offset')).toBe(launcherOffset);
   });
+
+  it('releases the launcher offset when restored tabs grow the strip during an outro', () => {
+    const controls = document.createElement('div');
+    const strip = document.createElement('div');
+    const outgoing = document.createElement('div');
+    const launcher = document.createElement('div');
+    outgoing.dataset.workspaceTabMotion = 'ws-old';
+    launcher.dataset.previewLauncher = '';
+    controls.append(strip, launcher);
+    strip.append(outgoing);
+    strip.style.columnGap = '2px';
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 160 },
+      clientWidth: { value: 160 },
+      scrollLeft: { value: 0, writable: true },
+    });
+    outgoing.getBoundingClientRect = () => rect(0, 160);
+    let launcherNaturalLeft = 162;
+    const launcherOffset = () =>
+      Number.parseFloat(controls.style.getPropertyValue('--workspace-tab-launcher-offset')) || 0;
+    launcher.getBoundingClientRect = () => rect(launcherNaturalLeft + launcherOffset(), 32);
+
+    prepareTabOutros(strip, ['ws-old']);
+
+    // loadWorkspaceTabsState mounts ten different tabs, moving the launcher's
+    // natural position to the right edge of the expanded strip.
+    for (let index = 0; index < 10; index++) {
+      const slot = document.createElement('div');
+      slot.dataset.workspaceTabMotion = `ws-${index}`;
+      slot.getBoundingClientRect = () => rect(162 + index * 102, 100);
+      strip.append(slot);
+    }
+    launcherNaturalLeft = 1030;
+
+    const outro = workspaceTabLifecycleMotion(outgoing, {
+      duration: 200,
+      easing: (value) => value,
+      phase: 'outro',
+      onFrame: () => {},
+    });
+    for (let frame = 0; frame <= 12; frame++) {
+      const progress = 1 - frame / 12;
+      outro.tick?.(progress, 1 - progress);
+    }
+
+    expect(controls.style.getPropertyValue('--workspace-tab-launcher-offset')).toBe('0px');
+    expect(launcher.getBoundingClientRect().left).toBe(1030);
+  });
 });

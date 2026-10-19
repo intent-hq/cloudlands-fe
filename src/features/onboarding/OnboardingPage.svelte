@@ -1454,6 +1454,11 @@
           ...lastSubmittedAgent,
           selectedSpecialist: specialistId,
         },
+        // Remember the base branch for the repo once the workspace is created.
+        rememberBranch:
+          !treatAsNewRepo && projectSelection.repoPath && effectiveBranch.trim()
+            ? { repoPath: projectSelection.repoPath, branch: effectiveBranch }
+            : undefined,
         selectedPrNumber: selectedPRNumber ?? undefined,
       };
       let setupScriptRecord: NonNullable<typeof activeInitialization>['setupScriptRecord'];

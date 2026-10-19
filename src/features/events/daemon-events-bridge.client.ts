@@ -7,6 +7,8 @@ import type {
   AgentMetadataPatch,
 } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { providerProfilesChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { PROVIDER_PROFILES_CHANGED_EVENT } from '$shared/provider-profiles';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
   observeSubmissionEvidence,
@@ -246,7 +248,10 @@ import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
 } from '$features/workspace/navigate-away-if-viewing';
-import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  proposalWorkspaceCreated,
+  restoreWorkspaceTab,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   commentEventReceived,
   noteEventReceived,
@@ -326,7 +331,6 @@ import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/w
 import {
   browserTabClosed,
   browserTabUpserted,
-  fetchWorkspaceBrowserClientRequested,
   workspaceBrowserClientPinReceived,
   refreshLiveClientsRequested,
 } from '$store/renderer/slices/browser-clients/browser-clients-slice';
@@ -1528,6 +1532,7 @@ function projectAgentMetadata(
       updates[key] = undefined;
       metadataPatch[key] = { op: 'clear' };
     }
+    metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     consumed.add('attentionRequestCleared');
   }
   if (
@@ -1545,6 +1550,9 @@ function projectAgentMetadata(
       op: 'set',
       value: updates.attentionRequestTimestamp,
     };
+    // The event carries the full reason, so a list row's shortened-copy flag
+    // no longer describes the stored value.
+    metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     for (const key of Object.keys(data)) consumed.add(key);
   }
   if (consumed.size === 1) return false;
@@ -2692,7 +2700,6 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.browserClientId === 'string' || raw.browserClientId === null) {
     changes.browserClientId = raw.browserClientId ?? undefined;
     appStore.dispatch(workspaceBrowserClientPinReceived(workspaceId, raw.browserClientId));
-    appStore.dispatch(fetchWorkspaceBrowserClientRequested(workspaceId));
   }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
@@ -3627,6 +3634,7 @@ export function routeDaemonEventsNotification(
       'skills:changed',
       'mcp.servers:status-changed',
       'workspace:updated',
+      PROVIDER_PROFILES_CHANGED_EVENT,
     ].includes(type)
   ) {
     appStore.dispatch(workspaceCatalogEventReceived(event));
@@ -3636,6 +3644,14 @@ export function routeDaemonEventsNotification(
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
     handleSettingsChangedEvent(event, overrides?.onSettingsChanges);
+    return;
+  }
+
+  // `providers:profiles-changed` (§5.54) is global and carries only the
+  // profile revision/identity — never env keys or values.
+  if (type === PROVIDER_PROFILES_CHANGED_EVENT) {
+    const revision = (event as { data?: { revision?: unknown } }).data?.revision;
+    if (typeof revision === 'number') appStore.dispatch(providerProfilesChanged(revision));
     return;
   }
 
@@ -3810,6 +3826,12 @@ export function routeDaemonEventsNotification(
   }
   if (type === 'workspace:created') {
     handleWorkspaceCreatedEvent(workspaceId);
+    // §6.5 `data.origin`: a proposal-created workspace opens as a
+    // background tab beside the conversation that proposed it.
+    const origin = event.data?.origin;
+    if (origin?.kind === 'proposal' && typeof origin.sourceWorkspaceId === 'string') {
+      appStore.dispatch(proposalWorkspaceCreated(workspaceId, origin.sourceWorkspaceId));
+    }
     // fall through so the activity timeline records the creation.
   }
   // Delete grace window (§5.1/§5.5 `pendingDeleteAt`): schedule events hide the pending
@@ -4390,6 +4412,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // this bridge currently handles (handleTerminalExitEvent below).
   'terminal:exit',
   'settings:changed',
+  // Named provider profile mutations (§5.54); global, revision-only refetch trigger.
+  'providers:profiles-changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
   // list migrated off FE localStorage; the daemon emits the full new items

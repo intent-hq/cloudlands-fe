@@ -50,11 +50,27 @@ const packaged = [
 ];
 
 describe('Mac native binary validation', () => {
-  it('rejects unsupported hosts at the beforePack hook before invoking Xcode', () => {
-    expect(() => buildModernMacOSIcon({ electronPlatformName: 'darwin', arch: 4 })).toThrow(
-      /cross-building and universal builds are unsupported/,
-    );
+  it.each([
+    ['x64', 'darwin', 'x64'],
+    ['arm64', 'darwin', 'x64'],
+    ['x64', 'darwin', 'arm64'],
+    ['arm64', 'linux', 'arm64'],
+  ])('rejects packaging target %s on %s/%s', (arch, platform, hostArch) => {
+    expect(() => native.assertNativeMacArch(arch, platform, hostArch)).toThrow(/Apple Silicon/);
   });
+
+  it('accepts native Apple Silicon packaging', () => {
+    expect(native.assertNativeMacArch('arm64', 'darwin', 'arm64')).toBe('arm64');
+  });
+
+  it.each([1, 4])(
+    'rejects Intel or universal target %s at beforePack before invoking Xcode',
+    (arch) => {
+      expect(() => buildModernMacOSIcon({ electronPlatformName: 'darwin', arch })).toThrow(
+        /cross-building and universal builds are unsupported/,
+      );
+    },
+  );
 
   it('rejects a wrong copied binary at afterPack even when signing is disabled', async () => {
     const root = temporaryDirectory();

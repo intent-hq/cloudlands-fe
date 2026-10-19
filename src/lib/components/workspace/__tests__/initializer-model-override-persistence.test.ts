@@ -11,7 +11,10 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import type {
+  CompactWorkspaceInitializerFormState,
+  WorkspaceInitializationRequest,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const mocks = vi.hoisted(() => {
@@ -56,6 +59,7 @@ const mocks = vi.hoisted(() => {
         >
       | undefined
     >(undefined),
+    agentByRepo: {} as Record<string, unknown>,
     // Never resolves: provider availability stays unknown, so it is never
     // clearing evidence — the provider-models catalog below decides validity.
     getProviderAvailability: vi.fn(() => new Promise(() => {})),
@@ -102,6 +106,9 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: {
+    select: (_state: unknown, repoKey: string) => mocks.agentByRepo[repoKey] ?? null,
+  },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -375,6 +382,7 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     mocks.defaultReasoningEffort$.set('');
     mocks.compactFormState$.set(null);
     mocks.lastSubmittedAgent$.set(null);
+    mocks.agentByRepo = {};
   });
 
   afterEach(() => {
@@ -495,25 +503,34 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
   it.each(['high', ''])(
     'keeps an effort-only edit (%j) and its model context over late hydration',
     async (effort) => {
-      render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      mockCreateSuccess();
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
       await fireEvent.click(
         screen.getAllByTestId(effort ? 'pick-reasoning' : 'clear-reasoning')[0],
       );
       mocks.compactFormState$.set({ ...SAVED_AGENT_STATE, selectedReasoningEffort: 'low' });
       mocks.hydrated$.set(true);
-      await waitFor(() => {
-        const form = mocks.dispatch.mock.calls
-          .map(([action]) => action)
-          .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-          .at(-1)?.payload[0];
-        expect(form).toMatchObject({
-          selectedReasoningEffort: effort,
-          selectedModel: undefined,
-          selectedProvider: 'auggie',
-          isTeamMode: false,
-        });
+      await waitFor(() =>
+        expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe(effort),
+      );
+      expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('');
+      sessionStorage.setItem(
+        PREFILL_KEY,
+        JSON.stringify({
+          repoPath: '/tmp/test-repo',
+          branch: 'main',
+          prompt: 'Keep my effort',
+          autoCreate: true,
+        }),
+      );
+      await component.applyPrefill();
+      await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+      expect(submittedInitialAgent()).toMatchObject({
+        provider: 'auggie',
+        model: undefined,
+        reasoningEffort: effort,
+        metadata: { workMode: 'single' },
       });
-      expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe(effort);
     },
   );
 
@@ -560,6 +577,7 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
   });
 
   it('remembers the saved provider together with an explicit model and effort', async () => {
+    mockCreateSuccess();
     mocks.compactFormState$.set({
       ...SAVED_AGENT_STATE,
       selectedProvider: 'codex',
@@ -567,19 +585,26 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
       selectedReasoningEffort: 'high',
     });
     mocks.hydrated$.set(true);
-    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     await waitFor(() =>
       expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('gpt-fixture'),
     );
     expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
-    const persisted = mocks.dispatch.mock.calls
-      .map(([action]) => action)
-      .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-      .at(-1)?.payload[0];
-    expect(persisted).toMatchObject({
-      selectedModel: 'gpt-fixture',
-      selectedProvider: 'codex',
-      selectedReasoningEffort: 'high',
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Use the saved provider',
+        autoCreate: true,
+      }),
+    );
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-fixture',
+      reasoningEffort: 'high',
     });
   });
 
@@ -624,5 +649,137 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
       expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high'),
     );
     expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('opus4.6');
+  });
+});
+
+describe('initializer remembers the agent setup per repository', () => {
+  // Global last-used setup: team mode with an auggie model override.
+  const GLOBAL = SAVED_AGENT_STATE;
+  // Setup last used in /tmp/repo-a: single agent (General) on another provider.
+  const REPO_A = {
+    isTeamMode: false,
+    selectedSpecialist: null,
+    selectedProvider: 'codex',
+    selectedModel: 'gpt-fixture',
+    modelWasOverridden: true,
+    selectedReasoningEffort: 'high',
+  };
+
+  function prefill(repoPath: string, autoCreate = false) {
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({ repoPath, branch: 'main', prompt: 'Do the work', autoCreate }),
+    );
+  }
+
+  function initializationRequest(): WorkspaceInitializationRequest {
+    const action = mocks.dispatch.mock.calls
+      .map(([dispatched]) => dispatched)
+      .find(
+        (dispatched) =>
+          dispatched.asyncActionType === 'workspaceInitializer/initializationRequested',
+      );
+    return action.payload.request;
+  }
+
+  beforeEach(() => {
+    mocks.principalState = withLegacyPrincipal({});
+    vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
+    );
+    mocks.initializationOutcome$.set(undefined);
+    sessionStorage.clear();
+    mocks.selectedModel$.set('');
+    mocks.configuredModels$.set({});
+    mocks.defaultReasoningEffort$.set('');
+    mocks.compactFormState$.set(GLOBAL);
+    mocks.lastSubmittedAgent$.set(GLOBAL);
+    mocks.agentByRepo = { 'local:/tmp/repo-a': REPO_A };
+    mocks.hydrated$.set(true);
+    mockCreateSuccess();
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  it("creates with the repository's remembered setup and asks to remember it for that repository", async () => {
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    prefill('/tmp/repo-a', true);
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+
+    expect(submittedInitialAgent()).toMatchObject({
+      specialist: undefined,
+      provider: 'codex',
+      model: 'gpt-fixture',
+      reasoningEffort: 'high',
+      metadata: { workMode: 'single' },
+    });
+    expect(initializationRequest()).toMatchObject({
+      rememberAgentRepoKey: 'local:/tmp/repo-a',
+      lastSubmittedAgent: {
+        isTeamMode: false,
+        selectedSpecialist: null,
+        selectedProvider: 'codex',
+        selectedModel: 'gpt-fixture',
+        selectedReasoningEffort: 'high',
+      },
+    });
+  });
+
+  it('falls back to the global last-used setup after switching to a repository without one', async () => {
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    prefill('/tmp/repo-a');
+    await component.applyPrefill();
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('gpt-fixture'),
+    );
+
+    prefill('/tmp/repo-b', true);
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({
+      specialist: 'spec-writer',
+      provider: 'auggie',
+      model: 'opus4.6',
+      metadata: { workMode: 'team' },
+    });
+    expect(initializationRequest().rememberAgentRepoKey).toBe('local:/tmp/repo-b');
+  });
+
+  it('keeps an explicit in-session model pick when the repository changes', async () => {
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await fireEvent.click(screen.getAllByTestId('pick-model')[0]);
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('user-picked-model'),
+    );
+
+    prefill('/tmp/repo-a', true);
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({ model: 'user-picked-model' });
+  });
+
+  it('keeps an explicit in-session agent mode pick when the repository changes', async () => {
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    // The form opens in team mode (global setup); the user picks single-agent mode.
+    const singleAgentCard = screen
+      .getByText(m.workspace_initialAgentPicker_singleAgent_label())
+      .closest('[aria-pressed]') as HTMLElement;
+    expect(singleAgentCard.getAttribute('aria-pressed')).toBe('false');
+    await fireEvent.click(singleAgentCard);
+    await waitFor(() => expect(singleAgentCard.getAttribute('aria-pressed')).toBe('true'));
+
+    mocks.agentByRepo = { 'local:/tmp/repo-a': { ...REPO_A, isTeamMode: true } };
+    prefill('/tmp/repo-a', true);
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({ metadata: { workMode: 'single' } });
   });
 });

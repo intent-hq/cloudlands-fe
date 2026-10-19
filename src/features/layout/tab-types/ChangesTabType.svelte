@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gitRootsConsumerMounted,
+    gitRootsConsumerUnmounted,
+  } from '$store/renderer/slices/git-roots/git-roots-slice';
   /**
    * Changes Tab Type Component
    *
@@ -156,6 +160,13 @@
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({ display: changesDisplayActions });
+  });
+  const gitRootsConsumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!(isActive && gitRootId) || !wsId) return;
+    appStore.dispatch(gitRootsConsumerMounted(wsId, gitRootsConsumerId));
+    return () => appStore.dispatch(gitRootsConsumerUnmounted(wsId, gitRootsConsumerId));
   });
 </script>
 

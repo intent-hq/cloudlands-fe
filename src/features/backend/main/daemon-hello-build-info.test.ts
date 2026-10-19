@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 describe('extractDaemonHelloBuildInfo', () => {
   it('extracts version and buildCommit from a PROTOCOL §5.17 hello result', () => {
     const result = extractDaemonHelloBuildInfo({
       clientId: 'client-1',
-      protocolVersion: '6.7',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       server: { version: '0.42.0', buildCommit: 'abc1234' },
     });
     expect(result).toEqual({ version: '0.42.0', buildCommit: 'abc1234' });

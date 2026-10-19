@@ -1,4 +1,6 @@
 <script context="module" lang="ts">
+  import { providerRefBaseId } from '$shared/provider-profiles';
+
   /** Known provider IDs that have icons defined in this component */
   const KNOWN_PROVIDER_IDS = new Set([
     'auggie',
@@ -13,9 +15,9 @@
     'antigravity',
   ]);
 
-  /** Check if a provider ID has a known icon */
+  /** Check if a provider ID (or a profile reference's base provider, §5.54) has a known icon */
   export function hasProviderIcon(providerId: string | undefined): boolean {
-    return providerId !== undefined && KNOWN_PROVIDER_IDS.has(providerId);
+    return providerId !== undefined && KNOWN_PROVIDER_IDS.has(providerRefBaseId(providerId));
   }
 </script>
 
@@ -30,7 +32,10 @@
     size?: number;
   }
 
-  let { providerId, class: className = 'size-3.5', size = 14 }: Props = $props();
+  let { providerId: providerRef, class: className = 'size-3.5', size = 14 }: Props = $props();
+  // A named profile (§5.54 `<base>@<id>`) shares its base provider's icon.
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
+  const providerId = $derived(providerRefBaseId(providerRef));
 </script>
 
 <span class={cn('inline-flex shrink-0', className)}>

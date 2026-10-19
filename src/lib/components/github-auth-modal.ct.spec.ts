@@ -5,7 +5,7 @@ for (const state of ['ready', 'starting', 'code', 'error', 'daemon-auth']) {
   test(`GitHub ${state} fits a narrow viewport and can be cancelled`, async ({ mount, page }) => {
     await page.setViewportSize({ width: 360, height: 560 });
     await mount(GitHubAuthModalPreview, {
-      hooksConfig: { geometrySnapshot: { scene: 'github-auth-modal', state } },
+      hooksConfig: { previewScene: { scene: 'github-auth-modal', state } },
     });
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

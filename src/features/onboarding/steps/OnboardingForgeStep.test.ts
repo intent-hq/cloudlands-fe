@@ -30,6 +30,7 @@ import {
   setOnboardingFullFlowRequested,
 } from '$store/renderer/slices/onboarding/onboarding-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -99,7 +100,7 @@ const supportingDaemonStats = () => ({
   listenMode: 'uds',
   os: 'linux',
   arch: 'x64',
-  protocolVersion: '10.5',
+  protocolVersion: CURRENT_PROTOCOL_VERSION,
 });
 
 const baseProps = () => ({ onContinue: vi.fn(), onSkip: vi.fn() });
@@ -245,7 +246,7 @@ describe('OnboardingForgeStep', () => {
 
   it('hides the GitLab option when the daemon protocol predates sourceControl.* auth; GitHub and Skip remain', async () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
-    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     const props = baseProps();
     const { container } = render(OnboardingForgeStep, { props });
 
@@ -283,6 +284,7 @@ describe('OnboardingForgeStep', () => {
 
   it('does not resume a pending GitLab grant into the connect panel when the daemon protocol is too old or unknown', async () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    // fixture-protocol-version: too old for sourceControl auth
     for (const stats of [{ ...supportingDaemonStats(), protocolVersion: '10.4' }, null]) {
       mocks.daemonHealthStats.value = stats;
       mocks.gitlabAuth.value = {
@@ -310,7 +312,7 @@ describe('OnboardingForgeStep', () => {
     await fireEvent.click(findButton(container, 'Connect GitLab')!);
     expect(container.querySelector('[data-testid="forge-step-gitlab"]')).toBeTruthy();
 
-    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     const { appStore } = (await import('$store/renderer/store')) as unknown as {
       appStore: { emitState: () => void };
     };

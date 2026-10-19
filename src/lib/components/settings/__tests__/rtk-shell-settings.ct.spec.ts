@@ -14,7 +14,7 @@ for (const width of [420, 1100]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const root = await mount(RtkShellSettings, {
-      hooksConfig: { geometrySnapshot: { scene: 'rtk-shell-settings', state: 'ready' } },
+      hooksConfig: { previewScene: { scene: 'rtk-shell-settings', state: 'ready' } },
     });
     await page.evaluate(() => document.fonts.ready);
     await assertRtkShellGeometry(root, width < 768);
@@ -25,7 +25,7 @@ for (const scenario of ['loading-settings', 'loading-probe'] as const) {
   test(`RTK exposes pending ${scenario} without an unchecked placeholder`, async ({ mount }) => {
     const root = await mount(RtkShellSettings, {
       props: { scenario },
-      hooksConfig: { geometrySnapshot: { scene: 'rtk-shell-settings', state: scenario } },
+      hooksConfig: { previewScene: { scene: 'rtk-shell-settings', state: scenario } },
     });
     await assertRtkLoading(root);
     await root
@@ -49,7 +49,7 @@ test('Shell label opens once, direct control and keyboard work, and RTK writes o
 }) => {
   await page.setViewportSize({ width: 1100, height: 1000 });
   const root = await mount(RtkShellSettings, {
-    hooksConfig: { geometrySnapshot: { scene: 'rtk-shell-settings', state: 'ready' } },
+    hooksConfig: { previewScene: { scene: 'rtk-shell-settings', state: 'ready' } },
   });
   await assertRtkShellGeometry(root, false);
   await exerciseShellAndRtk(page, root);

@@ -147,6 +147,8 @@ export interface WorkspaceInitializerHydrationState {
   dismissedRecentRepoKeys?: Record<string, true>;
   remoteSetups?: WorkspaceInitializerRemoteSetup[];
   lastSubmittedAgent?: WorkspaceInitializerAgentSettings | null;
+  /** Last created agent setup per repository (`agentSettingsRepoKey`), oldest first. */
+  agentByRepo?: Record<string, WorkspaceInitializerAgentSettings>;
 }
 
 export interface WorkspaceInitializerDraftAttachment {
@@ -246,6 +248,10 @@ export interface WorkspaceInitializationRequest {
   stagedItems: WorkspaceInitializationStagedItem[];
   heldMessage?: WorkspaceInitializationHeldMessage;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings;
+  /** Repository (`agentSettingsRepoKey`) to remember `lastSubmittedAgent` for once created. */
+  rememberAgentRepoKey?: string;
+  /** Base branch to remember for the repository once the workspace is created. */
+  rememberBranch?: { repoPath: string; branch: string };
   selectedPrNumber?: number;
   recentGitHubRepository?: { repository: string; name: string; owner: string; githubUrl: string };
 }
@@ -287,6 +293,8 @@ export interface WorkspaceInitializerState {
   dismissedRecentRepoKeys: Record<string, true>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
+  /** Last created agent setup per repository (`agentSettingsRepoKey`), oldest first. */
+  agentByRepo: Record<string, WorkspaceInitializerAgentSettings>;
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
   pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
   recentRepoRefreshes: Collection<WorkspaceInitializerRecentRepoRefresh, 'id'>;

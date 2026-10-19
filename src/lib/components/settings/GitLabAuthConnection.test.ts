@@ -17,6 +17,7 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 import { initialState as gitlabDefaults } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -65,7 +66,7 @@ const supportingDaemonStats = () => ({
   listenMode: 'uds',
   os: 'linux',
   arch: 'x64',
-  protocolVersion: '10.5',
+  protocolVersion: CURRENT_PROTOCOL_VERSION,
 });
 
 const findButton = (root: HTMLElement, label: string) =>
@@ -168,7 +169,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
 
   it('daemon protocol predating sourceControl.* auth: shows the too-old state, no Connect', () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
-    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     const { container } = render(GitLabAuthConnection);
 
     expect(tooOld(container)).toBeTruthy();
@@ -187,7 +188,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
 
   it('too-old daemon keeps the connect form closed even while a connect is flagged in flight', () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
-    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     mocks.gitlabAuth.value = { ...idleGitLab(), isAuthenticating: true };
     const { container } = render(GitLabAuthConnection);
 

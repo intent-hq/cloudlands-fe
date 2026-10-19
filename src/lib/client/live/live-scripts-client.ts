@@ -39,12 +39,11 @@ export class LiveScriptsClient implements ScriptsClient {
 
   private async requireActiveLists(): Promise<void> {
     const hello = await backendRequest<{
-      server?: { protocolVersion?: string; capabilities?: { scriptActiveLists?: number } };
+      server?: { capabilities?: { scriptActiveLists?: number } };
     }>('client.hello', {});
-    if (
-      !/^14\.\d+(?:\.\d+)?$/.test(hello.server?.protocolVersion ?? '') ||
-      hello.server?.capabilities?.scriptActiveLists !== 1
-    )
+    // Gate on the advertised capability, not the protocol major: majors move
+    // for unrelated changes (protocol 15 still serves active lists).
+    if (hello.server?.capabilities?.scriptActiveLists !== 1)
       throw new Error(m.scripts_list_unsupported_error());
   }
 

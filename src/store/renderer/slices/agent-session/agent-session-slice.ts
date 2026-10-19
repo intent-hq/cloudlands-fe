@@ -1088,6 +1088,7 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
+  attentionRequestReasonTruncated: boolean;
   specialist: string | undefined;
   chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
@@ -1146,6 +1147,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
+    attentionRequestReasonTruncated: attentionRequest?.reasonTruncated === true,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
     chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:

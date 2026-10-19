@@ -11,6 +11,7 @@ import {
   removeWorkspaceInitializerRemoteSetup,
   dismissWorkspaceInitializerRecentRepo,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
@@ -325,6 +326,42 @@ describe('workspaceInitializerReducer', () => {
 
     state = workspaceInitializerReducer(state, setWorkspaceInitializerBranchForRepo('', 'main'));
     expect(state.branchByRepo).toEqual({});
+  });
+
+  it('remembers the agent setup per repository and ignores an empty repo key', () => {
+    const team = { isTeamMode: true, selectedSpecialist: 'spec-writer', selectedModel: 'opus' };
+    const solo = { isTeamMode: false, selectedSpecialist: 'implementor', selectedModel: 'sonnet' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('github:github.com/acme/app', team),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerAgentForRepo('local:/code/app', solo),
+    );
+    state = workspaceInitializerReducer(state, setWorkspaceInitializerAgentForRepo('', solo));
+    expect(state.agentByRepo).toEqual({
+      'github:github.com/acme/app': team,
+      'local:/code/app': solo,
+    });
+    // The global last-used setup is a separate record.
+    expect(state.lastSubmittedAgent).toBeNull();
+  });
+
+  it('keeps a per-repo setup written before hydration over the persisted one', () => {
+    const persisted = { selectedModel: 'sonnet' };
+    const fresh = { selectedModel: 'opus' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('local:/a', fresh),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({
+        agentByRepo: { 'local:/a': persisted, 'local:/b': persisted },
+      }),
+    );
+    expect(state.agentByRepo).toEqual({ 'local:/a': fresh, 'local:/b': persisted });
   });
 
   it('sets and clears the pending GitHub prefill', () => {

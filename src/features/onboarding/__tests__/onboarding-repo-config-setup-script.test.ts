@@ -305,18 +305,49 @@ function installDefaultMockImplementations() {
   mocks.persistedOnboardingFormState = null;
 }
 
+const SETTLE_TIMEOUT_MS = 5000;
+
 /**
- * A submitted create keeps running after the assertion a test stopped at
- * (post-create dispatches, the 300ms setup-card beat, navigation). Wait for
- * every create this test started to settle — each `workspaceCreateProgress/begin`
- * is matched by a `clear` in the flow's finally — so its late dispatches and
- * mock calls never land in the next test's recorded calls.
+ * A successful create keeps running after the assertion a test stopped at: the
+ * page's completion waits one or two 300ms setup-card beats, then dispatches
+ * and navigates to the new workspace. Wait for every initialization this test
+ * dispatched to settle and for each successful one to reach that navigation,
+ * so its late dispatches never land in the next test's recorded calls or hit
+ * the store after afterEach disposes it. An initialization still pending at
+ * the bound is left to afterEach, which cancels its saga, so a deliberately
+ * held create cannot hang teardown.
  */
 async function settleInFlightCreates() {
-  const count = (type: string) => dispatchedActions().filter((a) => a.type === type).length;
-  const begun = count('workspaceCreateProgress/begin');
-  if (begun === 0) return;
-  await waitFor(() => expect(count('workspaceCreateProgress/clear')).toBe(begun));
+  const initializations = dispatchedActions().flatMap((action) => {
+    const promise = (action as { promise?: Promise<unknown> }).promise;
+    return action.type === 'workspaceInitializer/initialization' && promise ? [promise] : [];
+  });
+  if (initializations.length === 0) return;
+  const outcomes = await Promise.race([
+    Promise.allSettled(initializations),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), SETTLE_TIMEOUT_MS)),
+  ]);
+  if (outcomes === null) return;
+  const expectedNavigations = new Map<string, number>();
+  for (const outcome of outcomes) {
+    const workspaceId =
+      outcome.status === 'fulfilled'
+        ? (outcome.value as { workspaceId?: unknown } | null | undefined)?.workspaceId
+        : undefined;
+    if (typeof workspaceId !== 'string') continue;
+    const path = `/workspace/${workspaceId}`;
+    expectedNavigations.set(path, (expectedNavigations.get(path) ?? 0) + 1);
+  }
+  if (expectedNavigations.size === 0) return;
+  await waitFor(
+    () => {
+      for (const [path, expected] of expectedNavigations) {
+        const navigated = mocks.goto.mock.calls.filter(([target]) => target === path).length;
+        expect(navigated).toBeGreaterThanOrEqual(expected);
+      }
+    },
+    { timeout: SETTLE_TIMEOUT_MS },
+  );
 }
 
 let disposeStore: () => void;
@@ -1887,5 +1918,48 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     expect(heldParams.contextReferences).toEqual([
       { type: 'file', path: '/home/user/projects/data', title: 'data' },
     ]);
+  });
+});
+
+describe('onboarding test teardown', () => {
+  it('settles a successful create through its completion before the store is disposed', async () => {
+    // A successful create keeps running after workspace.create resolves: up to
+    // two 300ms setup-card beats, then store dispatches and navigation. If
+    // afterEach disposes the store first, those late dispatches throw
+    // "Cannot access Store.dispatch before Store.init()" as an unhandled error
+    // that fails whichever shard is still running.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const promptStep = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    promptStep.setInputValue('Build the thing');
+    promptStep.onSubmit();
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+
+    await settleInFlightCreates();
+
+    expect(dispatchedActions().filter((a) => a.type === 'onboarding/setWorkspaceId')).toHaveLength(
+      1,
+    );
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
   });
 });

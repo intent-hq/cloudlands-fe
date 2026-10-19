@@ -221,6 +221,13 @@
       ? workspaceRelativeFilePath(tab.filePath, repoPath)
       : null,
   );
+  // Relative Markdown images resolve next to the file, like GitHub. Scoped roots are
+  // excluded: workspace-file:// URLs serve only the primary checkout.
+  const markdownMediaBase = $derived(
+    !gitRootId && workspaceFilePath
+      ? workspaceFilePath.split('/').slice(0, -1).join('/')
+      : undefined,
+  );
   const workspaceMediaPath = $derived(
     isPdfPath || isAllowlistedMediaPath ? workspaceFilePath : null,
   );
@@ -738,6 +745,7 @@
           <MarkdownViewer
             content={fileContent}
             {workspaceId}
+            relativeMediaBase={markdownMediaBase}
             renderRichFencesAsCode
             renderDiagrams
           />

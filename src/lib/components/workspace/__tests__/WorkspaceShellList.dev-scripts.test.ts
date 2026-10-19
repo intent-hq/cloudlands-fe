@@ -61,6 +61,10 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectWorkspaceScriptOperations: workspaceReadable(
     (workspaceId) => mocks.operations[workspaceId] ?? {},
   ),
+  // A completed, successful read: loading and failure states are covered by
+  // WorkspaceShellList.script-list-states.test.ts through the real store.
+  selectScriptListPageState: workspaceReadable(() => ({ loading: false, error: undefined })),
+  selectWorkspaceScriptsInitialized: workspaceReadable(() => true),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
