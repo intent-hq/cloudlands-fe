@@ -432,6 +432,34 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('does not report an automatic reset of a deleted specialist as an agent pick', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
+    const onAgentPick = vi.fn();
+    const onTeamModeChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'deleted-custom', onAgentPick, onTeamModeChange },
+    });
+    await flush();
+    expect(onTeamModeChange).toHaveBeenCalledWith(true);
+    expect(onAgentPick).not.toHaveBeenCalled();
+  });
+
+  it('reports user mode picks through onAgentPick', async () => {
+    const onAgentPick = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onAgentPick },
+    });
+    // Re-selecting the active mode is not a pick.
+    await fireEvent.click(modeCards().team);
+    expect(onAgentPick).not.toHaveBeenCalled();
+    await fireEvent.click(modeCards().single);
+    expect(onAgentPick).toHaveBeenCalledTimes(1);
+    await fireEvent.click(modeCards().team);
+    expect(onAgentPick).toHaveBeenCalledTimes(2);
+  });
+
   it('defaults to single-agent mode with Developer when nothing is remembered', async () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },

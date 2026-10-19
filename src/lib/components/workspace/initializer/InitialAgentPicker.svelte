@@ -108,6 +108,8 @@
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
     onTeamModeChange?: (isTeamMode: boolean) => void;
+    /** The user picked a mode or specialist (never fired by automatic resets). */
+    onAgentPick?: () => void;
     /** Callback when provider changes (called when auto-selected) */
     onProviderChange?: (providerId: string) => void;
   }
@@ -124,6 +126,7 @@
     onReasoningEffortChange,
     onTeamModeChange,
     onProviderChange,
+    onAgentPick,
   }: Props = $props();
 
   function updateReasoningEffort(effort: string | undefined) {
@@ -230,15 +233,21 @@
   // pairs with the provider it was persisted (and restore-validated) with —
   // its legacy compound prefix when present, else the current selectedProvider.
   let overrideProvider = $state<string | undefined>(undefined);
+  // The model `overrideProvider` was recorded for: a model replaced from
+  // outside (e.g. the parent restoring another repository's remembered setup)
+  // pairs with the provider set alongside it, not the previous model's.
+  let overrideModel: string | undefined;
   $effect(() => {
     const model = selectedModel;
     if (!model) {
       overrideProvider = undefined;
+      overrideModel = undefined;
       return;
     }
-    if (overrideProvider === undefined) {
+    if (overrideProvider === undefined || overrideModel !== model) {
       overrideProvider =
         splitLegacyCompoundId(model).providerId ?? untrack(() => selectedProvider || undefined);
+      overrideModel = model;
     }
   });
 
@@ -623,6 +632,7 @@
     if (isTeamMode) return;
     // Team mode requires an orchestrator; the card is hidden without one.
     if (orchestratorId === null) return;
+    onAgentPick?.();
     // Save single-agent state
     lastSingleAgent = {
       model: selectedModel,
@@ -638,6 +648,7 @@
     selectedProvider = lastTeamMode.provider;
     selectedModel = lastTeamMode.modelOverridden ? lastTeamMode.model : undefined;
     overrideProvider = lastTeamMode.modelOverridden ? lastTeamMode.provider : undefined;
+    overrideModel = lastTeamMode.modelOverridden ? selectedModel : undefined;
     modelWasOverridden = lastTeamMode.modelOverridden;
     onTeamModeChange?.(true);
     onSpecialistChange?.(orchestratorId);
@@ -651,6 +662,7 @@
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
+      onAgentPick?.();
       // Save team mode state
       lastTeamMode = {
         model: selectedModel,
@@ -666,6 +678,7 @@
       selectedProvider = lastSingleAgent.provider;
       selectedModel = lastSingleAgent.model;
       overrideProvider = lastSingleAgent.modelOverridden ? lastSingleAgent.provider : undefined;
+      overrideModel = lastSingleAgent.modelOverridden ? selectedModel : undefined;
       modelWasOverridden = lastSingleAgent.modelOverridden;
       onTeamModeChange?.(false);
       onSpecialistChange?.(selectedSpecialist);
@@ -680,6 +693,7 @@
   }
 
   function handleSpecialistSelect(specialistId: string | null) {
+    onAgentPick?.();
     isTeamMode = false;
     selectedSpecialist = specialistId;
     lastSingleAgent.specialist = specialistId;
@@ -715,6 +729,7 @@
     modelWasOverridden = !!explicitModel;
     modelOverriddenThisSession = !!explicitModel;
     overrideProvider = explicitModel ? (pick?.providerId ?? selectedProvider) : undefined;
+    overrideModel = explicitModel;
 
     // Update provider to match the selected model's provider
     if (explicitModel && pick?.providerId && pick.providerId !== selectedProvider) {
