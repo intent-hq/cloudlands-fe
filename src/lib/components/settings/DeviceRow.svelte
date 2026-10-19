@@ -573,14 +573,14 @@
 
   {#if panelMode === 'edit' && !device.isLocal}
     <form
-      class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
+      class="@container space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
       aria-label={m.settings_devices_editForm_ariaLabel({ name: displayName })}
       onsubmit={(event) => {
         event.preventDefault();
         void updateDevice();
       }}
     >
-      <div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
+      <div class="grid gap-4 @2xl:grid-cols-[minmax(0,2fr)_auto]">
         <div class="space-y-3">
           <div class="space-y-1">
             <Label for={`device-${device.id}-edit-name`}>{m.settings_devices_name_label()}</Label>
@@ -638,18 +638,20 @@
             />
           </div>
         </div>
-        <div class="space-y-4">
-          <fieldset class="space-y-1" disabled={busy !== null}>
-            <legend class="type-body font-medium text-foreground"
-              >{m.settings_devices_accent_label()}</legend
-            >
-            <div class="flex flex-wrap gap-1">
+        <div class="flex min-w-0 items-center gap-2 self-start">
+          <fieldset class="flex min-w-0 items-center gap-2" disabled={busy !== null}>
+            <legend class="sr-only">{m.settings_devices_accent_label()}</legend>
+            <span class="shrink-0 type-body font-medium text-foreground" aria-hidden="true">
+              {m.settings_devices_accent_label()}
+            </span>
+            <div class="-m-1 flex min-w-0 items-center overflow-x-auto p-1 @sm:gap-1">
               {#each accentOptions as option}
                 <Button
                   type="button"
                   variant="plain"
+                  truncateLabel={false}
                   class={cn(
-                    'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @sm:size-7',
                     option === accent
                       ? option === null
                         ? 'bg-muted/50'
@@ -661,6 +663,8 @@
                     : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
                   aria-pressed={option === accent}
                   onclick={() => (accent = option)}
+                  onfocus={(event) =>
+                    event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}
                 >
                   {#if option === null}
                     <span
