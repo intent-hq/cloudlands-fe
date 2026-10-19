@@ -7,7 +7,7 @@
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
-  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import MarkdownMediaPreview from './MarkdownMediaPreview.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
@@ -197,10 +197,7 @@
     }
   });
 
-  let lightboxOpen = $state(false);
-  let lightboxImageUrl = $state('');
-  let lightboxImageAlt = $state<string | undefined>(undefined);
-  let lightboxOpenerElement = $state<HTMLElement | null>(null);
+  let mediaPreview: MarkdownMediaPreview | undefined = $state();
 
   // One shared actions trigger follows the hovered/focused image in {@html} DOM.
   let hoveredImage = $state<HTMLImageElement | null>(null);
@@ -387,10 +384,7 @@
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        lightboxImageUrl = src;
-        lightboxImageAlt = target.getAttribute('alt') || undefined;
-        lightboxOpenerElement = target;
-        lightboxOpen = true;
+        mediaPreview?.openImage(target);
         return;
       }
     }
@@ -399,6 +393,8 @@
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+
+      if (mediaPreview?.openVideo(anchor)) return;
 
       const sourcePanelId = getSourcePanelId(event);
       const owningWorkspaceId = workspaceId ? WorkspaceId(workspaceId) : undefined;
@@ -604,15 +600,7 @@
   </div>
 {/if}
 
-{#if lightboxImageUrl && canUseMedia(lightboxImageUrl)}
-  <ImageLightbox
-    bind:open={lightboxOpen}
-    imageUrl={lightboxImageUrl}
-    imageName={lightboxImageAlt}
-    openerElement={lightboxOpenerElement}
-    showActionsMenu
-  />
-{/if}
+<MarkdownMediaPreview bind:this={mediaPreview} {workspaceId} {canUseMedia} />
 
 <style>
   .markdown-viewer {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   navigateToRoute: vi.fn(),
   openBrowserPanel: vi.fn(),
   getPanelLayoutManager: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -51,7 +52,7 @@ vi.mock('$lib/utils/browser-link-open', () => ({
   resolveBrowserLinkForOpen: async (url: string) => ({ url }),
 }));
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
+  notify: { error: mocks.notifyError, success: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
 warmImport(() => import('../MarkdownViewer.svelte'));
@@ -235,6 +236,62 @@ describe.each([false, true])('rendered file links (streaming=%s)', (isStreaming)
     const { link } = await renderLink(href, isStreaming);
     expect(await fireEvent.click(link)).toBe(false);
     await expectFile(path, line);
+  });
+});
+
+describe('saved-video links', () => {
+  it.each([
+    { extension: 'mp4', streaming: false, modifiedEnter: false },
+    { extension: 'webm', streaming: true, modifiedEnter: false },
+    { extension: 'mp4', streaming: false, modifiedEnter: true },
+  ])(
+    'opens and dismisses $extension (streaming=$streaming, keyboard=$modifiedEnter)',
+    async ({ extension, streaming, modifiedEnter }) => {
+      const url = `workspace-asset://owning-workspace/demo.${extension}?backend=remote-1&v=2`;
+      const { link } = await renderLink(url, streaming);
+      link.focus();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      if (modifiedEnter) {
+        await fireEvent.keyDown(link, { key: 'Enter', metaKey: true, ctrlKey: true });
+      } else {
+        await fireEvent.click(link.querySelector('strong')!);
+      }
+      const dialog = await screen.findByRole('dialog', { name: /Open target/i });
+      const player = dialog.querySelector('video')!;
+      expect(player.src).toBe(url);
+      expect(player.controls).toBe(true);
+      expect(player.autoplay).toBe(false);
+      expectNoBrowserOrEditor();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      await fireEvent.click(screen.getByRole('button', { name: /close video preview/i }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(document.activeElement).toBe(link);
+    },
+  );
+
+  it.each([
+    'workspace-asset://another-workspace/demo.mp4',
+    'workspace-asset://owning-workspace/demo.txt',
+    'workspace-asset://owning-workspace/demo.mp4?backend=remote-1&backend=remote-2',
+    'workspace-asset://owning-workspace/%2e%2e/demo.mp4',
+  ])('rejects %s without external navigation or media loading', async (url) => {
+    const { link, container } = await renderLink(url);
+    await fireEvent.click(link);
+    await waitFor(() => expect(mocks.notifyError).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(container.querySelector('video')).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expectNoBrowserOrEditor();
+  });
+
+  it('retains independent asset access when workspace-file access is disabled', async () => {
+    const view = await renderLink('workspace-asset://owning-workspace/demo.mp4');
+    await view.rerender({ allowFileMedia: false, canOpenFile: () => false });
+    await fireEvent.click(view.link);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expectNoBrowserOrEditor();
+    await view.rerender({ workspaceId: 'another-workspace' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
 
