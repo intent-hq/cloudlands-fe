@@ -1,5 +1,32 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$store/renderer/store', async () => {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { videoPreviewReducer, initialState } =
+    await import('$store/renderer/slices/video-preview/video-preview-slice');
+  let state = { videoPreview: initialState };
+  const channel = stdChannel();
+  const store = createAppStoreMock({
+    state: () => state,
+    dedupeEmits: true,
+    dispatch(action: { type: string }) {
+      state = { videoPreview: videoPreviewReducer(state.videoPreview, action as never) };
+      channel.put(action);
+      store.emitState();
+      return action;
+    },
+  });
+  return {
+    store: Object.assign(store, {
+      runSaga(saga: () => Generator) {
+        const task = runSaga({ channel, dispatch: store.dispatch, getState: () => state }, saga);
+        return () => task.cancel();
+      },
+    }),
+  };
+});
 
 vi.mock('./CodeEditor.svelte', async () => ({
   default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
@@ -7,8 +34,22 @@ vi.mock('./CodeEditor.svelte', async () => ({
 }));
 
 import FileViewer from './FileViewer.svelte';
+import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '$store/renderer/store';
+import { videoPreviewSaga } from '$store/renderer/slices/video-preview/sagas/video-preview-saga';
 
-afterEach(cleanup);
+let stop: () => void;
+beforeEach(() => {
+  stop = appStore.runSaga(videoPreviewSaga);
+});
+
+afterEach(() => {
+  cleanup();
+  stop();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 function decodeSvgSource(source: string): string {
   const prefix = 'data:image/svg+xml;base64,';
@@ -60,6 +101,190 @@ describe('FileViewer SVG preview', () => {
 });
 
 describe('FileViewer workspace media', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 415 })));
+  });
+  async function failVideo(code: number) {
+    const video = screen.getByTestId<HTMLVideoElement>('file-video');
+    Object.defineProperty(video, 'error', { value: { code }, configurable: true });
+    await fireEvent.error(video);
+    return video;
+  }
+
+  it.each([3, 4])(
+    'replaces failed video (MediaError %s) with original-file download',
+    async (code) => {
+      const clicked: Array<{ href: string; name: string }> = [];
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+        clicked.push({ href: this.href, name: this.download });
+      });
+      try {
+        render(FileViewer, {
+          props: { filePath: 'recording.mp4', fileContent: 'AAAA', isBinary: true },
+        });
+        await failVideo(code);
+        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(screen.queryByTestId('file-video')).toBeNull();
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+        );
+        expect(clicked).toEqual([{ href: 'data:video/mp4;base64,AAAA', name: 'recording.mp4' }]);
+      } finally {
+        click.mockRestore();
+      }
+    },
+  );
+
+  it('distinguishes a network failure from an unsupported video', async () => {
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(2);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).not.toContain(
+      m.editor_fileViewer_videoUnsupported_label(),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the workspace download callback and respects pending and disabled downloads', async () => {
+    const onDownload = vi.fn();
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4',
+      onDownload,
+      downloading: false,
+      allowDownload: true,
+    };
+    const view = render(FileViewer, { props });
+    await failVideo(4);
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: m.layout_fileTab_downloadFile_label(),
+    });
+    await fireEvent.click(button);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, downloading: true });
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, allowDownload: false });
+    expect(
+      screen.queryByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+    ).toBeNull();
+  });
+
+  it('recovers after source replacement and ignores errors from the retired player', async () => {
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+    };
+    const view = render(FileViewer, { props });
+    const oldVideo = await failVideo(4);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    await view.rerender({ ...props, sourceUrl: 'workspace-file://ws-1/recording.mp4?v=2' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(
+      'workspace-file://ws-1/recording.mp4?v=2',
+    );
+    await fireEvent.error(oldVideo);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['decode error', 'audio-only metadata'])(
+    'tries one compatible preview after %s and releases it on unmount',
+    async (failure) => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'video/mp4' } }),
+      );
+      const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:compatible');
+      const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      const onDownload = vi.fn();
+      const view = render(FileViewer, {
+        props: {
+          filePath: 'recording.mp4',
+          sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+          onDownload,
+        },
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      if (failure === 'decode error') await failVideo(3);
+      else await fireEvent.loadedMetadata(screen.getByTestId('file-video'));
+      await waitFor(() =>
+        expect(screen.getByTestId('file-video').getAttribute('src')).toBe('blob:compatible'),
+      );
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        'workspace-file://ws-1/recording.mp4?v=1&preview=h264',
+        { signal: expect.any(AbortSignal) },
+      );
+      expect(createUrl).toHaveBeenCalledTimes(1);
+      await failVideo(4);
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      );
+      expect(onDownload).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(revokeUrl).toHaveBeenCalledExactlyOnceWith('blob:compatible');
+    },
+  );
+
+  it('cancels retired conversions and ignores late bytes on source replacement', async () => {
+    let finish!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const createUrl = vi.spyOn(URL, 'createObjectURL');
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+    };
+    const view = render(FileViewer, { props });
+    await failVideo(4);
+    expect(screen.getByRole('status')).toBeTruthy();
+    const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+    await view.rerender({ ...props, sourceUrl: 'workspace-file://ws-1/recording.mp4?v=2' });
+    expect(signal?.aborted).toBe(true);
+    finish(new Response(new Uint8Array([1, 2, 3])));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(screen.getByTestId('file-video').getAttribute('src')).toBe(
+      'workspace-file://ws-1/recording.mp4?v=2',
+    );
+  });
+
+  it('ends a stalled conversion with an actionable error', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(4);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a file-read failure during conversion as a load error', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 404 }));
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(4);
+    expect((await screen.findByRole('alert')).textContent).not.toContain(
+      m.editor_fileViewer_videoUnsupported_label(),
+    );
+  });
+
   it.each(['png', 'svg'])('disables downloads for a scoped %s preview', async (extension) => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     render(FileViewer, {

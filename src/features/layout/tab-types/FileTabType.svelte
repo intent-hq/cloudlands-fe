@@ -676,6 +676,9 @@
       <FileViewer
         filePath={resolvedWorkspaceMediaPath ?? tab.filePath}
         sourceUrl={workspaceMediaUrl}
+        onDownload={handleDownloadFile}
+        allowDownload={!isReadOnly && downloadReady}
+        {downloading}
       />
     {:else if isAllowlistedMediaPath}
       <div class="flex items-center justify-center h-full text-subtle">
