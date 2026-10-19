@@ -13,6 +13,7 @@ import {
 } from './workspace-file-image';
 
 const WS = 'ws-1234';
+const RO = { readOnly: true };
 
 describe('saved workspace asset video rendering', () => {
   it.each(['webm', 'mp4'])('renders %s without changing asset identity or routing', (extension) => {
@@ -179,10 +180,18 @@ describe('rewriteIntentFileImageSrcs', () => {
     );
   });
 
-  it('leaves cross-workspace long-form image sources untouched', () => {
+  it('leaves cross-workspace long-form image sources untouched for editable surfaces', () => {
     const html = '<img src="intent://local/other-ws/file/secret.png" alt="secret">';
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+
+  it('marks cross-workspace long-form image sources for an other-workspace placeholder when read-only', () => {
+    const html = '<img src="intent://local/other-ws/file/secret.png" alt="secret">';
+
+    expect(rewriteIntentFileImageSrcs(html, WS, RO)).toBe(
+      '<img data-media-src="intent://local/other-ws/file/secret.png" alt="secret" data-media-unavailable="other-workspace">',
+    );
   });
 
   it('decodes entity-encoded ampersands before parsing', () => {
@@ -199,10 +208,24 @@ describe('rewriteIntentFileImageSrcs', () => {
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
   });
 
-  it('leaves invalid intent file links untouched', () => {
+  it('leaves invalid intent file links untouched for editable surfaces', () => {
     const html = '<img src="intent://local/file/../x.png" alt="">';
 
     expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+
+  it('marks invalid intent file links for an invalid-link placeholder when read-only', () => {
+    const html = '<img src="intent://local/file/../x.png" alt="">';
+
+    expect(rewriteIntentFileImageSrcs(html, WS, RO)).toBe(
+      '<img data-media-src="intent://local/file/../x.png" alt="" data-media-unavailable="invalid-link">',
+    );
+  });
+
+  it('leaves non-file intent image sources untouched', () => {
+    const html = '<img src="intent://local/note/abc" alt="">';
+
+    expect(rewriteIntentFileImageSrcs(html, WS, RO)).toBe(html);
   });
 
   it('marks short-form image sources for a placeholder when the workspace is unknown', () => {
@@ -365,5 +388,85 @@ describe('rewriteRelativeImageSrcs', () => {
     '<img src="../escape.png" alt="">',
   ])('leaves %s untouched', (html) => {
     expect(rewriteRelativeImageSrcs(html, '')).toBe(html);
+  });
+});
+
+describe('Assistant cross-workspace media (#7185)', () => {
+  const CHIEF = '__chief__';
+
+  it('renders a long-form image from another workspace in the Assistant chat', () => {
+    const html = '<p><img src="intent://local/other/file/a.png" alt="a"></p>';
+
+    expect(rewriteIntentFileImageSrcs(html, CHIEF, RO)).toBe(
+      '<p><img src="workspace-file://other/a.png" alt="a"></p>',
+    );
+    expect(
+      parseIntentFileTarget('intent://local/amber-forest/file/out/b%201.webp', CHIEF, RO),
+    ).toEqual({
+      workspaceId: 'amber-forest',
+      path: 'out/b 1.webp',
+      encodedPath: 'out/b%201.webp',
+    });
+  });
+
+  it('renders another workspace video in the Assistant chat', () => {
+    expect(
+      rewriteIntentFileImageSrcs(
+        '<img src="intent://local/other/file/demo.mp4" alt="demo">',
+        CHIEF,
+        RO,
+      ),
+    ).toBe(
+      '<video src="workspace-file://other/demo.mp4" controls preload="metadata" playsinline class="markdown-video" data-name="demo"></video>',
+    );
+  });
+
+  it('shows an other-workspace placeholder instead of a raw src in a workspace chat', () => {
+    expect(rewriteIntentFileImageSrcs('<img src="intent://local/other/file/a.png">', WS, RO)).toBe(
+      '<img data-media-src="intent://local/other/file/a.png" data-media-unavailable="other-workspace">',
+    );
+    expect(parseIntentFileTarget('intent://local/other/file/a.png', WS)).toBeNull();
+  });
+
+  it.each([CHIEF, WS])('rejects traversal in other-workspace links (%s)', (current) => {
+    for (const src of [
+      'intent://local/other/file/../secret.png',
+      'intent://local/other/file/a/%2E%2E/secret.png',
+      'intent://local/other/file/a%2Fb.png',
+    ]) {
+      expect(parseIntentFileTarget(src, current, RO)).toBeNull();
+      const out = rewriteIntentFileImageSrcs(`<img src="${src}">`, current, RO);
+      expect(out).not.toContain(' src="');
+      expect(out).not.toContain('workspace-file://');
+    }
+  });
+
+  it('shows an invalid-link placeholder for an invalid target workspace ID in the Assistant chat', () => {
+    for (const src of [
+      'intent://local/..%2F/file/a.png',
+      'intent://local/%E0%A4%A/file/a.png',
+      'intent://local/a%20b/file/a.png',
+    ]) {
+      expect(parseIntentFileTarget(src, CHIEF, RO)).toBeNull();
+      expect(rewriteIntentFileImageSrcs(`<img src="${src}">`, CHIEF, RO)).toBe(
+        `<img data-media-src="${src}" data-media-unavailable="invalid-link">`,
+      );
+    }
+  });
+
+  it('keeps the current-workspace-only rule for intentFileImageUrlToWorkspaceFileUrl outside the Assistant', () => {
+    expect(
+      intentFileImageUrlToWorkspaceFileUrl('intent://local/other/file/a.png', WS, RO),
+    ).toBeNull();
+    expect(intentFileImageUrlToWorkspaceFileUrl('intent://local/other/file/a.png', CHIEF, RO)).toBe(
+      'workspace-file://other/a.png',
+    );
+  });
+
+  it('keeps editable surfaces current-workspace-only, even in the Assistant workspace', () => {
+    const html = '<img src="intent://local/other/file/a.png">';
+
+    expect(parseIntentFileTarget('intent://local/other/file/a.png', CHIEF)).toBeNull();
+    expect(rewriteIntentFileImageSrcs(html, CHIEF)).toBe(html);
   });
 });
