@@ -234,6 +234,25 @@ for (const href of ['https://example.com/review', 'https://github.com/acme/studi
   });
 }
 
+test('preview GitHub link menu Open in app enters owner and opens its browser', async ({
+  mount,
+  page,
+}) => {
+  const href = 'https://github.com/acme/studio/pull/142';
+  const component = await mount(Harness, {
+    props: { href, githubLinkDefaultAction: 'show-choices' },
+  });
+  await component.getByRole('link', { name: 'Review destination', exact: true }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  // Choices alone must not leave Home.
+  expect((await snapshot(page)).selectedWorkspaceId).toBeNull();
+  await menu.getByRole('menuitem', { name: 'Open in app' }).click();
+  await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');
+  await expect.poll(async () => focused((await snapshot(page)).owner)?.browserUrl).toBe(href);
+  expect((await snapshot(page)).external).toEqual([]);
+});
+
 test('preview GitHub link respects the external-browser preference and stays on Home', async ({
   mount,
   page,

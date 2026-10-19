@@ -7,7 +7,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
   import type { PullRequestWorkspace } from '$lib/client/app-client';
-  import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { openInExternalBrowser, openLinkInApp, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
   const menuAnchor = $derived.by(() => {
@@ -110,14 +111,19 @@
     await openInExternalBrowser(url);
   }
 
+  // The Assistant has no workspace to open the link in.
+  const inAppWorkspaceId = $derived(
+    linkActionMenuState.workspaceId === CHIEF_WORKSPACE_ID
+      ? undefined
+      : linkActionMenuState.workspaceId,
+  );
+
   async function handleOpenInApp() {
-    const { url, workspaceId } = linkActionMenuState;
+    const workspaceId = inAppWorkspaceId;
+    const { url, openInWorkspace, sourcePanelId } = linkActionMenuState;
     hideLinkActionMenu();
-    if (workspaceId) {
-      await openInBrowserPanel(url, workspaceId);
-    } else {
-      await openInExternalBrowser(url);
-    }
+    if (!workspaceId) return;
+    await openLinkInApp(url, workspaceId, { openInWorkspace, sourcePanelId });
   }
 
   async function handleCopyLink() {
@@ -162,7 +168,7 @@
       <Menu.Item onSelect={handleOpenInBrowser}>
         {m.navigation_linkActionMenu_openInBrowser_label()}
       </Menu.Item>
-      {#if linkActionMenuState.workspaceId}
+      {#if inAppWorkspaceId}
         <Menu.Item onSelect={handleOpenInApp}>
           {m.navigation_linkActionMenu_openInApp_label()}
         </Menu.Item>
