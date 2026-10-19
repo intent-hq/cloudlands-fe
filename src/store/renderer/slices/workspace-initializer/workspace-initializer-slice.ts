@@ -307,10 +307,11 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
     // A create that finished while the initial settings read was pending is newer.
     agentByRepo: mergeAgentByRepo(hydration.agentByRepo ?? {}, state.agentByRepo),
-    recentSpecialistIds: mergeRecentSpecialists(
-      hydration.recentSpecialistIds ?? [],
-      state.recentSpecialistIds,
-    ),
+    // Uses recorded while the initial settings read was pending are newer; a
+    // later re-hydration takes the persisted list, which already holds them.
+    recentSpecialistIds: state.hydrated
+      ? (hydration.recentSpecialistIds ?? state.recentSpecialistIds)
+      : mergeRecentSpecialists(hydration.recentSpecialistIds ?? [], state.recentSpecialistIds),
   };
 });
 workspaceInitializerReducer.with(

@@ -4,13 +4,13 @@ export const MAX_RECENT_SPECIALISTS = 50;
 /**
  * Record `specialistId` as the most recently used specialist. The list is
  * newest first, deduplicated, and capped at `MAX_RECENT_SPECIALISTS`. A null
- * or blank id (General) leaves the list unchanged.
+ * or blank id (General) returns the list unchanged (same reference).
  */
 export function rememberRecentSpecialist(
-  recentIds: readonly string[],
+  recentIds: string[],
   specialistId: string | null | undefined,
 ): string[] {
-  if (!specialistId) return [...recentIds];
+  if (!specialistId) return recentIds;
   return [specialistId, ...recentIds.filter((id) => id !== specialistId)].slice(
     0,
     MAX_RECENT_SPECIALISTS,
@@ -28,10 +28,8 @@ export function mergeRecentSpecialists(
 /** Read a persisted list, dropping malformed entries. */
 export function readRecentSpecialists(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return mergeRecentSpecialists(
-    value.filter((id): id is string => typeof id === 'string' && id.length > 0),
-    [],
-  );
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return [...new Set(ids)].slice(0, MAX_RECENT_SPECIALISTS);
 }
 
 /**
