@@ -164,21 +164,47 @@
       .sort((a, b) => b.tokens - a.tokens),
   );
 
-  const agentNameById = $derived(
+  const loadedAgentNameById = $derived(
     new Map($workspaceAgents$.map((agent) => [String(agent.id), agent.name])),
   );
+  // Label every usage agent without ever exposing its id: the loaded agent's
+  // live name wins, then the daemon-materialized `agentNames` (§5.23, covers
+  // retired / unloaded delegated agents), then a numbered generic label in
+  // stable id order.
+  const agentLabelById = $derived.by(() => {
+    // Number only agents that render a row, so a visible "2" always has a "1".
+    const ids = Object.entries($usage$.byAgentId)
+      .filter(([, entry]) => tokenCount(entry) > 0)
+      .map(([id]) => id);
+    const daemonNames = $usage$.agentNames ?? {};
+    const labels = new Map<string, string>();
+    const unnamed: string[] = [];
+    for (const id of ids.sort()) {
+      const name = loadedAgentNameById.get(id) || daemonNames[id];
+      if (name) labels.set(id, name);
+      else unnamed.push(id);
+    }
+    unnamed.forEach((id, index) =>
+      labels.set(
+        id,
+        unnamed.length === 1
+          ? m.workspace_tokenUsage_agentUnnamed_label()
+          : m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: index + 1 }),
+      ),
+    );
+    return labels;
+  });
+  function agentLabel(agentId: string): string {
+    return agentLabelById.get(agentId) ?? m.workspace_tokenUsage_agentUnnamed_label();
+  }
   const legacyAgentRows = $derived(
     Object.entries($usage$.byAgentId)
       .map(([agentId, entry]): BreakdownRow => ({
         id: agentId,
         kind: 'agent',
         kindLabel: m.workspace_tokenUsage_byAgent_label(),
-        label:
-          agentNameById.get(agentId) ||
-          m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
-        title:
-          agentNameById.get(agentId) ||
-          m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
+        label: agentLabel(agentId),
+        title: agentLabel(agentId),
         tokens: tokenCount(entry),
         totals: entry,
       }))
@@ -217,11 +243,7 @@
     return [...grouped.entries()]
       .map(([id, cells]): BreakdownRow => {
         const summary = summarizeCrossFilterRows(cells);
-        const label =
-          kind === 'agent'
-            ? agentNameById.get(id) ||
-              m.workspace_tokenUsage_agentFallback_label({ id: id.substring(0, 8) })
-            : formatModelLabel(id);
+        const label = kind === 'agent' ? agentLabel(id) : formatModelLabel(id);
         return {
           id,
           kind,
@@ -374,11 +396,7 @@
 
   function scopeLabel(target: ScopeTarget | null): string {
     if (!target) return m.workspace_tokenUsage_workspace_label();
-    const base =
-      target.kind === 'agent'
-        ? agentNameById.get(target.id) ||
-          m.workspace_tokenUsage_agentFallback_label({ id: target.id.substring(0, 8) })
-        : formatModelLabel(target.id);
+    const base = target.kind === 'agent' ? agentLabel(target.id) : formatModelLabel(target.id);
     return base;
   }
 
