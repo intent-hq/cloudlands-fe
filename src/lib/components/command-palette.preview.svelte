@@ -128,6 +128,10 @@
         props: { initialQuery: 'GitLab', withoutWorkspace: true },
         setup: setupGitLab(true),
       },
+      'provider-profiles': {
+        props: { initialQuery: 'provider profiles', withoutWorkspace: true },
+        setup: setupPaletteNoteSearch,
+      },
     },
   });
 </script>

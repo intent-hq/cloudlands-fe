@@ -10,6 +10,18 @@ import {
   removeItem,
   updateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  initialProfilesState,
+  profileHandlers,
+  stageProfileEnv,
+  type ProfileMutationResult,
+} from './provider-profiles-state';
+import type {
+  EnvEntryWrite,
+  ProviderProfile,
+  ProviderProfileFailure,
+} from '$shared/provider-profiles';
+import type { ProviderProfileStatus } from './provider-settings-types';
 import type {
   ProviderFastModeState,
   ProviderPaths,
@@ -43,6 +55,7 @@ export const fastModeWriteSettled = createAction<[providerId: string, editId: nu
 );
 
 export const initialState: ProviderSettingsState = {
+  profiles: initialProfilesState,
   fastMode: emptyFastMode,
   enabledProviders: {},
   nonDisableableProviderIds: [],
@@ -366,3 +379,111 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
   delete pending[providerId];
   return { ...state, fastMode: { ...state.fastMode, pending } };
 });
+
+// ---------------------------------------------------------------------------
+// Named provider profiles (§5.54). Env values never ride on an action: the
+// creators stage them (provider-profiles-state) and the saga takes them once.
+// ---------------------------------------------------------------------------
+
+/** Read (or re-read) the profile list; ignored when the catalog advertises no profile support. */
+export const providerProfilesRequested = createAction('providerProfiles/requested');
+export const providerProfilesLoaded =
+  createAction<[profiles: ProviderProfile[], revision: number]>('providerProfiles/loaded');
+export const providerProfilesLoadFailed = createAction('providerProfiles/loadFailed');
+/** A `providers:profiles-changed` event (§5.54) — payload carries no env keys or values. */
+export const providerProfilesChanged = createAction<[revision: number]>('providerProfiles/changed');
+
+export const providerProfileCreateRequested = createAction(
+  'providerProfiles/createRequested',
+  (input: { requestId: string; baseProviderId: string; name: string; env?: EnvEntryWrite[] }) => ({
+    requestId: input.requestId,
+    baseProviderId: input.baseProviderId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+export const providerProfileUpdateRequested = createAction(
+  'providerProfiles/updateRequested',
+  (input: { requestId: string; profileId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+    requestId: input.requestId,
+    profileId: input.profileId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+export const providerProfileDeleteRequested = createAction<
+  [payload: { requestId: string; profileId: string }]
+>('providerProfiles/deleteRequested');
+
+export const providerProfileMutationSucceeded = createAction<
+  [requestId: string, result: ProfileMutationResult]
+>('providerProfiles/mutationSucceeded');
+export const providerProfileMutationFailed = createAction<
+  [requestId: string, failure: ProviderProfileFailure]
+>('providerProfiles/mutationFailed');
+/** The UI is done with a settled request's outcome. */
+export const providerProfileMutationDismissed = createAction<[requestId: string]>(
+  'providerProfiles/mutationDismissed',
+);
+
+/** Re-check one profile's saved account state (`host.providerAuthStatus { providerId: ref }`). */
+export const providerProfileCheckRequested = createAction<[profileId: string]>(
+  'providerProfiles/checkRequested',
+);
+export const providerProfileStatusChanged = createAction<
+  [profileId: string, status: ProviderProfileStatus]
+>('providerProfiles/statusChanged');
+/**
+ * Model pickers (members included) need each listed profile's sign-in state
+ * without opening Settings: probe the catalog's profile references once,
+ * without forcing, and keep the verdict by profile id.
+ */
+export const providerProfileSummaryStatusesEnsured = createAction<
+  [profiles: { id: string; providerRef: string }[]]
+>('providerProfiles/summaryStatusesEnsured');
+export const providerProfileSummaryStatusChanged = createAction<
+  [profileId: string, status: ProviderProfileStatus]
+>('providerProfiles/summaryStatusChanged');
+/** Clear a shown activation notice once acknowledged. */
+export const providerProfileActivationDismissed = createAction<[profileId: string]>(
+  'providerProfiles/activationDismissed',
+);
+
+// Registration: state slice `profiles`, handlers in provider-profiles-state.
+const withProfiles = (
+  state: ProviderSettingsState,
+  profiles: ProviderSettingsState['profiles'],
+): ProviderSettingsState => (profiles === state.profiles ? state : { ...state, profiles });
+providerSettingsReducer.with(providerProfilesLoaded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.loaded(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfilesLoadFailed, (state) =>
+  withProfiles(state, profileHandlers.loadFailed(state.profiles, [])),
+);
+providerSettingsReducer.with(providerProfileCreateRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.create(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerProfileUpdateRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.update(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerProfileDeleteRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.delete(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileMutationSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.succeeded(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileMutationFailed, (state, { payload }) =>
+  withProfiles(state, profileHandlers.failed(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileMutationDismissed, (state, { payload }) =>
+  withProfiles(state, profileHandlers.dismissed(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileStatusChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.statusChanged(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileSummaryStatusChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.summaryStatusChanged(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileActivationDismissed, (state, { payload }) =>
+  withProfiles(state, profileHandlers.activationDismissed(state.profiles, payload)),
+);
