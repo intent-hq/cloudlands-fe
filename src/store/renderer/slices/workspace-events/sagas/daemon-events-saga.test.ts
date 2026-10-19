@@ -344,6 +344,7 @@ describe('daemonEventsSaga', () => {
       'script:*',
       'terminal:exit',
       'settings:changed',
+      'providers:profiles-changed',
       'workspace:tokenUsage-changed',
       'workspace:context-changed',
       'workspace:activity-changed',

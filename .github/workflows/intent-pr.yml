@@ -3,10 +3,11 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main', 'feat/up-clean-3-shared-controls']
-  # Type/lint, build, unit and consumer checks run on PRs and the merged tree.
-  # Integration runs only in the queue. Browser suites run on relevant PR diffs
-  # and nightly/manual runs, never in merge_group. Release-shaped diffs retain
-  # the existing fast path; CI Gate rejects all other unexpected skips.
+  # PRs run metadata, static consumer contracts, the CI policy test, type/lint
+  # and unit tests. The merge queue reruns type/lint and unit tests on the
+  # merged tree and adds build, integration and relevant browser/native suites
+  # (browser suites also run nightly/manually). Release-shaped diffs retain the
+  # existing fast path; CI Gate rejects all other unexpected skips.
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -16,31 +17,29 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Burst the heavy jobs to Depot larger runners when more than this many
-  # self-hosted Linux jobs are queued/running ahead of this run (see the route
-  # job). Jobs still blocked on `needs` are invisible to the jobs API, so a
-  # queued run ahead of us may undercount — with 8 tinybox slots, clearing
-  # this threshold means every slot is occupied and a genuine backlog is
-  # queued behind them. Bursted jobs don't carry the self-hosted+Linux
-  # labels and stop counting toward the depth, so the system naturally falls
-  # back to tinybox as it frees up.
-  LINUX_BURST_THRESHOLD: 8
+  # Number of intent-cache Linux runner slots: the route job bursts the heavy
+  # jobs to Depot once this many intent-cache jobs are queued or running
+  # ahead of this run. Raise it when slots are added. Jobs still blocked on
+  # `needs` are invisible to the jobs API, so a queued run ahead of us may
+  # undercount. Bursted jobs don't carry the intent-cache label and stop
+  # counting, so routing returns to the slots as they free up.
+  LINUX_BURST_THRESHOLD: 2
 
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
   # checkout or permissions and fails red for the guarded skips.
   # Decides where the heavy jobs (checks / build-web / test /
   # test-integration) run:
-  # the local tinybox runner normally, or Depot larger runners when the
-  # tinybox queue is backed up or the fleet is unavailable (ported from
-  # intentd's ci.yml route job). Runs on a small Depot runner so the burst
-  # decision is independent of the tinybox queue: probing from tinybox
-  # would queue behind the very backlog it measures (and deadlock entirely
-  # with tinybox offline). The probe FAILS OPEN TO DEPOT (depot-ubuntu-24.04-8):
-  # on API errors, when no online self-hosted Linux runner is visible, or
-  # when a self-hosted job has sat queued past the staleness cutoff, the
-  # heavy jobs burst instead of queueing behind an offline fleet — CI must
-  # not deadlock when tinybox is down. If the job itself fails (runner
+  # the intent-cache runner slots normally, or Depot larger runners when every
+  # slot is occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
+  # repository variable is `true` (ported from intentd's ci.yml route job).
+  # Runs on a small Depot runner so the burst decision is independent of the
+  # slots' queue: probing from a slot would queue behind the very backlog it
+  # measures (and deadlock entirely with the slots offline). The probe FAILS
+  # OPEN TO DEPOT (depot-ubuntu-24.04-8): on API errors, when no online
+  # intent-cache runner is visible, or when an intent-cache job has sat queued
+  # past the staleness cutoff, the heavy jobs burst instead of queueing behind
+  # an offline fleet — CI must not deadlock when the slots are down. If the job itself fails (runner
   # outage, timeout), the routed jobs are skipped and need a re-run — a
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
   # / gate) are not routed — they pin directly to depot-ubuntu-24.04. Required
@@ -66,15 +65,15 @@ jobs:
         uses: actions/github-script@v9
         env:
           THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
+          LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
         with:
-          # tinybox serves several repos on one runner slot, so the probe
+          # The intent-cache slots serve several repos, so the probe
           # wants to size the queue across all of them — but the default
           # GITHUB_TOKEN is repo-scoped and can only see cloudlands-fe. Set
           # the CI_QUEUE_READ_TOKEN secret (fine-grained PAT with
           # actions:read on the sibling repos) to enable cross-repo counting;
           # without it those repos are skipped and contribute 0. Routing to
-          # tinybox additionally requires the token to list the tinybox
-          # fleet: the runners are registered at the ORG level (shared
+          # the slots additionally requires the token to list them: the runners are registered at the ORG level (shared
           # across the repos via a runner group), so the token needs the
           # org-level "Self-hosted runners" read permission for the org
           # list to succeed. The default GITHUB_TOKEN cannot carry that
@@ -82,32 +81,38 @@ jobs:
           # the org list errors and the probe falls back to this repo's own
           # runner list (fine-grained "Administration" repository
           # permission, read) — currently empty, so every run bursts (safe:
-          # burst is the fail-open default; it just never uses tinybox).
+          # burst is the fail-open default; it just never uses the slots).
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
-            const tinybox = ["self-hosted", "Linux", "X64"];
+            // Only the intent-cache slots carry the `intent-cache` label, so no
+            // other self-hosted Linux runner picks these jobs up.
+            const fleet = ["self-hosted", "linux", "x64", "intent-cache"];
+            const hasLabels = (labels) => fleet.every(l => labels.some(x => String(x).toLowerCase() === l));
             // All the routed heavy jobs burst to the 8-core / 32 GB runner:
             // build-web needs well over 8 GB of heap with sourcemaps on
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
             const burst = ["depot-ubuntu-24.04-8"];
-            const threshold = parseInt(process.env.THRESHOLD || "8", 10);
+            const threshold = parseInt(process.env.THRESHOLD || "2", 10);
             // A self-hosted job queued longer than this has no runner
             // picking it up — treat the fleet as unavailable and burst.
             const staleMs = 15 * 60 * 1000;
-            // FAIL OPEN TO BURST: tinybox is only selected when the probe
-            // positively confirms (a) an online self-hosted Linux runner
+            // FAIL OPEN TO BURST: the slots are only selected when the probe
+            // positively confirms (a) an online intent-cache runner
             // visible to this repo (org-level list, or the repo-level
-            // fallback), (b) no self-hosted job stuck queued past the
-            // staleness cutoff, and (c) a queue depth within the
-            // threshold. Any probe error — including a token that cannot
+            // fallback), (b) no intent-cache job stuck queued past the
+            // staleness cutoff, and (c) a free slot (queue depth below both
+            // the threshold and the online count). Any probe error — including a token that cannot
             // list runners — routes to burst, so CI cannot queue-deadlock
             // when the fleet is offline or unreadable (mirrors intentd's
             // ci.yml route job).
             let useBurst = true;
             let reason = "fail-open default";
-            try {
-              // The tinybox fleet is registered at the ORG level (shared
+            // CI_LINUX_RUNNER_DISABLED=true forces every heavy job to Depot.
+            if (process.env.LINUX_RUNNER_DISABLED === "true") {
+              reason = "disabled for maintenance";
+            } else try {
+              // The intent-cache fleet is registered at the ORG level (shared
               // across the repos via a runner group), so probe the org
               // runner list first. That call needs the org-level
               // "Self-hosted runners" read permission on the token (see the
@@ -118,7 +123,7 @@ jobs:
               // (never deadlock on an invisible fleet).
               // NOTE: the org list is NOT scoped to the runner groups this
               // repo can access, so the probe assumes every online
-              // self-hosted+Linux+X64 org runner is the tinybox fleet in a
+              // intent-cache org runner is in a
               // group visible to this repo. Ops invariant: keep the fleet's
               // group visible to the CI repos, and never register
               // generically-labeled org runners outside it — a matching but
@@ -144,16 +149,16 @@ jobs:
               }
               const online = runners.filter(r =>
                 r.status === "online" &&
-                tinybox.every(l => (r.labels || []).some(x => x.name === l))
+                hasLabels((r.labels || []).map(x => x.name))
               );
               if (online.length === 0) {
-                reason = `no online self-hosted Linux runner (${runnerSource} list)`;
+                reason = `no online intent-cache runner (${runnerSource} list)`;
               } else {
-                // Count self-hosted Linux jobs that are queued or running in
-                // queued/in-progress runs: a running job occupies a tinybox
-                // slot just as much as a queued one. Depot jobs —
+                // Count intent-cache jobs that are queued or running in
+                // queued/in-progress runs: a running job occupies a slot just
+                // as much as a queued one. Depot jobs —
                 // including this route job and bursted heavy jobs — don't
-                // match the self-hosted+Linux label filter, so they never
+                // match the intent-cache label filter, so they never
                 // inflate the depth. Sibling-repo probe failures are the
                 // documented degraded mode (skip, contribute 0); a failure
                 // on this repo's own probe means the depth is unknowable,
@@ -161,7 +166,7 @@ jobs:
                 // job older than staleMs means nothing is draining the
                 // queue despite the runner looking online — burst.
                 const owner = context.repo.owner;
-                const repos = ["intentd", "cloudlands-fe", "monorepo"];
+                const repos = ["intentd", "cloudlands-fe", "intent"];
                 let depth = 0;
                 let staleQueued = false;
                 for (const repo of repos) {
@@ -171,7 +176,7 @@ jobs:
                       for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
                         const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
                         for (const j of jobs.data.jobs) {
-                          if ((j.status === "queued" || j.status === "in_progress") && j.labels.includes("self-hosted") && j.labels.includes("Linux")) {
+                          if ((j.status === "queued" || j.status === "in_progress") && hasLabels(j.labels || [])) {
                             depth += 1;
                             if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
                           }
@@ -184,10 +189,11 @@ jobs:
                   }
                 }
                 if (staleQueued) {
-                  reason = `self-hosted job queued past staleness cutoff (fleet not draining) online=${online.length} (${runnerSource} list)`;
+                  reason = `intent-cache job queued past staleness cutoff (fleet not draining) online=${online.length} (${runnerSource} list)`;
                 } else {
-                  useBurst = depth > threshold;
-                  reason = `queue depth=${depth} threshold=${threshold} online=${online.length} (${runnerSource} list)`;
+                  const limit = Math.min(threshold, online.length);
+                  useBurst = depth >= limit;
+                  reason = `queue depth=${depth} threshold=${limit} online=${online.length} (${runnerSource} list)`;
                 }
               }
             } catch (e) {
@@ -195,13 +201,13 @@ jobs:
               reason = `probe failed (${e.message})`;
             }
             core.info(`linux routing: burst=${useBurst} (${reason})`);
-            core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : tinybox));
+            core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : fleet));
             core.setOutput("linux_burst", String(useBurst));
 
   pr-title:
     name: Validate PR Title
     # Seconds-long job: pinned to the smallest GH-hosted runner rather than
-    # routed — not worth a tinybox slot or a burst decision.
+    # routed — not worth a self-hosted slot or a burst decision.
     runs-on: depot-ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); guarded directly
     # rather than through needs so it isn't delayed behind the route probe.
@@ -496,7 +502,7 @@ jobs:
     # alone would run it without runner labels); the gate still fails on such
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -517,9 +523,6 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest: concurrent tinybox slots share $HOME and
-          # race on the default ~/setup-pnpm (monorepo#1239).
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Wait before retrying pnpm setup
         if: steps.pnpm_setup.outcome == 'failure'
         run: sleep 10
@@ -529,15 +532,13 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path — ephemeral Depot runners
-        # start cold, while tinybox's persistent pnpm store already survives
-        # between jobs.
+        # Every Linux runner (Depot or an intent-cache container) starts with
+        # an empty pnpm store, so always restore it from the Actions cache.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Cold-checkout gate: runs the agent-facing `lint` gate BEFORE any
@@ -576,8 +577,8 @@ jobs:
         # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
         # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
         # timing, so this step alone gets ~2x the measured need; other steps keep
-        # the job cap (intent-hq/intent#3352). Both runner classes (tinybox,
-        # gh-linux-8x) have ample RAM. run-svelte-check.mjs prints the peak RSS of
+        # the job cap (intent-hq/intent#3352). Both runner classes (intent-cache,
+        # about 48 GB per slot, and the 32 GB burst runner) have ample RAM. run-svelte-check.mjs prints the peak RSS of
         # every run so the margin stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
@@ -640,8 +641,8 @@ jobs:
 
   build-web:
     name: Build (web)
-    # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
-    # 125 GB) so the single-slot Mac is free for release/signing work.
+    # Moved from m1mac to the self-hosted Linux runners so the single-slot
+    # Mac is free for release/signing work.
     # Skipped at job level on release-fast-path PRs — see the checks job's
     # comment for the full skip/fail-safe rationale.
     needs: [route, release-fast-path]
@@ -657,10 +658,10 @@ jobs:
       # the 8192 cap on the old 2-core / 7 GB ubuntu-latest runner
       # (~7.7 GB at death, monorepo#1074), which forced
       # INTENT_DISABLE_SOURCEMAPS=1. Sourcemaps stay enabled everywhere this
-      # job routes now: 8192 OOMed even on the 125 GB tinybox (the 64-core
-      # box runs more build work in parallel), so the cap is 16384 — within
-      # tinybox's RAM and the burst runner's 32 GB (gh-linux-8x; never burst
-      # this job to anything smaller).
+      # job routes now: 8192 OOMed on a 64-core self-hosted host (more build
+      # work in parallel), so the cap is 16384 — within an intent-cache
+      # slot's ~48 GB and the burst runner's 32 GB (never burst this job to
+      # anything smaller).
       NODE_OPTIONS: '--max-old-space-size=16384'
     steps:
       - name: Checkout
@@ -670,14 +671,11 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web renderer
@@ -693,8 +691,8 @@ jobs:
   test:
     # Two-way Vitest shard matrix (intent-hq/monorepo#4260). The job ran
     # unsharded while the box had a single runner slot (shards would have
-    # queued serially there, each paying its own checkout/install); with 8
-    # tinybox slots plus the burst route that rationale is stale, and the
+    # queued serially there, each paying its own checkout/install); with two
+    # self-hosted slots plus the burst route that rationale is stale, and the
     # unit step is the workflow's long pole (p50 ~7.5 min, p90 ~18 min on
     # the burst runner) against ~0.5 min of per-leg setup. Vitest's
     # --shard=N/2 is a stable partition of the sorted test-file list, so
@@ -703,7 +701,7 @@ jobs:
     # separate unsharded test-integration job so they still run exactly
     # once.
     # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
-    # cores/2), monorepo#3082), so two concurrent legs on one tinybox host
+    # cores/2), monorepo#3082), so two concurrent legs on one self-hosted host
     # can run 2x that fork count (plus the now-concurrent test-integration
     # job). Per-leg wall time halves the exposure window and the 60s CI
     # test timeout gives slack; if #3082-class load flakes reappear, halve
@@ -714,7 +712,7 @@ jobs:
     # exist — "CI Gate" is the only required check).
     name: Unit Tests (shard ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     strategy:
       # Let the sibling shard finish so one flaky leg doesn't hide the
@@ -761,16 +759,11 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks) — also what lets two
-          # shard legs share a tinybox $HOME without the monorepo#1239
-          # installer races.
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+          cache: 'pnpm'
       - name: Read backend Keychain fixture pin
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
@@ -911,14 +904,11 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -971,7 +961,10 @@ jobs:
   # packages/cloudlands-fe pin, so the breakage is red on the PR first. Fix
   # order when red: the checks compare against monorepo main and tolerate
   # docs that lead the pin, so land the monorepo docs PR its step summary
-  # names, then re-run this job. check-mcp-bindings is advisory in the
+  # names, then re-run all jobs or push (re-running only failed jobs keeps
+  # the monorepo commit `@main` resolved to on the first attempt). Keep
+  # `@main`: a SHA pin also pins those docs, so a docs-first fix needed a
+  # hand pin bump (intent-hq/intentd#2476). check-mcp-bindings is advisory in the
   # called workflow, and a failed monorepo checkout is fail-soft there
   # (warning, job green), so a monorepo outage never blocks this repo.
   # Runs on pull_request AND merge_group; the caller's own `if:` carries
@@ -986,7 +979,8 @@ jobs:
     secrets:
       CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
       DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@0e12255c6207b474a218e633ec61e9b051d3e990
+      INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@main
     with:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1069,14 +1063,29 @@ jobs:
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
-          # Only the small Linux policy job and static consumer contracts run
-          # before queueing. Failed/missing results are never intentional skips.
+          # Heavy jobs required on this event: success, or skipped ONLY via the
+          # release-PR fast path. Shared by the PR suites and the queue jobs.
+          check_heavy() {
+            if [ "$2" = "success" ]; then
+              return 0
+            fi
+            if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
+              echo "$1 skipped via release-PR fast path — accepted"
+              return 0
+            fi
+            echo "$1 result '$2' not acceptable on ${{ github.event_name }} (fast_path='$FAST_PATH')"
+            exit 1
+          }
+          # PRs run the Linux policy job, static consumer contracts, type/lint
+          # and unit tests before queueing. Type/lint and unit tests may skip
+          # only via the release-PR fast path; the remaining heavy jobs are
+          # queue-only. Failed/missing results are never intentional skips.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             check_pr_meta "pr-static" "${{ needs.pr-static.result }}"
             check_pr_meta "monorepo-consumer-checks" "${{ needs.monorepo-consumer-checks.result }}"
-            case "${{ needs.checks.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            check_heavy "checks" "${{ needs.checks.result }}"
+            check_heavy "test" "${{ needs.test.result }}"
             case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
-            case "${{ needs.test.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
@@ -1086,18 +1095,7 @@ jobs:
           fi
           case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # Queued heavy jobs (checks / build-web / test): success, or
-          # skipped ONLY via the release-PR fast path.
-          check_heavy() {
-            if [ "$2" = "success" ]; then
-              return 0
-            fi
-            if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-              echo "$1 skipped via release-PR fast path — accepted"
-              return 0
-            fi
-            echo "$1 result '$2' not acceptable (fast_path='$FAST_PATH')"
-            exit 1
-          }
+          # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"

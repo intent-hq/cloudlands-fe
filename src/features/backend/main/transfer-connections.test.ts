@@ -553,7 +553,8 @@ describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (
     ['13.0.1', true],
     ['14.0', true],
     ['15.0', true],
-    ['16.0', false],
+    // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+    ['16.0', true],
     ['12.0-preview', false],
     [undefined, false],
   ])('negotiates on the dedicated socket with version %s', async (protocolVersion, supported) => {

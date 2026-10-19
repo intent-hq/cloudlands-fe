@@ -1224,6 +1224,19 @@ describe('AIBehaviorEditor specialist model reasoning', () => {
       });
     });
 
+    // §5.54: a specialist pin to a named profile saves its reference as the
+    // coding agent, so delegation runs that profile rather than its Default.
+    it('pins a specialist to a named profile by its reference', async () => {
+      renderSpecialist();
+
+      await fireEvent.click(screen.getByTestId('pick-profile-model'));
+
+      expect(lastSave()).toMatchObject({
+        codingAgent: 'codex@pwork00000001',
+        model: 'gpt-5-work',
+      });
+    });
+
     it('keeps the picked model over the stale stored override', async () => {
       mocks.isFileBased.value = true;
       mocks.fileSpecialist.value = {

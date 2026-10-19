@@ -1002,6 +1002,20 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const form = getItems(store.state.repositoryCheckout.forms)[0];
       store.dispatch(urlSubmitted(form.formId, form.scopeKey!, projectUrl));
       await waitFor(() => expect(session.project).toHaveBeenCalledWith({ url: projectUrl }));
+      // The selection is saved for the next form only once a workspace is created.
+      expect(
+        store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft,
+      ).not.toEqual(expect.objectContaining({ contextUrl: projectUrl }));
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: { id: 'created-gitlab', title: '', branch: 'work/new' } },
+      });
+      const firstCreate = document.querySelector<HTMLButtonElement>(
+        '[data-dialog-primary-action]',
+      )!;
+      await waitFor(() => expect(firstCreate.disabled).toBe(false));
+      await fireEvent.click(firstCreate);
+      await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/created-gitlab'));
       await waitFor(() =>
         expect(store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft).toEqual({
           instanceBaseUrl,
@@ -1031,8 +1045,8 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
       await waitFor(() => expect(button.disabled).toBe(false));
       await fireEvent.click(button);
-      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
-      expect(mocks.create.mock.calls[0][0].repositoryCheckout).toEqual({
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+      expect(mocks.create.mock.calls[1][0].repositoryCheckout).toEqual({
         checkoutId: 'restored-lease',
         revision: 'new-account',
         projectPath,

@@ -8,6 +8,7 @@
  * PROTOCOL-shaped responses pass through verbatim.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
@@ -52,7 +53,10 @@ describe('LiveScriptsClient (fake transport)', () => {
   it('list forwards script.list with workspaceId and returns scripts verbatim', async () => {
     mockedRequest
       .mockResolvedValueOnce({
-        server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
       })
       .mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
     const client = new LiveScriptsClient();
@@ -73,7 +77,10 @@ describe('LiveScriptsClient (fake transport)', () => {
     };
     mockedRequest
       .mockResolvedValueOnce({
-        server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
       })
       .mockResolvedValueOnce({ scripts: [previouslyRunning] });
     const client = new LiveScriptsClient();

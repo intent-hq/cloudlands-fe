@@ -24,6 +24,7 @@ import {
 } from '../../shared/models/wire-model-info';
 import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
 import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
+import { modelsListProviderId } from '../../shared/provider-profiles';
 
 const logger = new Logger('DaemonModelCatalog');
 
@@ -97,12 +98,14 @@ export interface GetModelsEnvelope {
  */
 export async function getProviderModelsEnvelope(
   providerId: string,
-  params?: { forceRefresh?: boolean; workspaceId?: string },
+  params?: { forceRefresh?: boolean; workspaceId?: string; providerRef?: string },
   event?: Electron.IpcMainInvokeEvent,
 ): Promise<GetModelsEnvelope> {
   try {
     const { client } = getBackendClientForIpcEvent(event);
-    const catalog = await listProviderModels(client, providerId, {
+    // A named profile's catalog (§5.54) is listed under its own reference.
+    const catalogProviderId = modelsListProviderId(providerId, params?.providerRef);
+    const catalog = await listProviderModels(client, catalogProviderId, {
       forceRefresh: params?.forceRefresh === true,
       workspaceId: params?.workspaceId,
     });

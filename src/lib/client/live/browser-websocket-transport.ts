@@ -18,6 +18,7 @@
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   BackendError,
@@ -252,7 +253,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private helloConfirmed = false;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
-  private protocolVersion: unknown;
+  /** This socket's `client.hello` version, parsed once when the hello answers. */
+  private protocolVersion: ProtocolVersion | null = null;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
     message: 'client.hello has not completed on this connection',
@@ -394,8 +396,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
                 });
               }
               this.helloConfirmed = true;
-              this.protocolVersion = (result as { protocolVersion?: unknown } | null)
-                ?.protocolVersion;
+              this.protocolVersion = parseProtocolVersion(
+                (result as { protocolVersion?: unknown } | null)?.protocolVersion,
+              );
             }
             resolve(result as T);
           },
@@ -686,7 +689,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private teardownSocket(): void {
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
-    this.protocolVersion = undefined;
+    this.protocolVersion = null;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

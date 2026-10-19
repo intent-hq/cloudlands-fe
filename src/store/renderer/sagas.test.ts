@@ -115,6 +115,7 @@ describe('renderer app saga registry', () => {
       'uiLayoutPersistenceSaga',
       'tabStateSaga',
       'workspaceTabReconciliationSaga',
+      'proposalWorkspaceTabSaga',
       'workspaceTabCleanupSaga',
       'sidebarNavSaga',
       'panelLayoutSaga',

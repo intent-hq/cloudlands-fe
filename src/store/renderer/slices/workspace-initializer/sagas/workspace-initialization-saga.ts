@@ -28,6 +28,7 @@ import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
 import {
+  setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerLastSubmittedAgent,
   workspaceInitializationFinished,
   workspaceInitializationRequested,
@@ -261,6 +262,14 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     }
     stage = 'post-create';
     yield* put(setWorkspaceInitializerLastSubmittedAgent(request.lastSubmittedAgent));
+    if (request.rememberBranch) {
+      yield* put(
+        setWorkspaceInitializerBranchForRepo(
+          request.rememberBranch.repoPath,
+          request.rememberBranch.branch,
+        ),
+      );
+    }
     if (request.selectedPrNumber) yield* fork(storePrNumber, workspaceId, request.selectedPrNumber);
     if (request.recentGitHubRepository) yield* fork(registerRecent, request.recentGitHubRepository);
     yield* finish(action, {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ANY_HOST } from '$features/system/main/window-workspace-tracking';
 
 const { sendToWorkspaceWindows } = vi.hoisted(() => ({ sendToWorkspaceWindows: vi.fn() }));
 
@@ -12,6 +13,11 @@ describe('publishMainDomainEvent', () => {
 
     publishMainDomainEvent('ws-1', 'source:deleted', payload);
 
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith('ws-1', 'source:deleted', payload);
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      'source:deleted',
+      payload,
+      ANY_HOST,
+    );
   });
 });

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -856,13 +857,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
   /** PROTOCOL §5.17-shaped hello result (server block confirmed on the wire). */
   const helloResult = (clientId: string) => ({
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: true,
       osArch: 'darwin/arm64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   });
@@ -939,7 +940,9 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       ['13.0.1', true],
       ['14.0', true],
       ['15.0', true],
-      ['16.0', false],
+      // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+      ['16.0', true],
+      ['99.3', true],
       ['12', false],
       ['12.0-preview', false],
       [undefined, false],
@@ -1037,7 +1040,8 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         nextVersion === '12.0' ||
         nextVersion === '13.0' ||
         nextVersion === '14.0' ||
-        nextVersion === '15.0'
+        nextVersion === '15.0' ||
+        nextVersion === '16.0'
       ) {
         expect(result).toEqual(response);
         expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([

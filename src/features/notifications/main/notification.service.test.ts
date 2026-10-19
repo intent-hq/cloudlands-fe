@@ -877,6 +877,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'workspace-1',
       'notification:show',
       expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+      LOCAL_ID,
     );
     expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
   });
@@ -897,6 +898,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
         body: expect.any(String),
         navigateTarget: { workspaceId: 'workspace-1' },
       }),
+      LOCAL_ID,
     );
   });
 
@@ -914,6 +916,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       expect.objectContaining({
         navigateTarget: { workspaceId: 'workspace-1' },
       }),
+      LOCAL_ID,
     );
   });
 
@@ -931,6 +934,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'workspace-1',
       'notification:show',
       expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+      LOCAL_ID,
     );
     expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
   });
@@ -1000,6 +1004,7 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
         body: expect.any(String),
         navigateTarget: { workspaceId: 'workspace-1' },
       }),
+      LOCAL_ID,
     );
   });
 
@@ -2663,5 +2668,217 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     }
+  });
+});
+
+describe('NotificationService in-app popup host routing (notification:show)', () => {
+  const REMOTE_ID = 'remote-1';
+
+  /**
+   * Host-aware fake of the system.ipc window registry: each entry is a window
+   * holding a workspace, recorded with the host it was reported from. A
+   * missing scope (pre-host-aware callers) matches every host — exactly the
+   * old behaviour the type contract now forbids.
+   */
+  type Entry = { windowId: number; backendId: string; workspaceId: string };
+  let entries: Entry[];
+
+  const scopeMatches = (scope: unknown, backendId: string): boolean =>
+    typeof scope !== 'string' || scope === backendId;
+
+  function makeWindow(id: number, backendId?: string) {
+    return {
+      id,
+      ...(backendId ? { backendId } : {}),
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+  type MockWindow = ReturnType<typeof makeWindow>;
+
+  function setLiveWindows(windows: MockWindow[]) {
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (windows.find((w) => w.id === id) ?? null) as never,
+    );
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue(windows as never);
+  }
+
+  function showPayloads(window: MockWindow): unknown[] {
+    return window.webContents.send.mock.calls
+      .filter(([channel]: unknown[]) => channel === 'notification:show')
+      .map(([, payload]: unknown[]) => payload);
+  }
+
+  function buildIdleEvent(workspaceId: string): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: { agentId: 'agent-self', agentName: 'Self Agent', isBackground: false },
+    } as AgentIdleEvent;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetBackendMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    entries = [];
+    liveBackendIds.push(REMOTE_ID);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockReturnValue(undefined);
+    vi.mocked(getWindowIdsForWorkspace).mockImplementation(((
+      workspaceId: string,
+      scope?: unknown,
+    ) =>
+      entries
+        .filter((e) => e.workspaceId === workspaceId && scopeMatches(scope, e.backendId))
+        .map((e) => e.windowId)) as never);
+    vi.mocked(sendToWorkspaceWindows).mockImplementation(((
+      workspaceId: string,
+      channel: string,
+      data: unknown,
+      scope?: unknown,
+    ) => {
+      let windowCount = 0;
+      for (const e of entries) {
+        if (e.workspaceId !== workspaceId || !scopeMatches(scope, e.backendId)) continue;
+        const w = BrowserWindow.fromId(e.windowId) as unknown as MockWindow | null;
+        w?.webContents.send(channel, data);
+        windowCount++;
+      }
+      return { windowCount, browserClientsNotified: false, delivered: windowCount > 0 };
+    }) as never);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+    resetBackendMocks();
+  });
+
+  it('sends a remote agent popup only to the remote host window, not a local window holding the same workspace id', async () => {
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    entries = [
+      { windowId: 1, backendId: LOCAL_ID, workspaceId: 'workspace-1' },
+      { windowId: 2, backendId: REMOTE_ID, workspaceId: 'workspace-1' },
+    ];
+    // Intent is frontmost on the remote host's window: the in-app popup path.
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(remoteWindow as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
+
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(showPayloads(remoteWindow)).toEqual([
+      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+    ]);
+    expect(showPayloads(localWindow)).toEqual([]);
+  });
+
+  it('sends the shared Assistant id popup only to the emitting host window', async () => {
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    entries = [
+      { windowId: 1, backendId: LOCAL_ID, workspaceId: CHIEF_WORKSPACE_ID },
+      { windowId: 2, backendId: REMOTE_ID, workspaceId: CHIEF_WORKSPACE_ID },
+    ];
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(remoteWindow as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+
+    expect(showPayloads(remoteWindow)).toEqual([
+      expect.objectContaining({
+        navigateTarget: { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'agent-self' },
+      }),
+    ]);
+    expect(showPayloads(localWindow)).toEqual([]);
+  });
+
+  it('does not let a local window viewing the shared Assistant id suppress a remote Assistant notification', async () => {
+    settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    entries = [
+      { windowId: 1, backendId: LOCAL_ID, workspaceId: CHIEF_WORKSPACE_ID },
+      { windowId: 2, backendId: REMOTE_ID, workspaceId: CHIEF_WORKSPACE_ID },
+    ];
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(CHIEF_WORKSPACE_ID);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+
+    // The local window views the LOCAL Assistant: the remote notification is
+    // not suppressed. The focused window is on another host, so the OS banner
+    // is shown and the sound plays on the remote host's window.
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(showPayloads(remoteWindow)).toHaveLength(1);
+    expect(showPayloads(localWindow)).toEqual([]);
+  });
+
+  it('falls back to the focused window on the emitting host when no window there holds the workspace', async () => {
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    // Only the LOCAL window holds an id equal to the remote workspace's.
+    entries = [{ windowId: 1, backendId: LOCAL_ID, workspaceId: 'workspace-1' }];
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(remoteWindow as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
+
+    expect(showPayloads(remoteWindow)).toEqual([
+      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+    ]);
+    expect(showPayloads(localWindow)).toEqual([]);
+  });
+
+  it('shows the OS banner when the focused window is on another host, even if the emitting host has a window in the background', async () => {
+    const localWindow = makeWindow(1);
+    const remoteWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([localWindow, remoteWindow]);
+    entries = [{ windowId: 2, backendId: REMOTE_ID, workspaceId: CHIEF_WORKSPACE_ID }];
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent(CHIEF_WORKSPACE_ID), REMOTE_ID);
+
+    // A toast in the background remote window would go unseen.
+    expect(mockNotificationInstances.length).toBe(1);
+    const payloads = [...showPayloads(remoteWindow), ...showPayloads(localWindow)];
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).not.toHaveProperty('navigateTarget');
+    expect(showPayloads(remoteWindow)).toHaveLength(1);
+  });
+
+  it('with no window on the emitting host, shows the OS banner and plays the sound on the focused window without a click target', async () => {
+    const localWindow = makeWindow(1);
+    setLiveWindows([localWindow]);
+    entries = [{ windowId: 1, backendId: LOCAL_ID, workspaceId: 'workspace-1' }];
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1'), REMOTE_ID);
+
+    // The notification stays visible as a banner instead of a lost toast.
+    expect(mockNotificationInstances.length).toBe(1);
+    const payloads = showPayloads(localWindow);
+    expect(payloads).toHaveLength(1);
+    // A click on another host's window must not navigate it to this workspace.
+    expect(payloads[0]).not.toHaveProperty('navigateTarget');
   });
 });

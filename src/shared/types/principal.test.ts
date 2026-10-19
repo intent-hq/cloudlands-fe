@@ -59,6 +59,19 @@ describe('principal discovery wire contract', () => {
       expect(snapshot?.capabilities.submissionCorrelation).toBe(flag === 1 ? 1 : undefined);
     },
   );
+  it.each([undefined, false, true, 0, 2, '1', null, {}, 1])(
+    'reads the PR workspace lookup server capability only as exact integer 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        {
+          capabilities: { prWorkspaceLookup: 1 },
+          server: { capabilities: { prWorkspaceLookup: flag } },
+        },
+        principal,
+      );
+      expect(snapshot?.capabilities.prWorkspaceLookup).toBe(flag === 1 ? 1 : undefined);
+    },
+  );
   it.each([undefined, 'owner', -1, 0.5, Number.MAX_SAFE_INTEGER + 1])(
     'rejects malformed advertised revision %s',
     (value) => {

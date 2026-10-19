@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
+
 vi.mock('./backend-transport', () => ({ backendRequest: vi.fn() }));
 import { backendRequest } from './backend-transport';
 import { LiveScriptsClient } from './live-scripts-client';
@@ -15,7 +17,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: supported ? { scriptLifecycle: 1, scriptActiveLists: 1 } : {},
         },
       } as never;
@@ -93,7 +95,7 @@ describe('lifecycle wire negotiation', () => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '14.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
           },
         } as never;

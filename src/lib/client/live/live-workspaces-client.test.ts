@@ -477,6 +477,43 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     );
   });
 
+  it('findByPullRequest sends the PR URL and returns the documented rows', async () => {
+    const rows = [
+      { id: 'ws-2', title: 'Newer', archived: false, linkedAt: '2026-10-18T05:00:00.000Z' },
+      { id: 'ws-1', title: 'Older', archived: true, linkedAt: '2026-10-17T05:00:00.000Z' },
+    ];
+    mockedRequest.mockResolvedValueOnce({ workspaces: rows });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.findByPullRequest('https://github.com/o/r/pull/7')).toEqual(rows);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.findByPullRequest', {
+      url: 'https://github.com/o/r/pull/7',
+    });
+  });
+
+  it('findByPullRequest rejects malformed results and rows, and transport errors', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        workspaces: [{ id: 'ws-1', title: null, archived: false, linkedAt: 'x' }],
+      })
+      .mockRejectedValueOnce(
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          message: 'url is not a pull-request URL',
+          data: { code: 'invalid-params' },
+          rpcCode: -32602,
+        }),
+      );
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
+    await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
+    await expect(client.findByPullRequest('https://github.com/o/r/issues/7')).rejects.toThrow(
+      'url is not a pull-request URL',
+    );
+  });
+
   it('cancelDelete forwards the request and surfaces race-safe outcomes', async () => {
     mockedRequest
       .mockResolvedValueOnce({ cancelled: true })

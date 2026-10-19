@@ -4,6 +4,58 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.220.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.1...v2.220.2) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** land unread entry at new messages without a late jump ([#3496](https://github.com/intent-hq/cloudlands-fe/issues/3496)) ([cf5136f](https://github.com/intent-hq/cloudlands-fe/commit/cf5136f1749c118950680d81215e3ca640a48bbd))
+
+## [2.220.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.0...v2.220.1) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* route workspace window lookups and the in-app popup by host ([#3485](https://github.com/intent-hq/cloudlands-fe/issues/3485)) ([d9c3e70](https://github.com/intent-hq/cloudlands-fe/commit/d9c3e700e28d6514e2c86cfab1842b32a6c1c930))
+
+## [2.220.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.20...v2.220.0) (2026-10-18)
+
+
+### 🚀 Features
+
+* **ci:** use the self-hosted sccache cache when INTENT_SCCACHE_ENDPOINT is set ([#3487](https://github.com/intent-hq/cloudlands-fe/issues/3487)) ([6283f2d](https://github.com/intent-hq/cloudlands-fe/commit/6283f2dd1e6bd9bcf66f54ea77b5f4b6eb6c7957))
+* **navigation:** open the original workspace from a PR link ([#3482](https://github.com/intent-hq/cloudlands-fe/issues/3482)) ([e14af19](https://github.com/intent-hq/cloudlands-fe/commit/e14af194c37d786217711bea096d0b8d4b88e69e))
+* open proposal-created workspaces as background tabs ([#3477](https://github.com/intent-hq/cloudlands-fe/issues/3477)) ([9893036](https://github.com/intent-hq/cloudlands-fe/commit/989303690d5d042e0c5649380684eedc90987f30))
+* resume verify:changed from compatible attempt receipts ([#3456](https://github.com/intent-hq/cloudlands-fe/issues/3456)) ([277005b](https://github.com/intent-hq/cloudlands-fe/commit/277005b06d355cb457e9a96292f1923e481cebe1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.8 ([#3493](https://github.com/intent-hq/cloudlands-fe/issues/3493)) ([6af062d](https://github.com/intent-hq/cloudlands-fe/commit/6af062df4f7fe8747d588aa4c5c57f2ea917b1fe))
+* **chat:** center empty interrupted replies between user cards ([#3486](https://github.com/intent-hq/cloudlands-fe/issues/3486)) ([e2452f4](https://github.com/intent-hq/cloudlands-fe/commit/e2452f47e3a5d15c81a6db1f148a163b09589a78))
+* **lint:** classify domain-named imports by module content ([#3469](https://github.com/intent-hq/cloudlands-fe/issues/3469)) ([6ff2fcc](https://github.com/intent-hq/cloudlands-fe/commit/6ff2fcc957da03728e6c12c6caf87d2543763a9e))
+* **verify-changed:** never serve the Playwright HTML report; pre-bundle titlebar harness deps ([#3475](https://github.com/intent-hq/cloudlands-fe/issues/3475)) ([03e8d92](https://github.com/intent-hq/cloudlands-fe/commit/03e8d92087c3ee6fbbfe0791504630ed989a1cf5))
+
+## [2.219.20](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.19...v2.219.20) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.7 ([#3483](https://github.com/intent-hq/cloudlands-fe/issues/3483)) ([872bf6f](https://github.com/intent-hq/cloudlands-fe/commit/872bf6f76da927f177f63f691ef3c7551b23e2c3))
+* make script monitor and script list load failures visible ([#3476](https://github.com/intent-hq/cloudlands-fe/issues/3476)) ([812663f](https://github.com/intent-hq/cloudlands-fe/commit/812663fbdf6789511dbc3650465064680d9df554))
+* remove protocol version upper bounds and lint against hand parsing ([#3478](https://github.com/intent-hq/cloudlands-fe/issues/3478)) ([0cc3e11](https://github.com/intent-hq/cloudlands-fe/commit/0cc3e1187aff41f5f99b498cdfb38645a06b9ce2))
+* show the full intentd-behind toast message ([#3474](https://github.com/intent-hq/cloudlands-fe/issues/3474)) ([bffb520](https://github.com/intent-hq/cloudlands-fe/commit/bffb520f6a43512d02513e1621210b07af472ac1))
+* size command palette to fit its filter strip ([#3471](https://github.com/intent-hq/cloudlands-fe/issues/3471)) ([558c5ff](https://github.com/intent-hq/cloudlands-fe/commit/558c5ff98fcc644148ad860103d4c610278cd626))
+
+## [2.219.19](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.18...v2.219.19) (2026-10-18)
+
+
+### 🐛 Bug Fixes
+
+* focus the right window when a macOS notification is clicked ([#3464](https://github.com/intent-hq/cloudlands-fe/issues/3464)) ([a06a57c](https://github.com/intent-hq/cloudlands-fe/commit/a06a57c925c977343c2b6e378ef70c9997fc8152))
+* revert generic event-loss recovery ([#3392](https://github.com/intent-hq/cloudlands-fe/issues/3392)) to restore startup ([#3473](https://github.com/intent-hq/cloudlands-fe/issues/3473)) ([685540a](https://github.com/intent-hq/cloudlands-fe/commit/685540a2a6e2cc07b1a4d6a23dd816acc7ba10f5))
+* save New space choices only when a workspace is created ([#3468](https://github.com/intent-hq/cloudlands-fe/issues/3468)) ([a453636](https://github.com/intent-hq/cloudlands-fe/commit/a45363688b9265b92dbb31695c2cbf71ed9040d2))
+
 ## [2.219.18](https://github.com/intent-hq/cloudlands-fe/compare/v2.219.17...v2.219.18) (2026-10-18)
 
 

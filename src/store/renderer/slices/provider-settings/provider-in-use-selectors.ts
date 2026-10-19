@@ -5,6 +5,8 @@ import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-c
 import { selectSpecialistFilePath, selectSpecialists } from '../specialists/specialists-selectors';
 import { selectActiveProviderId } from './provider-settings-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import { isProviderProfileRef } from '$shared/provider-profiles';
+import { formatInteger } from '$lib/i18n/format';
 
 /**
  * Map of providerId -> human-readable reason why the provider is "in use"
@@ -17,6 +19,11 @@ import { m } from '$shared/paraglide/messages.js';
  * - a specialist's explicit model id (legacy compound ids pin their prefix
  *   provider; bare ids pin the default provider unless an explicit coding
  *   agent covers them).
+ *
+ * A named profile reference (`codex@<id>`, §5.54) is additionally in use when
+ * it is the default provider (with or without a default model), when quick
+ * actions run on it, or when a specialist model option selects it. These are
+ * the saved selections that must change before the profile can be removed.
  */
 export const selectProviderInUseReasons = store.createSelector((state): Record<string, string> => {
   const reasons = new Map<string, Set<string>>();
@@ -41,6 +48,14 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
       activeProviderId,
       m.settings_providers_inUseDefaultModel_label({ model: globalModel }),
     );
+  }
+
+  if (isProviderProfileRef(activeProviderId) && !globalModel) {
+    addReason(activeProviderId, m.settings_providers_inUseDefaultProvider_label());
+  }
+  const quickActionProviderId = state.backgroundAgentSettings?.providerId;
+  if (quickActionProviderId && isProviderProfileRef(quickActionProviderId)) {
+    addReason(quickActionProviderId, m.settings_providers_inUseQuickActions_label());
   }
 
   for (const specialist of selectSpecialists.select(state)) {
@@ -70,6 +85,19 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
         withProvenance(m.settings_providers_inUseSpecialistAgent_label({ name: specialist.name })),
       );
     }
+    specialist.modelOptions?.forEach((option, index) => {
+      if (option.provider && isProviderProfileRef(option.provider)) {
+        addReason(
+          option.provider,
+          withProvenance(
+            m.settings_providers_inUseSpecialistModelOption_label({
+              name: specialist.name,
+              position: formatInteger(index + 1),
+            }),
+          ),
+        );
+      }
+    });
     // Explicit model pin.
     if (specialist.defaultModel) {
       if (specialist.defaultModel.includes(':')) {

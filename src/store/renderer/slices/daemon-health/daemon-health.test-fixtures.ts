@@ -1,4 +1,5 @@
 import type { SystemStatusWirePayload } from './daemon-health-types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 /**
  * Exactly the `system.status` key set a Collaborator caller receives —
@@ -28,7 +29,7 @@ const rawCollaboratorSystemStatusProjection = {
   port: 5180,
   version: '0.0.0-test',
   buildCommit: '0123456789abcdef',
-  protocolVersion: 'test',
+  protocolVersion: CURRENT_PROTOCOL_VERSION,
   fingerprint: 'AB:CD',
   localIps: ['192.0.2.10'],
   tcAddress: null,
