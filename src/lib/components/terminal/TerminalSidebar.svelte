@@ -2,8 +2,9 @@
   import {
     selectScriptListPageState,
     selectScriptWorkflowOutcome,
+    selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
+  import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptCommandLabel } from '$features/scripts/types';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
@@ -39,7 +40,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
-  import { Skeleton } from '$lib/components/ui/skeleton';
+  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import {
@@ -918,12 +919,19 @@
     return pushEscapeLayer(() => closeContextMenu());
   });
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 </script>
+
+{#snippet scriptListError()}
+  <ErrorState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+    {#snippet message()}<p class="break-words">{$scriptPage$.error}</p>{/snippet}
+  </ErrorState>
+{/snippet}
 
 <!-- Sidebar Container -->
 <div
   class={cn(
-    'flex flex-col h-full bg-sidebar border-l border-border shrink-0 relative select-none',
+    'relative flex h-full min-w-0 shrink-0 flex-col select-none border-l border-border bg-sidebar',
     isResizing && 'pointer-events-none',
     className,
   )}
@@ -944,20 +952,33 @@
     </div>
   {:else}
     <!-- Expanded: full sidebar -->
-    <div class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-0">
+    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-2">
       <!-- Scripts Section -->
       <ListSection
         title={m.terminal_quakeOverlay_scripts_title()}
-        titleClass="mb-0.5 mt-1.5 px-3.5! pb-0!"
+        titleClass="mb-0 flex-wrap gap-y-0 px-3.5 py-0"
         icon={faPlay}
-        class="py-1 shrink-0"
+        class="shrink-0"
       >
         {#snippet actions()}
+          {#if $scriptPage$.error || (!$scriptsInitialized$ && !$scriptPage$.loading && !isDetecting)}
+            <Button
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
+              aria-label={m.terminal_sidebar_retryScripts_label()}
+              tooltip={m.terminal_sidebar_retryScripts_label()}
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+            >
+              <Fa icon={faRotateRight} size="xs" />
+            </Button>
+          {/if}
           {#if hasScripts}
             <Button
               variant="ghost-light"
               size="icon-xs"
-              class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              class="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
               onclick={(e) => {
                 e.stopPropagation();
                 handleSaveToRepo();
@@ -969,27 +990,32 @@
               <Fa
                 icon={saveToRepoStatus === 'saved' ? faCheck : faFloppyDisk}
                 size="xs"
-                class={saveToRepoStatus === 'saved' ? 'text-green-500' : ''}
+                class={saveToRepoStatus === 'saved' ? 'text-success' : ''}
               />
             </Button>
           {/if}
           <Button
             variant="ghost-light"
             size="icon-xs"
-            class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            class={cn(
+              'transition-opacity group-focus-within:opacity-100',
+              hasScripts && 'opacity-0 group-hover:opacity-100',
+            )}
             onclick={(e) => {
               e.stopPropagation();
               showAddForm = !showAddForm;
             }}
             tooltip={m.terminal_sidebar_addScript_tooltip()}
+            aria-label={m.terminal_sidebar_addScript_tooltip()}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
           {#if isAgentDetecting && $_scriptDetectAgentId$}
             <Button
-              variant="plain"
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
               type="button"
-              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
                 appStore.dispatch(
@@ -999,7 +1025,8 @@
                   }),
                 );
               }}
-              title={m.terminal_sidebar_viewDetectionAgent_tooltip()}
+              tooltip={m.terminal_sidebar_viewDetectionAgent_tooltip()}
+              aria-label={m.terminal_sidebar_viewDetectionAgent_tooltip()}
             >
               <div
                 class="shrink-0 flex-none"
@@ -1011,40 +1038,49 @@
                   variant="compact"
                 />
               </div>
-              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
+              <span class="sr-only">{m.terminal_sidebar_askingAgent_label()}</span>
             </Button>
           {:else if isAgentDetecting}
-            <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
+            <div
+              class="flex size-7 shrink-0 items-center justify-center text-muted-foreground"
+              role="status"
+              aria-label={m.terminal_sidebar_askingAgent_label()}
+            >
               <!-- a11y-ignore -->
               <IntentMarkLoader size={12} />
-              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
+              <span class="sr-only">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
-            <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
+            <div
+              class="flex size-7 shrink-0 items-center justify-center text-muted-foreground"
+              role="status"
+              aria-label={m.terminal_sidebar_scanningFiles_label()}
+            >
               <!-- a11y-ignore -->
               <IntentMarkLoader size={12} />
-              <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
+              <span class="sr-only">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}
             {#if showAgentAssist}
               <Button
-                variant="outline"
-                size="xs"
-                class="-mt-0.5 -mb-1"
+                variant="ghost-light"
+                size="icon-compact"
+                iconOnly
+                aria-label={m.terminal_sidebar_agentAssist_label()}
                 onclick={(e) => {
                   e.stopPropagation();
                   handleAgentDetect();
                 }}
                 tooltip={m.terminal_sidebar_agentAssist_tooltip()}
               >
-                {m.terminal_sidebar_agentAssist_label()}
+                <Fa icon={faWandMagicSparkles} size="xs" />
               </Button>
             {/if}
             <Button
               variant="ghost-light"
               size="icon-xs"
               class={cn(
-                '-mt-0.5 -mb-1 transition-opacity',
+                'transition-opacity group-focus-within:opacity-100',
                 showAgentAssist ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
               )}
               onclick={(e) => {
@@ -1055,19 +1091,19 @@
             >
               <Fa icon={faSearch} size="xs" />
             </Button>
-          {:else}
+          {:else if !$scriptPage$.error && !$scriptPage$.loading}
             <Button
-              variant="outline"
-              size="xs"
-              class="-mt-0.5 -mb-1"
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
+              aria-label={m.terminal_sidebar_detectWithAi_label()}
               onclick={(e) => {
                 e.stopPropagation();
                 handleAgentDetect();
               }}
-              tooltip={m.terminal_sidebar_detectWithAi_tooltip()}
+              tooltip={m.terminal_sidebar_detectWithAi_label()}
             >
               <Fa icon={faWandMagicSparkles} size="xs" />
-              {m.terminal_sidebar_detectWithAi_label()}
             </Button>
           {/if}
         {/snippet}
@@ -1075,10 +1111,7 @@
         <!-- Add Script Form -->
         {#if showAddForm}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
-            onkeydown={handleAddFormKeydown}
-          >
+          <div class="flex flex-col gap-1.5 px-3.5 py-2" onkeydown={handleAddFormKeydown}>
             <Input
               type="text"
               bind:value={newName}
@@ -1108,19 +1141,12 @@
           </div>
         {/if}
 
-        {#if $scriptPage$.nextCursor}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={$scriptPage$.loading}
-            onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
-            >{m.gitlabCheckout_loadMore_label()}</Button
-          >
+        {#if $scriptPage$.error && !hasScripts}
+          {@render scriptListError()}
         {/if}
-        {#if $scriptPage$.error}<p role="alert">{$scriptPage$.error}</p>{/if}
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-1 px-1.5">
+          <ListContainer spacing="compact" class="px-2 py-1">
             {#each visibleScripts as script (script.id)}
               <div
                 animate:flip={{
@@ -1288,28 +1314,31 @@
               {/if}
             </div>
           {/if}
-        {:else if !showAddForm && isDetecting}
-          <div class="px-3 text-center">
-            <div class="flex flex-col gap-1 px-1 py-1">
-              {#each Array(4) as { }}
-                <div class="flex items-center gap-2 py-0.75 rounded">
-                  <Skeleton class="h-2 w-2 rounded-full shrink-0" />
-                  <Skeleton class="h-3.5 flex-1 rounded" />
-                </div>
-              {/each}
-            </div>
-          </div>
-        {:else if !showAddForm}
-          <div class="px-3 py-3 text-center text-xs text-muted-foreground space-y-2">
-            {#if showAgentAssist}
-              <p>{m.terminal_sidebar_noScriptsTryAi_label()}</p>
-              <Button variant="outline" size="xs" onclick={handleAgentDetect}>
-                <Fa icon={faWandMagicSparkles} size="xs" />
-                {m.terminal_sidebar_detectWithAi_label()}
-              </Button>
-            {:else}
-              <p>{m.terminal_sidebar_noScriptsAddManually_label()}</p>
-            {/if}
+        {:else if !showAddForm && !$scriptPage$.error}
+          {#if isDetecting || $scriptPage$.loading || !$scriptsInitialized$}
+            <LoadingState
+              density="compact"
+              count={3}
+              label={m.terminal_sidebar_loadingScripts_label()}
+              class="gap-1 px-3.5 py-2 [&_[data-slot=skeleton]]:h-(--control-height-compact)"
+            />
+          {:else}
+            <EmptyState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+              {#snippet description()}{m.terminal_quakeOverlay_noScriptsYet_label()}{/snippet}
+            </EmptyState>
+          {/if}
+        {/if}
+        {#if $scriptPage$.error && hasScripts}
+          {@render scriptListError()}
+        {:else if hasScripts && $scriptPage$.nextCursor}
+          <div class="px-3.5 py-1">
+            <Button
+              variant="ghost"
+              size="compact"
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
+              >{m.gitlabCheckout_loadMore_label()}</Button
+            >
           </div>
         {/if}
       </ListSection>
@@ -1317,15 +1346,15 @@
       <!-- Terminals Section -->
       <ListSection
         title={m.terminal_sidebar_terminals_title()}
-        titleClass="mb-0.5 mt-1.5 px-3.5! pb-0!"
+        titleClass="mb-0 px-3.5 py-0"
         icon={faTerminal}
-        class="py-1 shrink-0"
+        class="shrink-0"
       >
         {#snippet actions()}
           <Button
             variant="ghost-light"
             size="icon-xs"
-            class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            class="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             onclick={(e) => {
               e.stopPropagation();
               onCreateTerminal?.();
@@ -1338,7 +1367,7 @@
         {/snippet}
 
         {#if sidebarTerminals.length > 0}
-          <ListContainer spacing="compact" class="py-0.5 px-2">
+          <ListContainer spacing="compact" class="px-1.5 py-0.5">
             {#each sidebarTerminals as term (term.id)}
               <ListItem
                 size="sm"
@@ -1360,7 +1389,7 @@
                   },
                 ]}
                 actionsVisible="hover"
-                actionsClass="absolute right-0 top-1/2 -translate-y-1/2 bg-background px-1 rounded"
+                actionsClass="absolute right-0 top-1/2 -translate-y-1/2 px-1 rounded"
               >
                 {#snippet iconSnippet()}
                   <div class="flex items-center justify-center w-4">
@@ -1371,9 +1400,9 @@
             {/each}
           </ListContainer>
         {:else}
-          <div class="px-3 py-3 text-center">
-            <p class="text-ui text-muted-foreground">{m.terminal_sidebar_noTerminals_label()}</p>
-          </div>
+          <EmptyState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+            {#snippet description()}{m.terminal_sidebar_noTerminals_label()}{/snippet}
+          </EmptyState>
         {/if}
       </ListSection>
     </div>
