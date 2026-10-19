@@ -219,3 +219,49 @@ describe('chat search utilities', () => {
     expect(ranges[0].toString()).toBe('crossnode');
   });
 });
+
+describe('chat search with collapsed tool runs', () => {
+  const message = assistant('assistant-runs', [
+    { type: 'tool_use', id: 'tool-a', name: 'view', input: {} },
+    { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
+    { type: 'tool_result', tool_use_id: 'orphan', output: 'orphan needle output' },
+    { type: 'text', text: 'prose needle after the run' },
+  ] as AgentMessage['contentBlocks']);
+
+  it('indexes prose at the post-collapse block path the renderer uses', () => {
+    const [plain] = findChatSearchMatches([message], 'prose needle', new Map());
+    const [collapsed] = findChatSearchMatches([message], 'prose needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(plain.blockPath).toBe('b:3');
+    expect(collapsed.blockPath).toBe('b:2');
+    expect(collapsed.disclosurePath).toEqual([]);
+  });
+
+  it('keeps a standalone tool result outside the collapsed run, like the renderer', () => {
+    const [match] = findChatSearchMatches([message], 'orphan needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(match.blockPath).toBe('b:1');
+    expect(match.disclosurePath).toEqual([]);
+  });
+
+  it('ignores wizard-only question blocks the renderer strips, so runs line up', () => {
+    const withQuestion = assistant('assistant-question', [
+      { type: 'tool_use', id: 'tool-a', name: 'view', input: {} },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent://question/q-1',
+          mimeType: 'application/vnd.intent.question+json',
+        },
+      },
+      { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
+      { type: 'text', text: 'prose needle' },
+    ] as AgentMessage['contentBlocks']);
+    const [match] = findChatSearchMatches([withQuestion], 'prose needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(match.blockPath).toBe('b:1');
+  });
+});

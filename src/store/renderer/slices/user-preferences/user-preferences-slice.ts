@@ -55,6 +55,8 @@ export type UserPreferencesState = {
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
   chatAuroraEnabled: boolean;
+  /** Whether runs of consecutive tool calls and thinking steps collapse into one chat row. */
+  collapseToolRuns: boolean;
   shellTransparencyEnabled: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
@@ -138,6 +140,7 @@ export const initialState: UserPreferencesStoreState = {
   providerSetupHydratedBackendId: null,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsSettingsVisible: false,
@@ -341,6 +344,17 @@ export const setChatAuroraEnabled = chatAuroraPreference.setAction;
 
 export const toggleChatAurora = chatAuroraPreference.toggleAction;
 
+const collapseToolRunsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'collapseToolRuns',
+  setActionName: 'setCollapseToolRuns',
+  toggleActionName: 'toggleCollapseToolRuns',
+});
+
+export const setCollapseToolRuns = collapseToolRunsPreference.setAction;
+
+export const toggleCollapseToolRuns = collapseToolRunsPreference.toggleAction;
+
 const shellTransparencyPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'shellTransparencyEnabled',
@@ -525,6 +539,7 @@ userPreferencesReducer.with(
 );
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
+collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);

@@ -2,7 +2,6 @@ import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
-  groupContentBlocks,
   parseSuggestedPrompts,
   parseSuggestedPromptsFromContentBlocks,
 } from '$lib/utils/messageParser';
@@ -14,12 +13,21 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
+import { shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
   isStandaloneToolResult,
 } from './tool-result-pairing';
+import { groupMessageBlocks } from './operational-run-collapse';
+import type { ContentBlock } from '$shared/types';
+import { isQuestionResourceBlock } from '$shared/types/question-resource';
+import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+
+export interface ChatSearchOptions {
+  /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
+  collapseToolRuns?: boolean;
+}
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -33,11 +41,28 @@ export interface ChatSearchMatch {
 export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
   childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
 
+/**
+ * Mirror the transcript renderers' block filtering that changes block order or
+ * count (resource dedupe, wizard-only questions, superseded tool_use skeletons)
+ * so search block paths match the rendered DOM.
+ */
+function renderedContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const kept = dedupeResourceBlocks(blocks).filter((block) => !isQuestionResourceBlock(block));
+  const lastToolUse = new Map<string, number>();
+  kept.forEach((block, index) => {
+    if (block.type === 'tool_use' && block.id) lastToolUse.set(block.id, index);
+  });
+  return kept.filter(
+    (block, index) => block.type !== 'tool_use' || !block.id || lastToolUse.get(block.id) === index,
+  );
+}
+
 /** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
 function buildMessageSearchBlocks(
   message: AgentMessage,
   turnKey: string,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions = {},
 ): ChatSearchBlock[] {
   const contentBlocks = message.contentBlocks;
   if (!contentBlocks?.length) return [];
@@ -60,9 +85,10 @@ function buildMessageSearchBlocks(
   const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
-  const grouped = normalizeResponseGroups(
-    groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
+  const grouped = groupMessageBlocks(
+    renderedContentBlocks(parsedPromptBlocks.contentBlocks),
     !!message.isStreaming,
+    !!options.collapseToolRuns,
   );
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
@@ -149,12 +175,14 @@ function buildChatSearchIndex(
   messages: AgentMessage[],
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions,
 ): ChatSearchBlock[] {
   return messages.flatMap((message) =>
     buildMessageSearchBlocks(
       message,
       turnKeyByMessageId.get(message.id) ?? message.id,
       ownerPrincipalId,
+      options,
     ),
   );
 }
@@ -173,12 +201,18 @@ export function findChatSearchMatches(
   query: string,
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId?: string | null,
+  options: ChatSearchOptions = {},
 ): ChatSearchMatch[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
   const matches: ChatSearchMatch[] = [];
   const occurrenceByMessage = new Map<string, number>();
-  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId, ownerPrincipalId)) {
+  for (const block of buildChatSearchIndex(
+    messages,
+    turnKeyByMessageId,
+    ownerPrincipalId,
+    options,
+  )) {
     const content = block.text.toLowerCase();
     let offset = 0;
     let occurrenceInBlock = 0;

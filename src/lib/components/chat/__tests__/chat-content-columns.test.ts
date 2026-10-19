@@ -106,6 +106,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).stub({
     selectChatAuroraEnabled: false,
+    selectCollapseToolRuns: false,
     selectLabsMultiplayerEnabled: false,
     selectIsAgentMonospace: false,
   }),
