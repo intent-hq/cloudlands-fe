@@ -89,6 +89,7 @@ function populatedState() {
         },
       ]),
       lastSubmittedAgent: { selectedModel: 'sonnet' },
+      agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
     },
   };
 }
@@ -246,6 +247,7 @@ describe('workspaceInitializerSaga', () => {
                 },
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
+              agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
             },
           },
         ],
@@ -300,6 +302,7 @@ describe('workspaceInitializerSaga', () => {
                 },
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
+              agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
             },
           },
         ],
@@ -366,6 +369,39 @@ describe('workspaceInitializerSaga', () => {
     },
   );
 
+  it('round-trips per-repo agent setups through the daemon bag and drops malformed entries', async () => {
+    const team = {
+      isTeamMode: true,
+      selectedSpecialist: 'spec-writer',
+      selectedProvider: 'claude-code',
+      selectedModel: 'opus',
+      selectedReasoningEffort: 'high',
+    };
+    const solo = { isTeamMode: false, selectedSpecialist: 'implementor', selectedModel: 'sonnet' };
+    const agentByRepo = { 'github:github.com/acme/app': team, 'local:/code/app': solo };
+    const state = { workspaceInitializer: { ...initialState, hydrated: true, agentByRepo } };
+    await runSaga(
+      { getState: () => withLegacyPrincipal(state) },
+      persistWorkspaceInitializerWorker,
+    ).toPromise();
+    const bag = mocks.update.mock.calls[0][0][0].value;
+    expect(bag.agentByRepo).toEqual(agentByRepo);
+
+    mocks.get.mockResolvedValue({
+      value: {
+        ...JSON.parse(JSON.stringify(bag)),
+        agentByRepo: { ...bag.agentByRepo, 'local:/bad': 'opus', 'local:/null': null },
+      },
+    });
+    const dispatch = vi.fn();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
+    const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+    expect(hydrated.agentByRepo).toEqual(agentByRepo);
+  });
+
   it('coalesces pre-hydration mutations and flushes the hydrated bag once', async () => {
     let resolve!: (value: unknown) => void;
     mocks.get.mockReturnValue(new Promise((done) => (resolve = done)));
@@ -418,6 +454,7 @@ describe('workspaceInitializerSaga', () => {
               dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
             },
           },
         ],
@@ -712,6 +749,7 @@ describe('workspaceInitializerSaga', () => {
               dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
             },
           },
         ],
@@ -782,6 +820,7 @@ describe('workspaceInitializerSaga', () => {
               dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
             },
           },
         ],

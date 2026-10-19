@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.221.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.2...v2.221.0) (2026-10-19)
+
+
+### 🚀 Features
+
+* **providers:** named provider profiles in Settings and model pickers ([#3457](https://github.com/intent-hq/cloudlands-fe/issues/3457)) ([9dabd5e](https://github.com/intent-hq/cloudlands-fe/commit/9dabd5eeb90a4605d1e8e564521f201dd421f8e2))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.9 ([#3505](https://github.com/intent-hq/cloudlands-fe/issues/3505)) ([81625db](https://github.com/intent-hq/cloudlands-fe/commit/81625db58179286c07ff30ab1a170a079304d1a8))
+* **navigation:** show only the label on the single Open in original workspace item ([#3501](https://github.com/intent-hq/cloudlands-fe/issues/3501)) ([a34b4fd](https://github.com/intent-hq/cloudlands-fe/commit/a34b4fdd21989e3b8f844e7c3d669e7e0bf48298))
+
 ## [2.220.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.220.1...v2.220.2) (2026-10-18)
 
 
