@@ -138,6 +138,7 @@ vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', ()
   selectPrBranchLookupEntries: vi.fn(() => readable(() => ({}))),
 }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentByRepo: { select: vi.fn(() => ({})) },
   selectNewWorkspaceDefaultSpecialist: Object.assign(
     vi.fn(() => readable(() => null)),
     { select: vi.fn(() => null) },

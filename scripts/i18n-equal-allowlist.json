@@ -8,6 +8,7 @@
   "home_integrations_description": ["fr"],
   "settings_devices_mobile_title": "*",
   "presence_person_roleStatus": "*",
+  "chat_proposalCard_agentSetupModelEffort_label": "*",
   "settings_sidebar_guestSessions_label": ["fr"],
   "settings_guestSessions_title": ["fr"],
   "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],

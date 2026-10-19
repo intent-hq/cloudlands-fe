@@ -2817,6 +2817,8 @@
   "chat_proposalCard_task_label": "任務",
   "chat_proposalCard_project_label": "專案",
   "chat_proposalCard_initialAgent_label": "初始代理",
+  "chat_proposalCard_agentSetup_label": "{setup}（上次在此存放庫中使用）",
+  "chat_proposalCard_agentSetupModelEffort_label": "{model} · {effort}",
   "chat_proposalCard_proposalFile_fallback": "提案",
   "chat_proposalCard_creatingWorkspace_label": "正在建立工作區…",
   "chat_proposalCard_workspaceCreationFailed_label": "建立工作區失敗",

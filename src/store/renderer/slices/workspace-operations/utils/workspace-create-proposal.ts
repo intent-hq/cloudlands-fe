@@ -24,6 +24,28 @@ function specialistOverride(value: unknown, fallback?: string): string | undefin
   return fallback;
 }
 
+/**
+ * Provider / model / effort the card adopted from the repository's remembered
+ * New Workspace setup (`editedFields.agentSetup`). They only fill legs the
+ * proposal's own initial agent leaves unset.
+ */
+function agentSetupOverrides(
+  value: unknown,
+  initialAgent: Partial<InitialAgentRequest> | undefined,
+): Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> {
+  const setup = recordValue(value);
+  if (!setup) return {};
+  const overrides: Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> =
+    {};
+  if (typeof setup.provider === 'string' && setup.provider && initialAgent?.provider === undefined)
+    overrides.provider = setup.provider;
+  if (typeof setup.model === 'string' && setup.model && initialAgent?.model === undefined)
+    overrides.model = setup.model;
+  if (typeof setup.reasoningEffort === 'string' && initialAgent?.reasoningEffort === undefined)
+    overrides.reasoningEffort = setup.reasoningEffort;
+  return overrides;
+}
+
 function withoutSpecialist(metadata: Record<string, unknown>): Record<string, unknown> {
   const next = { ...metadata };
   delete next.specialist;
@@ -107,6 +129,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     scope: stringOverride(siblingScoped ? undefined : editedFields?.scope, params.scope),
     initialAgent: {
       ...initialAgentFields,
+      ...agentSetupOverrides(editedFields?.agentSetup, initialAgent),
       name: payloadName ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,
