@@ -11,6 +11,8 @@
   import { toStore } from 'svelte/store';
   import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
   import {
+    selectProviderCatalogEntries,
+    selectProviderCatalogLoaded,
     selectProviderCatalogProfiles,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -43,6 +45,9 @@
   const toProviderName$ = selectProviderDisplayName(toProvider);
   // Profile names (§5.54) label the notice, so renames and removals relabel it.
   const profiles$ = selectProviderCatalogProfiles(toStore(() => workspaceId));
+  // "Removed profile" is said only once the catalog has loaded.
+  const catalogLoaded$ = selectProviderCatalogLoaded();
+  const catalogEntries$ = selectProviderCatalogEntries(toStore(() => workspaceId));
   // A profile side falls back to its base provider's model names.
   const fromBaseName$ = selectModelDisplayName(
     toStore(() => providerRefBaseId(notice.fromProvider ?? '')),
@@ -66,6 +71,8 @@
     void $toProviderName$;
     void $toName$;
     void $profiles$;
+    void $catalogLoaded$;
+    void $catalogEntries$;
     void $fromBaseName$;
     void $toBaseName$;
     return formatModelChangeLabel(notice, fallbackText, workspaceId);

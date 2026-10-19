@@ -7524,7 +7524,7 @@
   "settings_providerProfiles_name_label": "Nombre",
   "settings_providerProfiles_name_description": "Se muestra en los selectores de modelo junto al nombre del proveedor.",
   "settings_providerProfiles_env_label": "Variables de entorno",
-  "settings_providerProfiles_env_description": "Los valores se usan literalmente, sin expansión de shell, salvo que un ~ inicial en CODEX_HOME o CLAUDE_CONFIG_DIR significa tu carpeta personal. Usa una de esas dos para elegir una cuenta.",
+  "settings_providerProfiles_env_description": "Los valores se usan literalmente, sin expansión de shell. Usa CODEX_HOME o CLAUDE_CONFIG_DIR para elegir una cuenta; en esas dos, un valor ~ o que empiece por ~/ significa la carpeta personal del usuario que ejecuta el daemon.",
   "settings_providerProfiles_envEmpty_label": "Sin sobrescrituras. Este perfil hereda el entorno del proveedor.",
   "settings_providerProfiles_addVariable_label": "Añadir variable",
   "settings_providerProfiles_variableN_label": "variable n.º {n}",

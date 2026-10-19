@@ -7524,7 +7524,7 @@
   "settings_providerProfiles_name_label": "Name",
   "settings_providerProfiles_name_description": "Shown in model pickers next to the provider name.",
   "settings_providerProfiles_env_label": "Environment variables",
-  "settings_providerProfiles_env_description": "Values are used literally, without shell expansion, except that a leading ~ in CODEX_HOME or CLAUDE_CONFIG_DIR means your home folder. Use one of those two to choose an account.",
+  "settings_providerProfiles_env_description": "Values are used literally, without shell expansion. Use CODEX_HOME or CLAUDE_CONFIG_DIR to choose an account; in those two, a value of ~ or starting with ~/ means the home folder of the user running the daemon.",
   "settings_providerProfiles_envEmpty_label": "No overrides. This profile inherits the provider's environment.",
   "settings_providerProfiles_addVariable_label": "Add variable",
   "settings_providerProfiles_variableN_label": "variable {n}",

@@ -11,6 +11,7 @@
  */
 import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
 import {
+  selectProviderCatalogLoaded,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -92,13 +93,24 @@ function describeProfileSide(
   if (!providerRef) return model ?? '';
   const state = appStore.state;
   const baseId = providerRefBaseId(providerRef);
-  const baseName = selectProviderDisplayName.select(state, baseId, workspaceId);
-  const provider = formatProviderRefLabel(
-    providerRef,
-    baseName,
-    selectProviderCatalogProfiles.select(state, workspaceId),
+  // Until the (workspace) catalog has loaded, a missing profile is unknown,
+  // not removed: read the bare provider name instead of "Removed profile".
+  const loaded = workspaceId
+    ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
+    : selectProviderCatalogLoaded.select(state);
+  const baseName = selectProviderDisplayName.select(
+    state,
     baseId,
+    loaded ? workspaceId : undefined,
   );
+  const provider = loaded
+    ? formatProviderRefLabel(
+        providerRef,
+        baseName,
+        selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+      )
+    : baseName;
   if (!model) return m.chat_modelChangeNotice_profileDefaultModel_label({ provider });
   // A profile serves its own catalog; before it loads (or after removal) the
   // base provider's names still describe the same model ids.

@@ -7524,7 +7524,7 @@
   "settings_providerProfiles_name_label": "名稱",
   "settings_providerProfiles_name_description": "會在模型選擇器中顯示於提供者名稱旁。",
   "settings_providerProfiles_env_label": "環境變數",
-  "settings_providerProfiles_env_description": "值會按原樣使用，不進行 shell 展開；但 CODEX_HOME 或 CLAUDE_CONFIG_DIR 開頭的 ~ 代表你的主資料夾。使用這兩者之一選擇帳號。",
+  "settings_providerProfiles_env_description": "值會按原樣使用，不進行 shell 展開。使用 CODEX_HOME 或 CLAUDE_CONFIG_DIR 選擇帳號；在這兩者中，值為 ~ 或以 ~/ 開頭時代表執行常駐程式之使用者的主資料夾。",
   "settings_providerProfiles_envEmpty_label": "沒有覆寫項目。此設定檔會繼承提供者的環境。",
   "settings_providerProfiles_addVariable_label": "新增變數",
   "settings_providerProfiles_variableN_label": "變數 {n}",

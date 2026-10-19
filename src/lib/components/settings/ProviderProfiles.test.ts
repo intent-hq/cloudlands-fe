@@ -139,7 +139,7 @@ describe('ProviderProfiles', () => {
     ).toBeTruthy();
   });
 
-  it('explains that a leading ~ in CODEX_HOME and CLAUDE_CONFIG_DIR means the home folder', async () => {
+  it("explains that only ~ or ~/ in CODEX_HOME and CLAUDE_CONFIG_DIR means the daemon user's home folder", async () => {
     await seed({ profiles: [] });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
     render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
@@ -148,7 +148,10 @@ describe('ProviderProfiles', () => {
     );
     const dialog = await screen.findByRole('dialog');
     const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
-    expect(help.textContent).toMatch(/~.*CODEX_HOME.*CLAUDE_CONFIG_DIR.*home folder/);
+    expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
+    expect(help.textContent).toMatch(
+      /~ or starting with ~\/ means the home folder of the user running the daemon/,
+    );
   });
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {

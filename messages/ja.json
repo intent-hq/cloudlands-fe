@@ -7524,7 +7524,7 @@
   "settings_providerProfiles_name_label": "名前",
   "settings_providerProfiles_name_description": "モデル選択でプロバイダー名の横に表示されます。",
   "settings_providerProfiles_env_label": "環境変数",
-  "settings_providerProfiles_env_description": "値はシェル展開されず、そのまま使用されます。ただし CODEX_HOME と CLAUDE_CONFIG_DIR の先頭の ~ はホームフォルダーを表します。アカウントを選ぶにはこのどちらかを使用してください。",
+  "settings_providerProfiles_env_description": "値はシェル展開されず、そのまま使用されます。アカウントを選ぶには CODEX_HOME または CLAUDE_CONFIG_DIR を使用してください。この 2 つでは、~ または ~/ で始まる値はデーモンを実行しているユーザーのホームフォルダーを表します。",
   "settings_providerProfiles_envEmpty_label": "上書きはありません。このプロファイルはプロバイダーの環境を引き継ぎます。",
   "settings_providerProfiles_addVariable_label": "変数を追加",
   "settings_providerProfiles_variableN_label": "変数 {n}",

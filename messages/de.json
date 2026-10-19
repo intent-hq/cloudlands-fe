@@ -7524,7 +7524,7 @@
   "settings_providerProfiles_name_label": "Profilname",
   "settings_providerProfiles_name_description": "Wird in der Modellauswahl neben dem Anbieternamen angezeigt.",
   "settings_providerProfiles_env_label": "Umgebungsvariablen",
-  "settings_providerProfiles_env_description": "Werte werden wörtlich verwendet, ohne Shell-Erweiterung; nur ein führendes ~ in CODEX_HOME oder CLAUDE_CONFIG_DIR steht für deinen Home-Ordner. Wähle mit einer dieser beiden ein Konto.",
+  "settings_providerProfiles_env_description": "Werte werden wörtlich verwendet, ohne Shell-Erweiterung. Wähle mit CODEX_HOME oder CLAUDE_CONFIG_DIR ein Konto; dort steht ein Wert ~ oder ein Wert, der mit ~/ beginnt, für den Home-Ordner des Benutzers, unter dem der Daemon läuft.",
   "settings_providerProfiles_envEmpty_label": "Keine Überschreibungen. Dieses Profil übernimmt die Umgebung des Anbieters.",
   "settings_providerProfiles_addVariable_label": "Variable hinzufügen",
   "settings_providerProfiles_variableN_label": "Variable {n}",

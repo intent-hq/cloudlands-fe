@@ -292,6 +292,75 @@ describe('formatModelChangeLabel — named provider profiles', () => {
     );
   });
 
+  it('shows the bare provider name, not "Removed profile", until the catalog has loaded', () => {
+    const state = profileState([]);
+    mockStoreState = {
+      ...state,
+      providerCatalog: { ...(state.providerCatalog as object), loaded: false },
+    };
+    const label = formatModelChangeLabel(
+      {
+        from: 'opus',
+        to: 'opus',
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code',
+      },
+      FALLBACK,
+    );
+    expect(label).toBe('Switched from Opus 5.5 (Claude Code) to Opus 5.5 (Claude Code)');
+    expect(label).not.toContain('Removed profile');
+  });
+
+  it('waits for the workspace catalog before calling a profile removed', () => {
+    mockStoreState = profileState();
+    const pending = formatModelChangeLabel(
+      {
+        from: null,
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(pending).toBe('Switched from Claude Code default model to Claude Code default model');
+    expect(pending).not.toContain('Removed profile');
+    mockStoreState = {
+      ...profileState(),
+      providerCatalog: {
+        ...(profileState().providerCatalog as object),
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: {
+              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+              profiles: [
+                {
+                  id: 'pwork',
+                  providerRef: 'claude-code@pwork',
+                  baseProviderId: 'claude-code',
+                  name: 'Work',
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const loaded = formatModelChangeLabel(
+      {
+        from: null,
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(loaded).toBe(
+      'Switched from Claude Code · Removed profile default model to Claude Code · Work default model',
+    );
+  });
+
   it('describes a profile default-model side without the reference', () => {
     mockStoreState = profileState();
     const label = formatModelChangeLabel(
