@@ -81,6 +81,7 @@ test('opens People, receives live human activity, and restores focus on close', 
   await expect(panel).toHaveCount(0);
   await expect(launcher).toBeFocused();
   await launcher.press('Enter');
+  await expect(panel).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
   await expect(launcher).toBeFocused();
