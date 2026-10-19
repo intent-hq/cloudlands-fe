@@ -303,7 +303,7 @@ jobs:
           rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
-      # Share compiler outputs through the self-hosted cache on both native macOS architectures.
+      # Share compiler outputs through the self-hosted cache on the native macOS build.
       - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash

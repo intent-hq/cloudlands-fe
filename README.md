@@ -280,7 +280,7 @@ ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
 `macos-15-xlarge`. The larger runners' group must allow public repositories.
 Mac desktop release and manual packaging builds target ARM64 only.
 
-From-source Rust sidecars use managed sccache without Rust cache actions.
+From-source Rust sidecars use the self-hosted sccache without Rust cache actions.
 The setup script installs a pinned, checksum-verified binary. When the
 `INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
 cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless

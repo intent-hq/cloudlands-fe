@@ -10,15 +10,19 @@ const { load } = require('js-yaml');
 const read = (path: string) => load(readFileSync(path, 'utf8'));
 
 // Standard GitHub labels plus the org larger runners; Depot was retired.
+// Windows stays on Server 2022 (gh-windows-16x): windows-2025 breaks node-gyp.
 const HOSTED = new Set([
   'ubuntu-24.04',
   'gh-linux-8x',
   'gh-linux-arm64-8x',
   'gh-windows-16x',
-  'windows-2025',
   'macos-15-xlarge',
-  'macos-latest-large',
 ]);
+// Runners chosen through a matrix: `runner: <label>` rows and JSON `"runner":"<label>"` targets.
+const matrixRunners = (text: string) => [
+  ...[...text.matchAll(/^\s+runner: ([\w.-]+)\s*$/gm)].map((m) => m[1]),
+  ...[...text.matchAll(/"runner":"([^"]+)"/g)].map((m) => m[1]),
+];
 
 describe('GitHub-hosted CI runners', () => {
   it.each(['healthy', 'offline', 'busy', 'error'])('routes the %s fleet safely', async (state) => {
@@ -93,12 +97,29 @@ describe('GitHub-hosted CI runners', () => {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
           continue;
         }
-        if (runner && !runner.includes('${{')) {
-          expect(runner, `${file}:${id}`).not.toMatch(/^depot-/);
+        if (runner && !runner.includes('${{'))
           expect(HOSTED.has(runner), `${file}:${id} uses ${runner}`).toBe(true);
-        }
       }
     }
+  });
+
+  it('selects only known GitHub-hosted labels in runner matrices', () => {
+    const found = readdirSync('.github/workflows')
+      .filter((name) => name.endsWith('.yml'))
+      .flatMap((file) =>
+        matrixRunners(readFileSync(`.github/workflows/${file}`, 'utf8')).map((runner) => ({
+          file,
+          runner,
+        })),
+      );
+    expect(found.map(({ runner }) => runner)).toEqual(
+      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-15-xlarge']),
+    );
+    for (const { file, runner } of found)
+      expect(HOSTED.has(runner), `${file} matrix uses ${runner}`).toBe(true);
+    expect(matrixRunners('          runner: depot-ubuntu-24.04-arm-8\n')).toEqual([
+      'depot-ubuntu-24.04-arm-8',
+    ]);
   });
 
   it('configures managed caching without Rust cache actions', () => {
