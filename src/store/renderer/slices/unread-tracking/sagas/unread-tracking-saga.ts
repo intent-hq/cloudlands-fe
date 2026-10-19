@@ -40,6 +40,7 @@ import {
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
 import {
+  chatViewEnded,
   clearCurrentlyViewedAgent,
   endDividerSession,
   markAgentAsViewed,
@@ -51,6 +52,7 @@ import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycl
 export type DividerSessionBoundary =
   | { kind: 'tab-close'; agentIds: string[] }
   | { kind: 'chief-card-close'; agentIds: string[] }
+  | { kind: 'view-end'; agentIds: string[] }
   | {
       kind: 'workspace-switch';
       agentIds: string[];
@@ -137,7 +139,7 @@ function* readDividerBoundarySnapshot(
 
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
   yield* call(markAgentSeenAtBoundary, boundary.agentIds);
-  // Leaving the agent (workspace switch / tab close) ends the reading
+  // Leaving the agent (workspace switch / tab close / chat view end) ends the reading
   // session: drop the cached transcript scroll so the next entry lands at
   // the bottom or the unread divider, never a stale clamped position.
   // Chief-card close keeps its cache — the hover card is not a workspace
@@ -223,6 +225,27 @@ function* handleChiefUnmount(
   tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
 }
 
+/**
+ * A chat view outside the panel-layout agent tabs ended (Home preview: the
+ * selected workspace or agent changed, the preview closed, or the user left
+ * Home). Those surfaces never close an agent tab or switch the active
+ * workspace tab, so without this boundary the seen marker never advanced past
+ * a reply watched mid-turn and the divider session stayed latched at its
+ * stale anchor. Only an agent whose viewing session actually started (first
+ * transcript hydration latched a divider session) is affected.
+ */
+function* handleChatViewEnded(
+  tracker: BoundarySnapshotTracker,
+  { payload: [agentId] }: ReturnType<typeof chatViewEnded>,
+): SagaGenerator<void> {
+  if (!agentId) return;
+  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+  if (!current.dividerSessionAgentIds.includes(agentId)) return;
+  const boundary: DividerSessionBoundary = { kind: 'view-end', agentIds: [agentId] };
+  yield* call(finishBoundary, boundary);
+  tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+}
+
 function* handleSend(action: ReturnType<typeof sendMessage>): SagaGenerator<void> {
   if (action.payload.agentId) yield* call(markAgentSeenOnUserSend, action.payload.agentId);
 }
@@ -288,6 +311,7 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     call(watchWorkspaceBoundaries, tracker),
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
     takeEvery(workspaceUnmounted, handleChiefUnmount, tracker),
+    takeEvery(chatViewEnded, handleChatViewEnded, tracker),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),

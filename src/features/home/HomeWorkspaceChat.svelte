@@ -14,6 +14,7 @@
     hydrateAgentsRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { chatViewEnded } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import type { ChatAttentionFocusRequest } from '$lib/components/chat/chat-attention-focus';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
@@ -33,6 +34,19 @@
     eligibleAgents.find((candidate) => candidate.id === $activeId$) ??
       resolveCanonicalInitialAgent(eligibleAgents),
   );
+  // A primitive so agent-list refreshes that keep the same agent on screen do
+  // not end its viewing session.
+  const shownAgentId = $derived(preview ? undefined : agent?.id);
+  // This surface never closes an agent tab or switches the active workspace
+  // tab, so report when it stops showing a conversation (agent/workspace
+  // switch, preview close, leaving Home): the unread-tracking saga treats it
+  // as a stop-looking boundary that advances the seen marker and ends the
+  // "New messages" divider session.
+  $effect(() => {
+    const agentId = shownAgentId;
+    if (!agentId) return;
+    return () => store.dispatch(chatViewEnded(agentId));
+  });
   let attentionFocus = $state<ChatAttentionFocusRequest & { agentId: string }>();
   let nextFocusRequest = 0;
   export function focusAttention(agentId: string, questionMessageId?: string) {
