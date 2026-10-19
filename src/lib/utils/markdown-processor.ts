@@ -6,6 +6,7 @@ import { sanitizeMarkdownHTML } from './html-sanitizer';
 import {
   createWorkspaceFileVersion,
   rewriteIntentFileImageSrcs,
+  rewriteRelativeImageSrcs,
   stampWorkspaceFileImageVersions,
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
@@ -610,6 +611,12 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode?: 'placeholder' | 'content';
     /** Workspace ID used to resolve short-form intent://local/file/... image links */
     workspaceId?: string;
+    /**
+     * Workspace-relative directory of the Markdown file being rendered (`''`
+     * for the workspace root). When set, relative image paths resolve against
+     * it; when omitted (notes, chat), relative paths are left untouched.
+     */
+    relativeMediaBase?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
     /** Render supported TeX delimiters for read-only Markdown consumers. */
@@ -633,6 +640,7 @@ export async function processMarkdownToHTML(
     processPrimitives = true,
     taskBlockRenderMode = 'placeholder',
     workspaceId,
+    relativeMediaBase,
     renderRichFencesAsCode = false,
     renderMath = false,
     workspaceFileVersion,
@@ -667,7 +675,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}|${allowSanitizedHtml}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${relativeMediaBase === undefined ? '-' : `base:${relativeMediaBase}`}|${renderRichFencesAsCode}|${renderMath}|${allowSanitizedHtml}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return stampVersions(cached);
@@ -755,6 +763,9 @@ export async function processMarkdownToHTML(
 
     // Rewrite intent://.../file/... image sources to workspace-file:// URLs so
     // inline markdown images referencing workspace files render in the transcript
+    if (relativeMediaBase !== undefined) {
+      htmlOut = rewriteRelativeImageSrcs(htmlOut, relativeMediaBase);
+    }
     htmlOut = rewriteIntentFileImageSrcs(htmlOut, workspaceId);
     const t5 = isLargeContent ? performance.now() : 0;
 

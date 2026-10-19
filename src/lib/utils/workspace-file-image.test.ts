@@ -4,7 +4,9 @@ import {
   intentFileImageUrlToWorkspaceFileUrl,
   intentFileMediaUrlToWorkspaceFile,
   parseIntentFileTarget,
+  resolveRelativeMediaPath,
   rewriteIntentFileImageSrcs,
+  rewriteRelativeImageSrcs,
   stampWorkspaceFileImageVersions,
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
@@ -272,5 +274,68 @@ describe('stampWorkspaceFileImageVersions', () => {
 
     expect(workspaceFileImageUrlToIntentFileUrl(src)).toBe('intent://local/file/docs/a%20b.png');
     expect(workspaceFileMediaUrlToIntentFileUrl(src)).toBe('intent://local/file/docs/a%20b.png');
+  });
+});
+
+describe('resolveRelativeMediaPath', () => {
+  it.each([
+    ['charts/chart.png', 'report', 'report/charts/chart.png'],
+    ['./charts/chart.png', 'report', 'report/charts/chart.png'],
+    ['../shared/logo.png', 'docs/guide', 'docs/shared/logo.png'],
+    ['chart.png', '', 'chart.png'],
+    ['my%20chart.png?raw=1#top', 'report', 'report/my chart.png'],
+  ])('resolves %s against %s', (src, baseDir, expected) => {
+    expect(resolveRelativeMediaPath(src, baseDir)).toBe(expected);
+  });
+
+  it.each([
+    ['../escape.png', ''],
+    ['../../escape.png', 'report'],
+    ['/abs/chart.png', 'report'],
+    ['//cdn.example.com/chart.png', 'report'],
+    ['https://example.com/chart.png', 'report'],
+    ['intent://local/file/chart.png', 'report'],
+    ['workspace-asset://ws/asset.png', 'report'],
+    ['data:image/png;base64,AAAA', 'report'],
+    ['#anchor', 'report'],
+    ['', 'report'],
+    ['a\\b.png', 'report'],
+    ['C:/chart.png', ''],
+    ['%2e%2e/escape.png', ''],
+    ['bad%E0%A4%A.png', 'report'],
+  ])('rejects %s against %s', (src, baseDir) => {
+    expect(resolveRelativeMediaPath(src, baseDir)).toBeNull();
+  });
+
+  it('rejects an unsafe base directory', () => {
+    expect(resolveRelativeMediaPath('chart.png', '../outside')).toBeNull();
+  });
+});
+
+describe('rewriteRelativeImageSrcs', () => {
+  it('rewrites relative image sources to portable workspace file links', () => {
+    const html = '<p><img src="charts/my%20chart.png" alt="Chart"></p>';
+
+    expect(rewriteRelativeImageSrcs(html, 'report')).toBe(
+      '<p><img src="intent://local/file/report/charts/my%20chart.png" alt="Chart"></p>',
+    );
+  });
+
+  it('feeds the workspace file rewrite so relative images render', () => {
+    const html = rewriteRelativeImageSrcs('<img src="charts/chart.png" alt="Chart">', 'report');
+
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(
+      `<img src="workspace-file://${WS}/report/charts/chart.png" alt="Chart">`,
+    );
+  });
+
+  it.each([
+    '<img src="https://example.com/a.png" alt="">',
+    '<img src="intent://local/file/a.png" alt="">',
+    '<img src="workspace-asset://ws/asset.png" alt="">',
+    '<img src="/abs/a.png" alt="">',
+    '<img src="../escape.png" alt="">',
+  ])('leaves %s untouched', (html) => {
+    expect(rewriteRelativeImageSrcs(html, '')).toBe(html);
   });
 });

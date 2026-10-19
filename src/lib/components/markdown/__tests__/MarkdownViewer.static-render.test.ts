@@ -154,6 +154,34 @@ describe('MarkdownViewer static rendering', () => {
     expect(screen.getByTestId('chat-video-player')).toBeTruthy();
   });
 
+  it('resolves relative images against the Markdown file directory', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![Chart](charts/chart.png)',
+        workspaceId: 'ws-abc',
+        relativeMediaBase: 'report',
+      },
+    });
+
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/report\/charts\/chart\.png\?v=/,
+      );
+      return element!;
+    });
+    expect(image.getAttribute('alt')).toBe('Chart');
+  });
+
+  it('keeps relative images unresolved without a Markdown file directory', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![Chart](charts/chart.png)', workspaceId: 'ws-abc' },
+    });
+
+    await waitFor(() => expect(container.innerHTML).toContain('Chart'));
+    expect(container.innerHTML).not.toContain('workspace-file://');
+  });
+
   it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
     const { container } = render(MarkdownViewer, {
       props: {

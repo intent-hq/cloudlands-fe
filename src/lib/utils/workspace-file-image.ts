@@ -252,6 +252,53 @@ export function workspaceFileImageUrlToIntentFileUrl(workspaceFileUrl: string): 
   return `intent://local/file/${encodedPath}`;
 }
 
+/** A URL scheme prefix such as `https:`, `data:` or `intent:`. */
+const URL_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
+/**
+ * Resolve a document-relative media reference (`charts/chart.png`,
+ * `../shared/logo.png`) against a workspace-relative base directory, the way
+ * GitHub resolves images next to a Markdown file. `baseDir` is `''` for the
+ * workspace root.
+ *
+ * Returns the decoded workspace-relative path, or null when `src` is not a
+ * plain relative path (it has a scheme, is absolute or protocol-relative, is
+ * fragment/query-only) or would escape the workspace root.
+ */
+export function resolveRelativeMediaPath(src: string, baseDir: string): string | null {
+  if (!src || src !== src.trim() || URL_SCHEME_RE.test(src) || /^[/\\#?]/.test(src)) {
+    return null;
+  }
+  const pathPart = src.split(/[?#]/)[0];
+  if (!pathPart || pathPart.includes('\\')) return null;
+
+  const resolved = baseDir ? baseDir.split('/') : [];
+  if (resolved.some((segment) => !segment || segment === '.' || segment === '..')) return null;
+
+  for (const rawSegment of pathPart.split('/')) {
+    const segment = decodeSegment(rawSegment);
+    if (
+      segment === null ||
+      segment.includes('/') ||
+      segment.includes('\\') ||
+      segment.includes('\0')
+    ) {
+      return null;
+    }
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      // Never resolve above the workspace root.
+      if (resolved.length === 0) return null;
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+
+  if (resolved.length === 0 || /^[A-Za-z]:/.test(resolved[0])) return null;
+  return resolved.join('/');
+}
+
 /** Escape a value for interpolation into a double-quoted HTML attribute. */
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
@@ -291,6 +338,30 @@ export function stampWorkspaceFileImageVersions(html: string, version: string): 
       srcMatch[0],
       ` src="${srcMatch[1]}?${WORKSPACE_FILE_VERSION_PARAM}=${escapeAttr(version)}"`,
     );
+  });
+}
+
+/**
+ * Rewrite rendered `<img>` tags whose src is a document-relative path into
+ * portable `intent://local/file/{path}` links resolved against `baseDir`, so
+ * {@link rewriteIntentFileImageSrcs} can then serve them from the workspace.
+ * Absolute, scheme-bearing (http(s), intent://, workspace-asset://, data:)
+ * and root-escaping sources are left untouched.
+ */
+export function rewriteRelativeImageSrcs(html: string, baseDir: string): string {
+  if (!html.includes('<img')) return html;
+
+  return html.replace(/<img\b[^>]*>/gi, (match) => {
+    const srcMatch = /\ssrc="([^"]*)"/i.exec(match);
+    if (!srcMatch) return match;
+    // marked entity-encodes ampersands inside attribute values
+    const resolved = resolveRelativeMediaPath(srcMatch[1].replace(/&amp;/g, '&'), baseDir);
+    if (!resolved) return match;
+    const encodedPath = resolved
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    return match.replace(srcMatch[0], ` src="${escapeAttr(`intent://local/file/${encodedPath}`)}"`);
   });
 }
 
