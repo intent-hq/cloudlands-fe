@@ -1122,6 +1122,21 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
   });
 
+  it('reads the source panel from the page when the caller passes an empty one', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event, sourcePanelId: '' });
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
+  });
+
   it('passes the source panel to the menu for a click inside a workspace panel', async () => {
     const url = 'https://github.com/acme/widgets/issues/42';
     const { container, anchor } = buildContainerWithLink(url);
@@ -1388,6 +1403,14 @@ describe('openLinkInApp', () => {
 
     expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant panel fails', async () => {
+    showAssistantContentMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
   });
 
   it('ignores the Home panel once it enters the workspace', async () => {

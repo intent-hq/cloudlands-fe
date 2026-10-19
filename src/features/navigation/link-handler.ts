@@ -77,7 +77,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       options.workspaceId,
     );
     const openInWorkspace = options.openInWorkspace ?? source.openInWorkspace;
-    const sourcePanelId = openInWorkspace ? undefined : (options.sourcePanelId ?? source.panelId);
+    const sourcePanelId = openInWorkspace ? undefined : options.sourcePanelId || source.panelId;
     const { assistantLayoutId } = source;
     options = { ...options, openInWorkspace, sourcePanelId };
     // Try custom handler first
@@ -140,7 +140,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       // Home defaults must not override the configured GitHub action.
       if ((openInWorkspace && useHomeBrowser) || isCmdClickModifier(options)) {
         if (options.workspaceId) {
-          return await openLinkInApp(url, options.workspaceId, options);
+          return await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId });
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
@@ -153,7 +153,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return await openInExternalBrowser(url);
           case 'open-in-app':
             return options.workspaceId
-              ? await openLinkInApp(url, options.workspaceId, options)
+              ? await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId })
               : await openInExternalBrowser(url);
           case 'copy-link':
             await writeTextToClipboard(url);
@@ -531,8 +531,12 @@ export async function openLinkInApp(
   } = {},
 ): Promise<boolean> {
   if (workspaceId === CHIEF_WORKSPACE_ID) {
-    const { showAssistantContent } = await import('$features/home/assistant-panels');
-    if (await showAssistantContent(url, { layoutId: source.assistantLayoutId })) return true;
+    try {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      if (await showAssistantContent(url, { layoutId: source.assistantLayoutId })) return true;
+    } catch (error) {
+      logger.warn('Assistant panel unavailable, opening in external browser', { url, error });
+    }
     return await openInExternalBrowser(url);
   }
   try {
