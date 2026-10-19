@@ -1,7 +1,7 @@
 self-hosted-runner:
   labels:
     # Org larger runners (GitHub-hosted, runner group Default); standard
-    # GitHub labels such as ubuntu-24.04 and macos-15-xlarge are built in.
+    # GitHub labels such as ubuntu-24.04 and macos-26-xlarge are built in.
     - gh-linux-8x
     - gh-linux-arm64-8x
     - gh-windows-16x

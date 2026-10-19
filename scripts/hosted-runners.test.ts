@@ -16,7 +16,7 @@ const HOSTED = new Set([
   'gh-linux-8x',
   'gh-linux-arm64-8x',
   'gh-windows-16x',
-  'macos-15-xlarge',
+  'macos-26-xlarge',
 ]);
 // Runners chosen through a matrix: `runner: <label>` rows and JSON `"runner":"<label>"` targets.
 const matrixRunners = (text: string) => [
@@ -113,7 +113,7 @@ describe('GitHub-hosted CI runners', () => {
         })),
       );
     expect(found.map(({ runner }) => runner)).toEqual(
-      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-15-xlarge']),
+      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-26-xlarge']),
     );
     for (const { file, runner } of found)
       expect(HOSTED.has(runner), `${file} matrix uses ${runner}`).toBe(true);

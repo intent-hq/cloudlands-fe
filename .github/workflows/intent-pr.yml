@@ -813,7 +813,7 @@ jobs:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
     needs: [release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
-    runs-on: macos-15-xlarge
+    runs-on: macos-26-xlarge
     timeout-minutes: 15
     permissions:
       contents: read
