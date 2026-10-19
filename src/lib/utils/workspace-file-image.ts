@@ -342,6 +342,19 @@ export function stampWorkspaceFileImageVersions(html: string, version: string): 
 }
 
 /**
+ * Decode HTML character references in an attribute value without parsing
+ * markup. Returns null (leave the tag untouched) when no DOM is available.
+ */
+function decodeHtmlAttribute(value: string): string | null {
+  if (!value.includes('&')) return value;
+  if (typeof document === 'undefined') return null;
+  // RCDATA: entities decode, tags stay text, nothing loads or runs.
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
+/**
  * Rewrite rendered `<img>` tags whose src is a document-relative path into
  * portable `intent://local/file/{path}` links resolved against `baseDir`, so
  * {@link rewriteIntentFileImageSrcs} can then serve them from the workspace.
@@ -354,8 +367,9 @@ export function rewriteRelativeImageSrcs(html: string, baseDir: string): string 
   return html.replace(/<img\b[^>]*>/gi, (match) => {
     const srcMatch = /\ssrc="([^"]*)"/i.exec(match);
     if (!srcMatch) return match;
-    // marked entity-encodes ampersands inside attribute values
-    const resolved = resolveRelativeMediaPath(srcMatch[1].replace(/&amp;/g, '&'), baseDir);
+    // Decode every HTML entity first so traversal checks see the real path.
+    const src = decodeHtmlAttribute(srcMatch[1]);
+    const resolved = src === null ? null : resolveRelativeMediaPath(src, baseDir);
     if (!resolved) return match;
     const encodedPath = resolved
       .split('/')

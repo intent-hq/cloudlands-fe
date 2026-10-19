@@ -173,6 +173,22 @@ describe('MarkdownViewer static rendering', () => {
     expect(image.getAttribute('alt')).toBe('Chart');
   });
 
+  it('decodes HTML entities in relative image paths through marked', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![Chart](charts/chart&#32;one.png)',
+        workspaceId: 'ws-abc',
+        relativeMediaBase: 'report',
+      },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/report\/charts\/chart%20one\.png\?v=/,
+      ),
+    );
+  });
+
   it('keeps relative images unresolved without a Markdown file directory', async () => {
     const { container } = render(MarkdownViewer, {
       props: { content: '![Chart](charts/chart.png)', workspaceId: 'ws-abc' },

@@ -330,6 +330,31 @@ describe('rewriteRelativeImageSrcs', () => {
   });
 
   it.each([
+    ['numeric decimal space', 'charts/chart&#32;one.png', 'report/charts/chart%20one.png'],
+    ['numeric hex space', 'charts/chart&#x20;one.png', 'report/charts/chart%20one.png'],
+    ['named quote', 'charts/chart&quot;one.png', 'report/charts/chart%22one.png'],
+    ['named non-basic entity', 'charts/caf&eacute;.png', 'report/charts/caf%C3%A9.png'],
+  ])('decodes HTML entities (%s) before resolving', (_case, src, expected) => {
+    const html = rewriteRelativeImageSrcs(`<img src="${src}" alt="Chart">`, '');
+    const resolved = rewriteRelativeImageSrcs(`<img src="${src}" alt="Chart">`, 'report');
+
+    expect(html).not.toContain('%26');
+    expect(rewriteIntentFileImageSrcs(resolved, WS)).toBe(
+      `<img src="workspace-file://${WS}/${expected}" alt="Chart">`,
+    );
+  });
+
+  it.each([
+    '<img src="&#46;&#46;/escape.png" alt="">',
+    '<img src="&#x2e;&#x2E;/&#46;&#46;/escape.png" alt="">',
+    '<img src="&period;&period;/escape.png" alt="">',
+    '<img src="&#47;abs/a.png" alt="">',
+    '<img src="https&#58;//example.com/a.png" alt="">',
+  ])('refuses entity-encoded escapes and absolute forms in %s', (html) => {
+    expect(rewriteRelativeImageSrcs(html, '')).toBe(html);
+  });
+
+  it.each([
     '<img src="https://example.com/a.png" alt="">',
     '<img src="intent://local/file/a.png" alt="">',
     '<img src="workspace-asset://ws/asset.png" alt="">',
