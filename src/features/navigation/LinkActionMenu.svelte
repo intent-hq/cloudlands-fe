@@ -176,12 +176,7 @@
         {@const workspace = originalWorkspaces[0]}
         <Menu.Separator />
         <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
-          <span class="shrink-0">{m.navigation_linkActionMenu_openInOriginalWorkspace_label()}</span
-          >
-          <span class="min-w-0 flex-1 truncate text-muted-foreground">
-            {workspaceName(workspace)}
-          </span>
-          {@render archivedTag(workspace)}
+          {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
         </Menu.Item>
       {:else if originalWorkspaces.length > 1}
         <Menu.Separator />

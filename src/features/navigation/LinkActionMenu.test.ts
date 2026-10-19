@@ -216,12 +216,16 @@ describe('LinkActionMenu', () => {
       expect(linkActionMenuState.visible).toBe(false);
     });
 
-    it('names the single workspace it opens', async () => {
+    it('shows only the label on the single item, without name or Archived tag', async () => {
       render(LinkActionMenu);
       await showPrMenu([linked('ws-origin', 'Origin project')]);
-
       const item = await screen.findByRole('menuitem', { name: ORIGINAL });
-      expect(item.textContent).toContain('Origin project');
+      expect(item.textContent?.trim()).toBe('Open in original workspace');
+
+      hideLinkActionMenu();
+      await showPrMenu([linked('ws-origin', 'Origin project', true)]);
+      const archived = await screen.findByRole('menuitem', { name: ORIGINAL });
+      expect(archived.textContent?.trim()).toBe('Open in original workspace');
     });
 
     it('a late lookup result never moves the existing items', async () => {
@@ -269,19 +273,6 @@ describe('LinkActionMenu', () => {
       expect(active.textContent?.trim()).toBe('Alpha');
       expect(archived.textContent?.trim()).not.toBe('Beta');
       expect(archived.textContent).toContain('Beta');
-    });
-
-    it('marks an archived single workspace', async () => {
-      render(LinkActionMenu);
-      await showPrMenu([linked('ws-a', 'Alpha')]);
-      const plain = (await screen.findByRole('menuitem', { name: ORIGINAL })).textContent?.trim();
-
-      hideLinkActionMenu();
-      await showPrMenu([linked('ws-a', 'Alpha', true)]);
-      const marked = (await screen.findByRole('menuitem', { name: ORIGINAL })).textContent?.trim();
-
-      expect(marked).not.toBe(plain);
-      expect(marked?.startsWith(plain ?? '')).toBe(true);
     });
 
     it('leaves out the workspace the click came from', async () => {
