@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => {
     vi.fn(() => (next: (action: unknown) => unknown) => (action: unknown) => next(action));
   const storeGuardMiddleware = passthrough();
   const batchingMiddleware = passthrough();
-  const eventRecoveryMiddleware = passthrough();
   const actionRingBufferMiddleware = passthrough();
   const refCheckMiddleware = passthrough();
   const structuredCloneMiddleware = passthrough();
@@ -15,13 +14,11 @@ const mocks = vi.hoisted(() => {
   return {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
-    createEventRecoveryMiddleware: vi.fn(() => eventRecoveryMiddleware),
     createActionRingBufferMiddleware: vi.fn(() => actionRingBufferMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     storeGuardMiddleware,
     batchingMiddleware,
-    eventRecoveryMiddleware,
     actionRingBufferMiddleware,
     refCheckMiddleware,
     structuredCloneMiddleware,
@@ -33,9 +30,6 @@ vi.mock('../../store/utils/store-guard-middleware', () => ({
 }));
 vi.mock('./middlewares/batch', () => ({
   createBatchingMiddleware: mocks.createBatchingMiddleware,
-}));
-vi.mock('./middlewares/event-recovery', () => ({
-  createEventRecoveryMiddleware: mocks.createEventRecoveryMiddleware,
 }));
 vi.mock('./middlewares/action-ring-buffer', () => ({
   createActionRingBufferMiddleware: mocks.createActionRingBufferMiddleware,
@@ -80,13 +74,11 @@ describe('renderer middleware ownership', () => {
     expect(mocks.createStoreGuardMiddleware).toHaveBeenCalledWith('renderer');
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledWith([]);
-    expect(mocks.createEventRecoveryMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createActionRingBufferMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createReferenceChangeDetectorMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.eventRecoveryMiddleware,
       mocks.actionRingBufferMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -103,7 +95,6 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.eventRecoveryMiddleware,
       mocks.actionRingBufferMiddleware,
       mocks.refCheckMiddleware,
       mocks.structuredCloneMiddleware,
@@ -118,7 +109,6 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.eventRecoveryMiddleware,
       mocks.actionRingBufferMiddleware,
       mocks.structuredCloneMiddleware,
     ]);

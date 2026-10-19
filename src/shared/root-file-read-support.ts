@@ -1,18 +1,14 @@
+import { protocolVersionAtLeast, type ProtocolVersion } from './protocol-version';
 import { m } from './paraglide/messages.js';
 
-/** Require the registered-root file.read/file.readChunk contract; unknown generations fail closed. */
-function assertRootFileSupport(protocolVersion: unknown): void {
-  const match =
-    typeof protocolVersion === 'string' ? protocolVersion.match(/^(\d+)\.(\d+)(?:\.\d+)?$/) : null;
-  // Protocols 12, 13, 14 and 15 remove unrelated RPCs and retain the registered-root read contract.
-  const supported =
-    match &&
-    ((Number(match[1]) === 11 && Number(match[2]) >= 1) ||
-      Number(match[1]) === 12 ||
-      Number(match[1]) === 13 ||
-      Number(match[1]) === 14 ||
-      Number(match[1]) === 15);
-  if (!supported) {
+/**
+ * Require the registered-root file.read/file.readChunk contract (the release that
+ * added `gitRootId`, or newer). Missing, malformed and older versions fail closed;
+ * there is no upper bound — clients never cap the protocol version
+ * (intent-hq/intent#7206).
+ */
+function assertRootFileSupport(protocolVersion: ProtocolVersion | null | undefined): void {
+  if (!protocolVersionAtLeast(protocolVersion, 11, 1)) {
     throw new Error(m.files_secondaryRoot_unsupported_error());
   }
 }
@@ -21,7 +17,7 @@ function assertRootFileSupport(protocolVersion: unknown): void {
 export function assertScopedFileReadSupport(
   method: string,
   params: unknown,
-  protocolVersion: unknown,
+  protocolVersion: ProtocolVersion | null | undefined,
 ): void {
   if (isScopedFileRead(method, params)) assertRootFileSupport(protocolVersion);
 }

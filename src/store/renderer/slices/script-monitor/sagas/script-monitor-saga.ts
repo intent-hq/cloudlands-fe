@@ -1,12 +1,5 @@
-import {
-  call,
-  getContext,
-  put,
-  select,
-  take,
-  takeEvery,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { call, fork, put, select, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import {
   subscribeScriptMonitors,
   createScriptMonitorConnection,
@@ -18,6 +11,7 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   scriptMonitorActionRequested,
   scriptMonitorsLoadMoreRequested,
+  scriptMonitorsRetryRequested,
   scriptMonitorDetailsRequested,
   scriptMonitorOperationUpdated,
   scriptMonitorsSubscribeRequested,
@@ -29,12 +23,10 @@ import { selectScriptMonitors } from '../script-monitor-selectors';
 type Lease = {
   count: number;
   service: ReturnType<typeof subscribeScriptMonitors>;
+  channel: EventChannel<ScriptMonitorSnapshot>;
   snapshot?: ScriptMonitorSnapshot;
 };
 export function* scriptMonitorSaga(): SagaGenerator<void> {
-  const reduxStore = yield* getContext<{
-    dispatch(action: ReturnType<typeof scriptMonitorsUpdated>): unknown;
-  }>('reduxStore');
   const connection = createScriptMonitorConnection();
   const leases = new Map<string, Lease>();
   try {
@@ -46,17 +38,25 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
           previous.count++;
           return;
         }
-        const lease = { count: 1 } as Lease;
+        let service!: Lease['service'];
+        const channel = eventChannel<ScriptMonitorSnapshot>((emit) => {
+          service = subscribeScriptMonitors(workspaceId, emit, connection);
+          return () => service.dispose();
+        }, buffers.expanding());
+        const lease: Lease = { count: 1, service, channel };
         leases.set(workspaceId, lease);
-        lease.service = subscribeScriptMonitors(
-          workspaceId,
-          (snapshot) => {
-            if (leases.get(workspaceId) !== lease) return;
-            lease.snapshot = snapshot;
-            reduxStore.dispatch(scriptMonitorsUpdated(workspaceId, snapshot));
-          },
-          connection,
-        );
+        yield* fork(function* (): SagaGenerator<void> {
+          try {
+            while (true) {
+              const snapshot = yield* take(channel);
+              if (leases.get(workspaceId) !== lease) return;
+              lease.snapshot = snapshot;
+              yield* put(scriptMonitorsUpdated(workspaceId, snapshot));
+            }
+          } finally {
+            channel.close();
+          }
+        });
       },
     );
     yield* takeEvery(
@@ -65,7 +65,7 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
         const lease = leases.get(workspaceId);
         if (lease && --lease.count === 0) {
           leases.delete(workspaceId);
-          lease.service.dispose();
+          lease.channel.close();
         }
       },
     );
@@ -74,6 +74,13 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
       function* ({ payload: [workspaceId] }): SagaGenerator<void> {
         const service = leases.get(workspaceId)?.service;
         if (service) yield* call([service, service.loadMore]);
+      },
+    );
+    yield* takeEvery(
+      scriptMonitorsRetryRequested,
+      function* ({ payload: [workspaceId] }): SagaGenerator<void> {
+        const service = leases.get(workspaceId)?.service;
+        if (service) yield* call([service, service.retry]);
       },
     );
     yield* takeEvery(
@@ -128,7 +135,7 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
     // Keep the subscription owner alive until root-saga cancellation.
     yield* take(() => false);
   } finally {
-    for (const lease of leases.values()) lease.service.dispose();
+    for (const lease of leases.values()) lease.channel.close();
     leases.clear();
     connection.dispose();
   }

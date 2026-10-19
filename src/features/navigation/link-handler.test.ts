@@ -56,6 +56,11 @@ vi.mock('./link-action-menu-state.svelte', () => ({
   hideLinkActionMenu: vi.fn(),
 }));
 
+const loadLinkedWorkspacesMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('./link-action-menu-linked-workspaces', () => ({
+  loadLinkActionMenuLinkedWorkspaces: loadLinkedWorkspacesMock,
+}));
+
 const writeTextToClipboardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$lib/utils/clipboard', () => ({
   writeTextToClipboard: writeTextToClipboardMock,
@@ -158,6 +163,26 @@ describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('looks up the linked workspaces for that menu opening', async () => {
+    showLinkActionMenuMock.mockReturnValueOnce(42);
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() =>
+      expect(loadLinkedWorkspacesMock).toHaveBeenCalledExactlyOnceWith(42, url),
+    );
+  });
+
+  it('keeps the menu and opens no browser when the linked-workspace lookup fails', async () => {
+    loadLinkedWorkspacesMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() => expect(loadLinkedWorkspacesMock).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(showLinkActionMenuMock).toHaveBeenCalledTimes(1);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
   });
 
   it('copies the link without opening a browser or leaving Home', async () => {

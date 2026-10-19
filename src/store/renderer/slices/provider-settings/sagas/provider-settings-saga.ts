@@ -1,5 +1,3 @@
-import { captureSettingsWork } from '$features/settings/settings-recovery-lifetime';
-import { settingsWorkScope } from '../../settings-events/sagas/settings-work-scope';
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
@@ -51,7 +49,6 @@ import { providerFastModeSaga } from './provider-fast-mode-saga';
 const logger = createLogger('ProviderSettingsSaga');
 
 type ProviderSettingsUpdate = {
-  work: ReturnType<typeof captureSettingsWork>;
   connection?: string | null;
   waitForBackground?: boolean;
   modelPick?: { providerId: string; model: string; atomic: boolean };
@@ -96,7 +93,6 @@ function* queueModelWorker(
   }
   const selection = yield* selectModelSelectionState.effect();
   const update: ProviderSettingsUpdate = {
-    work: captureSettingsWork(),
     modelPick: { ...action.payload[0], atomic },
     revision: yield* selectProviderWriteRevision.effect('default'),
     connection: selection.selectionConnection,
@@ -152,7 +148,6 @@ function* queueActiveProviderWorker(
   yield* put(activeProviderAccepted(providerId));
   const selection = yield* selectModelSelectionState.effect();
   yield* put(updates, {
-    work: captureSettingsWork(),
     activeProviderId: providerId,
     request: action.payload[1],
     resource: 'default',
@@ -172,7 +167,6 @@ function* queueEnabledProviders(
   if (provider && !provider.canBeDisabled) return;
   const resource = `enabled:${providerId}`;
   yield* put(updates, {
-    work: captureSettingsWork(),
     enabledProviderDelta: { providerId, enabled },
     request,
     resource,
@@ -210,7 +204,6 @@ function* queuePathWorker(
   const [providerId, value, request] = action.payload;
   const resource = `path:${providerId}`;
   yield* put(updates, {
-    work: captureSettingsWork(),
     path: { providerId, value },
     request,
     resource,
@@ -222,7 +215,7 @@ function* queueSeedWorker(
   updates: Channel<ProviderSettingsUpdate>,
   action: ReturnType<typeof providerEnablementSeedRequested>,
 ) {
-  yield* put(updates, { work: captureSettingsWork(), enabledSeed: action.payload[0] });
+  yield* put(updates, { enabledSeed: action.payload[0] });
 }
 
 function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
@@ -252,8 +245,8 @@ function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
  * cycling, so dropping the write would leave `model.defaultProvider` stale on
  * the daemon — the onboarding model pick then resolves under the wrong provider
  * key after restart (intent-hq/monorepo#1924). Updates are partial patches
- * whose order matters, so a transient failure retries in place up to three
- * times. Recovery or authority replacement cancels the write and its queue.
+ * whose order matters, so the failed write is retried in place (never
+ * superseded); the last delay repeats until the write lands.
  *
  * The write goes through `settings.update` directly (like the model-selection
  * saga's `model.providerDefaults` write) because it THROWS on transport
@@ -268,7 +261,6 @@ export const PROVIDER_SETTINGS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const
 function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
   while (true) {
     const update = yield* take(updates);
-    if (!update.work.isCurrent()) continue;
     if (update.modelPick || update.activeProviderId !== undefined) {
       if (update.connection !== (yield* selectModelSelectionState.effect()).selectionConnection) {
         if (update.request)
@@ -297,16 +289,14 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
     }
     yield* take(backgroundSettingsWriteLock);
     try {
-      if (!update.work.isCurrent()) continue;
       const changes = yield* call(changesFor, update);
-      if (!update.work.isCurrent()) continue;
       if (changes.length === 0) {
         if (update.request)
           yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
         continue;
       }
       let attempt = 0;
-      while (update.work.isCurrent()) {
+      while (true) {
         try {
           const result = appClient.settings.updateSnapshot
             ? yield* call([appClient.settings, appClient.settings.updateSnapshot], changes)
@@ -314,7 +304,6 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
                 applied: yield* call([appClient.settings, appClient.settings.update], changes),
                 revision: 0,
               };
-          if (!update.work.isCurrent()) break;
           if (appClient.settings.updateSnapshot)
             yield* put(
               settingsChangesReceived(
@@ -347,14 +336,7 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
           yield* call(notifyOutcome, update, true);
           break;
         } catch (error) {
-          if (!update.work.isCurrent()) break;
-          if (
-            update.path ||
-            update.enabledSeed ||
-            isDaemonErrorResponse(error) ||
-            attempt >= PROVIDER_SETTINGS_RETRY_DELAYS_MS.length
-          )
-            throw error;
+          if (update.path || update.enabledSeed || isDaemonErrorResponse(error)) throw error;
           logger.error('Failed to persist provider settings; retrying');
         }
         yield* delay(
@@ -365,7 +347,6 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
         attempt += 1;
       }
     } catch {
-      if (!update.work.isCurrent()) continue;
       logger.warn('Provider settings write failed');
       if (update.enabledProviderDelta !== undefined)
         yield* put(
@@ -382,7 +363,7 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
 }
 
 /** Sole ordered owner of provider settings writes, including whole-map migrations. */
-function* providerSettingsSagaWork() {
+export function* providerSettingsSaga() {
   const updates = channel<ProviderSettingsUpdate>(buffers.expanding());
   try {
     yield* all([
@@ -400,8 +381,4 @@ function* providerSettingsSagaWork() {
     updates.close();
     yield* put(providerSettingsStopped());
   }
-}
-
-export function* providerSettingsSaga() {
-  yield* settingsWorkScope(providerSettingsSagaWork);
 }

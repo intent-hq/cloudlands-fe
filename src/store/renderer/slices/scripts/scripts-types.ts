@@ -151,9 +151,6 @@ export type ScriptsWorkspaceState = {
   activeScriptIds?: string[];
   loadError?: string;
   nextCursor?: string;
-  /** Exact active summary page demand, preserved across recovery/session replacement. */
-  // eslint-disable-next-line themis/suspicious-state-field -- Page demand survives deletions and cannot be derived from the remaining rows.
-  loadedPageCount?: number;
   /** Mount-scoped, serializable results for UI consumers. */
   workflowOutcomes?: Collection<ScriptWorkflowOutcome, 'id'>;
 };

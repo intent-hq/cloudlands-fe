@@ -235,16 +235,6 @@ export const setActiveScriptsData =
 export const scriptSnapshotReceived = createAction<[wsId: string, script: ScriptWithState]>(
   'scripts/snapshotReceived',
 );
-/** Atomic authoritative replacement after a generic stream gap. */
-export const scriptsRecoveryApplied =
-  createAction<[wsId: string, scripts: ScriptListEntry[], nextCursor?: string]>(
-    'scripts/recoveryApplied',
-  );
-export const scriptRecoveryPageRecorded = createAction<[wsId: string, append: boolean]>(
-  'scripts/recoveryPageRecorded',
-);
-export const scriptsRecoveryRetired = createAction<[wsId: string]>('scripts/recoveryRetired');
-
 export const scriptReadStarted =
   createAction<[wsId: string, requestId: string]>('scripts/readStarted');
 export const scriptReadFinished =
@@ -688,31 +678,6 @@ scriptsReducer.with(
     });
   },
 );
-scriptsReducer.with(scriptRecoveryPageRecorded, (state, { payload: [wsId, append] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    loadedPageCount: append ? (ws.loadedPageCount ?? 1) + 1 : 1,
-  });
-});
-scriptsReducer.with(scriptsRecoveryApplied, (state, { payload: [wsId, entries, nextCursor] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    scripts: Object.fromEntries(entries.map((script) => [script.id, script])),
-    activeScriptIds: entries.map((script) => script.id),
-    nextCursor,
-    pendingReads: {},
-    initialized: true,
-    loading: false,
-    loadError: undefined,
-  });
-});
-scriptsReducer.with(scriptsRecoveryRetired, (state, { payload: [wsId] }) => {
-  const { [wsId]: _removed, ...byWorkspaceId } = state.byWorkspaceId;
-  return { ...state, byWorkspaceId };
-});
-
 scriptsReducer.with(setActiveScriptsData, (state, { payload: [wsId, entries] }) => {
   const ws = getWorkspaceState(state, wsId);
   const incoming = Object.fromEntries(entries.map((script) => [script.id, script]));

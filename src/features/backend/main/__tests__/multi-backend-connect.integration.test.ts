@@ -311,7 +311,7 @@ afterEach(async () => {
 describe('multi-backend connect — end-to-end journey', () => {
   it('rejects the old backend before principal.me and writes neither connection registry', async () => {
     rpc.hello = {
-      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } },
+      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } }, // fixture-protocol-version: old intentd 0.9.12 predates principal.me
     };
     const { mod, openOrFocus } = await loadModule();
     mod.registerBackendHandlers();

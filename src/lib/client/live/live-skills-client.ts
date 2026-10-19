@@ -63,7 +63,6 @@ export class LiveSkillsClient implements SkillsClient {
     // `{ workspaceId }`. On event, refetch the skill list for the affected workspace
     // and push the fresh normalized SkillInfo[] to the handler.
     let disposed = false;
-    let generation = 0;
     let subscriptionId: string | undefined;
     let lastWorkspaceId: string | undefined;
 
@@ -74,10 +73,9 @@ export class LiveSkillsClient implements SkillsClient {
     // Event/reconnect refetch: non-folding — on failure, log and skip the
     // emit so the handler keeps its last known-good view (#610).
     const refetch = (workspaceId: string) => {
-      const captured = generation;
       this.fetchList(workspaceId)
         .then((skills) => {
-          if (!disposed && captured === generation) handler(skills);
+          if (!disposed) handler(skills);
         })
         .catch((error) => {
           logger.error('Failed to refetch skill list; keeping last known-good view', error);
@@ -116,7 +114,6 @@ export class LiveSkillsClient implements SkillsClient {
     // anything missed during the outage (#609).
     const offReconnect = onBackendReconnected(() => {
       if (disposed) return;
-      generation += 1;
       subscriptionId = undefined;
       void doSubscribe();
       if (lastWorkspaceId) refetch(lastWorkspaceId);

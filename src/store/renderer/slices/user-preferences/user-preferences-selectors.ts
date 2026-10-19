@@ -204,7 +204,3 @@ export const selectShortcutOverrides = store.createSelector((state) => {
 export const selectResolvedLocale = store.createSelector((state) => {
   return resolvePreferenceToLocale(state.userPreferences.languagePreference);
 });
-
-export const selectNotificationFieldEdits = store.createSelector(
-  (state) => state.userPreferences.notificationFieldEdits,
-);

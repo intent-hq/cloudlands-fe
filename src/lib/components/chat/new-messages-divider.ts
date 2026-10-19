@@ -29,6 +29,43 @@ export function resolveNewMessagesDividerAnchor(
 }
 
 /**
+ * Unread-entry phase while the initial history window may still be streaming
+ * (PROTOCOL §7.1 progressive delivery: newest row first, then one OLDER row
+ * per push until `complete`).
+ *
+ * Because rows arrive newest-first, every row loaded before the seen-marker
+ * row is unseen, so the reading point is the top of the loaded content until
+ * the marker row lands; once it lands the divider position is final (only
+ * older, already-seen rows remain to arrive).
+ *
+ * - `'none'` — no unread entry applies: no marker, empty transcript, marker at
+ *   the newest message, or a dangling marker once the whole conversation is
+ *   loaded (`complete` and not `truncated`, e.g. dropped by an
+ *   `agent.editAndRegenerate` truncation) — entry follows the bottom.
+ * - `'marker-pending'` — transfer incomplete and the marker row has not
+ *   arrived yet: every loaded row is unseen.
+ * - `'marker-loaded'` — the marker row is loaded and older than the newest
+ *   message: the divider anchor is final.
+ * - `'marker-beyond-window'` — transfer complete, marker absent, and older
+ *   history exists: the marker is older than the initial window, so every
+ *   loaded row is unseen and no divider can be placed.
+ */
+export type UnreadEntryPhase = 'none' | 'marker-pending' | 'marker-loaded' | 'marker-beyond-window';
+
+export function resolveUnreadEntryPhase(
+  messageIds: readonly string[],
+  lastSeenMessageId: string | null | undefined,
+  initialHistory: { complete: boolean; truncated: boolean },
+): UnreadEntryPhase {
+  if (!lastSeenMessageId || messageIds.length === 0) return 'none';
+  const markerIndex = messageIds.indexOf(lastSeenMessageId);
+  if (markerIndex === messageIds.length - 1) return 'none';
+  if (markerIndex !== -1) return 'marker-loaded';
+  if (!initialHistory.complete) return 'marker-pending';
+  return initialHistory.truncated ? 'marker-beyond-window' : 'none';
+}
+
+/**
  * Render-time placement from a LATCHED per-session anchor (never recomputed).
  *
  * Returns the anchor id when it is still present in the transcript, or `null`

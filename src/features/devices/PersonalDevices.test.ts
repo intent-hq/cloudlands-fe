@@ -27,6 +27,7 @@ import { routeDaemonEventsNotification } from '$features/events/daemon-events-br
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const qr = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,c3ludGhldGlj'));
 vi.mock('qrcode', () => ({ default: { toDataURL: qr } }));
@@ -171,8 +172,6 @@ beforeEach(() => {
       channel: string,
       params: { method: string; params?: unknown; localMachine?: boolean },
     ) => {
-      if (channel === 'backend:node-capabilities')
-        return { ok: true, result: await rpc('client.hello') };
       if (channel !== 'backend:request') throw new Error(`Unexpected IPC ${channel}`);
       return { ok: true, result: await rpc(params.method) };
     },
@@ -513,7 +512,7 @@ describe('Devices current-person UI through the actual store and IPC transport',
           {
             running: true,
             listenMode: 'wss',
-            protocolVersion: '10.8',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             host: { os: 'linux', arch: 'x64', locality: 'remote' },
           }, // protocol-version-ok: identity seam fixture
           '2026-09-30T12:00:00Z',

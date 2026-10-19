@@ -73,7 +73,7 @@ import {
   PinMismatchError,
   type BackendConnectionConfig,
 } from './backend-connection';
-import { protocolVersionAtLeast } from './protocol-compat';
+import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
 
 const logger = new Logger('TunnelManager');
 
@@ -269,7 +269,7 @@ export interface TunnelManagerOptions {
    * while hello is unknown so an independently reconnecting tunnel cannot
    * permanently disable CREDIT by opening before the backend handshake.
    */
-  getProtocolVersion: () => string | null;
+  getProtocolVersion: () => ProtocolVersion | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */
   socketFactory?: (config: BackendConnectionConfig) => TunnelSocketLike;
   /** Deadline for the `/tunnel` WebSocket to reach `open`. Default 10s. */
@@ -474,7 +474,7 @@ export class TunnelManager {
   onForwardDropped: ((remotePort: number) => void) | null = null;
 
   private readonly getConfig: () => BackendConnectionConfig | null;
-  private readonly getProtocolVersion: () => string | null;
+  private readonly getProtocolVersion: () => ProtocolVersion | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
   private readonly openTimeoutMs: number;

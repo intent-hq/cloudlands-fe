@@ -368,6 +368,23 @@ truncates coverage. Review the resolved plan, then raise or omit the limit to ru
 selected checks. Discovery failures also stop before checks; fix the reported config
 or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
 unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+
+Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`:
+`run.json` holds the source, configuration, command and resolved-selection identities;
+`results.jsonl` appends check outcomes and each unit file's result as it finishes; and
+`coverage.json` lists every current check and resolved unit file per lane as
+`executed-passed`, `resumed-passed` (with its source attempt), `failed` or `unfinished`.
+The run passes only when every entry is satisfied. To continue after a failure or
+interruption, rerun with `--resume`; never hand-pick stages. It reruns anything not
+proven compatible. A configuration, lockfile, Node, Vitest setup or runner change voids
+all credit. A non-unit check needs an identical command on identical sources. A unit
+file keeps its pass unless the plan for the changes since then would select it (direct
+edit, `vitest related`, declared trigger, UI invariant, full-risk fallback or deleted
+module). Credit follows the file across lanes, so an edited test that moves from the
+declared to the direct lane simply reruns there (cloudlands-fe#3439).
+`--resolved-plan --resume` previews the continuation; `--max-unit-files` still bounds
+the full resolved plan. Attempts untouched for seven days are pruned.
+
 The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
@@ -582,6 +599,9 @@ These rules apply to unit tests and browser tests alike:
   a decorative assertion a behavioral contract.
 - **Do not use source text, markup order, or CSS-class strings to prove appearance.**
   Those checks constrain implementation spelling without establishing browser behavior.
+  `intent/no-class-name-assertions-in-tests` rejects new `className` / `classList` /
+  `toHaveClass` assertions in `src/**/*.test.ts`; existing ones are counted in
+  `eslint-rules/baselines/no-class-name-assertions-in-tests/`, which may only shrink.
 - **Do not claim layout coverage from jsdom dimensions.** jsdom does not perform layout;
   assigning a width or mocking a bounding box and checking it cannot prove containment.
 - **Do not build circular style oracles:** importing a production class constant and
@@ -656,13 +676,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   or, if it needs more time, tag the individual test
   `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
-  PRs that touch CT-contract paths, specs or their direct local imports also require it
-  (classified by `scripts/ct-contract-paths.mjs`, shared with `verify:changed`).
-  Root Playwright test/config/fixture changes require its four shards on the PR;
-  Electron lifetime test/harness/config changes require its Electron suite.
-  Both also run nightly/manual. Browser suites never run in the merge queue;
-  ordinary application changes can therefore reveal browser regressions after merge.
-  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from PR or nightly artifacts.
+  Merge-queue entries that touch CT-contract paths, specs or their direct local imports
+  also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`). Root Playwright test/config/fixture changes require its four shards
+  in the queue; Electron lifetime test/harness/config changes require its Electron suite.
+  Both also run nightly/manual. Browser suites never run on PR updates (PRs run only
+  type/lint, unit tests and static checks); ordinary application changes can therefore
+  reveal browser regressions in the queue or after merge.
+  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from queue or nightly artifacts.
   All browser lanes retain JSON, HTML and traces for seven days; the nightly
   manifest and per-lane outcomes distinguish missing reports from successful runs.
   `nightly-browser-report.yml` processes every nightly/main manual completion,

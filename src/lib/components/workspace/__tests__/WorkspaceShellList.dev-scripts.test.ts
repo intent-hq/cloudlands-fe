@@ -62,6 +62,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
     (workspaceId) => mocks.operations[workspaceId] ?? {},
   ),
   selectScriptListPageState: workspaceReadable(() => ({ loading: false })),
+  selectWorkspaceScriptsInitialized: workspaceReadable(() => true),
   selectScriptDetectionOperation: workspaceSelector(() => undefined),
   selectScriptWorkflowOutcome: () => ({
     subscribe: (run: (value: undefined) => void) => {

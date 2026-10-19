@@ -1,3 +1,4 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -409,6 +410,15 @@ export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
+/** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
+export interface PullRequestWorkspace {
+  id: WorkspaceId;
+  title: string;
+  archived: boolean;
+  /** RFC 3339 time the daemon first linked this workspace to the PR. */
+  linkedAt: string;
+}
+
 export interface WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -425,6 +435,13 @@ export interface WorkspacesClient {
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /**
+   * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
+   * §5.1), most recently linked first, archived included. Callers must gate on
+   * the `prWorkspaceLookup: 1` server capability. Rejects on transport errors
+   * and on a malformed result.
+   */
+  findByPullRequest(url: string): Promise<PullRequestWorkspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
@@ -1161,15 +1178,12 @@ export interface TerminalCreateParams {
 
 /** Decoded `terminal:data` payload — `chunk` is the UTF-8 string the daemon base64-encoded. */
 export interface TerminalDataEvent {
-  /** False disables command/history inference after loss; live cwd observations remain transient. */
-  metadataAllowed?: boolean;
   terminalId: string;
   chunk: string;
 }
 
 /** `terminal:exit` payload. */
 export interface TerminalExitEvent {
-  metadataAllowed?: boolean;
   terminalId: string;
   exitCode: number;
 }
@@ -1186,18 +1200,8 @@ export interface TerminalTitleEvent {
   title: string;
 }
 
-/** Current metadata replacement; never a synthetic output or exit event. */
-export interface TerminalMetadataEvent {
-  terminalId: string;
-  /** Absent during invalidation: connectivity awaits its authoritative read. */
-  isConnected?: boolean;
-  /** Loss/retirement clears transient indicators; later live observations may repopulate them. */
-  clearTransient?: boolean;
-}
-
 /** Per-terminal event sink registered via `TerminalsClient.subscribeEvents`. */
 export interface TerminalEventHandlers {
-  onMetadata?(event: TerminalMetadataEvent): void;
   onData?(event: TerminalDataEvent): void;
   onExit?(event: TerminalExitEvent): void;
   onCwd?(event: TerminalCwdEvent): void;

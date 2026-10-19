@@ -35,6 +35,8 @@ const STAMP_FILE = path.join(DEST_DIR, '.intentd-fetch-stamp.json');
 const REPO = process.env.INTENTD_REPO?.trim() || 'intent-hq/intentd';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+// Same precedence as fetch-sidecar-lib.mjs GITHUB_TOKEN_ENV_NAMES (shared with the
+// protocol-version sync); this CJS entry cannot import that ESM module synchronously.
 function authToken() {
   for (const name of ['INTENTD_READ_PAT', 'GH_TOKEN', 'GITHUB_TOKEN']) {
     const value = process.env[name]?.trim();

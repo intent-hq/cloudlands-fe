@@ -258,23 +258,12 @@ describe('original socket selection admission and retained outcomes', () => {
       op = await h.acquire();
     vi.useFakeTimers();
     const save = op.confirm(command);
-    const saveFrame = h.socket.frames.at(-1)!;
     await vi.advanceTimersByTimeAsync(10001);
     expect(await save).toMatchObject({ uncertain: true, current: true });
     const reconcile = op.reconcile();
-    // The caller deadline does not release the original physical request.
-    expect(h.socket.frames.at(-1)).toBe(saveFrame);
-    expect(h.socket.frames.filter((frame) => frame.method.endsWith('.reconcile'))).toHaveLength(0);
-    h.socket.result(saveFrame.id, attempt());
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.socket.frames.at(-1)).toMatchObject({
-      method: 'workspace.repositorySelection.reconcile',
-      params: { ...query, selectionId: 'lease-1' },
-    });
+    expect(h.socket.frames.at(-1)?.params).toEqual({ ...query, selectionId: 'lease-1' });
     h.socket.result(h.socket.frames.at(-1)!.id, attempt());
     expect(await reconcile).toMatchObject({ uncertain: false, attempt: { receipt } });
-    expect(h.socket.frames.filter((frame) => frame.method.endsWith('.save'))).toHaveLength(1);
-    expect(h.socket.frames.filter((frame) => frame.method.endsWith('.reconcile'))).toHaveLength(1);
   });
   it('disposes a late capture on the original connection after UI timeout', async () => {
     const h = await harness();

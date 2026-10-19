@@ -35,7 +35,6 @@ import {
 } from './backend-transport';
 import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
 import { appClient } from '$lib/client';
@@ -475,6 +474,43 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
       'workspace.delete',
       { workspaceId: 'ws-1' },
       { timeoutMs: 120_000 },
+    );
+  });
+
+  it('findByPullRequest sends the PR URL and returns the documented rows', async () => {
+    const rows = [
+      { id: 'ws-2', title: 'Newer', archived: false, linkedAt: '2026-10-18T05:00:00.000Z' },
+      { id: 'ws-1', title: 'Older', archived: true, linkedAt: '2026-10-17T05:00:00.000Z' },
+    ];
+    mockedRequest.mockResolvedValueOnce({ workspaces: rows });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.findByPullRequest('https://github.com/o/r/pull/7')).toEqual(rows);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.findByPullRequest', {
+      url: 'https://github.com/o/r/pull/7',
+    });
+  });
+
+  it('findByPullRequest rejects malformed results and rows, and transport errors', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        workspaces: [{ id: 'ws-1', title: null, archived: false, linkedAt: 'x' }],
+      })
+      .mockRejectedValueOnce(
+        new BackendError({
+          code: 'INVALID_PARAMS',
+          message: 'url is not a pull-request URL',
+          data: { code: 'invalid-params' },
+          rpcCode: -32602,
+        }),
+      );
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
+    await expect(client.findByPullRequest('https://github.com/o/r/pull/7')).rejects.toThrow();
+    await expect(client.findByPullRequest('https://github.com/o/r/issues/7')).rejects.toThrow(
+      'url is not a pull-request URL',
     );
   });
 
@@ -1420,23 +1456,4 @@ it('forwards a companion only through its original Live session without a second
   expect(parent.prepareCompanion).toHaveBeenCalledOnce();
   expect(mockedRequest).not.toHaveBeenCalled();
   await opened.release();
-});
-
-it('does not share a held workspace list across session lifetimes', async () => {
-  const client = new LiveWorkspacesClient();
-  let finish!: (value: any) => void;
-  vi.mocked(backendRequest).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        finish = done;
-      }),
-  );
-  const old = client.list();
-  rendererEventRecovery.dispose();
-  vi.mocked(backendRequest).mockResolvedValueOnce({ workspaces: [{ id: 'ws-new' }] });
-  const next = client.list();
-  expect(next).not.toBe(old);
-  expect((await next)[0].id).toBe('ws-new');
-  finish({ workspaces: [{ id: 'ws-old' }] });
-  await old;
 });

@@ -10,7 +10,6 @@
  * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
  * events-driven refetch.
  */
-import { rendererEventRecovery } from '$features/events/renderer-event-recovery';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
@@ -27,12 +26,10 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
-import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
-  captureNoteWorkspaceCacheLifetime,
   resolveNoteWorkspaceId,
   runMutation,
   subscribeWorkspaceIds,
@@ -150,8 +147,6 @@ export class LiveNotesClient implements NotesClient {
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
-    const lifetime = rendererEventRecovery.capture(`notes:${JSON.stringify([workspaceId])}`);
-    const cacheLifetime = captureNoteWorkspaceCacheLifetime();
     // §5.2 `projection`: only ride the wire when "slim" is requested so older
     // daemons see an unchanged request. If a daemon rejects the unknown param
     // (-32602 Invalid params), fall back once to the plain full list; other
@@ -164,7 +159,7 @@ export class LiveNotesClient implements NotesClient {
           projection: 'slim',
         });
       } catch (error) {
-        if (!isProjectionRejected(error) || !lifetime.isCurrent()) throw error;
+        if (!isProjectionRejected(error)) throw error;
         result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       }
     } else {
@@ -173,9 +168,7 @@ export class LiveNotesClient implements NotesClient {
     const notes = Array.isArray(result?.notes) ? result.notes : [];
     return notes.map((n) => {
       const note = normalizeNote(n as Record<string, unknown>, workspaceId);
-      lifetime.commit(() => {
-        rememberNoteWorkspace(String(note.id), workspaceId, cacheLifetime);
-      });
+      rememberNoteWorkspace(String(note.id), workspaceId);
       return note;
     });
   }
@@ -197,16 +190,7 @@ export class LiveNotesClient implements NotesClient {
           : result;
       if (!raw || typeof raw !== 'object') return null;
       return normalizeNote(raw as Record<string, unknown>, workspaceId);
-    } catch (error) {
-      // Preserve deadlines and authority failures for the captured read owner.
-      if (
-        error instanceof BackendError &&
-        (error.completion !== undefined ||
-          error.code === 'TIMEOUT' ||
-          error.rpcCode === -32003 ||
-          error.rpcCode === -32001)
-      )
-        throw error;
+    } catch {
       return null;
     }
   }
@@ -423,13 +407,6 @@ export class LiveNotesClient implements NotesClient {
    */
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
-      recovery: {
-        eventTypes: ['note:*', 'task:*'],
-        read: async ({ request }, params) => {
-          const result = await request<{ notes: unknown[] }>('note.list', params);
-          return result.notes;
-        },
-      },
       channel: {
         subscribeMethod: 'note.subscribe',
         unsubscribeMethod: 'note.unsubscribe',

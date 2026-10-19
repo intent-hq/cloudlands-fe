@@ -246,6 +246,8 @@ export interface WorkspaceInitializationRequest {
   stagedItems: WorkspaceInitializationStagedItem[];
   heldMessage?: WorkspaceInitializationHeldMessage;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings;
+  /** Base branch to remember for the repository once the workspace is created. */
+  rememberBranch?: { repoPath: string; branch: string };
   selectedPrNumber?: number;
   recentGitHubRepository?: { repository: string; name: string; owner: string; githubUrl: string };
 }

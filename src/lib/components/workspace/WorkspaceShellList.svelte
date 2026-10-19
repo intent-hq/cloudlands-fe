@@ -19,11 +19,13 @@
     faTableColumns,
   } from '$lib/icons/phosphor-icons';
   import {
+    selectScriptListPageState,
     selectWorkspaceScriptEntries,
     selectWorkspaceScriptOperations,
-    selectScriptListPageState,
+    selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
+    refreshScripts,
     restartScriptRequested,
     startScriptRequested,
     stopScriptRequested,
@@ -50,6 +52,7 @@
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -210,7 +213,7 @@
       <div class="px-2 py-1.5">
         <ScriptDetectionControls {workspaceId} />
       </div>
-      {#if $scriptPage$.error}
+      {#if $scriptPage$.error && orderedScripts.length > 0}
         <p role="alert" class="px-2 py-1.5 type-caption text-muted-foreground break-words">
           {$scriptPage$.error}
         </p>
@@ -389,7 +392,32 @@
             </div>
           </div>
         {:else}
-          {#if !$scriptPage$.error}
+          <!-- Only a successful, empty read may claim there are no scripts (intent-hq/intent#7206). -->
+          {#if $scriptPage$.error}
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="alert">
+              <p class="text-danger">{m.terminal_sidebar_scriptsLoadFailed_error()}</p>
+              <p class="break-words text-xs text-muted-foreground">{$scriptPage$.error}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+                >{m.terminal_sidebar_retryScripts_label()}</Button
+              >
+            </div>
+          {:else if $scriptPage$.loading || !$scriptsInitialized$}
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="status">
+              <p class="text-muted-foreground">{m.terminal_sidebar_loadingScripts_label()}</p>
+              {#if !$scriptPage$.loading}
+                <!-- Nothing in flight: a retired or never-started read must stay recoverable here. -->
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+                  >{m.terminal_sidebar_retryScripts_label()}</Button
+                >
+              {/if}
+            </div>
+          {:else}
             <p class="px-2 py-1.5 type-caption text-muted-foreground">
               {m.terminal_quakeOverlay_noScriptsYet_label()}
             </p>
