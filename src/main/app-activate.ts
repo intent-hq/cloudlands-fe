@@ -54,6 +54,8 @@ export interface ActivateDeps<W extends ActivateWindow> {
   whenBootWindowsReady: () => Promise<void>;
   getAllWindows: () => readonly W[];
   getMainWindow: () => W | null | undefined;
+  /** A window that just claimed focus (e.g. a notification click target). */
+  getClaimedWindow: () => W | undefined;
   focusWindow: (window: W) => void;
   getActiveId: () => Promise<string>;
   restoreSessions: (backendId: string) => Promise<boolean>;
@@ -72,9 +74,16 @@ export async function handleActivate<W extends ActivateWindow>(
 
   const liveWindows = deps.getAllWindows().filter((w) => !w.isDestroyed());
   if (liveWindows.length > 0) {
-    // Focus an existing window instead of creating a new one.
+    // Focus an existing window instead of creating a new one. A live claim
+    // wins over the main window so a notification click keeps its target.
+    const claimed = deps.getClaimedWindow();
     const mainWindow = deps.getMainWindow();
-    const target = mainWindow && !mainWindow.isDestroyed() ? mainWindow : liveWindows[0];
+    const target =
+      claimed && !claimed.isDestroyed()
+        ? claimed
+        : mainWindow && !mainWindow.isDestroyed()
+          ? mainWindow
+          : liveWindows[0];
     deps.focusWindow(target);
     return 'focused';
   }

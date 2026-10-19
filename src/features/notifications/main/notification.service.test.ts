@@ -15,6 +15,7 @@ import {
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
+import { getActivationFocusClaim } from '../../../main/activation-focus-claim';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
@@ -2603,6 +2604,25 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     ]);
     expect(localWindow.focus).not.toHaveBeenCalled();
     expect(navigateCalls(localWindow)).toEqual([]);
+  });
+
+  it('claims the clicked host window so app activation does not raise another host window', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const hostAWindow = makeWindow(1);
+    const hostBWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([hostAWindow, hostBWindow]);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hostBWindow.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === hostBWindow.id ? 'remote-workspace' : undefined,
+    );
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(hostBWindow.focus).toHaveBeenCalled();
+    expect(hostAWindow.focus).not.toHaveBeenCalled();
+    expect(getActivationFocusClaim()).toBe(hostBWindow);
   });
 
   it('does not open a window on a remote host whose connection was closed before the click', async () => {
