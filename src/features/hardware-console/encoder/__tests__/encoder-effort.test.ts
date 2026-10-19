@@ -317,7 +317,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
           data: { success: false, error: 'picker save rejected' },
         });
       if (protocol === 'legacy') {
-        state.daemonHealth.stats.protocolVersion = '5.1';
+        state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
         publish();
         registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
       } else {
@@ -682,7 +682,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
 
   it('preserves legacy model-variant request and response handling', async () => {
     ready();
-    state.daemonHealth.stats.protocolVersion = '5.1';
+    state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     publish();
     const legacy = vi.fn(async () => ({
       success: true,
@@ -704,7 +704,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
 
   it('keeps rapid legacy turns across the leading model-variant echo', async () => {
     ready();
-    state.daemonHealth.stats.protocolVersion = '5.1';
+    state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     publish();
     const first = deferred<unknown>();
     const legacy = vi
@@ -756,7 +756,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
         .mockImplementationOnce(() => first.promise)
         .mockResolvedValue({ success: true, data: { success: false, error: 'new save rejected' } });
       if (protocol === 'legacy') {
-        state.daemonHealth.stats.protocolVersion = '5.1';
+        state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
         publish();
         registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
       } else {
@@ -845,7 +845,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
           data: { success: accepted, modelId: 'model-a/medium', error: 'new save rejected' },
         });
       if (protocol === 'legacy') {
-        state.daemonHealth.stats.protocolVersion = '5.1';
+        state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
         publish();
         registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
       } else {
@@ -917,7 +917,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       const first = deferred<unknown>();
       const legacy = vi.fn(() => first.promise);
       if (protocol === 'legacy') {
-        state.daemonHealth.stats.protocolVersion = '5.1';
+        state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
         publish();
         registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
       } else request.mockImplementationOnce(() => first.promise);

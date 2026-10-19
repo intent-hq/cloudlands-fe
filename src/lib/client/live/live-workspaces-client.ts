@@ -43,6 +43,7 @@ import {
 } from '$shared/types/browser-clients';
 import type {
   MutationResult,
+  PullRequestWorkspace,
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCancelDeleteResult,
@@ -160,6 +161,19 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
     throw new Error(`Invalid ${method} response shape`);
   }
   return value;
+}
+
+/** One documented `workspace.findByPullRequest` row (§5.1); anything else is a contract violation. */
+function isPullRequestWorkspace(row: unknown): row is PullRequestWorkspace {
+  if (row === null || typeof row !== 'object') return false;
+  const r = row as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    r.id.length > 0 &&
+    typeof r.title === 'string' &&
+    typeof r.archived === 'boolean' &&
+    typeof r.linkedAt === 'string'
+  );
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
@@ -373,6 +387,18 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
+  }
+
+  /** Workspaces linked to a PR URL (`workspace.findByPullRequest`, §5.1). */
+  async findByPullRequest(url: string): Promise<PullRequestWorkspace[]> {
+    const result = await backendRequest<{ workspaces?: unknown }>('workspace.findByPullRequest', {
+      url,
+    });
+    const rows = result?.workspaces;
+    if (!Array.isArray(rows) || !rows.every(isPullRequestWorkspace)) {
+      throw new Error('Invalid workspace.findByPullRequest response shape');
+    }
+    return rows;
   }
 
   /** Cancel a daemon-owned workspace delete grace window (§5.1). */

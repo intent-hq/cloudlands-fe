@@ -125,7 +125,7 @@ jobs:
   auto-merge-release-pr:
     name: Auto-merge green Release PR
     # API-driven check: use ubuntu-latest so a self-hosted slot is not wasted.
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     # Self-retrigger guard: the cut's own squash-merge push to main
     # (release-please writes the `chore(release): X.Y.Z` commit title) fires
     # the broadened push trigger — skip it at the job level so the run never

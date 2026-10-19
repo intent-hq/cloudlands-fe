@@ -872,6 +872,10 @@ for (const surface of ['home', 'sidebar'] as const) {
             : component.locator('[data-workspace-status]');
         const attribute = surface === 'home' ? 'data-home-status' : 'data-workspace-status';
         const pending = surface === 'home' && refresh === 'delayed';
+        const sidebarActions = component.getByRole('button', {
+          name: 'Workspace actions',
+          exact: true,
+        });
         await row.focus();
         await page.keyboard.press('Shift+F10');
         await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();
@@ -936,6 +940,7 @@ for (const surface of ['home', 'sidebar'] as const) {
           ).toHaveAttribute('data-home-status', 'pr-ready');
         }
         if (pending) expect(held.pendingCreation?.attentionReminder).toBeUndefined();
+        if (surface === 'sidebar') await expect(sidebarActions).toBeHidden();
         await testInfo.attach(surface + '-account-after', {
           body: await page.screenshot(),
           contentType: 'image/png',
@@ -972,6 +977,7 @@ for (const surface of ['home', 'sidebar'] as const) {
             component.getByRole('option', { name: 'Pending review' }).locator('[data-home-status]'),
           ).toHaveAttribute('data-home-status', 'needs-you');
         }
+        if (surface === 'sidebar') await expect(sidebarActions).toBeVisible();
         await row.focus();
         await page.keyboard.press('Shift+F10');
         await page.getByRole('menuitem', { name: 'Dismiss for now', exact: true }).click();

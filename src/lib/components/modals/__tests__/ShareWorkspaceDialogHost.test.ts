@@ -11,6 +11,7 @@ import { initialState as preferenceDefaults } from '$store/renderer/slices/user-
 import { initialState as identityDefaults } from '$store/renderer/slices/identity/identity-slice';
 import { initialState as gitlabDefaults } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { initialState as searchDefaults } from '$store/renderer/slices/github-user-search/github-user-search-slice';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -47,7 +48,7 @@ beforeEach(() => {
     githubAuth: { isAuthenticated: false },
     gitlabAuth: gitlabDefaults,
     githubUserSearch: searchDefaults,
-    daemonHealth: { stats: { protocolVersion: '10.8' } }, // protocol-version-ok: identity-seam fixture.
+    daemonHealth: { stats: { protocolVersion: CURRENT_PROTOCOL_VERSION } }, // protocol-version-ok: identity-seam fixture.
   });
 });
 

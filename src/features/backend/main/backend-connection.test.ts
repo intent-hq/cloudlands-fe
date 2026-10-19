@@ -799,13 +799,13 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
       return {
         result: {
           clientId: 'test-client',
-          protocolVersion: '9.4',
+          protocolVersion: '9.4', // fixture-protocol-version: old intentd 0.9.12 predates principal.me
           server: {
             locality: 'remote',
             hasDisplay: false,
             osArch: 'linux/x86_64',
             version: '0.9.12',
-            protocolVersion: '9.4',
+            protocolVersion: '9.4', // fixture-protocol-version: old intentd 0.9.12 predates principal.me
             capabilities: { liveState: true },
           },
         },

@@ -7,6 +7,7 @@
  * renders it.
  */
 
+import type { PullRequestWorkspace } from '$lib/client/app-client';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 
@@ -23,6 +24,19 @@ export interface LinkActionMenuState {
   workspaceId?: WorkspaceId;
   /** Element that triggered the menu; focus is restored to it on close. */
   anchorElement?: HTMLElement | null;
+  /** The link was clicked in the workspace's Home preview: Open in app enters the workspace. */
+  openInWorkspace: boolean;
+  /** Panel the link was clicked in; Open in app opens beside it. */
+  sourcePanelId?: string;
+  /** Assistant side panel the link was clicked in; Open in app shows the link there. */
+  assistantLayoutId?: string;
+  /**
+   * Workspaces the daemon linked to the clicked PR (`workspace.findByPullRequest`),
+   * most recently linked first. Empty until the lookup for this opening resolves.
+   */
+  linkedWorkspaces: PullRequestWorkspace[];
+  /** Identifies one opening of the menu; a lookup result for an older opening is dropped. */
+  openingId: number;
 }
 
 export const linkActionMenuState = $state<LinkActionMenuState>({
@@ -33,9 +47,17 @@ export const linkActionMenuState = $state<LinkActionMenuState>({
   y: 0,
   workspaceId: undefined,
   anchorElement: null,
+  openInWorkspace: false,
+  sourcePanelId: undefined,
+  assistantLayoutId: undefined,
+  linkedWorkspaces: [],
+  openingId: 0,
 });
 
-/** Show the link action menu at the given position. */
+/**
+ * Show the link action menu at the given position. Returns the opening id to
+ * pass to {@link setLinkActionMenuLinkedWorkspaces}.
+ */
 export function showLinkActionMenu(params: {
   url: string;
   gitHubRef: GitHubIssueOrPrRef;
@@ -43,14 +65,35 @@ export function showLinkActionMenu(params: {
   y: number;
   workspaceId?: WorkspaceId;
   anchorElement?: HTMLElement | null;
-}): void {
+  openInWorkspace?: boolean;
+  sourcePanelId?: string;
+  assistantLayoutId?: string;
+}): number {
+  linkActionMenuState.openingId += 1;
+  linkActionMenuState.linkedWorkspaces = [];
   linkActionMenuState.url = params.url;
   linkActionMenuState.gitHubRef = params.gitHubRef;
   linkActionMenuState.x = params.x;
   linkActionMenuState.y = params.y;
   linkActionMenuState.workspaceId = params.workspaceId;
   linkActionMenuState.anchorElement = params.anchorElement ?? null;
+  linkActionMenuState.openInWorkspace = params.openInWorkspace ?? false;
+  linkActionMenuState.sourcePanelId = params.sourcePanelId;
+  linkActionMenuState.assistantLayoutId = params.assistantLayoutId;
   linkActionMenuState.visible = true;
+  return linkActionMenuState.openingId;
+}
+
+/**
+ * Apply a PR workspace lookup result, but only while the menu is still showing
+ * the opening that requested it.
+ */
+export function setLinkActionMenuLinkedWorkspaces(
+  openingId: number,
+  workspaces: PullRequestWorkspace[],
+): void {
+  if (!linkActionMenuState.visible || linkActionMenuState.openingId !== openingId) return;
+  linkActionMenuState.linkedWorkspaces = workspaces;
 }
 
 /** Hide the link action menu. */
@@ -60,4 +103,9 @@ export function hideLinkActionMenu(): void {
   linkActionMenuState.gitHubRef = null;
   linkActionMenuState.workspaceId = undefined;
   linkActionMenuState.anchorElement = null;
+  linkActionMenuState.openInWorkspace = false;
+  linkActionMenuState.sourcePanelId = undefined;
+  linkActionMenuState.assistantLayoutId = undefined;
+  linkActionMenuState.linkedWorkspaces = [];
+  linkActionMenuState.openingId += 1;
 }

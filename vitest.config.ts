@@ -8,9 +8,9 @@ import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglid
 import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
-// recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
-// 64-core tinybox, which hosts up to 8 concurrent jobs across repos (including
-// intentd cargo builds): 50% of cores there means 32 jsdom forks on an
+// recurrence class #3032/#2586/#1406/#1171/#545). On a shared 64-core
+// self-hosted host running up to 8 concurrent jobs across repos (including
+// intentd cargo builds), 50% of cores meant 32 jsdom forks on an
 // already-loaded box, and under external load rotating test files blow the 30s
 // budget (observed ~34s for tests that take ~8s locally) while passing in
 // isolation. CI caps workers at min(50%, 16) — halving the fork count on the

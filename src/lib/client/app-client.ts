@@ -1,3 +1,4 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -77,6 +78,14 @@ import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type {
+  ProviderProfileCreateParams,
+  ProviderProfileCreateResult,
+  ProviderProfileDeleteResult,
+  ProviderProfilesListResult,
+  ProviderProfileUpdateParams,
+  ProviderProfileUpdateResult,
+} from '$shared/provider-profiles';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
   BrowserActionEnvelope,
@@ -410,6 +419,15 @@ export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
+/** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
+export interface PullRequestWorkspace {
+  id: WorkspaceId;
+  title: string;
+  archived: boolean;
+  /** RFC 3339 time the daemon first linked this workspace to the PR. */
+  linkedAt: string;
+}
+
 export interface WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -426,6 +444,13 @@ export interface WorkspacesClient {
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /**
+   * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
+   * §5.1), most recently linked first, archived included. Callers must gate on
+   * the `prWorkspaceLookup: 1` server capability. Rejects on transport errors
+   * and on a malformed result.
+   */
+  findByPullRequest(url: string): Promise<PullRequestWorkspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
@@ -2164,6 +2189,11 @@ export interface ModelsClient {
  */
 export interface ProvidersClient {
   catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
+  /** `providers.profiles.*` (§5.54), administrator-only; call only when the catalog advertises `supportsProfiles`. */
+  listProfiles(baseProviderId?: string): Promise<ProviderProfilesListResult>;
+  createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
+  updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
+  deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */

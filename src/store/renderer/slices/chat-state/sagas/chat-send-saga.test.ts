@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   // handler brackets; both are stubbed per-test.
   getModelsForProvider: vi.fn(),
   setModel: vi.fn(),
+  // Daemon-side redrive (`agent.retry`) — the provider retry's fallback when
+  // the failed turn has no renderer-side record to resend (wake-started
+  // turns, or after a reload; intent-hq/intent#7226).
+  agentRetry: vi.fn(),
   // Image pre-upload (monorepo#3338): default maps each inline block to a
   // deterministic reference block; individual tests override to assert the
   // failure path.
@@ -55,6 +59,7 @@ vi.mock('$lib/client', () => ({
       editQueued: mocks.editQueued,
       stop: mocks.stop,
       rename: mocks.rename,
+      retry: mocks.agentRetry,
     },
   },
 }));
@@ -113,6 +118,8 @@ import {
   streamStatusReceived,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
+import { selectChatError } from '../chat-state-selectors';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { chatSendSaga } from './chat-send-saga';
 
 const WS = 'ws-send';
@@ -756,6 +763,38 @@ describe('chatSendSaga', () => {
     // the failure banner's "Try again".
     expect(run.dispatch).not.toHaveBeenCalledWith(chatLastAttemptedMessageSet(AGENT, null));
     expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, 'Agent not found: agent-send'));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  // §5.54: a turn refused because the selected profile was removed (or its
+  // base provider disabled) asks for a replacement and flags the picker.
+  it('turns a provider-profile-replacement-required refusal into a replacement prompt', async () => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    mocks.send.mockRejectedValue(
+      new BackendError({
+        code: 'invalid_params',
+        rpcCode: -32602,
+        message: 'provider profile codex@pwork needs a replacement',
+        data: {
+          code: 'provider-profile-replacement-required',
+          providerRef: 'codex@pwork',
+          reason: 'profile-missing',
+        },
+      }),
+    );
+    const run = harness();
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+    await settle();
+
+    const failed = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === chatSendFailed.type);
+    expect(failed?.payload[1]).toMatch(/Choose another model/);
+    expect(run.state().agentSessions.byAgentId[AGENT]?.providerReplacementRequired).toEqual({
+      providerRef: 'codex@pwork',
+      reason: 'profile-missing',
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -1426,6 +1465,7 @@ describe('chatSendSaga', () => {
       mocks.setModel.mockReset();
       mocks.send.mockReset();
       mocks.queue.mockReset();
+      mocks.agentRetry.mockReset();
       mocks.getModelsForProvider.mockResolvedValue({
         models: [
           { value: 'gpt-5-mini', label: 'Mini' },
@@ -1572,6 +1612,7 @@ describe('chatSendSaga', () => {
         ],
       });
       const run = harness();
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
 
       const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
       run.channel.put(retry);
@@ -1646,6 +1687,131 @@ describe('chatSendSaga', () => {
       await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
       run.task.cancel();
       await run.task.toPromise();
+    });
+
+    describe('error session redrives through agent.retry (intent-hq/intent#7226)', () => {
+      // A turn started by a wake (PR monitor, hook, sibling agent) — or any
+      // turn after an app reload — has no `lastAttemptedMessage`: that record
+      // only exists for composer sends. The daemon, however, parked the
+      // session in `error` with the failed message requeued at the queue
+      // front, so `agent.retry` redrives it on the session's CURRENT model —
+      // the one setModel just switched to. That holds for composer turns too.
+      const errored = () => session({ status: AgentStatus.Error });
+      const sessionStatus = (run: ReturnType<typeof harness>) =>
+        selectAgentSession.select(run.state(), AGENT)?.status;
+
+      it('switches provider, then redrives the requeued turn through agent.retry', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: true, turnId: 'turn-1' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        // Switch BEFORE redrive, or the redrive runs on the exhausted provider.
+        const [switched] = mocks.setModel.mock.invocationCallOrder;
+        const [redriven] = mocks.agentRetry.mock.invocationCallOrder;
+        expect(switched).toBeLessThan(redriven);
+        // No client-side resend, and no "nothing to retry" dead end.
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.toastInfo).not.toHaveBeenCalled();
+        expect(mocks.toastError).not.toHaveBeenCalled();
+        expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+        expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('redrives through agent.retry even when a composer message is on record', async () => {
+        // The daemon requeued the failed message, so a renderer-side resend
+        // would run the prompt twice — and the record may be a leftover from
+        // an earlier composer turn rather than the turn that failed.
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: true });
+        const run = harness(errored());
+        run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'older prompt', options: {} }));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.queue).not.toHaveBeenCalled();
+        expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('drops the stale failure when the agent was deleted', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: false, notFound: true, error: 'not found' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+        expect(mocks.toastError).not.toHaveBeenCalled();
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('does not switch provider when the session is not in error', async () => {
+        const run = harness();
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        // Nothing can be redriven, so moving the session would only leave it
+        // on a different provider with nothing re-run.
+        expect(mocks.getModelsForProvider).not.toHaveBeenCalled();
+        expect(mocks.setModel).not.toHaveBeenCalled();
+        expect(mocks.agentRetry).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('reports nothing to retry when the daemon queue turned out empty', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: false });
+        const run = harness(errored());
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        expect(sessionStatus(run)).toBe(AgentStatus.RuntimeIdle);
+        await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('keeps the failure visible and reports it when agent.retry fails', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: false, error: 'Agent not in error status' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        await expect(
+          (async () => {
+            run.channel.put(retry);
+            return retry.promise;
+          })(),
+        ).rejects.toThrow('Agent not in error status');
+
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(selectChatError.select(run.state(), AGENT)).toBe('usage limit');
+        await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
     });
   });
 });

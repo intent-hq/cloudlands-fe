@@ -2,6 +2,8 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 const notifyError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
@@ -110,7 +112,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
         },
       };
@@ -158,7 +160,7 @@ describe('script lifecycle event to transport', () => {
       method === 'client.hello'
         ? {
             server: {
-              protocolVersion: '14.0',
+              protocolVersion: CURRENT_PROTOCOL_VERSION,
               capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
             },
           }
@@ -404,7 +406,7 @@ describe('script list and retained output read fences', () => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '14.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
           },
         };
@@ -430,7 +432,7 @@ describe('script list and retained output read fences', () => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '14.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
           },
         };
@@ -498,7 +500,7 @@ describe('script list and retained output read fences', () => {
         method === 'client.hello'
           ? {
               server: {
-                protocolVersion: '14.0',
+                protocolVersion: CURRENT_PROTOCOL_VERSION,
                 capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
               },
             }
@@ -569,7 +571,12 @@ it.each([true, false])(
     const page = deferred<{ view: string; scripts: ScriptWithState[] }>();
     transport.request.mockImplementation(async (method) => {
       if (method === 'client.hello')
-        return { server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } };
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptActiveLists: 1 },
+          },
+        };
       if (method === 'script.list') return page.promise;
       if (method === 'script.output') return 'selected output';
       throw new Error('Unexpected method ' + method);

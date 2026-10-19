@@ -12,7 +12,11 @@ import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { getBackendClient, getBackendClientForIpcEvent } from '../../backend/main/backend.ipc';
+import {
+  getBackendClient,
+  getBackendClientForIpcEvent,
+  getBackendIdForIpcSender,
+} from '../../backend/main/backend.ipc';
 import {
   isBinaryExtension,
   detectBinaryContent,
@@ -359,7 +363,7 @@ export function setupFileIPC() {
     FILE_CHANNELS.WRITE,
     createSafeValidatedHandler(
       FileWriteSchema,
-      async (_, validated): Promise<IpcResponse<FileIpc.WriteResponse>> => {
+      async (event, validated): Promise<IpcResponse<FileIpc.WriteResponse>> => {
         try {
           // Local-only after P3-5.1; remote writes no longer route through RPC.
           const expandedPath = expandPath(validated.path);
@@ -415,13 +419,20 @@ export function setupFileIPC() {
             // Emit file change event for immediate UI update if workspaceId provided
             if (validated.workspaceId) {
               try {
-                sendToWorkspaceWindows(validated.workspaceId, 'file:content-changed', {
-                  workspaceId: validated.workspaceId,
-                  path: validated.path,
-                  relativePath: validated.path,
-                  content: validated.content,
-                  source: 'user',
-                });
+                // The saving window's host owns this workspace.
+                const backendId = getBackendIdForIpcSender(event.sender);
+                sendToWorkspaceWindows(
+                  validated.workspaceId,
+                  'file:content-changed',
+                  {
+                    workspaceId: validated.workspaceId,
+                    path: validated.path,
+                    relativePath: validated.path,
+                    content: validated.content,
+                    source: 'user',
+                  },
+                  backendId,
+                );
 
                 sendToWorkspaceWindows(
                   validated.workspaceId,
@@ -431,6 +442,7 @@ export function setupFileIPC() {
                     filePath: validated.path,
                     source: 'user',
                   },
+                  backendId,
                 );
               } catch (emitError) {
                 logger.warn('Failed to emit file change event', {

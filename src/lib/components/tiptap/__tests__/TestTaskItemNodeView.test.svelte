@@ -13,9 +13,17 @@
     getPos: () => number | undefined;
     workspaceId?: string;
     selected?: boolean;
+    updateAttributes?: NodeViewProps['updateAttributes'];
   }
 
-  let { node, editor, getPos, workspaceId, selected = false }: Props = $props();
+  let {
+    node,
+    editor,
+    getPos,
+    workspaceId,
+    selected = false,
+    updateAttributes = () => {},
+  }: Props = $props();
 
   // Set up context for drag handling (NodeViewWrapper uses this)
   setContext(NODE_VIEW_CONTEXT_KEY, {
@@ -39,10 +47,7 @@
     view: editor.view,
     extension: { options: { workspaceId } } as any,
     HTMLAttributes: {},
-    updateAttributes: (attrs: Record<string, unknown>) => {
-      // Mock implementation - in tests, this would update the node
-      console.log('updateAttributes called with:', attrs);
-    },
+    updateAttributes,
     deleteNode: () => {
       // Mock implementation
       console.log('deleteNode called');

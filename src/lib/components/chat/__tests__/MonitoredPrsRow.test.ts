@@ -20,7 +20,7 @@ const {
   snapshotState,
   workspaceState,
   handleLinkMock,
-  openInBrowserPanelMock,
+  openLinkInAppMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   monitorsState: { monitors: [] as unknown[] },
@@ -33,7 +33,7 @@ const {
     } as unknown,
   },
   handleLinkMock: vi.fn(),
-  openInBrowserPanelMock: vi.fn(),
+  openLinkInAppMock: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -71,7 +71,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 
 vi.mock('$features/navigation/link-handler', () => ({
   handleLink: handleLinkMock,
-  openInBrowserPanel: openInBrowserPanelMock,
+  openLinkInApp: openLinkInAppMock,
 }));
 
 // Producer fixtures enter at the transport boundary; the service and component
@@ -203,7 +203,7 @@ describe('MonitoredPrsRow', () => {
     setViewport(originalInnerWidth, originalDevicePixelRatio);
     dispatchMock.mockClear();
     handleLinkMock.mockClear();
-    openInBrowserPanelMock.mockClear();
+    openLinkInAppMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
@@ -827,12 +827,34 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      { openInWorkspace: false, assistantLayoutId: undefined },
     );
     expect(handleLinkMock).not.toHaveBeenCalled();
+  });
+
+  it('chip menu Open in App enters the workspace from its Home preview', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    const preview = document.createElement('div');
+    preview.dataset.workspaceLinkTarget = 'ws-1';
+    document.body.append(preview);
+    render(MonitoredPrsRow, {
+      target: preview,
+      props: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
+    await fireEvent.click(openInAppItem);
+
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
+      'https://github.com/acme/widgets/pull/42',
+      'ws-1',
+      { openInWorkspace: true, assistantLayoutId: undefined },
+    );
+    preview.remove();
   });
 
   it('chip menu Open in External Browser routes the PR URL through the forceExternal link handler', async () => {
@@ -848,7 +870,7 @@ describe('MonitoredPrsRow', () => {
       'https://github.com/acme/widgets/pull/42',
       expect.objectContaining({ forceExternal: true }),
     );
-    expect(openInBrowserPanelMock).not.toHaveBeenCalled();
+    expect(openLinkInAppMock).not.toHaveBeenCalled();
   });
 
   it('open actions fall back to the canonical GitHub URL when the monitor has no url', async () => {
@@ -859,10 +881,11 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledTimes(1);
+    expect(openLinkInAppMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      expect.anything(),
     );
   });
 });

@@ -7,19 +7,17 @@
   import { scriptCommandLabel } from '$features/scripts/types';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
-  import type { ScriptCategory, ScriptMode, ScriptListEntry } from '$features/scripts/types';
+  import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    applyScriptDefinitionChangesRequested,
     createScriptDefinitionRequested,
-    deleteScriptRequested,
     detectScriptDefinitionsRequested,
-    listScriptDefinitionsRequested,
+    detectScriptsWithAgentRequested,
+    removeScriptDefinitionsRequested,
     restoreScriptDefinitionsRequested,
     saveScriptDefinitionsToRepoRequested,
     scriptWorkflowConsumed,
@@ -30,38 +28,33 @@
     updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import type {
-    ScriptDefinitionChanges,
-    ScriptDefinitionChangesOutcome,
-    ScriptDefinitionInput,
-    ScriptDefinitionUpdate,
+    ScriptAgentDetectionOutcome,
+    ScriptBulkRemovalOutcome,
     ScriptDetectionOutcome,
     ScriptWorkflowConsumer,
-    ScriptWithState,
   } from '$store/renderer/slices/scripts/scripts-types';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import { onDestroy } from 'svelte';
 
-  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify, withToastCountdown } from '$lib/components/patterns/notify';
-  import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
-  import {
-    selectExecutorIsRunning,
-    selectExecutorAgentId,
-  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
     selectActiveTerminalId as selectActiveTerminalIdSelector,
     selectUserTerminals as selectTerminalsSelector,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { terminalDisplayName } from '$lib/utils/terminal-display-name';
-
+  import {
+    selectExecutorAgentId,
+    selectExecutorIsRunning,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
+
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
@@ -101,13 +94,11 @@
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
-  const activeWorkspace = selectWorkspaceById(workspaceIdStore);
-
   const logger = createLogger('TerminalSidebar');
   const applyConsumerId = crypto.randomUUID();
   const createConsumerId = crypto.randomUUID();
   const detectConsumerId = crypto.randomUUID();
-  const listConsumerId = crypto.randomUUID();
+  const removeConsumerId = crypto.randomUUID();
   const restoreConsumerId = crypto.randomUUID();
   const saveConsumerId = crypto.randomUUID();
   const updateConsumerId = crypto.randomUUID();
@@ -123,10 +114,10 @@
     workspaceIdStore,
     'local-detection',
   );
-  const listOutcome$ = selectScriptWorkflowOutcome(
-    listConsumerId,
+  const removeOutcome$ = selectScriptWorkflowOutcome(
+    removeConsumerId,
     workspaceIdStore,
-    'agent-context',
+    'bulk-remove',
   );
   const restoreOutcome$ = selectScriptWorkflowOutcome(
     restoreConsumerId,
@@ -139,36 +130,6 @@
     workspaceIdStore,
     updateResourceIdStore,
   );
-
-  // i18n-ignore (agent-facing prompt, kept in English)
-  const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
-
-For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
-
-CRITICAL INSTRUCTIONS:
-1. You MUST wrap your JSON result in <<<DETECTED_SCRIPTS>>> and <<</DETECTED_SCRIPTS>>> tags
-2. Do NOT use markdown code blocks
-3. Do NOT add any text outside the tags
-4. Return ONLY a JSON object with keys "add", "update", and "remove"
-
-Example response (you MUST follow this exact format):
-<<<DETECTED_SCRIPTS>>>
-{"add":[{"name":"dev","command":"npm run dev","mode":"service","category":"dev"}],"update":[],"remove":[]}
-<<</DETECTED_SCRIPTS>>>
-
-Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
-
-  const validCategories = new Set([
-    'dev',
-    'build',
-    'test',
-    'lint',
-    'typecheck',
-    'format',
-    'storybook',
-    'other',
-  ]);
-  const validModes = new Set(['service', 'command']);
 
   type DetectFlow = 'idle' | 'local' | 'agent';
 
@@ -185,14 +146,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let pendingApply = $state<{
     requestId: string;
     workspaceId: string;
-    presentation: 'changes' | 'legacy';
   } | null>(null);
   let pendingCreate = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingDetect = $state<{ requestId: string; workspaceId: string } | null>(null);
-  let pendingList = $state<{ requestId: string; workspaceId: string } | null>(null);
-  let reviewedAgentDefinitions = $state<{
+  let pendingRemove = $state<{
+    requestId: string;
     workspaceId: string;
-    definitions: ScriptWithState[];
+    selectedScriptId: string | null;
+    targetIds: string[];
   } | null>(null);
   let pendingRestore = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingSave = $state<{ requestId: string; workspaceId: string } | null>(null);
@@ -204,7 +165,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     applyConsumerId,
     createConsumerId,
     detectConsumerId,
-    listConsumerId,
+    removeConsumerId,
     restoreConsumerId,
     saveConsumerId,
     updateConsumerId,
@@ -237,183 +198,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       pendingApply = null;
       pendingCreate = null;
       pendingDetect = null;
-      pendingList = null;
-      reviewedAgentDefinitions = null;
+      pendingRemove = null;
       pendingRestore = null;
       pendingSave = null;
       pendingUpdate = null;
       detectFlow = 'idle';
     }
     workflowWorkspaceId = nextWorkspaceId;
-  });
-
-  function handleDetectionResult(parsed: any): void {
-    const requestWorkspaceId = workspaceId;
-    const reviewedDefinitions: ScriptWithState[] | undefined =
-      reviewedAgentDefinitions?.workspaceId === requestWorkspaceId
-        ? reviewedAgentDefinitions.definitions
-        : undefined;
-    reviewedAgentDefinitions = null;
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      ('add' in parsed || 'update' in parsed || 'remove' in parsed)
-    ) {
-      const changes: ScriptDefinitionChanges = {
-        remove: Array.isArray(parsed.remove)
-          ? parsed.remove.filter((id: unknown): id is string => typeof id === 'string')
-          : [],
-        update: Array.isArray(parsed.update)
-          ? parsed.update.flatMap((entry: any) => {
-              if (typeof entry?.id !== 'string') return [];
-              const updates: ScriptDefinitionUpdate = {};
-              if (typeof entry.name === 'string') updates.name = entry.name;
-              if (typeof entry.command === 'string') updates.command = entry.command;
-              if (validModes.has(entry.mode)) updates.mode = entry.mode as ScriptMode;
-              if (validCategories.has(entry.category)) updates.category = entry.category;
-              return [{ id: entry.id, updates }];
-            })
-          : [],
-        add: Array.isArray(parsed.add)
-          ? parsed.add.flatMap((entry: any): ScriptDefinitionInput[] => {
-              if (
-                typeof entry?.name !== 'string' ||
-                typeof entry.command !== 'string' ||
-                !validModes.has(entry.mode)
-              )
-                return [];
-              return [
-                {
-                  name: entry.name,
-                  command: entry.command,
-                  mode: entry.mode as ScriptMode,
-                  purpose: 'saved',
-                  category: validCategories.has(entry.category)
-                    ? (entry.category as ScriptCategory)
-                    : 'other',
-                  source: 'auto-detected',
-                },
-              ];
-            })
-          : [],
-      };
-      const requestId = crypto.randomUUID();
-      pendingApply = { requestId, workspaceId: requestWorkspaceId, presentation: 'changes' };
-      appStore.dispatch(
-        applyScriptDefinitionChangesRequested(
-          requestWorkspaceId,
-          changes,
-          reviewedDefinitions,
-          consumer(applyConsumerId, requestId, 'agent-detection'),
-        ),
-      );
-      return;
-    }
-
-    // Fallback: old flat array format — deduplicate
-    if (Array.isArray(parsed)) {
-      const existingKeys = new Set(
-        (reviewedDefinitions ?? selectScriptEntries.select(appStore.state, requestWorkspaceId)).map(
-          (script) => `${script.name}::${script.command}`,
-        ),
-      );
-
-      const add: ScriptDefinitionInput[] = [];
-      for (const entry of parsed) {
-        if (
-          typeof entry.name === 'string' &&
-          typeof entry.command === 'string' &&
-          validModes.has(entry.mode) &&
-          !existingKeys.has(`${entry.name}::${entry.command}`)
-        ) {
-          add.push({
-            name: entry.name,
-            command: entry.command,
-            mode: entry.mode as ScriptMode,
-            purpose: 'saved',
-            category: (entry.category as ScriptCategory) || 'other',
-            source: 'auto-detected',
-          });
-        }
-      }
-      const requestId = crypto.randomUUID();
-      pendingApply = { requestId, workspaceId: requestWorkspaceId, presentation: 'legacy' };
-      appStore.dispatch(
-        applyScriptDefinitionChangesRequested(
-          requestWorkspaceId,
-          { add, update: [], remove: [] },
-          reviewedDefinitions,
-          consumer(applyConsumerId, requestId, 'agent-detection'),
-        ),
-      );
-      return;
-    }
-
-    // Neither format matched
-    logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    notify.info(m.terminal_sidebar_unexpectedFormat_info());
-    runLocalDetect({ source: 'fallback' });
-  }
-
-  const scriptDetectAgent = useBackgroundAgent('script-detect', {
-    resultTag: 'DETECTED_SCRIPTS',
-    timeout: 90000,
-    onResult: async (result) => {
-      try {
-        const parsed = JSON.parse(result);
-        handleDetectionResult(parsed);
-      } catch (e) {
-        logger.warn('Failed to parse DETECTED_SCRIPTS result', {
-          error: e instanceof Error ? e.message : String(e),
-        });
-        notify.info(m.terminal_sidebar_agentDetectFailed_info());
-        runLocalDetect({ source: 'fallback' });
-      }
-    },
-    onError: async () => {
-      // Try to salvage JSON from the agent's raw messages via Redux
-      const currentAgentId = selectExecutorAgentId.select(
-        appStore.state,
-        workspaceId,
-        'script-detect',
-      );
-      const agentSession = currentAgentId
-        ? selectAgentSession.select(appStore.state, currentAgentId)
-        : undefined;
-      const messages = agentSession?.messages;
-      if (messages && messages.length > 0) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i];
-          const texts: string[] = [];
-          if (msg.contentBlocks) {
-            for (const block of msg.contentBlocks) {
-              if (block.type === 'text' && block.text) texts.push(block.text);
-            }
-          }
-          const content = texts.join('\n');
-
-          // Try extracting JSON from code blocks or raw content
-          const jsonMatch =
-            content.match(/```json?\s*\n?([\s\S]*?)\n?\s*```/) ||
-            content.match(/(\{[\s\S]*?"add"[\s\S]*?\})/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[1].trim());
-              logger.info('Salvaged detection result from raw agent response');
-              handleDetectionResult(parsed);
-              return;
-            } catch (e) {
-              logger.warn('Failed to parse salvaged JSON', { error: e });
-            }
-          }
-        }
-      }
-
-      logger.warn('Script detection agent failed, falling back to local detection');
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      runLocalDetect({ source: 'fallback' });
-    },
   });
 
   function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
@@ -503,15 +294,33 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     )
       return;
     pendingApply = null;
+    detectFlow = 'idle';
     completeWorkflow(applyConsumerId, outcome);
     if (outcome.status !== 'success' || !outcome.result) {
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      runLocalDetect({ source: 'fallback' });
+      notify.error(outcome.error ?? m.terminal_quakeOverlay_detectFailed_error());
       return;
     }
-    const result = outcome.result as ScriptDefinitionChangesOutcome;
+    const compound = outcome.result as ScriptAgentDetectionOutcome;
+    if (compound.source === 'local') {
+      notify.info(
+        compound.fallbackReason === 'unexpected-format'
+          ? m.terminal_sidebar_unexpectedFormat_info()
+          : m.terminal_sidebar_agentDetectFailed_info(),
+      );
+      const result = compound.detection;
+      showAgentAssist = result.detected === 0;
+      notify[result.detected > 0 ? 'success' : 'info'](
+        result.detected > 0
+          ? result.detected === 1
+            ? m.terminal_sidebar_detectedFromFiles_one({ count: result.detected })
+            : m.terminal_sidebar_detectedFromFiles_many({ count: result.detected })
+          : m.terminal_sidebar_noScriptsLocally_info(),
+      );
+      return;
+    }
+    const result = compound.changes;
     showAgentAssist = selectScriptEntries.select(appStore.state, outcome.workspaceId).length === 0;
-    if (pending.presentation === 'legacy') {
+    if (compound.presentation === 'legacy') {
       notify[result.added > 0 ? 'success' : 'info'](
         result.added > 0
           ? result.added === 1
@@ -565,6 +374,37 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             }),
       );
     }
+  });
+
+  $effect(() => {
+    const outcome = $removeOutcome$;
+    const pending = pendingRemove;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingRemove = null;
+    completeWorkflow(removeConsumerId, outcome);
+    const result = outcome.result as ScriptBulkRemovalOutcome | undefined;
+    if (
+      outcome.status === 'success' &&
+      pending.selectedScriptId &&
+      selectedScriptId === pending.selectedScriptId &&
+      result?.removed.includes(pending.selectedScriptId)
+    ) {
+      onSelectScript?.(null);
+    }
+    const removedTargets = new Set(outcome.status === 'success' && result ? result.removed : []);
+    selectedScriptIds = new Set(
+      Array.from(selectedScriptIds).filter((scriptId) => !removedTargets.has(scriptId)),
+    );
+    if (lastClickedScriptId && removedTargets.has(lastClickedScriptId)) lastClickedScriptId = null;
   });
 
   $effect(() => {
@@ -691,45 +531,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     if (outcome.status !== 'success') logger.error('Script update failed', outcome.error);
   });
 
-  $effect(() => {
-    const outcome = $listOutcome$;
-    const pending = pendingList;
-    if (
-      !outcome ||
-      !pending ||
-      outcome.consumed ||
-      outcome.status === 'pending' ||
-      outcome.requestId !== pending.requestId ||
-      outcome.workspaceId !== pending.workspaceId ||
-      workspaceId !== pending.workspaceId
-    )
-      return;
-    pendingList = null;
-    completeWorkflow(listConsumerId, outcome);
-    const definitions =
-      outcome.status === 'success' && Array.isArray(outcome.result)
-        ? (outcome.result as ScriptWithState[])
-        : [];
-    reviewedAgentDefinitions =
-      outcome.status === 'success' ? { workspaceId: outcome.workspaceId, definitions } : null;
-    const workspace = selectWorkspaceById.select(appStore.state, outcome.workspaceId);
-    if (!workspace || !mounted || workspaceId !== outcome.workspaceId) return;
-    const existingScripts = definitions.map((script) => ({
-      id: script.id,
-      name: script.name,
-      command: script.command,
-      mode: script.mode,
-      purpose: script.purpose ?? 'saved',
-      category: script.category,
-    }));
-    const context =
-      existingScripts.length > 0
-        ? `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(existingScripts, null, 2)}`
-        : '';
-    scriptDetectAgent.execute(workspace, { message: SCRIPT_DETECT_PROMPT + context });
-    if (mounted && workspaceId === outcome.workspaceId) detectFlow = 'idle';
-  });
-
   // ---- Sort function ----
   function sortScripts(scripts: ScriptListEntry[]): ScriptListEntry[] {
     return [...scripts].sort((a, b) => {
@@ -841,23 +642,19 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       return;
     }
 
-    const workspace = $activeWorkspace;
-    if (!workspace) {
+    if (!workspaceId) {
       notify.info(m.terminal_sidebar_openWorkspaceFirst_info());
       return;
     }
 
     showAgentAssist = false;
     detectFlow = 'agent';
-    reviewedAgentDefinitions = null;
-
     const requestId = crypto.randomUUID();
-    pendingList = { requestId, workspaceId: workspace.id };
+    pendingApply = { requestId, workspaceId };
     appStore.dispatch(
-      listScriptDefinitionsRequested(
-        workspace.id,
-        { archive: 'active' },
-        consumer(listConsumerId, requestId, 'agent-context'),
+      detectScriptsWithAgentRequested(
+        workspaceId,
+        consumer(applyConsumerId, requestId, 'agent-detection'),
       ),
     );
   }
@@ -960,21 +757,29 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     action: 'start' | 'stop' | 'restart' | 'edit' | 'delete' | 'startAll' | 'stopAll',
   ) {
     if (action === 'delete') {
+      if (pendingRemove) return;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
-      for (const id of idsToDelete) {
-        appStore.dispatch(
-          deleteScriptRequested(
-            workspaceId,
-            id,
-            m.terminal_quakeOverlay_deleteScriptFailed_error(),
-          ),
-        );
-      }
-      if (selectedScriptId && idsToDelete.includes(selectedScriptId)) onSelectScript?.(null);
-      selectedScriptIds.clear();
-      selectedScriptIds = new Set(selectedScriptIds);
-      lastClickedScriptId = null;
+      const requestId = crypto.randomUUID();
+      const selected = selectScriptEntries
+        .select(appStore.state, workspaceId)
+        .filter((script) => selectedScriptIds.has(script.id));
+      const targets = selected.map((script) => ({ ...script, workspaceId }));
+      appStore.dispatch(
+        removeScriptDefinitionsRequested(
+          workspaceId,
+          targets,
+          m.terminal_quakeOverlay_deleteScriptFailed_error(),
+          consumer(removeConsumerId, requestId, 'bulk-remove'),
+        ),
+      );
+      pendingRemove = {
+        requestId,
+        workspaceId,
+        targetIds: idsToDelete,
+        selectedScriptId:
+          selectedScriptId && idsToDelete.includes(selectedScriptId) ? selectedScriptId : null,
+      };
     } else if (action === 'startAll') {
       // Start all selected scripts
       for (const id of selectedScriptIds) {
@@ -1187,15 +992,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
-                const wsId = $activeWorkspace?.id;
-                if (wsId) {
-                  appStore.dispatch(
-                    openAgentTabRequested(wsId, {
-                      agentId: $_scriptDetectAgentId$,
-                      ...getNavigationContext(e),
-                    }),
-                  );
-                }
+                appStore.dispatch(
+                  openAgentTabRequested(workspaceId, {
+                    agentId: $_scriptDetectAgentId$,
+                    ...getNavigationContext(e),
+                  }),
+                );
               }}
               title={m.terminal_sidebar_viewDetectionAgent_tooltip()}
             >

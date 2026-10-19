@@ -27,6 +27,7 @@ import {
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
+  selectLabsProviderProfilesEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectReduceMotionOnBattery,
@@ -56,6 +57,7 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsProviderProfilesEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -72,6 +74,7 @@ import {
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsProviderProfiles,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -94,6 +97,7 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
+const LABS_PROVIDER_PROFILES_STORAGE_KEY = 'labs:providerProfilesEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -226,6 +230,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof labsRemoteAgentsEnabled === 'boolean') {
     yield* put(setLabsRemoteAgentsEnabled(labsRemoteAgentsEnabled));
+  }
+
+  const labsProviderProfilesEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_PROVIDER_PROFILES_STORAGE_KEY,
+  );
+  if (typeof labsProviderProfilesEnabled === 'boolean') {
+    yield* put(setLabsProviderProfilesEnabled(labsProviderProfilesEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -362,6 +373,13 @@ function* persistLabsRemoteAgentsWorker() {
   );
 }
 
+function* persistLabsProviderProfilesWorker() {
+  yield* setLocalStorageJSON(
+    LABS_PROVIDER_PROFILES_STORAGE_KEY,
+    yield* selectLabsProviderProfilesEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -470,6 +488,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
     persistLabsRemoteAgentsWorker,
+  );
+  yield* takeEvery(
+    [setLabsProviderProfilesEnabled, toggleLabsProviderProfiles],
+    persistLabsProviderProfilesWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

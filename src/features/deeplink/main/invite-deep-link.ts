@@ -37,7 +37,7 @@ import {
   openBackendWindow,
 } from '../../backend/main/backend.ipc';
 import { AuthRejectedError, PinMismatchError } from '../../backend/main/backend-connection';
-import { protocolVersionAtLeast } from '../../backend/main/protocol-compat';
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import {
   InviteRpcError,
   InviteTransportError,

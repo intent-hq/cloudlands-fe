@@ -1,10 +1,5 @@
 import type { AppUpdater } from 'electron-updater';
 
-/** Native ARM clients advance independently; Intel and Rosetta retain the legacy feed. */
-export function macUpdateChannel(platform = process.platform, arch = process.arch) {
-  return platform === 'darwin' && arch === 'arm64' ? { channel: 'latest-arm64' } : {};
-}
-
 /** Reject an unavailable architecture before electron-updater emits update-available. */
 export function configureMacUpdateCompatibility(
   updater: Pick<AppUpdater, 'isUpdateSupported'>,

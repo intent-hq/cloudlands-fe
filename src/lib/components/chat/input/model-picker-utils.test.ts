@@ -241,6 +241,14 @@ describe('isProviderDisabledInSettings', () => {
   it('is false for an empty provider id', () => {
     expect(isProviderDisabledInSettings({ auggie: false }, '')).toBe(false);
   });
+  // §5.54: enablement stays keyed by the base provider.
+  it('treats a profile as disabled exactly when its base provider is', () => {
+    expect(isProviderDisabledInSettings({ codex: false }, 'codex@pwork00000001')).toBe(true);
+    expect(isProviderDisabledInSettings({ codex: true }, 'codex@pwork00000001')).toBe(false);
+    expect(
+      isProviderDisabledInSettings({ 'codex@pwork00000001': false }, 'codex@pwork00000001'),
+    ).toBe(false);
+  });
 });
 
 describe('findModelFallbackOption', () => {

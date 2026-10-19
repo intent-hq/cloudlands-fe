@@ -310,7 +310,7 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
-  it('sends exact create payloads while global takeEvery processes repeated writes concurrently', async () => {
+  it('sends exact create payloads and serializes repeated writes for one specialist', async () => {
     mocks.list.mockResolvedValue([fileDef('builtin')]);
     let release!: () => void;
     mocks.create.mockReturnValue(
@@ -339,7 +339,8 @@ describe('specialistsSaga', () => {
     channel.put(action);
     channel.put(action);
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    // The second write waits for the first one (and its refetch).
+    expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.create.mock.calls[0]).toEqual([
       'builtin',
       {
@@ -359,14 +360,88 @@ describe('specialistsSaga', () => {
     ]);
     release();
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    await settle();
+    // The queued write edits the file the first write created.
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
     expect(mocks.list.mock.calls).toEqual([[], []]);
     expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
       successAction(action),
+      ...expectedListActions(['builtin']),
       successAction(action),
       ...expectedListActions(['builtin']),
     ]);
     await expect(action.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps writes for different specialists concurrent', async () => {
+    let release!: () => void;
+    mocks.create.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          if (id === 'first') release = () => resolve({});
+          else resolve({});
+        }),
+    );
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => sagaState() },
+      specialistsSaga,
+    );
+    const write = (id: string) =>
+      saveFileSpecialist({ id, name: id, description: 'd', behaviorPrompt: 'p', scope: 'user' });
+    const first = write('first');
+    const second = write('second');
+    channel.put(first);
+    channel.put(second);
+    await settle();
+
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['first', 'second']);
+    await expect(second.promise).resolves.toBeUndefined();
+    release();
+    await expect(first.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('edits the file a queued create just wrote instead of creating it twice', async () => {
+    // Settings: pick a model on a built-in (create), then a reasoning level
+    // before the list refetch lands (second write for the same id).
+    mocks.list.mockResolvedValue([fileDef('builtin')]);
+    let state: { specialists: any } = sagaState();
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: any) => {
+      state = { specialists: specialistsReducer(state.specialists, action) };
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, specialistsSaga);
+    const write = (patch: Record<string, unknown>) =>
+      saveFileSpecialist({
+        id: 'builtin',
+        name: 'Builtin',
+        description: 'Default',
+        behaviorPrompt: 'Default prompt',
+        scope: 'user',
+        ...patch,
+      });
+    const model = write({ codingAgent: 'codex', model: 'gpt' });
+    const effort = write({ codingAgent: 'codex', model: 'gpt', reasoningEffort: 'high' });
+    channel.put(model);
+    channel.put(effort);
+    await expect(model.promise).resolves.toBeUndefined();
+    await expect(effort.promise).resolves.toBeUndefined();
+
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['builtin']);
+    expect(mocks.edit).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls[0][1]).toMatchObject({
+      codingAgent: 'codex',
+      model: 'gpt',
+      reasoningEffort: 'high',
+    });
+    expect(mocks.toastError).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
@@ -556,6 +631,128 @@ describe('specialistsSaga', () => {
     expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([failureAction(action)]);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('treats an already-absent override as reset when the delete allows it', async () => {
+    mocks.list.mockResolvedValue([]);
+    mocks.remove.mockRejectedValue(
+      Object.assign(new Error('specialist not found in user scope: builtin'), {
+        code: 'not-found',
+        rpcCode: -32602,
+        data: { code: 'not-found' },
+      }),
+    );
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = deleteFileSpecialist({ id: 'builtin', scope: 'user', allowMissing: true });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(dispatch.mock.calls[0][0]).toEqual(successAction(action));
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it.each([
+    ['a not-found delete without allowMissing', { code: 'not-found' }, false],
+    ['another daemon rejection with allowMissing', { code: 'INVALID_PARAMS' }, true],
+    [
+      'an unstructured not-found code with allowMissing',
+      { code: 'not-found', data: { code: 'not-found' } },
+      true,
+    ],
+  ])('still reports %s', async (_name, details, allowMissing) => {
+    mocks.remove.mockRejectedValue(Object.assign(new Error('rejected'), details));
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = deleteFileSpecialist({ id: 'builtin', scope: 'user', allowMissing });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow('rejected');
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('creates after a queued delete even while the project catalog still lists the file', async () => {
+    // Clearing a redundant project override deletes it; a reasoning pick right
+    // after must recreate it instead of editing the file that is now gone.
+    const project = { ...mappedFileDef('builtin'), source: 'project' as const };
+    const channel = stdChannel();
+    const task = runSaga(
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => ({
+          ...sagaState(),
+          providerCatalog: {
+            byWorkspaceId: {
+              'ws-1': { specialists: [{ ...fileDef('builtin'), source: 'project' }] },
+            },
+          },
+        }),
+      },
+      specialistsSaga,
+    );
+    const owner = { scope: 'project' as const, workspaceId: 'ws-1', workspacePath: '/ws' };
+    const remove = deleteFileSpecialist({ id: 'builtin', ...owner, allowMissing: true });
+    const save = saveFileSpecialist({
+      id: 'builtin',
+      name: project.name,
+      description: project.description,
+      behaviorPrompt: project.behaviorPrompt,
+      reasoningEffort: 'high',
+      ...owner,
+    });
+    channel.put(remove);
+    channel.put(save);
+    await expect(remove.promise).resolves.toBeUndefined();
+    await expect(save.promise).resolves.toBeUndefined();
+
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('edits after a queued create even when its refetch failed', async () => {
+    mocks.list.mockRejectedValue(new Error('list failed'));
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => sagaState() },
+      specialistsSaga,
+    );
+    const write = (reasoningEffort?: string) =>
+      saveFileSpecialist({
+        id: 'builtin',
+        name: 'Builtin',
+        description: 'Default',
+        behaviorPrompt: 'Default prompt',
+        codingAgent: 'codex',
+        model: 'gpt',
+        reasoningEffort,
+        scope: 'user',
+      });
+    const model = write();
+    const effort = write('high');
+    channel.put(model);
+    channel.put(effort);
+    await expect(model.promise).resolves.toBeUndefined();
+    await expect(effort.promise).resolves.toBeUndefined();
+
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls[0][1]).toMatchObject({ reasoningEffort: 'high' });
     task.cancel();
     await task.toPromise();
   });

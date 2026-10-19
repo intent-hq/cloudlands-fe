@@ -13,7 +13,9 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectProviderCatalogEntry,
   selectProviderCatalogLoaded,
+  selectProviderCatalogProfiles,
 } from '../../provider-catalog/provider-catalog-selectors';
+import { findProfileByRef, isProviderProfileRef } from '$shared/provider-profiles';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
 import { setAtomicDefaultModel } from '../../provider-settings/provider-settings-slice';
 import { selectModelSelectionState } from '../model-selectors';
@@ -33,7 +35,10 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   const providerId = explicitProviderId || legacyPrefix || activeProviderId;
 
   if (providerId && providerId !== activeProviderId) {
-    const provider = yield* selectProviderCatalogEntry.effect(providerId);
+    // A named profile (§5.54) is known while the catalog lists its reference.
+    const provider = isProviderProfileRef(providerId)
+      ? findProfileByRef(yield* selectProviderCatalogProfiles.effect(), providerId)
+      : yield* selectProviderCatalogEntry.effect(providerId);
     const catalogLoaded = yield* selectProviderCatalogLoaded.effect();
     // Before the catalog hydrates, let the daemon validate the pick.
     if (!provider && catalogLoaded) {

@@ -270,6 +270,7 @@ import {
   setGitLabAuthStatus,
 } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import {
   urlSubmitted,
   branchQueryChanged,
@@ -278,6 +279,7 @@ import {
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopGit: () => void;
+let stopInitialization: () => void;
 let stopCheckout: (() => void) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -286,6 +288,7 @@ beforeEach(() => {
   mocks.gitCheck.mockResolvedValue({ success: true, data: { available: true } });
   dispose = store.init();
   stopGit = store.runSaga(workspaceInitializerGitSaga);
+  stopInitialization = store.runSaga(workspaceInitializationSaga);
   admitLegacyPrincipal();
   store.dispatch(setLabsMultiplayerEnabled(false));
   mocks.hydrated$.set(true);
@@ -315,6 +318,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  stopInitialization();
   stopGit();
   stopCheckout?.();
   stopCheckout = undefined;
@@ -432,6 +436,34 @@ it('does not create after validation completes on an unmounted initializer', asy
   await new Promise((r) => setTimeout(r, 20));
   expect(mocks.create).not.toHaveBeenCalled();
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+});
+
+it('releases an in-flight create when the initializer unmounts', async () => {
+  let release!: (value: unknown) => void;
+  mocks.create.mockReturnValue(
+    new Promise((resolve) => {
+      release = resolve;
+    }),
+  );
+  sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
+  const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  const button = view.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  await fireEvent.click(button);
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+
+  view.unmount();
+  release({
+    ok: true,
+    data: {
+      workspace: { id: 'created', title: 'created', status: 'active' },
+      initialAgent: { id: 'created-agent' },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(mocks.placement).not.toHaveBeenCalled();
+  expect(mocks.goto).not.toHaveBeenCalled();
 });
 
 function admitHostMember() {
@@ -910,7 +942,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       expect(mocks.create).toHaveBeenCalledOnce();
       expect(mocks.captureCheckout).toHaveBeenCalledOnce();
       expect(session.release).not.toHaveBeenCalled();
-      await waitFor(() => expect(button.disabled).toBe(false));
 
       const nextSha = 'd'.repeat(40);
       const refreshed: RepositoryCheckoutSession = {
@@ -971,6 +1002,20 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const form = getItems(store.state.repositoryCheckout.forms)[0];
       store.dispatch(urlSubmitted(form.formId, form.scopeKey!, projectUrl));
       await waitFor(() => expect(session.project).toHaveBeenCalledWith({ url: projectUrl }));
+      // The selection is saved for the next form only once a workspace is created.
+      expect(
+        store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft,
+      ).not.toEqual(expect.objectContaining({ contextUrl: projectUrl }));
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: { id: 'created-gitlab', title: '', branch: 'work/new' } },
+      });
+      const firstCreate = document.querySelector<HTMLButtonElement>(
+        '[data-dialog-primary-action]',
+      )!;
+      await waitFor(() => expect(firstCreate.disabled).toBe(false));
+      await fireEvent.click(firstCreate);
+      await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/created-gitlab'));
       await waitFor(() =>
         expect(store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft).toEqual({
           instanceBaseUrl,
@@ -1000,8 +1045,8 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
       await waitFor(() => expect(button.disabled).toBe(false));
       await fireEvent.click(button);
-      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
-      expect(mocks.create.mock.calls[0][0].repositoryCheckout).toEqual({
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+      expect(mocks.create.mock.calls[1][0].repositoryCheckout).toEqual({
         checkoutId: 'restored-lease',
         revision: 'new-account',
         projectPath,

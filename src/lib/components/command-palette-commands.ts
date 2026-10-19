@@ -88,6 +88,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-provider-profiles',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalProviderProfiles_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-provider-profiles',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalProviderProfiles_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'new-terminal',
     get label() {
       return m.lib_commandPalette_newTerminal_command();

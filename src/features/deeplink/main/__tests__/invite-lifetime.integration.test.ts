@@ -41,7 +41,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
     request: state.request,
   }),
   onBackendStatus: () => () => {},
-  getConnectedDaemonProtocolVersion: () => '10.8', // protocol-version-ok: controlled legacy fixture
+  getConnectedDaemonProtocolVersion: () => '10.8', // fixture-protocol-version: controlled legacy fixture
   openBackendWindow: (...args: unknown[]) => state.open(...args),
 }));
 vi.mock('../../../backend/main/guest-sessions-store', () => ({

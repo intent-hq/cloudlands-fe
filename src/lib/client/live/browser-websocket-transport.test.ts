@@ -20,6 +20,7 @@ import {
   resolveBrowserWsUrl,
   sanitizeWsUrlForDisplay,
 } from './browser-websocket-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 class FakeWebSocket implements BrowserWebSocketLike {
   onopen: ((event?: unknown) => void) | null = null;
@@ -90,13 +91,13 @@ async function flush(): Promise<void> {
 function helloResult(clientId = 'browser-1') {
   return {
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: false,
       osArch: 'linux/x86_64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   };
@@ -853,12 +854,14 @@ describe('BrowserWebSocketTransport', () => {
 describe('root file reads on the sending connection', () => {
   it.each(
     ['file.read', 'file.readChunk'].flatMap((method) =>
-      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
-        ['11.0', '12.0', '13.0', '14.0', '15.0', 'invalid', undefined].map((nextVersion) => ({
-          method,
-          protocolVersion,
-          nextVersion,
-        })),
+      ['11.1', '12.0', '13.0', '14.0', '15.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', '15.0', '16.0', 'invalid', undefined].map(
+          (nextVersion) => ({
+            method,
+            protocolVersion,
+            nextVersion,
+          }),
+        ),
       ),
     ),
   )(
@@ -906,7 +909,14 @@ describe('root file reads on the sending connection', () => {
       }
       const result = await second;
       transport.dispose();
-      if (nextVersion === '12.0' || nextVersion === '13.0' || nextVersion === '14.0') {
+      if (
+        nextVersion === '12.0' ||
+        nextVersion === '13.0' ||
+        nextVersion === '14.0' ||
+        nextVersion === '15.0' ||
+        // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+        nextVersion === '16.0'
+      ) {
         expect(result).toEqual(response);
         expect(sockets[1].lastFrame()).toMatchObject({ method, params });
       } else {
