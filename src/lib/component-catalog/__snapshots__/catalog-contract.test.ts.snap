@@ -64,7 +64,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg aria-hidden="true" class="size-3.5">
+                  <svg aria-hidden="true" class="size-3.5" role="img">
+                    <rect>
                     <path>
         <output data-testid="selected">
           "none"
@@ -84,7 +85,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <svg aria-hidden="true" class="size-3.5">
+                  <svg aria-hidden="true" class="size-3.5" role="img">
+                    <rect>
                     <path>
         <output data-testid="selected">
           "none"
@@ -93,7 +95,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
       <span aria-hidden="true" class="contents svelte-<scope>" data-slot="menu-list-highlight">
         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
       <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="edit" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="0">
-        <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
+        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
           <svg aria-hidden="true" class="size-4 text-muted-foreground" data-icon="pencil" data-weight="regular" role="img">
             <rect>
             <path>
@@ -104,16 +106,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
           <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
             "⌘E"
       <div aria-disabled="false" aria-expanded="false" aria-haspopup="menu" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="export" data-dropdown-menu-item="" data-dropdown-menu-sub-trigger="" data-menu-item="true" data-slot="menu-sub-trigger" data-state="closed" id="bits-<id>" role="menuitem" tabindex="-1">
-        <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
+        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
         <span class="flex-1 min-w-0">
           <span class="block truncate">
             "Export"
-        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4" data-slot="menu-sub-chevron">
-          <svg aria-hidden="true" class="rtl:rotate-180 size-4" data-icon="chevron-right" data-weight="regular" role="img">
+        <span aria-hidden="true" class="first-line-icon ml-auto w-(--menu-icon-size)" data-slot="menu-sub-chevron">
+          <svg aria-hidden="true" class="rtl:rotate-180 size-(--menu-icon-size)" data-icon="chevron-right" data-weight="regular" role="img">
             <rect>
             <path>
       <div aria-describedby="c<id>-locked-reason" aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="locked" data-disabled="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
-        <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
+        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
         <span class="flex-1 min-w-0">
           <span class="block truncate">
             "Locked"
@@ -123,7 +125,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
         "Requires access"
       <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
       <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="delete" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
-        <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
+        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
           <svg aria-hidden="true" class="size-4 text-current" data-icon="trash" data-weight="regular" role="img">
             <rect>
             <path>
@@ -189,7 +191,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -217,7 +220,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -245,7 +249,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -283,7 +288,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -311,7 +317,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -339,7 +346,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -377,7 +385,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -405,7 +414,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -433,7 +443,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -471,7 +482,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -499,7 +511,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -527,7 +540,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -565,7 +579,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -593,7 +608,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -621,7 +637,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -659,7 +676,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -687,7 +705,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -715,7 +734,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -753,7 +773,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -781,7 +802,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -809,7 +831,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -847,7 +870,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -875,7 +899,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -903,7 +928,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -979,7 +1005,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1007,7 +1034,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1035,7 +1063,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -1073,7 +1102,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1101,7 +1131,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1129,7 +1160,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -1167,7 +1199,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1195,7 +1228,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1223,7 +1257,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -1261,7 +1296,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1289,7 +1325,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1317,7 +1354,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -1355,7 +1393,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1383,7 +1422,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 cursor-pointer focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1411,7 +1451,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <svg aria-hidden="true" class="size-3.5">
+                                <svg aria-hidden="true" class="size-3.5" role="img">
+                                  <rect>
                                   <path>
         <output aria-label="Action count">
           "0"
@@ -7662,18 +7703,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:combobox:c
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Ada Lovelace"
-                            <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
                           <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Grace Hopper"
-                            <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
-                              <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                            <span aria-hidden="true" class="first-line-icon ml-auto opacity-100 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
+                              <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                                 <rect>
                                 <path>
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="A very long option label that remains readable in compact layouts" data-menu-item="true" data-slot="combobox-option-motion" data-value="long" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "A very long option label that remains readable in compact layouts"
-                            <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
               <div class="svelte-<scope>" data-catalog-rendered-state="multi-selected" data-catalog-state="combobox-multi">
                 <div class="relative w-full">
                   <span class="sr-only" id="c<id>-label">
@@ -10951,78 +10992,78 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-highlighted="" data-label="Catalog option 01" data-menu-item="true" data-select-item="" data-selected="" data-value="option-01" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 01"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
-                            <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
+                            <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                               <rect>
                               <path>
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 02" data-menu-item="true" data-select-item="" data-value="option-02" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 02"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 03" data-menu-item="true" data-select-item="" data-value="option-03" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 03"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 04" data-menu-item="true" data-select-item="" data-value="option-04" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 04"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 05" data-menu-item="true" data-select-item="" data-value="option-05" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 05"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 06" data-menu-item="true" data-select-item="" data-value="option-06" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 06"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 07" data-menu-item="true" data-select-item="" data-value="option-07" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 07"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 08" data-menu-item="true" data-select-item="" data-value="option-08" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 08"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 09" data-menu-item="true" data-select-item="" data-value="option-09" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 09"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 10" data-menu-item="true" data-select-item="" data-value="option-10" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 10"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 11" data-menu-item="true" data-select-item="" data-value="option-11" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 11"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 12" data-menu-item="true" data-select-item="" data-value="option-12" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 12"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 13" data-menu-item="true" data-select-item="" data-value="option-13" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 13"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 14" data-menu-item="true" data-select-item="" data-value="option-14" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 14"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 15" data-menu-item="true" data-select-item="" data-value="option-15" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 15"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 16" data-menu-item="true" data-select-item="" data-value="option-16" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 16"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 17" data-menu-item="true" data-select-item="" data-value="option-17" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 17"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Catalog option 18" data-menu-item="true" data-select-item="" data-value="option-18" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 18"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
               "Fixture details"
@@ -11133,18 +11174,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-highlighted="" data-label="Apple" data-menu-item="true" data-select-item="" data-selected="" data-value="apple" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Apple"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
-                            <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
+                            <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                               <rect>
                               <path>
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Banana" data-menu-item="true" data-select-item="" data-value="banana" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Banana"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="A very long select option for compact layout verification" data-menu-item="true" data-select-item="" data-value="long" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "A very long select option for compact layout verification"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
               <div class="gap-2 grid svelte-<scope>" data-catalog-rendered-state="compact-28 medium-32 large-36">
                 <div class="min-w-0 relative w-full" data-slot="select-root">
                   <div>
@@ -18917,31 +18958,38 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-dropdown-menu-group-heading="" id="bits-<id>" role="group">
                       "Workspace actions"
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Default item"
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-highlighted="true" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="0">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Hover / highlighted"
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" data-state="open" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Active / pressed"
                     <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-disabled="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Disabled item"
                     <div aria-checked="true" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-checkbox-item="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-checkbox-item" data-state="checked" id="bits-<id>" role="menuitemcheckbox" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Checked checkbox"
-                      <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
-                        <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                      <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="menu-item-indicator">
+                        <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                           <rect>
                           <path>
                     <div data-dropdown-menu-radio-group="" id="bits-<id>" role="group">
                       <div aria-checked="false" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-radio-item="" data-menu-item="true" data-slot="menu-radio-item" data-state="unchecked" id="bits-<id>" role="menuitemradio" tabindex="-1">
+                        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                         "Compact radio"
-                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
+                        <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="menu-item-indicator">
                       <div aria-checked="true" aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-radio-item="" data-menu-item="true" data-slot="menu-radio-item" data-state="checked" id="bits-<id>" role="menuitemradio" tabindex="-1">
+                        <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                         "Comfortable radio"
-                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="menu-item-indicator">
-                          <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                        <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="menu-item-indicator">
+                          <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                             <rect>
                             <path>
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-command-item" id="bits-<id>" role="menuitem" tabindex="-1">
-                      <span aria-hidden="true" class="flex h-lh items-center justify-center shrink-0 w-4" data-slot="menu-item-leading">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                         <svg aria-hidden="true" class="opacity-70 size-4 text-muted-foreground" data-icon="paperclip" data-weight="regular" role="img">
                           <rect>
                           <path>
@@ -18952,15 +19000,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                           "⇧⌘A"
                     <div aria-disabled="false" aria-expanded="false" aria-haspopup="menu" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-dropdown-menu-sub-trigger="" data-menu-item="true" data-slot="menu-sub-trigger" data-state="closed" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "More actions"
-                      <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4" data-slot="menu-sub-chevron">
-                        <svg aria-hidden="true" class="rtl:rotate-180 size-4" data-icon="chevron-right" data-weight="regular" role="img">
+                      <span aria-hidden="true" class="first-line-icon ml-auto w-(--menu-icon-size)" data-slot="menu-sub-chevron">
+                        <svg aria-hidden="true" class="rtl:rotate-180 size-(--menu-icon-size)" data-icon="chevron-right" data-weight="regular" role="img">
                           <rect>
                           <path>
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Delete workspace"
                     <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
+                      <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "After separator"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="long-menu scrolling">
                 <h3 class="font-medium text-muted-foreground type-caption">
@@ -19110,18 +19161,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                       <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Ada Lovelace" data-menu-item="true" data-select-item="" data-value="ada" id="bits-<id>" role="option">
                         <div class="flex-1 min-w-0 truncate">
                           "Ada Lovelace"
-                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                        <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
                       <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-select-item="" data-selected="" data-value="grace" id="bits-<id>" role="option">
                         <div class="flex-1 min-w-0 truncate">
                           "Grace Hopper"
-                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
-                          <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                        <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
+                          <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                             <rect>
                             <path>
                       <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-select-item="" data-value="linus" id="bits-<id>" role="option">
                         <div class="flex-1 min-w-0 truncate">
                           "Linus Torvalds"
-                        <span aria-hidden="true" class="flex items-center justify-center ml-auto shrink-0 size-4 text-primary-ink" data-slot="select-item-check">
+                        <span aria-hidden="true" class="first-line-icon ml-auto text-primary-ink w-(--menu-icon-size)" data-slot="select-item-check">
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="combobox default highlighted selected disabled-option">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "Combobox listbox"
@@ -19139,18 +19190,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
-                            <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-100 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
+                            <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                               <rect>
                               <path>
                         <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="empty-search searchable-select">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "Empty search"
@@ -19192,12 +19243,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
-                            <svg aria-hidden="true" class="size-4" data-icon="check" data-weight="regular" role="img">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-100 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
+                            <svg aria-hidden="true" class="size-(--menu-icon-size)" data-icon="check" data-weight="regular" role="img">
                               <rect>
                               <path>
                       <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption">
@@ -19214,7 +19265,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div aria-disabled="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="first-line-icon ml-auto opacity-0 text-primary-ink w-(--menu-icon-size)" data-slot="combobox-item-check">
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover title body">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "Popover — title and body"
@@ -19503,7 +19554,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                  <svg aria-hidden="true" class="size-3.5">
+                                  <svg aria-hidden="true" class="size-3.5" role="img">
+                                    <rect>
                                     <path>
                 <div class="row-cell svelte-<scope>" data-row-preview="list-row-selection-states">
                   <div aria-label="Collection row states" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
@@ -19725,7 +19777,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                "⋯"
+                                <svg aria-hidden="true" class="size-4" role="img">
+                                  <rect>
+                                  <path>
                       <li class="group/menu-item relative z-10" data-sidebar="menu-item" data-slot="sidebar-menu-item">
                         <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none font-normal gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center justify-start min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="3" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" disabled="" tabindex="-1">
                           <span class="flex-1 font-normal inline-grid min-w-0 text-left">

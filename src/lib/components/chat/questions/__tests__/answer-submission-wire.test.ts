@@ -49,8 +49,10 @@ import {
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import QuestionWizard from '../QuestionWizard.svelte';
+import { submitChatMessage } from '$features/agent/chat-submission';
 import {
   buildAnswerMessageMetadata,
+  buildAnswerSubmission,
   flattenAnswersToMessage,
   getAnsweredQuestionsMessageIds,
   type QuestionAnswer,
@@ -265,6 +267,86 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset(AGENT));
+  });
+
+  it('submits pasted images in question order with attachment counts and answer metadata', async () => {
+    let placed = 0;
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'file.placeAttachment')
+        return {
+          attachmentId: `image-${++placed}`,
+          fileName: 'image.png',
+          path: '.intent/attachments/image.png',
+          size: 5,
+          mimeType: 'image/png',
+        };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: false, messageId: 'm-images' };
+      return {};
+    });
+    render(QuestionWizard, {
+      props: {
+        questions: [SINGLE, LAST],
+        onComplete: (answers: QuestionAnswer[]) =>
+          submitChatMessage(appStore, AGENT, {
+            wsId: WS,
+            ...buildAnswerSubmission(answers, 'msg-a1'),
+          }),
+      },
+    });
+    for (const [index, files] of [['first'], ['second', 'third']].entries()) {
+      const input = screen.getAllByPlaceholderText('Or type your own answer…').at(-1)!;
+      if (index === 0) await fireEvent.input(input, { target: { value: 'See screenshot' } });
+      await fireEvent.paste(input, {
+        clipboardData: {
+          items: files.map((name) => ({
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => new File([name], `${name}.png`, { type: 'image/png' }),
+          })),
+        },
+      });
+      await screen.findByRole('button', { name: `Remove ${files.at(-1)}.png` });
+      await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    }
+    await vi.waitFor(
+      () => {
+        expect(
+          backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+        ).toHaveLength(1);
+      },
+      { timeout: 15000, interval: 50 },
+    );
+    const placementCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === 'file.placeAttachment',
+    );
+    expect(
+      placementCalls.map(([, params]) => ({
+        workspaceId: params.workspaceId,
+        data: params.data,
+        mimeType: params.mimeType,
+      })),
+    ).toEqual([
+      { workspaceId: WS, data: 'Zmlyc3Q=', mimeType: 'image/png' },
+      { workspaceId: WS, data: 'c2Vjb25k', mimeType: 'image/png' },
+      { workspaceId: WS, data: 'dGhpcmQ=', mimeType: 'image/png' },
+    ]);
+    const sendCall = backendRequestMock.mock.calls.find(
+      ([method]) => method === 'agent.sendMessage',
+    )!;
+    expect(sendCall[1]).toMatchObject({
+      agentId: AGENT,
+      workspaceId: WS,
+      content: `Q: ${SINGLE.question}\nA: (Other) See screenshot [1 image attached]\n\nQ: ${LAST.question}\nA: (Other) [2 images attached]`,
+      imageBlocks: [
+        { type: 'image', attachmentId: 'image-1', mimeType: 'image/png' },
+        { type: 'image', attachmentId: 'image-2', mimeType: 'image/png' },
+        { type: 'image', attachmentId: 'image-3', mimeType: 'image/png' },
+      ],
+      messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },
+    });
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBeNull();
   });
 
   it('retries a merged queued turn with both question-answer contributions on the wire', async () => {

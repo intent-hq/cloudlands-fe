@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editableText } from '$features/file/utils/file-content';
   import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -23,6 +24,8 @@
   } from '$store/renderer/slices/files/files-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { notify } from '$lib/components/patterns/notify';
 
   interface Props {
     workspaceId?: string;
@@ -50,6 +53,8 @@
   const currentFileContent = $derived($selectedEntry$?.localContent ?? '');
   const isLoading = $derived($selectedEntry$?.loading ?? false);
   const error = $derived($selectedEntry$?.error ?? null);
+  const isBinary = $derived($selectedEntry$?.isBinary ?? false);
+  let downloading = $state(false);
   const openFiles = $derived.by(() => {
     const entries = new Map($entries$.map((entry) => [entry.path, entry]));
     return new Map(
@@ -73,7 +78,8 @@
   // Load file content
   function loadFile(filePath: string) {
     const entry = selectFileContentEntry.select(appStore.state, workspaceId, filePath);
-    if (entry?.localContent !== null && entry?.localContent !== undefined) return;
+    if (entry?.isBinary || (entry?.localContent !== null && entry?.localContent !== undefined))
+      return;
     appStore.dispatch(
       loadFileContentRequested(workspaceId, filePath, `${$fileExplorerWorkspacePath}/${filePath}`),
     );
@@ -82,14 +88,14 @@
   // Save file
   function saveFile(filePath: string) {
     const entry = selectFileContentEntry.select(appStore.state, workspaceId, filePath);
-    if (!entry || entry.localContent === null || entry.localContent === entry.originalContent)
+    if (!entry || entry.kind !== 'editable-text' || entry.localContent === entry.originalContent)
       return;
     appStore.dispatch(
       saveFileContentRequested(
         workspaceId,
         filePath,
         entry.absolutePath ?? filePath,
-        entry.localContent,
+        editableText(entry.localContent),
       ),
     );
   }
@@ -115,10 +121,28 @@
 
   // Handle content changes
   function handleContentChange(newContent: string) {
-    if (selectedFile) {
+    if (selectedFile && !isBinary) {
       appStore.dispatch(
-        updateFileContent(workspaceId, selectedFile, newContent, { autoSave: false }),
+        updateFileContent(workspaceId, selectedFile, editableText(newContent), { autoSave: false }),
       );
+    }
+  }
+
+  async function downloadFile() {
+    if (!selectedFile || !workspaceId || downloading || isLoading) return;
+    downloading = true;
+    try {
+      const result = await downloadWorkspaceFile(
+        workspaceId,
+        selectedFile,
+        $fileExplorerWorkspacePath,
+      );
+      if (!result?.success && !result?.canceled)
+        notify.error(result?.error?.message || m.layout_fileTab_downloadFailed_error());
+    } catch {
+      notify.error(m.layout_fileTab_downloadFailed_error());
+    } finally {
+      downloading = false;
     }
   }
 
@@ -284,6 +308,13 @@
       {:else if isLoading}
         <div class="flex items-center justify-center h-full">
           <IntentMarkLoader size={32} class="text-subtle" />
+        </div>
+      {:else if selectedFile && isBinary}
+        <div class="flex flex-col items-center justify-center h-full gap-3">
+          <p class="text-sm text-subtle">{m.editor_fileViewer_binary_label()}</p>
+          <Button onclick={downloadFile} disabled={downloading}>
+            {m.layout_fileTab_downloadFile_label()}
+          </Button>
         </div>
       {:else if selectedFile}
         <CodeEditor

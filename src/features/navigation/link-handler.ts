@@ -41,6 +41,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { readLinkSource } from './link-source';
 
 const logger = new Logger('LinkHandler');
 
@@ -59,25 +60,26 @@ const logger = new Logger('LinkHandler');
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
  * 6. `http(s)://` + forceExternal → external browser
- * 7. `http(s)://` + workspace preview or Cmd+Click → embedded browser panel (external browser
- *    fallback without a workspaceId)
- * 8. GitHub issue/PR URLs (plain click with coordinates) → configured default action
- * 9. `http(s)://` (plain click) → external browser
- * 10. `file://` → external editor
- * 11. Anything else → external browser (fallback)
+ * 7. `http(s)://` + Cmd+Click → embedded browser panel (external fallback without a workspaceId)
+ * 8. GitHub issue/PR URLs (plain click) → configured default action, including on Home
+ * 9. Other workspace preview links → the owning workspace's browser panel
+ * 10. `http(s)://` (plain click) → external browser
+ * 11. `file://` → external editor
+ * 12. Anything else → external browser (fallback)
  *
  * @returns true if handled, false if not
  */
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
-    const openInWorkspace = shouldOpenInWorkspace(options);
-    const sourcePanelId = openInWorkspace ? undefined : getSourcePanelId(options);
-    options = { ...options, openInWorkspace, sourcePanelId };
     const sourceTarget = options.event?.target;
-    const assistantLayoutId =
-      sourceTarget instanceof Element
-        ? sourceTarget.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset.assistantLayoutId
-        : undefined;
+    const source = readLinkSource(
+      sourceTarget instanceof Element ? sourceTarget : null,
+      options.workspaceId,
+    );
+    const openInWorkspace = options.openInWorkspace ?? source.openInWorkspace;
+    const sourcePanelId = openInWorkspace ? undefined : options.sourcePanelId || source.panelId;
+    const { assistantLayoutId } = source;
+    options = { ...options, openInWorkspace, sourcePanelId };
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -87,7 +89,15 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       }
     }
 
-    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
+    const gitHubRef = parseGitHubIssueOrPrUrl(url);
+    const { event } = options;
+    const githubAction =
+      gitHubRef && event && !isCmdClickModifier(options)
+        ? (options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state))
+        : undefined;
+    const useHomeBrowser = !githubAction || githubAction === 'open-in-app';
+
+    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal && useHomeBrowser) {
       const { showAssistantContent } = await import('$features/home/assistant-panels');
       const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
       if (await showAssistantContent(target, { layoutId: assistantLayoutId })) return true;
@@ -127,28 +137,23 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // Workspace previews and Cmd+Click use the owning workspace's browser panel.
-      if (openInWorkspace || isCmdClickModifier(options)) {
+      // Home defaults must not override the configured GitHub action.
+      if ((openInWorkspace && useHomeBrowser) || isCmdClickModifier(options)) {
         if (options.workspaceId) {
-          await activateLinkWorkspace(options.workspaceId, options);
-          return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
+          return await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId });
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
       }
 
       // GitHub issue/PR links (plain click) → configured default action
-      const gitHubRef = parseGitHubIssueOrPrUrl(url);
-      const { event } = options;
-      if (gitHubRef && event) {
-        const defaultAction =
-          options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state);
-        switch (defaultAction) {
+      if (gitHubRef && event && githubAction) {
+        switch (githubAction) {
           case 'open-in-browser':
             return await openInExternalBrowser(url);
           case 'open-in-app':
             return options.workspaceId
-              ? await openInBrowserPanel(url, options.workspaceId, sourcePanelId)
+              ? await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId })
               : await openInExternalBrowser(url);
           case 'copy-link':
             await writeTextToClipboard(url);
@@ -164,7 +169,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return true;
           }
           case 'show-choices':
-            return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
+            return await openLinkActionMenu(url, gitHubRef, event, options, assistantLayoutId);
         }
       }
 
@@ -285,15 +290,6 @@ function normalizeWorkspaceRelativePath(path: string): string | null {
   return segments.join('/');
 }
 
-function shouldOpenInWorkspace(options: LinkHandlerOptions): boolean {
-  if (options.openInWorkspace !== undefined) return options.openInWorkspace;
-  const target = options.event?.target;
-  if (!(target instanceof Element)) return false;
-  const workspaceId = target.closest<HTMLElement>('[data-workspace-link-target]')?.dataset
-    .workspaceLinkTarget;
-  return !!workspaceId && workspaceId === options.workspaceId;
-}
-
 async function activateLinkWorkspace(
   workspaceId: WorkspaceId | undefined,
   options: LinkHandlerOptions,
@@ -309,13 +305,6 @@ async function activateLinkWorkspace(
     });
     throw error;
   }
-}
-
-function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
-  if (options.sourcePanelId) return options.sourcePanelId;
-  const target = options.event?.target;
-  if (!(target instanceof HTMLElement)) return undefined;
-  return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
 }
 
 function focusSourcePanel(
@@ -460,7 +449,8 @@ async function openLinkActionMenu(
   url: string,
   gitHubRef: GitHubIssueOrPrRef,
   event: MouseEvent | KeyboardEvent,
-  workspaceId?: WorkspaceId,
+  { workspaceId, openInWorkspace, sourcePanelId }: LinkHandlerOptions,
+  assistantLayoutId?: string,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
@@ -472,14 +462,18 @@ async function openLinkActionMenu(
       x = rect.left;
       y = rect.bottom;
     }
-    showLinkActionMenu({
+    const openingId = showLinkActionMenu({
       url,
       gitHubRef,
       x,
       y,
       workspaceId,
       anchorElement,
+      openInWorkspace: openInWorkspace ?? false,
+      sourcePanelId,
+      assistantLayoutId,
     });
+    if (gitHubRef.kind === 'pr') loadLinkedWorkspaces(openingId, url);
     logger.debug('Opened link action menu', { url, workspaceId });
     return true;
   } catch (error) {
@@ -489,6 +483,72 @@ async function openLinkActionMenu(
     });
     return await openInExternalBrowser(url);
   }
+}
+
+/**
+ * Optional "Open in Original Workspace" lookup for an open link menu. Kept out
+ * of the menu's fallback path: if its chunk fails to load, the menu stays as is
+ * and no external browser opens.
+ */
+function loadLinkedWorkspaces(openingId: number, url: string): void {
+  import('./link-action-menu-linked-workspaces')
+    .then(({ loadLinkActionMenuLinkedWorkspaces }) =>
+      loadLinkActionMenuLinkedWorkspaces(openingId, url),
+    )
+    .catch((error: unknown) => {
+      logger.debug('PR workspace lookup unavailable', { url, error });
+    });
+}
+
+/**
+ * Navigate to a workspace picked from the link action menu ("Open in Original
+ * Workspace"). Archived workspaces open like any other; nothing is unarchived.
+ */
+export async function openLinkedWorkspace(workspaceId: WorkspaceId): Promise<boolean> {
+  try {
+    await activateLinkWorkspace(workspaceId, { openInWorkspace: true });
+    return true;
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to open linked workspace', { workspaceId, error });
+    return false;
+  }
+}
+
+/**
+ * Open a URL "in the app". From the Assistant it shows in the Assistant side
+ * panel the action came from (`assistantLayoutId`). Otherwise it opens in the
+ * workspace's embedded browser panel: content from that workspace's Home
+ * preview (`openInWorkspace`) enters the workspace first so the panel is
+ * visible; elsewhere it opens beside `sourcePanelId` in place. Opens nothing
+ * if entering the workspace fails (the user is notified).
+ */
+export async function openLinkInApp(
+  url: string,
+  workspaceId: WorkspaceId,
+  source: Pick<LinkHandlerOptions, 'openInWorkspace' | 'sourcePanelId'> & {
+    assistantLayoutId?: string;
+  } = {},
+): Promise<boolean> {
+  if (workspaceId === CHIEF_WORKSPACE_ID) {
+    try {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      if (await showAssistantContent(url, { layoutId: source.assistantLayoutId })) return true;
+    } catch (error) {
+      logger.warn('Assistant panel unavailable, opening in external browser', { url, error });
+    }
+    return await openInExternalBrowser(url);
+  }
+  try {
+    await activateLinkWorkspace(workspaceId, source);
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to enter workspace for in-app link', { url, workspaceId, error });
+    return false;
+  }
+  // A Home preview's panel is not part of the workspace layout.
+  const sourcePanelId = source.openInWorkspace ? undefined : source.sourcePanelId;
+  return await openInBrowserPanel(url, workspaceId, sourcePanelId);
 }
 
 /**

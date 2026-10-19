@@ -113,8 +113,58 @@ interface SessionState {
 
 const sessions = new Map<string, SessionState>();
 
+type OwnedSessionObserver = (session: NotePresenceSession | null) => void;
+const ownedSessions = new Map<string, Set<NotePresenceSession>>();
+const ownedSessionObservers = new Map<string, Set<OwnedSessionObserver>>();
+
 function sessionKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}\u0000${noteId}`;
+}
+
+/**
+ * Publish the saga-owned lease to DOM-only cursor adapters without giving
+ * those adapters another transport subscription lifetime.
+ */
+export function registerOwnedNotePresenceSession(
+  workspaceId: string,
+  noteId: string,
+  session: NotePresenceSession,
+): () => void {
+  const key = sessionKey(workspaceId, noteId);
+  let sessionsForResource = ownedSessions.get(key);
+  if (!sessionsForResource) {
+    sessionsForResource = new Set();
+    ownedSessions.set(key, sessionsForResource);
+  }
+  sessionsForResource.add(session);
+  for (const observer of ownedSessionObservers.get(key) ?? []) observer(session);
+  return () => {
+    const current = ownedSessions.get(key);
+    if (!current?.delete(session)) return;
+    if (current.size === 0) ownedSessions.delete(key);
+    const replacement = current.size > 0 ? [...current].at(-1)! : null;
+    for (const observer of ownedSessionObservers.get(key) ?? []) observer(replacement);
+  };
+}
+
+/** Observe the current saga-owned lease; this does not change its ref count. */
+export function observeOwnedNotePresenceSession(
+  workspaceId: string,
+  noteId: string,
+  observer: OwnedSessionObserver,
+): () => void {
+  const key = sessionKey(workspaceId, noteId);
+  let observers = ownedSessionObservers.get(key);
+  if (!observers) {
+    observers = new Set();
+    ownedSessionObservers.set(key, observers);
+  }
+  observers.add(observer);
+  observer([...(ownedSessions.get(key) ?? [])].at(-1) ?? null);
+  return () => {
+    observers?.delete(observer);
+    if (observers?.size === 0) ownedSessionObservers.delete(key);
+  };
 }
 
 function sortedViewers(state: SessionState): RemoteNoteViewer[] {
@@ -500,4 +550,6 @@ export function joinNotePresence(workspaceId: string, noteId: string): NotePrese
 /** Test seam: tear down every live session. */
 export function resetNotePresenceSessionsForTests(): void {
   for (const state of [...sessions.values()]) dispose(state);
+  ownedSessions.clear();
+  ownedSessionObservers.clear();
 }

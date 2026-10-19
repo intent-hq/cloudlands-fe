@@ -14,17 +14,20 @@
   interface Props {
     /** Resolved 0-based slot the workspace occupies. */
     slot: number;
+    size?: 'default' | 'compact';
     /** Extra classes (e.g. hover states from an interactive wrapper). */
     class?: string;
   }
 
-  let { slot, class: className = '' }: Props = $props();
+  let { slot, size = 'default', class: className = '' }: Props = $props();
 
   const slotColorClasses = $derived(slotColorClassesFor(slot));
 </script>
 
 <span
-  class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border font-medium leading-none a11y-ignore {slotColorClasses} {className}"
+  class="type-caption flex {size === 'compact'
+    ? 'h-3.5 w-3.5'
+    : 'h-4 w-4'} shrink-0 items-center justify-center rounded-[3px] border font-medium leading-none a11y-ignore {slotColorClasses} {className}"
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
 >
   {formatInteger(slot + 1)}

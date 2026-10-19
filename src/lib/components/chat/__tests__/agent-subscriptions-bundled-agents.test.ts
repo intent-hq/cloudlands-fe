@@ -360,7 +360,7 @@ describe('bundled subscription rows through real expanded AgentCards', () => {
           name: 'Newer rename',
           status: 'completed' as AgentSession['status'],
           lastAgentResponse: 'Newer preview',
-          metadata: { model: 'newer-model' },
+          metadataPatch: { model: { op: 'set', value: 'newer-model' } },
         }),
       );
       resolve(snapshot());

@@ -6,9 +6,9 @@
 import { TerminalAdapter } from './TerminalAdapter';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { Logger } from '../../shared/logger';
-import { appClient } from '$lib/client';
 
 import {
+  killRestoredTerminalRequested,
   removeTerminal,
   saveTerminalMetadata as saveTerminalMetadataAction,
   type TerminalMetadata,
@@ -227,12 +227,7 @@ class RendererTerminalManager {
       this.removeTerminalMetadata(terminalId, managed.workspaceId);
     } else {
       // Restored tabs can be closed before their renderer adapter is created.
-      void appClient.terminals.kill(terminalId, workspaceId).then(
-        (result) => {
-          if (!result.success) logger.error('Error killing terminal:', result.error);
-        },
-        (error) => logger.error('Error killing terminal:', error),
-      );
+      appStore.dispatch(killRestoredTerminalRequested(terminalId, workspaceId));
     }
   }
 

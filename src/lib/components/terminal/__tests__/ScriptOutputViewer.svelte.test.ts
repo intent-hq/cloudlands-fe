@@ -1,3 +1,4 @@
+import { store as appStore } from '$store/renderer/store';
 /**
  * Regression tests for `ScriptOutputViewer.svelte` code-font wiring
  * (verifier follow-up).
@@ -31,21 +32,23 @@ const {
   fontReadableRef,
   scriptState,
   scriptSelectorArgs,
-  mockScriptStart,
   lifecycleGate,
   outputReadableRef,
   authorityReadableRef,
   retainedReadableRef,
+  workflowOutcomeRef,
+  mockGetDefinition,
 } = vi.hoisted(() => ({
   xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
   fontReadableRef: { value: null as any },
   scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
   scriptSelectorArgs: [] as unknown[][],
-  mockScriptStart: vi.fn(),
   lifecycleGate: { hidesAgentLifecycleActions: false },
   outputReadableRef: { value: null as any },
   authorityReadableRef: { value: null as any },
   retainedReadableRef: { value: null as any },
+  workflowOutcomeRef: { value: null as any },
+  mockGetDefinition: vi.fn(),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -118,10 +121,6 @@ vi.mock('$features/terminal/terminal-theme-manager', () => ({
   },
 }));
 
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: { start: mockScriptStart, remove: vi.fn() },
-}));
-
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
   const makeSel = <T>(getter: (workspaceId: string, scriptId: string) => T) =>
     Object.assign(
@@ -178,6 +177,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
     ),
     selectScriptOutput: makeSel(getOutput),
     selectScriptRetainedOutput: () => retainedReadableRef.value,
+    selectScriptWorkflowOutcome: () => workflowOutcomeRef.value,
   };
 });
 
@@ -188,17 +188,49 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
-  removeScript: vi.fn(),
+  startScriptRequested: (...payload: unknown[]) => ({
+    type: 'scripts/startScriptRequested',
+    payload,
+  }),
   scriptOutputRequested: (...payload: unknown[]) => ({ type: 'scripts/outputRequested', payload }),
   scriptOutputReleased: (...payload: unknown[]) => ({ type: 'scripts/outputReleased', payload }),
-}));
-
-vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
-  createAgentFromConfigRequested: vi.fn(),
+  createScriptFixAgentRequested: (...payload: unknown[]) => ({
+    type: 'scripts/createFixAgentRequested',
+    payload,
+  }),
+  scriptWorkflowReleased: (...payload: unknown[]) => ({
+    type: 'scripts/workflowReleased',
+    payload,
+  }),
 }));
 
 vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: vi.fn(), state: {} },
+  store: {
+    state: {},
+    dispatch: vi.fn((action: any) => {
+      if (action.type !== 'scripts/getScriptDefinitionRequested') return action;
+      const [workspaceId, scriptId, consumer] = action.payload;
+      void mockGetDefinition(workspaceId, scriptId).then(
+        (result: unknown) =>
+          workflowOutcomeRef.value.set({
+            ...consumer,
+            workspaceId,
+            status: 'success',
+            result,
+            consumed: false,
+          }),
+        (error: unknown) =>
+          workflowOutcomeRef.value.set({
+            ...consumer,
+            workspaceId,
+            status: 'failure',
+            error: String(error),
+            consumed: false,
+          }),
+      );
+      return action;
+    }),
+  },
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -232,6 +264,12 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     lifecycleGate.hidesAgentLifecycleActions = false;
     outputReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
+    workflowOutcomeRef.value = createControllableReadable(undefined);
+    mockGetDefinition
+      .mockReset()
+      .mockImplementation((workspaceId: string, scriptId: string) =>
+        Promise.resolve(scriptState.byWorkspaceId[workspaceId]?.[scriptId]),
+      );
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     scriptState.byWorkspaceId = {
       'ws-failed': {
@@ -342,7 +380,10 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     ).toBe(true);
 
     await fireEvent.click(screen.getByText('Run'));
-    expect(mockScriptStart).toHaveBeenCalledWith('ws-2', 's-1');
+    expect(appStore.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/startScriptRequested',
+      payload: ['ws-2', 's-1'],
+    });
   });
 
   it('offers "Ask AI to Fix" on a failed script when agent creation is allowed', async () => {
@@ -350,6 +391,26 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     await waitForXTermInit();
 
     await waitFor(() => expect(screen.getByText('Ask AI to Fix')).toBeTruthy());
+  });
+
+  it('releases fix-agent preparation when the viewer changes workspace', async () => {
+    const { rerender } = render(ScriptOutputViewer, {
+      props: { scriptId: 's-1', workspaceId: 'ws-failed' },
+    });
+    await fireEvent.click(await screen.findByText('Ask AI to Fix'));
+    const request = vi
+      .mocked(appStore.dispatch)
+      .mock.calls.map(([action]) => action)
+      .find((action) => action.type === 'scripts/createFixAgentRequested');
+    expect(request).toEqual({
+      type: 'scripts/createFixAgentRequested',
+      payload: ['ws-failed', 's-1', undefined, expect.any(String)],
+    });
+    await rerender({ scriptId: 's-1', workspaceId: 'ws-2' });
+    expect(appStore.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/workflowReleased',
+      payload: ['ws-failed', request.payload[3]],
+    });
   });
 
   it('withholds "Ask AI to Fix" when agent lifecycle actions are hidden', async () => {
@@ -370,6 +431,12 @@ describe('retained output viewer lifecycle', () => {
     scriptSelectorArgs.length = 0;
     outputReadableRef.value = null;
     retainedReadableRef.value = createControllableReadable(undefined);
+    workflowOutcomeRef.value = createControllableReadable(undefined);
+    mockGetDefinition
+      .mockReset()
+      .mockImplementation((workspaceId: string, scriptId: string) =>
+        Promise.resolve(scriptState.byWorkspaceId[workspaceId]?.[scriptId]),
+      );
     authorityReadableRef.value = createControllableReadable<string | null>('authority');
     fontReadableRef.value = createControllableReadable(SYSTEM_DEFAULT);
     scriptState.byWorkspaceId = {

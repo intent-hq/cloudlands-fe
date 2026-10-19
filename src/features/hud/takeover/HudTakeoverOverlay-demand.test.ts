@@ -65,15 +65,32 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     document.dispatchEvent(new Event('visibilitychange'));
     await settle();
   }
-  function invalidate(id = WS) {
+  function pushTasks(id = WS) {
+    const rpcReads = () =>
+      backend.requests.filter(({ method }) =>
+        ['task.list', 'note.get', 'workspace.get'].includes(method),
+      );
+    const readsBefore = rpcReads();
     routeDaemonEventsNotification('events.event', {
       event: {
         id: `hud-demand-${++eventId}`,
-        type: 'task:created',
+        type: 'task:updated',
         workspaceId: id,
-        data: { noteId: 'ship' },
+        data: { workspaceId: id, tasks, removedIds: [] },
       },
     });
+    routeDaemonEventsNotification('events.event', {
+      event: {
+        id: `hud-stats-${++eventId}`,
+        type: 'workspace:task-stats-changed',
+        workspaceId: id,
+        data: { workspaceId: id, taskStats: { total: 2, completed: 1, inProgress: 0 } },
+      },
+    });
+    const pushed = store.state.workspaceTasks.byWorkspaceId[id];
+    expect(tasks.map((task) => pushed.tasks.map[task.id])).toEqual(tasks);
+    expect(pushed.stats).toEqual({ total: 2, completed: 1, inProgress: 0 });
+    expect(rpcReads()).toEqual(readsBefore);
   }
   beforeEach(() => {
     vi.useFakeTimers();
@@ -113,7 +130,7 @@ describe('displayed HUD task map demand through the real store and wire', () => 
 
   it('keeps the idle overlay quiet and discovers cold task cells and dependency edges on open', async () => {
     render(HudTakeoverOverlay, { nowMs: Date.now() });
-    invalidate();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toEqual([]);
     await open();
@@ -126,7 +143,7 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     ).toBeTruthy();
   });
 
-  it('refreshes an already displayed empty map when its first task arrives without replacing demand', async () => {
+  it('updates an already displayed empty map from pushed tasks when its first task arrives without replacing demand', async () => {
     backend.onRequest('task.list', () => ({
       tasks: [],
       stats: { total: 0, completed: 0, inProgress: 0 },
@@ -136,15 +153,11 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     expect(reads()).toHaveLength(1);
     expect(screen.queryByTestId('hud-takeover-cell')).toBeNull();
     const token = demand()[0];
-    backend.onRequest('task.list', () => ({
-      tasks,
-      stats: { total: 2, completed: 1, inProgress: 0 },
-    }));
-    invalidate();
-    invalidate();
+    pushTasks();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
     await settle();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     expect(screen.getAllByTestId('hud-takeover-cell')).toHaveLength(2);
     expect(demand()).toEqual([token]);
   });
@@ -169,28 +182,28 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     }
   });
 
-  it('releases on dismiss, defers closed invalidations, then refreshes once and reuses clean data', async () => {
+  it('releases on dismiss and reuses pushed tasks when reopened', async () => {
     render(HudTakeoverOverlay, { nowMs: Date.now() });
     await open();
     const firstToken = demand()[0];
     expect(demand()).toHaveLength(1);
     await close();
     expect(demand()).toEqual([]);
-    invalidate();
-    invalidate();
+    pushTasks();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toHaveLength(1);
     await open();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     expect(demand()).toHaveLength(1);
     expect(demand()[0]).not.toBe(firstToken);
     await close();
     await vi.advanceTimersByTimeAsync(HUD_TAKEOVER_CLOSE_MS);
     await open();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 
-  it('defers a cold open in a hidden document and refreshes hidden invalidations once on return', async () => {
+  it('defers a cold open in a hidden document and displays hidden pushes on return', async () => {
     await visibility(false);
     render(HudTakeoverOverlay, { nowMs: Date.now() });
     await open();
@@ -200,15 +213,15 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     expect(demand()).toHaveLength(1);
     await visibility(false);
     expect(demand()).toEqual([]);
-    invalidate();
-    invalidate();
+    pushTasks();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toHaveLength(1);
     await visibility(true);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     await visibility(false);
     await visibility(true);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 
   it('moves demand on workspace switch, isolates late replies and releases on component unmount', async () => {
@@ -241,8 +254,8 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     ]);
     overlay.unmount();
     expect(demand(OTHER)).toEqual([]);
-    invalidate();
-    invalidate(OTHER);
+    pushTasks();
+    pushTasks(OTHER);
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toHaveLength(2);
   });
@@ -256,13 +269,13 @@ describe('displayed HUD task map demand through the real store and wire', () => 
     expect(reads()).toHaveLength(1);
     await close();
     expect(demand()).toHaveLength(1);
-    invalidate();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     chat.unmount();
     expect(demand()).toEqual([]);
-    invalidate();
+    pushTasks();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 });

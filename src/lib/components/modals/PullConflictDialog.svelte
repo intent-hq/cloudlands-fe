@@ -291,23 +291,19 @@
                         dropdownOpen = false;
                       }}
                     >
-                      <span class="first-line-icon">
+                      {#snippet leading()}
                         {#if editor.iconBase64}
-                          <img
-                            src="data:image/png;base64,{editor.iconBase64}"
-                            alt=""
-                            class="w-5 h-5"
-                          />
+                          <img src="data:image/png;base64,{editor.iconBase64}" alt="" />
                         {:else if IconComponent}
-                          <IconComponent size={16} />
+                          <IconComponent />
                         {:else if editor.category === 'terminal'}
-                          <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                          <Fa icon={faTerminal} class="opacity-30" />
                         {:else if editor.category === 'finder'}
-                          <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                          <Fa icon={faFolder} class="opacity-30" />
                         {:else}
-                          <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                          <Fa icon={faCode} class="opacity-30" />
                         {/if}
-                      </span>
+                      {/snippet}
                       <span data-editor-name class="min-w-0 flex-1 break-words">{editor.name}</span>
                     </Menu.Item>
                   {/each}

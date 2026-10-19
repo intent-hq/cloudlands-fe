@@ -30,14 +30,29 @@
     getProviderAvailability,
     type ProviderAvailabilityResult,
   } from '$features/providers/provider-availability.client';
+  import {
+    getProviderStatusFromResult,
+    isProviderReadyInResult,
+    isProviderAuthenticationReady,
+  } from '$shared/types/provider-availability';
+  import { isProviderDisabledInSettings } from '$lib/components/chat/input/model-picker-utils';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
     selectProviderCatalogEntries,
+    selectProviderCatalogProfiles,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    findProfileByRef,
+    isProviderProfileRef,
+    providerRefBaseId,
+  } from '$shared/provider-profiles';
   import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectActiveProviderId,
+    selectEnabledProviders,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import type { SpecialistDef } from '$lib/client/app-client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -50,6 +65,7 @@
   const logger = createLogger('InitialAgentPicker');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
+  const providerProfiles$ = selectProviderCatalogProfiles();
   const specialists$ = selectSpecialists();
   const orchestrator$ = selectOrchestratorSpecialist();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
@@ -62,6 +78,7 @@
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
+  const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
   const configuredModels$ = selectProviderModels();
   const defaultReasoningEffort$ = selectDefaultReasoningEffort();
@@ -98,6 +115,11 @@
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
     onTeamModeChange?: (isTeamMode: boolean) => void;
+    /**
+     * The user picked a mode, specialist, model or reasoning effort. Never fired
+     * by automatic resets or effort reconciliation.
+     */
+    onSetupPick?: () => void;
     /** Callback when provider changes (called when auto-selected) */
     onProviderChange?: (providerId: string) => void;
   }
@@ -114,6 +136,7 @@
     onReasoningEffortChange,
     onTeamModeChange,
     onProviderChange,
+    onSetupPick,
   }: Props = $props();
 
   function updateReasoningEffort(effort: string | undefined) {
@@ -150,6 +173,7 @@
   }
 
   function handleReasoningChange(effort: string | null) {
+    onSetupPick?.();
     // A blank value is the wire's explicit clear. Undefined remains inheritance.
     updateReasoningEffort(effort ?? '');
     return true;
@@ -158,32 +182,15 @@
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
-  // Map provider IDs to keys used in ProviderAvailabilityResult
-  const providerAvailabilityKeyMap: Record<string, keyof ProviderAvailabilityResult['providers']> =
-    {
-      auggie: 'auggie',
-      'claude-code': 'claudeCode',
-      codex: 'codex',
-      mock: 'mock',
-      opencode: 'opencode',
-      droid: 'droid',
-      grok: 'grok',
-      unsloth: 'unsloth',
-      cortex: 'cortex',
-      pi: 'pi',
-    };
-
-  // The availability entry for a provider, or undefined when the check has
-  // not completed or the result carries no entry for it (unknown provider).
-  function providerAvailabilityEntry(providerId: string) {
-    if (!providerAvailability) return undefined;
-    const key = providerAvailabilityKeyMap[providerId];
-    return key ? providerAvailability.providers[key] : undefined;
-  }
-
-  // Helper to get provider availability from result (handles different key formats)
+  // A named profile (§5.54) is available while it is saved and its base
+  // provider is ready and enabled; readiness is keyed by the base provider.
   function getProviderAvailable(providerId: string): boolean {
-    return providerAvailabilityEntry(providerId)?.available ?? false;
+    if (isProviderProfileRef(providerId) && !findProfileByRef($providerProfiles$, providerId))
+      return false;
+    return (
+      isProviderReadyInResult(providerAvailability, providerRefBaseId(providerId)) &&
+      !isProviderDisabledInSettings($enabledProviders$, providerId)
+    );
   }
 
   // Available providers derived from availability check - dynamically from the catalog
@@ -197,14 +204,28 @@
   // Auto-select first available provider if current selection is unavailable
   // BUT: Don't override if the provider matches the user's explicit choice from the active provider selector
   $effect(() => {
+    const isSelectedDisabled = isProviderDisabledInSettings($enabledProviders$, selectedProvider);
+    if (isSelectedDisabled) {
+      const fallback = availableProviders[0]?.id ?? '';
+      selectedProvider = fallback;
+      onProviderChange?.(fallback);
+      return;
+    }
     if (providerAvailability && availableProviders.length > 0) {
-      const isSelectedAvailable = availableProviders.some((p) => p.id === selectedProvider);
+      const isSelectedAvailable = isProviderProfileRef(selectedProvider)
+        ? getProviderAvailable(selectedProvider)
+        : availableProviders.some((p) => p.id === selectedProvider);
       if (!isSelectedAvailable) {
         // Check if this is the user's explicit choice from the provider store.
         // '' (unresolved — settings not hydrated / providers.active unset) is
         // never an explicit choice, so it must not block the auto-select.
         const userExplicitChoice = $activeProviderId$;
-        if (selectedProvider && selectedProvider === userExplicitChoice) {
+        if (
+          !isSelectedDisabled &&
+          ((selectedProvider && selectedProvider === userExplicitChoice) ||
+            ((modelOverriddenThisSession || modelWasOverridden) &&
+              overrideProvider === selectedProvider))
+        ) {
           // User explicitly selected this provider - don't override even if availability check fails
           logger.debug('Keeping user-selected provider despite availability check:', {
             selectedProvider,
@@ -229,15 +250,21 @@
   // pairs with the provider it was persisted (and restore-validated) with —
   // its legacy compound prefix when present, else the current selectedProvider.
   let overrideProvider = $state<string | undefined>(undefined);
+  // The model `overrideProvider` was recorded for: a model replaced from
+  // outside (e.g. the parent restoring another repository's remembered setup)
+  // pairs with the provider set alongside it, not the previous model's.
+  let overrideModel: string | undefined;
   $effect(() => {
     const model = selectedModel;
     if (!model) {
       overrideProvider = undefined;
+      overrideModel = undefined;
       return;
     }
-    if (overrideProvider === undefined) {
+    if (overrideProvider === undefined || overrideModel !== model) {
       overrideProvider =
         splitLegacyCompoundId(model).providerId ?? untrack(() => selectedProvider || undefined);
+      overrideModel = model;
     }
   });
 
@@ -523,7 +550,13 @@
     const providerId =
       overrideProvider ?? split.providerId ?? (selectedProvider || $defaultProviderId$);
     const modelId = split.modelId;
-    if (providerAvailabilityEntry(providerId)?.available === false) return true;
+    if (isProviderDisabledInSettings($enabledProviders$, providerId)) return true;
+    const entry = getProviderStatusFromResult(providerAvailability, providerId);
+    if (
+      entry !== undefined &&
+      (!entry.available || !isProviderAuthenticationReady(providerId, entry.authenticated))
+    )
+      return true;
     const knownModels = knownModelsForProvider(providerId);
     if (!knownModels) return false;
     return !knownModels.some((row) => row.value === model || row.value === modelId);
@@ -616,6 +649,7 @@
     if (isTeamMode) return;
     // Team mode requires an orchestrator; the card is hidden without one.
     if (orchestratorId === null) return;
+    onSetupPick?.();
     // Save single-agent state
     lastSingleAgent = {
       model: selectedModel,
@@ -631,6 +665,7 @@
     selectedProvider = lastTeamMode.provider;
     selectedModel = lastTeamMode.modelOverridden ? lastTeamMode.model : undefined;
     overrideProvider = lastTeamMode.modelOverridden ? lastTeamMode.provider : undefined;
+    overrideModel = lastTeamMode.modelOverridden ? selectedModel : undefined;
     modelWasOverridden = lastTeamMode.modelOverridden;
     onTeamModeChange?.(true);
     onSpecialistChange?.(orchestratorId);
@@ -644,6 +679,7 @@
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
+      onSetupPick?.();
       // Save team mode state
       lastTeamMode = {
         model: selectedModel,
@@ -659,6 +695,7 @@
       selectedProvider = lastSingleAgent.provider;
       selectedModel = lastSingleAgent.model;
       overrideProvider = lastSingleAgent.modelOverridden ? lastSingleAgent.provider : undefined;
+      overrideModel = lastSingleAgent.modelOverridden ? selectedModel : undefined;
       modelWasOverridden = lastSingleAgent.modelOverridden;
       onTeamModeChange?.(false);
       onSpecialistChange?.(selectedSpecialist);
@@ -673,6 +710,7 @@
   }
 
   function handleSpecialistSelect(specialistId: string | null) {
+    onSetupPick?.();
     isTeamMode = false;
     selectedSpecialist = specialistId;
     lastSingleAgent.specialist = specialistId;
@@ -681,9 +719,14 @@
     modelWasOverridden = false;
     // Reset provider to default when clearing model override
     const defaultProv = $activeProviderId$ || $defaultProviderId$;
-    if (selectedProvider !== defaultProv) {
-      selectedProvider = defaultProv;
-      onProviderChange?.(defaultProv);
+    const fallback =
+      !isProviderDisabledInSettings($enabledProviders$, defaultProv) &&
+      (!providerAvailability || getProviderAvailable(defaultProv))
+        ? defaultProv
+        : (availableProviders[0]?.id ?? '');
+    if (selectedProvider !== fallback) {
+      selectedProvider = fallback;
+      onProviderChange?.(fallback);
     }
     onTeamModeChange?.(false);
     onSpecialistChange?.(specialistId);
@@ -699,10 +742,12 @@
     // The picker reports the resolved triple legs on every pick: store the
     // bare model id paired with its provider (no model-string parsing here).
     const explicitModel = (pick?.modelId ?? model) || undefined;
+    onSetupPick?.();
     selectedModel = explicitModel;
     modelWasOverridden = !!explicitModel;
     modelOverriddenThisSession = !!explicitModel;
     overrideProvider = explicitModel ? (pick?.providerId ?? selectedProvider) : undefined;
+    overrideModel = explicitModel;
 
     // Update provider to match the selected model's provider
     if (explicitModel && pick?.providerId && pick.providerId !== selectedProvider) {
@@ -807,8 +852,8 @@
             />
             <Menu.Separator />
             <!-- Create new specialist link -->
-            <Menu.Item class="gap-2" onSelect={openSpecialistSettings}>
-              <Fa icon={faPlus} class="size-3! opacity-60" />
+            <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
+              {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
               <span class="type-caption"
                 >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
               >

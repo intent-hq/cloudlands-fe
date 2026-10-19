@@ -10,11 +10,8 @@
  * the retired local file-tracking.json store). All are mapped into the renderer
  * `DiffChunk[]` / `TrackedChange[]` / `CommitInfo[]` shapes. A failed tracked-
  * changes read folds to `null`, preserving a distinction from a successful empty
- * result; other list reads remain best-effort. `subscribe` refetches on `git:*` / `changes:tracked` /
- * `changes:git-status` events (§6.5), through a module-level single-flight +
- * delayed-trailing-coalesce guard shared by all subscribers
- * (intent-hq/monorepo#1648, #1716; the workspace id comes from the shared
- * cached/push-driven source, so the event stream issues no `workspace.list`).
+ * result; other list reads remain best-effort. Admitted daemon pushes are
+ * consumed by the Redux read owner; there is no global status subscription.
  * `stage`, `commit`, and `pull` are the supported
  * write mutations: `stage` forwards to `git.stage`; `commit` forwards to
  * `git.agentCommit` (the wire-canonical commit method — `git.commit` is
@@ -48,22 +45,12 @@ import type {
   GitDiffsOptions,
   MutationResult,
   PrRefreshResult,
-  SubscriptionHandler,
-  Unsubscribe,
 } from '../app-client';
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-  onBackendReconnected,
-} from './backend-transport';
-import {
-  isEventInFamily,
-  listWorkspaceIds,
-  runMutation,
-  subscribeWorkspaceIds,
-} from './live-support';
+import { backendRequest } from './backend-transport';
+import { runMutation } from './live-support';
+import { store } from '$store/renderer/store';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
+import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
 
 /**
  * Transport timeout for `git.pull` (PROTOCOL §5.6). Longer than the daemon's
@@ -94,22 +81,60 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
     branch: String(raw.branch ?? ''),
     ahead: Number(raw.ahead ?? 0),
     behind: Number(raw.behind ?? 0),
-    diverged: Boolean(raw.diverged),
+    diverged:
+      raw.diverged === undefined
+        ? Number(raw.ahead) > 0 && Number(raw.behind) > 0
+        : Boolean(raw.diverged),
     files,
-    hasUncommittedChanges: Boolean(raw.hasUncommittedChanges),
-    hasUntrackedFiles: Boolean(raw.hasUntrackedFiles),
+    hasUncommittedChanges:
+      raw.hasUncommittedChanges === undefined
+        ? files.length > 0
+        : Boolean(raw.hasUncommittedChanges),
+    hasUntrackedFiles:
+      raw.hasUntrackedFiles === undefined
+        ? files.some((file) => file.status === GitFileStatus.Untracked)
+        : Boolean(raw.hasUntrackedFiles),
   };
 }
 
-/** Concurrent ordinary readers for one workspace share one fresh wire snapshot. */
+/** Validate the complete working-tree snapshot before applying a daemon push. */
+export function parsePushedGitStatus(value: unknown): GitStatus | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.branch !== 'string' ||
+    typeof raw.ahead !== 'number' ||
+    typeof raw.behind !== 'number' ||
+    !Array.isArray(raw.files) ||
+    raw.files.some(
+      (file) =>
+        !file ||
+        typeof file !== 'object' ||
+        typeof file.path !== 'string' ||
+        typeof file.status !== 'string' ||
+        typeof file.staged !== 'boolean',
+    )
+  )
+    return null;
+  return normalizeGitStatus(raw);
+}
+
+/** Concurrent ordinary readers share only within one admitted backend lifetime. */
 const statusReadsInFlight = new Map<string, Promise<GitStatus | null>>();
 
 function fetchStatus(
   workspaceId: string,
   options?: { forceRefresh?: boolean },
 ): Promise<GitStatus | null> {
+  const state = store.state;
+  const key = JSON.stringify([
+    getActiveBackendId(state),
+    getPrincipalActionContext(state),
+    state.daemonHealth?.connectionGeneration,
+    workspaceId,
+  ]);
   if (!options?.forceRefresh) {
-    const existing = statusReadsInFlight.get(workspaceId);
+    const existing = statusReadsInFlight.get(key);
     if (existing) return existing;
   }
 
@@ -122,144 +147,13 @@ function fetchStatus(
       return normalizeGitStatus(result as Record<string, unknown>);
     })
     .catch(() => null);
-  statusReadsInFlight.set(workspaceId, request);
+  statusReadsInFlight.set(key, request);
   void request.then(() => {
-    if (statusReadsInFlight.get(workspaceId) === request) {
-      statusReadsInFlight.delete(workspaceId);
+    if (statusReadsInFlight.get(key) === request) {
+      statusReadsInFlight.delete(key);
     }
   });
   return request;
-}
-
-/**
- * Shared single-flight state for the `subscribe` refetch path
- * (intent-hq/monorepo#1648). Module-level — NOT per-subscription — so N
- * subscribers plus a burst of daemon events cost at most one in-flight
- * `git.status` plus one trailing fetch, instead of one per
- * (event × subscriber). Every subscriber's handler is registered here and
- * fans out from the single shared fetch.
- */
-const statusHandlers = new Set<SubscriptionHandler<GitStatus | null>>();
-let statusFetchInFlight = false;
-let statusFetchDirty = false;
-let statusFetchTrailingTimer: ReturnType<typeof setTimeout> | undefined;
-/** Disposer for the shared event/reconnect triggers; set while subscribers exist. */
-let statusTriggersOff: (() => void) | undefined;
-/**
- * Disposer for this client's hold on the shared push-driven workspace-id
- * source. The id source is ref-counted and resets to "unseeded" at refcount 0,
- * so without a hold of our own the seeded set would only exist while some
- * OTHER client (notes/tasks/agents) happens to be subscribed — and every
- * status refetch past the short TTL would fall back to a real `workspace.list`
- * RPC, which is exactly the flood this path is fixing
- * (intent-hq/monorepo#1716). Held while status subscribers exist.
- */
-let statusWorkspaceIdsOff: (() => void) | undefined;
-
-/**
- * Minimum spacing before the trailing status refetch, mirroring
- * `WORKSPACE_ID_RESYNC_COALESCE_MS` in `live-support.ts`. Without it the
- * trailing fetch starts the instant the previous one settles, so a sustained
- * event stream (the daemon's `GitStatusRefresher` emits `changes:git-status`
- * ~1/s per workspace during workspace creation, plus `git:commit` /
- * `changes:tracked`) drives a zero-gap `git.status` loop
- * (intent-hq/monorepo#1716).
- */
-const STATUS_REFETCH_COALESCE_MS = 250;
-
-/**
- * Run the shared status fetch with trailing coalesce: the leading edge fires
- * immediately, triggers arriving while a fetch is in flight only set the dirty
- * flag, and at most one trailing fetch runs `STATUS_REFETCH_COALESCE_MS` after
- * the in-flight one settles. Triggers arriving while that trailing fetch is
- * already scheduled are absorbed by it.
- */
-function refetchSharedStatus(): void {
-  if (statusFetchTrailingTimer !== undefined) return;
-  if (statusFetchInFlight) {
-    statusFetchDirty = true;
-    return;
-  }
-  statusFetchInFlight = true;
-  // The shared cached/push-driven id source (intent-hq/monorepo#1716): served
-  // from the seeded set or the short TTL cache, so a git/changes event stream
-  // issues ZERO `workspace.list` RPCs. Only `ids[0]` is needed — this path
-  // picks a workspace for `git.status`, it never needs a fresh enumeration.
-  listWorkspaceIds('git-status')
-    .then((ids) => (ids.length > 0 ? fetchStatus(ids[0]) : null))
-    .then((status) => {
-      for (const handler of [...statusHandlers]) {
-        try {
-          handler(status);
-        } catch {
-          // One subscriber's throw must not starve the others (the shared
-          // fan-out replaced the per-subscription promise chains).
-        }
-      }
-    })
-    .catch(() => {
-      // Snapshot refresh failures are non-fatal for the subscription.
-    })
-    .finally(() => {
-      statusFetchInFlight = false;
-      if (!statusFetchDirty) return;
-      statusFetchDirty = false;
-      // Events landed mid-flight: their changes may postdate the fetch that
-      // just settled, so run exactly one trailing fetch after the coalesce
-      // delay (skipped once the last subscriber is gone).
-      statusFetchTrailingTimer = setTimeout(() => {
-        statusFetchTrailingTimer = undefined;
-        if (statusHandlers.size > 0) refetchSharedStatus();
-      }, STATUS_REFETCH_COALESCE_MS);
-    });
-}
-
-/**
- * Register the ONE shared refetch trigger for all subscribers: the transports
- * fan every notification out to every registered listener, so a
- * per-subscription listener would turn a single daemon event into M `emit()`s
- * (leading fetch + a guaranteed trailing fetch) instead of one. Attached when
- * the first handler joins `statusHandlers`, disposed when the last leaves.
- * Reconnect refreshes share the same trigger; re-issuing each subscription's
- * own `events.subscribe` stays per-subscription (each owns a subscriptionId).
- */
-function attachStatusTriggers(): void {
-  if (statusTriggersOff) return;
-  // Hold the shared push-driven id source open for as long as status
-  // subscribers exist, so `listWorkspaceIds("git-status")` above is served
-  // from the seeded set rather than re-issuing `workspace.list` once the
-  // short TTL lapses. The listener itself is a no-op: this path only needs
-  // the set to stay seeded, membership changes reach it via the git/changes
-  // events it already listens to.
-  statusWorkspaceIdsOff = subscribeWorkspaceIds(() => {});
-  const offNotify = onBackendNotification((n) => {
-    if (
-      isEventInFamily(n.method, n.params, 'git') ||
-      isEventInFamily(n.method, n.params, 'changes')
-    )
-      refetchSharedStatus();
-  });
-  const offReconnect = onBackendReconnected(() => {
-    refetchSharedStatus();
-  });
-  statusTriggersOff = () => {
-    offNotify();
-    offReconnect();
-  };
-}
-
-/** Drop the shared triggers (and any pending trailing fetch) once the last subscriber is gone. */
-function detachStatusTriggers(): void {
-  if (statusFetchTrailingTimer !== undefined) {
-    clearTimeout(statusFetchTrailingTimer);
-    statusFetchTrailingTimer = undefined;
-  }
-  statusFetchDirty = false;
-  statusWorkspaceIdsOff?.();
-  statusWorkspaceIdsOff = undefined;
-  if (!statusTriggersOff) return;
-  statusTriggersOff();
-  statusTriggersOff = undefined;
 }
 
 /** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
@@ -403,7 +297,7 @@ const WIRE_CHANGE_STATUSES: ReadonlySet<string> = new Set([
  * `TrackedChange`. The wire shape mirrors the renderer type, so fields are
  * carried through with type guards rather than re-derived.
  */
-function toTrackedChange(raw: unknown): TrackedChange | null {
+export function toTrackedChange(raw: unknown): TrackedChange | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const file = typeof r.file === 'string' ? r.file : '';
@@ -577,8 +471,12 @@ export class LiveGitClient implements GitClient {
   // When `includeOlder` is true, returns commits before and including the workspace boundary.
   // Delegates to `commitsWithBoundary()` to avoid duplicating request/mapping logic.
   async commits(workspaceId: string, includeOlder?: boolean): Promise<CommitInfo[]> {
-    const envelope = await this.commitsWithBoundary(workspaceId, includeOlder);
-    return envelope.commits;
+    try {
+      const envelope = await this.commitsWithBoundary(workspaceId, includeOlder);
+      return envelope.commits;
+    } catch {
+      return [];
+    }
   }
 
   // `file-tracking.loadCommits` with full envelope — returns the boundary SHA
@@ -590,35 +488,34 @@ export class LiveGitClient implements GitClient {
     commits: CommitInfo[];
     boundarySha: string | null;
     nextToken: string | null;
+    historyIdentity?: string;
   }> {
-    try {
-      const result = await backendRequest<{
-        commits?: unknown[];
-        boundarySha?: unknown;
-        nextToken?: unknown;
-      }>('file-tracking.loadCommits', {
-        workspaceId,
-        ...(includeOlder !== undefined ? { includeOlder } : {}),
-      });
-      const commits = Array.isArray(result?.commits) ? result.commits : [];
-      // Runtime validation: boundarySha and nextToken must be string | null.
-      // Untrusted payloads from backendRequest could send any shape.
-      const boundarySha =
-        result?.boundarySha === null || typeof result?.boundarySha === 'string'
-          ? result.boundarySha
-          : null;
-      const nextToken =
-        result?.nextToken === null || typeof result?.nextToken === 'string'
-          ? result.nextToken
-          : null;
-      return {
-        commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
-        boundarySha,
-        nextToken,
-      };
-    } catch {
-      return { commits: [], boundarySha: null, nextToken: null };
-    }
+    const result = await backendRequest<{
+      commits?: unknown[];
+      boundarySha?: unknown;
+      nextToken?: unknown;
+      historyIdentity?: unknown;
+    }>('file-tracking.loadCommits', {
+      workspaceId,
+      ...(includeOlder !== undefined ? { includeOlder } : {}),
+    });
+    const commits = Array.isArray(result?.commits) ? result.commits : [];
+    // Runtime validation: boundarySha and nextToken must be string | null.
+    // Untrusted payloads from backendRequest could send any shape.
+    const boundarySha =
+      result?.boundarySha === null || typeof result?.boundarySha === 'string'
+        ? result.boundarySha
+        : null;
+    const nextToken =
+      result?.nextToken === null || typeof result?.nextToken === 'string' ? result.nextToken : null;
+    return {
+      commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
+      boundarySha,
+      nextToken,
+      ...(typeof result?.historyIdentity === 'string' && result.historyIdentity
+        ? { historyIdentity: result.historyIdentity }
+        : {}),
+    };
   }
 
   // `git.getBranches` (PROTOCOL §5.6) keeps path-based repository selection.
@@ -726,7 +623,7 @@ export class LiveGitClient implements GitClient {
 
   // ---- Mutations ----------------------------------------------------------
   // Each forwards to the daemon (§7) and folds the outcome into a
-  // MutationResult; the subscribe→refetch loop (git status channel) reconciles
+  // MutationResult; the admitted Git event owner reconciles
   // store state from the resulting `git:*` events. Never throws, never fakes
   // success.
 
@@ -805,60 +702,5 @@ export class LiveGitClient implements GitClient {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }
-
-  subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    // The handler joins the module-level fan-out set, so the initial snapshot,
-    // every event-driven refetch, and reconnect all share one guarded fetch
-    // across subscribers (intent-hq/monorepo#1648).
-    const guardedHandler: SubscriptionHandler<GitStatus | null> = (status) => {
-      if (!disposed) handler(status);
-    };
-    statusHandlers.add(guardedHandler);
-    attachStatusTriggers();
-
-    refetchSharedStatus();
-
-    const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({
-        eventTypes: [
-          'git:commit',
-          'git:push',
-          'git:pull',
-          'git:branch',
-          'git:merge',
-          'changes:tracked',
-          'changes:git-status',
-        ],
-      })
-        .then((result) => {
-          subscriptionId = result?.subscriptionId;
-          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-        })
-        .catch(() => {
-          // Without a daemon subscription we still serve the initial snapshot.
-        });
-
-    doSubscribe();
-
-    // On reconnect the daemon dropped its subscription registry (RESUB-1);
-    // this subscription must re-issue its own `events.subscribe` (it owns the
-    // subscriptionId). The snapshot refresh that converges on anything missed
-    // during the outage is driven once by the shared trigger.
-    const offReconnect = onBackendReconnected(() => {
-      subscriptionId = undefined;
-      void doSubscribe();
-    });
-
-    return () => {
-      disposed = true;
-      statusHandlers.delete(guardedHandler);
-      if (statusHandlers.size === 0) detachStatusTriggers();
-      offReconnect();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
   }
 }

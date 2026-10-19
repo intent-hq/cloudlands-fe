@@ -189,7 +189,7 @@ describe('AgentCard mode switching', () => {
       store.dispatch(
         updateSession(agentId, {
           name: 'Live renamed agent',
-          metadata: { ...current().metadata, completionReport: 'New report' },
+          metadataPatch: { completionReport: { op: 'set', value: 'New report' } },
         }),
       );
       resolve({ success: true, agent: wireAgent(isBackground) });

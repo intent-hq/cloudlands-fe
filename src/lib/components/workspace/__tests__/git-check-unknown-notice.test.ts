@@ -53,6 +53,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -132,6 +133,7 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 }));
 
 vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
+  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
   restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
   createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
   clearNewWorkspaceDraft: vi.fn(),
@@ -196,6 +198,7 @@ import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import '$store/renderer/seeders/host-bridge-seeder';
 import { store } from '$store/renderer/store';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import {
   principalContextChanged,
   principalReceived,
@@ -209,6 +212,7 @@ import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferenc
 import { selectWorkspaceInitializerGitAvailability } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 let dispose: () => void;
 let stopGit: () => void;
+let stopInitialization: () => void;
 
 function admit(
   role: 'owner' | 'member' | 'guest' = 'member',
@@ -283,6 +287,7 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
     sessionStorage.clear();
     dispose = store.init();
     stopGit = store.runSaga(workspaceInitializerGitSaga);
+    stopInitialization = store.runSaga(workspaceInitializationSaga);
     admit('owner');
     mocks.request.mockImplementation(async (method: string) => {
       const result = await mocks.checkGit();
@@ -297,6 +302,7 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
 
   afterEach(() => {
     cleanup();
+    stopInitialization();
     stopGit();
     dispose();
     sessionStorage.clear();

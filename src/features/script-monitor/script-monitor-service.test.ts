@@ -12,8 +12,14 @@ import {
   subscribeScriptMonitors,
   type ScriptMonitorSnapshot,
 } from './script-monitor-service';
-import { monitorFixture as active, scriptFixture } from './script-monitor.fixture';
+import {
+  monitorFixture as active,
+  monitorSummaryFixture as summary,
+  scriptFixture,
+} from './script-monitor.fixture';
 import type { ScriptMonitor } from './types';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -65,8 +71,13 @@ beforeEach(() => {
   vi.mocked(backendSubscribe).mockResolvedValue({ subscriptionId: 'sub-1' });
   vi.mocked(backendRequest).mockImplementation(async (method) => {
     if (method === 'client.hello')
-      return { server: { capabilities: { scriptMonitors: 1, scriptLifecycle: 1 } } };
-    if (method === 'scriptMonitor.list') return { monitors: [active] };
+      return {
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
+        },
+      };
+    if (method === 'scriptMonitor.list') return { view: 'summary', monitors: [summary] };
     if (method === 'script.list') return { scripts: [scriptFixture] };
     throw new Error(`Unexpected wire call ${method}`);
   });
@@ -100,15 +111,44 @@ describe('script monitor wire and connection lifecycle', () => {
     second.dispose();
     reconnect();
     await ready();
-    expect(rows.monitors).toEqual([active]);
+    expect(rows.monitors).toEqual([summary]);
     connection.dispose();
   });
 
-  it.each([undefined, 0, 2])(
-    'never subscribes or reads monitors without capability v1 (%s)',
+  it('loads monitors from a current-protocol daemon that advertises capability v2', async () => {
+    vi.mocked(backendRequest).mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
+          },
+        };
+      if (method === 'scriptMonitor.list') return { view: 'summary', monitors: [summary] };
+      throw new Error(`Unexpected wire call ${method}`);
+    });
+    start();
+    await ready();
+    expect(rows.status).toBe('ready');
+    expect(rows.monitors).toEqual([summary]);
+  });
+  it('still rejects a current-protocol daemon without monitor capability v2', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({
+      server: { protocolVersion: CURRENT_PROTOCOL_VERSION, capabilities: { scriptMonitors: 1 } },
+    });
+    start();
+    await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 0, 1, 3])(
+    'never subscribes or reads monitors without capability v2 (%s)',
     async (version) => {
       vi.mocked(backendRequest).mockResolvedValue({
-        server: { capabilities: { scriptMonitors: version } },
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptMonitors: version },
+        },
       });
       start();
       await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
@@ -118,7 +158,7 @@ describe('script monitor wire and connection lifecycle', () => {
       expect(backendRequest).toHaveBeenCalledTimes(1);
     },
   );
-  it('subscribes before reading, reads archived definitions, never fetches output', async () => {
+  it('subscribes before reading, never enumerates script definitions, never fetches output', async () => {
     const ack = deferred<{ subscriptionId: string }>();
     vi.mocked(backendSubscribe).mockReturnValue(ack.promise);
     start();
@@ -128,24 +168,34 @@ describe('script monitor wire and connection lifecycle', () => {
     await ready();
     expect(backendSubscribe).toHaveBeenCalledWith({
       workspaceId: ws,
-      eventTypes: ['scriptMonitor:*', 'script:state', 'script:changed'],
+      eventTypes: ['scriptMonitor:*', 'script:changed', 'script:removed'],
     });
-    expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.list', { workspaceId: ws });
-    expect(backendRequest).toHaveBeenCalledWith('script.list', { workspaceId: ws, archive: 'all' });
-    expect(rows.monitors).toEqual([active]);
+    expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.list', {
+      workspaceId: ws,
+      view: 'summary',
+      state: 'active',
+      limit: 100,
+    });
+    expect(backendRequest).not.toHaveBeenCalledWith('script.list', expect.anything());
+    expect(rows.monitors).toEqual([summary]);
     expect(backendRequest).not.toHaveBeenCalledWith('script.output', expect.anything());
   });
   it.each(['completed', 'expired', 'triggered', 'cancelled'] as const)(
     'does not let a pending list or duplicate registration revive %s',
     async (state) => {
-      const read = deferred<{ monitors: ScriptMonitor[] }>();
+      const read = deferred<{ view: 'summary'; monitors: ScriptMonitor[] }>();
       const original = vi.mocked(backendRequest).getMockImplementation()!;
       vi.mocked(backendRequest).mockImplementation((method, params) =>
         method === 'scriptMonitor.list' ? read.promise : original(method, params),
       );
       start();
       await vi.waitFor(() =>
-        expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.list', { workspaceId: ws }),
+        expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.list', {
+          workspaceId: ws,
+          view: 'summary',
+          state: 'active',
+          limit: 100,
+        }),
       );
       const terminal =
         state === 'completed'
@@ -166,20 +216,20 @@ describe('script monitor wire and connection lifecycle', () => {
               };
       event(terminal as ScriptMonitor);
       event(active, 'scriptMonitor:registered');
-      read.resolve({ monitors: [active] });
+      read.resolve({ view: 'summary', monitors: [summary] });
       await ready();
-      expect(rows.monitors).toEqual([terminal]);
+      expect(rows.monitors).toEqual([]);
       await off!.mutate(active.monitorId, true);
       expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.cancelRun', expect.anything());
     },
   );
-  it('binds cancelRun to monitor identity and uses the returned terminal snapshot without synthesizing a wake', async () => {
+  it('binds cancelRun to monitor identity and uses the returned identity receipt without synthesizing a wake', async () => {
     start();
     await ready();
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     vi.mocked(backendRequest).mockImplementation((method, params) =>
       method === 'scriptMonitor.cancelRun'
-        ? Promise.resolve({ ok: true, monitor: done, runStopped: false })
+        ? Promise.resolve({ ok: true, monitorId: active.monitorId, runStopped: false })
         : original(method, params),
     );
     const result = await off!.mutate(active.monitorId, true);
@@ -188,7 +238,7 @@ describe('script monitor wire and connection lifecycle', () => {
       monitorId: active.monitorId,
     });
     expect(result?.runStopped).toBe(false);
-    expect(rows.monitors).toEqual([done]);
+    expect(rows.monitors).toEqual([]);
     expect(backendRequest).not.toHaveBeenCalledWith('script.stop', expect.anything());
     expect(backendRequest).not.toHaveBeenCalledWith('agent.send', expect.anything());
   });
@@ -197,7 +247,7 @@ describe('script monitor wire and connection lifecycle', () => {
     await ready();
     vi.mocked(backendRequest).mockRejectedValueOnce(new Error('stop failed'));
     await expect(off!.mutate(active.monitorId, true)).rejects.toThrow('stop failed');
-    expect(rows.monitors).toEqual([active]);
+    expect(rows.monitors).toEqual([summary]);
     vi.mocked(backendRequest).mockRejectedValueOnce({ rpcCode: -32601 });
     await expect(off!.mutate(active.monitorId, true)).rejects.toEqual({ rpcCode: -32601 });
     expect(rows.status).toBe('unsupported');
@@ -217,35 +267,91 @@ describe('script monitor wire and connection lifecycle', () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     vi.mocked(backendRequest).mockImplementation((method, params) =>
       method === 'scriptMonitor.list'
-        ? Promise.resolve({ monitors: [] })
+        ? Promise.resolve({ view: 'summary', monitors: [] })
         : original(method, params),
     );
     reconnect();
     await ready();
     expect(rows.monitors).toEqual([]);
   });
-  it('coalesces a burst of script changes into one trailing read', async () => {
+  it('does not refetch lists on script events', async () => {
     start();
     await ready();
-    const read = deferred<{ monitors: ScriptMonitor[] }>();
-    vi.mocked(backendRequest).mockImplementation(async (method) => {
-      if (method === 'scriptMonitor.list') return read.promise;
-      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-      return { scripts: [scriptFixture] };
-    });
+    const before = vi.mocked(backendRequest).mock.calls.length;
     for (let i = 0; i < 20; i++)
       emit({
         method: 'events.event',
-        params: { event: { workspaceId: ws, type: 'script:changed' } },
+        params: {
+          event: {
+            workspaceId: ws,
+            type: 'script:changed',
+            data: { scriptId: scriptFixture.id, script: scriptFixture },
+          },
+        },
       });
-    expect(
-      vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'scriptMonitor.list'),
-    ).toHaveLength(2);
-    read.resolve({ monitors: [active] });
-    await vi.waitFor(() =>
-      expect(
-        vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'scriptMonitor.list'),
-      ).toHaveLength(3),
+    expect(backendRequest).toHaveBeenCalledTimes(before);
+  });
+});
+
+describe('script monitor read failures (intent-hq/intent#7206)', () => {
+  const calls = (method: string) =>
+    vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method).length;
+
+  it('retries a failed first page on the healthy subscription without re-registering', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list' && fail
+        ? Promise.reject(new Error('Timed out'))
+        : original(method, params),
     );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    const hellos = calls('client.hello');
+    fail = false;
+    service.retry();
+    await ready();
+    expect(rows.monitors.map((row) => row.monitorId)).toEqual([active.monitorId]);
+    expect(calls('client.hello')).toBe(hellos);
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(backendUnsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('re-registers when the hello itself failed', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'client.hello' && fail
+        ? Promise.reject(new Error('Socket closed'))
+        : original(method, params),
+    );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+    fail = false;
+    service.retry();
+    await ready();
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(rows.monitors).toHaveLength(1);
+  });
+
+  it('keeps loaded rows usable when only an extra page fails', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method !== 'scriptMonitor.list') return original(method, params);
+      return (params as { cursor?: string }).cursor
+        ? Promise.reject(new Error('Timed out'))
+        : Promise.resolve({ view: 'summary', monitors: [summary], nextCursor: 'more' });
+    });
+    const service = start();
+    await ready();
+    await service.loadMore();
+    expect(rows.status).toBe('ready');
+    expect(rows.loadingMore).toBe(false);
+    expect(rows.nextCursor).toBe('more');
+    expect(rows.monitors).toHaveLength(1);
+    service.retry();
+    expect(calls('scriptMonitor.list')).toBe(2);
   });
 });

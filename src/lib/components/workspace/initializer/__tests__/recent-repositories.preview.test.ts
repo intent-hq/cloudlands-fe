@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import type { GitClient } from '$lib/client/app-client';
 const mocks = vi.hoisted(() => ({
   selector: <T>(getter: () => T) =>
     Object.assign(
@@ -19,13 +18,17 @@ vi.mock('$lib/electron-bridge', async () => ({
   invoke: (await import('$shared/ipc-mock-router')).mockInvoke,
   shell: { open: vi.fn() },
 }));
-vi.mock('$lib/client', () => ({
-  appClient: {
-    git: { originUrl: vi.fn<GitClient['originUrl']>().mockResolvedValue(null) },
-    workspaces: { recentViews: vi.fn(async () => ({})) },
-    settings: { get: vi.fn(async () => null), update: vi.fn(async () => []) },
-  },
-}));
+vi.mock('$lib/client', async () => {
+  const { createRecentRepositoriesClientFixture } =
+    await import('../../../../../test/fixtures/recent-repositories-client');
+  return {
+    appClient: {
+      ...createRecentRepositoriesClientFixture(),
+      workspaces: { recentViews: vi.fn(async () => ({})) },
+      settings: { get: vi.fn(async () => null), update: vi.fn(async () => []) },
+    },
+  };
+});
 vi.mock('$store/renderer/slices/workspace-share/sagas/workspace-share-saga', () => ({
   refreshIntegrationAuthAfterReconnect: vi.fn(),
 }));

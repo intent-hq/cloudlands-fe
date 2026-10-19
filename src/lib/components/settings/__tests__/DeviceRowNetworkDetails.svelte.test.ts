@@ -17,9 +17,12 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { initialState } = await import('$store/renderer/slices/connections/connections-slice');
+  const { settingsEventsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
   return createAppStoreMockModule({
     state: {
       connections: initialState,
+      settingsEvents: settingsEventsReducer(undefined, { type: '@@init' }),
     },
     dispatch: vi.fn(),
   });

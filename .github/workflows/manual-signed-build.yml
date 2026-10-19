@@ -30,19 +30,17 @@ on:
   workflow_dispatch:
     inputs:
       build_macos:
-        description: 'Build macOS DMGs for the selected architectures'
+        description: 'Build macOS DMG for Apple Silicon'
         required: false
         type: boolean
         default: false
       macos_arch:
-        description: 'Mac architectures: both, Apple Silicon (arm64), or Intel (x64)'
+        description: 'Mac builds require Apple Silicon'
         required: false
         type: choice
-        default: both
+        default: arm64
         options:
-          - both
           - arm64
-          - x64
       smoke_macos:
         description: 'Run fixture-only packaged journeys on a separate disposable macOS runner (requires build_macos and sign)'
         required: false
@@ -96,7 +94,7 @@ jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
@@ -108,15 +106,13 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
+          # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
+          # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
           ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-15-large","intentd_target":"x86_64-apple-darwin"}'
-          case "${MACOS_ARCH:-both}" in
-            both) TARGETS="[$ARM,$INTEL]" ;;
+          case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
-            x64) TARGETS="[$INTEL]" ;;
-            *) echo "::error::macos_arch must be both, arm64, or x64"; exit 1 ;;
+            *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
           esac
-          # Smoke one built artifact on its native CPU; prefer ARM when both are built.
           {
             echo "matrix={\"include\":$TARGETS}"
             echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
@@ -125,7 +121,7 @@ jobs:
 
   smoke-inputs:
     if: ${{ inputs.smoke_macos }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require a signed macOS artifact
@@ -233,14 +229,14 @@ jobs:
           version: 10.30.3
           # Per-runner-instance dest: on the old self-hosted pool, concurrent
           # slots shared $HOME and raced on the default ~/setup-pnpm
-          # (monorepo#1239). Hosted macos-15-xlarge runners are one VM per
+          # (monorepo#1239). Hosted macOS runners are one VM per
           # job so the race can't recur, but the dest is harmless to keep.
           dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store (same as the
-        # intent-pr.yml jobs). On the hosted macos-15-xlarge runner each job
+        # intent-pr.yml jobs). On the hosted macOS runner each job
         # is a fresh VM with no persistent store, so this is a candidate for
         # cache: 'pnpm' — left as-is here since only the runner target was
         # migrated by this change.
@@ -309,21 +305,25 @@ jobs:
           rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never be
-      # restored here; scoped to the intentd-src workspace (the FE checkout has
-      # no Cargo workspace). cache-on-failure keeps the compiled deps when a
-      # later step (packaging/notarization) fails after a completed cold
-      # ~15-min cargo build, so the next dispatch doesn't pay it again.
-      - name: Cache intentd cargo build
+      # Share compiler outputs through the self-hosted cache on the native macOS build.
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -355,7 +355,7 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           # Idempotency: drop any stale keychain left by a crashed run
           # before creating a fresh one. No-op on the ephemeral
-          # macos-15-xlarge runner (each job gets a clean VM) but harmless
+          # macOS runner (each job gets a clean VM) but harmless
           # to keep.
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -414,8 +414,8 @@ jobs:
 
       # dist:mac stages tailcat for the matrix CPU, which
       # builds the tailcat tunnel client from source (tailcat publishes no
-      # prebuilt macOS assets) and needs a Go toolchain — the hosted
-      # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
+      # prebuilt macOS assets) and needs the pinned Go toolchain below.
+      # Mac leg only: the Linux/Windows
       # legs stage checksum-verified prebuilt assets. Version must satisfy
       # tailcat v0.4.0's go.mod (go 1.27.0); mirrors intentd's macOS source
       # build of the same pinned tag.
@@ -456,8 +456,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
           # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
-          # 30764745052 — don't drop below ~10240). macos-15-xlarge provides
-          # 14 GB RAM, comfortably covering the ~8.2 GB committed heap peak.
+          # 30764745052 — don't drop below ~10240). The selected hosted Macs
+          # have enough RAM for this heap cap.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -563,7 +563,7 @@ jobs:
       # keychain search list, and shred the decoded certificate so no
       # signing material outlives the job (runs on failure and cancellation
       # too). Ephemeral-safe by design (#553): a no-op cleanup here is
-      # harmless on this hosted macos-15-xlarge runner.
+      # harmless on this hosted macOS runner.
       - name: Clean up signing keychain
         if: always()
         run: |
@@ -706,17 +706,24 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Cache intentd cargo build
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: x86_64-pc-windows-msvc
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
       # at target/release/intentd.exe. rustc locates the MSVC linker itself,
       # so no vcvars setup is needed even from Git Bash.
+      # Explicit --target (unlike the native macOS/Windows builds): the musl
+      # triple differs from the host's glibc triple, so the binary lands at
+      # target/<triple>/release/intentd. CC_<target> and the per-target
+      # cargo linker var point cc-rs-compiled C deps (libsqlite3-sys, ring,
+      # ...) and the final link at musl-gcc.
       - name: Build intentd from source
         if: ${{ inputs.intentd_ref != '' }}
         working-directory: intentd-src
@@ -1008,14 +1015,19 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Cache intentd cargo build
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-src
-          key: ${{ matrix.intentd_target }}
-          cache-on-failure: true
-
+        shell: bash
+        env:
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
+      # Native build on the matrix host (no --target), so the binary lands at
+      # target/release/intentd.
+      # Native build on the x64 MSVC host (no --target), so the binary lands
+      # at target/release/intentd.exe. rustc locates the MSVC linker itself,
+      # so no vcvars setup is needed even from Git Bash.
       # Explicit --target (unlike the native macOS/Windows builds): the musl
       # triple differs from the host's glibc triple, so the binary lands at
       # target/<triple>/release/intentd. CC_<target> and the per-target

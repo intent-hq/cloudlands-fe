@@ -120,58 +120,148 @@ test('newer previous-message navigation wins over a pending return to bottom', a
   await component.screenshot({ path: testInfo.outputPath('return-to-bottom-settled.png') });
 });
 
-test('previous-message action leaves bottom and stays at successive user messages', async ({
-  mount,
-  page,
-}, testInfo) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const component = await mount(ChatMessageNavigatorIntegrationHost);
-  const scroll = component.locator('.conversation-column').locator('..');
-  const down = bottomArrow(component);
-  await down.expectAtBottom(true);
+async function previousActionState(source: Locator) {
+  return source.evaluate((node) => {
+    const action = node.querySelector<HTMLButtonElement>(
+      '[aria-label="Scroll to previous message"]',
+    )!;
+    const row = node.getBoundingClientRect();
+    const rect = action.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return {
+      top: row.top,
+      centerX: row.x + row.width / 2,
+      centerY: row.y + row.height / 2,
+      hovered: node.matches(':hover'),
+      pointerEvents: getComputedStyle(action).pointerEvents,
+      actionHit: hit !== null && action.contains(hit),
+      hitMessage: hit?.closest('[data-message-id]')?.getAttribute('data-message-id'),
+    };
+  });
+}
 
-  for (const current of [24, 23, 22]) {
-    const source = component.locator(`[data-message-id="user-${current}"]`);
-    await source.hover();
-    await source.getByRole('button', { name: 'Scroll to previous message' }).click();
-    // Observe the settled destination, including animation, focus, lazy layout,
-    // and follow-bottom observers; a transient crossing is not success.
+async function waitForPreviousMessageReady(source: Locator) {
+  // Follow-bottom can move the row after hover resolves. Reposition only the
+  // pointer until the real action receives hits; never retry a navigation click.
+  await expect
+    .poll(async () => {
+      await source.hover();
+      const state = await previousActionState(source);
+      if (!state.hovered || !state.actionHit) return false;
+      // A pending layout frame can invalidate a successful hit test. Observe
+      // geometry and hits across frames before handing the pointer to the click.
+      for (let frame = 0; frame < 2; frame++) {
+        await source.evaluate(
+          () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+        );
+        const next = await previousActionState(source);
+        if (
+          !next.hovered ||
+          !next.actionHit ||
+          next.top !== state.top ||
+          next.centerX !== state.centerX ||
+          next.centerY !== state.centerY
+        )
+          return false;
+      }
+      return true;
+    })
+    .toBe(true);
+}
+
+async function hoverPreviousMessage(source: Locator, afterHover: () => Promise<void>) {
+  await waitForPreviousMessageReady(source);
+  await afterHover();
+  // The one-time update can move a previously ready row away from the pointer.
+  await waitForPreviousMessageReady(source);
+}
+
+for (const shiftAfterHover of [false, true]) {
+  test(`previous-message action leaves bottom and stays at successive user messages${shiftAfterHover ? ' after synthetic tail growth' : ''}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const component = await mount(ChatMessageNavigatorIntegrationHost);
+    const scroll = component.locator('.conversation-column').locator('..');
+    const down = bottomArrow(component);
+    await down.expectAtBottom(true);
+
+    let shifted = false;
+    for (const current of [24, 23, 22]) {
+      const source = component.locator(`[data-message-id="user-${current}"]`);
+      await hoverPreviousMessage(source, async () => {
+        if (!shiftAfterHover || shifted) return;
+        shifted = true;
+        const before = await previousActionState(source);
+        expect(before.hovered).toBe(true);
+        expect(before.actionHit).toBe(true);
+        await component
+          .getByTestId('grow-streaming-tail')
+          .evaluate((node: HTMLButtonElement) => node.click());
+        await expect
+          .poll(async () => (await previousActionState(source)).top - before.top)
+          .toBeLessThan(-20);
+        await expect
+          .poll(() =>
+            scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+          )
+          .toBeLessThanOrEqual(2);
+        // Chromium can retain :hover after layout moves under a stationary pointer.
+        // Hit-test the old position again, without following the moved message.
+        await page.mouse.move(before.centerX, before.centerY);
+        await expect.poll(async () => (await previousActionState(source)).hovered).toBe(false);
+        const moved = await previousActionState(source);
+        await testInfo.attach('synthetic-tail-growth', {
+          body: JSON.stringify({ before, moved }),
+          contentType: 'application/json',
+        });
+        expect(moved.actionHit).toBe(false);
+        expect(moved.pointerEvents).toBe('none');
+      });
+      // A click may recover by itself. Assert pointer readiness independently so
+      // removal of the readiness correction fails deterministically before clicking.
+      expect((await previousActionState(source)).actionHit).toBe(true);
+      await source.getByRole('button', { name: 'Scroll to previous message' }).click();
+      // Observe the settled destination, including animation, focus, lazy layout,
+      // and follow-bottom observers; a transient crossing is not success.
+      await page.waitForTimeout(700);
+      const target = component.locator(`[data-message-id="user-${current - 1}"]`);
+      const offset = await target.evaluate(
+        (node, container) =>
+          node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+        await scroll.elementHandle(),
+      );
+      const position = await scroll.evaluate((node) => ({
+        scrollTop: node.scrollTop,
+        bottomDistance: node.scrollHeight - node.clientHeight - node.scrollTop,
+      }));
+      await testInfo.attach(`previous-${current - 1}`, {
+        body: JSON.stringify({ offset, ...position }),
+        contentType: 'application/json',
+      });
+      expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+      expect(position.bottomDistance).toBeGreaterThan(2);
+    }
+    const readingPosition = await scroll.evaluate((node) => node.scrollTop);
+    await component
+      .getByTestId('append-streaming-message')
+      .evaluate((node: HTMLButtonElement) => node.click());
     await page.waitForTimeout(700);
-    const target = component.locator(`[data-message-id="user-${current - 1}"]`);
-    const offset = await target.evaluate(
-      (node, container) =>
-        node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
-      await scroll.elementHandle(),
-    );
-    const position = await scroll.evaluate((node) => ({
-      scrollTop: node.scrollTop,
-      bottomDistance: node.scrollHeight - node.clientHeight - node.scrollTop,
-    }));
-    await testInfo.attach(`previous-${current - 1}`, {
-      body: JSON.stringify({ offset, ...position }),
+    const positionAfterStreaming = await scroll.evaluate((node) => node.scrollTop);
+    expect(positionAfterStreaming).toBeCloseTo(readingPosition, 0);
+    await testInfo.attach('streaming-reading-position', {
+      body: JSON.stringify({ readingPosition, positionAfterStreaming }),
       contentType: 'application/json',
     });
-    expect(Math.abs(offset)).toBeLessThanOrEqual(3);
-    expect(position.bottomDistance).toBeGreaterThan(2);
-  }
-  const readingPosition = await scroll.evaluate((node) => node.scrollTop);
-  await component
-    .getByTestId('append-streaming-message')
-    .evaluate((node: HTMLButtonElement) => node.click());
-  await page.waitForTimeout(700);
-  const positionAfterStreaming = await scroll.evaluate((node) => node.scrollTop);
-  expect(positionAfterStreaming).toBeCloseTo(readingPosition, 0);
-  await testInfo.attach('streaming-reading-position', {
-    body: JSON.stringify({ readingPosition, positionAfterStreaming }),
-    contentType: 'application/json',
+    await component.screenshot({ path: testInfo.outputPath('previous-message-settled.png') });
+    await down.returnToBottom();
+    await down.expectAtBottom(true);
+    await expect
+      .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+      .toBeLessThanOrEqual(2);
   });
-  await component.screenshot({ path: testInfo.outputPath('previous-message-settled.png') });
-  await down.returnToBottom();
-  await down.expectAtBottom(true);
-  await expect
-    .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
-    .toBeLessThanOrEqual(2);
-});
+}
 
 test('previous-message navigation follows its target while earlier content hydrates', async ({
   mount,

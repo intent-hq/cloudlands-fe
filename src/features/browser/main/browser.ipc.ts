@@ -116,8 +116,11 @@ async function waitForDaemonTab(
  * owner group can label the tab without an agent-store lookup
  * (monorepo#3438). `visible: false` (agent opens, monorepo#3045) creates the
  * tab hidden — no panel mount, webview kept alive offscreen.
+ * `backendId` is the host that owns `workspaceId`: only that host's windows
+ * receive the open-tab command (workspace ids are only unique per host).
  */
 function openBrowserTab(
+  backendId: string,
   url: string,
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
@@ -179,6 +182,7 @@ function openBrowserTab(
       ...(emulatedSize === undefined ? {} : { emulatedSize }),
       ...(visible === undefined ? {} : { visible }),
     },
+    backendId,
   );
   if (!delivery.delivered) {
     // No window (or browser-mode client) received the message, so no tab was
@@ -447,6 +451,7 @@ export async function executeBrowserActions(
       ownerAgentName,
     ) =>
       openBrowserTab(
+        resolvedBackendContext.backendId,
         url,
         position,
         workspaceId,

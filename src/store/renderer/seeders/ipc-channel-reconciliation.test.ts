@@ -777,13 +777,14 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     // multiline generic `listenSync` calls.
     expect(listened.has('line-attribution:updated')).toBe(true);
     expect(listened.has('terminal:created')).toBe(true);
-    // Bare `on()` import call site (active-streams-tracker.ts).
-    expect(listened.has('agent:status-changed')).toBe(true);
+    // Agent lifecycle consumers use admitted Redux events, not legacy relays.
+    expect(listened.has('agent:status-changed')).toBe(false);
+    expect(listened.has('agent:idle')).toBe(false);
     // Template-literal dynamic family (CliBlock.svelte).
     expect(listenedPrefixes.has('terminal:professional:exit:')).toBe(true);
     // Emit sites: seeder literal + template family + daemon-events-bridge relay.
     expect(emitted.has('terminal:created')).toBe(true);
-    expect(emitted.has('git:status-changed')).toBe(true);
+    expect(emitted.has('git:status-changed')).toBe(false);
     expect(emittedPrefixes.has('terminal:professional:exit:')).toBe(true);
   });
 

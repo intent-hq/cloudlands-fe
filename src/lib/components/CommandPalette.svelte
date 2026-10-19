@@ -1,7 +1,10 @@
 <script lang="ts">
   import { openDevConsole } from '$features/dev-console/dev-console-client';
   import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
-  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectPrincipalConnectionContext,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
@@ -26,7 +29,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
-  import { createNoteQuery, type NoteQueryUpdate } from '$lib/utils/palette-note-search';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
@@ -36,6 +38,7 @@
   import {
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
+    selectLabsProviderProfilesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -83,16 +86,20 @@
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    paletteNoteSearchReleased,
+    paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
   import {
     selectPaletteFileMru,
     selectPaletteMruEntries,
+    selectPaletteNoteSearch,
   } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
+  import { isProfilesLabCommandHidden, runProfilesLabCommand } from './command-palette-labs';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -106,6 +113,10 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   const logger = createLogger('CommandPalette');
   interface Props {
     isOpen: boolean;
@@ -133,6 +144,7 @@
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
+  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -161,7 +173,8 @@
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
+        !isProfilesLabCommandHidden(command.id, $labsProviderProfilesEnabled$),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -491,19 +504,11 @@
   });
 
   // Global indexed note results complement local fuzzy title/tag discovery.
-  let noteResults = $state<NoteQueryUpdate>({
-    items: [],
-    loading: false,
-    capability: 'unknown',
-    fallback: true,
-  });
-  const noteQuery = createNoteQuery((update) => {
-    untrack(() => {
-      noteResults = update;
-    });
-  });
+  const noteSearchConsumerId = crypto.randomUUID();
+  const noteResults = selectPaletteNoteSearch(noteSearchConsumerId);
+  const principalConnectionContext = selectPrincipalConnectionContext();
   const indexedNotes = $derived(
-    noteResults.items
+    $noteResults.items
       .filter((item) => !item.isArchived)
       .map((item) => ({
         ...item,
@@ -517,19 +522,24 @@
       })),
   );
   $effect(() => {
+    const authority = $principalConnectionContext;
+    if (!authority) return;
     if (!isOpen) {
-      noteQuery.close();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
     const term = parsedQuery.searchTerm;
     if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'note')) {
-      noteQuery.clear();
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
       return;
     }
-    noteQuery.query(term, workspaceId, []);
-    // Cleanup also invalidates in-flight responses on unmount.
-    return () => noteQuery.cancel();
+    appStore.dispatch(
+      paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), term, workspaceId),
+    );
+    return () =>
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
+  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
@@ -840,6 +850,7 @@
       navigateToSettings({ tab: settingsCommand.settingsTab });
       return true;
     }
+    if (runProfilesLabCommand(commandId)) return true;
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {
@@ -971,6 +982,12 @@
       });
     }
   });
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !isOpen) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
+  });
 </script>
 
 {#if isOpen}
@@ -991,8 +1008,11 @@
 {/if}
 
 {#if isOpen}
+  <!-- Width follows the filter strip (640px floor, viewport cap); other sections use
+       contain-inline-size so long titles or queries truncate instead of widening it.
+       Centered with auto margins, not a translate, so odd widths avoid half-pixel offsets. -->
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[640px] z-50"
+    class="fixed inset-x-0 top-[12%] mx-auto w-max min-w-[min(640px,calc(100%-1rem))] max-w-[calc(100%-1rem)] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
@@ -1005,7 +1025,7 @@
       role="document"
       tabindex="-1"
     >
-      <div class="flex shrink-0 items-center gap-3 px-5 py-3">
+      <div class="flex shrink-0 items-center gap-3 px-5 py-3 contain-inline-size">
         <Fa icon={faSearch} class="size-5 shrink-0 text-muted-foreground" />
 
         <Input
@@ -1030,7 +1050,11 @@
 
       <div class="h-px shrink-0 bg-border"></div>
 
-      {#if !isGoToLineMode}
+      <!-- Go-to-line hides the strip but keeps it mounted, so the palette width does not jump. -->
+      <div
+        class={isGoToLineMode ? 'invisible h-0 overflow-hidden' : 'contents'}
+        inert={isGoToLineMode}
+      >
         <CommandPaletteFilters
           bind:this={filtersRef}
           {workspaceId}
@@ -1038,10 +1062,10 @@
           isCollaborator={$isCollaborator$}
           onFilter={applyFilter}
         />
-      {/if}
+      </div>
 
       {#if isGoToLineMode}
-        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
+        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1 contain-inline-size">
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
               <Button
@@ -1065,10 +1089,10 @@
             {/if}
           </div>
         </div>
-      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || noteResults.loading}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || $noteResults.loading}
         <div
           bind:this={resultsRef}
-          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2"
+          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2 contain-inline-size"
           data-palette-results
         >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
@@ -1144,7 +1168,7 @@
             {/if}
           {/each}
 
-          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || noteResults.loading}
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || $noteResults.loading}
             {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-11 flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
@@ -1153,8 +1177,11 @@
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !noteResults.loading}
-        <EmptyState class="min-h-0 flex-1 overflow-y-auto py-10" contentClass="break-words">
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !$noteResults.loading}
+        <EmptyState
+          class="min-h-0 flex-1 overflow-y-auto py-10 contain-inline-size"
+          contentClass="break-words"
+        >
           {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
           {#snippet title()}
             {parsedQuery.searchTerm
@@ -1163,7 +1190,7 @@
           {/snippet}
         </EmptyState>
       {:else if !searchQuery}
-        <div class="px-3 py-6 text-center">
+        <div class="px-3 py-6 text-center contain-inline-size">
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
         </div>
       {/if}

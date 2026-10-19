@@ -224,13 +224,48 @@ for (const modifier of ['Meta', 'Control'] as const) {
 
 for (const href of ['https://example.com/review', 'https://github.com/acme/studio/pull/142']) {
   test(`preview chat opens ${href} in owner browser`, async ({ mount, page }) => {
-    const component = await mount(Harness, { props: { href } });
+    const component = await mount(Harness, {
+      props: { href, githubLinkDefaultAction: 'open-in-app' },
+    });
     await component.getByRole('link', { name: 'Review destination', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');
     await expect.poll(async () => focused((await snapshot(page)).owner)?.browserUrl).toBe(href);
     expect((await snapshot(page)).external).toEqual([]);
   });
 }
+
+test('preview GitHub link menu Open in app enters owner and opens its browser', async ({
+  mount,
+  page,
+}) => {
+  const href = 'https://github.com/acme/studio/pull/142';
+  const component = await mount(Harness, {
+    props: { href, githubLinkDefaultAction: 'show-choices' },
+  });
+  await component.getByRole('link', { name: 'Review destination', exact: true }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  // Choices alone must not leave Home.
+  expect((await snapshot(page)).selectedWorkspaceId).toBeNull();
+  await menu.getByRole('menuitem', { name: 'Open in app' }).click();
+  await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');
+  await expect.poll(async () => focused((await snapshot(page)).owner)?.browserUrl).toBe(href);
+  expect((await snapshot(page)).external).toEqual([]);
+});
+
+test('preview GitHub link respects the external-browser preference and stays on Home', async ({
+  mount,
+  page,
+}) => {
+  const href = 'https://github.com/acme/studio/pull/142';
+  const component = await mount(Harness, {
+    props: { href, githubLinkDefaultAction: 'open-in-browser' },
+  });
+  await component.getByRole('link', { name: 'Review destination', exact: true }).click();
+  await expect.poll(async () => (await snapshot(page)).external).toEqual([{ url: href }]);
+  expect((await snapshot(page)).selectedWorkspaceId).toBeNull();
+  expect(focused((await snapshot(page)).owner)?.type).toBe('agent');
+});
 
 test('preview auth URL uses external browser without entering owner', async ({ mount, page }) => {
   const href = 'https://github.com/login/oauth/authorize?client_id=review';
@@ -362,10 +397,18 @@ for (const entry of headerCases) {
     expect(titleLayout.lineHeight).toBeGreaterThan(0);
     expect(titleLayout.height).toBeLessThanOrEqual(titleLayout.lineHeight * 2 + 1);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(closeBox.x + 1);
+    let repositoryBox: typeof titleBox | null = null;
     if (entry.repository) {
-      const repoBox = (await header.locator('[data-home-detail-repository]').boundingBox())!;
-      expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(repoBox.x + 1);
-      expect(repoBox.x + repoBox.width).toBeLessThanOrEqual(closeBox.x + 1);
+      const repository = header.locator('[data-home-detail-repository]');
+      await expect(repository.locator('.home-detail-repository-name')).toBeVisible();
+      repositoryBox = (await repository.boundingBox())!;
+      const separated = (a: typeof titleBox, b: typeof titleBox) =>
+        a.x + a.width <= b.x + 1 ||
+        b.x + b.width <= a.x + 1 ||
+        a.y + a.height <= b.y + 1 ||
+        b.y + b.height <= a.y + 1;
+      expect(separated(titleBox, repositoryBox)).toBe(true);
+      expect(separated(repositoryBox, closeBox)).toBe(true);
     }
     expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
@@ -375,7 +418,7 @@ for (const entry of headerCases) {
     await writeFile(
       resolve(folder, 'header-layout.json'),
       JSON.stringify(
-        { title: entry.title, lineLimit: 2, ...titleLayout, titleBox, closeBox },
+        { title: entry.title, lineLimit: 2, ...titleLayout, titleBox, closeBox, repositoryBox },
         null,
         2,
       ),

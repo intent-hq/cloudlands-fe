@@ -1,5 +1,6 @@
 // protocol-version-ok-file: supported-generation boundary fixtures.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { backendRequest } from './backend-transport';
 import { LiveFilesClient } from './live-files-client';
@@ -10,33 +11,51 @@ const request = vi.mocked(backendRequest);
 afterEach(() => vi.resetAllMocks());
 
 describe('registered-root file read support', () => {
-  it.each([
-    undefined,
-    '11.0',
-    '10.99',
-    '14.0',
-    '12',
-    '12.0-preview',
-    '13',
-    '13.0-preview',
-    'invalid',
-  ])('rejects unsupported or unknown sending connection %s for both readers', (protocolVersion) => {
-    for (const method of ['file.read', 'file.readChunk']) {
-      expect(() =>
-        assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
-      ).toThrow();
-    }
-  });
-  it.each(['11.1', '11.2', '11.1.3', '12.0', '12.1', '12.0.1', '13.0', '13.1', '13.0.1'])(
-    'accepts supported known-generation sending connection %s',
+  it.each([undefined, '11.0', '10.99', '12', '12.0-preview', '13', '13.0-preview', 'invalid'])(
+    'rejects a missing, malformed or older sending connection %s for both readers',
     (protocolVersion) => {
       for (const method of ['file.read', 'file.readChunk']) {
         expect(() =>
-          assertScopedFileReadSupport(method, { gitRootId: 'root-a' }, protocolVersion),
-        ).not.toThrow();
+          assertScopedFileReadSupport(
+            method,
+            { gitRootId: 'root-a' },
+            parseProtocolVersion(protocolVersion),
+          ),
+        ).toThrow();
       }
     },
   );
+  it.each([
+    '11.1',
+    '11.2',
+    '11.1.3',
+    '12.0',
+    '12.1',
+    '12.0.1',
+    '13.0',
+    '13.1',
+    '13.0.1',
+    '14.0',
+    '14.1',
+    '14.0.1',
+    '15.0',
+    '15.1',
+    '15.0.1',
+    // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+    '16.0',
+    '16.2.1',
+    '99.3',
+  ])('accepts any sending connection at or above 11.1: %s', (protocolVersion) => {
+    for (const method of ['file.read', 'file.readChunk']) {
+      expect(() =>
+        assertScopedFileReadSupport(
+          method,
+          { gitRootId: 'root-a' },
+          parseProtocolVersion(protocolVersion),
+        ),
+      ).not.toThrow();
+    }
+  });
   it('preserves unscoped and unrelated requests without root support', () => {
     expect(() => assertScopedFileReadSupport('file.read', {}, undefined)).not.toThrow();
     expect(() =>

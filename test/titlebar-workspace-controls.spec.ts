@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -7,14 +9,41 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 let server: ViteDevServer;
 let baseUrl = '';
 
+// Pre-bundle every dependency the browser imports before the first page loads.
+// Without explicit entries, Vite scans every HTML file in the package. On a cold
+// cache that scan can miss deep imports such as KebabIcon's
+// `phosphor-svelte/lib/*` icons, so Vite re-optimizes mid-test, logs
+// "optimized dependencies changed. reloading", and destroys the page's
+// execution context (cloudlands-fe#3392). The entries are the /src and /test
+// modules this spec dynamically imports in the page, read from its own source
+// so a newly added import is scanned too.
+const SPEC_PATH = fileURLToPath(import.meta.url);
+const BROWSER_ENTRIES = [
+  ...new Set(
+    [
+      ...readFileSync(SPEC_PATH, 'utf8').matchAll(
+        /import\(\s*(['"`])\/((?:src|test)\/[^'"`]+)\1\s*\)/g,
+      ),
+    ].map(([, , path]) => path),
+  ),
+];
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  // Guard the self-scan: an empty or stale list would silently fall back to the full scan.
+  expect(BROWSER_ENTRIES).toContain('test/fixtures/TitlebarWorkspaceControlsHarness.svelte');
+  for (const entry of BROWSER_ENTRIES) {
+    expect(existsSync(resolve(process.cwd(), entry)), entry).toBe(true);
+  }
   server = await createServer({
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('titlebar-workspace-controls'),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
+    optimizeDeps: {
+      entries: BROWSER_ENTRIES,
+      include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'],
+    },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -103,6 +132,11 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
+  // The initial zoom IPC resolves after mount's tick. Wait for the rendered
+  // counter-scale before callers record geometry at the requested zoom.
+  await expect
+    .poll(async () => (await page.locator('[data-titlebar-spaces-control]').boundingBox())?.width)
+    .toBeCloseTo(48, 0);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -431,7 +465,8 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         return { panelItem: state.panelItem, divider: state.divider, requests: state.requests };
       })
       .toEqual({
-        panelItem: null,
+        // Home remembers Assistant selection independently of its reading session.
+        panelItem: 'chief',
         divider: null,
         requests: [
           {
@@ -455,12 +490,9 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
         : `/workspace/${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}`,
     );
     await page.evaluate(async () => {
-      const [{ store }, { bulkUpsertSessions }, nav, unread, { goto }] = await Promise.all([
+      const [{ store }, { bulkUpsertSessions }] = await Promise.all([
         import('/src/store/renderer/store.ts'),
         import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
-        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
-        import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts'),
-        import('/test/fixtures/titlebar-navigation.svelte.ts'),
       ]);
       const session = store.state.agentSessions.byAgentId['assistant-route-thread'];
       store.dispatch(
@@ -479,13 +511,20 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
           },
         ] as never),
       );
-      store.dispatch(nav.openPanel('chief'));
-      await goto('/');
+    });
+    await page.locator('[data-titlebar-spaces-control]').click();
+    await expect(page.locator('[data-home-assistant]')).toBeVisible();
+    await expect(page.getByTestId('mock-chat-panel')).toContainText('assistant-route-thread');
+    // The mocked ChatPanel does not start divider sessions; model that boundary
+    // only after real Home navigation has restored the remembered Assistant.
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      const unread =
+        await import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts');
       store.dispatch(
         unread.startDividerSession('assistant-route-thread', 'assistant-message-arrived-away'),
       );
     });
-    await expect(page.locator('[data-home-assistant]')).toBeVisible();
     const returned = await assistantBoundaryState(page);
     expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
     expect(returned.selectedThread).toBe('assistant-route-thread');

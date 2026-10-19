@@ -112,8 +112,9 @@
     'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
 
   interface Props {
-    tabs: PanelTab[];
-    activeTabId: string | null;
+    /** A removed panel can lose its data before tooltip descendants finish teardown. */
+    tabs?: PanelTab[];
+    activeTabId?: string | null;
     attentionTabIds?: string[];
     panelId: string;
     workspaceId: string;
@@ -161,8 +162,8 @@
   }
 
   let {
-    tabs,
-    activeTabId,
+    tabs = [],
+    activeTabId = null,
     attentionTabIds = [],
     panelId,
     workspaceId,
@@ -1592,11 +1593,11 @@
               {/if}
               {#if current}
                 <span
-                  class="flex size-4 shrink-0 items-center justify-center"
+                  class="flex size-(--menu-icon-size) shrink-0 items-center justify-center"
                   aria-hidden="true"
                   data-pane-stack-current-check
                 >
-                  <Fa icon={faCheck} size="xs" class="text-muted-foreground" />
+                  <Fa icon={faCheck} class="size-(--menu-icon-size) text-muted-foreground" />
                 </span>
               {/if}
             </Menu.Item>
@@ -2026,14 +2027,6 @@
     padding: 6px 8px;
     color: hsl(var(--muted-foreground));
   }
-  :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading']) {
-    width: 12px;
-  }
-  :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading'] svg),
-  :global(.panel-header-menu [data-slot='menu-sub-chevron'] svg) {
-    width: 12px;
-    height: 12px;
-  }
   :global(.panel-header-menu [data-slot='menu-command-item'] kbd) {
     font-size: 11px;
     color: hsl(var(--muted-foreground));
@@ -2045,6 +2038,7 @@
     display: none;
   }
   :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-indicator']) {
+    align-self: center;
     order: -1;
     width: 12px;
     height: 12px;

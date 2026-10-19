@@ -4,7 +4,9 @@ import { AcceptChangesClient } from '$features/accept-changes/accept-changes.cli
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
-import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import { changesEventReceived, refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import { isPushedAcceptChangesStatus } from '$features/events/accept-changes-status-events';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import {
@@ -58,7 +60,9 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
   if (action.type === workspaceUnmounted.type) return;
   const [workspaceId] = action.payload;
   const entry = entryFor(coordinator, workspaceId);
+  if (!entry.dirty) return;
   const generation = entry.generation;
+  const context = yield* selectPrincipalActionContext.effect();
   entry.dirty = false;
   yield* put(setAcceptChangesStatusLoading(workspaceId, true));
   try {
@@ -66,6 +70,7 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
       [AcceptChangesClient, AcceptChangesClient.getStatus],
       workspaceId as WorkspaceId,
     );
+    if ((yield* selectPrincipalActionContext.effect()) !== context) return;
     const visible = yield* isVisible(entry, workspaceId);
     if (visible && entry.generation === generation && !entry.dirty) {
       const current = yield* selectPostMergeState.effect(workspaceId);
@@ -75,7 +80,7 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
           ...current,
           aheadOfTrunk: status.aheadOfTrunk,
           behindTrunk: status.behindTrunk,
-          hasConflicts: status.hasConflicts,
+          hasConflicts: status.hasConflicts ?? false,
           hasRemote: status.hasRemote,
           isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
         }),
@@ -86,7 +91,11 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
   } catch (error) {
     logger.warn('Failed to fetch accept-changes status', { workspaceId, error });
   } finally {
-    if (coordinator.get(workspaceId) === entry && entry.generation === generation) {
+    if (
+      coordinator.get(workspaceId) === entry &&
+      entry.generation === generation &&
+      (yield* selectPrincipalActionContext.effect()) === context
+    ) {
       yield* put(setAcceptChangesStatusLoading(workspaceId, false));
     }
   }
@@ -151,6 +160,32 @@ function* reconnected(coordinator: Coordinator): SagaGenerator<void> {
   }
 }
 
+function* received(
+  coordinator: Coordinator,
+  action: ReturnType<typeof changesEventReceived>,
+): SagaGenerator<void> {
+  const [workspaceId, type, data] = action.payload;
+  if (type !== 'changes:git-status' || data.gitRootId || !isPushedAcceptChangesStatus(data.status))
+    return;
+  const entry = entryFor(coordinator, workspaceId);
+  entry.generation++;
+  entry.dirty = false;
+  const status = data.status;
+  const current = yield* selectPostMergeState.effect(workspaceId);
+  yield* put(setAcceptChangesStatus(workspaceId, status));
+  yield* put(setAcceptChangesStatusLoading(workspaceId, false));
+  yield* put(
+    setPostMergeState(workspaceId, {
+      ...current,
+      aheadOfTrunk: status.aheadOfTrunk,
+      behindTrunk: status.behindTrunk,
+      hasConflicts: status.hasConflicts ?? false,
+      hasRemote: status.hasRemote,
+      isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+    }),
+  );
+}
+
 export function* acceptChangesStatusSaga(): SagaGenerator<void> {
   const coordinator: Coordinator = new Map();
   yield* all([
@@ -165,5 +200,6 @@ export function* acceptChangesStatusSaga(): SagaGenerator<void> {
     takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
     takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
     takeEvery(backendReconnected, reconnected, coordinator),
+    takeEvery(changesEventReceived, received, coordinator),
   ]);
 }

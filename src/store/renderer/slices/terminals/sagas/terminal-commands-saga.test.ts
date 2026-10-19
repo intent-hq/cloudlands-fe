@@ -6,9 +6,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   dispatchWindowEvent: vi.fn(),
   disposeTerminal: vi.fn(),
+  kill: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: mocks.dispatchWindowEvent }));
+vi.mock('$lib/client', () => ({ appClient: { terminals: { kill: mocks.kill } } }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: mocks.error }),
+}));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: mocks.disposeTerminal },
 }));
@@ -21,6 +27,7 @@ import {
   addTerminal,
   closeActiveTerminalRequested,
   createTerminalRequested,
+  killRestoredTerminalRequested,
   terminalsReducer,
 } from '../terminals-slice';
 import { terminalCommandsSaga } from './terminal-commands-saga';
@@ -122,6 +129,19 @@ describe('terminalCommandsSaga', () => {
     expect(dispatched).toEqual([]);
     expect(mocks.disposeTerminal).not.toHaveBeenCalled();
     expect(task.isRunning()).toBe(true);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('kills a restored terminal through terminal.kill with its workspace context', async () => {
+    mocks.kill.mockResolvedValue({ success: true });
+    const { dispatched, send, task } = startSaga();
+
+    send(killRestoredTerminalRequested('restored-pty', 'ws-1'));
+    await settle();
+
+    expect(mocks.kill).toHaveBeenCalledExactlyOnceWith('restored-pty', 'ws-1');
+    expect(dispatched).toEqual([]);
     task.cancel();
     await task.toPromise();
   });

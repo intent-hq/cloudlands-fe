@@ -50,6 +50,11 @@ import {
   releaseReasoningEffortIntent,
 } from '$features/agent/reasoning-effort';
 import { agentModelSaga } from './agent-model-saga';
+import { agentMutationSaga } from '../../agent-session/sagas/agent-mutation-saga';
+import {
+  saveAgentSessionRequested,
+  setAgentBackgroundRequested,
+} from '../../workspace-agents/workspace-agents-slice';
 import '../../../seeders/agent-ipc-bridge-seeder';
 
 const agentId = AgentId('agent-one');
@@ -137,6 +142,54 @@ afterEach(() => {
 });
 
 describe('registered model and effort mutation owner', () => {
+  it('preserves repeated provider writes and their revisions over a held detail read', async () => {
+    const { ensureAgentSession } = await import('$features/agent/agent-read-service');
+    store.dispatch(
+      updateSession(agentId, {
+        metadataPatch: {
+          provider: { op: 'set', value: 'codex' },
+          specialist: { op: 'set', value: 'before' },
+        },
+      }),
+    );
+    const prior = session();
+    const held = deferred<unknown>();
+    const original = request.getMockImplementation()!;
+    request.mockImplementation((method, params) =>
+      method === 'agent.get' ? held.promise : original(method, params),
+    );
+    const read = ensureAgentSession(agentId, workspaceId);
+    await expect(pick().selectModel(agentId, 'next', workspaceId, 'claude')).resolves.toMatchObject(
+      { status: 'success' },
+    );
+    await expect(pick().selectModel(agentId, 'next', workspaceId, 'claude')).resolves.toMatchObject(
+      { status: 'success' },
+    );
+    const projected = store.state.agentSessions.projectionVersions?.[agentId];
+    expect(projected).toEqual({
+      fields: { model: 2, provider: 2, effortLevels: 1 },
+      metadata: { provider: 3, specialist: 1 },
+    });
+    held.resolve({
+      ...prior,
+      name: 'Fetched provider detail',
+      metadata: { provider: 'codex', specialist: 'fetched', taskNoteId: 'new-detail' },
+    });
+    await read;
+    expect(session()).toMatchObject({
+      name: 'Fetched provider detail',
+      model: 'next',
+      provider: 'claude',
+      metadata: { provider: 'claude', specialist: 'fetched', taskNoteId: 'new-detail' },
+    });
+    expect(store.state.agentSessions.projectionVersions?.[agentId]).toEqual(projected);
+    expect(request.mock.calls).toEqual([
+      ['agent.get', { agentId, workspaceId }],
+      ['agent.setModel', { agentId, workspaceId, modelId: 'next', providerId: 'claude' }],
+      ['agent.setModel', { agentId, workspaceId, modelId: 'next', providerId: 'claude' }],
+    ]);
+  });
+
   it('keeps bare model/provider identity and reconciles effort through the exact wire', async () => {
     await expect(pick().selectModel(agentId, 'next', workspaceId, 'codex')).resolves.toMatchObject({
       status: 'success',
@@ -521,4 +574,184 @@ describe('registered model and effort mutation owner', () => {
     expect(session().model).toBe('last');
     expect(store.state.agentModel.mutations.ids).toEqual([]);
   });
+});
+
+// Reuse the real transport/store harness to verify the mutation owner alongside
+// the model owner. Picker payload construction is covered by ChatPanel-lifecycle.
+describe('registered metadata mutation owner with delayed detail reads', () => {
+  beforeEach(() => {
+    const owners = sagas.filter((saga) => saga === agentMutationSaga);
+    expect(owners).toHaveLength(1);
+    cancels.push(...owners.map((saga) => store.runSaga(saga)));
+  });
+
+  it('keeps background ABA and repeated writes without claiming fetched metadata', async () => {
+    const { ensureAgentSession } = await import('$features/agent/agent-read-service');
+    store.dispatch(
+      bulkUpsertSessions([
+        { ...session(), isBackground: true, metadata: { isBackground: true, provider: 'before' } },
+      ]),
+    );
+    const prior = session();
+    const held = deferred<unknown>();
+    const original = request.getMockImplementation()!;
+    request.mockImplementation((method, params) =>
+      method === 'agent.get' ? held.promise : original(method, params),
+    );
+    const read = ensureAgentSession(agentId, workspaceId);
+    for (const value of [true, false, true, true]) {
+      const action = setAgentBackgroundRequested(workspaceId, agentId, value);
+      store.dispatch(action);
+      await action.promise;
+    }
+    const projected = store.state.agentSessions.projectionVersions?.[agentId];
+    expect(projected).toEqual({
+      fields: { isBackground: 4, hasUnread: 4 },
+      metadata: { isBackground: 4 },
+    });
+    held.resolve({
+      agent: {
+        ...prior,
+        name: 'Fetched background detail',
+        isBackground: false,
+        metadata: { isBackground: false, provider: 'fetched', taskNoteId: 'fetched-task' },
+      },
+    });
+    await read;
+    expect(session()).toMatchObject({ name: 'Fetched background detail', isBackground: true });
+    expect(session().metadata).toEqual({
+      isBackground: true,
+      provider: 'fetched',
+      taskNoteId: 'fetched-task',
+    });
+    expect(store.state.agentSessions.projectionVersions?.[agentId]).toEqual(projected);
+    expect(request.mock.calls).toEqual([
+      ['agent.get', { agentId, workspaceId }],
+      ...[true, false, true, true].map((isBackground) => [
+        'agent.update',
+        { agentId, workspaceId, changes: { isBackground } },
+      ]),
+    ]);
+  });
+
+  it.each(['success', 'rollback'] as const)(
+    'preserves specialist %s and concurrent unrelated writes through final hydration',
+    async (outcome) => {
+      const { ensureAgentSession } = await import('$features/agent/agent-read-service');
+      store.dispatch(
+        bulkUpsertSessions([
+          {
+            ...session(),
+            metadata: {
+              specialist: 'original',
+              behaviorPrompt: 'original prompt',
+              provider: 'before',
+            },
+          },
+        ]),
+      );
+      const prior = session();
+      const heldRead = deferred<unknown>();
+      const heldSave = deferred<unknown>();
+      request.mockImplementation((method) => {
+        if (method === 'agent.get') return heldRead.promise;
+        if (method === 'agent.update') return heldSave.promise;
+        throw new Error(`Unexpected method ${method}`);
+      });
+      const read = ensureAgentSession(agentId, workspaceId);
+      store.dispatch(
+        updateSession(agentId, {
+          model: 'specialist-model',
+          metadataPatch: {
+            specialist: { op: 'set', value: 'selected' },
+            behaviorPrompt: { op: 'set', value: 'selected prompt' },
+            specialistName: { op: 'set', value: 'Selected name' },
+          },
+        }),
+      );
+      const save = saveAgentSessionRequested(workspaceId, agentId, true, {
+        specialistUpdate: {
+          specialist: 'selected',
+          rememberSpecialist: true,
+          model: 'specialist-model',
+          systemPrompt: 'selected prompt',
+        },
+        specialistRollback: {
+          model: prior.model,
+          metadataPatch: {
+            specialist: { op: 'set', value: 'original' },
+            behaviorPrompt: { op: 'set', value: 'original prompt' },
+            specialistName: { op: 'clear' },
+          },
+        },
+      });
+      const settled =
+        outcome === 'rollback' ? expect(save.promise).rejects.toThrow('save denied') : save.promise;
+      store.dispatch(save);
+      store.dispatch(
+        updateSession(agentId, {
+          metadataPatch: { taskNoteId: { op: 'set', value: 'concurrent-task' } },
+        }),
+      );
+      if (outcome === 'rollback') heldSave.reject(new Error('save denied'));
+      else heldSave.resolve({ agent: { ...prior, specialist: 'selected' } });
+      await settled;
+      const revision = outcome === 'rollback' ? 2 : 1;
+      const projected = store.state.agentSessions.projectionVersions?.[agentId];
+      expect(projected).toEqual({
+        fields: { model: revision },
+        metadata: {
+          specialist: revision,
+          behaviorPrompt: revision,
+          specialistName: revision,
+          taskNoteId: 1,
+        },
+      });
+      heldRead.resolve({
+        agent: {
+          ...prior,
+          name: 'Fetched specialist detail',
+          metadata: {
+            specialist: 'stale',
+            behaviorPrompt: 'stale prompt',
+            specialistName: 'stale name',
+            taskNoteId: 'stale-task',
+            provider: 'fetched-provider',
+            fetchedExtension: 'accepted',
+          },
+        },
+      });
+      await read;
+      expect(session()).toMatchObject({
+        name: 'Fetched specialist detail',
+        model: outcome === 'rollback' ? 'old' : 'specialist-model',
+      });
+      expect(session().metadata).toEqual({
+        specialist: outcome === 'rollback' ? 'original' : 'selected',
+        behaviorPrompt: outcome === 'rollback' ? 'original prompt' : 'selected prompt',
+        ...(outcome === 'success' ? { specialistName: 'Selected name' } : {}),
+        taskNoteId: 'concurrent-task',
+        provider: 'fetched-provider',
+        fetchedExtension: 'accepted',
+      });
+      expect(Object.hasOwn(session().metadata!, 'specialistName')).toBe(outcome === 'success');
+      expect(store.state.agentSessions.projectionVersions?.[agentId]).toEqual(projected);
+      expect(request.mock.calls).toEqual([
+        ['agent.get', { agentId, workspaceId }],
+        [
+          'agent.update',
+          {
+            agentId,
+            workspaceId,
+            changes: {
+              specialist: 'selected',
+              rememberSpecialist: true,
+              model: 'specialist-model',
+              systemPrompt: 'selected prompt',
+            },
+          },
+        ],
+      ]);
+    },
+  );
 });

@@ -123,6 +123,44 @@ test('Workspaces right panel resizes across the available content width', async 
   );
 });
 
+test('Assistant preview has its note component ready before opening the plan', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(AssistantPreview);
+  const deferredChunks: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(/\/assets\/NoteTabType-[^/]+\.js$/, async (route) => {
+    deferredChunks.push(route.request().url());
+    await held;
+    await route.continue();
+  });
+  try {
+    await component.getByRole('link', { name: 'Open the plan', exact: true }).click();
+    await expect(
+      component
+        .locator('.assistant-content-resizable')
+        .getByRole('heading', { name: 'Plan for the repository' }),
+    ).toBeVisible();
+    expect(deferredChunks).toEqual([]);
+  } finally {
+    try {
+      await testInfo.attach('note-component-readiness', {
+        body: JSON.stringify({ deferredChunks }),
+        contentType: 'application/json',
+      });
+      await testInfo.attach('note-component-readiness', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  }
+});
+
 test('Assistant right panel resizes across the available content width', async ({
   mount,
   page,

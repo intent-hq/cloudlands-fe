@@ -19,11 +19,16 @@ test('large script inventory opens and retains output without a cleanup window',
   await expect(page.getByRole('button', { name: /History and cleanup/ })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await component.update({ props: { retireSelected: true } });
+  await expect(page.locator('[data-selected-script]')).toHaveAttribute(
+    'data-selected-script',
+    'synthetic-0',
+  );
   await expect(firstScript).toHaveCount(0);
   await expect(
     page.locator('.xterm-screen').filter({ hasText: 'Retained command output' }),
   ).toBeVisible();
-  await expect(page.getByText("printf 'synthetic check 0'", { exact: true })).toBeVisible();
+  await expect(page.getByText('synthetic-0', { exact: true })).toBeVisible();
+  await expect(page.getByText("printf 'synthetic check 0'", { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /History and cleanup/ })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('script-shell-surfaces.png') });

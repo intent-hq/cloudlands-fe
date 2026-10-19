@@ -333,6 +333,42 @@ describe('saga watcher ownership guard', () => {
     ]);
   });
 
+  it.each([
+    ['changes', 'changesEventReceived', false],
+    ['changes', 'refreshRequested', true],
+    ['changes', 'loadWorkspaceDataRequested', true],
+    ['changes', 'changesEventReceivedElsewhere', true],
+    ['other', 'changesEventReceived', true],
+  ] as const)(
+    'limits admitted changes projection fanout to its canonical origin (%s/%s)',
+    (slice, action, rejected) => {
+      const owners = ['gitStatus', 'acceptStatus', 'fileHistory'];
+      const origin = `src/store/renderer/slices/${slice}/${slice}-slice.ts`;
+      const result = inspectSagaWatcherOwnership([
+        root(
+          owners,
+          owners.map((name) => `import { ${name} } from './slices/${name}/sagas/owner';`),
+        ),
+        actionOwner(origin, [action]),
+        ...owners.map((name) => ({
+          path: `src/store/renderer/slices/${name}/sagas/owner.ts`,
+          content: [
+            "import { takeEvery } from 'typed-redux-saga';",
+            `import { ${action} as received } from '$store/renderer/slices/${slice}/${slice}-slice';`,
+            `export function* ${name}() { yield* takeEvery(received, project); }`,
+          ].join('\n'),
+        })),
+      ]);
+      expect(result.violations).toEqual(
+        rejected
+          ? [expect.stringContaining(`duplicate watcher ownership for ${origin}#${action}`)]
+          : [],
+      );
+      expect(result.watcherCount).toBe(1);
+      expect(result.auditedFiles).toHaveLength(4);
+    },
+  );
+
   it('rejects duplicate watcher ownership for the same action', () => {
     const source = [
       "import { takeEvery, takeLatest } from 'typed-redux-saga';",

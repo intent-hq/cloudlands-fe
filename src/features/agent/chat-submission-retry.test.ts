@@ -46,7 +46,10 @@ import {
   clearQueuedMessagesRequested,
   chatLastAttemptedMessageSet,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
-import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import {
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
@@ -758,7 +761,7 @@ describe('queue admission and command ordering through the live boundary', () =>
 });
 
 describe('queue control freshness after later daemon events', () => {
-  it('refreshes both authoritative sources after a later append so confirmed controls become usable again', async () => {
+  it('uses a later full queue append with zero reads and usable confirmed controls', async () => {
     const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
     let authoritative = [row(a, { mergeEligible: true })];
     emit('agent:queue:updated', { queue: authoritative });
@@ -780,10 +783,9 @@ describe('queue control freshness after later daemon events', () => {
     ];
     emit('agent:queue:updated', { queue: authoritative });
     await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
-    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getQueue')).toBe(true);
-    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getConversation')).toBe(
-      true,
-    );
+    await quiet();
+    expect(count('agent.getQueue')).toBe(0);
+    expect(count('agent.getConversation')).toBe(0);
     expect(display().queue.map((row) => row.content)).toEqual(['A plus another client append']);
     expect(sends()).toEqual([]);
     expect(queues()).toEqual([]);
@@ -837,7 +839,7 @@ describe('queue freshness with the production standing subscription', () => {
         return baseReply(method, params);
       });
       cleanups.push(store.runSaga(chatReadSaga));
-      emit('agent:queue:updated', { queue: [original] });
+      store.dispatch(pendingLifecycleObserved(a.scope, false));
       await settle();
       const reads = () =>
         ['agent.getQueue', 'agent.getConversation'].map(
@@ -848,13 +850,13 @@ describe('queue freshness with the production standing subscription', () => {
       const settledReads = reads();
       await settle();
       expect.soft(reads()).toEqual(settledReads);
-      // A genuinely new subscription delivery remains evidence, even with the
-      // same object/content. It must invalidate and recover both read fences.
+      // A delivery retries failed recovery, but a settled successful read does
+      // not become stale merely because the same transcript arrives again.
       failHistory = false;
       onTranscript!(transcript);
-      expect(display().queue[0].blocksMutations).toBe(true);
+      expect(display().queue[0].blocksMutations).toBe(rejectHistory);
       await settle();
-      expect(reads()).toEqual(settledReads.map((count) => count + 1));
+      expect(reads()).toEqual(settledReads.map((count) => count + (rejectHistory ? 1 : 0)));
       expect(display().queue[0].blocksMutations).toBe(false);
       expect(
         store.state.agentSessions.byAgentId[agent].messages.map((message) => message.id),
@@ -964,10 +966,12 @@ async function standing() {
   const original = row(a, { mergeEligible: true });
   emit('agent:queue:updated', { queue: [original] });
   let handler: any;
+  let phase: Parameters<typeof appClient.chat.subscribe>[2];
   const subscription = vi
     .spyOn(appClient.chat, 'subscribe')
-    .mockImplementation((_id: any, callback: any) => {
+    .mockImplementation((_id, callback, onPhase) => {
       handler = callback;
+      phase = onPhase;
       return () => {};
     });
   acquireChatInterestLease(agent, 'optimistic-subscription-races');
@@ -993,11 +997,155 @@ async function standing() {
   beginSubmissionRead(agent, ws, 'history').complete([]);
   expect(display().queue[0].blocksMutations).toBe(false);
   wire.request.mockClear();
-  return { a, original, handler, snapshot };
+  return { a, original, handler, snapshot, phase };
 }
 
+it.each(['unchanged', 'assistant-only'] as const)(
+  'preserves settled queue controls with zero reads after %s transcript deliveries',
+  async (delivery) => {
+    const { original, handler, snapshot } = await standing();
+    // A complete queue push may leave historyFresh false; it proves queue state,
+    // not absence from history. The prior accepted transcript proves continuity.
+    emit('agent:queue:updated', { queue: [original] });
+    cleanups.push(store.runSaga(chatReadSaga));
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.getQueue'
+        ? Promise.resolve({ queue: [original] })
+        : baseReply(method, params),
+    );
+    const delivered =
+      delivery === 'unchanged'
+        ? { ...snapshot }
+        : {
+            ...snapshot,
+            fromSnapshot: false,
+            totalMessages: 2,
+            messages: [
+              ...snapshot.messages,
+              {
+                id: 'assistant-only',
+                role: 'assistant',
+                timestamp: previous.timestamp,
+                contentBlocks: [{ type: 'text', text: 'Assistant update' }],
+              },
+            ],
+          };
+    for (let n = 0; n < 3; n++) handler(delivered);
+    await quiet();
+    expect([count('agent.getQueue'), count('agent.getConversation')]).toEqual([0, 0]);
+    expect(
+      display().queue.map((entry) => [entry.confirmedId, entry.content, entry.blocksMutations]),
+    ).toEqual([[original.id, 'A', false]]);
+    expect(
+      store.state.agentSessions.byAgentId[agent].messages.map((message) => message.id),
+    ).toEqual(delivered.messages.map((message) => message.id));
+    noMutations();
+  },
+);
+
+it.each([
+  'new user',
+  'correlation change',
+  'history bounds',
+  'older cursor',
+  'unseen messages',
+  'reset',
+  'reconnect',
+  'sequence gap',
+  'unresolved send',
+] as const)('retains bounded recovery after %s despite settled queue authority', async (reason) => {
+  const { a, original, handler, snapshot, phase } = await standing();
+  wire.request.mockImplementation((method, params) =>
+    method === 'agent.getQueue'
+      ? Promise.resolve({ queue: [original] })
+      : baseReply(method, params),
+  );
+  if (reason === 'unresolved send') {
+    const pending = admitAgentSubmission(store, agent, ws, 1, {
+      content: 'B',
+      destination: 'queue',
+    })!;
+    store.dispatch(
+      pendingSubmissionSettled(pending.scope, pending.submission.id, 'uncertain', Date.now()),
+    );
+  }
+  cleanups.push(store.runSaga(chatReadSaga));
+  if (reason === 'sequence gap') phase!('resyncing');
+  if (reason === 'reconnect') phase!('awaiting-snapshot');
+  const transcript = { ...snapshot } as Parameters<
+    Parameters<typeof appClient.chat.subscribe>[1]
+  >[0];
+  if (reason === 'new user')
+    transcript.messages = [
+      ...transcript.messages,
+      {
+        ...previous,
+        id: 'uncorrelated-new-user',
+      } as any,
+    ];
+  if (reason === 'correlation change')
+    transcript.messages = [
+      {
+        ...previous,
+        author: original.author,
+        metadata: { submissionIds: [a.submission.id] },
+      } as any,
+    ];
+  if (reason === 'history bounds') transcript.truncated = true;
+  if (reason === 'older cursor') transcript.nextToken = 'changed-older-bound';
+  if (reason === 'unseen messages') transcript.totalMessages = 20;
+  if (reason === 'reset') transcript.resumed = false;
+  handler(transcript);
+  await quiet();
+  expect([count('agent.getQueue'), count('agent.getConversation')]).toEqual([1, 1]);
+  await quiet();
+  expect([count('agent.getQueue'), count('agent.getConversation')]).toEqual([1, 1]);
+  expect(display().queue.find((entry) => entry.confirmedId === original.id)?.content).toBe(
+    reason === 'unresolved send' ? 'A\n\nB' : 'A',
+  );
+  expect(display().queue[0].blocksMutations).toBe(reason === 'unresolved send');
+  noMutations();
+});
+
+it('does not reuse accepted transcript evidence after submission scope readmission', async () => {
+  const { a, handler, snapshot } = await standing();
+  store.dispatch(pendingScopeReleased(a.scope));
+  const next = admitAgentSubmission(store, agent, ws, 1, {
+    content: 'New lifetime',
+    destination: 'queue',
+  })!;
+  const authoritative = row(next, { mergeEligible: true });
+  emit('agent:queue:updated', { queue: [authoritative] });
+  wire.request.mockImplementation((method, params) =>
+    method === 'agent.getQueue'
+      ? Promise.resolve({ queue: [authoritative] })
+      : baseReply(method, params),
+  );
+  cleanups.push(store.runSaga(chatReadSaga));
+  handler(snapshot);
+  await quiet();
+  expect([count('agent.getQueue'), count('agent.getConversation')]).toEqual([1, 1]);
+  expect(display().queue.map((entry) => [entry.content, entry.blocksMutations])).toEqual([
+    ['New lifetime', false],
+  ]);
+  noMutations();
+});
+
+it('retains explicit history demand after settled assistant-only deliveries', async () => {
+  const { handler, snapshot } = await standing();
+  cleanups.push(store.runSaga(chatReadSaga));
+  handler({ ...snapshot, fromSnapshot: false });
+  await quiet();
+  expect(wire.request).not.toHaveBeenCalled();
+  await loadChatTranscript(agent, ws);
+  await quiet();
+  expect([count('agent.getQueue'), count('agent.getConversation')]).toEqual([0, 1]);
+  expect(display().queue[0].blocksMutations).toBe(false);
+  noMutations();
+});
+
 it('coalesces live subscription bursts during reads, rejects stale publication and restores live rows after partial history', async () => {
-  const { original, handler } = await standing();
+  const { a, original, handler } = await standing();
   const qs: ((v: any) => void)[] = [],
     hs: ((v: any) => void)[] = [];
   wire.request.mockImplementation((m, p) =>
@@ -1008,7 +1156,7 @@ it('coalesces live subscription bursts during reads, rejects stale publication a
         : baseReply(m, p),
   );
   cleanups.push(store.runSaga(chatReadSaga));
-  emit('agent:queue:updated', { queue: [original] });
+  store.dispatch(pendingLifecycleObserved(a.scope, false));
   await vi.waitFor(() => {
     expect(qs).toHaveLength(1);
     expect(hs).toHaveLength(1);
@@ -1095,7 +1243,7 @@ it.each(['send', 'send-all', 'clear', 'remove'] as const)(
           : clearQueuedMessagesRequested(agent, ws, [a.submission.id]),
       );
     };
-    emit('agent:queue:updated', { queue: [original] });
+    store.dispatch(pendingLifecycleObserved(a.scope, false));
     await quiet();
     expect(count('agent.getQueue')).toBe(1);
     expect(count('agent.getConversation')).toBe(1);
@@ -1186,17 +1334,17 @@ it.each([
     startSending();
     if (automaticRefresh) {
       emit('agent:queue:updated', { queue: [confirmed] });
-      await vi.waitFor(() => {
-        expect(count('agent.getQueue')).toBe(1);
-        expect(count('agent.getConversation')).toBe(1);
-      });
+      await quiet();
+      expect(count('agent.getQueue')).toBe(0);
+      expect(count('agent.getConversation')).toBe(0);
     } else await Promise.all([hydrateAgentQueue(agent, ws), loadChatTranscript(agent, ws)]);
     await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
     const entry = store.state.pendingSubmissions.byAgentId[agent];
     expect(getItems(entry.submissions)).toEqual([]);
     expect(getItems(entry.operations)).toEqual([]);
     expect(getItems(entry.processing)).toEqual([]);
-    expect(entry.queueFresh && entry.historyFresh).toBe(true);
+    expect(entry.queueFresh).toBe(true);
+    expect(entry.historyFresh).toBe(!automaticRefresh);
     expect(entry.refreshNeeded).toBe(false);
     const requestId = requestQueueMutation(confirmed.id, { kind: 'remove' });
     await expectQueueMutationStatus(requestId, 'succeeded');

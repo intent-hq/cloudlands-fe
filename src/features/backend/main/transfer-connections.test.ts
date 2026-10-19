@@ -551,7 +551,10 @@ describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (
     ['11.0', false],
     ['13.0', true],
     ['13.0.1', true],
-    ['14.0', false],
+    ['14.0', true],
+    ['15.0', true],
+    // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+    ['16.0', true],
     ['12.0-preview', false],
     [undefined, false],
   ])('negotiates on the dedicated socket with version %s', async (protocolVersion, supported) => {
@@ -580,7 +583,7 @@ describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (
     expect(__getActiveTransferCountForTesting()).toBe(0);
   });
 
-  it.each(['12.0', '13.0'])(
+  it.each(['12.0', '13.0', '14.0', '15.0'])(
     'does not reuse protocol %s support if the dedicated socket reconnects after hello',
     async (protocolVersion) => {
       vi.useFakeTimers();

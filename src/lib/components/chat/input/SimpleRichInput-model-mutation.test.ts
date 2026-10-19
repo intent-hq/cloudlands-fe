@@ -5,6 +5,7 @@ import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const fixture = vi.hoisted(() => ({
   state: {} as Record<string, any>,
@@ -236,7 +237,11 @@ beforeEach(() => {
       hasReceivedList: true,
       listUnavailable: false,
     },
-    daemonHealth: { health: 'healthy', hostLocality: 'local', stats: { protocolVersion: '9.4' } },
+    daemonHealth: {
+      health: 'healthy',
+      hostLocality: 'local',
+      stats: { protocolVersion: CURRENT_PROTOCOL_VERSION },
+    },
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     voiceSettings: { engine: 'daemon', provider: 'elevenlabs', keyConfigured: {} },
     skills: { byWorkspaceId: {} },
@@ -402,7 +407,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'auggie',
-        metadata: { provider: 'auggie' },
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
         reasoningEffort: 'high',
       }),
     );
@@ -424,7 +429,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'auggie',
-        metadata: { provider: 'auggie' },
+        metadataPatch: { provider: { op: 'set', value: 'auggie' } },
         reasoningEffort: 'high',
       }),
     );
@@ -464,7 +469,7 @@ describe('real composer model mutation ownership', () => {
       fixture.dispatch(
         updateSession('agent-1', {
           provider: 'auggie',
-          metadata: { provider: 'auggie' },
+          metadataPatch: { provider: { op: 'set', value: 'auggie' } },
           reasoningEffort: 'high',
         }),
       );
@@ -500,7 +505,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         reasoningEffort: 'medium',
       }),
     );
@@ -526,7 +531,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         reasoningEffort: 'medium',
       }),
     );
@@ -561,7 +566,7 @@ describe('real composer model mutation ownership', () => {
     fixture.dispatch(
       updateSession('agent-1', {
         provider: 'codex',
-        metadata: { provider: 'codex' },
+        metadataPatch: { provider: { op: 'set', value: 'codex' } },
         model: undefined,
         reasoningEffort: null,
       }),

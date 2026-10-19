@@ -12,10 +12,14 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
   admittedFixture.state = withLegacyPrincipal({});
+  mocks.dispatch.mockImplementation(
+    createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+  );
 });
 
 const mocks = vi.hoisted(() => {
@@ -54,6 +58,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -67,6 +72,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationOutcome: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -76,6 +83,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -151,6 +159,7 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 }));
 
 vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
+  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
   restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
   createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
   clearNewWorkspaceDraft: vi.fn(),

@@ -25,6 +25,11 @@ import {
   selectNormalizedProviderId,
 } from '../provider-catalog/provider-catalog-selectors';
 
+/** Push revision, including same-value events; transcript replacements do not advance it. */
+export const selectAgentSessionProjection = store.createSelector(
+  (state, agentId: string) => state.agentSessions.projectionVersions?.[agentId],
+);
+
 export const selectAgentBackgroundPending = store.createSelector(
   (state, agentId: string) => state.agentSessions.backgroundModePending?.[agentId] === true,
 );

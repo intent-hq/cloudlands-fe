@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render } from '@testing-library/svelte';
+import McpServersSection from '$lib/components/workspace/sidebar/McpServersSection.svelte';
 import { __resetProviderAuthStatusForTests } from '$features/providers/provider-auth-status.client';
 vi.mock(
   '$lib/client/live/backend-transport',
@@ -25,6 +27,10 @@ import {
   type MockBackendHandle,
 } from '../../../../test/mocks/backend-transport.mock';
 import { store } from '../../store';
+import { onBackendNotification } from '$lib/client/live/backend-transport';
+import { workspaceCatalogEventReceived } from './provider-catalog-slice';
+import type { WorkspaceEvent } from '$features/events/types';
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { workspaceCatalogSaga } from './workspace-catalog-saga';
 import {
   workspaceMounted,
@@ -42,6 +48,7 @@ describe('workspace catalog host probes through live clients', () => {
   let dispose: () => void;
   let cancel: () => void;
   let cancelAvailability: () => void;
+  let offEvents: () => void;
   const probes = () => backend.requests.filter((r) => r.method === 'host.providerDiscovery');
   beforeEach(() => {
     vi.useFakeTimers();
@@ -62,10 +69,16 @@ describe('workspace catalog host probes through live clients', () => {
     });
     dispose = store.init();
     cancel = store.runSaga(workspaceCatalogSaga);
+    offEvents = onBackendNotification(({ method, params }) => {
+      if (method === 'events.event')
+        store.dispatch(workspaceCatalogEventReceived((params as { event: WorkspaceEvent }).event));
+    });
     cancelAvailability = store.runSaga(providerAvailabilitySaga);
   });
   afterEach(() => {
     const binaryRequests = backend.requests.filter((r) => r.method === 'host.findBinary');
+    cleanup();
+    offEvents();
     cancelAvailability();
     cancel();
     dispose();
@@ -73,6 +86,330 @@ describe('workspace catalog host probes through live clients', () => {
     vi.useRealTimers();
     expect(binaryRequests).toEqual([]);
   });
+  it('shares lifecycle and sidebar mount demand without a second MCP list', async () => {
+    let release!: (value: { providers: [] }) => void;
+    backend.onRequest(
+      'providers.catalog',
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    backend.onRequest('mcp.servers.list', () => ({
+      servers: [
+        { id: 'server', name: 'tools', transport: 'stdio', enabled: true, workspaceDisabled: true },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({
+      status: { serverId: 'server', state: 'stopped' },
+    }));
+    store.dispatch(workspaceMounted(WS));
+    const options = {
+      props: { workspaceId: WS },
+      context: new Map([['redux-store-context', { store, dispose }]]),
+    };
+    render(McpServersSection, options);
+    render(McpServersSection, options);
+    await settle();
+    release({ providers: [] });
+    await settle();
+    expect(backend.requests.filter((request) => request.method === 'mcp.servers.list')).toEqual([
+      { method: 'mcp.servers.list', params: { workspaceId: WS } },
+    ]);
+    expect(probes()).toHaveLength(1);
+    expect(store.state.mcpSettings.byWorkspaceId[WS].disabledServers).toEqual({ server: true });
+    cleanup();
+    render(McpServersSection, options);
+    await settle();
+    expect(probes()).toHaveLength(1);
+  });
+
+  it('applies settings and MCP status pushes during slow hydration without re-reading catalogs', async () => {
+    let release!: (value: { providers: [] }) => void;
+    backend.onRequest(
+      'providers.catalog',
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    backend.onRequest('settings.list', () => ({
+      settings: [{ path: 'model.defaultProvider', value: 'old', origin: 'default' }],
+    }));
+    backend.onRequest('mcp.servers.list', () => ({
+      servers: [
+        {
+          id: 'server',
+          name: 'tools',
+          transport: 'stdio',
+          enabled: true,
+          workspaceDisabled: false,
+        },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({
+      status: { serverId: 'server', state: 'starting' },
+    }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    backend.pushEvent({
+      type: 'settings:changed',
+      workspaceId: '',
+      data: {
+        changes: [{ path: 'model.defaultProvider', value: 'codex', origin: 'file' }],
+        revision: 1,
+      },
+    });
+    backend.pushEvent({
+      type: 'mcp.servers:status-changed',
+      workspaceId: '',
+      data: { serverId: 'server', status: { serverId: 'server', state: 'running' } },
+    });
+    backend.pushEvent({
+      type: 'workspace:updated',
+      workspaceId: WS,
+      data: {
+        workspaceId: WS,
+        changes: { mcpServerToggled: { serverId: 'server', workspaceDisabled: true } },
+      },
+    });
+    release({ providers: [] });
+    await settle();
+    expect(probes()).toHaveLength(1);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].settings[0]).toMatchObject({
+      value: 'codex',
+      origin: 'file',
+    });
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].mcpStatuses).toEqual([
+      { serverId: 'server', state: 'running' },
+    ]);
+    expect(store.state.mcpSettings.byWorkspaceId[WS].disabledServers).toEqual({ server: true });
+  });
+
+  it('refreshes only scoped specialist definitions and ignores duplicate deliveries', async () => {
+    store.dispatch(workspaceMounted(WS));
+    store.dispatch(workspaceMounted('other'));
+    await settle();
+    backend.requests.length = 0;
+    backend.onRequest('specialist.list', () => ({
+      specialists: [{ id: 'new-role', name: 'New role', description: '', source: 'project' }],
+    }));
+    const event = {
+      type: 'specialists:changed',
+      workspaceId: WS,
+      data: { workspaceId: WS },
+      id: 'same-change',
+    };
+    backend.pushEvent(event);
+    backend.pushEvent(event);
+    await settle();
+    expect(backend.requests).toEqual([
+      { method: 'specialist.list', params: { workspaceId: WS, includeProject: true } },
+    ]);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].specialists[0].id).toBe('new-role');
+    expect(store.state.providerCatalog.byWorkspaceId?.other.specialists).toEqual([]);
+  });
+
+  it('updates complete global settings and scoped toggles without any reads after hydration', async () => {
+    backend.onRequest('settings.list', () => ({
+      settings: [{ path: 'model.defaultProvider', value: 'codex', origin: 'default' }],
+    }));
+    backend.onRequest('mcp.servers.list', ({ workspaceId }: { workspaceId: string }) => ({
+      servers: [
+        {
+          id: 'server',
+          name: 'tools',
+          transport: 'stdio',
+          enabled: true,
+          workspaceDisabled: workspaceId === 'other',
+        },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({
+      status: { serverId: 'server', state: 'running' },
+    }));
+    store.dispatch(workspaceMounted(WS));
+    store.dispatch(workspaceMounted('other'));
+    await settle();
+    backend.requests.length = 0;
+    backend.pushEvent({
+      type: 'settings:changed',
+      workspaceId: '',
+      data: {
+        changes: [{ path: 'model.defaultProvider', value: 'claude-code', origin: 'file' }],
+        revision: 3,
+      },
+    });
+    backend.pushEvent({
+      type: 'workspace:updated',
+      workspaceId: WS,
+      data: { changes: { mcpServerToggled: { serverId: 'server', workspaceDisabled: true } } },
+    });
+    backend.pushEvent({
+      type: 'mcp.servers:status-changed',
+      workspaceId: WS,
+      data: {
+        serverId: 'server',
+        status: { serverId: 'server', state: 'error', lastError: 'offline' },
+      },
+    });
+    await settle();
+    expect(backend.requests).toEqual([]);
+    expect(store.state.providerCatalog.workspaceEpoch ?? 0).toBe(0);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].settings[0]).toMatchObject({
+      value: 'claude-code',
+      origin: 'file',
+    });
+    expect(store.state.providerCatalog.byWorkspaceId?.other.settings[0].value).toBe('claude-code');
+    expect(store.state.mcpSettings.byWorkspaceId[WS].disabledServers).toEqual({ server: true });
+    expect(store.state.mcpSettings.byWorkspaceId.other.disabledServers).toEqual({ server: true });
+    expect(store.state.providerCatalog.byWorkspaceId?.other.mcpStatuses).toEqual([
+      { serverId: 'server', state: 'running' },
+    ]);
+    backend.pushEvent({
+      type: 'mcp.servers:status-changed',
+      workspaceId: WS,
+      data: { serverId: 'server', status: { serverId: 'server', state: 'running' } },
+    });
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].mcpStatuses).toEqual([
+      { serverId: 'server', state: 'running' },
+    ]);
+    expect(backend.requests).toEqual([]);
+  });
+
+  it('reads only redacted MCP configuration and new statuses while retaining other catalogs', async () => {
+    backend.onRequest('settings.list', () => ({
+      settings: [{ path: 'mcp.servers', value: '********' }],
+    }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    backend.requests.length = 0;
+    backend.onRequest('mcp.servers.list', () => ({
+      servers: [
+        {
+          id: 'new-server',
+          name: 'new',
+          transport: 'http',
+          url: 'https://example.test/mcp',
+          enabled: true,
+          workspaceDisabled: true,
+        },
+      ],
+    }));
+    backend.onRequest('mcp.servers.getStatus', () => ({
+      status: { serverId: 'new-server', state: 'running' },
+    }));
+    backend.pushEvent({
+      type: 'settings:changed',
+      workspaceId: '',
+      data: { changes: [{ path: 'mcp.servers', value: '********' }], revision: 3 },
+    });
+    await settle();
+    expect(backend.requests).toEqual([
+      { method: 'mcp.servers.list', params: { workspaceId: WS } },
+      { method: 'mcp.servers.getStatus', params: { workspaceId: WS, serverId: 'new-server' } },
+    ]);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].mcpServers?.[0]).toMatchObject({
+      id: 'new-server',
+      workspaceDisabled: true,
+    });
+    expect(store.state.mcpSettings.byWorkspaceId[WS].disabledServers).toEqual({
+      'new-server': true,
+    });
+  });
+
+  it.each(['reconnect', 'identity'] as const)(
+    'abandons old reads on %s and preserves pushes on the replacement read',
+    async (kind) => {
+      let releaseOld!: (value: { providers: [] }) => void;
+      backend.onRequest(
+        'providers.catalog',
+        () =>
+          new Promise((resolve) => {
+            releaseOld = resolve;
+          }),
+      );
+      store.dispatch(workspaceMounted(WS));
+      await settle();
+      backend.onRequest('providers.catalog', () => ({ providers: [] }));
+      backend.onRequest('settings.list', () => ({
+        settings: [{ path: 'model.defaultProvider', value: 'new-daemon' }],
+      }));
+      if (kind === 'reconnect') backend.triggerReconnect();
+      else store.dispatch(hostExecutionConnectionChanged('new-principal'));
+      await settle();
+      expect(probes()).toHaveLength(2);
+      expect(store.state.providerCatalog.byWorkspaceId?.[WS].settings[0].value).toBe('new-daemon');
+      backend.pushEvent({
+        type: 'settings:changed',
+        workspaceId: '',
+        data: { changes: [{ path: 'model.defaultProvider', value: 'pushed' }], revision: 1 },
+      });
+      releaseOld({ providers: [] });
+      await settle();
+      expect(store.state.providerCatalog.byWorkspaceId?.[WS].settings[0].value).toBe('pushed');
+      expect(probes()).toHaveLength(2);
+    },
+  );
+
+  it('retains every resource invalidation queued behind a slow specialist read', async () => {
+    backend.onRequest('settings.list', () => ({
+      settings: [{ path: 'mcp.servers', value: '********' }],
+    }));
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    backend.requests.length = 0;
+    let release!: (value: { specialists: [] }) => void;
+    backend.onRequest(
+      'specialist.list',
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    backend.pushEvent({ type: 'specialists:changed', workspaceId: WS, data: { workspaceId: WS } });
+    await settle();
+    backend.pushEvent({
+      type: 'settings:changed',
+      workspaceId: '',
+      data: { changes: [{ path: 'mcp.servers', value: '********' }], revision: 4 },
+    });
+    backend.pushEvent({ type: 'skills:changed', workspaceId: WS, data: { workspaceId: WS } });
+    backend.onRequest('specialist.list', () => ({
+      specialists: [{ id: 'new-role', name: 'New role', source: 'project', description: '' }],
+      importDiagnostics: [],
+    }));
+    release({ specialists: [] });
+    await settle();
+    expect(backend.requests.map((request) => request.method).sort()).toEqual([
+      'mcp.servers.list',
+      'specialist.list',
+      'specialist.list',
+    ]);
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].specialists[0].id).toBe('new-role');
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS].importDiagnostics).toEqual([]);
+  });
+
+  it('does not resurrect an unmounted workspace from a slow read or a scoped event', async () => {
+    let release!: (value: { providers: [] }) => void;
+    backend.onRequest(
+      'providers.catalog',
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    store.dispatch(workspaceMounted(WS));
+    await settle();
+    store.dispatch(workspaceUnmounted(WS));
+    backend.pushEvent({ type: 'specialists:changed', workspaceId: WS, data: { workspaceId: WS } });
+    release({ providers: [] });
+    await settle();
+    expect(store.state.providerCatalog.byWorkspaceId?.[WS]).toBeUndefined();
+    expect(probes()).toHaveLength(1);
+  });
+
   it.each([
     {
       name: 'npx launch',
@@ -172,14 +509,14 @@ describe('workspace catalog host probes through live clients', () => {
     await settle();
     expect(probes()).toHaveLength(3);
     expect(probes()[2].params).toEqual({ workspaceId: 'another-workspace' });
-    backend.pushEvent({ type: 'settings:changed', data: {} });
+    backend.pushEvent({ type: 'settings:changed', workspaceId: '', data: {} });
     await settle();
-    expect(probes()).toHaveLength(5);
+    expect(probes()).toHaveLength(3);
   });
 
-  it.each(['event', 'explicit'] as const)(
+  it.each(['explicit'] as const)(
     'retries stale cached readiness on mount after a failed %s refresh',
-    async (trigger) => {
+    async () => {
       store.dispatch(workspaceMounted(WS));
       await settle();
       expect(
@@ -188,8 +525,7 @@ describe('workspace catalog host probes through live clients', () => {
       backend.onRequest('providers.catalog', () => {
         throw new Error('temporary failure');
       });
-      if (trigger === 'event') backend.pushEvent({ type: 'settings:changed', data: {} });
-      else store.dispatch(workspaceCatalogRequested(WS));
+      store.dispatch(workspaceCatalogRequested(WS));
       await settle();
       expect(
         store.state.providerCatalog.byWorkspaceId?.[WS].readiness['claude-code'].available,

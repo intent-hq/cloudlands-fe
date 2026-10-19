@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ANY_HOST } from '../../../system/main/window-workspace-tracking';
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
@@ -94,6 +95,7 @@ describe('embedded browser CDP workspace routing', () => {
       'ws-2',
       IPC_CHANNELS.BROWSER.FOCUS_TAB,
       { tabId: 'tab-1', workspaceId: 'ws-2' },
+      ANY_HOST,
     );
   });
 
@@ -702,6 +704,7 @@ describe('embedded browser CDP workspace routing', () => {
         'ws-2',
         IPC_CHANNELS.BROWSER.SHOW_TAB,
         { tabId: 'tab-1', workspaceId: 'ws-2', focus: false },
+        ANY_HOST,
       ]);
     });
 
@@ -1008,11 +1011,13 @@ describe('embedded browser CDP workspace routing', () => {
       'ws-2',
       IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
       { requestId: expect.any(String), workspaceId: 'ws-2' },
+      ANY_HOST,
     ]);
     expect(calls[1]).toEqual([
       'ws-2',
       IPC_CHANNELS.BROWSER.CLOSE_TAB,
       { tabId: 'tab-1', workspaceId: 'ws-2' },
+      ANY_HOST,
     ]);
     expect(calls.slice(2)).toHaveLength(1);
     for (const [workspaceId, channel, payload] of calls.slice(2)) {

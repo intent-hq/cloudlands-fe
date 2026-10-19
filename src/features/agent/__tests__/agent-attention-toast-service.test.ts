@@ -311,14 +311,13 @@ describe('agent-attention-toast-service', () => {
       expect(toastCustomMock).not.toHaveBeenCalled();
     });
 
-    it('shows the toast when the window is unfocused, even while viewing the agent', async () => {
+    it('suppresses the toast for the current workspace even when the window is unfocused', async () => {
       setWindowFocused(false);
       seedViewingState([panel('p1', [agentTab], agentTab.id)]);
 
       await showAgentAttentionToast(request);
 
-      expect(toastCustomMock).toHaveBeenCalledTimes(1);
-      expect(lastCustomCall().id).toBe(agentAttentionToastId(AGENT));
+      expect(toastCustomMock).not.toHaveBeenCalled();
     });
 
     it('shows the toast when a different workspace tab is current', async () => {
@@ -330,25 +329,25 @@ describe('agent-attention-toast-service', () => {
       expect(toastCustomMock).toHaveBeenCalledTimes(1);
     });
 
-    it("shows the toast when another agent's tab is active in the event's workspace", async () => {
+    it("suppresses the toast when another agent's tab is active in the current workspace", async () => {
       setWindowFocused(true);
       seedViewingState([panel('p1', [agentTab, otherAgentTab], otherAgentTab.id)]);
 
       await showAgentAttentionToast(request);
 
-      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+      expect(toastCustomMock).not.toHaveBeenCalled();
     });
 
-    it('shows the toast when a non-agent tab (file) is active, even with the agent tab open', async () => {
+    it('suppresses the toast when a file tab is active in the current workspace', async () => {
       setWindowFocused(true);
       seedViewingState([panel('p1', [agentTab, fileTab], fileTab.id)]);
 
       await showAgentAttentionToast(request);
 
-      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+      expect(toastCustomMock).not.toHaveBeenCalled();
     });
 
-    it('shows the toast when a panel is expanded and the agent tab is only active in a hidden panel', async () => {
+    it('suppresses the toast when the agent tab is in a hidden panel of the current workspace', async () => {
       setWindowFocused(true);
       seedViewingState([panel('p1', [fileTab], fileTab.id), panel('p2', [agentTab], agentTab.id)], {
         expandedPanelId: 'p1',
@@ -356,8 +355,20 @@ describe('agent-attention-toast-service', () => {
 
       await showAgentAttentionToast(request);
 
-      expect(toastCustomMock).toHaveBeenCalledTimes(1);
+      expect(toastCustomMock).not.toHaveBeenCalled();
     });
+
+    it.each(['discussion', 'blocker'] as const)(
+      'suppresses %s without a loaded panel layout for the current workspace',
+      async (kind) => {
+        storeStateMock.value = { tabState: { currentTabId: WS } };
+
+        await showAgentAttentionToast({ ...request, kind });
+
+        expect(toastCustomMock).not.toHaveBeenCalled();
+        expect(dispatchMock).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('re-raised requests update the same toast in place (stable id, no stacking)', async () => {
@@ -481,6 +492,24 @@ describe('agent-attention-toast-service', () => {
   describe('showWorkspaceAutoUnarchiveToast', () => {
     const notice = { workspaceId: WS, agentId: AGENT, agentName: 'Builder' };
 
+    it('suppresses auto-unarchive notifications for the current workspace', async () => {
+      storeStateMock.value = { tabState: { currentTabId: WS } };
+
+      await showWorkspaceAutoUnarchiveToast(notice);
+
+      expect(toastInfoMock).not.toHaveBeenCalled();
+    });
+
+    it('suppresses auto-unarchive notifications after switching during loading', async () => {
+      storeStateMock.value = { tabState: { currentTabId: 'ws-other' } };
+      const showing = showWorkspaceAutoUnarchiveToast(notice);
+      storeStateMock.value = { tabState: { currentTabId: WS } };
+
+      await showing;
+
+      expect(toastInfoMock).not.toHaveBeenCalled();
+    });
+
     function lastInfoCall(): [string, { id: string; action: { label: string; onClick(): void } }] {
       const call = toastInfoMock.mock.calls[toastInfoMock.mock.calls.length - 1];
       expect(call).toBeDefined();
@@ -488,6 +517,7 @@ describe('agent-attention-toast-service', () => {
     }
 
     it('shows a transient info toast with the resolved workspace title and agent name', async () => {
+      storeStateMock.value = { tabState: { currentTabId: 'ws-other' } };
       workspaceByIdSelectMock.mockImplementation(() => ({ title: 'My Project' }));
 
       await showWorkspaceAutoUnarchiveToast(notice);
@@ -607,6 +637,19 @@ describe('agent-attention-toast-service lazy loading', () => {
       expect(toastCustomMock).not.toHaveBeenCalled();
     },
   );
+
+  it('suppresses a pending toast after switching to its workspace during loading', async () => {
+    storeStateMock.value = { tabState: { currentTabId: 'ws-other' } };
+    const showing = service.showAgentAttentionToast(request);
+    await importsStarted;
+    storeStateMock.value = { tabState: { currentTabId: WS } };
+
+    notifyReady.resolve();
+    componentReady.resolve();
+    await showing;
+
+    expect(toastCustomMock).not.toHaveBeenCalled();
+  });
 
   it('shows only the fresh request after a clear while both imports are pending', async () => {
     const stale = service.showAgentAttentionToast(request);

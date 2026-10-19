@@ -2,6 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeWorkspaceEvent } from './workspace-events-sanitizer';
 
 describe('workspace event sanitizer', () => {
+  it('preserves explicit portable author identity without accepting malformed principal IDs', () => {
+    const event = {
+      id: 'portable-message',
+      workspaceId: 'ws-1',
+      timestamp: '2026-10-14T00:00:00.000Z',
+      type: 'agent:message',
+      actor: { type: 'system' },
+      data: { role: 'user', author: { principalId: null, displayName: 'Former member' } },
+    };
+    expect(sanitizeWorkspaceEvent(event)?.data).toEqual(event.data);
+    expect(
+      sanitizeWorkspaceEvent({
+        ...event,
+        data: { author: { principalId: { invalid: true }, displayName: 'Unknown' } },
+      })?.data,
+    ).toEqual({ author: { displayName: 'Unknown' } });
+  });
+
   it('drops cyclic nested event data and returns JSON-serializable output', () => {
     const cyclicData: any = { command: 'pnpm test' };
     cyclicData.self = cyclicData;

@@ -90,6 +90,45 @@ function makeStore(
 }
 
 describe('cycleWorkspaceTab', () => {
+  describe.each([
+    ['next', 'ws-3'],
+    ['previous', 'ws-2'],
+  ] as const)('from Home going %s', (direction, expectedWorkspaceId) => {
+    it.each(['ws-1', 'ws-2', 'ws-3', 'ws-stale', null])(
+      'selects the displayed edge regardless of remembered workspace %s',
+      (rememberedWorkspaceId) => {
+        const store = makeStore(rememberedWorkspaceId);
+        store.state.tabState.workspaceStacks = [['ws-3', 'ws-1'], ['ws-2']];
+        const navigate = vi.fn();
+
+        expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBe(expectedWorkspaceId);
+        expect(store.state.tabState.currentTabId).toBe(expectedWorkspaceId);
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(`/workspace/${expectedWorkspaceId}`);
+      },
+    );
+
+    it('opens the only workspace even when it is already remembered', () => {
+      const store = makeStore('ws-2');
+      store.state.tabState.openTabs = { 'ws-2': true };
+      store.state.tabState.workspaceStacks = [['ws-2']];
+      const navigate = vi.fn();
+
+      expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBe('ws-2');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+    });
+
+    it.each([null, 'ws-stale'])('stays on Home with no tabs and remembered %s', (remembered) => {
+      const store = makeStore(remembered);
+      store.state.tabState.openTabs = {};
+      store.state.tabState.workspaceStacks = [];
+      const navigate = vi.fn();
+
+      expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.actions).toHaveLength(0);
+    });
+  });
+
   it('cycles forward and navigates to the selected workspace route', () => {
     const store = makeStore();
     const navigate = vi.fn();
@@ -117,6 +156,67 @@ describe('cycleWorkspaceTab', () => {
 });
 
 describe('global workspace tab navigation', () => {
+  it.each([
+    ['MacIntel', false],
+    ['Linux x86_64', false],
+    ['MacIntel', true],
+    ['Linux x86_64', true],
+  ] as const)('cycles from Home through keyboard events on %s (custom: %s)', (platform, custom) => {
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    const manager = new KeyboardShortcutManager();
+    const store = makeStore('ws-2');
+    let currentPath = '/workspace/ws-2';
+    const navigate = vi.fn((path: string) => {
+      currentPath = path;
+    });
+
+    try {
+      registerWorkspaceTabShortcuts({
+        isMac: platform === 'MacIntel',
+        register: (shortcut) => manager.register(shortcut),
+        store,
+        getCurrentPath: () => currentPath,
+        navigate,
+        openNewWorkspace: vi.fn(),
+        resolveBinding: (id) => {
+          if (custom && id === 'global.next-space') return 'alt+j';
+          if (custom && id === 'global.previous-space') return 'alt+k';
+          return SHORTCUT_DEFAULTS[id];
+        },
+      });
+      manager.attach();
+
+      for (const previous of [false, true]) {
+        currentPath = '/';
+        const pressShortcut = () => {
+          const event = new KeyboardEvent('keydown', {
+            bubbles: true,
+            cancelable: true,
+            key: custom ? (previous ? 'k' : 'j') : 'Tab',
+            code: custom ? (previous ? 'KeyK' : 'KeyJ') : 'Tab',
+            altKey: custom,
+            ctrlKey: !custom,
+            shiftKey: !custom && previous,
+          });
+          document.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(true);
+        };
+
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-3' : '/workspace/ws-1');
+        pressShortcut();
+        expect(currentPath).toBe('/workspace/ws-2');
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-1' : '/workspace/ws-3');
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-3' : '/workspace/ws-1');
+      }
+    } finally {
+      manager.destroy();
+      platformSpy.mockRestore();
+    }
+  });
+
   it('closes only the routed workspace tab and navigates to its successor', () => {
     const store = makeStore('ws-2');
     const navigate = vi.fn();

@@ -109,6 +109,44 @@ function fixture(capability: unknown = 1) {
 }
 
 describe('shared pending submission state', () => {
+  it('uses full queue authority for settled controls without claiming fresh history', () => {
+    const f = fixture();
+    f.accept('a');
+    f.settle('a', 'accepted', queued('a'));
+    const stale = f.read('queue');
+    f.event([queued('a', 'authoritative content')]);
+    expect(submissionReadIsCurrent(f.entry(), stale)).toBe(false);
+    expect(f.entry().queueFresh).toBe(true);
+    expect(f.entry().historyFresh).toBe(false);
+    expect(f.entry().refreshNeeded).toBe(false);
+    expect(getItems(f.entry().seeds)).toEqual([]);
+    expect(getItems(f.entry().submissions)).toEqual([]);
+    expect(f.display().queue.map((r) => [r.content, r.blocksMutations])).toEqual([
+      ['authoritative content', false],
+    ]);
+    f.event([queued('a', 'authoritative content')]);
+    expect(f.entry().refreshNeeded).toBe(false);
+    f.event([]);
+    expect(f.display().queue).toEqual([]);
+    expect(f.entry().refreshNeeded).toBe(false);
+  });
+
+  it('keeps absent accepted and uncertain sends recoverable after an empty full queue', () => {
+    const f = fixture();
+    f.accept('accepted');
+    f.accept('uncertain');
+    f.settle('accepted', 'accepted', queued('accepted'));
+    f.settle('uncertain', 'uncertain');
+    f.event([]);
+    expect(f.entry().queueFresh).toBe(true);
+    expect(f.entry().refreshNeeded).toBe(true);
+    expect(f.display().queue.map((r) => [r.content, r.blocksMutations])).toEqual([
+      ['accepted', true],
+      ['uncertain', true],
+    ]);
+    expect(getItems(f.entry().submissions).map((s) => s.id)).toEqual(['accepted', 'uncertain']);
+  });
+
   it.each(['queue', 'history'] as const)(
     'fences both pre-ACK reads when %s completes first and retains unaccounted acceptance',
     (first) => {

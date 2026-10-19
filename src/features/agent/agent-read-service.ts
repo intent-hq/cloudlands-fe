@@ -1,4 +1,4 @@
-import { claimAgentReadOwnership } from './agent-read-ownership';
+import { claimAgentReadOwnership, getAgentReadContext } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Reusable agent-session read seam used by the agent read saga and event router.
@@ -19,15 +19,15 @@ import { onBackendReconnected } from '$lib/client/live/backend-transport';
  *
  * Conversation note: the agent session's `messages` array IS the conversation.
  * On the mock seam this carries the sample transcript; on the live daemon
- * `agent.get` currently returns message COUNTS only (no transcript) and the chat
- * domain is still mock-delegated, so live transcripts are a documented BE gap
- * (Track C chat snapshot) — this service does not fabricate them.
+ * `agent.get` returns message COUNTS only. chat.subscribe owns live history;
+ * metadata reads preserve that separately hydrated transcript.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
  * configured store, the slice actions, and the logger.
  */
 import { appClient } from '$lib/client';
 import type { AgentSession } from '$shared/types';
+import type { AgentSessionProjectionVersions } from '$store/renderer/slices/agent-session/agent-session-types';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -53,7 +53,12 @@ function readKey(agentId: string, workspaceId?: string): string {
       markerProjectionGeneration.clear();
     });
   }
-  return JSON.stringify([connectionGeneration, workspaceId ?? null, agentId]);
+  return JSON.stringify([
+    connectionGeneration,
+    getAgentReadContext(),
+    workspaceId ?? null,
+    agentId,
+  ]);
 }
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
@@ -103,6 +108,58 @@ function preserveProjectedQuestionMarkers(
   return metadata === session.metadata ? session : { ...session, metadata };
 }
 
+/** A read started before a push must not roll its fields back on arrival. */
+function preserveLocalUpdates(
+  before: AgentSession | undefined,
+  incoming: AgentSession | null,
+  beforeProjection: AgentSessionProjectionVersions | undefined,
+): AgentSession | null {
+  if (!incoming || !before || before.workspaceId !== incoming.workspaceId) return incoming;
+  const current = appStore.state.agentSessions?.byAgentId[String(incoming.id)];
+  if (!current || current.workspaceId !== incoming.workspaceId) return incoming;
+  const projected = appStore.state.agentSessions.projectionVersions?.[String(incoming.id)];
+  const merged = { ...incoming };
+  for (const key of new Set([
+    ...Object.keys(current),
+    ...Object.keys(projected?.fields ?? {}),
+  ]) as Set<keyof AgentSession>) {
+    if (key === 'metadata') continue;
+    if (current[key] !== before[key] || projected?.fields[key] !== beforeProjection?.fields[key])
+      Object.assign(merged, { [key]: current[key] });
+  }
+  const metadata = { ...incoming.metadata };
+  for (const key of new Set([
+    ...Object.keys(before.metadata ?? {}),
+    ...Object.keys(current.metadata ?? {}),
+    ...Object.keys(projected?.metadata ?? {}),
+  ])) {
+    // Extension keys can name Object.prototype members. Only own values and
+    // revisions represent metadata; a missing own key is an explicit deletion.
+    const hasCurrent = Object.hasOwn(current.metadata ?? {}, key);
+    const hasBefore = Object.hasOwn(before.metadata ?? {}, key);
+    const currentValue = hasCurrent ? current.metadata?.[key] : undefined;
+    const beforeValue = hasBefore ? before.metadata?.[key] : undefined;
+    const revision = Object.hasOwn(projected?.metadata ?? {}, key)
+      ? projected?.metadata[key]
+      : undefined;
+    const beforeRevision = Object.hasOwn(beforeProjection?.metadata ?? {}, key)
+      ? beforeProjection?.metadata[key]
+      : undefined;
+    if (hasCurrent !== hasBefore || currentValue !== beforeValue || revision !== beforeRevision) {
+      if (hasCurrent) {
+        Object.defineProperty(metadata, key, {
+          value: currentValue,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else delete metadata[key];
+    }
+  }
+  merged.metadata = metadata;
+  return merged;
+}
+
 /**
  * Refresh after a daemon event without losing an update behind an older read.
  * If a read is already in flight, one trailing read is scheduled after it;
@@ -146,9 +203,8 @@ export async function refreshAgentSessionAfterEvent(
  * Shared raw `agent.get` read for callers that need the returned projection.
  * Rejections propagate so each caller can preserve its existing error policy;
  * the failed promise is always evicted and is never treated as cached data.
- * The only reconciliation applied is the question-marker guard above: a
- * response to a request that started before an `agent:updated` marker
- * projection keeps the store's projected marker values.
+ * Fields changed by local pushes while the request was in flight stay current;
+ * the explicit question-marker guard also protects repeated marker clears.
  */
 export function readAgentSession(
   agentId: string,
@@ -159,13 +215,29 @@ export function readAgentSession(
   const pending = inFlight.get(key);
   if (pending) return pending;
 
+  // Explicit-workspace raw readers also run outside the initialized renderer
+  // (for example isolated saga stores). Only renderer reads have local pushes
+  // to preserve; keep the raw seam usable without a mounted store.
+  let beforeRead: AgentSession | undefined;
+  let beforeProjection: AgentSessionProjectionVersions | undefined;
+  try {
+    beforeRead = appStore.state.agentSessions?.byAgentId[agentId];
+    beforeProjection = appStore.state.agentSessions?.projectionVersions?.[agentId];
+  } catch {
+    beforeRead = undefined;
+  }
+  const context = getAgentReadContext();
   const generation = ++readGeneration;
   const connection = connectionGeneration;
   const run = appClient.agents
     .get(agentId, workspaceId)
     .then((session) =>
-      connection === connectionGeneration
-        ? preserveProjectedQuestionMarkers(agentId, generation, session)
+      connection === connectionGeneration && context === getAgentReadContext()
+        ? preserveLocalUpdates(
+            beforeRead,
+            preserveProjectedQuestionMarkers(agentId, generation, session),
+            beforeProjection,
+          )
         : null,
     )
     .finally(() => {
@@ -173,6 +245,29 @@ export function readAgentSession(
     });
   inFlight.set(key, run);
   return run;
+}
+
+/**
+ * Confirm state after a caller's observation. A shared read already in flight
+ * may predate that observation: drain it once, then use the existing raw lane
+ * for a fresh request. Concurrent callers behind that read coalesce there.
+ * This performs no hydration and never retries its own confirmation request.
+ */
+export async function readAgentSessionAfterCurrent(
+  agentId: string,
+  workspaceId: string,
+  isCurrent: () => boolean,
+): Promise<AgentSession | null> {
+  const key = readKey(agentId, workspaceId);
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (pending) await pending.catch(() => null);
+  if (connection !== connectionGeneration || !ownership.isCurrent() || !isCurrent()) return null;
+  const session = await readAgentSession(agentId, workspaceId);
+  return connection === connectionGeneration && ownership.isCurrent() && isCurrent()
+    ? session
+    : null;
 }
 
 async function hydrateAgentSession(

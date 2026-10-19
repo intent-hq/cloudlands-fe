@@ -44,6 +44,8 @@ interface BackendState {
   dirty: boolean;
   typingSource: string | null;
   unsupported: boolean;
+  generation: number;
+  lastSuccessfulFocus: string | null;
 }
 
 function focusKey(item: PresenceFocusItem): string {
@@ -99,6 +101,8 @@ export class PresenceAggregator {
     if (!backend) return;
     backend.unsupported = false;
     backend.typingSource = null;
+    backend.generation += 1;
+    backend.lastSuccessfulFocus = null;
     void this.flush(backendId);
   }
 
@@ -127,6 +131,8 @@ export class PresenceAggregator {
         dirty: false,
         typingSource: null,
         unsupported: false,
+        generation: 0,
+        lastSuccessfulFocus: null,
       };
       this.backends.set(backendId, backend);
     }
@@ -158,10 +164,21 @@ export class PresenceAggregator {
 
   private async send(backendId: string, backend: BackendState): Promise<void> {
     const params = this.merged(backendId);
+    // A non-null typing target is an intentional pulse, even when unchanged.
+    // Focus is a set: window arrival order and duplicate items do not matter.
+    const focus = JSON.stringify(params.focus.map(focusKey).sort());
+    if (!params.typing && backend.lastSuccessfulFocus === focus) return;
+    const generation = backend.generation;
+    // A failed write may have landed daemon-side; never reuse the old success.
+    backend.lastSuccessfulFocus = null;
+    backend.typingSource = null;
     try {
       const result = await this.request(backendId, params);
+      if (generation !== backend.generation) return;
       backend.typingSource = result.typingSource;
+      backend.lastSuccessfulFocus = params.typing ? null : focus;
     } catch (error) {
+      if (generation !== backend.generation) return;
       if (error instanceof JsonRpcError && error.rpcCode === PRESENCE_UNSUPPORTED_RPC_CODE) {
         backend.unsupported = true;
         logger.info('presence.update unsupported by daemon; presence disabled', { backendId });

@@ -16,6 +16,7 @@
   } from '$lib/components/patterns/collection';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
+  import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -735,6 +736,12 @@
           {/if}
         </dl>
         <div class="space-y-3">
+          <RemoteTunnelSettings
+            deviceId={device.id}
+            connected={$connectedIds$.includes(device.id)}
+            disabled={busy !== null || $openWorkflow$?.phase === 'running'}
+            onConnect={connectDevice}
+          />
           <SettingsFieldRow
             id={`device-${device.id}-detect-hosts-field`}
             compact

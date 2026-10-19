@@ -14,14 +14,14 @@ for (const { state, lines, fullValue } of scenarios) {
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(DaemonStatusIndicator, {
-      hooksConfig: { geometrySnapshot: { scene: 'daemon-status-indicator', state } },
+      hooksConfig: { previewScene: { scene: 'daemon-status-indicator', state } },
     });
     await page.getByRole('button').click();
     await page.getByRole('menuitem', { name: /^Status -/ }).press('ArrowRight');
     const panel = page.getByRole('region', { name: 'Daemon Status', exact: true });
     await expect(panel).toBeVisible();
     await panel.evaluate((element) =>
-      window.__INTENT_GEOMETRY_CT__.waitForCaptureStability(element),
+      window.__INTENT_PREVIEW_CT__.waitForCaptureStability(element),
     );
     const row = panel.getByText('Connection', { exact: true }).locator('..');
     const value = row.locator('span').last();

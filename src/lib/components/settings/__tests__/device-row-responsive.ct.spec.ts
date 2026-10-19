@@ -55,7 +55,7 @@ for (const width of [360, 1024]) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(Preview, {
       props: { mobilePage: true },
-      hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'mobile' } },
+      hooksConfig: { previewScene: { scene: 'devices-settings', state: 'mobile' } },
     });
     await expect(page.getByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeEnabled();
     const advanced = component.getByRole('button', {
@@ -113,7 +113,7 @@ test('Machines replaces the local icon editor when another machine is edited', a
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, {
     props: { expanded: true },
-    hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'local-expanded' } },
+    hooksConfig: { previewScene: { scene: 'devices-settings', state: 'local-expanded' } },
   });
   const localName = m.layout_daemonStatus_localConnection_label();
   const local = page.getByRole('article', { name: localName });

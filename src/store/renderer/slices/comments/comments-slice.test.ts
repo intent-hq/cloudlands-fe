@@ -9,6 +9,9 @@ import {
   loadCommentsAction,
   replaceNoteCommentsAction,
   clearCommentsAction,
+  commentLoadFinished,
+  commentLoadReleased,
+  commentLoadRequested,
   selectCommentAction,
 } from './comments-slice';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
@@ -34,6 +37,33 @@ describe('commentsReducer', () => {
   it('should return initial state', () => {
     const state = reduce(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it('correlates comment load outcomes, clears retry errors, and releases consumers', () => {
+    let state = reduce(
+      initialState,
+      commentLoadRequested('consumer', 'request-1', 'workspace-1', 'note-1'),
+    );
+    state = reduce(
+      state,
+      commentLoadFinished('consumer', 'request-1', 'workspace-1', 'authority-1', 'offline'),
+    );
+    const stale = reduce(
+      state,
+      commentLoadFinished('consumer', 'stale', 'workspace-1', 'authority-1'),
+    );
+    expect(stale).toBe(state);
+    state = reduce(
+      state,
+      commentLoadFinished('consumer', 'request-1', 'workspace-1', 'authority-1'),
+    );
+    expect(getItem(state.loadsByConsumer, 'consumer')).toMatchObject({
+      status: 'ready',
+      authority: 'authority-1',
+    });
+    expect(getItem(state.loadsByConsumer, 'consumer')).not.toHaveProperty('error');
+    state = reduce(state, commentLoadReleased('consumer'));
+    expect(getItem(state.loadsByConsumer, 'consumer')).toBeUndefined();
   });
 
   describe('replaceNoteCommentsAction', () => {

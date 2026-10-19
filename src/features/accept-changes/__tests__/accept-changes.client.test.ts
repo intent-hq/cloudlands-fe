@@ -46,14 +46,16 @@ const gitStatus = {
 
 describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
   let task: Task;
+  let state: ReturnType<typeof withLegacyPrincipal>;
   beforeEach(() => {
     mocks.backendRequest.mockReset();
     const channel = stdChannel();
-    const state = withLegacyPrincipal({
+    state = withLegacyPrincipal({
       workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
       connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
       guestSessions: { ...guestInitialState, hasReceivedList: true },
     });
+    vi.spyOn(store, 'state', 'get').mockImplementation(() => state);
     task = runSaga(
       { channel, dispatch: (action) => channel.put(action), getState: () => state },
       acceptWorkflowSaga,
@@ -202,6 +204,54 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
   });
 
   describe('getStatus single-flight', () => {
+    it.each(['backend', 'principal', 'reconnect'] as const)(
+      'does not share a held same-workspace response across a %s change',
+      async (boundary) => {
+        let resolveOld!: (value: typeof gitStatus) => void;
+        mocks.backendRequest.mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolveOld = done;
+            }),
+        );
+        const old = AcceptChangesClient.getStatus(WS);
+        if (boundary === 'backend') {
+          state = withLegacyPrincipal({
+            ...state,
+            connections: { ...state.connections, windowBackendId: 'remote' },
+          });
+        } else if (boundary === 'principal') {
+          const snapshot = state.principal.snapshot;
+          if (!snapshot) throw new Error('Test principal was not admitted');
+          state = {
+            ...state,
+            principal: {
+              ...state.principal,
+              snapshot: {
+                ...snapshot,
+                principal: { ...snapshot.principal, id: 'different-principal' },
+              },
+            },
+          };
+        } else {
+          state = withLegacyPrincipal({
+            ...state,
+            daemonHealth: {
+              ...state.daemonHealth,
+              connectionGeneration: state.daemonHealth.connectionGeneration + 1,
+            },
+          });
+        }
+        mocks.backendRequest.mockResolvedValueOnce({ ...gitStatus, branch: 'new-context' });
+        const fresh = AcceptChangesClient.getStatus(WS);
+        resolveOld({ ...gitStatus, branch: 'old-context' });
+        const [oldResult, freshResult] = await Promise.all([old, fresh]);
+        expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+        expect(oldResult.branch).toBe('old-context');
+        expect(freshResult.branch).toBe('new-context');
+      },
+    );
+
     it('coalesces two concurrent calls for the same workspace into one backendRequest', async () => {
       let resolveRequest!: (value: typeof gitStatus) => void;
       mocks.backendRequest.mockReturnValue(

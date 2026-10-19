@@ -29,7 +29,9 @@ describe('AskUserQuestions', () => {
 
     await fireEvent.keyDown(document.body, { key: '2' });
 
-    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1, {
+      priority: expect.objectContaining({ selectedIds: ['quality'], skipped: false }),
+    });
     expect(onAnswersChange).toHaveBeenLastCalledWith({
       priority: {
         questionId: 'priority',
@@ -193,7 +195,9 @@ describe('AskUserQuestions', () => {
     });
     expect(view.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe('true');
     await fireEvent.click(view.getByRole('radio', { name: /Speed/ }));
-    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1, {
+      priority: expect.objectContaining({ selectedIds: ['speed'], skipped: false }),
+    });
     expect(onAnswersChange).toHaveBeenCalledWith({
       priority: expect.objectContaining({ selectedIds: ['speed'] }),
     });
@@ -223,7 +227,10 @@ describe('AskUserQuestions', () => {
     });
 
     expect(onCurrentIndexChange).toHaveBeenCalledTimes(1);
-    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1, {
+      priority: { questionId: 'priority', selectedIds: ['speed'] },
+      audience: { questionId: 'audience', selectedIds: ['quality'] },
+    });
     expect(onComplete).not.toHaveBeenCalled();
   });
 

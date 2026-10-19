@@ -65,10 +65,6 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
     { registerMockIpcHandler: 2 },
   ],
   ['src/store/renderer/seeders/workspaces-seeder.ts', { registerMockIpcHandler: 7 }],
-  [
-    'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
-    { addMockIpcListener: 1 },
-  ],
 ]);
 
 const IPC_ROUTER_PATH = 'src/shared/ipc-mock-router.ts';

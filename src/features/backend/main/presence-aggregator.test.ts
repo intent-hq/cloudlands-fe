@@ -40,6 +40,82 @@ describe('PresenceAggregator', () => {
     expect(await third).toBe('ts-1');
   });
 
+  it('suppresses unchanged non-typing unions across windows and focus order', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'source' });
+    const aggregator = new PresenceAggregator(request);
+    const a = { workspaceId: 'a' };
+    const b = { workspaceId: 'b', agentId: 'agent' };
+    await aggregator.report('host', 1, { focus: [a, b] });
+    await aggregator.report('host', 1, { focus: [b, a, a], typing: null });
+    await aggregator.report('host', 2, { focus: [a] });
+    aggregator.dropWindow(2);
+    await aggregator.report('host', 1, { focus: [a, b] });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(await aggregator.report('host', 1, { focus: [a, b] })).toBe('source');
+    aggregator.dropWindow(1);
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith('host', { focus: [], typing: null });
+  });
+
+  it('coalesces identical reports that arrive during a successful send', async () => {
+    let resolve!: (value: unknown) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue({ ok: true, typingSource: 'source' });
+    const aggregator = new PresenceAggregator(request);
+    const params = { focus: [{ workspaceId: 'ws' }] };
+    const first = aggregator.report('host', 1, params);
+    const second = aggregator.report('host', 2, params);
+    resolve({ ok: true, typingSource: 'source' });
+    await Promise.all([first, second]);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains identical typing pulses, clearing typing, retries, and backend isolation', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'source' });
+    const aggregator = new PresenceAggregator(request);
+    const focus = [{ workspaceId: 'ws' }];
+    await aggregator.report('host', 1, { focus, typing: { agentId: 'a' } });
+    await aggregator.report('host', 1, { focus, typing: { agentId: 'a' } });
+    await aggregator.report('host', 1, { focus, typing: null });
+    await aggregator.report('host', 1, { focus, typing: null });
+    expect(request).toHaveBeenCalledTimes(3);
+    request.mockRejectedValueOnce(new Error('lost'));
+    await aggregator.report('host', 1, { focus: [] });
+    await aggregator.report('host', 1, { focus: [] });
+    expect(request).toHaveBeenCalledTimes(5);
+    await aggregator.report('other', 2, { focus: [] });
+    expect(request).toHaveBeenCalledTimes(6);
+  });
+
+  it('reasserts unchanged focus on reconnect even if an old send completes afterward', async () => {
+    let resolve!: (value: unknown) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue({ ok: true, typingSource: 'new' });
+    const aggregator = new PresenceAggregator(request);
+    const first = aggregator.report('host', 1, { focus: [{ workspaceId: 'ws' }] });
+    aggregator.reconnected('host');
+    resolve({ ok: true, typingSource: 'old' });
+    expect(await first).toBe('new');
+    expect(request).toHaveBeenCalledTimes(2);
+    await aggregator.report('host', 1, { focus: [{ workspaceId: 'ws' }] });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('latches an unsupported daemon until reconnect, then sends again', async () => {
     const request = vi
       .fn()
@@ -81,7 +157,7 @@ describe('PresenceAggregator', () => {
     expect(await aggregator.report('backend', 1, { focus: [{ workspaceId: 'ws-2' }] })).toBe(
       'ts-new',
     );
-    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
 

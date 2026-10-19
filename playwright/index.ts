@@ -5,7 +5,6 @@ import '@fontsource-variable/inter';
 import { beforeMount } from '@playwright/experimental-ct-svelte/hooks';
 import type { SvelteComponent } from 'svelte';
 import { waitForCaptureStability } from '../src/lib/component-catalog/capture-stability';
-import { collectGeometry } from '../src/lib/component-catalog/geometry-probe';
 import {
   validatePreviewDefinition,
   type PreviewDefinition,
@@ -56,14 +55,14 @@ interface MockHooksConfig {
   mockIpc?: Record<string, unknown>;
 }
 
-interface GeometryHooksConfig {
-  geometrySnapshot?: {
+interface PreviewHooksConfig {
+  previewScene?: {
     scene: string;
     state: string;
   };
 }
 
-// Registered before the geometry hook on purpose: ct-svelte keeps the LAST
+// Registered before the preview hook on purpose: ct-svelte keeps the LAST
 // before-mount hook's return value as the mounted component, so a hook that
 // returns nothing must not run after one that returns a component.
 beforeMount<MockHooksConfig>(async ({ hooksConfig }) => {
@@ -79,17 +78,17 @@ beforeMount<MockHooksConfig>(async ({ hooksConfig }) => {
   }
 });
 
-beforeMount<GeometryHooksConfig>(async ({ hooksConfig, App }) => {
-  const geometry = hooksConfig?.geometrySnapshot;
-  if (!geometry) return;
-  const loadDefinition = previewDefinitionLoadersByScene.get(geometry.scene);
+beforeMount<PreviewHooksConfig>(async ({ hooksConfig, App }) => {
+  const preview = hooksConfig?.previewScene;
+  if (!preview) return;
+  const loadDefinition = previewDefinitionLoadersByScene.get(preview.scene);
   if (!loadDefinition) {
-    throw new Error(`Preview “${geometry.scene}” is not registered in the CT browser bundle.`);
+    throw new Error(`Preview “${preview.scene}” is not registered in the CT browser bundle.`);
   }
-  const definition = validatePreviewDefinition(await loadDefinition(), geometry.scene);
-  const previewState = definition.states[geometry.state];
+  const definition = validatePreviewDefinition(await loadDefinition(), preview.scene);
+  const previewState = definition.states[preview.state];
   if (!previewState) {
-    throw new Error(`Preview “${geometry.scene}” has no state “${geometry.state}”.`);
+    throw new Error(`Preview “${preview.scene}” has no state “${preview.state}”.`);
   }
   const cleanup = previewState.setup?.();
   let component: SvelteComponent;
@@ -110,12 +109,11 @@ beforeMount<GeometryHooksConfig>(async ({ hooksConfig, App }) => {
   return component;
 });
 
-window.__INTENT_GEOMETRY_CT__ = { collectGeometry, waitForCaptureStability };
+window.__INTENT_PREVIEW_CT__ = { waitForCaptureStability };
 
 declare global {
   interface Window {
-    __INTENT_GEOMETRY_CT__: {
-      collectGeometry: typeof collectGeometry;
+    __INTENT_PREVIEW_CT__: {
       waitForCaptureStability: typeof waitForCaptureStability;
     };
   }

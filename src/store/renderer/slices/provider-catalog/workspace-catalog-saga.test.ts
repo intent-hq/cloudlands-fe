@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../types';
+import type { WorkspaceEvent } from '$features/events/types';
 
 const mocks = vi.hoisted(() => ({
   catalog: vi.fn(),
@@ -44,8 +45,10 @@ import {
   providerCatalogReducer,
   workspaceCatalogRequested,
   workspaceCatalogReadFailed,
+  workspaceCatalogEventReceived,
 } from './provider-catalog-slice';
 import { workspaceCatalogSaga } from './workspace-catalog-saga';
+import { selectProviderCatalogProfiles } from './provider-catalog-selectors';
 import {
   selectContextDefaultProvider,
   selectContextSpecialists,
@@ -64,7 +67,7 @@ const settle = async () => {
 afterEach(() => vi.resetAllMocks());
 
 describe('workspace catalog ownership', () => {
-  it('sends origin IDs, isolates late responses, and refetches all contexts on an unqualified event', async () => {
+  it('sends origin IDs, isolates late responses, and recovers only settings on incomplete events and projects scoped toggles', async () => {
     let releaseA!: (value: { providers: [] }) => void;
     const a = new Promise<{ providers: [] }>((resolve) => {
       releaseA = resolve;
@@ -121,6 +124,10 @@ describe('workspace catalog ownership', () => {
         };
       },
     };
+    mocks.notification = (notification) =>
+      dispatch(
+        workspaceCatalogEventReceived((notification.params as { event: WorkspaceEvent }).event),
+      );
     const task = runSaga(
       { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
       workspaceCatalogSaga,
@@ -154,7 +161,7 @@ describe('workspace catalog ownership', () => {
         params: { event: { type: 'settings:changed', data: { value: 'unqualified' } } },
       });
       await settle();
-      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B']);
+      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
       expect(selectContextDefaultProvider.select(state as StoreState, 'B')).toBe('B');
       mocks.notification?.({
         method: 'events.event',
@@ -170,11 +177,11 @@ describe('workspace catalog ownership', () => {
         },
       });
       await settle();
-      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B', 'A', 'B', 'A', 'B']);
+      expect(mocks.catalog.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
       dispatch(workspaceCatalogRequested('B'));
       mocks.reconnect?.();
       await settle();
-      expect(state.providerCatalog.workspaceEpoch).toBe(3);
+      expect(state.providerCatalog.workspaceEpoch).toBe(1);
       await settle();
       mocks.catalog.mockRejectedValueOnce(new Error('Catalog unavailable'));
       dispatch(workspaceCatalogRequested('B'));
@@ -184,6 +191,66 @@ describe('workspace catalog ownership', () => {
     } finally {
       task.cancel();
       await task.toPromise();
+    }
+  });
+});
+
+describe('named profile changes (§5.54)', () => {
+  it('re-reads only the catalog of each workspace on providers:profiles-changed', async () => {
+    const work = {
+      id: 'pwork00000001',
+      providerRef: 'codex@pwork00000001',
+      baseProviderId: 'codex',
+      name: 'Work',
+    };
+    mocks.catalog.mockResolvedValue({ providers: [], profiles: [] });
+    mocks.settings.mockResolvedValue([]);
+    mocks.specialists.mockResolvedValue([]);
+    mocks.request.mockResolvedValue({ providers: [] });
+    mocks.auth.mockResolvedValue({});
+    mocks.mcpServers.mockResolvedValue([]);
+    mocks.mcpStatuses.mockResolvedValue([]);
+    const channel = stdChannel();
+    let state = {
+      providerCatalog: initialState,
+      workspaceLifecycle: lifecycleInitial,
+      agentAvailability: availabilityInitial,
+    };
+    const dispatch = (action: StoreAction<unknown>) => {
+      state = {
+        ...state,
+        providerCatalog: providerCatalogReducer(state.providerCatalog, action),
+        workspaceLifecycle: workspaceLifecycleReducer(state.workspaceLifecycle, action),
+      };
+      channel.put(action);
+    };
+    const reduxStore = { getState: () => state, subscribe: () => () => {} };
+    const task = runSaga(
+      { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
+      workspaceCatalogSaga,
+    );
+    try {
+      dispatch(workspaceMounted('A'));
+      await settle();
+      expect(selectProviderCatalogProfiles.select(state as StoreState, 'A')).toEqual([]);
+      mocks.catalog.mockClear();
+      mocks.settings.mockClear();
+      mocks.catalog.mockResolvedValue({ providers: [], profiles: [work] });
+
+      // The event is global: no workspaceId, never env keys or values.
+      dispatch(
+        workspaceCatalogEventReceived({
+          type: 'providers:profiles-changed',
+          data: { revision: 4, change: 'created', profileId: work.id, profile: work },
+        } as unknown as WorkspaceEvent),
+      );
+      await settle();
+
+      expect(mocks.catalog).toHaveBeenCalledExactlyOnceWith('A');
+      expect(mocks.settings).not.toHaveBeenCalled();
+      expect(selectProviderCatalogProfiles.select(state as StoreState, 'A')).toEqual([work]);
+    } finally {
+      task.cancel();
     }
   });
 });

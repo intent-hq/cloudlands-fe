@@ -1,3 +1,6 @@
+import { applyAgentMetadataPatch } from './agent-metadata-patch';
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
@@ -12,6 +15,7 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  AgentSessionUpdate,
   FeOwnedSessionState,
   StoredAgentSession,
   WireAgentSession,
@@ -282,8 +286,12 @@ function removeHistorySegmentsFor(
   return next;
 }
 
-/** Drop the detail-hydrated marker for `agentId`; no-op when absent. */
+/** Drop detail trust and projection versions when a session is evicted. */
 function removeDetailHydrated(state: AgentSessionState, agentId: string): AgentSessionState {
+  if (state.projectionVersions?.[agentId]) {
+    const { [agentId]: _, ...rest } = state.projectionVersions;
+    state = { ...state, projectionVersions: rest };
+  }
   if (!state.detailHydrated || !(agentId in state.detailHydrated)) return state;
   const { [agentId]: _, ...rest } = state.detailHydrated;
   return { ...state, detailHydrated: rest };
@@ -472,6 +480,38 @@ function replaceSessionMessageById(
     ...session,
     messages: nextMessages,
   });
+}
+
+/** A same-value push is still newer authority than a pending detail response. */
+function recordSessionProjection(
+  state: AgentSessionState,
+  agentId: string,
+  updates: AgentSessionUpdate,
+): AgentSessionState {
+  if (!getSession(state, agentId)) return state;
+  const metadataKeys = Object.entries(updates.metadataPatch ?? {})
+    .filter(([, op]) => op !== undefined)
+    .map(([key]) => key);
+  const fieldKeys = Object.keys(updates).filter(
+    (key) => key !== 'metadata' && key !== 'metadataPatch' && key !== 'messages',
+  );
+  if (!fieldKeys.length && !metadataKeys.length) return state;
+  const prior = state.projectionVersions?.[agentId];
+  const fields = { ...prior?.fields };
+  const metadata = {
+    ...prior?.metadata,
+    ...Object.fromEntries(
+      metadataKeys.map((key) => [
+        key,
+        (prior?.metadata && Object.hasOwn(prior.metadata, key) ? prior.metadata[key] : 0) + 1,
+      ]),
+    ),
+  };
+  for (const key of fieldKeys) fields[key] = (fields[key] ?? 0) + 1;
+  return {
+    ...state,
+    projectionVersions: { ...state.projectionVersions, [agentId]: { fields, metadata } },
+  };
 }
 
 function updateSessionFields(
@@ -1048,6 +1088,7 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
+  attentionRequestReasonTruncated: boolean;
   specialist: string | undefined;
   chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
@@ -1106,6 +1147,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
+    attentionRequestReasonTruncated: attentionRequest?.reasonTruncated === true,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
     chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:
@@ -1454,8 +1496,8 @@ export const replaceMessageById = createAction<
 export const updateSession = createAction<
   [
     agentId: string,
-    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
-    options?: { reasoningEffortSource: 'control' | 'encoder' },
+    updates: AgentSessionUpdate,
+    options?: { reasoningEffortSource?: 'control' | 'encoder'; projectedMetadataKeys?: never },
   ]
 >('agentSessions/updateSession');
 
@@ -1747,6 +1789,14 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   next = removeDetailHydrated(next, agentId);
   return next;
 });
+// Detail metadata from a previous connection/principal is not authoritative
+// for notification flags or detail-only UI fields after re-admission.
+function invalidateAgentDetail(state: AgentSessionState): AgentSessionState {
+  return state.detailHydrated ? { ...state, detailHydrated: undefined } : state;
+}
+agentSessionReducer.with(principalContextChanged, invalidateAgentDetail);
+agentSessionReducer.with(principalIdentityChanged, invalidateAgentDetail);
+agentSessionReducer.with(connectionStatusChanged, invalidateAgentDetail);
 agentSessionReducer.with(markAgentDetailHydrated, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId] || state.detailHydrated?.[agentId]) return state;
   return { ...state, detailHydrated: { ...state.detailHydrated, [agentId]: true } };
@@ -1797,8 +1847,15 @@ agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId,
 agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const { messages, ...otherUpdates } = updates;
-  let merged: StoredAgentSession = { ...session, ...otherUpdates };
+  state = recordSessionProjection(state, agentId, updates);
+  const { messages, metadataPatch, ...otherUpdates } = updates;
+  let merged: StoredAgentSession = {
+    ...session,
+    ...otherUpdates,
+    metadata: metadataPatch
+      ? applyAgentMetadataPatch(session.metadata, metadataPatch)
+      : session.metadata,
+  };
   let droppedResident = 0;
   if (messages && Array.isArray(messages)) {
     const ordered = normalizeSortHistoryMessages(messages);
@@ -1843,15 +1900,18 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     const existing = getSession(state, agentId);
     if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
       return state;
-    const metadata = existing.metadata ?? {};
-    if (
-      Object.entries(fields).every(
-        ([key, value]) => metadata[key as keyof typeof metadata] === value,
-      )
-    ) {
-      return state;
-    }
-    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
+    const metadataPatch: NonNullable<AgentSessionUpdate['metadataPatch']> = {};
+    if (fields.pendingQuestionsMessageId !== undefined)
+      metadataPatch.pendingQuestionsMessageId = {
+        op: 'set',
+        value: fields.pendingQuestionsMessageId,
+      };
+    if (fields.dismissedQuestionsMessageId !== undefined)
+      metadataPatch.dismissedQuestionsMessageId = {
+        op: 'set',
+        value: fields.dismissedQuestionsMessageId,
+      };
+    return agentSessionReducer(state, updateSession(agentId, { metadataPatch }));
   }
 
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
@@ -1872,11 +1932,11 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   const existing = getSession(state, agentId);
   if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
-  const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
-    ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
+  const merged: AgentSessionUpdate = {
+    ...updates,
     ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
   };
-  return updateSessionFields(state, agentId, merged);
+  return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);
 });
 agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
   const session = getSession(state, agentId);

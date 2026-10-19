@@ -34,7 +34,11 @@
   import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
   import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
-  import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
+  import {
+    clearMainPanelView as ftClearMainPanelView,
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import {
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
@@ -436,6 +440,12 @@
     selectedNoteIdStore.set(pageState?.mainPanel?.selectedNoteId ?? null);
   });
   const isNewWorkspaceSession$ = selectIsNewWorkspaceSession(workspaceIdStore, selectedNoteIdStore);
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !$isNewWorkspaceSession$) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'history'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'history'));
+  });
 
   // Restore scroll position after workspace state is created
   $effect(() => {
@@ -782,6 +792,7 @@
         : ''}
     >
       <MultiSelectTabbedSidebar
+        {active}
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
         onCreateNote={handleCreateNote}

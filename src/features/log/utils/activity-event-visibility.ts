@@ -44,6 +44,7 @@ export function isSourceFileActivityEvent(event: WorkspaceEvent): boolean {
 
 /** Keep activity history focused on work performed by agents and project edits. */
 export function shouldShowWorkspaceActivityEvent(event: WorkspaceEvent): boolean {
+  if ((event.type as string) === 'agent:last-message') return false;
   return (
     ACTIVITY_EVENT_PREFIXES.some((prefix) => event.type.startsWith(prefix)) ||
     isSourceFileActivityEvent(event)

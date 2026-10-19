@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
@@ -29,12 +29,39 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
     filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
       Promise.resolve(null),
     ),
-    backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
+    backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.remove') {
+        const result = await scriptsRemove(params.workspaceId, params.scriptId);
+        if (!result.success) throw new Error(result.error);
+        return { ok: true };
+      }
+      if (method === 'script.create') {
+        const { workspaceId, ...definition } = params;
+        const result = await scriptsCreate(workspaceId, definition);
+        if (!result.success) throw new Error(result.error);
+        return (
+          result.script ?? {
+            ...definition,
+            id: definition.scriptId,
+            workspaceId,
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            runtime: { status: 'idle', restartCount: 0 },
+          }
+        );
+      }
+      return { config: {} };
+    }),
   }),
 );
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: scriptsList, create: scriptsCreate, remove: scriptsRemove },
+    scripts: {
+      list: scriptsList,
+      get: async (workspaceId: string, id: string) =>
+        (await scriptsList(workspaceId)).find((s: any) => s.id === id),
+      create: scriptsCreate,
+    },
     files: { read: filesRead },
   },
 }));
@@ -43,11 +70,30 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { scriptsClient } from './scripts.client';
+import { store } from '$store/renderer/store';
+import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+
+let stop: () => void;
+beforeEach(() => {
+  store.dispose();
+  store.init();
+  admitLegacyPrincipal();
+  store.dispatch(setWorkspaceEntity({ id: 'ws-1', title: 'Scripts', myRole: 'owner' } as never));
+  stop = store.runSaga(scriptsOperationSaga);
+});
+afterEach(() => {
+  stop();
+  store.dispose();
+});
 
 function fileEntry(path: string, content: string): FileContentEntry {
   return {
     path,
     absolutePath: null,
+    kind: 'editable-text',
     originalContent: content,
     localContent: content,
     lastUpdated: 0,
@@ -96,6 +142,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
         cwd: 'packages/app',
         env: { NODE_ENV: 'development' },
         autoStart: true,
+        healthUrl: 'http://localhost:3100/health',
+        readyPattern: 'READY',
       }),
       liveScript({ id: 'script-test', name: 'test', command: 'pnpm test', mode: 'command' }),
     ]);
@@ -103,7 +151,7 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
 
     const result = await scriptsClient.saveToRepo('ws-1');
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(backendRequestMock).toHaveBeenCalledTimes(1);
     expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.save', {
       workspaceId: 'ws-1',
@@ -117,6 +165,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
             cwd: 'packages/app',
             env: { NODE_ENV: 'development' },
             autoStart: true,
+            healthUrl: 'http://localhost:3100/health',
+            readyPattern: 'READY',
           },
           { name: 'test', command: 'pnpm test', mode: 'command' },
         ],
@@ -203,6 +253,9 @@ describe('scriptsClient.create purpose forwarding', () => {
 });
 
 describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+  beforeEach(() =>
+    store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
+  );
   afterEach(() => vi.clearAllMocks());
 
   it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {
@@ -220,7 +273,7 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
 
     const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
+    expect(scriptsList).toHaveBeenCalledWith('ws-1');
     expect(scriptsCreate).toHaveBeenCalledTimes(1);
     expect(scriptsCreate).toHaveBeenCalledWith(
       'ws-1',
@@ -232,6 +285,17 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
         category: 'dev',
       }),
     );
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      category: 'dev',
+      cwd: undefined,
+      env: undefined,
+      autoStart: undefined,
+    });
     expect(result.success).toBe(true);
   });
 
@@ -281,7 +345,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
-    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'all' });
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(scriptsCreate).toHaveBeenCalledTimes(2);
     expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
       name: 'dev',
@@ -289,6 +353,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'service',
       category: 'dev',
+      source: 'auto-detected',
     });
     expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
       name: 'test',
@@ -296,6 +361,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       purpose: 'saved',
       mode: 'command',
       category: 'test',
+      source: 'auto-detected',
     });
     expect(scriptsRemove).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -543,6 +609,44 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
 
     expect(result).toEqual({ success: false, error: 'daemon offline' });
     expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe('scriptsClient.restoreSnapshot', () => {
+  afterEach(() => vi.clearAllMocks());
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s purpose when recreating a snapshot',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      expect((await scriptsClient.restoreSnapshot('ws-1', [liveScript({ purpose })])).success).toBe(
+        true,
+      );
+      expect(scriptsCreate).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({ name: 'dev', purpose: purpose ?? 'saved' }),
+      );
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('scriptId');
+    },
+  );
+  it('does not recreate definitions after a removal failure', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    scriptsRemove.mockResolvedValueOnce({ success: false, error: 'offline' });
+    expect(await scriptsClient.restoreSnapshot('ws-1', [liveScript()])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+  });
+  it('reports a failed restore read and permits retry', async () => {
+    scriptsList.mockRejectedValueOnce(new Error('offline'));
+    expect(await scriptsClient.restoreSnapshot('ws-1', [])).toEqual({
+      success: false,
+      error: 'offline',
+    });
+    scriptsList.mockResolvedValueOnce([]);
+    expect((await scriptsClient.restoreSnapshot('ws-1', [])).success).toBe(true);
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
 });

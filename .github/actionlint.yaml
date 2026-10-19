@@ -1,14 +1,7 @@
-# Custom runner labels for the self-hosted fleet, so actionlint's
-# runner-label check recognizes them (everything else it treats as unknown).
 self-hosted-runner:
   labels:
-    - m1mac
-    - tinybox
-    # GH-hosted larger runner the route job bursts the heavy jobs to.
+    # Org larger runners (GitHub-hosted, runner group Default); standard
+    # GitHub labels such as ubuntu-24.04 and macos-26-xlarge are built in.
     - gh-linux-8x
-    # GH-hosted larger ARM64 Linux runner (8-core/32 GB) the release/manual
-    # Linux arm64 legs run on (monorepo#1340 sizing).
     - gh-linux-arm64-8x
-    # GH-hosted larger Windows runner (16-core/64 GB, Server 2022 image) the
-    # Windows release/manual-build legs run on.
     - gh-windows-16x

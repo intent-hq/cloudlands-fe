@@ -66,6 +66,7 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import {
   acquireChatInterestLease,
+  HYDRATION_LEASE_HOLDER_PREFIX,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
 import {
@@ -158,7 +159,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   // cannot close the standing registration the wait depends on, released in
   // the finally (which also runs on saga cancellation).
   hydrationLeaseSeq += 1;
-  const leaseHolder = `chat-read:${hydrationLeaseSeq}`;
+  const leaseHolder = `${HYDRATION_LEASE_HOLDER_PREFIX}${hydrationLeaseSeq}`;
   yield* call(acquireChatInterestLease, agentId, leaseHolder);
   try {
     yield* put(transcriptHydrationStarted(agentId));
@@ -416,7 +417,7 @@ const queueReconciliationActions = [
 ];
 type QueueReconciliationAction = ReturnType<(typeof queueReconciliationActions)[number]>;
 
-/** Evidence invalidates both reads. Coalesce bursts and wait for the event mirror to publish. */
+/** Coalesce evidence bursts and wait for the authoritative event mirror to publish. */
 function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): SagaGenerator<void> {
   yield* delay(0);
   const [scope] = action.payload;
@@ -426,7 +427,7 @@ function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): Sa
   if (!display.queue.length) return;
   // Both services retain their existing scope/connection/read fences and trailing coalescing.
   yield* all([
-    call(hydrateAgentQueue, scope.agentId, scope.workspaceId),
+    ...(!entry.queueFresh ? [call(hydrateAgentQueue, scope.agentId, scope.workspaceId)] : []),
     call(loadChatTranscript, scope.agentId, scope.workspaceId),
   ]);
 }

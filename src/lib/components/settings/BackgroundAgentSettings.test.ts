@@ -171,6 +171,19 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     expect(mocks.dispatched).toEqual([]);
   });
 
+  // §5.54: quick actions follow the default provider, which may be a profile.
+  it('accepts picks from the default profile and keeps its effort route', async () => {
+    mocks.effectiveProviderId.value = 'codex@pwork00000001';
+    render(BackgroundAgentSettings);
+    expect(screen.getAllByTestId('picker-show-reasoning')[0].textContent).toBe('true');
+    await fireEvent.click(screen.getAllByTestId('pick-profile-model')[0]);
+    // Another configuration of the same provider is a different account.
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[0]);
+    expect(mocks.dispatched).toEqual([
+      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['gpt-5-work'] },
+    ]);
+  });
+
   it('sets and clears the quick-action default without changing action overrides', async () => {
     mocks.typeOverrides.value = { commit: 'pinned-commit', pr: '', review: '', fast: '' };
     render(BackgroundAgentSettings);

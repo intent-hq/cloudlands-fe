@@ -201,13 +201,18 @@ test('sends ready entries together and leaves held entries available to clear', 
     'Keep the spacing consistent.',
   );
   await expect(
-    component.getByRole('button', { name: 'Send all ready messages now' }),
+    component
+      .getByTestId('queued-messages-header')
+      .getByRole('button', { name: 'Send immediately' }),
   ).toBeDisabled();
   await testInfo.attach('held-message-preserved', {
     body: await component.screenshot(),
     contentType: 'image/png',
   });
-  await component.getByRole('button', { name: 'Clear all queued messages' }).click();
+  await component
+    .getByTestId('queued-messages-header')
+    .getByRole('button', { name: 'Remove', exact: true })
+    .click();
   await expect(component.getByTestId('queued-messages-container')).toHaveCount(0);
 });
 

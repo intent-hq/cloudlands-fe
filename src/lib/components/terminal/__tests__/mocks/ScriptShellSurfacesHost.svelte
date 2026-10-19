@@ -6,6 +6,7 @@
   import { makeScriptsFixture } from '../../../../../test/fixtures/scripts';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     appendScriptOutput,
@@ -19,6 +20,7 @@
   const workspaceId = 'synthetic-history' as WorkspaceId;
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   const scripts = makeScriptsFixture();
+  const terminalState = selectWorkspaceTerminalState(workspaceId);
   store.dispatch(
     setWorkspaceEntity({
       id: workspaceId,
@@ -48,7 +50,10 @@
   onDestroy(disposeStore);
 </script>
 
-<div class="h-screen bg-background text-foreground">
+<div
+  class="h-screen bg-background text-foreground"
+  data-selected-script={$terminalState.selectedScriptId}
+>
   <section class="w-80 h-96 overflow-auto" aria-label="Workspace shell">
     <WorkspaceShellList {workspaceId} />
   </section>

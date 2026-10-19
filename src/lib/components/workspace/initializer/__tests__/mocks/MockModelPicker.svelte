@@ -57,6 +57,14 @@
   >
     pick model with resolved triple
   </button>
+  <button
+    type="button"
+    data-testid="pick-profile-model"
+    onclick={() =>
+      onModelChange?.('gpt-5-work', { providerId: 'codex@pwork00000001', modelId: 'gpt-5-work' })}
+  >
+    pick a named profile's model
+  </button>
   <button type="button" data-testid="attempt-reasoning" onclick={() => onReasoningChange?.('high')}
     >attempt reasoning callback</button
   >
@@ -69,3 +77,11 @@
     </button>
   {/if}
 </div>
+
+<button
+  type="button"
+  data-testid="pick-antigravity"
+  onclick={() =>
+    onModelChange?.('gemini-4-argon', { providerId: 'antigravity', modelId: 'gemini-4-argon' })}
+  >pick Antigravity</button
+>

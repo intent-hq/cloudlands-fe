@@ -41,6 +41,10 @@
   } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import VirtualizedFileTree from './VirtualizedFileTree.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { m } from '$shared/paraglide/messages.js';
   import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
 
@@ -472,6 +476,12 @@
         }, 50);
       }, 100);
     }
+  });
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !true) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
   });
 </script>
 

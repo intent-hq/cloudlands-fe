@@ -838,6 +838,39 @@ describe('QueuedMessageList', () => {
   });
 
   describe('editing lifecycle', () => {
+    it('preserves replacement selection when input arrives before deferred autofocus', async () => {
+      const frames: FrameRequestCallback[] = [];
+      const frame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({
+        props: { messages: [queued({ content: 'original message' })], onedit },
+      });
+      try {
+        await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+        const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+        textarea.focus();
+        textarea.setSelectionRange(0, textarea.value.length);
+        for (const callback of frames.splice(0)) callback(performance.now());
+        textarea.setRangeText(
+          'replacement message',
+          textarea.selectionStart,
+          textarea.selectionEnd,
+          'end',
+        );
+        await fireEvent.input(textarea);
+        await fireEvent.keyDown(textarea, { key: 'Enter' });
+        await waitFor(() =>
+          expect(onedit).toHaveBeenLastCalledWith('q-1', 'replacement message', false),
+        );
+      } finally {
+        view.unmount();
+        frame.mockRestore();
+      }
+    });
+
     async function beginEdit(
       props: Parameters<typeof render<typeof QueuedMessageList>>[1]['props'],
     ) {

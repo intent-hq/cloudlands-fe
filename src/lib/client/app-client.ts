@@ -1,7 +1,9 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
   ScriptArchiveFilter,
+  ScriptListPage,
   ScriptArchiveResult,
   ScriptRestoreResult,
 } from '$features/scripts/types';
@@ -75,6 +77,14 @@ import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type {
+  ProviderProfileCreateParams,
+  ProviderProfileCreateResult,
+  ProviderProfileDeleteResult,
+  ProviderProfilesListResult,
+  ProviderProfileUpdateParams,
+  ProviderProfileUpdateResult,
+} from '$shared/provider-profiles';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
   BrowserActionEnvelope,
@@ -112,7 +122,11 @@ import type { SystemStatusState } from '$store/renderer/slices/system-status/sys
 import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
 import type { CommentV2 } from '$store/renderer/slices/comments/comments-types';
 import type { AuthorType, CommentType } from '$features/comments/comment-types-v2';
-import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
+import type {
+  EditableText,
+  RestorableSnapshot,
+  FileContentEntry,
+} from '$store/renderer/slices/files/files-types';
 
 /** Disposer returned by every `subscribe()` call. */
 export type Unsubscribe = () => void;
@@ -404,6 +418,15 @@ export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
+/** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
+export interface PullRequestWorkspace {
+  id: WorkspaceId;
+  title: string;
+  archived: boolean;
+  /** RFC 3339 time the daemon first linked this workspace to the PR. */
+  linkedAt: string;
+}
+
 export interface WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -420,6 +443,13 @@ export interface WorkspacesClient {
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /**
+   * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
+   * §5.1), most recently linked first, archived included. Callers must gate on
+   * the `prWorkspaceLookup: 1` server capability. Rejects on transport errors
+   * and on a malformed result.
+   */
+  findByPullRequest(url: string): Promise<PullRequestWorkspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
@@ -1375,7 +1405,11 @@ export interface FilesClient {
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
   /** Write file content (`file.write`); create-ish, so the live client attaches an idempotencyKey (§5.6). */
-  write(workspaceId: string, path: string, content: string): Promise<MutationResult>;
+  write(
+    workspaceId: string,
+    path: string,
+    content: EditableText | RestorableSnapshot,
+  ): Promise<MutationResult>;
   /** Delete a file (`file.delete`). */
   delete(workspaceId: string, path: string): Promise<MutationResult>;
   /** Create a directory (`file.mkdir`); create, so the live client attaches an idempotencyKey (§5.6). */
@@ -1461,11 +1495,17 @@ export interface GitClient {
    * `file-tracking.loadCommits` with full envelope — returns commits, boundarySha, and nextToken.
    * The `boundarySha` is the workspace boundary commit SHA or null when no boundary exists.
    * When `includeOlder` is true, fetches commits before and including the workspace boundary.
+   * Rejects failed reads so consumers retain the prior history and can retry.
    */
   commitsWithBoundary(
     workspaceId: string,
     includeOlder?: boolean,
-  ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
+  ): Promise<{
+    commits: CommitInfo[];
+    boundarySha: string | null;
+    nextToken: string | null;
+    historyIdentity?: string;
+  }>;
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
    * commit. Returns `null` on transport failure so callers degrade gracefully.
@@ -1517,7 +1557,6 @@ export interface GitClient {
    * transport/validation errors fold the same way. Never throws.
    */
   pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult>;
-  subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
    * — staging requires explicit paths per contract.
@@ -1898,18 +1937,21 @@ export interface CommentsClient {
   delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult>;
 }
 
-/** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
+/** New-definition input for `script.create`; ID upserts belong to the reserved edit API. */
 export interface ScriptCreateInput {
   /** Omit to use the daemon default; existing IDs retain their stored purpose. */
   purpose?: ScriptPurpose;
   name: string;
   command: string;
   mode: ScriptMode;
+  healthUrl?: string;
+  readyPattern?: string;
   cwd?: string;
   env?: Record<string, string>;
   category?: string;
   autoStart?: boolean;
-  scriptId?: string;
+  /** Existing definitions must use scriptsClient.update so edits reserve before reads. */
+  scriptId?: never;
 }
 
 /** `script.create` outcome — carries the daemon's created definition on success. */
@@ -1943,10 +1985,13 @@ export interface ScriptsClient {
     workspaceId: string,
     options?: { archive?: ScriptArchiveFilter },
   ): Promise<ScriptWithState[]>;
+  listPage(
+    workspaceId: string,
+    options?: { limit?: number; cursor?: string },
+  ): Promise<ScriptListPage>;
+  get(workspaceId: string, scriptId: string): Promise<ScriptWithState>;
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
-  /** `script.remove` — stop (if running) and forget a script. */
-  remove(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.stop`. */
@@ -2141,6 +2186,11 @@ export interface ModelsClient {
  */
 export interface ProvidersClient {
   catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
+  /** `providers.profiles.*` (§5.54), administrator-only; call only when the catalog advertises `supportsProfiles`. */
+  listProfiles(baseProviderId?: string): Promise<ProviderProfilesListResult>;
+  createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
+  updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
+  deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */

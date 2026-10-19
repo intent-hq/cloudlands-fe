@@ -2,13 +2,14 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
+  replaceItem,
   getItem,
   getItems,
 } from '@themislib/themis/utils/collections/collection-utils';
@@ -26,6 +27,7 @@ export const initialState: CommentsV2State = {
   selectedCommentId: null,
   hoveredCommentId: null,
   expandedThreadIds: {},
+  loadsByConsumer: createCollection('consumerId'),
 };
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,22 @@ export const loadCommentsAction = createAction<[comments: CommentV2[]]>('comment
 export const replaceNoteCommentsAction = createAction<
   [workspaceId: string, noteId: string, comments: CommentV2[]]
 >('comments/replaceNoteComments');
+
+export const commentLoadRequested = createAsyncAction<
+  [consumerId: string, requestId: string, workspaceId: string, noteId: string],
+  CommentV2[]
+>('comments/loadRequested', 'comments/loadSettled');
+export const commentLoadFinished =
+  createAction<
+    [
+      consumerId: string,
+      requestId: string,
+      workspaceId: string,
+      authority: string | null,
+      error?: string,
+    ]
+  >('comments/loadFinished');
+export const commentLoadReleased = createAction<[consumerId: string]>('comments/loadReleased');
 
 /** Clear all comment data. */
 export const clearCommentsAction = createAction('comments/clear');
@@ -202,6 +220,45 @@ commentsReducer.with(
     );
   },
 );
+
+commentsReducer.with(
+  commentLoadRequested,
+  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => ({
+    ...state,
+    loadsByConsumer: addItem(removeItem(state.loadsByConsumer, consumerId), {
+      consumerId,
+      requestId,
+      workspaceId,
+      noteId,
+      authority: null,
+      status: 'loading',
+    }),
+  }),
+);
+commentsReducer.with(
+  commentLoadFinished,
+  (state, { payload: [consumerId, requestId, workspaceId, authority, error] }) => {
+    const current = getItem(state.loadsByConsumer, consumerId);
+    if (!current || current.requestId !== requestId || current.workspaceId !== workspaceId) {
+      return state;
+    }
+    const next = {
+      ...current,
+      authority,
+      status: error ? ('error' as const) : ('ready' as const),
+    };
+    if (error) next.error = error;
+    else delete next.error;
+    return {
+      ...state,
+      loadsByConsumer: replaceItem(state.loadsByConsumer, consumerId, next),
+    };
+  },
+);
+commentsReducer.with(commentLoadReleased, (state, { payload: [consumerId] }) => ({
+  ...state,
+  loadsByConsumer: removeItem(state.loadsByConsumer, consumerId),
+}));
 
 // ── clear ───────────────────────────────────────────────────────────────
 commentsReducer.with(clearCommentsAction, () => initialState);

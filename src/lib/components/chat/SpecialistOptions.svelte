@@ -37,7 +37,9 @@
       data-specialist-option={option.id ?? 'general'}
       onSelect={() => onchange(option.id)}
     >
-      <AgentAvatar agentId="blank" variant="standard" specialist={option.id} icon={option.icon} />
+      <span class="first-line-icon w-5">
+        <AgentAvatar agentId="blank" variant="standard" specialist={option.id} icon={option.icon} />
+      </span>
       <span class="flex min-w-0 flex-1 flex-col text-left">
         <span class="type-caption truncate text-foreground">{option.name}</span>
         <span class="type-caption line-clamp-2 text-muted-foreground">{option.description}</span>

@@ -72,11 +72,6 @@ vi.mock('$store/renderer/store', async () => {
   return createStoreMockModule(mockStore);
 });
 
-vi.mock('../comment-loader', () => ({
-  loadComments: vi.fn(async () => []),
-  resolveComment: vi.fn(async () => true),
-}));
-
 import { Editor } from '@tiptap/core';
 import { createEditorConfig, mentionRenderText } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';

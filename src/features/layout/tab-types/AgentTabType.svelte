@@ -445,6 +445,7 @@
           bind:this={chatPanelRef}
           workspace={$workspace}
           agentId={tab.agentId}
+          tabId={tab.id}
           {agentModel}
           {isActive}
           {isPanelFocused}

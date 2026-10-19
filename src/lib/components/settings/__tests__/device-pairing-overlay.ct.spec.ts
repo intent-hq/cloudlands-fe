@@ -7,7 +7,7 @@ test('Mobile QR dialog traps focus and returns it when dismissed', async ({ moun
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, {
     props: { mobilePage: true },
-    hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'mobile' } },
+    hooksConfig: { previewScene: { scene: 'devices-settings', state: 'mobile' } },
   });
   const trigger = page.getByRole('button', { name: m.settings_wsApi_showQrCode(), exact: true });
   await trigger.click();

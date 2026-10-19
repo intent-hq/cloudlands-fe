@@ -3,7 +3,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
-import type { ScriptMonitor } from '$features/script-monitor/types';
+import type { ActiveScriptMonitor } from '$features/script-monitor/types';
 import { store as appStore } from '$store/renderer/store';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
@@ -49,7 +49,7 @@ export function setupHomeAssistantActivityFixtures() {
   const inFlight = new Map<string, number>();
   let hooks: BackgroundHook[] = [];
   let prs: PrMonitorRow[] = [];
-  let scripts: ScriptMonitor[] = [];
+  let scripts: ActiveScriptMonitor[] = [];
   let heldAgentId: string | undefined;
   let release = () => {};
   const createdAt = '2026-09-29T12:00:00Z';
@@ -79,7 +79,7 @@ export function setupHomeAssistantActivityFixtures() {
     createdAt,
     updatedAt: createdAt,
   });
-  const script = (index: number): ScriptMonitor => ({
+  const script = (index: number): ActiveScriptMonitor => ({
     monitorId: `activity-script-${index}`,
     workspaceId: CHIEF_WORKSPACE_ID,
     agentId: id(index),
@@ -143,18 +143,7 @@ export function setupHomeAssistantActivityFixtures() {
       for (const state of ['cancelled', 'dispatched', 'expired', 'evicted'] as const)
         hooks.push(hook(6, `settled-${state}`, state));
       prs = [pr(0, 'active'), pr(2, 'active'), pr(6, 'completed'), pr(8, 'active')];
-      const settled = script(6);
-      scripts = [
-        script(0),
-        script(3),
-        {
-          ...settled,
-          state: 'completed',
-          settledAt: expiresAt,
-          reason: 'finished',
-          result: { outcome: 'succeeded', stoppedAt: expiresAt, exitCode: 0 },
-        },
-      ];
+      scripts = [script(0), script(3)];
       for (const thread of threads) {
         eventCounts.set(
           thread.id,
@@ -223,11 +212,7 @@ export function setupHomeAssistantActivityFixtures() {
         item.agentId === agentId ? { ...item, state: 'cancelled' } : item,
       );
       prs = prs.map((item) => (item.agentId === agentId ? { ...item, state: 'completed' } : item));
-      scripts = scripts.map((item) =>
-        item.agentId === agentId
-          ? { ...item, state: 'cancelled', reason: 'unmonitored', settledAt: expiresAt }
-          : item,
-      );
+      scripts = scripts.filter((item) => item.agentId !== agentId);
       eventCounts.set(agentId, 0);
       watchCounts.set(agentId, 0);
       appStore.dispatch(

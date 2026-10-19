@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -9,7 +10,6 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
-  import { scrollFade } from '$lib/actions/scroll-fade';
   import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
 
   let {
@@ -17,16 +17,20 @@
     selectedId,
     onselect,
     onopen,
+    oncontextmenu,
     archived = false,
     showRepository = true,
+    showRepositoryOwner = true,
     groups,
   }: {
     workspaces: Workspace[];
     selectedId: string | null;
     onselect: (id: string) => void;
     onopen: (id: string) => void;
+    oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
+    showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
@@ -57,57 +61,71 @@
 </script>
 
 <div
-  class="min-h-0 flex-1 overflow-auto px-6 pb-5"
+  class="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-5"
   data-home-board
-  use:scrollFade={{ axis: 'x' }}
   aria-label={m.home_board_view()}
 >
   <div
-    class="grid min-h-full w-full gap-4"
-    style:grid-template-columns={`repeat(${displayColumns.length}, minmax(15rem, 1fr))`}
+    class="grid w-full content-start grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3"
   >
     {#each displayColumns as group (group.id)}
       {@const items = group.items}
       <section class="flex min-w-0 flex-col self-stretch" aria-label={group.label}>
         <h3
-          class="sticky top-0 z-20 flex items-center gap-2 bg-background px-2 py-3 type-caption font-medium"
+          class="sticky top-0 z-20 flex min-w-0 items-center gap-2 [overflow-wrap:anywhere] bg-background px-2 py-3 type-caption font-medium"
         >
           {group.label}
         </h3>
         <div class="flex flex-col gap-2 pb-2">
           {#each items as workspace (workspace.id)}
+            {@const displayTitle = workspace.title.trim()
+              ? workspace.title
+              : m.workspace_links_untitled_label()}
+            {@const repositoryLabel =
+              [
+                showRepositoryOwner ? workspace.repositoryOwner : undefined,
+                workspace.repositoryName,
+              ]
+                .filter(Boolean)
+                .join('/') || workspace.repositoryPath}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
               active={selectedId === workspace.id}
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
-              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
+              class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
               onclick={(event) => {
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
-              onkeydown={(event) => openHomeWorkspaceFromEvent(event, workspace.id, onopen)}
-              aria-label={workspace.title}
+              oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
+              onkeydown={(event) => {
+                oncontextmenu?.(event, workspace);
+                if (!event.defaultPrevented)
+                  openHomeWorkspaceFromEvent(event, workspace.id, onopen);
+              }}
+              aria-label={displayTitle}
             >
               <span class="flex items-start justify-between gap-3">
+                <WorkspaceMicroKeySlot workspaceId={workspace.id} />
                 <Tooltip.Provider
                   ><Tooltip.Root
                     ><Tooltip.Trigger
                       >{#snippet child({ props: homeTooltipProps })}<span
                           {...homeTooltipProps}
-                          class="min-w-0 line-clamp-2 break-words font-medium"
+                          class="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] font-medium"
                         >
-                          {workspace.title}
+                          {displayTitle}
                         </span>{/snippet}</Tooltip.Trigger
-                    ><Tooltip.Content>{workspace.title}</Tooltip.Content></Tooltip.Root
+                    ><Tooltip.Content>{displayTitle}</Tooltip.Content></Tooltip.Root
                   ></Tooltip.Provider
                 >
                 <HomeWorkspaceStatus {workspace} class="mt-0.5" />
               </span>
               {#if workspace.statusMessage}
                 <span
-                  class="home-workspace-summary mt-2 line-clamp-2 break-words type-caption text-muted-foreground"
+                  class="home-workspace-summary mt-2 line-clamp-2 [overflow-wrap:anywhere] type-caption text-muted-foreground"
                 >
                   {workspace.statusMessage}
                 </span>
@@ -115,13 +133,13 @@
               <span
                 class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
-                {#if showRepository && workspace.repositoryName}
+                {#if showRepository && repositoryLabel}
                   <Tooltip.Provider
                     ><Tooltip.Root
                       ><Tooltip.Trigger
                         >{#snippet child({ props: homeTooltipProps })}<span
                             {...homeTooltipProps}
-                            class="flex min-w-0 max-w-full items-center gap-1.5"
+                            class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
                           >
                             {#if workspace.repositoryOwner}
                               <GitHubAvatar
@@ -129,13 +147,11 @@
                                 class="shrink-0 rounded-sm"
                               />
                             {/if}
-                            <span class="truncate">{workspace.repositoryName}</span>
+                            <span class="truncate" data-home-workspace-repository
+                              >{repositoryLabel}</span
+                            >
                           </span>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content
-                        >{[workspace.repositoryOwner, workspace.repositoryName]
-                          .filter(Boolean)
-                          .join('/')}</Tooltip.Content
-                      ></Tooltip.Root
+                      ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
                     ></Tooltip.Provider
                   >
                 {/if}

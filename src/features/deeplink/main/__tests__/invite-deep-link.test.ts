@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 /**
  * Behavior tests for the `intent://invite` deep-link join flow
@@ -2072,12 +2073,12 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
   beforeEach(() => {
     gitlabOnlyDaemon();
-    localProtocolVersion.mockReturnValue('10.8'); // protocol-version-ok: fixture hello
+    localProtocolVersion.mockReturnValue(CURRENT_PROTOCOL_VERSION);
     prove.mockResolvedValue({ ...CREDENTIAL, principalId: 'gl:4711', login: 'gl-user' });
   });
 
   it('an old local daemon offers upgrade without probing GitLab or starting repository auth', async () => {
-    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: pre-seam fixture hello
+    localProtocolVersion.mockReturnValue('10.7'); // fixture-protocol-version: pre-seam local daemon
     onLocal('github.connect', () => CONNECT);
     onLocal('github.cancelAuth', () => ({ ok: true }));
     const { prompt } = fakeConsent('cancel');
@@ -2407,7 +2408,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
   }
 
   beforeEach(() => {
-    localProtocolVersion.mockReturnValue('10.8'); // protocol-version-ok: fixture hello
+    localProtocolVersion.mockReturnValue(CURRENT_PROTOCOL_VERSION);
     challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: GITLAB_PIN });
     onLocal('github.getUser', () => ({ user: { id: 42, login: 'octocat' } }));
     onLocal('sourceControl.authStatus', (params) => {
@@ -2643,7 +2644,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
   });
 
   it('explicit null on an old sidecar keeps the documented GitHub legacy path', async () => {
-    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+    localProtocolVersion.mockReturnValue('10.7'); // fixture-protocol-version: old sidecar before the identity seam
     challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: null });
     setPrincipal(GITLAB_PIN);
     await handleInviteDeepLink(LINK);
@@ -2654,7 +2655,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
   });
 
   it('an old sidecar cannot bypass a GitLab pin through GitHub', async () => {
-    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+    localProtocolVersion.mockReturnValue('10.7'); // fixture-protocol-version: old sidecar before the identity seam
     await handleInviteDeepLink(LINK);
     expectNoProof();
     expect(localRequest).not.toHaveBeenCalled();
@@ -2664,7 +2665,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
   it.each([42, 9000])(
     'an old sidecar still enforces a GitHub pin against numeric ID %s',
     async (id) => {
-      localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+      localProtocolVersion.mockReturnValue('10.7'); // fixture-protocol-version: old sidecar before the identity seam
       challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: GITHUB_PIN });
       onLocal('github.getUser', () => ({ user: { id, login: 'octocat' } }));
       await handleInviteDeepLink(LINK);

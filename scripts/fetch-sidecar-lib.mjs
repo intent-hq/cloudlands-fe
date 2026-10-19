@@ -75,6 +75,15 @@ export function sidecarBinaryName(target, appName = INTENTD_APP_NAME) {
   return isWindowsTarget(target) ? `${appName}.exe` : appName;
 }
 
+/**
+ * GitHub token for intent-hq/intentd reads, in fetch-sidecar's precedence (its CJS
+ * `authToken()` cannot import this ESM module synchronously, so keep the two in step).
+ */
+export const GITHUB_TOKEN_ENV_NAMES = ['INTENTD_READ_PAT', 'GH_TOKEN', 'GITHUB_TOKEN'];
+export function githubAuthToken(env = process.env) {
+  return GITHUB_TOKEN_ENV_NAMES.map((name) => env[name]?.trim()).find(Boolean) ?? null;
+}
+
 /** Release tag for a pinned version (intentd tags are `vX.Y.Z[-beta.N]`). */
 export function releaseTag(version) {
   return version.startsWith('v') ? version : `v${version}`;

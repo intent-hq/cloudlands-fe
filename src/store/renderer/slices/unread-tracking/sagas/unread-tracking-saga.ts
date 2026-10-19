@@ -1,5 +1,6 @@
 import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 import {
   markAgentSeenAtBoundary,
@@ -10,6 +11,7 @@ import {
   newestPersistedMessageId,
   releaseViewAwaitingTranscript,
 } from '$features/agent/mark-agent-seen';
+import { hasPanelChatInterestLease } from '$features/agent/utils/chat-interest-leases';
 import { clearCachedChatScroll } from '$lib/components/chat/chat-scroll-cache';
 import {
   selectAgentMessages,
@@ -36,19 +38,23 @@ import {
 import {
   selectCurrentlyViewedAgentId,
   selectDividerBoundaryStateSnapshot,
+  selectDividerSession,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
 import {
+  chatViewEnded,
   clearCurrentlyViewedAgent,
   endDividerSession,
   markAgentAsViewed,
   recordWatchedStreamingTail,
 } from '../unread-tracking-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 export type DividerSessionBoundary =
   | { kind: 'tab-close'; agentIds: string[] }
   | { kind: 'chief-card-close'; agentIds: string[] }
+  | { kind: 'view-end'; agentIds: string[] }
   | {
       kind: 'workspace-switch';
       agentIds: string[];
@@ -135,7 +141,7 @@ function* readDividerBoundarySnapshot(
 
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
   yield* call(markAgentSeenAtBoundary, boundary.agentIds);
-  // Leaving the agent (workspace switch / tab close) ends the reading
+  // Leaving the agent (workspace switch / tab close / chat view end) ends the reading
   // session: drop the cached transcript scroll so the next entry lands at
   // the bottom or the unread divider, never a stale clamped position.
   // Chief-card close keeps its cache — the hover card is not a workspace
@@ -146,7 +152,9 @@ function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> 
   // here because its destroy-time cache write is suppressed state-side:
   // endDividerSession (dispatched below, in this same tick) ends the
   // agent's divider session, and canRecordChatScroll refuses to record
-  // once the session has ended.
+  // once the session has ended. A 'view-end' boundary is the exception: its
+  // host dispatches AFTER the teardown flush, so the departing panel has
+  // already written its destroy-time cache entry and this clear removes it.
   if (boundary.kind !== 'chief-card-close') {
     yield* call(clearCachedChatScroll, boundary.agentIds);
   }
@@ -204,6 +212,46 @@ function* handleChiefBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<v
     yield* call(finishBoundary, boundary);
     tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
   }
+}
+
+function* handleChiefUnmount(
+  tracker: BoundarySnapshotTracker,
+  { payload: [workspaceId] }: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (workspaceId !== CHIEF_WORKSPACE_ID) return;
+  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+  if (current.chiefSessionAgentIds.length === 0) return;
+  const boundary: DividerSessionBoundary = {
+    kind: 'chief-card-close',
+    agentIds: current.chiefSessionAgentIds,
+  };
+  yield* call(finishBoundary, boundary);
+  tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
+}
+
+/**
+ * A chat view outside the panel-layout agent tabs ended (Home preview: the
+ * selected workspace or agent changed, the preview closed, or the user left
+ * Home). Those surfaces never close an agent tab or switch the active
+ * workspace tab, so without this boundary the seen marker never advanced past
+ * a reply watched mid-turn and the divider session stayed latched at its
+ * stale anchor. Only an agent whose viewing session actually started (first
+ * transcript hydration latched a divider session) is affected, and never one
+ * another live panel still shows (e.g. its agent tab in a split): that
+ * panel's latched session must survive, and its own tab-close / workspace
+ * boundary ends it later. Only panel leases count: a background history
+ * hydration lease outliving the departed panel must not swallow the boundary.
+ * The host dispatches after its teardown flush, so the departing panel has
+ * already released its interest lease.
+ */
+function* handleChatViewEnded({
+  payload: [agentId],
+}: ReturnType<typeof chatViewEnded>): SagaGenerator<void> {
+  if (!agentId) return;
+  if ((yield* selectDividerSession.effect(agentId)) === null) return;
+  if (hasPanelChatInterestLease(agentId)) return;
+  const boundary: DividerSessionBoundary = { kind: 'view-end', agentIds: [agentId] };
+  yield* call(finishBoundary, boundary);
 }
 
 function* handleSend(action: ReturnType<typeof sendMessage>): SagaGenerator<void> {
@@ -270,6 +318,8 @@ export function* unreadTrackingSaga(): SagaGenerator<void> {
     takeEvery(TAB_BOUNDARY_ACTIONS, handleTabBoundary, tracker),
     call(watchWorkspaceBoundaries, tracker),
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
+    takeEvery(workspaceUnmounted, handleChiefUnmount, tracker),
+    takeEvery(chatViewEnded, handleChatViewEnded),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),
     takeEvery(markAgentAsViewed, handleViewed),

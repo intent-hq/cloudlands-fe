@@ -49,11 +49,7 @@
         event.stopPropagation();
       }}
     >
-      {#if orientation === 'horizontal'}
-        <span aria-hidden="true">⋯</span>
-      {:else}
-        <KebabIcon class="size-3.5" />
-      {/if}
+      <KebabIcon {orientation} class="size-3.5" />
     </Button>
   {/snippet}
 </ActionMenu>

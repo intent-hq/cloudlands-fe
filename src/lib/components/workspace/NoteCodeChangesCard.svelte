@@ -35,6 +35,10 @@
     type JsonValue,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { toStore } from 'svelte/store';
@@ -214,6 +218,12 @@
       ),
     );
   }
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !hasAgents) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
+  });
 </script>
 
 {#if hasAgents && (hasChanges || isLoading)}

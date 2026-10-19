@@ -132,14 +132,14 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-test('text-only menu items use only the canonical inset', async ({ mount, page }) => {
+test('iconless menu items align with the shared icon column', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(MenuHarness);
   await page.getByRole('button', { name: 'Actions' }).click();
   const row = page.getByRole('menuitem', { name: 'Apple' });
   await expect(row).toBeVisible();
-  expect(await textInset(row)).toBeCloseTo(8, 0);
-  expect(await textInset(page.getByRole('menuitemcheckbox'))).toBeCloseTo(8, 0);
+  expect(await textInset(row)).toBeCloseTo(34, 0);
+  expect(await textInset(page.getByRole('menuitemcheckbox'))).toBeCloseTo(34, 0);
   await row.click();
   await expect(page.getByTestId('selected')).toHaveText('apple');
 });

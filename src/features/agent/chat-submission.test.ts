@@ -247,7 +247,7 @@ describe('Q&A local admission', () => {
     store.dispatch(
       updateSession('agent', {
         messages: [question, next],
-        metadata: { pendingQuestionsMessageId: next.id },
+        metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: next.id } },
       }),
     );
     expect(wizard()?.messageId).toBe(next.id);
@@ -339,7 +339,9 @@ describe('Q&A local admission', () => {
         { ...current.snapshot!, capabilities: initial.principal.snapshot!.capabilities },
       ),
     );
-    store.dispatch(updateSession('agent', { metadata: { pendingQuestionsMessageId: undefined } }));
+    store.dispatch(
+      updateSession('agent', { metadataPatch: { pendingQuestionsMessageId: { op: 'clear' } } }),
+    );
     expect(submitChatMessage(store, 'agent', { ...payload, text: '' })).toBe(false);
     expect(wizard()?.messageId).toBe(question.id);
     expect(submitChatMessage(store, 'agent', payload)).toBe(true);

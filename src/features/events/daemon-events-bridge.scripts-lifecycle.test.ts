@@ -2,6 +2,8 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 const notifyError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
@@ -107,8 +109,14 @@ beforeEach(() => {
   transport.request.mockReset();
   notifyError.mockClear();
   transport.request.mockImplementation(async (method) => {
-    if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-    if (method === 'script.list') return { scripts: [row()] };
+    if (method === 'client.hello')
+      return {
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
+        },
+      };
+    if (method === 'script.list') return { view: 'summary', scripts: [row()] };
     if (method === 'script.output') return 'retained output';
     return { ok: true };
   });
@@ -129,7 +137,9 @@ describe('script lifecycle event to transport', () => {
       const run = start();
       run.dispatch(refreshScripts(WS));
       await settle();
-      expect(listCalls()).toEqual([['script.list', { workspaceId: WS, archive: 'active' }]]);
+      expect(listCalls()).toEqual([
+        ['script.list', { workspaceId: WS, archive: 'active', view: 'summary', limit: 100 }],
+      ]);
       run.dispatch(appendScriptOutput(WS, ID, { text: 'kept', timestamp: 'now' }));
       const completed = row({
         archivedAt: 'now',
@@ -138,17 +148,22 @@ describe('script lifecycle event to transport', () => {
       });
       emit('script:changed', { scriptId: ID, action: 'updated', script: completed });
       await settle();
-      expect(run.scripts().scripts[ID]).toEqual(completed);
+      expect(run.scripts().scripts[ID]).toBeUndefined();
       expect(run.active()).toEqual([]);
       expect(run.scripts().outputBuffers[ID].chunks[0].text).toBe('kept');
       expect(listCalls()).toHaveLength(1);
     },
   );
   it('replays retirement, deletion and unknown runtime over delayed initial hydration', async () => {
-    const pending = deferred<{ scripts: ScriptWithState[] }>();
+    const pending = deferred<{ view: string; scripts: ScriptWithState[] }>();
     transport.request.mockImplementation(async (method) =>
       method === 'client.hello'
-        ? { server: { capabilities: { scriptLifecycle: 1 } } }
+        ? {
+            server: {
+              protocolVersion: CURRENT_PROTOCOL_VERSION,
+              capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
+            },
+          }
         : pending.promise,
     );
     const run = start();
@@ -161,9 +176,12 @@ describe('script lifecycle event to transport', () => {
     emit('script:changed', { scriptId: ID, action: 'updated', script: retired });
     emit('script:changed', { scriptId: 'deleted', action: 'removed' });
     emit('script:state', { scriptId: 'unknown', status: 'exited', exitCode: 7, restartCount: 0 });
-    pending.resolve({ scripts: [row(), row({ id: 'deleted' }), row({ id: 'unknown' })] });
+    pending.resolve({
+      view: 'summary',
+      scripts: [row(), row({ id: 'deleted' }), row({ id: 'unknown' })],
+    });
     await settle();
-    expect(run.scripts().scripts[ID]).toEqual(retired);
+    expect(run.scripts().scripts[ID]).toBeUndefined();
     expect(run.scripts().scripts.deleted).toBeUndefined();
     expect(run.scripts().scripts.unknown.runtime.exitCode).toBe(7);
     expect(run.active().map((s) => s.id)).toEqual(['unknown']);
@@ -381,51 +399,47 @@ describe('script lifecycle event to transport', () => {
 });
 
 describe('script list and retained output read fences', () => {
-  it('recovers archive and last-result metadata missed while disconnected', async () => {
+  it('refreshes only active summaries and reads selected output without archive enumeration', async () => {
     const run = start();
     run.dispatch(setScriptsData(WS, [row(), row({ id: 'deleted' })]));
-    const completed = row({
-      archivedAt: 'retired',
-      lastRun: { outcome: 'failed', exitCode: 9, stoppedAt: 'retired' },
-      runtime: { status: 'exited', exitCode: 9, restartCount: 0 },
-    });
-    transport.request.mockImplementation(async (method, params) => {
-      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-      if (method === 'script.list')
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello')
         return {
-          scripts:
-            params.archive === 'active'
-              ? []
-              : [completed, row({ id: 'unopened-history', archivedAt: 'old' })],
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
+          },
         };
+      if (method === 'script.list') return { view: 'summary', scripts: [] };
       if (method === 'script.output') return 'failure output';
       throw new Error('Unexpected method ' + method);
     });
     run.dispatch(refreshScripts(WS));
     await settle();
-    expect(listCalls()).toEqual([
-      ['script.list', { workspaceId: WS, archive: 'active' }],
-      ['script.list', { workspaceId: WS, archive: 'all' }],
-    ]);
-    expect(run.scripts().scripts).toEqual({ [ID]: completed });
-    expect(run.active()).toEqual([]);
+    expect(run.scripts().scripts).toEqual({});
     run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));
     await settle();
     expect(run.scripts().retainedOutputs?.viewer.text).toBe('failure output');
-    expect(listCalls()).toHaveLength(2);
+    expect(listCalls()).toEqual([
+      ['script.list', { workspaceId: WS, archive: 'active', view: 'summary', limit: 100 }],
+    ]);
   });
 
-  it('replays restore and runtime events over delayed retained metadata reconciliation', async () => {
-    const pending = deferred<{ scripts: ScriptWithState[] }>();
+  it('replays restore and runtime events over a delayed active page', async () => {
+    const pending = deferred<{ view: string; scripts: ScriptWithState[] }>();
     const run = start();
-    run.dispatch(setScriptsData(WS, [row()]));
-    transport.request.mockImplementation(async (method, params) => {
-      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-      return params.archive === 'active' ? { scripts: [] } : pending.promise;
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
+          },
+        };
+      return pending.promise;
     });
     run.dispatch(refreshScripts(WS));
     await settle();
-    expect(listCalls()).toHaveLength(2);
     const restored = row({ runtime: { status: 'idle', restartCount: 0 } });
     emit('script:changed', { scriptId: ID, action: 'updated', script: restored });
     emit('script:state', {
@@ -434,59 +448,62 @@ describe('script list and retained output read fences', () => {
       restartCount: 0,
       startedAt: 'new-run',
     });
-    pending.resolve({
-      scripts: [
-        row({ archivedAt: 'old', runtime: { status: 'exited', exitCode: 1, restartCount: 0 } }),
-      ],
-    });
+    pending.resolve({ view: 'summary', scripts: [] });
     await settle();
     expect(run.active().map((s) => s.id)).toEqual([ID]);
-    expect(run.scripts().scripts[ID].archivedAt).toBeUndefined();
     expect(run.scripts().scripts[ID].runtime).toMatchObject({
       status: 'starting',
       startedAt: 'new-run',
     });
-    expect(listCalls()).toHaveLength(2);
+    expect(listCalls()).toHaveLength(1);
   });
 
   it.each(['changed', 'removed'] as const)(
-    'keeps %s events authoritative over a missing-definition read',
+    'keeps %s events authoritative while direct output loads',
     async (kind) => {
-      const pending = deferred<{ scripts: ScriptWithState[] }>();
+      const pending = deferred<string>();
       transport.request.mockImplementation(async (method) => {
-        if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-        if (method === 'script.list') return pending.promise;
-        return 'current output';
+        if (method === 'script.output') return pending.promise;
+        throw new Error('Unexpected method ' + method);
       });
       const run = start();
       run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));
       await settle();
-      const completed = row({
-        archivedAt: 'now',
-        runtime: { status: 'exited', exitCode: 7, restartCount: 0 },
-      });
       emit('script:changed', {
         scriptId: ID,
         action: kind === 'removed' ? 'removed' : 'updated',
-        ...(kind === 'changed' ? { script: completed } : {}),
+        ...(kind === 'changed'
+          ? {
+              script: row({
+                archivedAt: 'now',
+                runtime: { status: 'exited', exitCode: 7, restartCount: 0 },
+              }),
+            }
+          : {}),
       });
-      pending.resolve({ scripts: [row()] });
+      pending.resolve('current output');
       await settle();
-      expect(run.scripts().scripts[ID]).toEqual(kind === 'changed' ? completed : undefined);
+      expect(run.scripts().scripts[ID]).toBeUndefined();
       expect(run.active()).toEqual([]);
-      expect(listCalls()).toEqual([['script.list', { workspaceId: WS, archive: 'all' }]]);
+      expect(listCalls()).toEqual([]);
       if (kind === 'changed')
         expect(run.scripts().retainedOutputs?.viewer.text).toBe('current output');
+      else expect(run.scripts().retainedOutputs?.viewer).toBeUndefined();
     },
   );
 
   it.each(['connection', 'authority', 'workspace'] as const)(
     'drops active hydration after %s invalidation',
     async (kind) => {
-      const pending = deferred<{ scripts: ScriptWithState[] }>();
+      const pending = deferred<{ view: string; scripts: ScriptWithState[] }>();
       transport.request.mockImplementation(async (method) =>
         method === 'client.hello'
-          ? { server: { capabilities: { scriptLifecycle: 1 } } }
+          ? {
+              server: {
+                protocolVersion: CURRENT_PROTOCOL_VERSION,
+                capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
+              },
+            }
           : pending.promise,
       );
       const run = start();
@@ -495,27 +512,24 @@ describe('script list and retained output read fences', () => {
       if (kind === 'connection') run.dispatch(backendReconnected());
       if (kind === 'authority') run.state.principal.status = 'loading';
       if (kind === 'workspace') run.dispatch(workspaceUnmounted(WS));
-      pending.resolve({ scripts: [row()] });
+      pending.resolve({ view: 'summary', scripts: [row()] });
       await settle();
       expect(run.scripts().scripts[ID]).toBeUndefined();
     },
   );
 
-  it('drops pre-reconnect missing-definition replies even when the backend ID is unchanged', async () => {
-    const pending = deferred<{ scripts: ScriptWithState[] }>();
-    transport.request.mockImplementation(async (method) =>
-      method === 'client.hello'
-        ? { server: { capabilities: { scriptLifecycle: 1 } } }
-        : pending.promise,
-    );
+  it('drops pre-reconnect output replies even when the backend ID is unchanged', async () => {
+    const pending = deferred<string>();
+    transport.request.mockReturnValue(pending.promise);
     const run = start();
     run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));
     await settle();
     run.dispatch(backendReconnected());
-    pending.resolve({ scripts: [row()] });
+    pending.resolve('old connection output');
     await settle();
     expect(run.scripts().scripts[ID]).toBeUndefined();
-    expect(transport.request.mock.calls.some(([method]) => method === 'script.output')).toBe(false);
+    expect(run.scripts().retainedOutputs?.viewer.text).toBeUndefined();
+    expect(listCalls()).toEqual([]);
   });
 
   it('keeps the newer request when an output viewer is requested again before the old reply', async () => {
@@ -551,46 +565,45 @@ describe('script list and retained output read fences', () => {
   });
 });
 
-it.each([
-  [true, true],
-  [false, true],
-  [true, false],
-  [false, false],
-])(
-  'keeps a newer all-list reply (row exists: %s, older active reply finishes last: %s)',
-  async (exists, activeFinishesLast) => {
-    const active = deferred<{ scripts: ScriptWithState[] }>();
-    const all = deferred<{ scripts: ScriptWithState[] }>();
-    transport.request.mockImplementation(async (method, params) => {
-      if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
-      if (method === 'script.list')
-        return params.archive === 'active' ? active.promise : all.promise;
-      return 'new output';
+it.each([true, false])(
+  'does not reinsert an archived row when its page finishes last: %s',
+  async (pageFinishesLast) => {
+    const page = deferred<{ view: string; scripts: ScriptWithState[] }>();
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptActiveLists: 1 },
+          },
+        };
+      if (method === 'script.list') return page.promise;
+      if (method === 'script.output') return 'selected output';
+      throw new Error('Unexpected method ' + method);
     });
     const run = start();
     run.dispatch(refreshScripts(WS));
     await settle();
     run.dispatch(scriptOutputRequested(WS, ID, 'viewer'));
     await settle();
-    const completed = row({
-      archivedAt: 'now',
-      lastRun: { outcome: 'succeeded', stoppedAt: 'now' },
-      runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
-    });
-    const finishActive = async () => {
-      active.resolve({ scripts: [row()] });
+    const finishPage = async () => {
+      page.resolve({ view: 'summary', scripts: [row()] });
       await settle();
     };
-    if (!activeFinishesLast) await finishActive();
-    all.resolve({
-      scripts: [...(exists ? [completed] : []), row({ id: 'unopened', archivedAt: 'now' })],
+    if (!pageFinishesLast) await finishPage();
+    emit('script:changed', {
+      scriptId: ID,
+      action: 'updated',
+      script: row({
+        archivedAt: 'now',
+        runtime: { status: 'exited', restartCount: 0, exitCode: 0 },
+      }),
     });
+    if (pageFinishesLast) await finishPage();
     await settle();
-    if (activeFinishesLast) await finishActive();
-    expect(run.scripts().scripts[ID]).toEqual(exists ? completed : undefined);
-    expect(run.scripts().scripts.unopened).toBeUndefined();
     expect(run.active()).toEqual([]);
-    expect(run.scripts().retainedOutputs?.viewer.text).toBe('new output');
-    expect(listCalls()).toHaveLength(2);
+    expect(run.scripts().scripts[ID]).toBeUndefined();
+    expect(run.scripts().retainedOutputs?.viewer.text).toBe('selected output');
+    expect(listCalls()).toHaveLength(1);
   },
 );

@@ -39,6 +39,7 @@ export interface SettingsFormOutcome {
 }
 
 export type SettingsFormKind =
+  | 'connection-tunnel'
   | 'collaboration-machine-name'
   | 'personal-devices'
   | 'agent-backend'

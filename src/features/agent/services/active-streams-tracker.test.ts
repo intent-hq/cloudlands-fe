@@ -5,21 +5,10 @@ const bridge = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 
-vi.mock('$lib/electron-bridge', () => ({
-  on: vi.fn((event: string, handler: (data: unknown) => void) => {
-    bridge.handlers.set(event, handler);
-    return `listener-${event}`;
-  }),
-  off: vi.fn((event: string) => bridge.handlers.delete(event)),
-}));
-
-vi.mock('../../../shared/generated/ipc-client', () => ({
-  invoke: bridge.invoke,
-}));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: bridge.invoke }));
 
 interface ActiveStreamsResponse {
-  success: boolean;
-  data: Array<{
+  streams: Array<{
     agentId: string;
     sessionId: string;
     workspaceId: string;
@@ -57,55 +46,79 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     const fetches = Array.from({ length: 12 }, () => tracker.fetchActiveStreams());
 
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
-    expect(bridge.invoke).toHaveBeenCalledWith('agent:get-active-streams');
+    expect(bridge.invoke).toHaveBeenCalledWith('agent.listActive', {});
 
-    firstScan.resolve({ success: true, data: [] });
+    firstScan.resolve({ streams: [] });
     await Promise.all(fetches);
     expect(bridge.invoke.mock.calls.length).toBeLessThanOrEqual(2);
   });
 
-  it('coalesces a status and idle burst into one trailing scan with the latest snapshot', async () => {
+  it('applies busy/idle/deletion pushes across workspaces without dependent scans, even during hydration', async () => {
     const firstScan = deferred<ActiveStreamsResponse>();
-    const trailingScan = deferred<ActiveStreamsResponse>();
-    bridge.invoke
-      .mockImplementationOnce(() => firstScan.promise)
-      .mockImplementationOnce(() => trailingScan.promise);
-
+    bridge.invoke.mockImplementationOnce(() => firstScan.promise);
     tracker.startPolling();
-    const statusChanged = bridge.handlers.get('agent:status-changed');
-    const idle = bridge.handlers.get('agent:idle');
-    expect(statusChanged).toBeDefined();
-    expect(idle).toBeDefined();
-
-    for (let index = 0; index < 10; index++) {
-      statusChanged?.({ agentId: `agent-${index}` });
-      idle?.({ agentId: `agent-${index}` });
-    }
-    expect(bridge.invoke).toHaveBeenCalledTimes(1);
-
+    const push = (type: string, agentId: string, workspaceId: string, data = {}) =>
+      tracker.applyEvent({
+        type,
+        workspaceId,
+        sessionId: agentId,
+        timestamp: '2026-10-12T00:00:00Z',
+        data: { agentId, ...data },
+      });
+    push('agent:status-changed', 'live', 'ws-2', { isActive: true, status: 'active' });
+    push('agent:idle', 'finished', 'ws-1');
+    push('agent:deleted', 'deleted', 'ws-1');
+    expect(tracker.getStreamingAgentIdsForWorkspace('ws-2')).toEqual(['live']);
     firstScan.resolve({
-      success: true,
-      data: [
-        { agentId: 'stale-agent', sessionId: 'stale-agent', workspaceId: 'ws-1', startTime: 1 },
+      streams: [
+        { agentId: 'finished', sessionId: 'finished', workspaceId: 'ws-1', startTime: 1 },
+        { agentId: 'deleted', sessionId: 'deleted', workspaceId: 'ws-1', startTime: 1 },
+        { agentId: 'other', sessionId: 'other', workspaceId: 'ws-3', startTime: 1 },
       ],
     });
-    await vi.waitFor(() => expect(bridge.invoke).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(tracker.isAgentStreaming('other')).toBe(true));
+    expect(tracker.isAgentStreaming('finished')).toBe(false);
+    expect(tracker.isAgentStreaming('deleted')).toBe(false);
+    expect(tracker.isAgentStreaming('live')).toBe(true);
+    push('agent:idle', 'live', 'ws-2');
+    expect(tracker.isAgentStreaming('live')).toBe(false);
+    expect(bridge.invoke).toHaveBeenCalledTimes(1);
+  });
 
-    trailingScan.resolve({
-      success: true,
-      data: [
-        { agentId: 'latest-agent', sessionId: 'latest-agent', workspaceId: 'ws-2', startTime: 2 },
-      ],
+  it('uses the browser backend and fences a delayed previous admission baseline', async () => {
+    delete (window as any).electronAPI;
+    const old = deferred<ActiveStreamsResponse>();
+    bridge.invoke
+      .mockImplementationOnce(() => old.promise)
+      .mockResolvedValue({
+        streams: [
+          { agentId: 'remote', sessionId: 'remote', workspaceId: 'remote-ws', startTime: 1 },
+        ],
+      });
+    tracker.startPolling();
+    expect(bridge.invoke).toHaveBeenCalledWith('agent.listActive', {});
+    tracker.applyEvent({
+      type: 'agent:status-changed',
+      workspaceId: 'old-ws',
+      timestamp: '2026-10-12T00:00:00Z',
+      data: { agentId: 'old', isActive: true },
     });
-    await vi.waitFor(() => expect(tracker.isAgentStreaming('latest-agent')).toBe(true));
-
-    expect(tracker.isAgentStreaming('stale-agent')).toBe(false);
-    expect(tracker.getStreamingAgentIdsForWorkspace('ws-2')).toEqual(['latest-agent']);
+    tracker.stopPolling();
+    tracker.startPolling();
+    await vi.waitFor(() => expect(tracker.isAgentStreaming('remote')).toBe(true));
+    expect(tracker.isAgentStreaming('old')).toBe(false);
+    old.resolve({
+      streams: [{ agentId: 'old', sessionId: 'old', workspaceId: 'old-ws', startTime: 1 }],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(tracker.getStreamingAgentIdsForWorkspace('old-ws')).toEqual([]);
+    expect(tracker.isAgentStreaming('remote')).toBe(true);
     expect(bridge.invoke).toHaveBeenCalledTimes(2);
   });
 
@@ -113,12 +126,12 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     for (let index = 0; index < 12; index++) tracker.startPolling();
 
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
-    firstScan.resolve({ success: true, data: [] });
+    firstScan.resolve({ streams: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
   });
@@ -127,22 +140,17 @@ describe('ActiveStreamsTracker refresh coalescing', () => {
     const firstScan = deferred<ActiveStreamsResponse>();
     bridge.invoke
       .mockImplementationOnce(() => firstScan.promise)
-      .mockResolvedValue({ success: true, data: [] });
+      .mockResolvedValue({ streams: [] });
 
     tracker.startPolling();
-    const statusChanged = bridge.handlers.get('agent:status-changed');
-    expect(statusChanged).toBeDefined();
-
-    // Queue a trailing refresh while the initial scan is still in flight.
-    statusChanged?.({ agentId: 'agent-1' });
+    // An explicit recovery request during hydration queues one trailing read.
     const inFlight = tracker.fetchActiveStreams();
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
 
     tracker.stopPolling();
 
     firstScan.resolve({
-      success: true,
-      data: [{ agentId: 'agent-1', sessionId: 'agent-1', workspaceId: 'ws-1', startTime: 1 }],
+      streams: [{ agentId: 'agent-1', sessionId: 'agent-1', workspaceId: 'ws-1', startTime: 1 }],
     });
     await inFlight;
     await new Promise((resolve) => setTimeout(resolve, 0));

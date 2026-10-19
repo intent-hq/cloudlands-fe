@@ -784,6 +784,26 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Rendering', () => {
+    it('leases Git roots only while the retained panel is active', async () => {
+      const view = await renderPanel({ active: false });
+      const demandActions = () =>
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('gitRoots/consumer'));
+      expect(demandActions()).toEqual([]);
+      await view.rerender({ workspaceId: 'ws-1', active: true });
+      const id = demandActions()[0].payload[1];
+      await view.rerender({ workspaceId: 'ws-1', active: false });
+      await view.rerender({ workspaceId: 'ws-1', active: true });
+      view.unmount();
+      expect(demandActions()).toEqual([
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', id] },
+        { type: 'gitRoots/consumerUnmounted', payload: ['ws-1', id] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', id] },
+        { type: 'gitRoots/consumerUnmounted', payload: ['ws-1', id] },
+      ]);
+    });
+
     it('leases accept-status freshness only while the panel is mounted', async () => {
       const view = await renderPanel();
 
@@ -1194,8 +1214,14 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerUnmounted', payload: ['ws-1', expect.any(String)] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
       ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
@@ -1211,10 +1237,11 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
+      ]);
       expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
       mockAcceptChangesState.commitMessage = '';
     });
@@ -2058,10 +2085,11 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2077,8 +2105,14 @@ describe('SidebarChangesPanel', () => {
 
       expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerUnmounted', payload: ['ws-1', expect.any(String)] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
@@ -2093,10 +2127,11 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
-        type: 'git/acceptChangesConsumerMounted',
-        payload: ['ws-1'],
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-1'] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-1', expect.any(String)] },
+      ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
@@ -2132,6 +2167,21 @@ describe('SidebarChangesPanel', () => {
       ).toEqual([
         { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
         { type: 'git/acceptChangesConsumerMounted', payload: ['ws-2'] },
+      ]);
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('changes/consumer')),
+      ).toEqual([
+        { type: 'changes/consumerUnmounted', payload: ['ws-1'] },
+        { type: 'changes/consumerMounted', payload: ['ws-2'] },
+      ]);
+      const rootDemand = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type.startsWith('gitRoots/consumer'));
+      expect(rootDemand).toEqual([
+        { type: 'gitRoots/consumerUnmounted', payload: ['ws-1', expect.any(String)] },
+        { type: 'gitRoots/consumerMounted', payload: ['ws-2', rootDemand[0].payload[1]] },
       ]);
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });

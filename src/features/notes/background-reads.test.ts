@@ -1,3 +1,7 @@
+import {
+  noteContentViewRequested,
+  noteContentViewReleased,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock(
   '$lib/client/live/backend-transport',
@@ -364,7 +368,7 @@ describe('background reads through the real store, sagas, clients and event brid
     ]);
   });
 
-  it('settles concurrent note content demand while the latest seq owns the store update', async () => {
+  it('settles concurrent note content demand through one shared transport read', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     backend.onRequest('note.get', () => pending.promise);
     const first = ensureNoteContentLoaded(WS, 'task-note');
@@ -372,15 +376,181 @@ describe('background reads through the real store, sagas, clients and event brid
     await settle();
     expect(reads('note.get')).toEqual([
       { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
-      { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
     ]);
     pending.resolve({ note: note() });
     await settle();
     expect(await first).toBe(true);
     expect(await second).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(reads('note.get')).toHaveLength(2);
+    expect(reads('note.get')).toHaveLength(1);
   });
+
+  it.each(['slim', 'uncached'] as const)(
+    'loads a hidden %s note body when opened after a task metadata push',
+    async (cached) => {
+      const slim = { ...note(''), rev: 1, contentLength: 42, contentPreview: 'Preview' };
+      store.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: cached === 'slim' ? [slim] : [] }));
+      const { content: _body, ...metadata } = {
+        ...note(),
+        rev: 2,
+        metadata: { task: { status: 'complete' } },
+      };
+      event('task:status-changed', { noteId: 'task-note', newStatus: 'complete', note: metadata });
+      await settle();
+      expect(reads('note.get')).toEqual([]);
+      expect(reads('task.list')).toEqual([]);
+      expect(reads('workspace.get')).toEqual([]);
+      expect(
+        store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].metadata?.task?.status,
+      ).toBe('complete');
+      backend.onRequest('note.get', () => ({ note: { ...metadata, content: 'Actual body' } }));
+      store.dispatch(noteContentViewRequested('opening', '1', WS, 'task-note'));
+      await settle();
+      expect(reads('note.get')).toHaveLength(1);
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
+        'Actual body',
+      );
+    },
+  );
+
+  it.each([3, 2])(
+    'rejects delayed legacy task status alongside metadata revision %i',
+    async (rev) => {
+      const current = { ...note(), rev: 3, metadata: { task: { status: 'complete' } } };
+      store.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [current] }));
+      backend.onRequest('task.list', () => ({
+        tasks: [{ id: 'task-note', title: 'Task', status: 'complete', rev: 3 }],
+        stats: { total: 1, completed: 1, inProgress: 0 },
+      }));
+      store.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      const readsBefore = [...backend.requests];
+      const { content: _body, ...metadata } = {
+        ...current,
+        rev,
+        metadata: { task: { status: rev === 3 ? 'complete' : 'in_progress' } },
+      };
+      event('task:status-changed', {
+        noteId: 'task-note',
+        newStatus: 'in_progress',
+        note: metadata,
+      });
+      await settle();
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note']).toMatchObject({
+        rev: 3,
+        content: 'fresh',
+        metadata: { task: { status: 'complete' } },
+      });
+      expect(selectWorkspaceTasks.select(store.state, WS)).toEqual([
+        { id: 'task-note', title: 'Task', status: 'complete', rev: 3 },
+      ]);
+      expect(backend.requests).toEqual(readsBefore);
+    },
+  );
+
+  it('updates full task metadata without fetching even when its body is displayed', async () => {
+    store.dispatch(noteContentViewRequested('view', '1', WS, 'task-note'));
+    await settle();
+    const initialReads = reads('note.get').length;
+    const { content: _body, ...metadata } = {
+      ...note(),
+      rev: 2,
+      title: 'Updated task',
+      metadata: {
+        task: { status: 'complete', assignedAgentIds: ['worker'], acceptanceCriteria: ['Done'] },
+      },
+    };
+    event('task:status-changed', { noteId: 'task-note', newStatus: 'complete', note: metadata });
+    event('task:updated', {
+      workspaceId: WS,
+      tasks: [{ id: 'task-note', title: 'Updated task', status: 'complete', rev: 2 }],
+      removedIds: [],
+    });
+    await settle();
+    expect(reads('note.get')).toHaveLength(initialReads);
+    expect(reads('task.list')).toEqual([]);
+    expect(reads('workspace.get')).toEqual([]);
+    expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note']).toMatchObject({
+      title: 'Updated task',
+      content: 'fresh',
+      rev: 2,
+      metadata: {
+        task: { status: 'complete', assignedAgentIds: ['worker'], acceptanceCriteria: ['Done'] },
+      },
+    });
+  });
+
+  it('pushes hidden note metadata without reading its body, then refreshes once on show', async () => {
+    const { content: _body, ...metadata } = {
+      ...note(),
+      rev: 2,
+      title: 'Renamed task',
+      tags: ['task'],
+      metadata: { task: { status: 'complete' } },
+    };
+    event('note:updated', { noteId: 'task-note', note: metadata });
+    await settle();
+    expect(reads('note.get')).toEqual([]);
+    expect(reads('task.list')).toEqual([]);
+    expect(reads('workspace.get')).toEqual([]);
+    expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note']).toMatchObject({
+      title: 'Renamed task',
+      metadata: { task: { status: 'complete' } },
+      rev: 2,
+    });
+    backend.onRequest('note.get', () => ({ note: { ...metadata, content: 'new body' } }));
+    store.dispatch(noteContentViewRequested('view-a', '1', WS, 'task-note'));
+    store.dispatch(noteContentViewRequested('view-b', '1', WS, 'task-note'));
+    await settle();
+    expect(reads('note.get')).toEqual([
+      { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
+    ]);
+    expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
+      'new body',
+    );
+    store.dispatch(noteContentViewReleased(WS, 'view-a'));
+    store.dispatch(noteContentViewReleased(WS, 'view-b'));
+  });
+
+  it.each([true, false])(
+    'refreshes an older joined read after hide/update/show only while visible=%s',
+    async (visible) => {
+      const pending = deferred<{ note: ReturnType<typeof note> }>();
+      store.dispatch(
+        loadWorkspaceNotesSucceeded([WS], { [WS]: [{ ...note('body one'), rev: 1 }] }),
+      );
+      let calls = 0;
+      backend.onRequest('note.get', () =>
+        ++calls === 1 ? pending.promise : { note: { ...note('body three'), rev: 3 } },
+      );
+      store.dispatch(noteContentViewRequested('view-a', '1', WS, 'task-note'));
+      await settle();
+      const { content: _body, ...metadata } = note();
+      event('note:updated', { noteId: 'task-note', note: { ...metadata, rev: 2 } });
+      await settle();
+      expect(reads('note.get')).toHaveLength(1);
+      store.dispatch(noteContentViewReleased(WS, 'view-a'));
+      event('note:updated', { noteId: 'task-note', note: { ...metadata, rev: 3 } });
+      await settle();
+      store.dispatch(noteContentViewRequested('view-a', '2', WS, 'task-note'));
+      store.dispatch(noteContentViewRequested('view-b', '1', WS, 'task-note'));
+      await settle();
+      if (!visible) {
+        store.dispatch(noteContentViewReleased(WS, 'view-a'));
+        store.dispatch(noteContentViewReleased(WS, 'view-b'));
+      }
+      pending.resolve({ note: { ...note('body two'), rev: 2 } });
+      await settle();
+      expect(reads('note.get')).toHaveLength(visible ? 2 : 1);
+      expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
+        visible ? 'body three' : 'body one',
+      );
+      if (visible)
+        expect(
+          store.state.workspaceNotes.byWorkspaceId[WS].staleContentByNoteId['task-note'],
+        ).toBeUndefined();
+    },
+  );
 
   it('preserves one trailing event read when a genuine note event arrives during content demand', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
@@ -388,6 +558,7 @@ describe('background reads through the real store, sagas, clients and event brid
     backend.onRequest('note.get', () =>
       ++calls === 1 ? pending.promise : { note: note('newer') },
     );
+    store.dispatch(noteContentViewRequested('mounted-note', '1', WS, 'task-note'));
     const loaded = ensureNoteContentLoaded(WS, 'task-note');
     await settle();
     event('note:updated', { noteId: 'task-note' });
@@ -397,7 +568,7 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(await loaded).toBe(true);
     // Event reads are trailing-coalesced, and their newer async-action seq keeps
     // the earlier content-demand response from overwriting the refreshed note.
-    expect(reads('note.get')).toHaveLength(3);
+    expect(reads('note.get')).toHaveLength(2);
     expect(store.state.workspaceNotes.byWorkspaceId[WS].notes.map['task-note'].content).toBe(
       'newer',
     );
@@ -751,169 +922,78 @@ describe('background reads through the real store, sagas, clients and event brid
     const hudProgress = (id = WS) =>
       selectHudWorkspaceCards.select(store.state).find((card) => card.workspaceId === id)?.tasks;
     const summary = (id = WS) => selectWorkspaceById.select(store.state, id)?.taskStats;
-    const taskChange = () =>
-      event('task:status-changed', {
-        noteId: 'task-note',
-        previousStatus: 'in_progress',
-        newStatus: 'complete',
-      });
 
     beforeEach(() => {
       store.dispatch(replaceWorkspaceList([workspace(), workspace(OTHER)]));
     });
 
     it.each(['unloaded', 'previously loaded'] as const)(
-      'refreshes canonical counters for a %s hidden list after one of two running tasks completes',
+      'applies pushed rows and statistics to a %s hidden list with zero reads',
       async (cache) => {
         if (cache === 'previously loaded') {
-          backend.onRequest('task.list', () => ({
-            tasks: [
-              { id: 'task-note', title: 'First', status: 'in_progress' },
-              { id: 'second-task', title: 'Second', status: 'in_progress' },
-            ],
-            stats: running,
-          }));
           store.dispatch(acquireWorkspaceTasksDemand(WS, 'old-chat'));
           await settle();
           store.dispatch(releaseWorkspaceTasksDemand(WS, 'old-chat'));
         }
         const initialLists = reads('task.list').length;
-        backend.onRequest('workspace.get', () => ({ workspace: workspace(WS, halfDone) }));
-        taskChange();
-        event('note:updated', { noteId: 'task-note' });
-        await vi.advanceTimersByTimeAsync(2000);
-
+        const tasks = [
+          { id: 'task-note', title: 'First', status: 'complete', specLinked: true, rev: 9 },
+        ];
+        event('task:updated', { workspaceId: WS, tasks, removedIds: [] });
+        event('workspace:task-stats-changed', { workspaceId: WS, taskStats: halfDone });
+        await settle();
         expect(progress()).toEqual(halfDone);
         expect(summary()).toEqual(halfDone);
         expect(hudProgress()).toEqual(halfDone);
         expect(progress(OTHER)).toEqual(running);
-        expect(reads('workspace.get').length).toBeGreaterThan(0);
-        expect(reads('workspace.get').length).toBeLessThanOrEqual(2);
-        for (const request of reads('workspace.get')) {
-          expect(request).toEqual({ method: 'workspace.get', params: { workspaceId: WS } });
-        }
+        expect(selectWorkspaceTasks.select(store.state, WS)).toEqual(tasks);
+        expect(reads('workspace.get')).toEqual([]);
+        expect(reads('note.get')).toEqual([]);
         expect(reads('task.list')).toHaveLength(initialLists);
-        expect(store.state.workspaceTasks.byWorkspaceId[WS]).toMatchObject({
-          initialized: cache === 'previously loaded',
-          stale: true,
-          demandIds: [],
-        });
-        if (cache === 'previously loaded') {
-          expect(selectWorkspaceTasks.select(store.state, WS).map(({ status }) => status)).toEqual([
-            'complete',
-            'in_progress',
-          ]);
-        } else {
-          expect(selectWorkspaceTasks.select(store.state, WS)).toEqual([]);
-        }
+        event('task:updated', { workspaceId: WS, tasks: [], removedIds: ['task-note'] });
+        event('workspace:task-stats-changed', { workspaceId: WS, taskStats: done });
+        await settle();
+        expect(selectWorkspaceTasks.select(store.state, WS)).toEqual([]);
+        expect(progress()).toEqual(done);
       },
     );
 
-    it.each(['summary first', 'task list first'] as const)(
-      'keeps canonical progress after an invalidated task read finishes with no demand: %s',
-      async (order) => {
-        const pendingTasks = deferred<{ tasks: []; stats: typeof running }>();
-        const pendingSummary = deferred<{ workspace: Workspace }>();
-        backend.onRequest('task.list', () => pendingTasks.promise);
-        backend.onRequest('workspace.get', () => pendingSummary.promise);
-        store.dispatch(acquireWorkspaceTasksDemand(WS, 'closing-chat'));
-        await settle();
-        taskChange();
-        store.dispatch(releaseWorkspaceTasksDemand(WS, 'closing-chat'));
-        await settle();
-        expect(reads('task.list')).toEqual([{ method: 'task.list', params: { workspaceId: WS } }]);
-        expect(reads('workspace.get')).toEqual([
-          { method: 'workspace.get', params: { workspaceId: WS } },
-        ]);
-        if (order === 'summary first') {
-          pendingSummary.resolve({ workspace: workspace(WS, halfDone) });
-          await settle();
-          expect(progress()).toEqual(halfDone);
-          pendingTasks.resolve({ tasks: [], stats: running });
-        } else {
-          pendingTasks.resolve({ tasks: [], stats: running });
-          await settle();
-          pendingSummary.resolve({ workspace: workspace(WS, halfDone) });
-        }
-        await vi.advanceTimersByTimeAsync(2000);
-        expect(progress()).toEqual(halfDone);
-        expect(hudProgress()).toEqual(halfDone);
-        expect(store.state.workspaceTasks.byWorkspaceId[WS]).toMatchObject({
-          loading: false,
-          stale: true,
-          demandIds: [],
-        });
-        expect(reads('task.list')).toHaveLength(1);
-        expect(reads('workspace.get')).toHaveLength(1);
-      },
-    );
+    it('preserves pushes received during an older task-list read without a trailing read', async () => {
+      const pending = deferred<{
+        tasks: { id: string; title: string; status: string }[];
+        stats: typeof running;
+      }>();
+      backend.onRequest('task.list', () => pending.promise);
+      store.dispatch(acquireWorkspaceTasksDemand(WS, 'chat'));
+      await settle();
+      const tasks = [{ id: 'task-note', title: 'Changed', status: 'complete', specLinked: true }];
+      event('task:updated', { workspaceId: WS, tasks, removedIds: ['deleted'] });
+      event('workspace:task-stats-changed', { workspaceId: WS, taskStats: halfDone });
+      pending.resolve({
+        tasks: [
+          { id: 'task-note', title: 'Old', status: 'in_progress' },
+          { id: 'deleted', title: 'Old', status: 'not_started' },
+        ],
+        stats: running,
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(selectWorkspaceTasks.select(store.state, WS)).toEqual(tasks);
+      expect(progress()).toEqual(halfDone);
+      expect(summary()).toEqual(halfDone);
+      expect(reads('task.list')).toEqual([{ method: 'task.list', params: { workspaceId: WS } }]);
+      expect(reads('workspace.get')).toEqual([]);
+    });
 
     it.each(['note:created', 'note:updated', 'note:deleted', 'task:created'])(
-      'refreshes daemon counters on %s alone without inferring stats from task rows',
+      '%s does not infer counters or fetch workspace details',
       async (type) => {
-        backend.onRequest('workspace.get', () => ({ workspace: workspace(WS, halfDone) }));
         event(type, { noteId: 'task-note' });
         await vi.advanceTimersByTimeAsync(2000);
-        expect(progress()).toEqual(halfDone);
-        expect(summary()).toEqual(halfDone);
-        expect(hudProgress()).toEqual(halfDone);
-        expect(reads('workspace.get')).toEqual([
-          { method: 'workspace.get', params: { workspaceId: WS } },
-        ]);
-        expect(reads('task.list')).toHaveLength(0);
+        expect(progress()).toEqual(running);
+        expect(reads('workspace.get')).toEqual([]);
+        expect(reads('task.list')).toEqual([]);
       },
     );
-
-    it('coalesces task/note bursts through trailing reads and isolates another workspace', async () => {
-      const first = deferred<{ workspace: Workspace }>();
-      const second = deferred<{ workspace: Workspace }>();
-      let calls = 0;
-      backend.onRequest('workspace.get', (params) => {
-        const { workspaceId } = params as { workspaceId: string };
-        if (workspaceId === OTHER) return { workspace: workspace(OTHER, halfDone) };
-        calls++;
-        return calls === 1
-          ? first.promise
-          : calls === 2
-            ? second.promise
-            : { workspace: workspace(WS, done) };
-      });
-      taskChange();
-      await vi.advanceTimersByTimeAsync(2000);
-      for (let i = 0; i < 5; i++) {
-        taskChange();
-        event('note:updated', { noteId: 'task-note' });
-      }
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(reads('workspace.get')).toEqual([
-        { method: 'workspace.get', params: { workspaceId: WS } },
-      ]);
-      event('task:created', { noteId: 'other-task' }, OTHER);
-      store.dispatch(openWorkspaceTab(OTHER));
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(progress(OTHER)).toEqual(halfDone);
-      first.resolve({ workspace: workspace() });
-      await settle();
-      expect(calls).toBe(2);
-      for (let i = 0; i < 5; i++) taskChange();
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(calls).toBe(2);
-      second.resolve({ workspace: workspace(WS, halfDone) });
-      await settle();
-      expect(calls).toBe(3);
-      expect(progress()).toEqual(done);
-      expect(summary()).toEqual(done);
-      expect(hudProgress()).toEqual(done);
-      expect(progress(OTHER)).toEqual(halfDone);
-      expect(summary(OTHER)).toEqual(halfDone);
-      expect(reads('workspace.get')).toEqual([
-        { method: 'workspace.get', params: { workspaceId: WS } },
-        { method: 'workspace.get', params: { workspaceId: OTHER } },
-        { method: 'workspace.get', params: { workspaceId: WS } },
-        { method: 'workspace.get', params: { workspaceId: WS } },
-      ]);
-      expect(reads('task.list')).toHaveLength(0);
-    });
   });
 
   it.each([
@@ -922,7 +1002,7 @@ describe('background reads through the real store, sagas, clients and event brid
     ['force', 0],
     ['force', 2000],
   ] as const)(
-    'retains task invalidations during first %s load with response delayed %i ms',
+    'retains task pushes during first %s load with response delayed %i ms',
     async (trigger, delay) => {
       const pending = deferred<{
         tasks: [];
@@ -944,11 +1024,14 @@ describe('background reads through the real store, sagas, clients and event brid
         previousStatus: 'in_progress',
         newStatus: 'complete',
       });
-      event('note:updated', { noteId: 'task-note' });
+      event('workspace:task-stats-changed', {
+        workspaceId: WS,
+        taskStats: { total: 1, completed: 1, inProgress: 0 },
+      });
       await vi.advanceTimersByTimeAsync(delay);
       pending.resolve({ tasks: [], stats: { total: 1, completed: 0, inProgress: 1 } });
       await vi.advanceTimersByTimeAsync(2000);
-      expect(reads('task.list')).toHaveLength(2);
+      expect(reads('task.list')).toHaveLength(1);
       expect(store.state.workspaceTasks.byWorkspaceId[WS].stats.completed).toBe(1);
     },
   );
@@ -1018,7 +1101,7 @@ describe('background reads through the real store, sagas, clients and event brid
     expect(reads('task.list')).toHaveLength(2);
   });
 
-  it('coalesces paired task status and note events into one authoritative task-list refresh', async () => {
+  it('applies paired task status, note and statistics events without task-list refresh', async () => {
     store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
     await settle();
     const initial = reads('task.list').length;
@@ -1029,9 +1112,11 @@ describe('background reads through the real store, sagas, clients and event brid
     });
     event('note:updated', { noteId: 'task-note' });
     await vi.advanceTimersByTimeAsync(2000);
-    expect(reads('task.list').slice(initial)).toEqual([
-      { method: 'task.list', params: { workspaceId: WS } },
-    ]);
+    event('workspace:task-stats-changed', {
+      workspaceId: WS,
+      taskStats: { total: 1, completed: 1, inProgress: 0 },
+    });
+    expect(reads('task.list').slice(initial)).toEqual([]);
     expect(store.state.workspaceTasks.byWorkspaceId[WS].stats.completed).toBe(1);
     const settled = reads('task.list').length;
     store.dispatch(ensureWorkspaceTasksLoaded(WS));

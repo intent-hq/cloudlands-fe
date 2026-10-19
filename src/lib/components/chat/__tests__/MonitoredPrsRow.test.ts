@@ -9,7 +9,9 @@
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import { listPrMonitors, type PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import producerRowsRaw from '$features/pr-monitor/__fixtures__/legacy-monitor-rows.fixture';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
 const {
@@ -18,7 +20,7 @@ const {
   snapshotState,
   workspaceState,
   handleLinkMock,
-  openInBrowserPanelMock,
+  openLinkInAppMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   monitorsState: { monitors: [] as unknown[] },
@@ -31,7 +33,7 @@ const {
     } as unknown,
   },
   handleLinkMock: vi.fn(),
-  openInBrowserPanelMock: vi.fn(),
+  openLinkInAppMock: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -69,7 +71,17 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 
 vi.mock('$features/navigation/link-handler', () => ({
   handleLink: handleLinkMock,
-  openInBrowserPanel: openInBrowserPanelMock,
+  openLinkInApp: openLinkInAppMock,
+}));
+
+// Producer fixtures enter at the transport boundary; the service and component
+// remain real so a wire count mismatch cannot be hidden by a hand-built row.
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  backendSubscribe: vi.fn(),
+  backendUnsubscribe: vi.fn(),
+  onBackendNotification: vi.fn(),
+  onBackendReconnected: vi.fn(),
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
@@ -81,6 +93,8 @@ import {
 
 const originalInnerWidth = window.innerWidth;
 const originalDevicePixelRatio = window.devicePixelRatio;
+const producerCases: Array<{ name: string; monitor: PrMonitorRow }> =
+  JSON.parse(producerRowsRaw).cases;
 
 function setViewport(width: number, devicePixelRatio = 1) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
@@ -189,11 +203,70 @@ describe('MonitoredPrsRow', () => {
     setViewport(originalInnerWidth, originalDevicePixelRatio);
     dispatchMock.mockClear();
     handleLinkMock.mockClear();
-    openInBrowserPanelMock.mockClear();
+    openLinkInAppMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
     monitorsState.monitors = [];
+    vi.mocked(backendRequest).mockReset();
+  });
+
+  it.each([
+    ['empty', /ready to merge/],
+    ['pending-build', /blocked by required checks still running/],
+    ['multiple-pending', /blocked by required checks still running/],
+    ['mixed-required-optional', /blocked by required checks failing/],
+    ['optional-only', /blocked by required checks failing/],
+    ['unknown-required', /blocked by required checks failing/],
+    ['unknown-threads', /blocked by review threads that could not be read/],
+    ['unknown-empty', /merge readiness is still being checked/],
+    ['missing-baseline', /merge readiness is still being checked/],
+  ])('renders readiness from the unmodified Rust producer row: %s', async (name, readiness) => {
+    const fixture = producerCases.find((entry) => entry.name === name)!;
+    expect(fixture, `missing producer case ${name}`).toBeDefined();
+    vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
+    monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+    expect(backendRequest).toHaveBeenCalledWith('prMonitor.list', {
+      workspaceId: fixture.monitor.workspaceId,
+    });
+    render(MonitoredPrsRow, {
+      props: {
+        workspaceId: fixture.monitor.workspaceId,
+        agentId: fixture.monitor.agentId,
+      },
+    });
+
+    const details = await openDetails();
+    expect(details.firstElementChild?.textContent).toMatch(readiness);
+  });
+
+  it('renders an actual paused producer row without inventing a checklist', async () => {
+    vi.useFakeTimers({ now: new Date('2026-01-02T03:30:00Z'), toFake: ['Date'] });
+    try {
+      const fixture = producerCases.find((entry) => entry.name === 'paused-missing-baseline')!;
+      vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
+      monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+      render(MonitoredPrsRow, {
+        props: {
+          workspaceId: fixture.monitor.workspaceId,
+          agentId: fixture.monitor.agentId,
+        },
+      });
+
+      const details = await openDetails();
+      expect(details.firstElementChild?.textContent).toMatch(/Monitoring paused until/);
+      expect(details.textContent).not.toMatch(
+        /ready to merge|checks failed|checks are still running/,
+      );
+      expect(
+        screen
+          .getByTestId('monitored-pr-summary')
+          .closest('[data-monitor-paused]')
+          ?.getAttribute('data-monitor-paused'),
+      ).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders a normalized inline disclosure row per active monitor', () => {
@@ -754,12 +827,34 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      { openInWorkspace: false, assistantLayoutId: undefined },
     );
     expect(handleLinkMock).not.toHaveBeenCalled();
+  });
+
+  it('chip menu Open in App enters the workspace from its Home preview', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    const preview = document.createElement('div');
+    preview.dataset.workspaceLinkTarget = 'ws-1';
+    document.body.append(preview);
+    render(MonitoredPrsRow, {
+      target: preview,
+      props: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
+    await fireEvent.click(openInAppItem);
+
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
+      'https://github.com/acme/widgets/pull/42',
+      'ws-1',
+      { openInWorkspace: true, assistantLayoutId: undefined },
+    );
+    preview.remove();
   });
 
   it('chip menu Open in External Browser routes the PR URL through the forceExternal link handler', async () => {
@@ -775,7 +870,7 @@ describe('MonitoredPrsRow', () => {
       'https://github.com/acme/widgets/pull/42',
       expect.objectContaining({ forceExternal: true }),
     );
-    expect(openInBrowserPanelMock).not.toHaveBeenCalled();
+    expect(openLinkInAppMock).not.toHaveBeenCalled();
   });
 
   it('open actions fall back to the canonical GitHub URL when the monitor has no url', async () => {
@@ -786,10 +881,11 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledTimes(1);
+    expect(openLinkInAppMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      expect.anything(),
     );
   });
 });

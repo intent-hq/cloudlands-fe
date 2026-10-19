@@ -73,6 +73,7 @@ tokenUsageReducer.with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =
             })),
           ),
         }),
+    ...(usage.agentNames === undefined ? {} : { agentNames: usage.agentNames }),
     lastScanAt: usage.lastScanAt,
     isStale: false,
   }),

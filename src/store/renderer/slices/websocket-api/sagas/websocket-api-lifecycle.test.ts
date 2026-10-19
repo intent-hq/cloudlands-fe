@@ -157,19 +157,20 @@ describe('API production-owner lifecycle', () => {
       await fireEvent.click(
         screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
       );
-      const input = (await screen.findByRole('spinbutton', {
-        name: m.settings_wsApi_port_label(),
-      })) as HTMLInputElement;
+      const getPortInput = () =>
+        screen.getByRole('spinbutton', {
+          name: m.settings_wsApi_port_label(),
+        }) as HTMLInputElement;
       await waitFor(() => {
-        expect(input.disabled).toBe(false);
-        expect(input.value).toBe('5181');
+        expect(getPortInput().disabled).toBe(false);
+        expect(getPortInput().value).toBe('5181');
       });
       const toggle = screen.getByRole('switch');
       await fireEvent.click(toggle);
       await waitFor(() => {
         expect(onEnabled).toHaveBeenCalledTimes(1);
-        expect(input.disabled).toBe(false);
-        expect(input.value).toBe(String(selectedPort));
+        expect(getPortInput().disabled).toBe(false);
+        expect(getPortInput().value).toBe(String(selectedPort));
         expect(toggle.getAttribute('aria-checked')).toBe('true');
       });
       expect(mocks.backend.mock.calls.filter(([method]) => method === 'settings.update')).toEqual([
@@ -197,14 +198,14 @@ describe('API production-owner lifecycle', () => {
       await waitFor(() => {
         expect(mocks.ipc).toHaveBeenCalledWith('connections:unpublish-self');
         expect(toggle.getAttribute('aria-checked')).toBe('false');
-        expect(input.disabled).toBe(false);
+        expect(getPortInput().disabled).toBe(false);
       });
       await fireEvent.click(toggle);
       await waitFor(() => {
         expect(onEnabled).toHaveBeenCalledTimes(2);
         expect(toggle.getAttribute('aria-checked')).toBe('true');
-        expect(input.disabled).toBe(false);
-        expect(input.value).toBe(String(selectedPort));
+        expect(getPortInput().disabled).toBe(false);
+        expect(getPortInput().value).toBe(String(selectedPort));
       });
       expect(mocks.backend.mock.calls.filter(([method]) => method === 'settings.update')).toEqual([
         ['settings.update', { changes: [{ path: 'server.wsApi.enabled', value: true }] }],

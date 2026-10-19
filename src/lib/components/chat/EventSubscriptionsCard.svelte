@@ -11,7 +11,10 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
-  import { selectAgentScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
+  import {
+    selectAgentScriptMonitors,
+    selectScriptMonitors,
+  } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
   import {
     scriptMonitorsSubscribeRequested,
     scriptMonitorsUnsubscribeRequested,
@@ -119,7 +122,13 @@
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
   const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
-  const hasScripts = $derived(scriptCount > 0);
+  const scriptPage$ = selectScriptMonitors(workspaceIdStore);
+  // Only a chat the user is viewing holds the monitor lease that Retry acts on, and the
+  // failure is workspace-wide: background chats stay quiet instead of all showing it.
+  const scriptsFailed = $derived(!isolatedPreview && isActive && $scriptPage$.status === 'failed');
+  const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
+  // "+": more script monitors may exist than this chat has read.
+  const countSuffix = $derived($scriptPage$.nextCursor || scriptsFailed ? '+' : '');
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
@@ -187,8 +196,12 @@
       return totalCount === 0
         ? m.events_ipc_subscribed_description()
         : totalCount === 1
-          ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-          : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+          ? m.chat_eventSubscriptions_heading_one({
+              count: formatInteger(totalCount) + countSuffix,
+            })
+          : m.chat_eventSubscriptions_heading_many({
+              count: formatInteger(totalCount) + countSuffix,
+            });
     }
 
     if (isAgentOnly) {
@@ -202,8 +215,12 @@
     return totalCount === 0
       ? m.events_ipc_subscribed_description()
       : totalCount === 1
-        ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-        : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+        ? m.chat_eventSubscriptions_heading_one({
+            count: formatInteger(totalCount) + countSuffix,
+          })
+        : m.chat_eventSubscriptions_heading_many({
+            count: formatInteger(totalCount) + countSuffix,
+          });
   });
 
   $effect(() => {
@@ -380,7 +397,7 @@
               class={isSingleEvent ? '' : 'border-t border-border'}
               data-testid="event-subscriptions-scripts"
             >
-              <MonitoredScriptsRow {workspaceId} {agentId} />
+              <MonitoredScriptsRow {workspaceId} {agentId} showLoadFailure={scriptsFailed} />
             </div>
           {/if}
           <div

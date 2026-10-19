@@ -74,6 +74,7 @@ import {
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
 import { updateDaemonToPin } from './exact-daemon-update';
+import { getConnectionTunnel, setConnectionTunnel } from './connection-tunnel';
 import {
   getLocalDaemonProtocolVersion,
   getSidecarRunLog,
@@ -141,6 +142,7 @@ import type {
   ConnectionCertWarningsEvent,
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
+  ConnectionTunnelResult,
   ConnectionsChangedEvent,
   ConnectionsListResult,
   ForgetConnectionResult,
@@ -155,11 +157,18 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
+import { compareProtocolMajor } from './protocol-compat';
+import {
+  parseProtocolVersion,
+  protocolVersionAtLeast,
+  type ProtocolVersion,
+} from '$shared/protocol-version';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
   ConnectionsForgetSchema,
+  ConnectionsGetTunnelSchema,
+  ConnectionsSetTunnelSchema,
   ConnectionsListSchema,
   GuestSessionsLeaveSchema,
   GuestSessionsLeaveWorkspaceSchema,
@@ -197,8 +206,9 @@ const connectedDaemonVersions = new Map<string, string>();
 // Each connected daemon's `client.hello` `protocolVersion`, keyed by
 // connection id and cleared whenever that connection leaves `connected`, so
 // feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
-// version rather than a stale one after a reconnect or daemon upgrade.
-const connectedProtocolVersions = new Map<string, string>();
+// version rather than a stale one after a reconnect or daemon upgrade. Parsed
+// once when the hello answers; an absent or malformed version is not stored.
+const connectedProtocolVersions = new Map<string, ProtocolVersion>();
 // Whether the local client's hello has answered at least once this session:
 // until then the sidecar's startup probe may seed the local version, after
 // that the hello result is the only source (a null/absent hello stays null).
@@ -233,11 +243,11 @@ export function captureLocalIdentityConnection() {
  * ({@link getLocalDaemonProtocolVersion}) only seeds the local id BEFORE the
  * first local hello of the session, never after a hello answered without one.
  */
-export function getConnectedDaemonProtocolVersion(connectionId: string): string | null {
+export function getConnectedDaemonProtocolVersion(connectionId: string): ProtocolVersion | null {
   const captured = connectedProtocolVersions.get(connectionId);
   if (captured) return captured;
   if (connectionId === LOCAL_CONNECTION_ID && !localHelloObserved) {
-    return getLocalDaemonProtocolVersion();
+    return parseProtocolVersion(getLocalDaemonProtocolVersion());
   }
   return null;
 }
@@ -1937,7 +1947,9 @@ function createAdditionalBackendClient(
           // latched per connection id and broadcast to this backend's windows only.
           const helloProtocolVersion =
             typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
-          if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+          const parsedHelloProtocolVersion = parseProtocolVersion(helloProtocolVersion);
+          if (parsedHelloProtocolVersion)
+            connectedProtocolVersions.set(id, parsedHelloProtocolVersion);
           else connectedProtocolVersions.delete(id);
           if (id === LOCAL_CONNECTION_ID) {
             localHelloObserved = true;
@@ -3122,11 +3134,21 @@ function extractLocalIps(result: unknown): string[] | null {
  * detectHosts on.
  */
 
-function refreshRemoteHostsOwned(id: string, parent?: PoolOwner): Promise<void> {
-  return poolWork('refreshRemoteHosts', parent, (owner) => refreshRemoteHostsOriginal(id, owner));
+function refreshRemoteHostsOwned(
+  id: string,
+  parent?: PoolOwner,
+  refreshTunnel = false,
+): Promise<void> {
+  return poolWork('refreshRemoteHosts', parent, (owner) =>
+    refreshRemoteHostsOriginal(id, owner, refreshTunnel),
+  );
 }
 
-async function refreshRemoteHostsOriginal(id: string, owner?: PoolOwner): Promise<void> {
+async function refreshRemoteHostsOriginal(
+  id: string,
+  owner?: PoolOwner,
+  refreshTunnel = false,
+): Promise<void> {
   try {
     // Snapshot this backend's pooled client BEFORE the first await: a
     // concurrent disconnect/reconnect replaces the pool entry, and querying
@@ -3137,15 +3159,16 @@ async function refreshRemoteHostsOriginal(id: string, owner?: PoolOwner): Promis
     const isGuest = (await guestSessionsStore.findById(id)) !== null;
     // Invited routes come from authenticated system.status, never owner-only pairingInfo.
     if (isGuest) return;
-    if (!isGuest && !(await connectionsStore.getDetectHosts(id))) return;
+    const detectHosts = await connectionsStore.getDetectHosts(id);
+    if (!detectHosts && !refreshTunnel) return;
     const result = await poolRequest(owner, client, 'server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
-      if (ips) await connectionsStore.setHosts(id, ips);
+      if (ips && detectHosts) await connectionsStore.setHosts(id, ips);
       const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
-      if (ips || tcChanged) await broadcastConnectionsChangedOwned(owner);
+      if ((ips && detectHosts) || tcChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
     recordPoolError(owner, error);
@@ -4585,6 +4608,32 @@ async function getRemoteConnection(id: string): Promise<SavedRemoteConnection> {
   return connection as SavedRemoteConnection;
 }
 
+function connectionTunnelOperation(id: string, enabled?: boolean): Promise<ConnectionTunnelResult> {
+  return enqueueConnectionOperation(async (owner) => {
+    await getRemoteConnection(id);
+    const client = backendClients.get(id);
+    if (!client) {
+      throw new Error('The remote device is not connected'); // i18n-ignore (connection diagnostic)
+    }
+    const assertConnected = () => {
+      if (backendClients.get(id) !== client || client.getStatus() !== 'connected') {
+        throw new Error('The remote device is not connected'); // i18n-ignore (connection diagnostic)
+      }
+    };
+    assertConnected();
+    const request = async (method: string, params?: unknown): Promise<unknown> => {
+      assertConnected();
+      const result = await poolRequest(owner, client, method, params);
+      assertConnected();
+      return result;
+    };
+    if (enabled === undefined) return getConnectionTunnel(request);
+    const result = await setConnectionTunnel(request, enabled);
+    if (result.supported) await refreshRemoteHostsOwned(id, owner, true);
+    return result;
+  });
+}
+
 async function loadSavedConnectionSecret(
   id: string,
 ): Promise<{ status: 'success'; token: string } | { status: 'secret-unavailable' }> {
@@ -4957,6 +5006,25 @@ function registerConnectionsHandlers(): void {
           } satisfies RotateConnectionSecretResult;
         }),
       CONNECTIONS.ROTATE_SECRET,
+    ),
+  );
+
+  // Administrative settings for a saved remote, addressed independently of
+  // the caller's window and the local daemon. Standard IPC authorization applies.
+  ipcMain.handle(
+    CONNECTIONS.GET_TUNNEL,
+    createValidatedHandler(
+      ConnectionsGetTunnelSchema,
+      async (_event, { id }) => connectionTunnelOperation(id),
+      CONNECTIONS.GET_TUNNEL,
+    ),
+  );
+  ipcMain.handle(
+    CONNECTIONS.SET_TUNNEL,
+    createValidatedHandler(
+      ConnectionsSetTunnelSchema,
+      async (_event, { id, enabled }) => connectionTunnelOperation(id, enabled),
+      CONNECTIONS.SET_TUNNEL,
     ),
   );
 

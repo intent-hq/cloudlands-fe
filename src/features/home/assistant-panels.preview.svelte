@@ -27,6 +27,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import HomeAssistantPanels from './HomeAssistantPanels.svelte';
+  import NoteTabType from '$features/layout/tab-types/NoteTabType.svelte';
+  import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { startHomePreview } from './home-preview-lifecycle';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -41,6 +43,16 @@
   let { noteContent, workspaceView }: Props = $props();
   const stop = startHomePreview(() => [setupAssistantPanelsFixture(noteContent, workspaceView)]);
   onDestroy(stop);
+  // The preview exercises note interactions, so load the real note surface with
+  // the fixture instead of downloading its editor chunks after the first click.
+  const noteTab = tabTypeRegistry.get('note');
+  if (!noteTab) throw new Error('Assistant preview requires the note tab type');
+  const { loadComponent: _loadComponent, ...noteDefinition } = noteTab;
+  const previewNoteTab = { ...noteDefinition, component: NoteTabType };
+  tabTypeRegistry.register(previewNoteTab);
+  onDestroy(() => {
+    if (tabTypeRegistry.get('note') === previewNoteTab) tabTypeRegistry.register(noteTab);
+  });
 
   const links =
     '[Open the plan](intent://local/note/plan) · [Open the second plan](intent://local/note/second)\n\n[Open repository](https://github.com/acme/studio) · [Open missing note](intent://local/note/missing) · [Open workspace plan](intent://local/example-workspace/note/plan)\n\n[Open empty note](intent://local/note/empty) · [Open long note](intent://local/note/long)\n\n[Open unavailable workspace note](intent://local/unavailable-workspace/note/plan) · [Open workspace lookup failure note](intent://local/failing-workspace/note/plan)';

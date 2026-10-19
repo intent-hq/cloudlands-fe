@@ -44,6 +44,10 @@ export interface PresenceState {
   rosters: Record<string, PresenceMemberCollection>;
   /** Accepted membership per shared workspace on display — a full replacement each time. */
   members: Record<string, WorkspaceMemberCollection>;
+  /** Admission-local ordering for pushed profiles versus membership request start. */
+  profileRevision: number;
+  /** Retained across offline transitions, cleared with workspace/admission ownership. */
+  profileUpdates: Record<string, Record<string, { revision: number; profile: PresenceIdentity }>>;
   /** Typing bookkeeping per workspace id, keyed by the connection's `source`. */
   liveTyping: Record<string, Record<string, LiveTypingEntry>>;
   /** `principal.me` of the window's backend; `null` until read or when unknown. */

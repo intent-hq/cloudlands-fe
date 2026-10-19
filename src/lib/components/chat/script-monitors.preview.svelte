@@ -1,10 +1,14 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  export const preview = definePreview<{ failure?: boolean; command?: string }>({
+  export const preview = definePreview<{ failure?: boolean; command?: string; paged?: boolean }>({
     id: 'script-monitors',
     title: 'Script monitors',
     defaultState: 'conditions',
-    states: { conditions: { props: {} }, 'cancel-error': { props: { failure: true } } },
+    states: {
+      conditions: { props: {} },
+      'cancel-error': { props: { failure: true } },
+      paged: { props: { paged: true } },
+    },
   });
 </script>
 
@@ -21,8 +25,9 @@
   import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
   let {
     failure = false,
+    paged = false,
     command = 'pnpm vitest run src/lib/components/chat/__tests__/MonitoredScriptsRow.test.ts\n  pnpm run check',
-  }: { failure?: boolean; command?: string } = $props();
+  }: { failure?: boolean; command?: string; paged?: boolean } = $props();
   onMount(() => {
     store.dispatch(
       scriptMonitorsUpdated(monitorFixture.workspaceId, {
@@ -33,15 +38,17 @@
             monitorId: 'monitor-build',
             scriptId: 'build',
             scriptName: 'Build preview',
-            outputPattern: undefined,
+            outputPatternPreview: undefined,
             lineCount: undefined,
           },
         ],
+        details: { [monitorFixture.monitorId]: monitorFixture },
         scripts: [
           { ...scriptFixture, command },
           { ...scriptFixture, id: 'build', name: 'Build preview' },
         ],
         status: 'ready',
+        ...(paged ? { nextCursor: 'preview-page' } : {}),
       }),
     );
     if (failure)
@@ -56,6 +63,7 @@
       store.dispatch(
         scriptMonitorsUpdated(monitorFixture.workspaceId, {
           monitors: [],
+          details: { [monitorFixture.monitorId]: monitorFixture },
           scripts: [],
           status: 'unsupported',
         }),

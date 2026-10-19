@@ -67,7 +67,7 @@ env:
 
 jobs:
   pin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: ${{ github.repository_owner == 'intent-hq' }}
     steps:
@@ -206,6 +206,21 @@ jobs:
             echo "::warning::fetch-sidecar preflight failed for intentd $LATEST; not landing the pin this run."
             exit 0
           fi
+          # Test fixtures default fake hellos to the pinned daemon's protocol
+          # version (intent-hq/intent#7206); regenerate it with the pin so the
+          # offline lint:intentd-protocol-pin gate stays green on the bump PR.
+          # A fetch failure may be transient (warn and retry next run); exit 3
+          # means protocol.rs changed shape, which blocks every future bump, so
+          # it fails the run instead of skipping quietly.
+          sync_status=0
+          node scripts/sync-intentd-protocol-version.mjs || sync_status=$?
+          if [ "$sync_status" -eq 3 ]; then
+            echo "::error::scripts/sync-intentd-protocol-version.mjs cannot parse PROTOCOL_VERSION for intentd $LATEST; update its parser before the pin can advance."
+            exit 1
+          elif [ "$sync_status" -ne 0 ]; then
+            echo "::warning::could not read PROTOCOL_VERSION for intentd $LATEST; not landing the pin this run."
+            exit 0
+          fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
       # Race guard (intent-hq/monorepo#4359): everything above ran against the
@@ -252,7 +267,7 @@ jobs:
 
           title="fix: bump intentd sidecar to v$LATEST"
           git checkout -B "$BRANCH"
-          git add intentd.version
+          git add intentd.version src/test/current-protocol-version.ts
           git commit -m "$title" -m "intentd.version: $CURRENT -> $LATEST (alpha channel)."
 
           # Skip the push when the remote branch already carries this exact

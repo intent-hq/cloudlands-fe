@@ -50,7 +50,11 @@ import {
   selectAgentIsThinking,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
-import { addMessage } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  addMessage,
+  bulkUpsertSessions,
+  updateSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import { loadChatTranscript } from './chat-read-service';
 import { chatInitialHistoryProgressed } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -100,8 +104,8 @@ describe('chatReadService (fake seam, real store)', () => {
   afterEach(() => {
     vi.clearAllMocks();
     clearPendingAgentDeletions();
-    agentsApi.get.mockResolvedValue(null as never);
-    agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+    agentsApi.get.mockReset().mockResolvedValue(null as never);
+    agentsApi.getConversation.mockReset().mockResolvedValue(conversation([]) as never);
   });
 
   it('does not start a competing event-driven history read during progressive delivery', async () => {
@@ -894,4 +898,36 @@ it('keeps a newer transcript owner when an older metadata hydrate finishes', asy
   await old;
   expect(selectAgentSession.select(appStore.state, id)?.workspaceId).toBe('workspace-b');
   expect(selectAgentMessages.select(appStore.state, id).map((row) => row.id)).toEqual(['b-only']);
+});
+
+it('uses known metadata for transcript recovery and preserves pushes received during the page read', async () => {
+  appStore.init();
+  agentsApi.get.mockClear();
+  agentsApi.getConversation.mockClear();
+  const agentId = 'transcript-known-session';
+  appStore.dispatch(bulkUpsertSessions([makeSession({ id: agentId })]));
+  let finish!: (page: ReturnType<typeof conversation>) => void;
+  agentsApi.getConversation.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const read = loadChatTranscript(agentId, WS);
+  await flush();
+  appStore.dispatch(
+    updateSession(agentId, { name: 'Pushed name', status: AgentStatus.Idle, isResponding: false }),
+  );
+  finish(conversation([makeMessage('pushed-page', 'done')]));
+  await read;
+  expect(agentsApi.get).not.toHaveBeenCalled();
+  expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
+  expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+    name: 'Pushed name',
+    status: AgentStatus.Idle,
+    isResponding: false,
+  });
+  expect(selectAgentMessages.select(appStore.state, agentId).map((message) => message.id)).toEqual([
+    'pushed-page',
+  ]);
 });

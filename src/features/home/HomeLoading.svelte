@@ -42,7 +42,7 @@
         </div>
       {/each}
     {:else if view === 'board'}
-      <div class="grid grid-cols-[repeat(3,minmax(15rem,1fr))] gap-4 px-1">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3 px-1">
         {#each [0, 1, 2] as column (column)}
           <div class="min-w-0 space-y-3">
             <div class="flex h-10 items-center px-2"><Skeleton class="h-3 w-20" /></div>

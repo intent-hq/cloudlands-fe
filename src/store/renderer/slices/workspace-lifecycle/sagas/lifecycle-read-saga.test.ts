@@ -4,6 +4,16 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { setWorkspaceEntity } from '../../workspace/workspace-slice';
+import type { WorkspaceEvent } from '$features/events/types';
+import { LiveEventsClient } from '$lib/client/live/live-events-client';
+import { getPeopleActivity } from '$features/presence/components/people-activity';
+import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
+import {
+  selectPeopleEventsLoading,
+  selectPeopleEventsError,
+} from '../../workspace-events/workspace-events-selectors';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -20,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   skills: { list: vi.fn() },
   scripts: {
     list: vi.fn(),
+    listPage: vi.fn(),
     status: vi.fn(),
     supportsLifecycle: undefined as undefined | (() => Promise<boolean>),
   },
@@ -65,9 +76,10 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => mocks.logger,
 }));
 
-import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
+import { AgentStatus, GitFileStatus, type AgentSession, type Workspace } from '$shared/types';
 import { LiveGitClient } from '$lib/client/live/live-git-client';
 import {
+  changesEventReceived,
   loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
@@ -77,10 +89,11 @@ import { initContextForWorkspace } from '../../context/context-slice';
 import { refreshPRStatusRequested } from '../../pr-status/pr-status-slice';
 import {
   refreshScripts,
+  loadMoreScripts,
+  scriptSnapshotReceived,
   setScriptListState,
   setActiveScriptsData,
   scriptOutputRequested,
-  updateRuntimeState,
 } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
@@ -108,6 +121,10 @@ import {
 import {
   loadEventsRequested,
   loadOlderEventsRequested,
+  loadPeopleEventsRequested,
+  eventsLoaded,
+  eventReceived,
+  workspaceEventsReducer,
 } from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
@@ -145,10 +162,7 @@ const TOP_LEVEL = { scope: 'topLevel' } as const;
 const NOW = new Date('2026-07-31T00:00:00.000Z');
 
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
 function state(
@@ -208,7 +222,7 @@ function state(
   };
 }
 
-function start(current = state()) {
+function start(current = state(), changesVisible = true) {
   const channel = stdChannel();
   const actions: Array<{ type: string; payload?: unknown }> = [];
   const task = runSaga(
@@ -223,12 +237,14 @@ function start(current = state()) {
           )
         )
           actions.push(action);
+        if (action.type === 'changes/reconcileRequested') channel.put(action);
       },
       getState: () => current,
     },
     lifecycleReadSaga,
   );
   runningTasks.push(task);
+  if (changesVisible) channel.put({ type: 'changes/consumerMounted', payload: [WS] });
   return {
     channel: {
       ...channel,
@@ -290,6 +306,12 @@ function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession 
 
 describe('lifecycleReadSaga', () => {
   beforeEach(() => {
+    mocks.scripts.list.mockReset();
+    mocks.scripts.listPage.mockReset();
+    mocks.scripts.listPage.mockImplementation(async (wsId) => ({
+      view: 'summary',
+      scripts: await mocks.scripts.list(wsId),
+    }));
     appStore.dispose();
     appStore.init();
     vi.useFakeTimers();
@@ -925,8 +947,9 @@ describe('lifecycleReadSaga', () => {
       { type: 'taskAgentAssociations/hydrateTaskAgentAssociations', payload: [WS, links] },
       { type: 'skills/setSkills', payload: [WS, [skill]] },
       setScriptListState(WS, true),
-      setScriptListState(WS, false, undefined, false),
-      { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [script] } },
+      { type: 'scripts/setActiveData', payload: [WS, [script]] },
+      { type: 'scripts/pageCursor', payload: [WS, undefined] },
+      setScriptListState(WS, false, undefined, true),
       { type: 'scripts/setInitialized', payload: [WS, true] },
       { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [terminal]] },
     ]);
@@ -1020,6 +1043,312 @@ describe('lifecycleReadSaga', () => {
         expect.any(Error),
       );
       await stop(run.task);
+    });
+  });
+
+  describe('People activity history', () => {
+    const humanEvent = (id: string): WorkspaceEvent => ({
+      id,
+      workspaceId: WS,
+      timestamp: NOW.toISOString(),
+      type: 'note:created',
+      actor: { type: 'user', id: 'person', name: 'Sam' },
+      data: { title: 'Plan' },
+    });
+    const noise = (id: string): WorkspaceEvent => ({
+      ...humanEvent(id),
+      actor: { type: 'system' },
+    });
+    const rows = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => humanEvent(`${prefix}-${index}`));
+
+    function startPeople() {
+      const channel = stdChannel();
+      const current = withLegacyPrincipal(appStore.state);
+      const dispatch = (action: { type: string }) => {
+        current.workspaceEvents = workspaceEventsReducer(current.workspaceEvents, action);
+        channel.put(action);
+        return action;
+      };
+      const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
+      runningTasks.push(task);
+      return {
+        current,
+        dispatch,
+        task,
+        history: () => current.workspaceEvents.byWorkspaceId[WS],
+        visible: () =>
+          getPeopleActivity(
+            WS,
+            current.workspaceEvents.byWorkspaceId[WS]?.events ?? [],
+            selectWorkspacePeopleIdentities.select(current, WS),
+          ),
+      };
+    }
+
+    it('traverses sparse unfiltered wire pages and counts author-resolved system messages', async () => {
+      const client = new LiveEventsClient();
+      mocks.events.queryPage.mockImplementation(client.queryPage.bind(client));
+      const message: WorkspaceEvent = {
+        ...noise('human-message'),
+        type: 'agent:message',
+        data: {
+          role: 'user',
+          agentId: 'agent',
+          messageId: 'message',
+          author: { principalId: 'person', displayName: 'Sam', login: 'sam', avatarUrl: null },
+        },
+      };
+      mocks.backendRequest
+        .mockResolvedValueOnce({ items: [noise('noise')], nextToken: 'page-2' })
+        .mockResolvedValueOnce({ items: [], nextToken: 'page-3' })
+        .mockResolvedValueOnce({ items: [message, ...rows('human', 19)], nextToken: 'page-4' });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+
+      expect(mocks.backendRequest.mock.calls).toEqual([
+        ['event.query', { workspaceId: WS, limit: 100, paginate: true }],
+        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-2', paginate: true }],
+        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-3', paginate: true }],
+      ]);
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history()).toMatchObject({ peopleInitialized: true, nextToken: 'page-4' });
+      expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
+    });
+
+    it('uses existing history for initial load and fetches 20 additional rows for more', async () => {
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, rows('cached', 19), 'page-2'));
+      mocks.events.queryPage
+        .mockResolvedValueOnce({ items: [humanEvent('twentieth')], nextToken: 'page-3' })
+        .mockResolvedValueOnce({
+          items: [noise('noise'), humanEvent('older')],
+          nextToken: 'page-4',
+        })
+        .mockResolvedValueOnce({ items: rows('more', 19), nextToken: 'page-5' });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(run.visible()).toHaveLength(40);
+      expect(mocks.events.queryPage.mock.calls).toEqual([
+        [WS, { limit: 100, nextToken: 'page-2' }],
+        [WS, { limit: 100, nextToken: 'page-3' }],
+        [WS, { limit: 100, nextToken: 'page-4' }],
+      ]);
+    });
+
+    it('counts unnamed human actions through the current full identity roster', async () => {
+      const run = startPeople();
+      run.current.userPreferences.labsMultiplayerEnabled = true;
+      run.current.presence.context = selectPrincipalActionContext.select(run.current);
+      run.current.workspace = workspaceReducer(
+        run.current.workspace,
+        setWorkspaceEntity({ id: WS, memberCount: 2 } as Workspace),
+      );
+      run.current.presence.members[WS] = createCollection('principalId', [
+        {
+          principalId: 'person',
+          login: 'sam',
+          displayName: 'Sam',
+          avatarUrl: null,
+          role: 'owner' as const,
+          addedAt: NOW.toISOString(),
+        },
+      ]);
+      mocks.events.queryPage.mockResolvedValueOnce({
+        items: rows('human', 20).map((event) => ({
+          ...event,
+          actor: { type: 'user', id: 'person' },
+        })),
+        nextToken: 'older',
+      });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history().nextToken).toBe('older');
+    });
+
+    it('merges the first People page with a live-only cache and continues past duplicate rows', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage
+        .mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        )
+        .mockResolvedValueOnce({ items: rows('older', 18), nextToken: 'page-3' });
+      const run = startPeople();
+      run.dispatch(eventReceived(WS, humanEvent('cached')));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      run.dispatch(eventReceived(WS, humanEvent('live')));
+      resolve({
+        items: Array.from({ length: 100 }, () => humanEvent('cached')),
+        nextToken: 'page-2',
+      });
+      await settle();
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history().events.map((event) => event.id)).toEqual(
+        expect.arrayContaining(['cached', 'live']),
+      );
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+    });
+
+    it('caps one request at ten pages and keeps continuation without automatic repeat loading', async () => {
+      let page = 0;
+      mocks.events.queryPage.mockImplementation(async () => ({
+        items: [noise(`noise-${page}`)],
+        nextToken: `page-${++page}`,
+      }));
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      for (let i = 0; i < 4; i++) await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
+      expect(run.history()).toMatchObject({ nextToken: 'page-10', endReached: false });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
+      mocks.events.queryPage.mockResolvedValueOnce({
+        items: [humanEvent('last')],
+        nextToken: null,
+      });
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
+        limit: 100,
+        nextToken: 'page-10',
+      });
+      expect(run.history()).toMatchObject({ endReached: true, peopleRequestId: null });
+    });
+
+    it('stops at empty end-of-history, including repeated initial and more requests', async () => {
+      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history()).toMatchObject({ events: [], endReached: true, peopleError: null });
+    });
+
+    it('coalesces repeated more requests and preserves live events arriving during the read', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage.mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, rows('cached', 20), 'page-2'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      await settle();
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'more'));
+      run.dispatch(eventReceived(WS, humanEvent('live')));
+      expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(true);
+      resolve({ items: rows('older', 20), nextToken: 'page-3' });
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.visible()).toHaveLength(41);
+      expect(run.history().events.map((event) => event.id)).toContain('live');
+    });
+
+    it('keeps a failed page cursor and requires an explicit retry after initial failure', async () => {
+      mocks.events.queryPage
+        .mockResolvedValueOnce({ items: [humanEvent('first')], nextToken: 'page-2' })
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ items: rows('rest', 19), nextToken: null });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(selectPeopleEventsError.select(run.current, WS)).toBe('offline');
+      expect(run.history()).toMatchObject({ nextToken: 'page-2', peopleRequestId: null });
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial', true));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
+        limit: 100,
+        nextToken: 'page-2',
+      });
+      expect(run.visible()).toHaveLength(20);
+      expect(selectPeopleEventsError.select(run.current, WS)).toBeNull();
+    });
+
+    it('serializes People requests behind a shared refresh and uses its new cursor', async () => {
+      let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+      mocks.events.queryPage
+        .mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        )
+        .mockResolvedValueOnce({ items: rows('older', 19), nextToken: null });
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, [humanEvent('stale')], 'stale-cursor'));
+      run.dispatch(loadEventsRequested(WS));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      resolve({ items: [humanEvent('fresh')], nextToken: 'fresh-cursor' });
+      await settle();
+      expect(mocks.events.queryPage.mock.calls).toEqual([
+        [WS, { limit: 100 }],
+        [WS, { limit: 100, nextToken: 'fresh-cursor' }],
+      ]);
+      expect(run.visible()).toHaveLength(20);
+      expect(run.history().events.map((event) => event.id)).not.toContain('stale');
+    });
+
+    it.each(['unmount', 'backend', 'connection', 'principal', 'cancel'] as const)(
+      'discards a late People response after %s and clears its loading state',
+      async (change) => {
+        let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
+        mocks.events.queryPage.mockReturnValueOnce(
+          new Promise((done) => {
+            resolve = done;
+          }),
+        );
+        const run = startPeople();
+        run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+        await settle();
+        if (change === 'unmount') run.dispatch(workspaceUnmounted(WS));
+        if (change === 'backend') run.current.connections.windowBackendId = 'replacement';
+        if (change === 'connection') run.current.workspaceEvents.subscriptionGeneration += 1;
+        if (change === 'principal') run.current.principal.presentationVersion += 1;
+        if (change === 'cancel') await stop(run.task);
+        resolve({ items: [humanEvent('late')], nextToken: 'page-2' });
+        await settle();
+        expect(run.visible()).toHaveLength(0);
+        expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
+        expect(run.history().peopleInitialized).toBe(false);
+        expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('stops a non-advancing cursor without marking the remaining history exhausted', async () => {
+      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: 'same' });
+      const run = startPeople();
+      run.dispatch(eventsLoaded(WS, [], 'same'));
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(run.history()).toMatchObject({
+        nextToken: 'same',
+        endReached: false,
+        peopleRequestId: null,
+      });
     });
   });
 
@@ -1158,11 +1487,7 @@ describe('lifecycleReadSaga', () => {
         await settle();
         await settle();
       }
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'active' }],
-        ['other', { archive: 'active' }],
-      ]);
+      expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS], ['other']]);
       expect(mocks.scripts.status).not.toHaveBeenCalled();
     } finally {
       mocks.scripts.supportsLifecycle = undefined;
@@ -1170,86 +1495,57 @@ describe('lifecycleReadSaga', () => {
     }
   });
 
-  it('recovers missed retirement metadata for retained rows from the all partition', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
-    mocks.scripts.list.mockResolvedValueOnce([]).mockResolvedValueOnce([
-      {
-        id: 'open-output',
-        archivedAt: 'now',
-        lastRun: { outcome: 'failed', stoppedAt: 'now' },
-        runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
-      },
-    ]);
-    const run = startScriptCache();
-    try {
-      const row = { id: 'open-output', runtime: { status: 'running', restartCount: 0 } };
-      run.dispatch(setScriptsData(WS, [row, { ...row, id: 'closed-output' }] as never));
-      run.dispatch(scriptOutputRequested(WS, row.id, 'viewer'));
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      await settle();
-      expect(mocks.scripts.list.mock.calls).toEqual([
-        [WS, { archive: 'active' }],
-        [WS, { archive: 'all' }],
-      ]);
-      expect(mocks.scripts.status).not.toHaveBeenCalled();
-      expect(run.getState().byWorkspaceId[WS].scripts['closed-output']).toBeUndefined();
-      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].lastRun?.outcome).toBe(
-        'failed',
-      );
-      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
-        status: 'exited',
-        exitCode: 1,
-      });
-      expect(run.getState().byWorkspaceId[WS].activeScriptIds).toEqual([]);
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
-  });
-
-  it('keeps a newer live event when retained metadata reconciliation finishes late', async () => {
-    mocks.scripts.supportsLifecycle = async () => true;
+  it('never enumerates archives when a partial refresh omits an open output ID', async () => {
     mocks.scripts.list.mockResolvedValue([]);
-    let resolveStatus!: (value: unknown) => void;
-    mocks.scripts.list.mockResolvedValueOnce([]).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveStatus = resolve;
-      }),
-    );
     const run = startScriptCache();
-    try {
-      run.dispatch(
-        setScriptsData(WS, [
-          { id: 'open-output', runtime: { status: 'running', restartCount: 0 } },
-        ] as never),
-      );
-      run.dispatch(scriptOutputRequested(WS, 'open-output', 'viewer'));
-      run.dispatch(refreshScripts(WS));
-      await settle();
-      await settle();
-      expect(mocks.scripts.list).toHaveBeenCalledTimes(2);
-      run.dispatch(
-        updateRuntimeState(WS, 'open-output', { status: 'starting', startedAt: 'new run' }),
-      );
-      resolveStatus([
-        {
-          id: 'open-output',
-          archivedAt: 'now',
-          runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
-        },
-      ]);
-      await settle();
-      await settle();
-      expect(run.getState().byWorkspaceId[WS].scripts['open-output'].runtime).toMatchObject({
-        status: 'starting',
-        startedAt: 'new run',
-      });
-    } finally {
-      mocks.scripts.supportsLifecycle = undefined;
-      await stop(run.task);
-    }
+    run.dispatch(
+      setScriptsData(WS, [
+        { id: 'selected', runtime: { status: 'running', restartCount: 0 } },
+      ] as never),
+    );
+    run.dispatch(scriptOutputRequested(WS, 'selected', 'viewer'));
+    run.dispatch(refreshScripts(WS));
+    await settle();
+    await settle();
+    expect(mocks.scripts.list).toHaveBeenCalledExactlyOnceWith(WS);
+    expect(run.getState().byWorkspaceId[WS].retainedOutputs?.viewer.scriptId).toBe('selected');
+    expect(run.getState().byWorkspaceId[WS].activeScriptIds).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('loads one page at a time and removes an archived row racing the next page', async () => {
+    const first = {
+      id: 'first',
+      workspaceId: WS,
+      commandPreview: 'preview',
+      commandTruncated: true,
+      runtime: { status: 'idle', restartCount: 0 },
+    };
+    mocks.scripts.listPage.mockResolvedValueOnce({
+      view: 'summary',
+      scripts: [first],
+      nextCursor: 'next',
+    });
+    let resolve!: (value: unknown) => void;
+    mocks.scripts.listPage.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+    const run = startScriptCache();
+    run.dispatch(refreshScripts(WS));
+    await settle();
+    await settle();
+    expect(mocks.scripts.listPage).toHaveBeenCalledTimes(1);
+    expect(mocks.scripts.list).not.toHaveBeenCalled();
+    run.dispatch(loadMoreScripts(WS));
+    await settle();
+    expect(mocks.scripts.listPage).toHaveBeenLastCalledWith(WS, { cursor: 'next' });
+    run.dispatch(
+      scriptSnapshotReceived(WS, { ...first, command: 'full', archivedAt: 'now' } as never),
+    );
+    resolve({ view: 'summary', scripts: [first, { ...first, id: 'second' }] });
+    await settle();
+    await settle();
+    expect(run.getState().byWorkspaceId[WS].activeScriptIds).toEqual(['second']);
+    expect(run.getState().byWorkspaceId[WS].nextCursor).toBeUndefined();
+    await stop(run.task);
   });
 
   function startScriptCache() {
@@ -1275,7 +1571,7 @@ describe('lifecycleReadSaga', () => {
       run.channel.put(refreshScripts(WS));
       await settle();
       await settle();
-      expect(run.actions).toContainEqual(setScriptListState(WS, true, undefined, true));
+      expect(run.actions).toContainEqual(setScriptListState(WS, true));
       expect(run.actions).toContainEqual(setScriptListState(WS, false, 'history offline'));
       expect(run.actions.some((action) => action.type === setScriptsData.type)).toBe(false);
     } finally {
@@ -1305,12 +1601,14 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
       setScriptListState(WS, true),
-      setScriptListState(WS, false, undefined, false),
-      { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: stale } },
+      { type: 'scripts/setActiveData', payload: [WS, stale] },
+      { type: 'scripts/pageCursor', payload: [WS, undefined] },
+      setScriptListState(WS, false, undefined, true),
       { type: 'scripts/setInitialized', payload: [WS, true] },
       setScriptListState(WS, true),
-      setScriptListState(WS, false, undefined, false),
-      { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: fresh } },
+      { type: 'scripts/setActiveData', payload: [WS, fresh] },
+      { type: 'scripts/pageCursor', payload: [WS, undefined] },
+      setScriptListState(WS, false, undefined, true),
       { type: 'scripts/setInitialized', payload: [WS, true] },
     ]);
     await stop(run.task);
@@ -1369,8 +1667,8 @@ describe('lifecycleReadSaga', () => {
     pending[WS][1]([{ id: 'fresh' }]);
     await settle();
     expect(run.actions).toContainEqual({
-      type: 'scripts/setScriptsData',
-      payload: { wsId: WS, scripts: [{ id: 'fresh' }] },
+      type: 'scripts/setActiveData',
+      payload: [WS, [{ id: 'fresh' }]],
     });
     await stop(run.task);
   });
@@ -1724,6 +2022,524 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  describe('pushed file and history state', () => {
+    it('explicit refresh adopts a newer immutable history without a delivered status push', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base-A',
+        historyIdentity: 'A',
+      });
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      mocks.git.commitsWithBoundary.mockClear();
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'B' }],
+        boundarySha: 'base-B',
+        historyIdentity: 'B',
+      });
+      run.channel.put(refreshRequested(WS));
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData').at(-1)).toMatchObject({
+        payload: { wsId: WS, commits: [{ hash: 'B' }], boundarySha: 'base-B' },
+      });
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      run.channel.put(push('B'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('explicit refresh still rejects a response superseded by a newer push', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base-A',
+        historyIdentity: 'A',
+      });
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'C' }],
+        boundarySha: 'base-C',
+        historyIdentity: 'C',
+      });
+      run.channel.put(push('C'));
+      resolve({ commits: [{ hash: 'B' }], boundarySha: 'base-B', historyIdentity: 'B' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(
+        run.actions.filter((a) => a.type === 'changes/setCommitsData').map((a) => a.payload),
+      ).toEqual([
+        { wsId: WS, commits: [{ hash: 'A' }], boundarySha: 'base-A' },
+        { wsId: WS, commits: [{ hash: 'C' }], boundarySha: 'base-C' },
+      ]);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not spin or accept missing response identity as a known pushed history', async () => {
+      const run = start(state(WS));
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([]);
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base',
+        historyIdentity: 'A',
+      });
+      run.channel.put({ type: 'changes/consumerUnmounted', payload: [WS] } as never);
+      run.channel.put({ type: 'changes/consumerMounted', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toHaveLength(1);
+    });
+
+    it('uses an initial response identity to avoid the next unchanged history read', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base',
+        historyIdentity: 'A',
+      });
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves file and review consumers independently of the Changes panel', async () => {
+      const run = start(state(WS), false);
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base',
+        historyIdentity: 'A',
+      });
+      run.channel.put({ type: 'changes/consumerMounted', payload: [WS, 'files'] } as never);
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      run.channel.put({ type: 'changes/consumerMounted', payload: [WS, 'history'] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+      run.channel.put({ type: 'changes/consumerUnmounted', payload: [WS, 'history'] } as never);
+      run.channel.put(push('B'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(2);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an older-page response with a different immutable history identity', async () => {
+      const run = start(state(WS));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base',
+        historyIdentity: 'A',
+      });
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      mocks.git.commitsWithBoundary.mockResolvedValueOnce({
+        commits: [{ hash: 'wrong-page' }],
+        boundarySha: 'other',
+        historyIdentity: 'B',
+      });
+      run.channel.put(loadOlderCommitsRequested(WS, 'base'));
+      await settle();
+      expect(run.actions.filter((a) => a.type === 'changes/appendOlderCommits')).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+    });
+
+    it('rejects a B history snapshot after A to B to A and performs one bounded recovery', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      // The daemon captured B while the frontend observed A both before and after.
+      run.channel.put(push('A'));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'A' }],
+        boundarySha: 'base-A',
+        historyIdentity: 'A',
+      });
+      resolve({ commits: [{ hash: 'B' }], boundarySha: 'base-B', historyIdentity: 'B' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([
+        expect.objectContaining({
+          payload: { wsId: WS, commits: [{ hash: 'A' }], boundarySha: 'base-A' },
+        }),
+      ]);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      run.channel.put(push('A'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves manual paths and current stages while replacing tracked attribution', async () => {
+      const run = start(state(WS));
+      mocks.git.status.mockResolvedValue({
+        ...gitStatus,
+        files: [
+          { path: 'a.ts', status: GitFileStatus.Modified, staged: true },
+          { path: 'manual.txt', status: GitFileStatus.Untracked, staged: false },
+        ],
+      });
+      mocks.git.trackedChanges.mockResolvedValue([tracked]);
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      mocks.git.status.mockClear();
+      mocks.git.trackedChanges.mockClear();
+      mocks.git.commitsWithBoundary.mockClear();
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [tracked] }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: {
+          changes: [
+            expect.objectContaining({
+              relativePath: 'a.ts',
+              stage: 'staged',
+              stats: tracked.stats,
+            }),
+            expect.objectContaining({
+              relativePath: 'manual.txt',
+              stage: 'unstaged',
+              attribution: expect.objectContaining({ manual: true }),
+            }),
+          ],
+        },
+      });
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [] }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: {
+          changes: [
+            expect.objectContaining({
+              relativePath: 'a.ts',
+              stage: 'staged',
+              stats: { additions: 0, deletions: 0 },
+            }),
+            expect.objectContaining({ relativePath: 'manual.txt' }),
+          ],
+        },
+      });
+      expect(mocks.git.status).toHaveBeenCalledTimes(2);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+    });
+
+    it('defers detailed reads while the Changes panel is closed and reconciles on reopen', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'closed',
+      });
+      const run = start(state(WS), false);
+      run.channel.put(push('closed'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      run.channel.put({ type: 'changes/consumerMounted', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      run.channel.put({ type: 'changes/consumerUnmounted', payload: [WS] } as never);
+      run.channel.put(push('changed-while-closed'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not append an old history page across a changed boundary', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'old',
+      });
+      const run = start(state(WS));
+      run.channel.put(push('old'));
+      await vi.advanceTimersByTimeAsync(1000);
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      run.channel.put(loadOlderCommitsRequested(WS, 'old-base'));
+      await settle();
+      run.channel.put(push('new'));
+      await vi.advanceTimersByTimeAsync(1000);
+      resolve({ commits: [{ hash: 'old-parent' }], boundarySha: 'old-base' });
+      await settle();
+      expect(run.actions.filter((a) => a.type === 'changes/appendOlderCommits')).toEqual([]);
+    });
+    it('retains failed invalidations for reopening instead of treating them as loaded', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'retry',
+      });
+      const current = state(WS);
+      const run = start(current);
+      mocks.git.commitsWithBoundary.mockRejectedValueOnce(new Error('offline'));
+      run.channel.put(push('retry'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([]);
+      run.channel.put({ type: 'tabState/openWorkspaceTab', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toHaveLength(1);
+    });
+    const tracked = {
+      id: 'tracked-1',
+      file: '/repo/a.ts',
+      relativePath: 'a.ts',
+      stage: 'unstaged',
+      status: 'modified',
+      stats: { additions: 9, deletions: 2 },
+      attribution: { manual: true, timestamp: 1 },
+    };
+    const gitStatus = {
+      branch: 'feature',
+      ahead: 1,
+      behind: 0,
+      files: [{ path: 'a.ts', status: GitFileStatus.Modified, staged: false }],
+    };
+    const push = (identity: string) =>
+      changesEventReceived(WS, 'changes:git-status', {
+        status: { historyIdentity: identity, gitStatus },
+      });
+
+    it('reads only working-tree membership for an attribution push', async () => {
+      const run = start(state(WS));
+      mocks.git.status.mockResolvedValue(gitStatus);
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      mocks.git.status.mockClear();
+      mocks.git.trackedChanges.mockClear();
+      mocks.git.commitsWithBoundary.mockClear();
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [tracked] }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.status).toHaveBeenCalledTimes(1);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      expect(run.actions).toContainEqual(
+        expect.objectContaining({
+          type: 'changes/setChangesData',
+          payload: expect.objectContaining({ changes: [tracked] }),
+        }),
+      );
+    });
+
+    it('does not reload history for file-only pushes with unchanged history identity', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'history-a',
+      });
+      const run = start(state(WS));
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      mocks.git.trackedChanges.mockResolvedValue([tracked]);
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.status).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: { changes: [tracked] },
+      });
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'history-b',
+      });
+      run.channel.put(push('history-b'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    });
+
+    it('defers hidden invalidations and recovers files and history on reopening', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'history-a',
+      });
+      const current = state('ws-other');
+      const run = start(current);
+      run.channel.put(push('history-a'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      current.tabState.currentTabId = WS;
+      run.channel.put({ type: 'tabState/openWorkspaceTab', payload: [WS] } as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves a newer tracked push over an older in-flight read', async () => {
+      mocks.git.status.mockResolvedValue(gitStatus);
+      let resolve!: (value: unknown[]) => void;
+      mocks.git.trackedChanges.mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      run.channel.put(changesEventReceived(WS, 'changes:tracked', { changes: [tracked] }));
+      resolve([]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setChangesData').at(-1)).toMatchObject({
+        payload: { changes: [tracked] },
+      });
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores secondary roots and keeps workspace history identities separate', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'same-identity',
+      });
+      const current = state(WS);
+      const run = start(current);
+      run.channel.put(changesEventReceived(WS, 'git:commit', { gitRootId: 'secondary' }));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      run.channel.put(push('same-identity'));
+      await vi.advanceTimersByTimeAsync(1000);
+      current.tabState.currentTabId = 'ws-other';
+      run.channel.put({ type: 'changes/consumerMounted', payload: ['ws-other'] } as never);
+      run.channel.put(
+        changesEventReceived('ws-other', 'changes:git-status', {
+          status: { historyIdentity: 'same-identity', gitStatus },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary.mock.calls).toEqual([[WS], ['ws-other']]);
+    });
+
+    it('rejects stale history after an identity change and keeps the new boundary', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(push('before-rebase'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(push('after-rebase'));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'new' }],
+        boundarySha: 'new-base',
+        historyIdentity: 'after-rebase',
+      });
+      resolve({ commits: [{ hash: 'stale' }], boundarySha: 'old-base' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([
+        expect.objectContaining({
+          payload: { wsId: WS, commits: [{ hash: 'new' }], boundarySha: 'new-base' },
+        }),
+      ]);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not repeat an in-flight history read for another file push with the same identity', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const run = start(state(WS));
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(push('same'));
+      resolve({ commits: [{ hash: 'head' }], boundarySha: 'base', historyIdentity: 'same' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toHaveLength(1);
+    });
+
+    it('recovers after reconnect and conservatively reads history for legacy status pushes', async () => {
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [],
+        boundarySha: null,
+        historyIdentity: 'same',
+      });
+      const run = start(state(WS));
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      run.channel.put(backendReconnected());
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(mocks.git.status).toHaveBeenCalledTimes(1);
+      run.channel.put(
+        changesEventReceived(WS, 'changes:git-status', { status: { localCommits: [] } }),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(3);
+      expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    });
+
+    it('fences a prior backend reply and does not reuse its history identity', async () => {
+      let resolve!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const current = state(WS);
+      const run = start(current);
+      run.channel.put(push('same'));
+      await vi.advanceTimersByTimeAsync(1000);
+      const remote = withLegacyPrincipal({
+        ...current,
+        connections: { ...current.connections, windowBackendId: 'remote' },
+      });
+      Object.assign(current, remote);
+      current.workspace.loadedBackendId = 'remote';
+      current.workspace.capabilityContext = selectPrincipalActionContext.select(remote);
+      run.channel.put(push('same'));
+      mocks.git.commitsWithBoundary.mockResolvedValue({
+        commits: [{ hash: 'remote-head' }],
+        boundarySha: 'remote-base',
+        historyIdentity: 'same',
+      });
+      resolve({ commits: [{ hash: 'local-head' }], boundarySha: 'local-base' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(2);
+      expect(run.actions.filter((a) => a.type === 'changes/setCommitsData')).toEqual([
+        expect.objectContaining({
+          payload: { wsId: WS, commits: [{ hash: 'remote-head' }], boundarySha: 'remote-base' },
+        }),
+      ]);
+    });
+  });
+
   it('reconciles both changes triggers with parallel reads and keeps partial failure atomic', async () => {
     const change = {
       id: 'change-1',
@@ -1808,6 +2624,7 @@ describe('lifecycleReadSaga', () => {
     const gitTask = runSaga(
       {
         channel: run.channel,
+        getState: () => state(),
         dispatch: (action) => run.actions.push(action as { type: string; payload?: unknown }),
       },
       gitReadSaga,
@@ -4147,17 +4964,23 @@ describe('script lifecycle capability coherence', () => {
     request.mockImplementation(async (method, params) => {
       if (method === 'client.hello') {
         helloCount++;
-        if (helloCount === 2) return pending as never;
-        return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+        if (helloCount === 1) return pending as never;
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptActiveLists: 1 },
+          },
+        } as never;
       }
       const archived = (params as { archive?: string }).archive === 'archived';
       return {
+        view: 'summary',
         scripts: archived ? [{ id: 'history', archivedAt: '2026-09-30T00:00:00Z' }] : [],
       } as never;
     });
     const client = new LiveScriptsClient();
     mocks.scripts.supportsLifecycle = client.supportsLifecycle.bind(client);
-    mocks.scripts.list.mockImplementation(client.list.bind(client));
+    mocks.scripts.listPage.mockImplementation(client.listPage.bind(client));
     let current = { ...state(), connections: { windowBackendId: 'original' } };
     const channel = stdChannel();
     const dispatch = (action: { type: string }) => {
@@ -4168,9 +4991,14 @@ describe('script lifecycle capability coherence', () => {
     const task = runSaga({ channel, dispatch, getState: () => current }, lifecycleReadSaga);
     try {
       dispatch(refreshScripts(WS));
-      await vi.waitFor(() => expect(helloCount).toBe(2));
+      await vi.waitFor(() => expect(helloCount).toBe(1));
       current.connections.windowBackendId = 'replacement';
-      resolveHello({ server: { capabilities: { scriptLifecycle: 1 } } });
+      resolveHello({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      });
       for (let i = 0; i < 10; i++) await settle();
       expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toBeUndefined();
       expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
@@ -4214,15 +5042,21 @@ describe('script lifecycle capability coherence', () => {
       request.mockImplementation(async (method, params) => {
         if (method === 'client.hello') {
           helloCount++;
-          if (helloCount === 2) {
+          if (helloCount === 1) {
             if (mode === 'failure') throw new Error('temporary hello failure');
             return { server: { capabilities: {} } } as never;
           }
-          return { server: { capabilities: { scriptLifecycle: 1 } } } as never;
+          return {
+            server: {
+              protocolVersion: CURRENT_PROTOCOL_VERSION,
+              capabilities: { scriptActiveLists: 1 },
+            },
+          } as never;
         }
         if (method === 'script.list') {
           const filter = (params as { archive?: string }).archive;
           return {
+            view: 'summary',
             scripts: rows.filter((s) =>
               filter === 'active' ? !s.archivedAt : filter === 'archived' ? !!s.archivedAt : true,
             ),
@@ -4232,7 +5066,7 @@ describe('script lifecycle capability coherence', () => {
       });
       const client = new LiveScriptsClient();
       mocks.scripts.supportsLifecycle = client.supportsLifecycle.bind(client);
-      mocks.scripts.list.mockImplementation(client.list.bind(client));
+      mocks.scripts.listPage.mockImplementation(client.listPage.bind(client));
       let current = state();
       current.scripts = scriptsReducer(
         current.scripts,
@@ -4256,7 +5090,7 @@ describe('script lifecycle capability coherence', () => {
         expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toEqual(['saved']);
         expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
         expect(request.mock.calls.filter(([method]) => method === 'script.list')).toEqual([
-          ['script.list', { workspaceId: WS, archive: 'active' }],
+          ['script.list', { workspaceId: WS, archive: 'active', view: 'summary', limit: 100 }],
         ]);
       } finally {
         mocks.scripts.supportsLifecycle = undefined;

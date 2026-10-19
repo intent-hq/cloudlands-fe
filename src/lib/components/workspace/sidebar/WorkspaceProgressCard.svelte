@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
@@ -14,6 +16,7 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faArrowRight,
     faCodeBranch,
@@ -87,40 +90,29 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    selectWorkspaceDrivingClient,
+    selectWorkspaceBrowserSelectionKnown,
+    selectOwnClientIdConfirmed,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import {
-    presencePersonNameWithForge,
-    presencePersonLabel,
-    type PresenceCircle,
-    type PresenceCircleAction,
-  } from '$features/presence/components/presence-person';
-  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import {
-    PRESENCE_FOLLOW_VISIBLE_LIMIT,
-    selectPresenceFollowTargets,
-  } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
-  import { followPresencePersonRequested } from '$store/renderer/slices/presence-follow/presence-follow-slice';
-  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   const readyLogger = createLogger('ReadyTasks');
 
   interface Props {
     workspaceId?: string;
+    active?: boolean;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
   }
 
-  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
+  let { workspaceId, active = true, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -459,86 +451,6 @@
       : null,
   );
 
-  // Multiplayer presence row: everybody else on this shared workspace, the
-  // offline members greyscale, so the row shows even while only this window
-  // is online. An avatar takes the viewer to where that person looks right
-  // now (their agent chat, else their note); unknown destinations are inert.
-  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const presenceFocusTargets$ = selectPresenceFollowTargets(workspaceIdStore);
-  const presencePersonAction = $derived.by(() => {
-    const targets = $presenceFocusTargets$;
-    const agents = $workspaceAgentSessions$;
-    const allNotes = $notes;
-    const wsId = $workspace?.id ? String($workspace.id) : undefined;
-    return (person: PresenceCircle): PresenceCircleAction => {
-      const name = person.hostRole
-        ? presencePersonLabel(person)
-        : presencePersonNameWithForge(person);
-      const entry = targets[person.principalId];
-      const target = entry?.target;
-      if (!entry || !target)
-        return {
-          label:
-            !person.hostRole && !person.online
-              ? m.workspace_progressCard_presenceOffline_tooltip({ name })
-              : name,
-          onSelect: null,
-        };
-      const sameWorkspace = target.workspaceId === wsId;
-      const agent = sameWorkspace
-        ? agents.find((s) => String(s.id) === target.agentId)?.name
-        : undefined;
-      const note = sameWorkspace
-        ? allNotes.find((n) => String(n.id) === target.noteId)?.title
-        : undefined;
-      const viewLabel = target.agentId
-        ? m.workspace_progressCard_presenceOnAgent_tooltip({
-            name,
-            agent: agent || m.layout_tabTypes_agent_title(),
-          })
-        : target.noteId
-          ? m.workspace_progressCard_presenceOnNote_tooltip({
-              name,
-              note: note || m.layout_tabTypes_note_title(),
-            })
-          : name;
-      return {
-        label:
-          !sameWorkspace || (!target.agentId && !target.noteId)
-            ? m.workspace_progressCard_presenceAtWorkspace_tooltip({
-                name: viewLabel,
-                workspace: entry.workspaceTitle,
-              })
-            : viewLabel,
-        onSelect: wsId
-          ? (event) => {
-              const current = selectPresenceFollowTargets.select(appStore.state, wsId)[
-                person.principalId
-              ];
-              if (
-                !current ||
-                current.scope !== entry.scope ||
-                current.generation !== entry.generation ||
-                current.seq !== entry.seq
-              )
-                return;
-              appStore.dispatch(
-                followPresencePersonRequested(
-                  entry.scope,
-                  person.principalId,
-                  entry.generation,
-                  entry.seq,
-                  crypto.randomUUID(),
-                  findSourcePanelId(event.target),
-                  isCmdClickModifier({ event }),
-                ),
-              );
-            }
-          : null,
-      };
-    };
-  });
-
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
       ? {
@@ -562,19 +474,25 @@
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
+  const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
+  const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
     Boolean(
-      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+      $ownClientIdConfirmed$ &&
+      $drivingClient$.ownClientId &&
+      $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
     ),
   );
   const canSetPrimaryClient = $derived(
     Boolean(
       workspaceId &&
       $canSetPrimaryClient$ &&
+      $browserSelectionKnown$ &&
+      $ownClientIdConfirmed$ &&
       !primaryAlreadySelected &&
       $drivingClient$.eligibleClients.some(
         (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
@@ -610,12 +528,14 @@
   function handleConfirmSetPrimaryClient() {
     const pending = pendingPrimaryClient;
     pendingPrimaryClient = null;
+    // A backend change can precede the rendered selector update.
     if (
       !pending ||
       !canSetPrimaryClient ||
       pending.workspaceId !== workspaceId ||
       pending.clientId !== $drivingClient$.ownClientId ||
-      pending.context !== $principalActionContext$
+      pending.context !== $principalActionContext$ ||
+      pending.context !== selectPrincipalActionContext.select(appStore.state)
     )
       return;
     appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));
@@ -961,14 +881,22 @@
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
 {/snippet}
 
 {#snippet sidebarSideIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$ === 'left' ? 'right' : 'left'} class="opacity-50" />
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
 {/snippet}
 
-<div class="flex w-full flex-col" data-workspace-title-section>
+<div
+  use:browserClientConsumer={active ? workspaceId : undefined}
+  class="flex w-full flex-col"
+  data-workspace-title-section
+>
   <!-- Workspace Header -->
   <div class="flex w-full flex-col pb-1">
     <div class="flex items-center justify-between group">
@@ -1033,7 +961,7 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <KebabIcon class="size-4" />
+                <KebabIcon />
               {/if}
             </Button>
           {/snippet}
@@ -1191,17 +1119,6 @@
           </TooltipRich>
         {/if}
       </div>
-      {#if $presencePeople$.length > 0}
-        <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
-          <PresenceAvatarStack
-            people={$presencePeople$}
-            maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
-            size={18}
-            action={presencePersonAction}
-            class="pl-0.5"
-          />
-        </div>
-      {/if}
       <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
       <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
@@ -1321,7 +1238,7 @@
             <Button
               variant="plain"
               wrapContent={false}
-              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+              class="type-body relative z-10 h-auto w-full justify-start cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"

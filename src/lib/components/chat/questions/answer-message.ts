@@ -1,5 +1,7 @@
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
+import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 
 /**
  * Answer flattening for the Agent Q&A wizard (wire contract): all answers of
@@ -22,12 +24,23 @@ export interface QuestionAnswer {
   freeText: string;
   /** True when the question was explicitly skipped. */
   skipped: boolean;
+  /** Transient pasted images, in paste order for this question. */
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
 }
 
 function formatAnswer(answer: QuestionAnswer): string {
   if (answer.skipped) return '(skipped)';
   const parts = [...answer.selectedLabels];
-  if (answer.freeText) parts.push(`(Other) ${answer.freeText}`);
+  const imageCount = answer.imageBlocks?.length ?? 0;
+  const attachmentNote =
+    imageCount === 0
+      ? ''
+      : imageCount === 1
+        ? m.chat_questionWizard_imagesAttached_label_one()
+        : m.chat_questionWizard_imagesAttached_label_many({ count: formatInteger(imageCount) });
+  if (answer.freeText || imageCount > 0) {
+    parts.push(`(Other) ${[answer.freeText, attachmentNote].filter(Boolean).join(' ')}`);
+  }
   // A question left unanswered without an explicit Skip (only reachable via
   // Back-then-Send edge flows) reads the same as a skip on the wire.
   if (parts.length === 0) return '(skipped)';
@@ -54,6 +67,18 @@ export function buildAnswerMessageMetadata(
   answeredQuestionsMessageId: string,
 ): QuestionAnswersMetadata {
   return { type: QUESTION_ANSWERS_METADATA_TYPE, answeredQuestionsMessageId };
+}
+
+/** Keep images in question order so the per-answer counts identify their grouping. */
+export function buildAnswerSubmission(answers: readonly QuestionAnswer[], messageId: string) {
+  const imageBlocks = answers.flatMap((answer) =>
+    answer.skipped ? [] : (answer.imageBlocks ?? []),
+  );
+  return {
+    text: flattenAnswersToMessage(answers),
+    messageMetadata: buildAnswerMessageMetadata(messageId),
+    ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+  };
 }
 
 interface AnswerMessageLike {

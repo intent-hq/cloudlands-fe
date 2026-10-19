@@ -21,6 +21,7 @@ import {
   setLocalUpdateSupported,
 } from '../connection-mode';
 import { Logger } from '$shared/logger';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const {
   ctorOptions,
@@ -184,7 +185,7 @@ describe('backend.ipc client identity wiring (§5.17)', () => {
     const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
     expect(typeof onHelloResult).toBe('function');
 
-    onHelloResult({ clientId: 'cli-9b21', protocolVersion: '2.2', server: {} });
+    onHelloResult({ clientId: 'cli-9b21', protocolVersion: CURRENT_PROTOCOL_VERSION, server: {} });
     expect(mockPersistClientId).toHaveBeenCalledWith(
       'cli-9b21',
       expect.objectContaining({ transport: 'uds' }),
@@ -493,7 +494,7 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
     expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
 
-    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} }); // fixture-protocol-version: asserts this exact value is captured
     expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
     expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
 
@@ -502,8 +503,13 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
 
     // A fresh hello (reconnect after a daemon upgrade) re-captures.
-    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} });
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} }); // fixture-protocol-version: a different value replaces the captured one
     expect(getConnectedDaemonProtocolVersion('local')).toBe('10.10');
+
+    // Parsed once at the hello: a malformed version is unknown, never a string
+    // a gate could hand-parse.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '15-dev', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
     __resetBackendProtocolStateForTesting();
   });
 
@@ -526,7 +532,7 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
 
     // A later hello with a version re-captures; a versionless one clears again.
-    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} }); // fixture-protocol-version: asserts this exact value is captured
     expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
     onHelloResult({ clientId: 'cli-1', server: {} });
     expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
@@ -1243,18 +1249,24 @@ describe('collaboration auth captures only a negotiated local connection', () =>
     'does not infer support from capability %s',
     async (collaborationIdentity) => {
       const { api, hello } = await local();
-      hello({ protocolVersion: '10.8', server: { capabilities: { collaborationIdentity } } }); // protocol-version-ok: documented GitLab seam test
+      hello({
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        server: { capabilities: { collaborationIdentity } },
+      });
       expect(api.captureLocalIdentityConnection().supported).toBe(false);
     },
   );
   it('routes identity calls through local B regardless of a remote A hello', async () => {
     const { api, client, hello } = await local();
-    hello({ protocolVersion: '10.8', server: { capabilities: { collaborationIdentity: 1 } } }); // protocol-version-ok: documented GitLab seam test
+    hello({
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      server: { capabilities: { collaborationIdentity: 1 } },
+    });
     await api.connectBackendClient('conn-remote');
     const remote = api.getBackendClientForConnection('conn-remote')!;
     const remoteHello = ctorOptions.at(-1)!.onHelloResult as (result: unknown) => void;
     remoteHello({
-      protocolVersion: '10.8',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       server: { capabilities: { collaborationIdentity: 0 } },
     }); // protocol-version-ok: fixture remote hello
     const lease = api.captureLocalIdentityConnection();

@@ -11,8 +11,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { on, off } from '$lib/electron-bridge';
-import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 
 const logger = createLogger('ActiveStreamsTracker');
 
@@ -36,9 +35,8 @@ class ActiveStreamsTracker {
   // Whether we're currently listening to events
   private isListening = false;
 
-  // Event handlers (stored for cleanup)
-  private statusChangedHandler: ((data: any) => void) | null = null;
-  private idleHandler: ((data: any) => void) | null = null;
+  // Events received during a baseline read override that older snapshot.
+  private scanUpdates: Map<string, ActiveStream | null> | null = null;
 
   // Version counter for reactivity
   private version = 0;
@@ -63,22 +61,6 @@ class ActiveStreamsTracker {
     // Fetch fresh state once when event listening starts
     this.fetchActiveStreams();
 
-    // Set up event listeners for stream state changes
-    this.statusChangedHandler = (data: any) => {
-      logger.debug('Received agent:status-changed event', { data });
-      // Refresh the full state when any agent status changes
-      this.fetchActiveStreams();
-    };
-
-    this.idleHandler = (data: any) => {
-      logger.debug('Received agent:idle event', { data });
-      // Refresh the full state when an agent goes idle
-      this.fetchActiveStreams();
-    };
-
-    on('agent:status-changed', this.statusChangedHandler);
-    on('agent:idle', this.idleHandler);
-
     this.isListening = true;
     logger.info('Started listening for active stream events');
   }
@@ -89,34 +71,69 @@ class ActiveStreamsTracker {
   stopPolling(): void {
     if (!this.isListening) return;
 
-    if (this.statusChangedHandler) {
-      off('agent:status-changed', this.statusChangedHandler);
-      this.statusChangedHandler = null;
-    }
-    if (this.idleHandler) {
-      off('agent:idle', this.idleHandler);
-      this.idleHandler = null;
-    }
-
     this.pendingRefresh = false;
+    this.inFlight = null;
     this.refreshGeneration++;
+    this.scanUpdates = null;
+    this.updateStreams([]);
 
     this.isListening = false;
     logger.info('Stopped listening for active stream events');
+  }
+
+  /** Consumes the admitted workspace event stream, without legacy IPC relays. */
+  applyEvent(event: {
+    type: string;
+    workspaceId?: string;
+    sessionId?: string | null;
+    timestamp: string;
+    data?: Record<string, unknown>;
+  }): void {
+    if (!this.isListening) return;
+    const data = event.data;
+    const agentId = data?.agentId;
+    if (typeof agentId !== 'string' || !event.workspaceId) return;
+    const terminal = ['agent:idle', 'agent:failed', 'agent:deleted', 'agent:delete-scheduled'];
+    let active: boolean;
+    if (terminal.includes(event.type)) active = false;
+    else if (event.type === 'agent:status-changed') {
+      if (data?.isActive === true || data?.isResponding === true || data?.isStreaming === true)
+        active = true;
+      else if (
+        data?.isActive === false ||
+        ['idle', 'completed', 'error', 'failed', 'deleted', 'halted'].includes(String(data?.status))
+      )
+        active = false;
+      else if (data?.status === 'active' || data?.status === 'responding') active = true;
+      else return;
+    } else return;
+    const prior = this.allStreams.get(agentId);
+    if (prior && prior.workspaceId !== event.workspaceId) return;
+    const stream = active
+      ? (prior ?? {
+          agentId,
+          sessionId: event.sessionId ?? agentId,
+          workspaceId: event.workspaceId,
+          startTime: Date.parse(event.timestamp),
+        })
+      : null;
+    this.scanUpdates?.set(agentId, stream);
+    const streams = new Map(this.allStreams);
+    if (stream) streams.set(agentId, stream);
+    else streams.delete(agentId);
+    this.updateStreams([...streams.values()]);
   }
 
   /**
    * Fetch active streams from the backend
    */
   fetchActiveStreams(): Promise<void> {
-    if (typeof window === 'undefined' || !window.electronAPI) return Promise.resolve();
-
     if (this.inFlight) {
       this.pendingRefresh = true;
       return this.inFlight;
     }
 
-    const refresh = this.drainRefreshes();
+    const refresh = this.drainRefreshes(this.refreshGeneration);
     this.inFlight = refresh;
     refresh.then(
       () => {
@@ -129,27 +146,34 @@ class ActiveStreamsTracker {
     return refresh;
   }
 
-  private async drainRefreshes(): Promise<void> {
+  private async drainRefreshes(generation: number): Promise<void> {
     do {
       this.pendingRefresh = false;
       await this.fetchActiveStreamsOnce();
-    } while (this.pendingRefresh);
+    } while (generation === this.refreshGeneration && this.pendingRefresh);
   }
 
   private async fetchActiveStreamsOnce(): Promise<void> {
     const generation = this.refreshGeneration;
+    const updates = new Map<string, ActiveStream | null>();
+    this.scanUpdates = updates;
     try {
-      const result = await invokeIpc<{ success: boolean; data?: unknown }>(
-        'agent:get-active-streams',
-      );
+      const result = await backendRequest<{ streams: ActiveStream[] }>('agent.listActive', {});
 
       if (generation !== this.refreshGeneration) return;
 
-      if (result.success && Array.isArray(result.data)) {
-        this.updateStreams(result.data);
+      if (Array.isArray(result.streams)) {
+        const streams = new Map(result.streams.map((stream) => [stream.agentId, stream]));
+        for (const [id, stream] of updates) {
+          if (stream) streams.set(id, stream);
+          else streams.delete(id);
+        }
+        this.updateStreams([...streams.values()]);
       }
     } catch (error) {
       logger.warn('Failed to fetch active streams', { error });
+    } finally {
+      if (this.scanUpdates === updates) this.scanUpdates = null;
     }
   }
 

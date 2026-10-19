@@ -76,6 +76,8 @@ describe('scrubHostPythonInjection', () => {
       const env: NodeJS.ProcessEnv = {
         PATH: process.env.PATH,
         SystemRoot: process.env.SystemRoot,
+        // setup-python uses this to locate libpython on Linux runners.
+        LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH,
         TMPDIR: scratch,
         TMP: scratch,
         TEMP: scratch,

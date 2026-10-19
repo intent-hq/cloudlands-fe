@@ -447,7 +447,17 @@ describe('chat reconnect recovery through the live client and store', () => {
         isStreaming: true,
         isProcessing: true,
       });
-      // A genuinely new idle snapshot still settles the pending activity.
+      // Repeated snapshots whose assistant precedes the confirmed local send
+      // must keep activity, even after hydration and user-echo reconciliation.
+      const stale = [...rows(), message('older-reply', 0)];
+      snapshot('sub-2', stale);
+      snapshot('sub-2', stale);
+      expect(selectAgentSession.select(store.state, AGENT)).toMatchObject({
+        isStreaming: true,
+        isProcessing: true,
+      });
+      // A completed assistant after the canonical local send proves completion,
+      // even when reconnect missed all of that reply's streaming chunks.
       snapshot('sub-2', [...rows(), message('completed-reply', 2)]);
       expect(selectAgentSession.select(store.state, AGENT)).toMatchObject({
         isStreaming: false,

@@ -1,17 +1,13 @@
 /**
  * Live scripts domain backed by the intentd daemon (PROTOCOL §5.8).
  *
- * Wires the scripts panel through the daemon's `script.*` surface:
- * `list/create/remove/start/stop/restart/output/status/run`. Scripts run as
- * PTYs on the daemon's unified PTY host; `script.output` / `script.status`
- * are the historical poll reads while live output/state stream as the
- * `script:output` / `script:state` events (§6.5). Definitions and runtime
- * state cross the wire in the exact `ScriptWithState` shape the renderer
- * slice consumes (definition fields + a merged `runtime` block), so payloads
- * pass through verbatim.
+ * Discovery reads one active summary page. Full definitions are read only for
+ * selected edits or explicit bulk operations. Output is always a separate
+ * known-ID read and never depends on membership in the loaded page.
  */
 import type {
   ScriptArchiveFilter,
+  ScriptListPage,
   ScriptArchiveResult,
   ScriptRestoreResult,
 } from '$features/scripts/types';
@@ -41,23 +37,50 @@ export class LiveScriptsClient implements ScriptsClient {
     return result?.server?.capabilities?.scriptLifecycle === 1;
   }
 
+  private async requireActiveLists(): Promise<void> {
+    const hello = await backendRequest<{
+      server?: { capabilities?: { scriptActiveLists?: number } };
+    }>('client.hello', {});
+    // Gate on the advertised capability, not the protocol major: majors move
+    // for unrelated changes (protocol 15 still serves active lists).
+    if (hello.server?.capabilities?.scriptActiveLists !== 1)
+      throw new Error(m.scripts_list_unsupported_error());
+  }
+
+  /** Explicit bulk operations only; normal discovery uses one summary page. */
   async list(
     workspaceId: string,
     options?: { archive?: ScriptArchiveFilter },
   ): Promise<ScriptWithState[]> {
-    const supported = await this.supportsLifecycle();
-    // An explicit partition must never become a successful unfiltered snapshot.
-    // Missing capability is legacy fallback only for default/all-list callers;
-    // failed negotiation remains a retryable error rather than cached history.
-    if (!supported && options?.archive && options.archive !== 'all') {
-      throw new Error(m.scripts_history_unsupported_error());
-    }
+    await this.requireActiveLists();
     const result = await backendRequest<{ scripts: ScriptWithState[] }>('script.list', {
       workspaceId,
-      ...(supported ? { archive: options?.archive ?? 'active' } : {}),
+      archive: options?.archive ?? 'active',
     });
-    if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_history_load_error());
+    if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_list_load_error());
     return result.scripts;
+  }
+
+  async listPage(
+    workspaceId: string,
+    options?: { limit?: number; cursor?: string },
+  ): Promise<ScriptListPage> {
+    await this.requireActiveLists();
+    const result = await backendRequest<ScriptListPage>('script.list', {
+      workspaceId,
+      archive: 'active',
+      view: 'summary',
+      limit: 100,
+      ...options,
+    });
+    if (result?.view !== 'summary' || !Array.isArray(result.scripts))
+      throw new Error(m.scripts_list_unsupported_error());
+    return result;
+  }
+
+  async get(workspaceId: string, scriptId: string): Promise<ScriptWithState> {
+    await this.requireActiveLists();
+    return backendRequest('script.get', { workspaceId, scriptId });
   }
 
   async archive(
@@ -68,7 +91,7 @@ export class LiveScriptsClient implements ScriptsClient {
     // The saga checks current workspace/connection authority after its one
     // negotiation. No further await may separate that check from wire dispatch.
     if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
-      throw new Error(m.scripts_history_unsupported_error());
+      throw new Error(m.scripts_list_unsupported_error());
     return backendRequest('script.archive', { workspaceId, scriptIds });
   }
 
@@ -80,12 +103,16 @@ export class LiveScriptsClient implements ScriptsClient {
     // The saga checks current workspace/connection authority after its one
     // negotiation. No further await may separate that check from wire dispatch.
     if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
-      throw new Error(m.scripts_history_unsupported_error());
+      throw new Error(m.scripts_list_unsupported_error());
     return backendRequest('script.restore', { workspaceId, scriptIds });
   }
 
   async create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult> {
     try {
+      if (input.scriptId !== undefined) {
+        // i18n-ignore (developer API misuse, rejected before any request)
+        throw new Error('Use scriptsClient.update to edit an existing script.');
+      }
       const script = await backendRequest<WorkspaceScript>('script.create', {
         workspaceId,
         name: input.name,
@@ -96,17 +123,14 @@ export class LiveScriptsClient implements ScriptsClient {
         ...(input.env !== undefined ? { env: input.env } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),
         ...(input.autoStart !== undefined ? { autoStart: input.autoStart } : {}),
-        ...(input.scriptId !== undefined ? { scriptId: input.scriptId } : {}),
+        ...(input.healthUrl !== undefined ? { healthUrl: input.healthUrl } : {}),
+        ...(input.readyPattern !== undefined ? { readyPattern: input.readyPattern } : {}),
       });
       const id = typeof script?.id === 'string' ? script.id : undefined;
       return { success: true, ...(id ? { id } : {}), ...(script ? { script } : {}) };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }
-
-  async remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation('script.remove', { workspaceId, scriptId });
   }
 
   async start(workspaceId: string, scriptId: string): Promise<MutationResult> {

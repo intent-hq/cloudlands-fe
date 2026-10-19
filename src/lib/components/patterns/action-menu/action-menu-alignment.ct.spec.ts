@@ -53,14 +53,14 @@ test('removing the last visible icon releases the column while an open child kee
   await page.getByRole('button', { name: 'Actions', exact: true }).click();
   const root = page.getByRole('menu', { name: 'Workspace menu', exact: true });
   const label = root.getByText('Rename', { exact: true });
-  await expect.poll(() => textInset(label)).toBe(24);
+  await expect.poll(() => textInset(label)).toBe(26);
   await component.update({ props: { iconSource: 'submenu' } });
   await expect.poll(() => textInset(label)).toBe(0);
   await root.getByRole('menuitem', { name: 'More', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   const child = page.getByRole('menuitem', { name: 'Export', exact: true });
   await expect(child).toBeFocused();
-  await expect.poll(() => textInset(child.getByText('Export', { exact: true }))).toBe(24);
+  await expect.poll(() => textInset(child.getByText('Export', { exact: true }))).toBe(26);
   expect(await textInset(label)).toBe(0);
 });
 
@@ -95,7 +95,7 @@ for (const iconSource of ['root', 'section', 'radio', 'submenu', 'hidden'] as co
     const left = await textLeft(rename.getByText('Rename', { exact: true }));
     const rootHasIcon = ['root', 'section', 'radio'].includes(iconSource);
     expect(await textInset(rename.getByText('Rename', { exact: true }))).toBeCloseTo(
-      rootHasIcon ? 24 : 0,
+      rootHasIcon ? 26 : 0,
       0,
     );
     for (const label of [
@@ -136,7 +136,7 @@ for (const iconSource of ['root', 'section', 'radio', 'submenu', 'hidden'] as co
     await expect(exportRow).toBeFocused();
     const childLeft = await textLeft(exportRow.getByText('Export', { exact: true }));
     expect(await textInset(exportRow.getByText('Export', { exact: true }))).toBeCloseTo(
-      iconSource === 'submenu' ? 24 : 0,
+      iconSource === 'submenu' ? 26 : 0,
       0,
     );
     expect(await textLeft(child.getByText('Copy', { exact: true }))).toBeCloseTo(childLeft, 0);

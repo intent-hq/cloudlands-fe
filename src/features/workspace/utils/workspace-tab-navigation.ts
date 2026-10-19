@@ -145,6 +145,15 @@ export function cycleWorkspaceTab(
   currentPath: string,
   navigate: (path: string) => unknown,
 ): string | null {
+  if (currentPath === '/') {
+    return selectWorkspaceTabByPosition(
+      store,
+      direction === 'next' ? 0 : 'last',
+      currentPath,
+      navigate,
+    );
+  }
+
   store.dispatch(
     direction === 'next' ? switchToNextWorkspaceTab() : switchToPreviousWorkspaceTab(),
   );

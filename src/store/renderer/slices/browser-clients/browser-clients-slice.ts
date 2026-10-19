@@ -36,6 +36,18 @@ export { initialState } from './browser-clients-types';
 // Actions — saga triggers
 // ---------------------------------------------------------------------------
 
+/** Visible browser controls and retained browser surfaces own independent leases. */
+export const browserClientsConsumerMounted = createAction<[wsId: string, consumerId: string]>(
+  'browserClients/consumerMounted',
+);
+export const browserClientsConsumerUnmounted = createAction<[wsId: string, consumerId: string]>(
+  'browserClients/consumerUnmounted',
+);
+/** Last consumer left: cancel reads without tearing down the workspace or pin writes. */
+export const browserClientReadsReleased = createAction<[wsId: string]>(
+  'browserClients/readsReleased',
+);
+
 /** Learn this connection's own clientId and read the live client list. */
 export const hydrateBrowserClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/hydrateBrowserClientsRequested',
@@ -84,7 +96,9 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
-export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
+export const browserConnectionInvalidated = createAction(
+  'browserClients/browserConnectionInvalidated',
+);
 
 export const authenticatedClientsCleared = createAction<[context: string]>(
   'browserClients/authenticatedClientsCleared',
@@ -97,6 +111,11 @@ export const authenticatedClientsReceived = createAction<[context: string, clien
 export const liveClientsReceived = createAction<[clients: LiveClient[], workspaceId?: string]>(
   'browserClients/liveClientsReceived',
 );
+
+/** Authoritative saved selection; the event does not report routing availability. */
+export const workspaceBrowserClientPinReceived = createAction<
+  [wsId: string, clientId: string | null]
+>('browserClients/workspaceBrowserClientPinReceived');
 
 export const workspaceBrowserClientReceived = createAction<
   [wsId: string, browserClient: WorkspaceBrowserClient]
@@ -128,6 +147,30 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 );
 
 export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
+browserClientsReducer.with(browserClientsConsumerMounted, (state, { payload: [wsId, id] }) => {
+  const entry = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...entry,
+    consumers: { ...entry.consumers, [id]: true },
+  });
+});
+browserClientsReducer.with(browserClientsConsumerUnmounted, (state, { payload: [wsId, id] }) => {
+  const entry = state.byWorkspaceId[wsId];
+  if (!entry?.consumers?.[id]) return state;
+  const consumers = { ...entry.consumers };
+  delete consumers[id];
+  return setWorkspaceState(state, wsId, { ...entry, consumers });
+});
+browserClientsReducer.with(browserClientReadsReleased, (state, { payload: [wsId] }) => {
+  const entry = state.byWorkspaceId[wsId];
+  if (!entry) return state;
+  return setWorkspaceState(state, wsId, {
+    ...entry,
+    liveClients: createLiveClientCollection(),
+    liveClientsLoaded: false,
+    browserClient: null,
+  });
+});
 browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [context] }) =>
   state.authenticatedContext !== context
     ? state
@@ -151,10 +194,15 @@ browserClientsReducer.with(
   }),
 );
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
-  state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
+  state.ownClientId === clientId && state.ownClientIdConfirmed
+    ? state
+    : { ...state, ownClientId: clientId, ownClientIdConfirmed: true },
 );
-browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
+browserClientsReducer.with(browserConnectionInvalidated, (state) => ({
   ...state,
+  // Keep hosted native surfaces mounted while the same client reconnects.
+  // Empty rosters/resolution fence recovery until fresh connection reads land.
+  ownClientIdConfirmed: false,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   authenticatedContext: null,
@@ -162,7 +210,13 @@ browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   byWorkspaceId: Object.fromEntries(
     Object.entries(state.byWorkspaceId).map(([id, entry]) => [
       id,
-      { ...entry, liveClients: createLiveClientCollection(), liveClientsLoaded: false },
+      {
+        ...entry,
+        browserClient: null,
+        pinnedClientId: undefined,
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
     ]),
   ),
 }));
@@ -184,7 +238,21 @@ browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, wor
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
   (state, { payload: [wsId, browserClient] }) =>
-    setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      browserClient,
+      pinnedClientId: browserClient.source === 'workspace' ? browserClient.clientId : null,
+    }),
+);
+browserClientsReducer.with(
+  workspaceBrowserClientPinReceived,
+  (state, { payload: [wsId, pinnedClientId] }) =>
+    setWorkspaceState(state, wsId, {
+      ...getWorkspaceState(state, wsId),
+      pinnedClientId,
+      // Selection is already known; resolution still needs its own read.
+      browserClient: null,
+    }),
 );
 function bumpTabsRevision(state: BrowserClientsState, wsId: string): BrowserClientsState {
   const ws = getWorkspaceState(state, wsId);

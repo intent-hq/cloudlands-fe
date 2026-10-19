@@ -186,7 +186,8 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
   }),
 }));
 
-vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
+vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/changes/changes-slice')>()),
   refreshRequested: (...args: unknown[]) => ({ type: 'changes/refreshRequested', payload: args }),
 }));
 

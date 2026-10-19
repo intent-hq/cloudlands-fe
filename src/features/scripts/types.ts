@@ -12,7 +12,7 @@
  */
 export type ScriptMode = 'service' | 'command';
 
-export type ScriptArchiveFilter = 'active' | 'archived' | 'all';
+export type ScriptArchiveFilter = 'active';
 export type ScriptPurpose = 'saved' | 'oneOff';
 interface ScriptLastRun {
   runId?: string;
@@ -50,6 +50,8 @@ export interface WorkspaceScript {
   workspaceId: string;
   name: string;
   command: string;
+  healthUrl?: string;
+  readyPattern?: string;
   cwd?: string; // Relative to workspace repo root
   env?: Record<string, string>;
   mode: ScriptMode;
@@ -96,4 +98,29 @@ export function createDefaultRuntimeState(): ScriptRuntimeState {
     status: 'idle',
     restartCount: 0,
   };
+}
+
+/** Display-only projection. Omitted definition fields cannot be written back. */
+type ScriptSummary = Omit<
+  ScriptWithState,
+  'command' | 'env' | 'cwd' | 'healthUrl' | 'readyPattern' | 'archivedAt' | 'lastRunAt'
+> & {
+  commandPreview: string;
+  commandTruncated: boolean;
+  command?: never;
+  healthUrl?: never;
+  readyPattern?: never;
+  env?: never;
+  cwd?: never;
+  archivedAt?: never;
+  lastRunAt?: never;
+};
+export type ScriptListEntry = ScriptWithState | ScriptSummary;
+export interface ScriptListPage {
+  view: 'summary';
+  scripts: ScriptSummary[];
+  nextCursor?: string;
+}
+export function scriptCommandLabel(script: ScriptListEntry): string {
+  return 'commandPreview' in script ? script.commandPreview : script.command;
 }

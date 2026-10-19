@@ -764,7 +764,14 @@ describe('actual main finalization fence and original pool', () => {
     expect(await invoke(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, event, undefined)).toEqual({
       ok: true,
       result: {
-        server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+        server: {
+          capabilities: {
+            agentNodes: 1,
+            localNodeIsolation: 0,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 0,
+          },
+        },
       },
     });
     expect(client.getRepositoryConnection()).toBe(original);
@@ -1037,6 +1044,7 @@ describe('pool auxiliary admission at retirement', () => {
     let close: Promise<void> | undefined;
     let socket: ControlledSocket | undefined;
     const releaseClose = () => {
+      if (socket) socket.holdClose = false;
       const release = socket?.originalClose;
       if (release) {
         socket!.originalClose = undefined;
@@ -1048,10 +1056,12 @@ describe('pool auxiliary admission at retirement', () => {
       await settledTurn();
       socket = edge.sockets[0]!;
       socket.holdClose = true;
+      const closeStarted = deferred();
+      socket.onDestroy = () => closeStarted.resolve();
       const boundary = fence();
       retirement = lifecycle.retire(boundary);
       expect(lifecycle.retire(boundary)).toBe(retirement);
-      await settledTurn();
+      await closeStarted.promise;
       expect(socket.originalClose).toBeTypeOf('function');
       close = new Promise<void>((resolve) => socket!.once('close', resolve));
       let retired = false;

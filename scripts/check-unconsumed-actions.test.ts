@@ -135,6 +135,37 @@ describe('unconsumed action guard', () => {
     expect(result.dispatchedCount).toBe(3);
   });
 
+  it.each([
+    ['conditional arrays', 'capable ? [a] : [a, c]', ['a', 'b']],
+    ['explicit common actions with conditional spread', '[a, ...(capable ? [] : [c])]', ['b']],
+  ] as const)(
+    'checks presence-style %s without crediting an unused action',
+    (_name, pattern, unconsumed) => {
+      const result = inspectUnconsumedActions(
+        [
+          slice([], ["export const c = createAction('demo/c');"]),
+          {
+            path: SAGA,
+            content: [
+              SAGA_IMPORT,
+              "import { a, b, c } from '../demo-slice';",
+              "import { takeLatestInContext } from '../../../utils/context-saga-effects';",
+              'export function* demoSaga(capable: boolean) {',
+              "  yield* put(a({ id: 'x' }));",
+              '  yield* put(b());',
+              `  yield* takeLatestInContext(${pattern}, context, worker);`,
+              '}',
+            ].join('\n'),
+          },
+        ],
+        noExceptions,
+      );
+      expect(result.violations).toEqual(
+        unconsumed.map((action) => expect.stringContaining(`action ${action} is dispatched`)),
+      );
+    },
+  );
+
   it('rejects a put consumed only by a predicate take, naming the declaration and dispatch', () => {
     const result = inspectUnconsumedActions(
       [

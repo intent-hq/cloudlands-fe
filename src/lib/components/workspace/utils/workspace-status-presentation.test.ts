@@ -20,7 +20,7 @@ const expected: Array<
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
   ['pr_queued', 'icon', 'hourglass-half', 'text-info', m.workspace_statusIcon_prQueued_label()],
-  ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
+  ['pr_ready', 'icon', 'code-pull-request', 'text-success', m.workspace_statusIcon_prReady_label()],
   ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
   ['pr_merged', 'icon', 'code-merge', 'text-purple-500', 'PR merged'],
 ];

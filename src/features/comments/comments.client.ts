@@ -11,8 +11,8 @@ import {
  * (JSON files) — a split-brain store agents never wrote to. All operations now
  * go over `backendRequest` so UI comments and agent comments share the daemon
  * store. Anchored comment creation and deletion live in
- * `comments-write-service` (appClient.comments.*); this client covers the
- * legacy `NoteComment`-shaped surface used by `comment-loader`.
+ * `comments-write-service` (appClient.comments.*); this client retains the
+ * legacy `NoteComment`-shaped compatibility surface for remaining callers.
  */
 
 import type { Result, NoteComment } from '../../shared/types';

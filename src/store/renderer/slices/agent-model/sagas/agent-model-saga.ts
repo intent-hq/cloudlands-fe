@@ -226,18 +226,17 @@ export function* agentModelSaga() {
       }
     }
     const current = yield* snapshot(write);
-    yield* put(
-      updateSession(request.agentId, {
-        model: op.model,
-        ...(op.providerId
-          ? {
-              provider: op.providerId,
-              metadata: { ...current.session?.metadata, provider: op.providerId },
-              ...(current.providerId !== op.providerId ? { effortLevels: undefined } : {}),
-            }
-          : {}),
-      }),
-    );
+    const updates = {
+      model: op.model,
+      ...(op.providerId
+        ? {
+            provider: op.providerId,
+            metadataPatch: { provider: { op: 'set' as const, value: op.providerId } },
+            ...(current.providerId !== op.providerId ? { effortLevels: undefined } : {}),
+          }
+        : {}),
+    };
+    yield* put(updateSession(request.agentId, updates));
     if (op.kind === 'session') return { status: 'success' } satisfies AgentModelOutcome;
     const accepted = yield* snapshot(write);
     write.identity = accepted.identity;

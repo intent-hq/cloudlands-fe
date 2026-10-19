@@ -26,6 +26,8 @@ export interface ProviderCatalogState {
   providers: Collection<ProviderCatalogEntry, 'id'>;
   /** Flips true once the first `providers.catalog` hydration lands. */
   loaded: boolean;
+  /** Named profile summaries (§5.54 top-level `profiles`), id-keyed in daemon order; empty on older daemons. */
+  profiles?: Collection<import('$shared/provider-catalog').ProviderProfileSummary, 'id'>;
 }
 
 export interface WorkspaceCatalogSnapshot {
@@ -37,3 +39,10 @@ export interface WorkspaceCatalogSnapshot {
   settings: import('$lib/client/app-client').SettingDefinitionWithValue[];
   specialists: import('$lib/client/app-client').SpecialistDef[];
 }
+
+/** Read only the resources whose invalidation payload is incomplete. */
+export type WorkspaceCatalogResource = 'catalog' | 'settings' | 'specialists' | 'readiness' | 'mcp';
+export type WorkspaceCatalogUpdate =
+  | { kind: 'settings'; changes: import('$lib/client/app-client').AppliedSettingChange[] }
+  | { kind: 'status'; status: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus }
+  | { kind: 'toggle'; serverId: string; workspaceDisabled: boolean };

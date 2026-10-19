@@ -1,4 +1,4 @@
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -7,6 +7,7 @@ import {
   updateItem,
   getItem,
   getItemIndex,
+  upsertItem,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -45,6 +46,19 @@ export interface TerminalMetadata {
   workspaceId: string;
   createdAt: string;
   title?: string;
+}
+
+export interface TerminalCreationConsumer {
+  id: string;
+  resourceId: string;
+}
+
+export interface TerminalCreationOutcome extends TerminalCreationConsumer {
+  workspaceId: string;
+  seq: number;
+  status: 'pending' | 'success' | 'failure' | 'cancelled';
+  terminalId?: string;
+  error?: string;
 }
 
 /** Surface a terminal or script output was last shown on. */
@@ -108,6 +122,7 @@ export type TerminalOverlayState = {
    */
   workspacePlacements: Record<string, Record<string, TerminalPlacement>>;
   workspaces: Record<string, WorkspaceTerminalState>;
+  creationOutcomes: Collection<TerminalCreationOutcome, 'id'>;
 };
 
 // ============================================================================
@@ -131,6 +146,7 @@ const initialState: TerminalOverlayState = {
   workspaceHeights: {},
   workspacePlacements: {},
   workspaces: {},
+  creationOutcomes: createCollection<TerminalCreationOutcome, 'id'>('id'),
 };
 
 // ============================================================================
@@ -221,6 +237,23 @@ export const hydratePlacements = createAction<
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
+);
+
+export const createOverlayTerminalRequested = createAsyncAction<
+  [wsId: string, consumer?: TerminalCreationConsumer],
+  string
+>('terminals/createOverlayTerminal', 'terminals/createOverlayTerminalRequested');
+
+export const terminalCreationFinished = createAction<[outcome: TerminalCreationOutcome]>(
+  'terminals/terminalCreationFinished',
+);
+
+export const clearTerminalCreationOutcome = createAction<[consumerId: string, seq?: number]>(
+  'terminals/clearTerminalCreationOutcome',
+);
+
+export const killRestoredTerminalRequested = createAction<[termId: string, workspaceId?: string]>(
+  'terminals/killRestoredTerminalRequested',
 );
 
 export const createPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
@@ -330,6 +363,37 @@ function consumeHydratedPlacements(
 // ============================================================================
 
 export const terminalsReducer = createReducer<TerminalOverlayState>(initialState);
+terminalsReducer.with(createOverlayTerminalRequested, (state, action) => {
+  const request = action as ReturnType<typeof createOverlayTerminalRequested>;
+  const [workspaceId, consumer] = action.payload;
+  if (!consumer) return state;
+  return {
+    ...state,
+    creationOutcomes: upsertItem(state.creationOutcomes, {
+      ...consumer,
+      workspaceId,
+      seq: request.seq,
+      status: 'pending',
+    }),
+  };
+});
+terminalsReducer.with(terminalCreationFinished, (state, { payload: [outcome] }) => {
+  const current = getItem(state.creationOutcomes, outcome.id);
+  if (
+    !current ||
+    current.status !== 'pending' ||
+    current.seq !== outcome.seq ||
+    current.workspaceId !== outcome.workspaceId ||
+    current.resourceId !== outcome.resourceId
+  )
+    return state;
+  return { ...state, creationOutcomes: upsertItem(state.creationOutcomes, outcome) };
+});
+terminalsReducer.with(clearTerminalCreationOutcome, (state, { payload: [id, seq] }) => {
+  const current = getItem(state.creationOutcomes, id);
+  if (!current || (seq !== undefined && current.seq !== seq)) return state;
+  return { ...state, creationOutcomes: removeItem(state.creationOutcomes, id) };
+});
 terminalsReducer.with(openTerminalOverlay, (state, { payload: [wsId, termId] }) => {
   const ws = getWs(state, wsId);
   const newWs = { ...ws };

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { Logger } from '$shared/logger';
 import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -30,7 +31,9 @@ let circuitBreakerBroadcastUnsubscribe: (() => void) | null = null;
  * viewing the affected workspace, so the UI can surface (or clear) a notice.
  */
 function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatus): void {
-  const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
+  // ANY_HOST: the circuit breaker is keyed by workspace id alone and carries
+  // no host, so every host's windows holding this id are notified.
+  const targetWindowIds = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
   const targetSet = targetWindowIds.length > 0 ? new Set(targetWindowIds) : null;
 
   for (const win of BrowserWindow.getAllWindows()) {

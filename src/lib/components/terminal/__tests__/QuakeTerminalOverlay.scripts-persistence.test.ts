@@ -138,7 +138,6 @@ import {
   openTerminalOverlay,
   selectScript,
 } from '$store/renderer/slices/terminals/terminals-slice';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -248,7 +247,11 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
     ]);
 
     await (component as any).handleScriptAction('start', 'script-1');
-    expect(scriptsClient.start).toHaveBeenCalledWith(WS_B, 'script-1');
+    expect(wsState(WS_B).operations['script-1']).toMatchObject({
+      action: 'start',
+      pending: true,
+    });
+    expect(wsState(WS_A).operations['script-1']).toBeUndefined();
   });
   it('keeps the same output viewer and buffer mounted when another client archives the selected command', async () => {
     seedWorkspace(WS_A, 'script-a');

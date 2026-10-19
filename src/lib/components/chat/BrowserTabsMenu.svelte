@@ -24,7 +24,11 @@
     selectBrowserTabHost,
     selectOwnClientId,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
-  import { closeBrowserTabRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import {
+    browserClientsConsumerMounted,
+    browserClientsConsumerUnmounted,
+    closeBrowserTabRequested,
+  } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { store as appStore } from '$store/renderer/store';
   import { formatInteger } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
@@ -84,6 +88,13 @@
       manager.focusPanel(entry.panelId);
     }
   }
+  const consumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!menuOpen || previewEntries) return;
+    appStore.dispatch(browserClientsConsumerMounted(wsId, consumerId));
+    return () => appStore.dispatch(browserClientsConsumerUnmounted(wsId, consumerId));
+  });
   let menuOpen = $state(false);
   let contentElement = $state<HTMLUListElement | null>(null);
   let triggerElement = $state<HTMLButtonElement | null>(null);
@@ -194,10 +205,10 @@
 
 {#snippet favicon(entry: BrowserTabEntry)}
   <span
-    class="relative inline-flex size-3.5 shrink-0 items-center justify-center"
+    class="relative inline-flex size-(--menu-icon-size) shrink-0 items-center justify-center"
     aria-hidden="true"
   >
-    <Fa icon={faWindowMaximize} size={12} class="size-3! opacity-30" />
+    <Fa icon={faWindowMaximize} class="size-(--menu-icon-size) opacity-30" />
     {#if entry.tab.faviconUrl}
       <img
         src={entry.tab.faviconUrl}

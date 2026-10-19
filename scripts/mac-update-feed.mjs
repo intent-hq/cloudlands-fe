@@ -4,16 +4,15 @@ import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs
 import { createRequire } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isDeepStrictEqual, parseArgs } from 'node:util';
+import { parseArgs } from 'node:util';
 
 // Use the updater's parser and version validator, including under pnpm isolation.
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const { load, dump, JSON_SCHEMA } = updaterRequire('js-yaml');
 const { valid } = updaterRequire('semver');
 const ARCHITECTURES = ['x64', 'arm64'];
-const PER_BUILD_FIELDS = new Set(['files', 'path', 'sha512', 'sha2', 'size', 'releaseDate']);
 const USAGE =
-  'Usage: node scripts/mac-update-feed.mjs --arm64 <job-dir>/latest-mac.yml --x64 <job-dir>/latest-mac.yml --output <publish-dir>/latest-mac.yml\n' +
+  'Usage: node scripts/mac-update-feed.mjs --arm64 <job-dir>/latest-mac.yml --output <publish-dir>/latest-mac.yml\n' +
   '   or: node scripts/mac-update-feed.mjs --validate <publish-dir>/latest-mac.yml';
 
 function record(value) {
@@ -34,7 +33,7 @@ function architecture(name) {
   return matches[0];
 }
 
-function validateStructure(info, expectedArchitectures) {
+export function validateMacFeedStructure(info, expectedArchitectures) {
   if (!record(info)) throw new Error('Mac feed must be a YAML mapping');
   if (typeof info.version !== 'string' || valid(info.version) !== info.version) {
     throw new Error('Mac feed must contain a valid version');
@@ -118,7 +117,7 @@ async function verifyAssets(info, directory) {
 
 async function readFeed(path, expectedArchitectures) {
   // JSON_SCHEMA keeps timestamps as strings; load rejects duplicate keys/documents.
-  const info = validateStructure(
+  const info = validateMacFeedStructure(
     load(await readFile(path, 'utf8'), { schema: JSON_SCHEMA }),
     expectedArchitectures,
   );
@@ -128,41 +127,21 @@ async function readFeed(path, expectedArchitectures) {
 
 /** Validate the combined feed against archives in its final upload directory. */
 export async function validateMacUpdateFeed(path) {
-  const info = await readFeed(path, ARCHITECTURES);
-  if (info.path !== undefined && architecture(info.path) !== 'x64') {
-    throw new Error('Combined feed legacy path must use the x64 ZIP');
+  const raw = load(await readFile(path, 'utf8'), { schema: JSON_SCHEMA });
+  const arches = raw?.files?.some((file) => architecture(file.url) === 'x64')
+    ? ARCHITECTURES
+    : ['arm64'];
+  const info = await readFeed(path, arches);
+  if (info.path !== undefined && architecture(info.path) !== arches[0]) {
+    throw new Error('Combined feed legacy path must use the first architecture ZIP');
   }
   return info;
 }
 
-/** Merge separate native-job feeds; assets stay beside each input until upload assembly. */
-export async function mergeMacUpdateFeeds({ arm64, x64 }) {
-  if (!arm64 || !x64) throw new Error('Both arm64 and x64 feed paths are required');
-  if ((await realpath(arm64)) === (await realpath(x64)))
-    throw new Error('Architecture feeds must be distinct inputs');
-  const intel = await readFeed(x64, ['x64']);
-  const arm = await readFeed(arm64, ['arm64']);
-  const keys = new Set([...Object.keys(intel), ...Object.keys(arm)]);
-  for (const key of keys) {
-    if (!PER_BUILD_FIELDS.has(key) && !isDeepStrictEqual(intel[key], arm[key])) {
-      throw new Error(`Conflicting Mac feed metadata: ${key}`);
-    }
-  }
-  const files = ARCHITECTURES.flatMap((arch) =>
-    [...(arch === 'x64' ? intel : arm).files].sort((a, b) => {
-      // ZIP first matches electron-builder's legacy default. Ordering is independent
-      // of artifact download order and locale.
-      const zipOrder = Number(b.url.endsWith('.zip')) - Number(a.url.endsWith('.zip'));
-      return zipOrder || (a.url < b.url ? -1 : a.url > b.url ? 1 : 0);
-    }),
-  );
-  const legacy = files[0];
-  const merged = { ...intel, files, path: legacy.url, sha512: legacy.sha512 };
-  const dates = [intel.releaseDate, arm.releaseDate].filter((date) => date !== undefined);
-  if (dates.length > 0)
-    merged.releaseDate = new Date(Math.max(...dates.map((date) => Date.parse(date)))).toISOString();
-  validateStructure(merged, ARCHITECTURES);
-  return merged;
+/** Validate the supported native job before upload assembly. */
+export async function prepareMacUpdateFeed(arm64) {
+  if (!arm64) throw new Error('The arm64 feed path is required');
+  return readFeed(arm64, ['arm64']);
 }
 
 async function main(args) {
@@ -172,7 +151,6 @@ async function main(args) {
       args,
       options: {
         arm64: { type: 'string' },
-        x64: { type: 'string' },
         output: { type: 'string' },
         validate: { type: 'string' },
       },
@@ -182,22 +160,22 @@ async function main(args) {
     const names = parsed.tokens.map((token) => token.name);
     if (new Set(names).size !== names.length || Object.values(values).some((value) => !value))
       throw new Error(USAGE);
-    if (values.validate ? names.length !== 1 : !values.arm64 || !values.x64 || !values.output)
+    if (values.validate ? names.length !== 1 : !values.arm64 || !values.output)
       throw new Error(USAGE);
   } catch {
     throw new Error(USAGE);
   }
   if (values.validate) {
     await validateMacUpdateFeed(values.validate);
-    console.log('Mac feed and both architecture archives validated.');
+    console.log('Mac feed and its architecture archives validated.');
     return;
   }
   const output = resolve(values.output);
-  const info = await mergeMacUpdateFeeds(values);
+  const info = await prepareMacUpdateFeed(values.arm64);
   await mkdir(dirname(output), { recursive: true });
   const outputPath = join(await realpath(dirname(output)), basename(output));
   if (
-    [await realpath(values.arm64), await realpath(values.x64)].includes(outputPath) ||
+    (await realpath(values.arm64)) === outputPath ||
     info.files.some((file) => file.url === basename(output))
   ) {
     throw new Error('Output must not overwrite a source feed or archive');

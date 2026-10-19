@@ -10,6 +10,9 @@ import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import {
   scriptMonitorActionRequested,
+  scriptMonitorsLoadMoreRequested,
+  scriptMonitorsRetryRequested,
+  scriptMonitorDetailsRequested,
   scriptMonitorOperationUpdated,
   scriptMonitorsSubscribeRequested,
   scriptMonitorsUnsubscribeRequested,
@@ -67,6 +70,27 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
       },
     );
     yield* takeEvery(
+      scriptMonitorsLoadMoreRequested,
+      function* ({ payload: [workspaceId] }): SagaGenerator<void> {
+        const service = leases.get(workspaceId)?.service;
+        if (service) yield* call([service, service.loadMore]);
+      },
+    );
+    yield* takeEvery(
+      scriptMonitorsRetryRequested,
+      function* ({ payload: [workspaceId] }): SagaGenerator<void> {
+        const service = leases.get(workspaceId)?.service;
+        if (service) yield* call([service, service.retry]);
+      },
+    );
+    yield* takeEvery(
+      scriptMonitorDetailsRequested,
+      function* ({ payload: [workspaceId, monitorId] }): SagaGenerator<void> {
+        const service = leases.get(workspaceId)?.service;
+        if (service) yield* call([service, service.details], monitorId);
+      },
+    );
+    yield* takeEvery(
       scriptMonitorActionRequested,
       function* ({ payload: [workspaceId, monitorId, action] }): SagaGenerator<void> {
         const lease = leases.get(workspaceId);
@@ -76,8 +100,7 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
         const row = state.monitors.find((item) => item.monitorId === monitorId);
         if (!row) return;
         if (action === 'pane' || action === 'bottom') {
-          const script = state.scripts.find((item) => item.id === row.scriptId);
-          if (script) yield* call(openMonitoredScript, workspaceId, script.id, script.name, action);
+          yield* call(openMonitoredScript, workspaceId, row.scriptId, row.scriptName, action);
           return;
         }
         if (row.state !== 'active') return;
@@ -94,9 +117,7 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
               ? result.runStopped
                 ? m.chat_scriptMonitor_stopped_description()
                 : m.chat_scriptMonitor_unchanged_description()
-              : result.monitor.state === 'cancelled'
-                ? m.chat_scriptMonitor_unmonitored_description()
-                : m.chat_scriptMonitor_unchanged_description();
+              : m.chat_scriptMonitor_unmonitored_description();
           yield* put(scriptMonitorOperationUpdated(workspaceId, monitorId, { pending: false }));
           yield* call(notify.info, message);
         } catch {

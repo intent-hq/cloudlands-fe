@@ -44,16 +44,3 @@ export function isCtSpec(file) {
 export function hasCtSpecSuffix(file) {
   return endsWithNocase(normalizeCtPath(file), CT_SPEC_SUFFIX);
 }
-
-// `<directory>/<scene>.geometry<CT_SPEC_SUFFIX>` → `{ directory, scene }`, with
-// `directory` either `''` or ending in `/`; null for any other path.
-export function ctGeometryScene(file) {
-  const path = normalizeCtPath(file);
-  const suffix = `.geometry${CT_SPEC_SUFFIX}`;
-  if (!endsWithNocase(path, suffix)) return null;
-  const stem = path.slice(0, -suffix.length);
-  const slash = stem.lastIndexOf('/');
-  const scene = stem.slice(slash + 1);
-  if (!scene) return null;
-  return { directory: stem.slice(0, slash + 1), scene };
-}

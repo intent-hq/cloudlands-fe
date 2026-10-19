@@ -14,8 +14,17 @@
   import { AskUserQuestions } from '$lib/components/ui/ask-user-questions';
   import type { AskUserAnswer, AskUserQuestion } from '$lib/components/ui/ask-user-questions';
   import { Button } from '$lib/components/ui/button';
+  import { onDestroy } from 'svelte';
+  import AttachmentPreview from '../AttachmentPreview.svelte';
+  import type { ContextItem } from '../input/context-api';
+  import {
+    imageFilesToContextItems,
+    INLINE_IMAGE_MAX_BYTES,
+    REFERENCE_IMAGE_MAX_BYTES,
+  } from '../input/image-context-items';
   import { crispOut, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import type {
     QuestionWizardDraft,
     QuestionWizardDraftAnswer,
@@ -24,6 +33,7 @@
 
   interface Props {
     questions: Question[];
+    workspaceId?: string;
     draft?: QuestionWizardDraft;
     onDraftChange?: (draft: QuestionWizardDraft) => void;
     onResolved?: () => void;
@@ -36,6 +46,7 @@
 
   let {
     questions,
+    workspaceId,
     draft = undefined,
     onDraftChange,
     onResolved,
@@ -54,6 +65,13 @@
   const answers = $derived(activeDraft.answers);
   let completed = $state(false);
   let confirmingDismiss = $state(false);
+  // Images never enter the host-owned, persisted wizard draft.
+  let answerImages = $state<Record<string, ContextItem[]>>({});
+  let readingImages = $state(false);
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+  });
 
   const multiStep = $derived(questions.length > 1);
   const primitiveQuestions = $derived<AskUserQuestion[]>(
@@ -87,6 +105,7 @@
             questionId: question.attachmentId,
             selectedIds: answer.sel.map(String),
             otherText: answer.text || undefined,
+            hasAttachments: (answerImages[question.attachmentId]?.length ?? 0) > 0,
             skipped: answer.skipped,
           } satisfies AskUserAnswer,
         ];
@@ -123,7 +142,7 @@
             optionIndex < question.options.length,
         );
       return {
-        sel: !question.multiSelect && text.length > 0 ? [] : sel,
+        sel: !question.multiSelect && (text.length > 0 || answer.hasAttachments) ? [] : sel,
         text,
         skipped: false,
       };
@@ -138,12 +157,53 @@
         selectedLabels: answer.sel.map((optionIndex) => question.options[optionIndex].label),
         freeText: answer.text.trim(),
         skipped: answer.skipped,
+        ...(!answer.skipped && answerImages[question.attachmentId]?.length
+          ? {
+              imageBlocks: answerImages[question.attachmentId].map((image) => ({
+                type: 'image' as const,
+                data: image.imageData!,
+                mimeType: image.imageMimeType!,
+              })),
+            }
+          : {}),
       };
     });
   }
 
   function handleAnswersChange(next: Record<string, AskUserAnswer>) {
-    if (!completed) updateDraft({ idx, answers: toDraftAnswers(next) });
+    if (completed) return;
+    for (const question of questions) {
+      if (next[question.attachmentId]?.skipped) answerImages[question.attachmentId] = [];
+    }
+    updateDraft({ idx, answers: toDraftAnswers(next) });
+  }
+
+  async function handleOtherPaste(event: ClipboardEvent, questionId: string) {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (files.length === 0) return;
+    event.preventDefault();
+    if (readingImages || completed || draftResolved) return;
+    readingImages = true;
+    try {
+      const maxBytes =
+        workspaceId === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES;
+      const images = await imageFilesToContextItems(files, { maxBytes });
+      if (destroyed || completed || draftResolved || images.length === 0) return;
+      answerImages[questionId] = [...(answerImages[questionId] ?? []), ...images];
+      updateDraft({
+        idx,
+        answers: answers.map((answer, index) =>
+          questions[index].attachmentId === questionId
+            ? { ...answer, sel: questions[index].multiSelect ? answer.sel : [], skipped: false }
+            : answer,
+        ),
+      });
+    } finally {
+      readingImages = false;
+    }
   }
 
   function handleComplete(next: Record<string, AskUserAnswer>) {
@@ -205,6 +265,30 @@
     return crispOut(node, { tier: 'moderate', y: 8, scale: 0.98 });
   }
 </script>
+
+{#snippet otherAttachments(questionId: string)}
+  {#if answerImages[questionId]?.length}
+    <div class="flex min-w-0 items-center gap-2 overflow-x-auto py-1">
+      {#each answerImages[questionId] as image (image.id)}
+        <AttachmentPreview
+          id={image.id}
+          name={image.label}
+          type={image.imageMimeType}
+          imageData={image.imageData}
+          imageMimeType={image.imageMimeType}
+          variant="thumbnail"
+          onRemove={completed || confirmingDismiss || readingImages
+            ? undefined
+            : (id) => {
+                answerImages[questionId] = answerImages[questionId].filter(
+                  (item) => item.id !== id,
+                );
+              }}
+        />
+      {/each}
+    </div>
+  {/if}
+{/snippet}
 
 {#snippet dismissAction()}
   {#if onDismiss}
@@ -281,10 +365,12 @@
         questions={primitiveQuestions}
         currentIndex={idx}
         answers={primitiveAnswers}
-        onCurrentIndexChange={(nextIndex) => {
-          if (!completed) updateDraft({ idx: nextIndex, answers });
+        onCurrentIndexChange={(nextIndex, nextAnswers) => {
+          if (!completed) updateDraft({ idx: nextIndex, answers: toDraftAnswers(nextAnswers) });
         }}
         onAnswersChange={handleAnswersChange}
+        onOtherPaste={handleOtherPaste}
+        {otherAttachments}
         onComplete={handleComplete}
         showBack={multiStep}
         onBack={handleBack}
@@ -296,7 +382,7 @@
         clearOnSkip
         globalKeyboardShortcuts
         restoreFocusOnNavigate
-        disabled={completed || confirmingDismiss || collapsed}
+        disabled={completed || confirmingDismiss || collapsed || readingImages}
         {footerActions}
         class="max-w-none max-h-[var(--question-max-height,60dvh)] overflow-y-auto bg-popover [box-shadow:none]!"
         skipLabel={m.chat_questionWizard_skip_label()}

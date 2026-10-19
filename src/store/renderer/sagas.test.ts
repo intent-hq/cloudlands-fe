@@ -14,6 +14,7 @@ import { sagas, startAllAppSagas } from './sagas';
 describe('renderer app saga registry', () => {
   function getAuditedSagaNames() {
     return [
+      'customViewsSaga',
       'modelNameCacheSaga',
       'pendingRetentionSaga',
       'homeIntegrationsSaga',
@@ -21,6 +22,7 @@ describe('renderer app saga registry', () => {
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
+      'hudSaga',
       'guestSessionsSaga',
       'presenceSaga',
       'presenceFollowSaga',
@@ -106,7 +108,6 @@ describe('renderer app saga registry', () => {
       'collaborationAuthSaga',
       'mcpSettingsSaga',
       'directoryPickerSaga',
-      'legacyImportSaga',
       'statsReadSaga',
       'prMonitorSaga',
       'scriptMonitorSaga',
@@ -114,6 +115,7 @@ describe('renderer app saga registry', () => {
       'uiLayoutPersistenceSaga',
       'tabStateSaga',
       'workspaceTabReconciliationSaga',
+      'proposalWorkspaceTabSaga',
       'workspaceTabCleanupSaga',
       'sidebarNavSaga',
       'panelLayoutSaga',

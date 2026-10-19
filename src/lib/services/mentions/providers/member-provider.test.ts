@@ -27,6 +27,7 @@ import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-sli
 import { setBundledSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
 import { MentionSystem } from '../mention-system';
 import type { MentionCandidate } from '../types';
 import { providerRegistry } from './index';
@@ -42,6 +43,7 @@ vi.mock('$lib/client', () => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ typingSource: 'own-source' })),
+  listenSync: vi.fn(() => () => {}),
 }));
 
 const owner: WorkspaceMember = {
@@ -76,6 +78,7 @@ const principalIds = (results: MentionCandidate[]) =>
 describe('workspace member mention search', () => {
   let dispose: () => void;
   let cancelSaga: (() => void) | undefined;
+  let cancelNotesReadSaga: (() => void) | undefined;
   let system: MentionSystem;
 
   function workspace(id = 'ws-1', memberCount = 3, myRole: Workspace['myRole'] = 'owner') {
@@ -119,6 +122,7 @@ describe('workspace member mention search', () => {
 
   beforeEach(() => {
     dispose = store.init();
+    cancelNotesReadSaga = store.runSaga(notesReadSaga);
     system = new MentionSystem({ debounceMs: 0 });
     mocks.request.mockReset().mockResolvedValue({ files: [], terminals: [], scripts: [] });
     mocks.notes.mockReset().mockResolvedValue([]);
@@ -128,6 +132,8 @@ describe('workspace member mention search', () => {
   afterEach(() => {
     cancelSaga?.();
     cancelSaga = undefined;
+    cancelNotesReadSaga?.();
+    cancelNotesReadSaga = undefined;
     system.destroy();
     dispose();
     vi.useRealTimers();

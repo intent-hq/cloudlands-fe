@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -856,13 +857,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
   /** PROTOCOL §5.17-shaped hello result (server block confirmed on the wire). */
   const helloResult = (clientId: string) => ({
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: true,
       osArch: 'darwin/arm64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   });
@@ -937,7 +938,11 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       ['10.9', false],
       ['13.0', true],
       ['13.0.1', true],
-      ['14.0', false],
+      ['14.0', true],
+      ['15.0', true],
+      // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+      ['16.0', true],
+      ['99.3', true],
       ['12', false],
       ['12.0-preview', false],
       [undefined, false],
@@ -978,11 +983,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
   it.each(
     ['file.read', 'file.readChunk'].flatMap((method) =>
       ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
-        ['11.0', '12.0', '13.0', '14.0', 'invalid', undefined].map((nextVersion) => ({
-          method,
-          protocolVersion,
-          nextVersion,
-        })),
+        ['11.0', '12.0', '13.0', '14.0', '15.0', '16.0', 'invalid', undefined].map(
+          (nextVersion) => ({
+            method,
+            protocolVersion,
+            nextVersion,
+          }),
+        ),
       ),
     ),
   )(
@@ -1029,7 +1036,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       }
       const result = await second;
       client.dispose();
-      if (nextVersion === '12.0' || nextVersion === '13.0') {
+      if (
+        nextVersion === '12.0' ||
+        nextVersion === '13.0' ||
+        nextVersion === '14.0' ||
+        nextVersion === '15.0' ||
+        nextVersion === '16.0'
+      ) {
         expect(result).toEqual(response);
         expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
           'client.hello',
@@ -1320,13 +1333,21 @@ describe('captured repository socket dispatch', () => {
   it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
     const { client, sockets } = await connected({
       clientId: 'confirmed-client',
-      server: { capabilities: { agentNodes: 1, localNodeIsolation: 1, agentPlatformRouting: 1 } },
+      server: {
+        capabilities: {
+          agentNodes: 1,
+          localNodeIsolation: 1,
+          agentPlatformRouting: 1,
+          workspaceMembershipEvents: 1,
+        },
+      },
     });
     const connection = client.getRepositoryConnection();
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 1,
       localNodeIsolation: 1,
       agentPlatformRouting: 1,
+      workspaceMembershipEvents: 1,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1334,13 +1355,14 @@ describe('captured repository socket dispatch', () => {
     expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
-      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true}}}}\n',
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
     );
     await hello;
     expect(client.getNodeCapabilities()).toEqual({
       agentNodes: 0,
       localNodeIsolation: 0,
       agentPlatformRouting: 0,
+      workspaceMembershipEvents: 0,
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();

@@ -6,7 +6,7 @@ import { selectWorkspaceActionContext } from '../../workspace/workspace-selector
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { scriptReadStarted } from '../scripts-slice';
 import { replayScriptRead } from '$features/scripts/utils/script-change';
-import type { ScriptWithState } from '../scripts-types';
+import type { ScriptListEntry } from '../scripts-types';
 import { selectScriptReadJournal } from '../scripts-selectors';
 
 export function* beginScriptRead(workspaceId: string): SagaGenerator<ScriptReadContext> {
@@ -45,8 +45,8 @@ export function* isScriptReadCurrent(context: ScriptReadContext): SagaGenerator<
 
 export function* reconcileScriptRead(
   context: ScriptReadContext,
-  entries: ScriptWithState[],
-): SagaGenerator<{ scripts: ScriptWithState[]; definitionChanges: Set<string> } | undefined> {
+  entries: ScriptListEntry[],
+): SagaGenerator<{ scripts: ScriptListEntry[]; definitionChanges: Set<string> } | undefined> {
   if (!(yield* isScriptReadCurrent(context))) return;
   const journal = yield* selectScriptReadJournal.effect(context.workspaceId, context.requestId);
   if (!journal) return;

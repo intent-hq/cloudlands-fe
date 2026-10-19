@@ -18,7 +18,12 @@ import {
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  browserClientsConsumerMounted,
+  browserClientsConsumerUnmounted,
+  browserClientReadsReleased,
   browserClientsReducer,
+  browserConnectionInvalidated,
+  workspaceBrowserClientPinReceived,
   authenticatedClientsReceived,
   authenticatedClientsCleared,
   browserTabClosed,
@@ -35,6 +40,7 @@ import {
   selectLiveClientsLoaded,
   selectOwnClientId,
   selectWorkspaceBrowserClient,
+  selectWorkspaceBrowserSelectionKnown,
   selectWorkspaceBrowserTabsRevision,
   selectWorkspaceDrivingClient,
 } from './browser-clients-selectors';
@@ -141,6 +147,35 @@ describe('browserClientsReducer', () => {
     const cleared = { source: 'default' as const, resolved: null };
     state = browserClientsReducer(state, workspaceBrowserClientReceived('ws-1', cleared));
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toEqual(cleared);
+  });
+
+  it('applies saved pin events without inventing resolution or disturbing other workspace state', () => {
+    let state = browserClientsReducer(initialState, liveClientsReceived([desk], 'ws-1'));
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-closed'));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-2', {
+        source: 'workspace',
+        clientId: 'cli-laptop',
+        resolved: null,
+      }),
+    );
+    const other = state.byWorkspaceId['ws-2'];
+    state = browserClientsReducer(state, workspaceBrowserClientPinReceived('ws-1', 'cli-desk'));
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').pinnedClientId).toBe(
+      'cli-desk',
+    );
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(true);
+    expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
+    expect(selectLiveClientsLoaded.select(asState(state), 'ws-1')).toBe(true);
+    expect(state.byWorkspaceId['ws-2']).toBe(other);
+    state = browserClientsReducer(state, workspaceBrowserClientPinReceived('ws-1', null));
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').pinnedClientId).toBeNull();
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(true);
+    state = browserClientsReducer(state, browserConnectionInvalidated());
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(false);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
   });
 
   it('derives the driving-client indicator input from the live list and the workspace pin', () => {
@@ -380,4 +415,28 @@ describe('identity drift selectors', () => {
       expect(selectBrowserTabHost.select(asState(state), nested.clientId).connected).toBe(true);
     },
   );
+});
+
+it('tracks browser consumers independently and invalidates released routing without losing identity', () => {
+  let state = browserClientsReducer(initialState, ownClientIdReceived('desktop'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'panel'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, liveClientsReceived([desk], 'ws'));
+  state = browserClientsReducer(
+    state,
+    workspaceBrowserClientReceived('ws', { source: 'default', resolved: desk }),
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'));
+  expect(state.byWorkspaceId.ws.consumers).toEqual({ offscreen: true });
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'unknown'))).toBe(
+    state,
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, browserClientReadsReleased('ws'));
+  expect(state.byWorkspaceId.ws.liveClientsLoaded).toBe(false);
+  expect(state.byWorkspaceId.ws.browserClient).toBeNull();
+  expect(state.ownClientId).toBe('desktop');
+  state = browserClientsReducer(state, workspaceUnmounted('ws'));
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'))).toBe(state);
+  expect(browserClientsReducer(state, browserClientReadsReleased('ws'))).toBe(state);
 });

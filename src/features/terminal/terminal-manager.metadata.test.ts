@@ -5,7 +5,6 @@ import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
-  backendRequest: vi.fn(),
   state: {} as unknown,
   adapter: {
     initialize: vi.fn(async () => {}),
@@ -38,16 +37,9 @@ vi.mock('./TerminalAdapter', () => ({
   }),
 }));
 vi.mock('./terminal-buffer-manager', () => ({ TerminalBufferManager: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: mocks.backendRequest,
-}));
-vi.mock('$lib/client', async () => {
-  const { LiveTerminalsClient } = await import('$lib/client/live/live-terminals-client');
-  return { appClient: { terminals: new LiveTerminalsClient() } };
-});
 
 import { terminalManager } from './terminal-manager.svelte';
-import { LiveTerminalsClient } from '$lib/client/live/live-terminals-client';
+import { killRestoredTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
 
 const WS = 'ws-1';
 
@@ -102,31 +94,14 @@ describe('terminalManager.loadTerminalMetadata display-name localization', () =>
   });
 });
 
-it('kills a restored terminal without an adapter so the next daemon list stays empty', async () => {
-  let alive = true;
-  mocks.backendRequest.mockImplementation(async (method: string) => {
-    if (method === 'terminal.kill') {
-      alive = false;
-      return { ok: true };
-    }
-    if (method === 'terminal.list') {
-      return {
-        terminals: alive ? [{ id: 'pty-restored', name: 'Terminal', cwd: '/tmp' }] : [],
-        daemonBootId: 'boot-1',
-      };
-    }
-    throw new Error(`Unexpected method: ${method}`);
-  });
-  const client = new LiveTerminalsClient();
-  expect((await client.list(WS)).terminals).toHaveLength(1);
+it('dispatches saga-owned kill for a restored terminal without an adapter', () => {
+  mocks.dispatch.mockClear();
   expect(terminalManager.hasTerminal('pty-restored')).toBe(false);
 
-  terminalManager.disposeTerminal('pty-restored');
+  terminalManager.disposeTerminal('pty-restored', WS);
 
-  expect(mocks.backendRequest).toHaveBeenCalledWith('terminal.kill', {
-    terminalId: 'pty-restored',
-  });
-  expect((await client.list(WS)).terminals).toEqual([]);
+  expect(mocks.dispatch).toHaveBeenCalledWith(killRestoredTerminalRequested('pty-restored', WS));
+  expect(mocks.adapter.dispose).not.toHaveBeenCalled();
 });
 
 describe('terminalManager owner-aware detach', () => {

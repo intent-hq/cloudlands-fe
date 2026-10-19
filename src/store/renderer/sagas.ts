@@ -64,6 +64,7 @@ import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { gitWriteSaga } from './slices/git/sagas/git-write-saga';
+import { hudSaga } from './slices/hud/sagas/hud-saga';
 import { acceptWorkflowSaga } from './slices/accept-workflow/sagas/accept-workflow-saga';
 import { acceptWorkflowObserverSaga } from './slices/accept-workflow/sagas/accept-workflow-observer-saga';
 import { prWorkflowSaga } from './slices/pr-workflow/sagas/pr-workflow-saga';
@@ -72,7 +73,6 @@ import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-statu
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
-import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
 import { identitySaga } from './slices/identity/sagas/identity-saga';
@@ -107,6 +107,7 @@ import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalo
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { proposalWorkspaceTabSaga } from './slices/tab-state/sagas/proposal-workspace-tab-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
@@ -150,6 +151,7 @@ export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
+  hudSaga,
   guestSessionsSaga,
   presenceSaga,
   presenceFollowSaga,
@@ -235,7 +237,6 @@ export const sagas = [
   collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
-  legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
   scriptMonitorSaga,
@@ -243,6 +244,7 @@ export const sagas = [
   uiLayoutPersistenceSaga,
   tabStateSaga,
   workspaceTabReconciliationSaga,
+  proposalWorkspaceTabSaga,
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,

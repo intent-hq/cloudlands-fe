@@ -8,6 +8,7 @@
  * PROTOCOL-shaped responses pass through verbatim.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
@@ -41,21 +42,31 @@ const DEV_SCRIPT: ScriptWithState = {
 };
 
 describe('LiveScriptsClient (fake transport)', () => {
-  beforeEach(() =>
-    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(false),
-  );
+  beforeEach(() => {
+    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(true);
+  });
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
   it('list forwards script.list with workspaceId and returns scripts verbatim', async () => {
-    mockedRequest.mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([DEV_SCRIPT]);
   });
 
@@ -64,12 +75,22 @@ describe('LiveScriptsClient (fake transport)', () => {
       ...DEV_SCRIPT,
       runtime: { status: 'idle', restartCount: 0, previouslyRunning: true },
     };
-    mockedRequest.mockResolvedValueOnce({ scripts: [previouslyRunning] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      })
+      .mockResolvedValueOnce({ scripts: [previouslyRunning] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([previouslyRunning]);
     expect(scripts[0].runtime.previouslyRunning).toBe(true);
   });
@@ -95,7 +116,6 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
 
     expect(mockedRequest).toHaveBeenCalledWith('script.create', {
@@ -107,9 +127,17 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
     expect(result).toEqual({ success: true, id: 's-1', script: definition });
+  });
+
+  it('refuses an ID upsert through the public creation API', async () => {
+    const client = new LiveScriptsClient();
+    const input = { name: 'renamed', command: 'true', mode: 'command' as const, scriptId: 's-1' };
+    // @ts-expect-error Existing IDs are forbidden even through a widened object.
+    const result = await client.create('ws-1', input);
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
   });
 
   it.each(['saved', 'oneOff'] as const)(
@@ -152,7 +180,6 @@ describe('LiveScriptsClient (fake transport)', () => {
   });
 
   it.each([
-    ['remove', 'script.remove'],
     ['start', 'script.start'],
     ['stop', 'script.stop'],
     ['restart', 'script.restart'],

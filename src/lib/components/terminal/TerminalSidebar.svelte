@@ -1,43 +1,60 @@
 <script lang="ts">
+  import {
+    selectScriptListPageState,
+    selectScriptWorkflowOutcome,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptCommandLabel } from '$features/scripts/types';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
-  import { scriptsClient } from '$features/scripts/scripts.client';
-  import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
+  import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    refreshScripts,
+    createScriptDefinitionRequested,
+    detectScriptDefinitionsRequested,
+    detectScriptsWithAgentRequested,
+    removeScriptDefinitionsRequested,
+    restoreScriptDefinitionsRequested,
+    saveScriptDefinitionsToRepoRequested,
+    scriptWorkflowConsumed,
+    scriptWorkflowReleased,
     stopScriptRequested,
-    removeScript,
-    upsertScript,
+    startScriptRequested,
+    restartScriptRequested,
+    updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import type {
+    ScriptAgentDetectionOutcome,
+    ScriptBulkRemovalOutcome,
+    ScriptDetectionOutcome,
+    ScriptWorkflowConsumer,
+  } from '$store/renderer/slices/scripts/scripts-types';
   import { writable } from 'svelte/store';
+  import { onDestroy } from 'svelte';
 
-  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify, withToastCountdown } from '$lib/components/patterns/notify';
-  import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
-  import {
-    selectExecutorIsRunning,
-    selectExecutorAgentId,
-  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
     selectActiveTerminalId as selectActiveTerminalIdSelector,
     selectUserTerminals as selectTerminalsSelector,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { terminalDisplayName } from '$lib/utils/terminal-display-name';
-
+  import {
+    selectExecutorAgentId,
+    selectExecutorIsRunning,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
+
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
@@ -77,39 +94,42 @@
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
-  const activeWorkspace = selectWorkspaceById(workspaceIdStore);
-
   const logger = createLogger('TerminalSidebar');
-
-  // i18n-ignore (agent-facing prompt, kept in English)
-  const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
-
-For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
-
-CRITICAL INSTRUCTIONS:
-1. You MUST wrap your JSON result in <<<DETECTED_SCRIPTS>>> and <<</DETECTED_SCRIPTS>>> tags
-2. Do NOT use markdown code blocks
-3. Do NOT add any text outside the tags
-4. Return ONLY a JSON object with keys "add", "update", and "remove"
-
-Example response (you MUST follow this exact format):
-<<<DETECTED_SCRIPTS>>>
-{"add":[{"name":"dev","command":"npm run dev","mode":"service","category":"dev"}],"update":[],"remove":[]}
-<<</DETECTED_SCRIPTS>>>
-
-Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
-
-  const validCategories = new Set([
-    'dev',
-    'build',
-    'test',
-    'lint',
-    'typecheck',
-    'format',
-    'storybook',
-    'other',
-  ]);
-  const validModes = new Set(['service', 'command']);
+  const applyConsumerId = crypto.randomUUID();
+  const createConsumerId = crypto.randomUUID();
+  const detectConsumerId = crypto.randomUUID();
+  const removeConsumerId = crypto.randomUUID();
+  const restoreConsumerId = crypto.randomUUID();
+  const saveConsumerId = crypto.randomUUID();
+  const updateConsumerId = crypto.randomUUID();
+  const updateResourceIdStore = writable('');
+  const applyOutcome$ = selectScriptWorkflowOutcome(
+    applyConsumerId,
+    workspaceIdStore,
+    'agent-detection',
+  );
+  const createOutcome$ = selectScriptWorkflowOutcome(createConsumerId, workspaceIdStore, 'create');
+  const detectOutcome$ = selectScriptWorkflowOutcome(
+    detectConsumerId,
+    workspaceIdStore,
+    'local-detection',
+  );
+  const removeOutcome$ = selectScriptWorkflowOutcome(
+    removeConsumerId,
+    workspaceIdStore,
+    'bulk-remove',
+  );
+  const restoreOutcome$ = selectScriptWorkflowOutcome(
+    restoreConsumerId,
+    workspaceIdStore,
+    'restore',
+  );
+  const saveOutcome$ = selectScriptWorkflowOutcome(saveConsumerId, workspaceIdStore, 'save');
+  const updateOutcome$ = selectScriptWorkflowOutcome(
+    updateConsumerId,
+    workspaceIdStore,
+    updateResourceIdStore,
+  );
 
   type DetectFlow = 'idle' | 'local' | 'agent';
 
@@ -123,342 +143,82 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
-  async function handleDetectionResult(parsed: any): Promise<void> {
-    const snapshot = selectScriptEntries.select(appStore.state, workspaceId).map((s) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { runtime, ...scriptDef } = s;
-      return { ...scriptDef };
-    });
+  let pendingApply = $state<{
+    requestId: string;
+    workspaceId: string;
+  } | null>(null);
+  let pendingCreate = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingDetect = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingRemove = $state<{
+    requestId: string;
+    workspaceId: string;
+    selectedScriptId: string | null;
+    targetIds: string[];
+  } | null>(null);
+  let pendingRestore = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingSave = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingUpdate = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let saveStatusResetTimer: ReturnType<typeof setTimeout> | null = null;
+  let workflowWorkspaceId = '';
+  let mounted = true;
+  const workflowConsumerIds = [
+    applyConsumerId,
+    createConsumerId,
+    detectConsumerId,
+    removeConsumerId,
+    restoreConsumerId,
+    saveConsumerId,
+    updateConsumerId,
+  ];
 
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      ('add' in parsed || 'update' in parsed || 'remove' in parsed)
-    ) {
-      let addedCount = 0;
-      let updatedCount = 0;
-      let removedCount = 0;
-      const scriptEntries = selectScriptEntries.select(appStore.state, workspaceId);
-      const autoDetectedIds = new Set(
-        scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
-      );
-      const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
-      // A Set so a script skipped by both the remove and update branches (or
-      // duplicated in the agent output) is reported at most once.
-      const skippedRunning = new Set<string>();
-
-      if (Array.isArray(parsed.remove)) {
-        for (const scriptId of parsed.remove) {
-          if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
-            // Removing a running script kills its live PTY group daemon-side —
-            // skip it and surface the skip so the user can stop + re-detect.
-            const target = entriesById.get(scriptId);
-            if (target?.runtime?.status === 'running') {
-              skippedRunning.add(target.name);
-              logger.info('Skipping script.remove for running script', {
-                name: target.name,
-                scriptId,
-              });
-              continue;
-            }
-            await scriptsClient.remove(workspaceId, scriptId);
-            appStore.dispatch(removeScript(workspaceId, scriptId));
-            removedCount++;
-          }
-        }
-      }
-
-      if (Array.isArray(parsed.update)) {
-        for (const entry of parsed.update) {
-          if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
-            // The update rides the §5.8 script.create scriptId upsert, which
-            // tears down the live PTY group — never send it for a running row.
-            const target = entriesById.get(entry.id);
-            if (target?.runtime?.status === 'running') {
-              skippedRunning.add(target.name);
-              logger.info('Skipping script.update for running script', {
-                name: target.name,
-                scriptId: entry.id,
-              });
-              continue;
-            }
-            const updates: Record<string, string> = {};
-            if (entry.name) updates.name = entry.name;
-            if (entry.command) updates.command = entry.command;
-            if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
-            if (entry.category && validCategories.has(entry.category))
-              updates.category = entry.category;
-            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
-            if (updateResult.success) updatedCount++;
-          }
-        }
-      }
-
-      if (Array.isArray(parsed.add)) {
-        for (const entry of parsed.add) {
-          if (
-            typeof entry.name === 'string' &&
-            typeof entry.command === 'string' &&
-            validModes.has(entry.mode)
-          ) {
-            const createResult = await scriptsClient.create(workspaceId, {
-              name: entry.name,
-              command: entry.command,
-              mode: entry.mode as ScriptMode,
-              purpose: 'saved',
-              category: (entry.category as ScriptCategory) || 'other',
-              source: 'auto-detected',
-            });
-            if (createResult.success && createResult.data) {
-              appStore.dispatch(upsertScript(workspaceId, createResult.data));
-              addedCount++;
-            }
-          }
-        }
-      }
-
-      appStore.dispatch(refreshScripts(workspaceId));
-
-      const parts: string[] = [];
-      if (addedCount > 0) parts.push(m.terminal_sidebar_detectAdded_part({ count: addedCount }));
-      if (updatedCount > 0)
-        parts.push(m.terminal_sidebar_detectUpdated_part({ count: updatedCount }));
-      if (removedCount > 0)
-        parts.push(m.terminal_sidebar_detectRemoved_part({ count: removedCount }));
-
-      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
-
-      if (parts.length > 0) {
-        notify.success(
-          m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }),
-          withToastCountdown(
-            {
-              action: {
-                label: m.terminal_sidebar_undo_label(),
-                onClick: async () => {
-                  for (const s of selectScriptEntries.select(appStore.state, workspaceId)) {
-                    await scriptsClient.remove(workspaceId, s.id);
-                  }
-                  for (const s of snapshot) {
-                    await scriptsClient.create(workspaceId, {
-                      name: s.name,
-                      command: s.command,
-                      mode: s.mode,
-                      purpose: s.purpose ?? 'saved',
-                      category: s.category,
-                      source: s.source || 'user',
-                      cwd: s.cwd,
-                      env: s.env,
-                      autoStart: s.autoStart,
-                    });
-                  }
-                  appStore.dispatch(refreshScripts(workspaceId));
-                  notify.success(m.terminal_sidebar_scriptsRestored_success());
-                },
-              },
-              duration: 10000,
-            },
-            { pauseOnHover: false },
-          ),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noScriptChanges_info());
-      }
-      if (skippedRunning.size > 0) {
-        const skippedNames = [...skippedRunning];
-        notify.warning(
-          skippedNames.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
-            : m.scripts_detect_skippedRunning_many({
-                count: skippedNames.length,
-                names: skippedNames.join(', '),
-              }),
-        );
-      }
-      return;
-    }
-
-    // Fallback: old flat array format — deduplicate
-    if (Array.isArray(parsed)) {
-      const existingKeys = new Set(
-        selectScriptEntries
-          .select(appStore.state, workspaceId)
-          .map((s) => `${s.name}::${s.command}`),
-      );
-
-      let createdCount = 0;
-      for (const entry of parsed) {
-        if (
-          typeof entry.name === 'string' &&
-          typeof entry.command === 'string' &&
-          validModes.has(entry.mode) &&
-          !existingKeys.has(`${entry.name}::${entry.command}`)
-        ) {
-          const createResult = await scriptsClient.create(workspaceId, {
-            name: entry.name,
-            command: entry.command,
-            mode: entry.mode as ScriptMode,
-            purpose: 'saved',
-            category: (entry.category as ScriptCategory) || 'other',
-            source: 'auto-detected',
-          });
-          if (createResult.success && createResult.data) {
-            appStore.dispatch(upsertScript(workspaceId, createResult.data));
-            createdCount++;
-          }
-        }
-      }
-
-      showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
-
-      if (createdCount > 0) {
-        notify.success(
-          createdCount === 1
-            ? m.terminal_sidebar_detectedNew_one({ count: createdCount })
-            : m.terminal_sidebar_detectedNew_many({ count: createdCount }),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noNewScripts_info());
-      }
-      return;
-    }
-
-    // Neither format matched
-    logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    notify.info(m.terminal_sidebar_unexpectedFormat_info());
-    await runLocalDetect({ source: 'fallback' });
+  function consumer(
+    consumerId: string,
+    requestId: string,
+    resourceId: string,
+  ): ScriptWorkflowConsumer {
+    return { consumerId, requestId, resourceId };
   }
 
-  const scriptDetectAgent = useBackgroundAgent('script-detect', {
-    resultTag: 'DETECTED_SCRIPTS',
-    timeout: 90000,
-    onResult: async (result) => {
-      try {
-        const parsed = JSON.parse(result);
-        await handleDetectionResult(parsed);
-      } catch (e) {
-        logger.warn('Failed to parse DETECTED_SCRIPTS result', {
-          error: e instanceof Error ? e.message : String(e),
-        });
-        notify.info(m.terminal_sidebar_agentDetectFailed_info());
-        await runLocalDetect({ source: 'fallback' });
-      }
-    },
-    onError: async () => {
-      // Try to salvage JSON from the agent's raw messages via Redux
-      const currentAgentId = selectExecutorAgentId.select(
-        appStore.state,
-        workspaceId,
-        'script-detect',
-      );
-      const agentSession = currentAgentId
-        ? selectAgentSession.select(appStore.state, currentAgentId)
-        : undefined;
-      const messages = agentSession?.messages;
-      if (messages && messages.length > 0) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i];
-          const texts: string[] = [];
-          if (msg.contentBlocks) {
-            for (const block of msg.contentBlocks) {
-              if (block.type === 'text' && block.text) texts.push(block.text);
-            }
-          }
-          const content = texts.join('\n');
+  function releaseWorkflows(releaseWorkspaceId: string): void {
+    for (const consumerId of workflowConsumerIds) {
+      appStore.dispatch(scriptWorkflowReleased(releaseWorkspaceId, consumerId));
+    }
+  }
 
-          // Try extracting JSON from code blocks or raw content
-          const jsonMatch =
-            content.match(/```json?\s*\n?([\s\S]*?)\n?\s*```/) ||
-            content.match(/(\{[\s\S]*?"add"[\s\S]*?\})/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[1].trim());
-              logger.info('Salvaged detection result from raw agent response');
-              await handleDetectionResult(parsed);
-              return;
-            } catch (e) {
-              logger.warn('Failed to parse salvaged JSON', { error: e });
-            }
-          }
-        }
-      }
-
-      logger.warn('Script detection agent failed, falling back to local detection');
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      await runLocalDetect({ source: 'fallback' });
-    },
+  onDestroy(() => {
+    mounted = false;
+    if (saveStatusResetTimer) clearTimeout(saveStatusResetTimer);
+    if (workflowWorkspaceId) releaseWorkflows(workflowWorkspaceId);
   });
 
-  async function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
-    detectFlow = 'local';
-    try {
-      logger.info('Running local script detection', { source: options.source ?? 'primary' });
-      const result = await scriptsClient.detect(workspaceId);
-      if (!result.success) {
-        // i18n-ignore (internal error, caught and surfaced via extracted toast)
-        throw new Error(result.error || 'Local script detection failed');
-      }
-
-      appStore.dispatch(refreshScripts(workspaceId));
-      // Use the detected count from the IPC response (number of scripts found
-      // in project manifests) rather than the total store count which includes
-      // user-created scripts. Default to 0 so agent assist is shown when the
-      // field is missing.
-      const detectedCount = typeof result.detected === 'number' ? result.detected : 0;
-      showAgentAssist = detectedCount === 0;
-
-      if (detectedCount > 0) {
-        notify.success(
-          detectedCount === 1
-            ? m.terminal_sidebar_detectedFromFiles_one({ count: detectedCount })
-            : m.terminal_sidebar_detectedFromFiles_many({ count: detectedCount }),
-        );
-      } else {
-        notify.info(m.terminal_sidebar_noScriptsLocally_info());
-      }
-      const skippedRunning = result.skippedRunning ?? [];
-      if (skippedRunning.length > 0) {
-        notify.warning(
-          skippedRunning.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
-            : m.scripts_detect_skippedRunning_many({
-                count: skippedRunning.length,
-                names: skippedRunning.join(', '),
-              }),
-        );
-      }
-      logger.info('Local detection complete', {
-        totalScripts: selectScriptEntries.select(appStore.state, workspaceId).length,
-        detectedCount,
-        source: options.source ?? 'primary',
-      });
-    } catch (e) {
-      showAgentAssist = true;
-      logger.error('Local script detection failed', {
-        error: e instanceof Error ? e.message : String(e),
-        source: options.source ?? 'primary',
-      });
-      notify.error(m.terminal_quakeOverlay_detectFailed_error());
-    } finally {
+  $effect(() => {
+    const nextWorkspaceId = workspaceId;
+    if (workflowWorkspaceId && workflowWorkspaceId !== nextWorkspaceId) {
+      releaseWorkflows(workflowWorkspaceId);
+      pendingApply = null;
+      pendingCreate = null;
+      pendingDetect = null;
+      pendingRemove = null;
+      pendingRestore = null;
+      pendingSave = null;
+      pendingUpdate = null;
       detectFlow = 'idle';
     }
-  }
+    workflowWorkspaceId = nextWorkspaceId;
+  });
 
-  function buildExistingScriptsContext(): string {
-    const existingScripts = selectScriptEntries.select(appStore.state, workspaceId).map((s) => ({
-      id: s.id,
-      name: s.name,
-      command: s.command,
-      mode: s.mode,
-      purpose: s.purpose ?? 'saved',
-      category: s.category,
-    }));
-
-    return existingScripts.length > 0
-      ? // i18n-ignore (agent-facing prompt, kept in English)
-        `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(existingScripts, null, 2)}`
-      : '';
+  function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
+    detectFlow = 'local';
+    logger.info('Running local script detection', { source: options.source ?? 'primary' });
+    const requestWorkspaceId = workspaceId;
+    const requestId = crypto.randomUUID();
+    pendingDetect = { requestId, workspaceId: requestWorkspaceId };
+    appStore.dispatch(
+      detectScriptDefinitionsRequested(
+        requestWorkspaceId,
+        consumer(detectConsumerId, requestId, 'local-detection'),
+      ),
+    );
   }
 
   // Sidebar state
@@ -513,8 +273,266 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const sidebarTerminals = $derived($_sidebarTerminals);
   const activeTerminalId = $derived($_sidebarActiveTerminalId);
 
+  function completeWorkflow(
+    consumerId: string,
+    outcome: { workspaceId: string; requestId: string },
+  ): void {
+    appStore.dispatch(scriptWorkflowConsumed(outcome.workspaceId, consumerId, outcome.requestId));
+  }
+
+  $effect(() => {
+    const outcome = $applyOutcome$;
+    const pending = pendingApply;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingApply = null;
+    detectFlow = 'idle';
+    completeWorkflow(applyConsumerId, outcome);
+    if (outcome.status !== 'success' || !outcome.result) {
+      notify.error(outcome.error ?? m.terminal_quakeOverlay_detectFailed_error());
+      return;
+    }
+    const compound = outcome.result as ScriptAgentDetectionOutcome;
+    if (compound.source === 'local') {
+      notify.info(
+        compound.fallbackReason === 'unexpected-format'
+          ? m.terminal_sidebar_unexpectedFormat_info()
+          : m.terminal_sidebar_agentDetectFailed_info(),
+      );
+      const result = compound.detection;
+      showAgentAssist = result.detected === 0;
+      notify[result.detected > 0 ? 'success' : 'info'](
+        result.detected > 0
+          ? result.detected === 1
+            ? m.terminal_sidebar_detectedFromFiles_one({ count: result.detected })
+            : m.terminal_sidebar_detectedFromFiles_many({ count: result.detected })
+          : m.terminal_sidebar_noScriptsLocally_info(),
+      );
+      return;
+    }
+    const result = compound.changes;
+    showAgentAssist = selectScriptEntries.select(appStore.state, outcome.workspaceId).length === 0;
+    if (compound.presentation === 'legacy') {
+      notify[result.added > 0 ? 'success' : 'info'](
+        result.added > 0
+          ? result.added === 1
+            ? m.terminal_sidebar_detectedNew_one({ count: result.added })
+            : m.terminal_sidebar_detectedNew_many({ count: result.added })
+          : m.terminal_sidebar_noNewScripts_info(),
+      );
+      return;
+    }
+    const changes = [
+      result.added > 0 ? m.terminal_sidebar_detectAdded_part({ count: result.added }) : '',
+      result.updated > 0 ? m.terminal_sidebar_detectUpdated_part({ count: result.updated }) : '',
+      result.removed > 0 ? m.terminal_sidebar_detectRemoved_part({ count: result.removed }) : '',
+    ].filter(Boolean);
+    if (changes.length > 0) {
+      const resultWorkspaceId = outcome.workspaceId;
+      notify.success(
+        m.terminal_sidebar_scriptsUpdated_success({ changes: changes.join(', ') }),
+        withToastCountdown(
+          {
+            action: {
+              label: m.terminal_sidebar_undo_label(),
+              onClick: () => {
+                if (!mounted || workspaceId !== resultWorkspaceId) return;
+                const requestId = crypto.randomUUID();
+                pendingRestore = { requestId, workspaceId: resultWorkspaceId };
+                appStore.dispatch(
+                  restoreScriptDefinitionsRequested(
+                    resultWorkspaceId,
+                    result.snapshot,
+                    consumer(restoreConsumerId, requestId, 'restore'),
+                  ),
+                );
+              },
+            },
+            duration: 10000,
+          },
+          { pauseOnHover: false },
+        ),
+      );
+    } else {
+      notify.info(m.terminal_sidebar_noScriptChanges_info());
+    }
+    if (result.skippedRunning.length > 0) {
+      notify.warning(
+        result.skippedRunning.length === 1
+          ? m.scripts_detect_skippedRunning_one({ name: result.skippedRunning[0] })
+          : m.scripts_detect_skippedRunning_many({
+              count: result.skippedRunning.length,
+              names: result.skippedRunning.join(', '),
+            }),
+      );
+    }
+  });
+
+  $effect(() => {
+    const outcome = $removeOutcome$;
+    const pending = pendingRemove;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingRemove = null;
+    completeWorkflow(removeConsumerId, outcome);
+    const result = outcome.result as ScriptBulkRemovalOutcome | undefined;
+    if (
+      outcome.status === 'success' &&
+      pending.selectedScriptId &&
+      selectedScriptId === pending.selectedScriptId &&
+      result?.removed.includes(pending.selectedScriptId)
+    ) {
+      onSelectScript?.(null);
+    }
+    const removedTargets = new Set(outcome.status === 'success' && result ? result.removed : []);
+    selectedScriptIds = new Set(
+      Array.from(selectedScriptIds).filter((scriptId) => !removedTargets.has(scriptId)),
+    );
+    if (lastClickedScriptId && removedTargets.has(lastClickedScriptId)) lastClickedScriptId = null;
+  });
+
+  $effect(() => {
+    const outcome = $detectOutcome$;
+    const pending = pendingDetect;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingDetect = null;
+    detectFlow = 'idle';
+    completeWorkflow(detectConsumerId, outcome);
+    if (outcome.status !== 'success' || !outcome.result) {
+      showAgentAssist = true;
+      logger.error('Local script detection failed', { error: outcome.error });
+      notify.error(m.terminal_quakeOverlay_detectFailed_error());
+      return;
+    }
+    const result = outcome.result as ScriptDetectionOutcome;
+    showAgentAssist = result.detected === 0;
+    notify[result.detected > 0 ? 'success' : 'info'](
+      result.detected > 0
+        ? result.detected === 1
+          ? m.terminal_sidebar_detectedFromFiles_one({ count: result.detected })
+          : m.terminal_sidebar_detectedFromFiles_many({ count: result.detected })
+        : m.terminal_sidebar_noScriptsLocally_info(),
+    );
+  });
+
+  $effect(() => {
+    const outcome = $createOutcome$;
+    const pending = pendingCreate;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingCreate = null;
+    completeWorkflow(createConsumerId, outcome);
+    if (outcome.status !== 'success' || !outcome.result || Array.isArray(outcome.result)) {
+      logger.error('Script creation failed', outcome.error);
+      return;
+    }
+    const script = outcome.result as { id: string };
+    onSelectScript?.(script.id);
+    newName = '';
+    newCommand = '';
+    newMode = 'command';
+    showAddForm = false;
+  });
+
+  $effect(() => {
+    const outcome = $restoreOutcome$;
+    const pending = pendingRestore;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingRestore = null;
+    completeWorkflow(restoreConsumerId, outcome);
+    if (outcome.status === 'success') notify.success(m.terminal_sidebar_scriptsRestored_success());
+    else notify.warning(outcome.error ?? m.terminal_quakeOverlay_detectFailed_error());
+  });
+
+  $effect(() => {
+    const outcome = $saveOutcome$;
+    const pending = pendingSave;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId ||
+      workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingSave = null;
+    completeWorkflow(saveConsumerId, outcome);
+    if (outcome.status !== 'success') {
+      notify.error(outcome.error ?? m.terminal_sidebar_saveToRepoFailed_error());
+      saveToRepoStatus = 'idle';
+      return;
+    }
+    saveToRepoStatus = 'saved';
+    if (saveStatusResetTimer) clearTimeout(saveStatusResetTimer);
+    saveStatusResetTimer = setTimeout(() => {
+      saveStatusResetTimer = null;
+      saveToRepoStatus = 'idle';
+    }, 1500);
+  });
+
+  $effect(() => {
+    const outcome = $updateOutcome$;
+    const pending = pendingUpdate;
+    if (
+      !outcome ||
+      !pending ||
+      outcome.consumed ||
+      outcome.status === 'pending' ||
+      outcome.requestId !== pending.requestId ||
+      outcome.workspaceId !== pending.workspaceId
+    )
+      return;
+    pendingUpdate = null;
+    completeWorkflow(updateConsumerId, outcome);
+    if (outcome.status !== 'success') logger.error('Script update failed', outcome.error);
+  });
+
   // ---- Sort function ----
-  function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
+  function sortScripts(scripts: ScriptListEntry[]): ScriptListEntry[] {
     return [...scripts].sort((a, b) => {
       // Priority: live (starting/running/restarting) > exited > idle
       const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
@@ -529,7 +547,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   // ---- Status dot helpers ----
-  function getStatusColor(script: ScriptWithState): string {
+  function getStatusColor(script: ScriptListEntry): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
     if (kind === 'restarting') return 'bg-warning';
@@ -538,7 +556,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return 'bg-muted-foreground/40';
   }
 
-  function getStatusLabel(script: ScriptWithState): string {
+  function getStatusLabel(script: ScriptListEntry): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running') return m.terminal_quakeOverlay_status_running();
     if (kind === 'restarting') return m.workspace_devScripts_restarting_label();
@@ -554,7 +572,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   // ---- Actions ----
-  function getScriptActions(script: ScriptWithState) {
+  function getScriptActions(script: ScriptListEntry) {
     const actions: Array<{
       icon: any;
       label: string;
@@ -582,8 +600,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return actions;
   }
 
-  async function handleStart(scriptId: string) {
-    await scriptsClient.start(workspaceId, scriptId);
+  function handleStart(scriptId: string) {
+    appStore.dispatch(
+      startScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_startScriptFailed_error(),
+      ),
+    );
     onSelectScript?.(scriptId);
     pendingScrollScriptId = scriptId;
   }
@@ -594,88 +618,79 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     );
   }
 
-  async function handleRestart(scriptId: string) {
-    await scriptsClient.restart(workspaceId, scriptId);
+  function handleRestart(scriptId: string) {
+    appStore.dispatch(
+      restartScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_restartScriptFailed_error(),
+      ),
+    );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleDelete(scriptId: string) {
-    await scriptsClient.remove(workspaceId, scriptId);
-    appStore.dispatch(removeScript(workspaceId, scriptId));
-    if (selectedScriptId === scriptId) {
-      onSelectScript?.(null);
-    }
-  }
-
-  async function handleDetect() {
+  function handleDetect() {
     if (isDetecting) {
       return;
     }
 
     showAgentAssist = false;
-    await runLocalDetect({ source: 'primary' });
+    runLocalDetect({ source: 'primary' });
   }
 
-  async function handleAgentDetect() {
+  function handleAgentDetect() {
     if (isDetecting) {
       return;
     }
 
-    const workspace = $activeWorkspace;
-    if (!workspace) {
+    if (!workspaceId) {
       notify.info(m.terminal_sidebar_openWorkspaceFirst_info());
       return;
     }
 
     showAgentAssist = false;
     detectFlow = 'agent';
-
-    try {
-      await scriptDetectAgent.execute(workspace, {
-        message: SCRIPT_DETECT_PROMPT + buildExistingScriptsContext(),
-      });
-    } finally {
-      detectFlow = 'idle';
-    }
+    const requestId = crypto.randomUUID();
+    pendingApply = { requestId, workspaceId };
+    appStore.dispatch(
+      detectScriptsWithAgentRequested(
+        workspaceId,
+        consumer(applyConsumerId, requestId, 'agent-detection'),
+      ),
+    );
   }
 
-  async function handleAddScript() {
+  function handleAddScript() {
     if (!newName.trim() || !newCommand.trim()) return;
-    const result = await scriptsClient.create(workspaceId, {
-      name: newName.trim(),
-      command: newCommand.trim(),
-      mode: newMode,
-      purpose: 'saved',
-      source: 'user',
-    });
-    if (result.success && result.data) {
-      appStore.dispatch(upsertScript(workspaceId, result.data));
-      onSelectScript?.(result.data.id);
-      newName = '';
-      newCommand = '';
-      newMode = 'command';
-      showAddForm = false;
-    }
+    const requestWorkspaceId = workspaceId;
+    const requestId = crypto.randomUUID();
+    pendingCreate = { requestId, workspaceId: requestWorkspaceId };
+    appStore.dispatch(
+      createScriptDefinitionRequested(
+        requestWorkspaceId,
+        {
+          name: newName.trim(),
+          command: newCommand.trim(),
+          mode: newMode,
+          purpose: 'saved',
+          source: 'user',
+        },
+        consumer(createConsumerId, requestId, 'create'),
+      ),
+    );
   }
 
-  async function handleSaveToRepo() {
+  function handleSaveToRepo() {
     if (saveToRepoStatus !== 'idle') return;
     saveToRepoStatus = 'saving';
-    try {
-      const result = await scriptsClient.saveToRepo(workspaceId);
-      if (result.success) {
-        saveToRepoStatus = 'saved';
-        setTimeout(() => {
-          saveToRepoStatus = 'idle';
-        }, 1500);
-      } else {
-        notify.error(result.error || m.terminal_sidebar_saveToRepoFailed_error());
-        saveToRepoStatus = 'idle';
-      }
-    } catch {
-      notify.error(m.terminal_sidebar_saveToRepoFailed_error());
-      saveToRepoStatus = 'idle';
-    }
+    const requestWorkspaceId = workspaceId;
+    const requestId = crypto.randomUUID();
+    pendingSave = { requestId, workspaceId: requestWorkspaceId };
+    appStore.dispatch(
+      saveScriptDefinitionsToRepoRequested(
+        requestWorkspaceId,
+        consumer(saveConsumerId, requestId, 'save'),
+      ),
+    );
   }
 
   function handleSelectScript(scriptId: string, event?: MouseEvent) {
@@ -738,31 +753,42 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     contextMenuScriptId = null;
   }
 
-  async function handleContextMenuAction(
+  function handleContextMenuAction(
     action: 'start' | 'stop' | 'restart' | 'edit' | 'delete' | 'startAll' | 'stopAll',
   ) {
     if (action === 'delete') {
+      if (pendingRemove) return;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
-      for (const id of idsToDelete) {
-        await scriptsClient.remove(workspaceId, id);
-        appStore.dispatch(removeScript(workspaceId, id));
-        if (selectedScriptId === id) {
-          onSelectScript?.(null);
-        }
-      }
-      selectedScriptIds.clear();
-      selectedScriptIds = new Set(selectedScriptIds);
-      lastClickedScriptId = null;
+      const requestId = crypto.randomUUID();
+      const selected = selectScriptEntries
+        .select(appStore.state, workspaceId)
+        .filter((script) => selectedScriptIds.has(script.id));
+      const targets = selected.map((script) => ({ ...script, workspaceId }));
+      appStore.dispatch(
+        removeScriptDefinitionsRequested(
+          workspaceId,
+          targets,
+          m.terminal_quakeOverlay_deleteScriptFailed_error(),
+          consumer(removeConsumerId, requestId, 'bulk-remove'),
+        ),
+      );
+      pendingRemove = {
+        requestId,
+        workspaceId,
+        targetIds: idsToDelete,
+        selectedScriptId:
+          selectedScriptId && idsToDelete.includes(selectedScriptId) ? selectedScriptId : null,
+      };
     } else if (action === 'startAll') {
       // Start all selected scripts
       for (const id of selectedScriptIds) {
-        await handleStart(id);
+        handleStart(id);
       }
     } else if (action === 'stopAll') {
       // Stop all selected scripts
       for (const id of selectedScriptIds) {
-        await handleStop(id);
+        handleStop(id);
       }
     } else if (action === 'edit' && contextMenuScriptId) {
       // Edit the right-clicked script
@@ -770,11 +796,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     } else if (contextMenuScriptId) {
       // Start/stop/restart the right-clicked script
       if (action === 'start') {
-        await handleStart(contextMenuScriptId);
+        handleStart(contextMenuScriptId);
       } else if (action === 'stop') {
-        await handleStop(contextMenuScriptId);
+        handleStop(contextMenuScriptId);
       } else if (action === 'restart') {
-        await handleRestart(contextMenuScriptId);
+        handleRestart(contextMenuScriptId);
       }
     }
     closeContextMenu();
@@ -796,13 +822,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      void scriptsClient
-        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
-        .then((result) => {
-          if (!result.success && result.error) notify.warning(result.error);
-        })
-        .catch((error) => logger.error('Script update failed', error))
-        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
+      const mutationWorkspaceId = workspaceId;
+      const mutationScriptId = editingScriptId;
+      const name = editingScriptName.trim();
+      const requestId = crypto.randomUUID();
+      updateResourceIdStore.set(mutationScriptId);
+      pendingUpdate = { requestId, workspaceId: mutationWorkspaceId };
+      appStore.dispatch(
+        updateScriptDefinitionRequested(
+          mutationWorkspaceId,
+          mutationScriptId,
+          { name },
+          consumer(updateConsumerId, requestId, mutationScriptId),
+        ),
+      );
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -884,7 +917,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     if (!contextMenuPos) return;
     return pushEscapeLayer(() => closeContextMenu());
   });
-  /* eslint-disable @typescript-eslint/no-unused-vars -- template-level vars used by Svelte runtime */
+  const scriptPage$ = selectScriptListPageState(workspaceIdStore);
 </script>
 
 <!-- Sidebar Container -->
@@ -959,15 +992,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
-                const wsId = $activeWorkspace?.id;
-                if (wsId) {
-                  appStore.dispatch(
-                    openAgentTabRequested(wsId, {
-                      agentId: $_scriptDetectAgentId$,
-                      ...getNavigationContext(e),
-                    }),
-                  );
-                }
+                appStore.dispatch(
+                  openAgentTabRequested(workspaceId, {
+                    agentId: $_scriptDetectAgentId$,
+                    ...getNavigationContext(e),
+                  }),
+                );
               }}
               title={m.terminal_sidebar_viewDetectionAgent_tooltip()}
             >
@@ -1078,6 +1108,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           </div>
         {/if}
 
+        {#if $scriptPage$.nextCursor}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={$scriptPage$.loading}
+            onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
+            >{m.gitlabCheckout_loadMore_label()}</Button
+          >
+        {/if}
+        {#if $scriptPage$.error}<p role="alert">{$scriptPage$.error}</p>{/if}
         <!-- Script List -->
         {#if hasScripts}
           <ListContainer spacing="compact" class="py-1 px-1.5">
@@ -1096,7 +1136,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  subtitle={editingScriptId === script.id ? '' : script.command}
+                  subtitle={editingScriptId === script.id ? '' : scriptCommandLabel(script)}
                   subtitleClass="leading-none"
                   active={selectedScriptId === script.id}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}

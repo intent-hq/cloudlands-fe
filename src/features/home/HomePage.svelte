@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
@@ -31,6 +33,7 @@
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
+  import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
@@ -75,6 +78,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
+  import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeHeader from './HomeHeader.svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -82,14 +86,13 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-  import { setWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
   import CustomViewsSidebar from '$features/custom-views/components/CustomViewsSidebar.svelte';
   import CustomViewPanel from '$features/custom-views/components/CustomViewPanel.svelte';
   import {
-    selectCustomViews,
     selectCustomViewState,
+    selectSelectedCustomView,
   } from '$features/custom-views/custom-views-selectors';
   import { selectCustomView } from '$features/custom-views/custom-views-slice';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -101,6 +104,7 @@
     preview?: boolean;
     integrationPreview?: Partial<Record<'prs' | 'linear', HomeIntegrationsState>>;
   } = $props();
+  const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
   function openWorkspace(id: string) {
@@ -116,12 +120,15 @@
     if (!position) return;
     contextMenu = {
       ...position,
-      returnFocus: position.returnFocus?.closest('[role="option"]') as HTMLElement | null,
+      returnFocus:
+        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
+        position.returnFocus,
       workspace,
     };
   }
   function workspaceMenu(workspace: Workspace): SidebarMenuEntry[] {
     return createHomeWorkspaceMenu(workspace, {
+      microConnected: $microConnected$,
       pinned: $pinnedIds$.includes(workspace.id),
       onOpen: openWorkspace,
       onClose: () => (contextMenu = null),
@@ -141,12 +148,8 @@
     !$collaborator$ && (preview || hasCapability('customViews')),
   );
   const selectedCustomViewId = $derived(customViewsAvailable ? $customViews$.selectedId : null);
-  const customViewItems$ = selectCustomViews();
-  const selectedCustomView = $derived(
-    selectedCustomViewId
-      ? $customViewItems$.find((view) => view.id === selectedCustomViewId)
-      : undefined,
-  );
+  const selectedCustomView$ = selectSelectedCustomView();
+  const selectedCustomView = $derived(customViewsAvailable ? $selectedCustomView$ : undefined);
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
@@ -380,6 +383,15 @@
         : [];
     }),
   );
+  const statusGroups = $derived(
+    groupHomeWorkspacesByStatus(filteredWorkspaces).map((group) => ({
+      ...group,
+      expanded:
+        $view$.expandedGroups[group.id] !== false ||
+        group.items.some((workspace) => workspace.id === selectedId),
+      collapsible: true,
+    })),
+  );
   const listGroups: {
     id: string;
     label: string;
@@ -388,7 +400,13 @@
     collapsible: boolean;
   }[] = $derived.by(() => {
     if ($view$.groupBy === 'none') return [];
-    const groups = ($view$.groupBy === 'repository' ? repositorySections : triageGroups)
+    const groups = (
+      $view$.groupBy === 'repository'
+        ? repositorySections
+        : $view$.groupBy === 'workspace-status'
+          ? statusGroups
+          : triageGroups
+    )
       .map((group) => ({
         ...group,
         items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),
@@ -495,21 +513,9 @@
     () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
     () => activeHomeTab,
   );
+  // New space resolves the selected Home repository itself
+  // (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
-    const repoPath = selectedRepository?.repoPath;
-    if (selectedRepository && repoPath) {
-      store.dispatch(
-        setWorkspaceInitializerLastSelectedRepo({
-          path: repoPath,
-          type: selectedRepository.isGithub && !repoPath.startsWith('/') ? 'github' : 'local',
-          ...(selectedRepository.owner && selectedRepository.name
-            ? {
-                githubUrl: `https://github.com/${selectedRepository.owner}/${selectedRepository.name}`,
-              }
-            : {}),
-        }),
-      );
-    }
     store.dispatch(setShowCreateModal(true));
   }
 </script>
@@ -886,14 +892,21 @@
                             workspaces={filteredWorkspaces}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
+                            showRepositoryOwner={!selectedOrg}
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}
+                            {@const displayTitle = item.title.trim()
+                              ? item.title
+                              : m.workspace_links_untitled_label()}
+                            {@const pullRequestCount =
+                              item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
@@ -901,42 +914,45 @@
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}
-                                {#if !selectedRepository && item.repositoryOwner}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                          >
-                                            <GitHubAvatar
-                                              identity={item.repositoryOwner ?? ''}
-                                              size={20}
-                                              class="shrink-0 rounded-sm"
-                                            />
-                                          </span>{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{[item.repositoryOwner, item.repositoryName]
-                                          .filter(Boolean)
-                                          .join('/')}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                            class="flex size-5 items-center justify-center text-muted-foreground"
-                                            ><Fa icon={faFolder} /></span
-                                          >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content
-                                        >{item.repositoryName ||
-                                          item.repositoryPath}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                {/if}
+                                <span class="flex items-center gap-2">
+                                  <WorkspaceMicroKeySlot workspaceId={item.id} />
+                                  {#if !selectedRepository && item.repositoryOwner}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                            >
+                                              <GitHubAvatar
+                                                identity={item.repositoryOwner ?? ''}
+                                                size={20}
+                                                class="shrink-0 rounded-sm"
+                                              />
+                                            </span>{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{[item.repositoryOwner, item.repositoryName]
+                                            .filter(Boolean)
+                                            .join('/')}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
+                                    <Tooltip.Provider
+                                      ><Tooltip.Root
+                                        ><Tooltip.Trigger
+                                          >{#snippet child({ props: homeTooltipProps })}<span
+                                              {...homeTooltipProps}
+                                              class="flex size-5 items-center justify-center text-muted-foreground"
+                                              ><Fa icon={faFolder} /></span
+                                            >{/snippet}</Tooltip.Trigger
+                                        ><Tooltip.Content
+                                          >{item.repositoryName ||
+                                            item.repositoryPath}</Tooltip.Content
+                                        ></Tooltip.Root
+                                      ></Tooltip.Provider
+                                    >
+                                  {/if}
+                                </span>
                               {/snippet}
                               {#snippet title()}
                                 <span class="home-row-line">
@@ -946,19 +962,20 @@
                                         >{#snippet child({ props: homeTooltipProps })}<span
                                             {...homeTooltipProps}
                                             class="home-row-title truncate font-medium"
-                                            >{item.title}</span
+                                            >{displayTitle}</span
                                           >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content>{item.title}</Tooltip.Content></Tooltip.Root
+                                      ><Tooltip.Content>{displayTitle}</Tooltip.Content
+                                      ></Tooltip.Root
                                     ></Tooltip.Provider
                                   >
                                   <span
                                     class="home-row-description flex min-w-0 items-center gap-2"
                                   >
                                     <HomeWorkspacePullBadge workspace={item} />
-                                    {#if item.pullRequests && item.pullRequests.length > 1}
+                                    {#if pullRequestCount > 1}
                                       <span
                                         class="shrink-0 rounded-full border border-border px-2 py-0.5 type-caption tabular-nums"
-                                        >+{formatInteger(item.pullRequests.length - 1)}</span
+                                        >+{formatInteger(pullRequestCount - 1)}</span
                                       >
                                     {/if}
                                     <Tooltip.Provider
@@ -975,6 +992,12 @@
                                       ></Tooltip.Provider
                                     >
                                   </span>
+                                  {#if !selectedRepository}
+                                    <HomeWorkspaceRepositoryLabel
+                                      workspace={item}
+                                      showOwner={!selectedOrg}
+                                    />
+                                  {/if}
                                 </span>
                               {/snippet}
                               {#snippet trailing()}<span
@@ -1054,7 +1077,10 @@
                               rowHeight={48}
                               virtualize={scroll ? 'auto' : false}
                               getKey={(workspace) => workspace.id}
-                              getText={(workspace) => workspace.title}
+                              getText={(workspace) =>
+                                workspace.title.trim()
+                                  ? workspace.title
+                                  : m.workspace_links_untitled_label()}
                               selectable="single"
                               selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
                               onSelectedKeysChange={(keys) =>

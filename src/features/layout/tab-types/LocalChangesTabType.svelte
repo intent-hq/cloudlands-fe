@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gitRootsConsumerMounted,
+    gitRootsConsumerUnmounted,
+  } from '$store/renderer/slices/git-roots/git-roots-slice';
   /**
    * Local Changes Tab Type Component
    *
@@ -8,6 +12,10 @@
 
   import { toStore } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
     selectFileTrackingBoundarySha,
@@ -48,6 +56,13 @@
   const headerContext = getPanelHeaderContext();
   const workspaceId$ = toStore(() => workspaceId);
   const workspace = selectWorkspaceById(workspaceId$);
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!isActive || !wsId || gitRootId) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'all'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'all'));
+  });
+
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
   const gitRoots$ = selectGitRoots(workspaceId$);
   const selectedRoot = $derived($gitRoots$.find((root) => root.id === gitRootId));
@@ -223,6 +238,13 @@
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({ display: changesDisplayActions });
+  });
+  const gitRootsConsumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!(isActive && gitRootId) || !wsId) return;
+    appStore.dispatch(gitRootsConsumerMounted(wsId, gitRootsConsumerId));
+    return () => appStore.dispatch(gitRootsConsumerUnmounted(wsId, gitRootsConsumerId));
   });
 </script>
 

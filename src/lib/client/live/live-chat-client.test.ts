@@ -726,6 +726,56 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     );
   });
 
+  it('keeps the newer assistant streaming through an older terminal and duplicate delivery', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+      });
+      snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+      const frame = (messageId: string, complete = false) => ({
+        added: [
+          {
+            id: `${messageId}:0`,
+            messageId,
+            agentId: 'agent-1',
+            role: 'assistant',
+            block: { id: `${messageId}:0`, type: 'text', text: messageId },
+            ...(complete
+              ? {
+                  streamingComplete: true,
+                  timestamp: '2026-06-27T01:00:01.000Z',
+                  messageSeq: messageId === 'old' ? 1 : 2,
+                }
+              : {}),
+          },
+        ],
+        updated: [],
+        removedIds: [],
+      });
+      deltaPush('sub-1', 1, frame('old'));
+      deltaPush('sub-1', 2, frame('new'));
+      deltaPush('sub-1', 3, frame('old', true));
+      expect(seen.at(-1)?.messages.find((m) => m.id === 'old')?.streamingComplete).toBe(true);
+      expect(seen.at(-1)?.isStreaming).toBe(true);
+      const deliveries = seen.length;
+      deltaPush('sub-1', 3, frame('old', true));
+      expect(seen).toHaveLength(deliveries);
+      expect(seen.at(-1)?.isStreaming).toBe(true);
+      deltaPush('sub-1', 4, frame('new', true));
+      expect(seen.at(-1)?.isStreaming).toBe(false);
+    } finally {
+      off();
+    }
+    expect(mockedRequest).toHaveBeenCalledWith('chat.unsubscribe', { subscriptionId: 'sub-1' });
+  });
+
   it('registers chat.subscribe, emits the seq-0 snapshot, and unsubscribes on dispose', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

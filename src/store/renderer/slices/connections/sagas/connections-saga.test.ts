@@ -22,6 +22,7 @@ import {
   KEYCHAIN_SYNC_STATUS_EVENT,
   LOCAL_CONNECTION_ID,
 } from '$shared/types/connections';
+import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import {
   addConnectionRequested,
@@ -326,8 +327,8 @@ describe('connectionsSaga', () => {
       id: 'remote-1',
       host: '10.0.0.5',
       port: 8443,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
     };
     invoke.mockImplementation(async (channel: string) =>
       channel === CONNECTION_CHANNELS.LIST
@@ -357,8 +358,8 @@ describe('connectionsSaga', () => {
       id: 'remote-1',
       host: '10.0.0.5',
       port: 8443,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
       origin: 'boot',
     };
     invoke.mockImplementation(async (channel: string) =>
@@ -801,8 +802,8 @@ describe('connectionsSaga', () => {
       id: REMOTE.id,
       host: REMOTE.host,
       port: REMOTE.port,
-      localProtocolVersion: '1',
-      remoteProtocolVersion: '2',
+      localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+      remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
     });
     callbacks[CONNECTION_AUTH_REJECTED_EVENT]!({
       id: REMOTE.id,
@@ -1136,10 +1137,15 @@ describe('connectionsSaga', () => {
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
       const [message, options] = notify.warning.mock.calls[0]!;
-      expect(String(message)).toContain('Studio Mac');
-      expect(String(message)).toContain('v0.9.0');
-      expect(String(message)).toContain('v0.10.0');
-      expect(String(message)).not.toContain('vv');
+      // The short title shares the header row with Update + close and is
+      // clamped to two lines; the full version sentence lives in the
+      // full-width description so it is never truncated.
+      expect(String(message)).toBe(m.layout_daemonStatus_daemonBehind_title());
+      const description = String(options.description);
+      expect(description).toContain('Studio Mac');
+      expect(description).toContain('v0.9.0');
+      expect(description).toContain('v0.10.0');
+      expect(description).not.toContain('vv');
       expect(options.id).toBe(`connections-daemon-behind-${BEHIND.id}`);
       // Sticky: never auto-dismisses — dismissal is programmatic.
       expect(options.duration).toBe(Number.POSITIVE_INFINITY);
@@ -1456,10 +1462,10 @@ describe('connectionsSaga', () => {
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
-      const [message, options] = notify.warning.mock.calls[0]!;
-      expect(String(message)).toContain('This machine (local)');
-      expect(String(message)).toContain('v0.9.0');
-      expect(String(message)).toContain('v0.10.0');
+      const [, options] = notify.warning.mock.calls[0]!;
+      expect(String(options.description)).toContain('This machine (local)');
+      expect(String(options.description)).toContain('v0.9.0');
+      expect(String(options.description)).toContain('v0.10.0');
       expect(options.id).toBe(`connections-daemon-behind-${LOCAL.id}`);
 
       // Unchanged re-broadcast: silent.
@@ -1486,9 +1492,9 @@ describe('connectionsSaga', () => {
       };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
-      const [message] = notify.warning.mock.calls[0]!;
-      expect(String(message)).toContain('This machine (local)');
-      expect(String(message)).not.toContain('persisted-fallback-label');
+      const [, options] = notify.warning.mock.calls[0]!;
+      expect(String(options.description)).toContain('This machine (local)');
+      expect(String(options.description)).not.toContain('persisted-fallback-label');
 
       run.task.cancel();
       await run.task.toPromise();

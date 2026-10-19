@@ -6,21 +6,26 @@
 
   let {
     activeTabId,
+    scriptId,
+    workspaceId = 'workspace-1',
     firstMounted = true,
     secondMounted = true,
   }: {
     activeTabId: string;
+    scriptId?: string;
+    workspaceId?: string;
     firstMounted?: boolean;
     secondMounted?: boolean;
   } = $props();
 
-  const firstTab: PanelTab = {
+  const firstTab: PanelTab = $derived({
     id: 'terminal-tab-1',
     type: 'terminal',
     title: 'Terminal 1',
     closable: true,
-    terminalId: 'terminal-session-1',
-  };
+    terminalId: scriptId ? undefined : 'terminal-session-1',
+    scriptId,
+  });
   const secondTab: PanelTab = {
     id: 'terminal-tab-2',
     type: 'terminal',
@@ -34,7 +39,7 @@
 {#if firstMounted}
   <TerminalTabType
     tab={firstTab}
-    workspaceId="workspace-1"
+    {workspaceId}
     layoutId="layout-1"
     isActive={activeTabId === firstTab.id}
     isPanelFocused={activeTabId === firstTab.id}
@@ -43,7 +48,7 @@
 {#if secondMounted}
   <TerminalTabType
     tab={secondTab}
-    workspaceId="workspace-1"
+    {workspaceId}
     layoutId="layout-1"
     isActive={activeTabId === secondTab.id}
     isPanelFocused={activeTabId === secondTab.id}

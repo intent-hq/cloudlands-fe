@@ -11,6 +11,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend-transport-types';
+import * as backendTransport from './backend-transport';
+import { LiveFilesClient } from './live-files-client';
 import {
   BrowserWebSocketTransport,
   type BrowserWebSocketLike,
@@ -18,6 +20,7 @@ import {
   resolveBrowserWsUrl,
   sanitizeWsUrlForDisplay,
 } from './browser-websocket-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 class FakeWebSocket implements BrowserWebSocketLike {
   onopen: ((event?: unknown) => void) | null = null;
@@ -88,13 +91,13 @@ async function flush(): Promise<void> {
 function helloResult(clientId = 'browser-1') {
   return {
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: false,
       osArch: 'linux/x86_64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   };
@@ -851,12 +854,14 @@ describe('BrowserWebSocketTransport', () => {
 describe('root file reads on the sending connection', () => {
   it.each(
     ['file.read', 'file.readChunk'].flatMap((method) =>
-      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
-        ['11.0', '12.0', '13.0', '14.0', 'invalid', undefined].map((nextVersion) => ({
-          method,
-          protocolVersion,
-          nextVersion,
-        })),
+      ['11.1', '12.0', '13.0', '14.0', '15.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', '15.0', '16.0', 'invalid', undefined].map(
+          (nextVersion) => ({
+            method,
+            protocolVersion,
+            nextVersion,
+          }),
+        ),
       ),
     ),
   )(
@@ -904,7 +909,14 @@ describe('root file reads on the sending connection', () => {
       }
       const result = await second;
       transport.dispose();
-      if (nextVersion === '12.0' || nextVersion === '13.0') {
+      if (
+        nextVersion === '12.0' ||
+        nextVersion === '13.0' ||
+        nextVersion === '14.0' ||
+        nextVersion === '15.0' ||
+        // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+        nextVersion === '16.0'
+      ) {
         expect(result).toEqual(response);
         expect(sockets[1].lastFrame()).toMatchObject({ method, params });
       } else {
@@ -927,11 +939,20 @@ describe('observational node capabilities', () => {
       id: socket.lastFrame().id,
       result: {
         clientId: 'A',
-        server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+        server: {
+          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
+        },
       },
     });
     await expect(observing).resolves.toEqual({
-      server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+      server: {
+        capabilities: {
+          agentNodes: 1,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 1,
+          workspaceMembershipEvents: 1,
+        },
+      },
     });
     await h.transport.observeNodeCapabilities();
     expect(socket.sent).toHaveLength(1);
@@ -953,10 +974,20 @@ describe('observational node capabilities', () => {
     await flush();
     replacement.receive({
       id: replacement.lastFrame().id,
-      result: { clientId: 'B', server: { capabilities: { agentNodes: '1' } } },
+      result: {
+        clientId: 'B',
+        server: { capabilities: { agentNodes: '1', workspaceMembershipEvents: true } },
+      },
     });
     await expect(reconnecting).resolves.toEqual({
-      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+        },
+      },
     });
     h.transport.dispose();
     await expect(h.transport.observeNodeCapabilities()).rejects.toThrow();
@@ -978,12 +1009,57 @@ describe('observational node capabilities', () => {
     await newer;
     h.socket().receive({
       id: oldId,
-      result: { clientId: 'old', server: { capabilities: { agentNodes: 1 } } },
+      result: {
+        clientId: 'old',
+        server: { capabilities: { agentNodes: 1, workspaceMembershipEvents: 1 } },
+      },
     });
     await older;
     await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
-      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+        },
+      },
     });
     h.transport.dispose();
+  });
+});
+
+describe('binary file reads through browser transport normalization', () => {
+  it.each([
+    ['stream did not contain valid UTF-8', 'binary'],
+    ['No such file or directory (os error 2)', 'missing'],
+    ['Permission denied (os error 13)', 'error'],
+    [undefined, 'error'],
+    [{ detail: { message: 'stream did not contain valid UTF-8' } }, 'error'],
+  ])('classifies the actual daemon error data %j as %s', async (data, expected) => {
+    const { transport, socket } = createHarness();
+    const request = vi
+      .spyOn(backendTransport, 'backendRequest')
+      .mockImplementation((method, params) => transport.request(method, params));
+    try {
+      const pending = new LiveFilesClient()
+        .read('ws-1', '.intent/artifacts/report.xlsx')
+        .catch((error) => error);
+      await connect(socket());
+      expect(socket().lastFrame()).toMatchObject({ method: 'file.read' });
+      socket().receive({
+        jsonrpc: '2.0',
+        id: socket().lastFrame().id,
+        error: { code: -32603, message: 'Internal error', data },
+      });
+      const result = await pending;
+      if (expected === 'binary')
+        expect(result).toMatchObject({ isBinary: true, originalContent: null });
+      else if (expected === 'missing') expect(result).toBeNull();
+      else expect(result).toBeInstanceOf(BackendError);
+    } finally {
+      transport.dispose();
+      request.mockRestore();
+    }
   });
 });

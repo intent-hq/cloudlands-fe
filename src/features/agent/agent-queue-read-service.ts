@@ -1,4 +1,5 @@
 import { beginSubmissionRead } from './submission-evidence';
+import { sameSubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import { claimAgentReadOwnership } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
@@ -113,12 +114,22 @@ async function runHydrateAgentQueueFetch(
   }
   appStore.dispatch(hydrateAgentQueueRequested(agentId, workspaceId));
   const seqAtFetchStart = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
+  const submissionScope = appStore.state.pendingSubmissions?.byAgentId[agentId]?.scope;
   const submissionRead = beginSubmissionRead(agentId, workspaceId, 'queue');
   try {
     const queue = await appClient.agents.getQueue(agentId, workspaceId);
     if (connection !== connectionGeneration || !ownership.isCurrent()) return;
     if (!submissionRead.isCurrent()) {
-      hydrateFollowUpWantedByAgent.add(key);
+      const current = appStore.state.pendingSubmissions?.byAgentId[agentId];
+      // A newer full push satisfies this queue read within the same admission
+      // lifetime. Later ACK/lifecycle/history invalidations clear queueFresh and
+      // still require recovery. Preserve any explicitly requested trailing read.
+      const supersededBySnapshot =
+        getAgentQueueEventSnapshotSeq(agentId, workspaceId) !== seqAtFetchStart &&
+        submissionScope &&
+        current?.queueFresh &&
+        sameSubmissionScope(current.scope, submissionScope);
+      if (!supersededBySnapshot) hydrateFollowUpWantedByAgent.add(key);
       return;
     }
     // Re-check after the fetch: a deletion may have become pending while

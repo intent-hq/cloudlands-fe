@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gitRootsConsumerMounted,
+    gitRootsConsumerUnmounted,
+  } from '$store/renderer/slices/git-roots/git-roots-slice';
   /**
    * Changes Tab Type Component
    *
@@ -8,6 +12,10 @@
 
   import { toStore } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
     selectFileTrackingCommits,
@@ -53,6 +61,13 @@
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
   // Secondary git root scoping the changeset (multi git root tracking).
   // Absent → primary-root behavior, byte-identical to before.
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!isActive || !wsId || gitRootId) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'history'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'history'));
+  });
+
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
   // Root path used to absolutize the daemon's root-relative file paths: the
   // registered secondary root's path when `gitRootId` is set, else the
@@ -145,6 +160,13 @@
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({ display: changesDisplayActions });
+  });
+  const gitRootsConsumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!(isActive && gitRootId) || !wsId) return;
+    appStore.dispatch(gitRootsConsumerMounted(wsId, gitRootsConsumerId));
+    return () => appStore.dispatch(gitRootsConsumerUnmounted(wsId, gitRootsConsumerId));
   });
 </script>
 

@@ -129,6 +129,7 @@ describe('browser:exec IPC workspace routing', () => {
         workspaceId,
         tabId: 'tab-123-i',
       },
+      'local',
     );
     expect(result).toEqual({
       success: true,
@@ -140,6 +141,7 @@ describe('browser:exec IPC workspace routing', () => {
             success: true,
             message: 'Opening browser tab with URL: https://example.test',
             tabId: 'tab-123-i',
+            url: 'https://example.test',
           },
         },
       ],

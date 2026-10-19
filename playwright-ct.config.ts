@@ -26,7 +26,8 @@ const { port: ctPort, cacheDir: ctCacheDir } = resolveCtPortConfig({ env: proces
 // 10/10 at `--workers=1`. Local runs use
 // min(4, max(1, floor(availableParallelism / 4))); PW_WORKERS=N raises or
 // lowers it and the CLI `--workers=N` still wins over the config value.
-// CI keeps its single worker per shard (see .github/workflows/intent-pr.yml).
+// CI defaults to one worker; the hosted required lane passes --workers=2
+// (see .github/workflows/browser-tests.yml).
 const workers = resolveCtWorkers({ env: process.env, cpus: os.availableParallelism() });
 // The config is re-evaluated inside every worker process (which Playwright
 // marks with TEST_WORKER_INDEX); print the config-resolved count from the
@@ -63,7 +64,7 @@ export default defineConfig({
      intent-hq/cloudlands-fe#2373, see `workers` above) reports as flaky
      in the report. The required CI command fails on any flaky result. */
   retries: process.env.CI ? 2 : 1,
-  /* 1 on CI; bounded locally — see `workers` above. */
+  /* 1 by default on CI; the hosted lane overrides via CLI. Bounded locally. */
   workers,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters
      `list` streams results to the terminal; the html report is still written
@@ -75,11 +76,11 @@ export default defineConfig({
 
   expect: {
     /* Screenshot baselines are generated on the GH-hosted runner image, but
-       the CI shards can also route to the self-hosted tinybox runners, which
+       the CI shards can also run on self-hosted runners, which
        rasterize the odd pixel differently (a 1-pixel diff at 200% zoom
        failed a shard deterministically). Tolerate sub-percent rasterization
        drift so baselines stay portable across runner environments — do NOT
-       regenerate baselines on tinybox instead, that just flips the failure
+       regenerate baselines on a self-hosted runner instead, that just flips the failure
        onto the GH-hosted burst path. Ratio-based rather than maxDiffPixels:
        config- and assertion-level options merge per key and ALL set bounds
        must hold, so a pixel-count default here would tighten (not loosen)

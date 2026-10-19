@@ -9,6 +9,7 @@
  * (`selectEffectiveDefaultProviderId`).
  */
 import { describe, expect, it } from 'vitest';
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type { StoreState } from '../../types';
 import {
@@ -22,6 +23,7 @@ import {
   selectProviderCatalogEntryOrDefault,
   selectProviderCatalogLoaded,
   selectProviderEnabledFromCatalog,
+  selectProviderCatalogProfiles,
 } from './provider-catalog-selectors';
 import {
   initialState,
@@ -345,4 +347,127 @@ it('retains workspace snapshots during refresh and clears them across connection
     workspaceCatalogReceived('A', { ...snapshot('A-server'), mcpServers: [] }, 1),
   );
   expect(selectWorkspaceMcpServerName.select(storeWith(removed), 'A', 'shared-id')).toBeUndefined();
+});
+
+it('projects catalog pushes only into the named existing snapshot and preserves definitions', async () => {
+  const { workspaceCatalogReceived, workspaceCatalogUpdated } =
+    await import('./provider-catalog-slice');
+  const snapshot = {
+    catalog: CATALOG,
+    settings: [
+      {
+        path: 'model.defaultProvider',
+        value: 'codex',
+        origin: 'default' as const,
+        type: 'string' as const,
+        label: 'Provider',
+        category: 'Providers',
+        description: '',
+        defaultValue: '',
+      },
+    ],
+    specialists: [],
+    readiness: {},
+    mcpServers: [{ id: 'server', name: 'tools', type: 'stdio' as const, workspaceDisabled: false }],
+    mcpStatuses: [{ serverId: 'server', state: 'error' as const, lastError: 'offline' }],
+  };
+  let state = providerCatalogReducer(initialState, workspaceCatalogReceived('A', snapshot, 0));
+  state = providerCatalogReducer(state, workspaceCatalogReceived('B', snapshot, 0));
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', {
+      kind: 'settings',
+      changes: [{ path: 'model.defaultProvider', value: 'claude-code', origin: 'file' }],
+    }),
+  );
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', {
+      kind: 'status',
+      status: { serverId: 'server', state: 'running' },
+    }),
+  );
+  state = providerCatalogReducer(
+    state,
+    workspaceCatalogUpdated('A', { kind: 'toggle', serverId: 'server', workspaceDisabled: true }),
+  );
+  expect(state.byWorkspaceId?.A.settings[0]).toEqual({
+    ...snapshot.settings[0],
+    value: 'claude-code',
+    origin: 'file',
+  });
+  expect(state.byWorkspaceId?.A.mcpStatuses).toEqual([{ serverId: 'server', state: 'running' }]);
+  expect(state.byWorkspaceId?.A.mcpServers?.[0].workspaceDisabled).toBe(true);
+  expect(state.byWorkspaceId?.B).toBe(snapshot);
+  expect(
+    providerCatalogReducer(
+      state,
+      workspaceCatalogUpdated('missing', {
+        kind: 'status',
+        status: { serverId: 'server', state: 'running' },
+      }),
+    ),
+  ).toBe(state);
+});
+
+describe('named profile summaries (§5.54 catalog `profiles`)', () => {
+  const WITH_PROFILES: ProviderCatalogResult = {
+    providers: [
+      {
+        id: 'codex',
+        displayName: 'OpenAI Codex',
+        shortName: 'Codex',
+        command: 'codex',
+        canBeDisabled: true,
+        visible: true,
+        supportsProfiles: true,
+      },
+    ],
+    profiles: [
+      {
+        id: 'pwork00000001',
+        providerRef: 'codex@pwork00000001',
+        baseProviderId: 'codex',
+        name: 'Work',
+      },
+    ],
+  };
+
+  it('stores the summaries in daemon order and reads none from an older daemon', () => {
+    const state = providerCatalogReducer(initialState, providerCatalogLoaded(WITH_PROFILES));
+    expect(selectProviderCatalogProfiles.select(storeWith(state))).toEqual(WITH_PROFILES.profiles);
+    const older = providerCatalogReducer(state, providerCatalogLoaded(CATALOG));
+    expect(selectProviderCatalogProfiles.select(storeWith(older))).toEqual([]);
+  });
+
+  it('drops summaries from another daemon when the connection changes', () => {
+    const state = providerCatalogReducer(initialState, providerCatalogLoaded(WITH_PROFILES));
+    const next = providerCatalogReducer(state, hostExecutionConnectionChanged('other'));
+    expect(selectProviderCatalogProfiles.select(storeWith(next))).toEqual([]);
+  });
+
+  it('reads a workspace snapshot catalog for workspace-scoped callers', () => {
+    const state = {
+      ...initialState,
+      byWorkspaceId: {
+        'ws-1': { catalog: WITH_PROFILES, settings: [], specialists: [], readiness: {} },
+      },
+    } as ProviderCatalogState;
+    expect(selectProviderCatalogProfiles.select(storeWith(state), 'ws-1')).toEqual(
+      WITH_PROFILES.profiles,
+    );
+    expect(selectProviderCatalogProfiles.select(storeWith(state))).toEqual([]);
+  });
+
+  it('labels a profile reference with its base provider and current name', () => {
+    const state = storeWith(
+      providerCatalogReducer(initialState, providerCatalogLoaded(WITH_PROFILES)),
+    );
+    const label = selectProviderDisplayName.select(state, 'codex@pwork00000001');
+    expect(label).toMatch(/OpenAI Codex.*Work/);
+    // Bare ids keep their catalog name (Settings, onboarding).
+    expect(selectProviderDisplayName.select(state, 'codex')).toBe('OpenAI Codex');
+    // A removed profile still names its base provider, never another account.
+    expect(selectProviderDisplayName.select(state, 'codex@pgone00000001')).toMatch(/^OpenAI Codex/);
+  });
 });

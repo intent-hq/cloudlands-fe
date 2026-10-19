@@ -167,6 +167,18 @@ function panelTrigger(container: HTMLElement): HTMLButtonElement {
   )!;
 }
 
+it('renders an empty header while its tab list is unavailable, then recovers', async () => {
+  const view = renderHeader('terminal', { tabs: undefined });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+  await view.rerender({ tabs: [tab('terminal')], activeTabId: 'stale-tab' });
+  expect(view.container.querySelector('[data-panel-content-header]')).not.toBeNull();
+  expect(view.container.querySelector('[data-pane-stack-selector-trigger]')?.textContent).toContain(
+    tab('terminal').title,
+  );
+  await view.rerender({ tabs: undefined, activeTabId: null });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+});
+
 function dragEvent(target: Element) {
   const data = new Map<string, string>();
   const dataTransfer = {

@@ -31,7 +31,11 @@ import {
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID, getSpecialistById } from '$lib/constants/specialists';
-import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+import {
+  getProviderStatusFromResult,
+  PROVIDER_AVAILABILITY_KEY_TO_ID,
+  isProviderAuthenticationReady,
+} from '$shared/types/provider-availability';
 import {
   getProviderAvailability,
   type ProviderAvailabilityResult,
@@ -85,30 +89,9 @@ function getProviderForModel(model: string, fallbackProvider: string): string {
   return splitLegacyCompoundId(model).providerId || fallbackProvider;
 }
 
-/** Map a provider ID to its status within a ProviderAvailabilityResult. */
-function getProviderStatus(
-  availability: ProviderAvailabilityResult,
-  providerId: string,
-): ProviderStatus | undefined {
-  const map: Record<string, ProviderStatus | undefined> = {
-    auggie: availability.providers.auggie,
-    'claude-code': availability.providers.claudeCode,
-    codex: availability.providers.codex,
-    cortex: availability.providers.cortex,
-    opencode: availability.providers.opencode,
-    droid: availability.providers.droid,
-    grok: availability.providers.grok,
-    unsloth: availability.providers.unsloth,
-    mock: availability.providers.mock,
-    pi: availability.providers.pi,
-    antigravity: availability.providers.antigravity,
-  };
-  return map[providerId];
-}
-
 /** A provider is usable if it is installed AND authenticated. */
 function isProviderUsable(availability: ProviderAvailabilityResult, providerId: string): boolean {
-  const status = getProviderStatus(availability, providerId);
+  const status = getProviderStatusFromResult(availability, providerId);
   return !!status && status.available && status.authenticated === true;
 }
 
@@ -130,18 +113,9 @@ function isProviderUserExplicitUsable(
 
 /** Compute the ordered list of usable provider IDs. */
 function getUsableProviderIds(availability: ProviderAvailabilityResult): string[] {
-  const ids: string[] = [];
-  if (isProviderUsable(availability, 'auggie')) ids.push('auggie');
-  if (isProviderUsable(availability, 'claude-code')) ids.push('claude-code');
-  if (isProviderUsable(availability, 'codex')) ids.push('codex');
-  if (isProviderUsable(availability, 'opencode')) ids.push('opencode');
-  if (isProviderUsable(availability, 'droid')) ids.push('droid');
-  if (isProviderUsable(availability, 'grok')) ids.push('grok');
-  if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
-  if (isProviderUsable(availability, 'pi')) ids.push('pi');
-  if (isProviderUsable(availability, 'unsloth')) ids.push('unsloth');
-  if (isProviderUsable(availability, 'antigravity')) ids.push('antigravity');
-  return ids;
+  return Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID).filter(
+    (providerId) => providerId !== 'mock' && isProviderUsable(availability, providerId),
+  );
 }
 
 /**
@@ -223,7 +197,7 @@ export async function resolveOnboardingModel(
     const pickedModel = splitLegacyCompoundId(userPick.model).modelId || userPick.model;
     const pickedProvider =
       userPick.provider || getProviderForModel(userPick.model, defaultProviderId);
-    const pickedStatus = getProviderStatus(availability, pickedProvider);
+    const pickedStatus = getProviderStatusFromResult(availability, pickedProvider);
     if (!isProviderUserExplicitUsable(pickedStatus, pickedProvider)) {
       throw new Error(
         m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
@@ -262,7 +236,7 @@ export async function resolveOnboardingModel(
   let provider: string | undefined;
 
   if (userExplicit) {
-    const activeStatus = getProviderStatus(availability, activeProvider);
+    const activeStatus = getProviderStatusFromResult(availability, activeProvider);
     if (isProviderUserExplicitUsable(activeStatus, activeProvider)) {
       provider = activeProvider;
       logger.info('Honoring user-explicit provider selection', {

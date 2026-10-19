@@ -150,6 +150,44 @@ describe('renderer side-effect boundary guard', () => {
     );
   });
 
+  it('allows notifications to consume admitted events without an IPC registration', () => {
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        {
+          path: 'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
+          content: [
+            "import { actionChannel } from 'typed-redux-saga';",
+            "import { eventReceived } from '../../workspace-events/workspace-events-slice';",
+            'export function* webNotificationSaga() { yield* actionChannel(eventReceived); }',
+          ].join('\n'),
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it.each(['addMockIpcListener', 'registerMockIpcHandler'])(
+    'rejects reintroducing %s in the notification saga',
+    (registrar) => {
+      expect(
+        findRendererSideEffectBoundaryViolations([
+          registry,
+          {
+            path: 'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
+            content: [
+              `import { ${registrar} as register } from '$shared/ipc-mock-router';`,
+              "register('agent:idle', () => {});",
+            ].join('\n'),
+          },
+        ]),
+      ).toEqual([
+        expect.stringContaining(
+          'new renderer IPC bridge registration requires architecture review',
+        ),
+      ]);
+    },
+  );
+
   it('rejects aliased, namespace, and barrel-reexported IPC bridge registrations', () => {
     const violations = findRendererSideEffectBoundaryViolations([
       registry,

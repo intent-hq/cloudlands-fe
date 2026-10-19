@@ -1,3 +1,5 @@
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { describe, expect, it } from 'vitest';
 import {
   AgentStatus,
@@ -210,6 +212,20 @@ function getMsgs(state: AgentSessionState, agentId: string): AgentMessage[] {
 // ============================================================================
 
 describe('agent-session-slice reducer', () => {
+  it.each([removeSession('a1'), removeWorkspaceSessions('ws-1'), clearAllSessions()])(
+    'removes projection versions with evicted sessions: $type',
+    (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, updateSession('a1', { status: AgentStatus.Active }));
+      expect(state.projectionVersions?.a1.fields.status).toBe(1);
+      state = agentSessionReducer(state, action);
+      expect(state.projectionVersions?.a1).toBeUndefined();
+    },
+  );
+
   it('returns initial state', () => {
     const state = agentSessionReducer(undefined, { type: '@@INIT', payload: undefined });
     expect(state).toEqual(initialState);
@@ -1045,6 +1061,121 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('updateSession', () => {
+    describe.each(['__proto__', 'constructor', 'toString'])('metadata extension key %s', (key) => {
+      it.each(['written', null, { resolution: 'applied' as const }])(
+        'stores %j as an own serializable value and counts repeated operations',
+        (value) => {
+          let state = agentSessionReducer(
+            initialState,
+            upsertSession({
+              ...makeSession('a1'),
+              metadata: { untouched: 'kept' },
+            }),
+          );
+          for (const revision of [1, 2]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', {
+                metadataPatch: { [key]: { op: 'set', value } },
+              }),
+            );
+            const metadata = state.byAgentId.a1.metadata!;
+            const versions = state.projectionVersions!.a1.metadata;
+            expect(Object.getPrototypeOf(metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(metadata, key)).toBe(true);
+            expect(metadata[key]).toEqual(value);
+            expect(JSON.parse(JSON.stringify(metadata))).toEqual({
+              untouched: 'kept',
+              [key]: value,
+            });
+            expect(Object.getPrototypeOf(versions)).toBe(Object.prototype);
+            expect(Object.hasOwn(versions, key)).toBe(true);
+            expect(versions[key]).toBe(revision);
+            expect(Object.hasOwn(versions, 'untouched')).toBe(false);
+          }
+          const versions = state.projectionVersions!.a1.metadata;
+          state = agentSessionReducer(state, updateSession('a1', { metadataPatch: {} }));
+          expect(state.projectionVersions!.a1.metadata).toBe(versions);
+          for (const revision of [3, 4]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', { metadataPatch: { [key]: { op: 'clear' } } }),
+            );
+            expect(Object.getPrototypeOf(state.byAgentId.a1.metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(state.byAgentId.a1.metadata!, key)).toBe(false);
+            expect(state.byAgentId.a1.metadata).toEqual({ untouched: 'kept' });
+            expect(state.projectionVersions!.a1.metadata[key]).toBe(revision);
+            expect(JSON.parse(JSON.stringify(state.projectionVersions!.a1.metadata))).toEqual({
+              [key]: revision,
+            });
+          }
+        },
+      );
+    });
+
+    it('applies explicit metadata operations without claiming untouched keys', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession({
+          ...makeSession('a1'),
+          metadata: { provider: 'codex', specialist: 'before', extensionTask: 'task' },
+        }),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { metadataPatch: { provider: { op: 'set', value: 'codex' } } }),
+      );
+      const priorVersions = state.projectionVersions?.a1;
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', {
+          metadataPatch: { specialist: { op: 'clear' }, extension: { op: 'set', value: null } },
+        }),
+      );
+      expect(state.byAgentId.a1.metadata).toEqual({
+        provider: 'codex',
+        extensionTask: 'task',
+        extension: null,
+      });
+      expect(state.projectionVersions?.a1).toEqual({
+        fields: {},
+        metadata: { provider: 1, specialist: 1, extension: 1 },
+      });
+      expect(priorVersions).toEqual({ fields: {}, metadata: { provider: 1 } });
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', {
+          metadataPatch: { provider: { op: 'set', value: 'codex' }, specialist: { op: 'clear' } },
+        }),
+      );
+      expect(state.projectionVersions?.a1?.metadata).toEqual({
+        provider: 2,
+        specialist: 2,
+        extension: 1,
+      });
+      expect(state.byAgentId.a1).not.toHaveProperty('metadataPatch');
+    });
+
+    it('leaves metadata and revisions untouched for non-metadata and empty patches', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession({ ...makeSession('a1'), metadata: { provider: 'codex' } }),
+      );
+      const metadata = state.byAgentId.a1.metadata;
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { name: 'Renamed', metadataPatch: {} }),
+      );
+      expect(state.byAgentId.a1.metadata).toBe(metadata);
+      expect(state.projectionVersions?.a1).toEqual({ fields: { name: 1 }, metadata: {} });
+      expect(
+        agentSessionReducer(
+          initialState,
+          updateSession('missing', { metadataPatch: { provider: { op: 'set', value: 'codex' } } }),
+        ),
+      ).toBe(initialState);
+    });
+
     it('updates non-message fields', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, updateSession('a1', { name: 'New Name' }));
@@ -1304,9 +1435,16 @@ describe('agent-session-slice reducer', () => {
         expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
           state,
         );
-        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
-          state,
-        );
+      });
+
+      it('records repeated marker authority without claiming unrelated metadata', () => {
+        const state = seeded();
+        const next = agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }));
+        expect(next.byAgentId.a1.metadata).toEqual(state.byAgentId.a1.metadata);
+        expect(next.projectionVersions?.a1).toEqual({
+          fields: {},
+          metadata: { pendingQuestionsMessageId: 1 },
+        });
       });
 
       it('does not create a session for an unknown agent', () => {
@@ -3436,6 +3574,22 @@ describe('agent-session-slice reducer', () => {
   // §5.5 list projection: the marker records that the detail read landed, so
   // an absent detail-only field is "none" rather than "not loaded yet".
   describe('markAgentDetailHydrated', () => {
+    it.each([
+      principalContextChanged('next'),
+      principalIdentityChanged('other'),
+      connectionStatusChanged('disconnected'),
+    ])('invalidates accepted detail at boundary $type', (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated?.a1).toBe(true);
+      state = agentSessionReducer(state, action);
+      expect(state.detailHydrated).toBeUndefined();
+      expect(state.byAgentId.a1).toBeDefined();
+    });
+
     it('is unset on initial state and set only for a stored session', () => {
       expect(initialState.detailHydrated).toBeUndefined();
 
@@ -7428,7 +7582,7 @@ it('does not carry frontend fields or old workspace indexes across an opaque age
     state,
     updateSession('shared-origin', {
       liveTurnOpen: true,
-      metadata: { pendingQuestionsMessageId: 'a-marker' },
+      metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'a-marker' } },
     }),
   );
   state = agentSessionReducer(
