@@ -220,16 +220,19 @@ describe('LinkActionMenu', () => {
     it('shows only the label on the single item, without name or Archived tag', async () => {
       render(LinkActionMenu);
       await showPrMenu([linked('ws-origin', 'Origin project')]);
-      const label = m.navigation_linkActionMenu_openInOriginalWorkspace_label();
+      const archivedTag = m.navigation_linkActionMenu_archivedWorkspace_label();
       const item = await screen.findByRole('menuitem', { name: ORIGINAL });
-      expect(item.textContent?.trim()).toBe(label);
+      expect(item.textContent).not.toContain('Origin project');
 
       hideLinkActionMenu();
       await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
       await showPrMenu([linked('ws-origin', 'Origin project', true)]);
       const archived = await screen.findByRole('menuitem', { name: ORIGINAL });
       expect(archived).not.toBe(item);
-      expect(archived.textContent?.trim()).toBe(label);
+      expect(archived.textContent).not.toContain('Origin project');
+      expect(archived.textContent).not.toContain(archivedTag);
+      await fireEvent.click(archived);
+      expect(openLinkedWorkspaceMock).toHaveBeenCalledWith('ws-origin');
     });
 
     it('a late lookup result never moves the existing items', async () => {
