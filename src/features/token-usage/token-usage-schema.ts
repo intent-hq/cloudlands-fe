@@ -65,6 +65,7 @@ export const TokenUsageSchema = z
     totals: TokenUsageTotalsSchema,
     byModel: z.record(TokenUsageTotalsSchema),
     byAgentModel: TokenUsageCrossFilterRowsSchema.optional(),
+    agentNames: z.record(z.string()).optional(),
     lastScanAt: z.string().datetime({ offset: true }).nullable(),
   })
   .passthrough();
