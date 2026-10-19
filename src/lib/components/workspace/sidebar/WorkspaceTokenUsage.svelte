@@ -30,6 +30,7 @@
   import { summarizeCrossFilterRows } from '$features/token-usage/utils/token-usage-utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
   interface Props {
     workspaceId: string;
   }
@@ -164,53 +165,71 @@
       .sort((a, b) => b.tokens - a.tokens),
   );
 
+  // Name-only projection: agent-list status churn does not change labels.
   const loadedAgentNameById = $derived(
     new Map($workspaceAgents$.map((agent) => [String(agent.id), agent.name])),
   );
+  function usableName(name: string | undefined): string | undefined {
+    return name?.trim() && !looksLikeAgentId(name.trim()) ? name : undefined;
+  }
   // Label every usage agent without ever exposing its id: the loaded agent's
   // live name wins, then the daemon-materialized `agentNames` (§5.23, covers
-  // retired / unloaded delegated agents), then a numbered generic label in
-  // stable id order.
-  const agentLabelById = $derived.by(() => {
-    // Number only agents that render a row, so a visible "2" always has a "1".
-    const ids = new Set(
-      Object.entries($usage$.byAgentId)
-        .filter(([, entry]) => tokenCount(entry) > 0)
-        .map(([id]) => id),
+  // retired / unloaded delegated agents), then a generic label.
+  function knownAgentName(agentId: string): string | undefined {
+    const daemonNames = $usage$.agentNames;
+    return (
+      usableName(loadedAgentNameById.get(agentId)) ??
+      usableName(
+        daemonNames && Object.hasOwn(daemonNames, agentId) ? daemonNames[agentId] : undefined,
+      )
     );
-    for (const row of crossFilterRows) if (tokenCount(row.totals) > 0) ids.add(row.agentId);
-    const daemonNames = $usage$.agentNames ?? {};
-    const labels = new Map<string, string>();
-    const unnamed: string[] = [];
-    for (const id of [...ids].sort()) {
-      const name = loadedAgentNameById.get(id) || daemonNames[id];
-      if (name) labels.set(id, name);
-      else unnamed.push(id);
+  }
+  // Unnamed agents are numbered among the rows that render, in display order
+  // (tokens descending, then id), so a visible "2" always follows a "1".
+  const unnamedLabelById = $derived.by(() => {
+    const tokensById = new Map<string, number>();
+    if (crossFilterAvailable) {
+      for (const row of crossFilterRows) {
+        tokensById.set(row.agentId, (tokensById.get(row.agentId) ?? 0) + tokenCount(row.totals));
+      }
+    } else {
+      for (const [id, entry] of Object.entries($usage$.byAgentId))
+        tokensById.set(id, tokenCount(entry));
     }
-    unnamed.forEach((id, index) =>
-      labels.set(
+    const unnamed = [...tokensById]
+      .filter(([id, tokens]) => tokens > 0 && knownAgentName(id) === undefined)
+      .sort(([a, aTokens], [b, bTokens]) => bTokens - aTokens || (a < b ? -1 : a > b ? 1 : 0))
+      .map(([id]) => id);
+    return new Map(
+      unnamed.map((id, index) => [
         id,
         unnamed.length === 1
           ? m.workspace_tokenUsage_agentUnnamed_label()
           : m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: index + 1 }),
-      ),
+      ]),
     );
-    return labels;
   });
   function agentLabel(agentId: string): string {
-    return agentLabelById.get(agentId) ?? m.workspace_tokenUsage_agentUnnamed_label();
+    return (
+      knownAgentName(agentId) ??
+      unnamedLabelById.get(agentId) ??
+      m.workspace_tokenUsage_agentUnnamed_label()
+    );
   }
   const legacyAgentRows = $derived(
     Object.entries($usage$.byAgentId)
-      .map(([agentId, entry]): BreakdownRow => ({
-        id: agentId,
-        kind: 'agent',
-        kindLabel: m.workspace_tokenUsage_byAgent_label(),
-        label: agentLabel(agentId),
-        title: agentLabel(agentId),
-        tokens: tokenCount(entry),
-        totals: entry,
-      }))
+      .map(([agentId, entry]): BreakdownRow => {
+        const label = agentLabel(agentId);
+        return {
+          id: agentId,
+          kind: 'agent',
+          kindLabel: m.workspace_tokenUsage_byAgent_label(),
+          label,
+          title: label,
+          tokens: tokenCount(entry),
+          totals: entry,
+        };
+      })
       .filter((row) => row.tokens > 0)
       .sort((a, b) => b.tokens - a.tokens),
   );
@@ -261,7 +280,10 @@
         };
       })
       .filter((row) => row.tokens > 0)
-      .sort((a, b) => b.tokens - a.tokens || a.label.localeCompare(b.label));
+      .sort(
+        (a, b) =>
+          b.tokens - a.tokens || a.label.localeCompare(b.label, undefined, { numeric: true }),
+      );
   }
 
   const modelRows = $derived(crossFilterAvailable ? matrixBreakdownRows('model') : legacyModelRows);
@@ -399,8 +421,7 @@
 
   function scopeLabel(target: ScopeTarget | null): string {
     if (!target) return m.workspace_tokenUsage_workspace_label();
-    const base = target.kind === 'agent' ? agentLabel(target.id) : formatModelLabel(target.id);
-    return base;
+    return target.kind === 'agent' ? agentLabel(target.id) : formatModelLabel(target.id);
   }
 
   function scopeKindLabel(target: ScopeTarget | null): string {

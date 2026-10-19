@@ -1599,6 +1599,24 @@ describe('WorkspaceTokenUsage', () => {
       expect(agentRowTitles()).toEqual(['PR reviewer', 'Implementor', 'Coordinator']);
     });
 
+    it('numbers unnamed agents in display order and ignores id-shaped names', async () => {
+      const usage = namedUsage({ [RETIRED]: RETIRED }, false);
+      mocks.state.usage = {
+        ...usage,
+        byAgentId: { ...usage.byAgentId, [RETIRED]: totals(100), [DELEGATED]: totals(900) },
+      };
+      mocks.state.agents = [{ id: LIVE, name: 'Coordinator' }];
+
+      await renderExpandedTokenUsage();
+
+      expect(screen.getByTestId('token-usage-by-agent').innerHTML).not.toContain('agent-');
+      expect(agentRowTitles()).toEqual([
+        m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 1 }),
+        'Coordinator',
+        m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 2 }),
+      ]);
+    });
+
     it('numbers unresolved agents only among rows that render', async () => {
       const usage = namedUsage({ [DELEGATED]: 'Implementor' });
       mocks.state.usage = {
