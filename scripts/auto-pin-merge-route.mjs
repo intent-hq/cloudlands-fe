@@ -9,14 +9,21 @@
 // fast path (release-pr-fast-path.mjs), so the queue adds no test signal for
 // it — only wait. Direct merging is allowed ONLY when every guard holds:
 //   1. The tested head is a full 40-char SHA.
-//   2. CI Gate is green on exactly that head (read by the caller).
-//   3. The head contains live main's tip. `--admin` bypasses the ruleset's
-//      strict up-to-date rule, so this is checked here instead (intentd cron
-//      run 39234998462 cut a release one commit behind main this way).
-//   4. main-tip..head has the sidecar pin-bump shape (release-pr-fast-path
-//      --pin-only): intentd.version plus the regenerated source-pin line,
-//      regular modes, no protocol-version change. A protocol bump re-runs
-//      every fake-hello test, so it keeps the queue.
+//   2. CI Gate is green on exactly that head, with no change request or
+//      unresolved review thread (read by the caller; anything else arrives
+//      here as a non-`success` state).
+//   3. The PR's own diff, merge-base(main, head)..head, has the sidecar
+//      pin-bump shape (release-pr-fast-path --pin-only): intentd.version plus
+//      the regenerated source-pin line, regular modes, no protocol-version
+//      change. A protocol bump re-runs every fake-hello test, so it keeps the
+//      queue.
+//   4. Live main has not touched those pin files since that merge-base, so
+//      the squash applies exactly the tested pin change. main may otherwise
+//      have moved: the cloudlands-fe ruleset does not require branches to be
+//      up to date, and a pin entry takes the same fast path in the queue, so
+//      the queue would not test it against newer main either. Requiring the
+//      head to contain main would send every pin back to the queue whenever
+//      main moved during the CI wait — the busy-queue case this exists for.
 // Anything else — including an unexpected error — routes to the queue. The
 // caller merges with `--match-head-commit <head>` so a refreshed, unchecked
 // head can never ride this decision.
@@ -53,13 +60,16 @@ function hasCommit(cwd, sha) {
   }
 }
 
-function isAncestor(cwd, ancestor, descendant) {
+// Files a pin bump writes; main touching any of them since the PR's base
+// means the tested change is no longer what the squash would apply.
+const PIN_PATHS = ['intentd.version', 'src/test/current-protocol-version.ts'];
+
+function mergeBaseOf(cwd, a, b) {
   try {
-    git(cwd, 'merge-base', '--is-ancestor', ancestor, descendant);
-    return true;
+    return git(cwd, 'merge-base', a, b).trim();
   } catch (err) {
-    // Exit 1 is git's "not an ancestor"; anything else is a real failure.
-    if (err && typeof err === 'object' && 'status' in err && err.status === 1) return false;
+    // Exit 1 is git's "no common ancestor"; anything else is a real failure.
+    if (err && typeof err === 'object' && 'status' in err && err.status === 1) return '';
     throw err;
   }
 }
@@ -105,21 +115,32 @@ export function decidePinMergeRoute({
     }
   }
 
-  if (!isAncestor(cwd, mainSha, head)) {
+  const base = mergeBaseOf(cwd, mainSha, head);
+  if (!base) {
     return queue(
-      `tested head ${head} does not contain live ${remote}/${branch} (${mainSha})`,
+      `tested head ${head} shares no history with ${remote}/${branch} (${mainSha})`,
       mainSha,
     );
   }
 
-  const shape = evaluateFastPath(mainSha, head, cwd, { pinOnly: true });
+  const shape = evaluateFastPath(base, head, cwd, { pinOnly: true });
   if (!shape.fastPath) {
     return queue(`diff is not a plain sidecar pin bump: ${shape.reason}`, mainSha);
+  }
+
+  const touched = git(cwd, 'diff', '--name-only', base, mainSha, '--', ...PIN_PATHS)
+    .split('\n')
+    .filter(Boolean);
+  if (touched.length > 0) {
+    return queue(
+      `${remote}/${branch} (${mainSha}) changed ${touched.join(', ')} since the PR's base ${base}`,
+      mainSha,
+    );
   }
   return {
     route: 'direct',
     mainSha,
-    reason: `plain sidecar pin bump on live ${remote}/${branch} (${mainSha}) with CI Gate green on ${head}`,
+    reason: `plain sidecar pin bump onto ${remote}/${branch} (${mainSha}) with CI Gate green on ${head}`,
   };
 }
 

@@ -21,10 +21,11 @@
 # time (~45 min each) and once held pin PR #3535 for 3+ hours, deferring the
 # alpha cut. The run waits (bounded) for CI Gate on the pushed head, then
 # scripts/auto-pin-merge-route.mjs — from this trusted checkout of main, never
-# the PR head — requires CI Gate green on that head, the head to contain live
-# main's tip, and the main..head diff to have the --pin-only shape
+# the PR head — requires CI Gate green on that head with no change request or
+# unresolved review thread, the PR's own diff to have the --pin-only shape
 # (intentd.version + regenerated source-pin; a protocol-version bump does not
-# qualify). The merge is `--squash --admin --match-head-commit <tested head>`.
+# qualify), and live main not to have touched those files since the PR's base.
+# The merge is `--squash --admin --match-head-commit <tested head>`.
 # Any failed, unreadable or timed-out guard falls back to arming auto-merge
 # (squash) through the queue. While the rolling PR is already in the queue its
 # branch is locked against pushes, so the run skips with a notice and a later
@@ -82,7 +83,7 @@ jobs:
   pin:
     runs-on: ubuntu-24.04
     # Covers the bounded CI Gate wait (WAIT_GATE_SECONDS) on top of preflight.
-    timeout-minutes: 25
+    timeout-minutes: 30
     if: ${{ github.repository_owner == 'intent-hq' }}
     # The implicit GITHUB_TOKEN only reads the PR's CI Gate: fine-grained PATs
     # cannot read statusCheckRollup without Checks/Commit-statuses access
@@ -305,7 +306,7 @@ jobs:
             queued=$(gh api graphql \
               -f query='query($owner: String!, $repo: String!, $pr: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { isInMergeQueue } } }' \
               -F owner="${GITHUB_REPOSITORY%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F pr="$pr" \
-              --jq '.data.repository.pullRequest.isInMergeQueue')
+              --jq '.data.repository.pullRequest.isInMergeQueue' || echo unknown)
             if [ "$queued" = "true" ]; then
               echo "::notice::Rolling PR #$pr is in the merge queue, so $BRANCH cannot be updated; skipping this run. The next run after it lands advances the pin."
               echo "queued=true" >> "$GITHUB_OUTPUT"
@@ -319,7 +320,6 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           CURRENT: ${{ steps.decide.outputs.current }}
           LATEST: ${{ steps.decide.outputs.latest }}
-          PR: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -354,8 +354,9 @@ jobs:
             echo "  hidden from the Release PR changelog (AGENTS.md release-process gotcha)."
             echo "- Preflight passed: \`node scripts/fetch-sidecar.cjs\` fetched and sha256-verified the"
             echo "  v$LATEST sidecar before this PR was pushed."
-            echo "- Merges directly once CI Gate is green and the diff is a plain pin bump on current"
-            echo "  main (\`scripts/auto-pin-merge-route.mjs\`); otherwise it goes through the merge queue."
+            echo "- Merges directly once CI Gate is green and the diff is a plain pin bump that main"
+            echo "  has not overtaken (\`scripts/auto-pin-merge-route.mjs\`); otherwise it goes through"
+            echo "  the merge queue. A change request or unresolved review thread keeps it in the queue."
             echo "- Add the \`hold-release\` label to pause future automated updates of this PR."
           } > "$body_file"
 
@@ -366,7 +367,10 @@ jobs:
               --json number,isCrossRepository,author \
               --jq '[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].number // empty'
           }
-          pr="$PR"
+          # Re-find after the push: the PR seen by the queue check may have
+          # landed or closed meanwhile, and editing a dead PR would leave the
+          # pushed branch with no open PR.
+          pr=$(find_pr)
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --title "$title" --body-file "$body_file"
             echo "Updated existing PR #$pr."
@@ -379,41 +383,48 @@ jobs:
           echo "number=$pr" >> "$GITHUB_OUTPUT"
 
       # Bounded wait for CI Gate on exactly the pushed head; the pin fast path
-      # normally turns it green ~1-2 min after the push. A terminal failure,
-      # a moved head or the deadline ends the wait; the route step then picks
-      # the queue unless the gate is green on the tested head.
+      # normally turns it green ~1-2 min after the push. GitHub updates the
+      # PR head asynchronously, so a different head is re-polled until the
+      # deadline rather than treated as final. A change request or an
+      # unresolved review thread blocks the direct route (the queue path
+      # honors them through the ruleset; --admin would not). The state is
+      # `success` only when every condition holds; anything else routes to
+      # the queue. Never fails the job: the merge step must still run.
       - name: Wait for CI Gate on the pushed head
         id: gate
         if: steps.push.outputs.number != ''
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ steps.push.outputs.number }}
           HEAD_SHA: ${{ steps.push.outputs.head }}
           WAIT_GATE_SECONDS: '600'
         run: |
-          set -euo pipefail
+          set -uo pipefail
           deadline=$((SECONDS + WAIT_GATE_SECONDS))
           gate=missing
           while :; do
-            if detail=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid,statusCheckRollup 2>/dev/null); then
-              current=$(jq -r '.headRefOid // empty' <<<"$detail")
-              if [ "$current" != "$HEAD_SHA" ]; then
-                gate="head-moved:$current"
-                echo "::notice::PR #$PR head moved from $HEAD_SHA to $current; not direct-merging."
-                break
-              fi
+            detail=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" \
+              --json headRefOid,reviewDecision,statusCheckRollup 2>/dev/null) || detail=""
+            current=$(jq -r '.headRefOid // empty' <<<"$detail" 2>/dev/null) || current=""
+            if [ -z "$detail" ] || [ -z "$current" ]; then
+              gate=unreadable
+            elif [ "$current" != "$HEAD_SHA" ]; then
+              gate="head-mismatch:$current"
+            elif [ "$(jq -r '.reviewDecision // empty' <<<"$detail")" = "CHANGES_REQUESTED" ]; then
+              gate=blocked:changes-requested
+              break
+            else
               gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
                 | if length == 0 then "missing"
                   elif all(.conclusion == "SUCCESS") then "success"
                   else (map(.conclusion // .status // "PENDING") | join(","))
-                  end' <<<"$detail")
+                  end' <<<"$detail" 2>/dev/null) || gate=unreadable
               [ "$gate" = "success" ] && break
-              if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE' <<<"$gate"; then
+              if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE|SKIPPED|NEUTRAL' <<<"$gate"; then
                 echo "::warning::CI Gate concluded unsuccessfully on $HEAD_SHA (state: $gate)."
                 break
               fi
-            else
-              gate=unreadable
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
               echo "::notice::CI Gate not green on $HEAD_SHA after ${WAIT_GATE_SECONDS}s (state: $gate)."
@@ -421,11 +432,22 @@ jobs:
             fi
             sleep 15
           done
+          if [ "$gate" = "success" ]; then
+            # shellcheck disable=SC2016 # GraphQL variables, not shell expansions.
+            unresolved=$(gh api graphql \
+              -f query='query($owner: String!, $repo: String!, $pr: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved } } } } }' \
+              -F owner="${GITHUB_REPOSITORY%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F pr="$PR" \
+              --jq '.data.repository.pullRequest.reviewThreads | if .totalCount > (.nodes | length) then 1 else ([.nodes[] | select(.isResolved | not)] | length) end' \
+              2>/dev/null) || unresolved=unreadable
+            if [ "$unresolved" != "0" ]; then
+              gate="blocked:review-threads=$unresolved"
+            fi
+          fi
           echo "CI Gate on $HEAD_SHA: $gate"
           echo "state=$gate" >> "$GITHUB_OUTPUT"
 
       - name: Merge rolling PR (direct when verified, else merge queue)
-        if: steps.push.outputs.number != ''
+        if: ${{ !cancelled() && steps.push.outputs.number != '' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           PR: ${{ steps.push.outputs.number }}
@@ -448,13 +470,15 @@ jobs:
             echo "::warning::direct merge of PR #$PR failed; falling back to the merge queue."
           fi
 
-          # Enabling auto-merge fails when the PR is already in clean status
-          # ("Pull request is in clean status"); fall back to a plain squash
-          # merge request so the PR doesn't sit open unmerged (same handling
-          # as the monorepo's auto-bump-submodules script).
-          if ! gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$HEAD_SHA"; then
+          # Queue path, unchanged from before direct merges: the queue tests
+          # whatever head it builds, so it is not bound to HEAD_SHA. Enabling
+          # auto-merge fails when the PR is already in clean status ("Pull
+          # request is in clean status"); fall back to a plain squash merge
+          # request so the PR doesn't sit open unmerged (same handling as the
+          # monorepo's auto-bump-submodules script).
+          if ! gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash; then
             echo "::warning::could not enable auto-merge on PR #$PR; attempting a squash merge"
-            if ! gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$HEAD_SHA"; then
+            if ! gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash; then
               echo "::warning::could not merge PR #$PR; leaving it open"
             fi
           fi

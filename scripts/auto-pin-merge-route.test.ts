@@ -94,15 +94,40 @@ describe('decidePinMergeRoute', () => {
     expect(decidePinMergeRoute({ head, ciGate: 'success', cwd: run }).route).toBe('direct');
   });
 
-  it('keeps the queue when main moved past the tested head', () => {
+  it('still merges directly when main moved without touching the pin files', () => {
     const { upstream, run } = setup();
     const head = commitPinBump(run);
     const mainSha = advanceMain(upstream);
-    expect(decidePinMergeRoute({ head, ciGate: 'success', cwd: run })).toEqual({
-      route: 'queue',
-      mainSha,
-      reason: `tested head ${head} does not contain live origin/main (${mainSha})`,
-    });
+    const result = decidePinMergeRoute({ head, ciGate: 'success', cwd: run });
+    expect(result.route).toBe('direct');
+    expect(result.mainSha).toBe(mainSha);
+  });
+
+  it.each([
+    ['intentd.version', pinFile('0.11.16')],
+    [MODULE, moduleFile(PIN_A, '16.0')],
+  ])('keeps the queue when main changed %s after the PR was cut', (path, content) => {
+    const { upstream, run } = setup();
+    const head = commitPinBump(run);
+    advanceMain(upstream);
+    writeFileSync(join(upstream, path), content);
+    git(upstream, 'add', '-A');
+    git(upstream, 'commit', '-qm', `change ${path} on main`);
+    const mainSha = git(upstream, 'rev-parse', 'HEAD');
+    const result = decidePinMergeRoute({ head, ciGate: 'success', cwd: run });
+    expect(result.route).toBe('queue');
+    expect(result.mainSha).toBe(mainSha);
+    expect(result.reason).toContain(`changed ${path} since the PR's base`);
+  });
+
+  it('keeps the queue when the tested head shares no history with main', () => {
+    const { upstream, run } = setup();
+    git(upstream, 'checkout', '-q', '--orphan', 'unrelated');
+    const head = commitPinBump(upstream);
+    git(upstream, 'checkout', '-q', 'main');
+    const result = decidePinMergeRoute({ head, ciGate: 'success', cwd: run });
+    expect(result.route).toBe('queue');
+    expect(result.reason).toContain('shares no history');
   });
 
   it('keeps the queue for a pin bump that changes the protocol version', () => {
@@ -121,14 +146,20 @@ describe('decidePinMergeRoute', () => {
     expect(result.reason).toContain('not a sidecar pin-bump diff');
   });
 
-  it.each(['pending', 'missing', 'FAILURE', 'SUCCESS,FAILURE', ''])(
-    'keeps the queue when CI Gate is %j',
-    (ciGate) => {
-      const { run } = setup();
-      const head = commitPinBump(run);
-      expect(decidePinMergeRoute({ head, ciGate, cwd: run }).route).toBe('queue');
-    },
-  );
+  it.each([
+    'pending',
+    'missing',
+    'FAILURE',
+    'SUCCESS,FAILURE',
+    'blocked:changes-requested',
+    'blocked:review-threads=1',
+    'head-mismatch:' + 'b'.repeat(40),
+    '',
+  ])('keeps the queue when CI Gate is %j', (ciGate) => {
+    const { run } = setup();
+    const head = commitPinBump(run);
+    expect(decidePinMergeRoute({ head, ciGate, cwd: run }).route).toBe('queue');
+  });
 
   it.each(['', 'HEAD', 'abc123', 'A'.repeat(40)])('keeps the queue for tested head %j', (head) => {
     const { run } = setup();
