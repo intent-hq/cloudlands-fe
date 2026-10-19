@@ -145,6 +145,29 @@ describe('html-sanitizer', () => {
     expect(sanitized).not.toContain('workspace-file://');
   });
 
+  it('keeps cross-workspace image sources in the Assistant chat (#7185)', () => {
+    const html = '<img src="workspace-file://other-workspace/docs/shot.png" alt="shot">';
+
+    expect(sanitizeMarkdownHTML(html, '__chief__', { readOnly: true })).toContain(
+      'src="workspace-file://other-workspace/docs/shot.png"',
+    );
+  });
+
+  it.each(['workspace-file://a%20b/x.png', 'workspace-file://%2E%2E/x.png'])(
+    'strips malformed workspace hosts in the Assistant chat: %s',
+    (src) => {
+      expect(
+        sanitizeMarkdownHTML(`<img src="${src}">`, '__chief__', { readOnly: true }),
+      ).not.toContain('workspace-file://');
+    },
+  );
+
+  it('strips cross-workspace image sources for editable Assistant content', () => {
+    const html = '<img src="workspace-file://other-workspace/docs/shot.png" alt="shot">';
+
+    expect(sanitizeMarkdownHTML(html, '__chief__')).not.toContain('workspace-file://');
+  });
+
   it('removes cross-workspace videos', () => {
     const html = '<video src="workspace-file://other-workspace/out/demo.mp4" controls></video>';
 

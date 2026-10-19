@@ -952,6 +952,8 @@
   "ui_mediaUnavailable_missing_description": "檔案遺失。",
   "ui_mediaUnavailable_unsupported_description": "不支援此檔案類型。",
   "ui_mediaUnavailable_loadFailed_description": "無法載入媒體。",
+  "ui_mediaUnavailable_otherWorkspace_description": "此媒體來自另一個工作區。請開啟該工作區檢視。",
+  "ui_mediaUnavailable_invalidLink_description": "此媒體連結無效。",
   "ui_imageActionsMenu_copyFailed_error": "複製失敗",
   "ui_imageActionsMenu_downloadFailed_error": "下載失敗",
   "ui_imageActionsMenu_dimensions_label": "{width} × {height} px",

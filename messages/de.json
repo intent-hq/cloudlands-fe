@@ -952,6 +952,8 @@
   "ui_mediaUnavailable_missing_description": "Die Datei fehlt.",
   "ui_mediaUnavailable_unsupported_description": "Dieser Dateityp wird nicht unterstützt.",
   "ui_mediaUnavailable_loadFailed_description": "Das Medium konnte nicht geladen werden.",
+  "ui_mediaUnavailable_otherWorkspace_description": "Dieses Medium stammt aus einem anderen Workspace. Öffne diesen Workspace, um es anzusehen.",
+  "ui_mediaUnavailable_invalidLink_description": "Dieser Medienlink ist ungültig.",
   "ui_imageActionsMenu_copyFailed_error": "Kopieren fehlgeschlagen",
   "ui_imageActionsMenu_downloadFailed_error": "Herunterladen fehlgeschlagen",
   "ui_imageActionsMenu_dimensions_label": "{width} × {height} px",

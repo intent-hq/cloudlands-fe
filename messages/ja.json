@@ -952,6 +952,8 @@
   "ui_mediaUnavailable_missing_description": "ファイルが見つかりません。",
   "ui_mediaUnavailable_unsupported_description": "このファイル形式はサポートされていません。",
   "ui_mediaUnavailable_loadFailed_description": "メディアを読み込めませんでした。",
+  "ui_mediaUnavailable_otherWorkspace_description": "このメディアは別のワークスペースのものです。表示するにはそのワークスペースを開いてください。",
+  "ui_mediaUnavailable_invalidLink_description": "このメディアリンクは無効です。",
   "ui_imageActionsMenu_copyFailed_error": "コピーに失敗しました",
   "ui_imageActionsMenu_downloadFailed_error": "ダウンロードに失敗しました",
   "ui_imageActionsMenu_dimensions_label": "{width} × {height} px",
