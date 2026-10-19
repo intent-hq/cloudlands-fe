@@ -53,6 +53,7 @@
     resetNotificationSettings,
     setAgentFontStyle,
     setChatAuroraEnabled,
+    setCollapseToolRuns,
     setCodeFontFamily,
     setNoteFontStyle,
     setShellTransparencyEnabled,
@@ -62,6 +63,7 @@
   import {
     selectAgentFontStyle,
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
@@ -97,6 +99,7 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
+  const collapseToolRuns = selectCollapseToolRuns();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
@@ -167,6 +170,7 @@
     theme: 'display',
     appearance: 'display',
     'chat-aurora': 'display',
+    'collapse-tool-runs': 'display',
     'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
@@ -699,6 +703,28 @@
                     checked={$chatAuroraEnabled}
                     onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
                     ariaLabel={m.settings_appearance_chatAurora_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
+                id="collapse-tool-runs"
+                data-highlight-id="collapse-tool-runs"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-appearance-collapseToolRuns-label-field"
+                  label={m.settings_appearance_collapseToolRuns_label()}
+                  description={m.settings_appearance_collapseToolRuns_description()}
+                >
+                  <Switch
+                    id="collapse-tool-runs-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$collapseToolRuns}
+                    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
+                    ariaLabel={m.settings_appearance_collapseToolRuns_label()}
                   />
                 </SettingsFieldRow>
               </section>

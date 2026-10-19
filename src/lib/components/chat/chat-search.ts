@@ -2,7 +2,6 @@ import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
-  groupContentBlocks,
   parseSuggestedPrompts,
   parseSuggestedPromptsFromContentBlocks,
 } from '$lib/utils/messageParser';
@@ -14,13 +13,13 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
+import { shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
   isStandaloneToolResult,
 } from './tool-result-pairing';
-import { collapseOperationalRuns } from './operational-run-collapse';
+import { groupMessageBlocks } from './operational-run-collapse';
 
 export interface ChatSearchOptions {
   /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
@@ -67,13 +66,11 @@ function buildMessageSearchBlocks(
   const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
-  const normalized = normalizeResponseGroups(
-    groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
+  const grouped = groupMessageBlocks(
+    parsedPromptBlocks.contentBlocks,
     !!message.isStreaming,
+    !!options.collapseToolRuns,
   );
-  const grouped = options.collapseToolRuns
-    ? collapseOperationalRuns(normalized, { isStreaming: !!message.isStreaming })
-    : normalized;
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {

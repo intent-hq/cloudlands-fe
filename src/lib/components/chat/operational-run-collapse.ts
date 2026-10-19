@@ -1,12 +1,18 @@
-import type { ContentBlockGroup, RenderContentBlock } from '$lib/utils/messageParser';
+import type { ContentBlock } from '$shared/types';
+import {
+  groupContentBlocks,
+  type ContentBlockGroup,
+  type RenderContentBlock,
+} from '$lib/utils/messageParser';
+import { normalizeResponseGroups } from './response-group-blocks';
 
 /** Fewest tool calls plus thinking steps that collapse into one summary row. */
-export const MIN_COLLAPSED_RUN_LENGTH = 2;
+const MIN_COLLAPSED_RUN_LENGTH = 2;
 
 /** Renderer-only identity for synthetic run groups (never an authored group name). */
-export const COLLAPSED_RUN_SOURCE_NAME = 'collapsed-operational-run';
+const COLLAPSED_RUN_SOURCE_NAME = 'collapsed-operational-run';
 
-export interface CollapsedRunCounts {
+interface CollapsedRunCounts {
   tools: number;
   thinking: number;
 }
@@ -62,4 +68,18 @@ export function collapseOperationalRuns(
     result.push(group);
   }
   return result;
+}
+
+/**
+ * The message block structure every chat surface renders and indexes: authored
+ * groups, normalized reasoning, then (when enabled) collapsed tool runs. Search
+ * and the renderers share it so block paths always agree.
+ */
+export function groupMessageBlocks(
+  blocks: ContentBlock[],
+  isStreaming: boolean,
+  collapseToolRuns: boolean,
+): RenderContentBlock[] {
+  const normalized = normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming);
+  return collapseToolRuns ? collapseOperationalRuns(normalized, { isStreaming }) : normalized;
 }

@@ -344,7 +344,10 @@ function* persistChatAuroraWorker() {
 }
 
 function* persistCollapseToolRunsWorker() {
-  yield* setLocalStorageJSON(COLLAPSE_TOOL_RUNS_STORAGE_KEY, yield* selectCollapseToolRuns.effect());
+  yield* setLocalStorageJSON(
+    COLLAPSE_TOOL_RUNS_STORAGE_KEY,
+    yield* selectCollapseToolRuns.effect(),
+  );
 }
 
 function* persistShellTransparencyWorker() {

@@ -18,7 +18,7 @@
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { collapseOperationalRuns } from './operational-run-collapse';
+  import { groupMessageBlocks } from './operational-run-collapse';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -52,7 +52,6 @@
     parseSuggestedPrompts,
     parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
-    groupContentBlocks,
     filterWorkspaceCardsCoveredByIds,
     type RenderBlock,
     type ParsedContent,
@@ -75,7 +74,6 @@
     getResponseGroupChildBoundary,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
-    normalizeResponseGroups,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -303,13 +301,7 @@
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
   const collapseToolRuns$ = selectCollapseToolRuns();
-  let groupedBlocks = $derived.by(() => {
-    const normalized = normalizeResponseGroups(
-      groupContentBlocks(blocks, isStreaming),
-      isStreaming,
-    );
-    return $collapseToolRuns$ ? collapseOperationalRuns(normalized, { isStreaming }) : normalized;
-  });
+  let groupedBlocks = $derived(groupMessageBlocks(blocks, isStreaming, $collapseToolRuns$));
 
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
