@@ -29,6 +29,7 @@ import {
   getLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
 import { readAgentByRepo } from '../utils/agent-by-repo';
+import { readRecentSpecialists } from '../utils/recent-specialists';
 import {
   selectCompactWorkspaceInitializerFormState,
   selectWorkspaceInitializerAgentByRepo,
@@ -38,6 +39,7 @@ import {
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerRecentSpecialistIds,
   selectWorkspaceInitializerDismissedRecentRepoKeys,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
@@ -159,6 +161,7 @@ function* buildWorkspaceInitializerBag() {
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
   const agentByRepo = yield* selectWorkspaceInitializerAgentByRepo.effect();
+  const recentSpecialistIds = yield* selectWorkspaceInitializerRecentSpecialistIds.effect();
   return {
     compactFormState,
     onboardingFormState,
@@ -170,6 +173,7 @@ function* buildWorkspaceInitializerBag() {
     remoteSetups,
     lastSubmittedAgent,
     agentByRepo,
+    recentSpecialistIds,
   } satisfies WorkspaceInitializerHydrationState;
 }
 
@@ -274,6 +278,7 @@ export function* hydrateWorkspaceInitializerWorker() {
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
         : null,
       agentByRepo: readAgentByRepo(daemonBag.agentByRepo),
+      recentSpecialistIds: readRecentSpecialists(daemonBag.recentSpecialistIds),
     };
     yield* put(hydrateWorkspaceInitializer(hydrationState));
     return true;

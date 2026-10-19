@@ -34,6 +34,7 @@ import type {
 
 import { recentRepoKey } from './utils/recent-repo-key';
 import { mergeAgentByRepo, rememberAgentForRepo } from './utils/agent-by-repo';
+import { mergeRecentSpecialists, rememberRecentSpecialist } from './utils/recent-specialists';
 
 export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
@@ -53,6 +54,7 @@ export const initialState: WorkspaceInitializerState = {
   remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
   agentByRepo: {},
+  recentSpecialistIds: [],
   pendingGitHubPrefill: null,
   recentRepoRefreshes: createCollection<WorkspaceInitializerRecentRepoRefresh, 'id'>('id'),
   directoryStatusChecks: createCollection<WorkspaceInitializerDirectoryStatusCheck, 'id'>('id'),
@@ -305,6 +307,10 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
     // A create that finished while the initial settings read was pending is newer.
     agentByRepo: mergeAgentByRepo(hydration.agentByRepo ?? {}, state.agentByRepo),
+    recentSpecialistIds: mergeRecentSpecialists(
+      hydration.recentSpecialistIds ?? [],
+      state.recentSpecialistIds,
+    ),
   };
 });
 workspaceInitializerReducer.with(
@@ -490,6 +496,11 @@ workspaceInitializerReducer.with(
   (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,
     lastSubmittedAgent,
+    // Team mode submits the orchestrator, which the specialist dropdown never lists.
+    recentSpecialistIds:
+      lastSubmittedAgent && !lastSubmittedAgent.isTeamMode
+        ? rememberRecentSpecialist(state.recentSpecialistIds, lastSubmittedAgent.selectedSpecialist)
+        : state.recentSpecialistIds,
   }),
 );
 workspaceInitializerReducer.with(

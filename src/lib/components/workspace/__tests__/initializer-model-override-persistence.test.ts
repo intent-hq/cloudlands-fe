@@ -120,6 +120,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
   selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
+  selectWorkspaceInitializerRecentSpecialistIds: () => mocks.readable([]),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),

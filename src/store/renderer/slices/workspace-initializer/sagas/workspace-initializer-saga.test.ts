@@ -90,6 +90,7 @@ function populatedState() {
       ]),
       lastSubmittedAgent: { selectedModel: 'sonnet' },
       agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+      recentSpecialistIds: ['implementor'],
     },
   };
 }
@@ -248,6 +249,7 @@ describe('workspaceInitializerSaga', () => {
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
               agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+              recentSpecialistIds: ['implementor'],
             },
           },
         ],
@@ -303,6 +305,7 @@ describe('workspaceInitializerSaga', () => {
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
               agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+              recentSpecialistIds: ['implementor'],
             },
           },
         ],
@@ -402,6 +405,33 @@ describe('workspaceInitializerSaga', () => {
     expect(hydrated.agentByRepo).toEqual(agentByRepo);
   });
 
+  it('round-trips recently used specialists through the daemon bag and drops malformed ids', async () => {
+    const recentSpecialistIds = ['implementor', 'spec-writer'];
+    const state = {
+      workspaceInitializer: { ...initialState, hydrated: true, recentSpecialistIds },
+    };
+    await runSaga(
+      { getState: () => withLegacyPrincipal(state) },
+      persistWorkspaceInitializerWorker,
+    ).toPromise();
+    const bag = mocks.update.mock.calls[0][0][0].value;
+    expect(bag.recentSpecialistIds).toEqual(recentSpecialistIds);
+
+    mocks.get.mockResolvedValue({
+      value: {
+        ...JSON.parse(JSON.stringify(bag)),
+        recentSpecialistIds: ['implementor', 7, '', null, 'spec-writer', 'implementor'],
+      },
+    });
+    const dispatch = vi.fn();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
+    const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+    expect(hydrated.recentSpecialistIds).toEqual(recentSpecialistIds);
+  });
+
   it('coalesces pre-hydration mutations and flushes the hydrated bag once', async () => {
     let resolve!: (value: unknown) => void;
     mocks.get.mockReturnValue(new Promise((done) => (resolve = done)));
@@ -455,6 +485,7 @@ describe('workspaceInitializerSaga', () => {
               remoteSetups: [],
               lastSubmittedAgent: null,
               agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
@@ -750,6 +781,7 @@ describe('workspaceInitializerSaga', () => {
               remoteSetups: [],
               lastSubmittedAgent: null,
               agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
@@ -821,6 +853,7 @@ describe('workspaceInitializerSaga', () => {
               remoteSetups: [],
               lastSubmittedAgent: null,
               agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
