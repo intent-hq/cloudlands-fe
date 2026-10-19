@@ -334,11 +334,14 @@ describe('rewriteRelativeImageSrcs', () => {
     ['numeric hex space', 'charts/chart&#x20;one.png', 'report/charts/chart%20one.png'],
     ['named quote', 'charts/chart&quot;one.png', 'report/charts/chart%22one.png'],
     ['named non-basic entity', 'charts/caf&eacute;.png', 'report/charts/caf%C3%A9.png'],
+    // Attribute-value rules: legacy names without ";" followed by text stay literal.
+    ['legacy name without semicolon', 'charts/a&copycat.png', 'report/charts/a%26copycat.png'],
+    ['legacy prefix of an unknown name', 'charts/a&notit;.png', 'report/charts/a%26notit%3B.png'],
+    ['double-encoded ampersand', 'charts/a&amp;amp;b.png', 'report/charts/a%26amp%3Bb.png'],
+    ['unknown named entity', 'charts/a&bogus;.png', 'report/charts/a%26bogus%3B.png'],
   ])('decodes HTML entities (%s) before resolving', (_case, src, expected) => {
-    const html = rewriteRelativeImageSrcs(`<img src="${src}" alt="Chart">`, '');
     const resolved = rewriteRelativeImageSrcs(`<img src="${src}" alt="Chart">`, 'report');
 
-    expect(html).not.toContain('%26');
     expect(rewriteIntentFileImageSrcs(resolved, WS)).toBe(
       `<img src="workspace-file://${WS}/${expected}" alt="Chart">`,
     );

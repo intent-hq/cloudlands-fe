@@ -342,16 +342,17 @@ export function stampWorkspaceFileImageVersions(html: string, version: string): 
 }
 
 /**
- * Decode HTML character references in an attribute value without parsing
- * markup. Returns null (leave the tag untouched) when no DOM is available.
+ * Decode a double-quoted `src` attribute value with HTML attribute-value rules
+ * (legacy named references differ from text content). Returns null (leave the
+ * tag untouched) when no DOM is available.
  */
 function decodeHtmlAttribute(value: string): string | null {
   if (!value.includes('&')) return value;
   if (typeof document === 'undefined') return null;
-  // RCDATA: entities decode, tags stay text, nothing loads or runs.
-  const textarea = document.createElement('textarea');
-  textarea.innerHTML = value;
-  return textarea.value;
+  // Template content is inert: the parsed <img> is never inserted, loaded, or run.
+  const template = document.createElement('template');
+  template.innerHTML = `<img src="${value}">`;
+  return template.content.firstElementChild?.getAttribute('src') ?? null;
 }
 
 /**
