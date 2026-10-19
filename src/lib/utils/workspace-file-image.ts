@@ -15,6 +15,7 @@
  * navigation stores or toasts.
  */
 
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { VideoSource } from '$shared/types/content-block';
 
 /** Image extensions served by the workspace-file:// protocol (SVG excluded). */
@@ -26,6 +27,15 @@ type WorkspaceFileMediaKind = 'image' | 'video';
 export interface WorkspaceFileMedia {
   url: string;
   kind: WorkspaceFileMediaKind;
+}
+
+/** `readOnly`: the caller renders without an editor that serializes media back to markdown. */
+export interface IntentFileOptions {
+  readOnly?: boolean;
+}
+
+function allowsOtherWorkspaces(currentWorkspaceId: string | undefined, options: IntentFileOptions) {
+  return options.readOnly === true && currentWorkspaceId === CHIEF_WORKSPACE_ID;
 }
 
 export interface IntentFileTarget {
@@ -112,10 +122,17 @@ export function workspaceAssetVideoSource(
  * Returns null when the URL is not a workspace file link, the path is unsafe
  * (traversal, empty or absolute segments, drive letters), or the workspace ID
  * cannot be resolved and verified against `currentWorkspaceId`.
+ *
+ * With `readOnly`, the Assistant chat (`CHIEF_WORKSPACE_ID`), which is not a
+ * workspace checkout, may name any workspace in a long-form link
+ * (intent-hq/intent#7185). Editable surfaces never pass it: their serializer
+ * writes `workspace-file://` back as a short-form link, which would drop the
+ * other workspace's ID.
  */
 export function parseIntentFileTarget(
   intentUrl: string,
   currentWorkspaceId?: string,
+  options: IntentFileOptions = {},
 ): IntentFileTarget | null {
   if (!intentUrl.startsWith('intent://')) return null;
 
@@ -136,7 +153,13 @@ export function parseIntentFileTarget(
   } else if (rest.length >= 3 && rest[1] === 'file') {
     // Long form: {workspace-id}/file/{workspace-relative-path}
     const decodedWorkspaceId = decodeSegment(rest[0]);
-    if (!decodedWorkspaceId || decodedWorkspaceId !== currentWorkspaceId) return null;
+    if (!decodedWorkspaceId) return null;
+    if (
+      decodedWorkspaceId !== currentWorkspaceId &&
+      !allowsOtherWorkspaces(currentWorkspaceId, options)
+    ) {
+      return null;
+    }
     workspaceId = decodedWorkspaceId;
     pathSegments = rest.slice(2);
   } else {
@@ -173,8 +196,9 @@ export function parseIntentFileTarget(
 export function intentFileMediaUrlToWorkspaceFile(
   intentUrl: string,
   currentWorkspaceId?: string,
+  options: IntentFileOptions = {},
 ): WorkspaceFileMedia | null {
-  const target = parseIntentFileTarget(intentUrl, currentWorkspaceId);
+  const target = parseIntentFileTarget(intentUrl, currentWorkspaceId, options);
   if (!target) return null;
   const kind = mediaKindForPath(target.path);
   if (!kind) return null;
@@ -185,8 +209,9 @@ export function intentFileMediaUrlToWorkspaceFile(
 export function intentFileImageUrlToWorkspaceFileUrl(
   intentUrl: string,
   currentWorkspaceId?: string,
+  options: IntentFileOptions = {},
 ): string | null {
-  const media = intentFileMediaUrlToWorkspaceFile(intentUrl, currentWorkspaceId);
+  const media = intentFileMediaUrlToWorkspaceFile(intentUrl, currentWorkspaceId, options);
   return media?.kind === 'image' ? media.url : null;
 }
 
@@ -303,6 +328,34 @@ export function resolveRelativeMediaPath(src: string, baseDir: string): string |
 const escapeAttr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
 const SHORT_FORM_INTENT_FILE_RE = /^intent:\/\/[^/?#]+\/file\//;
+const LONG_FORM_INTENT_FILE_RE = /^intent:\/\/[^/?#]+\/([^/?#]+)\/file\//;
+
+type IntentFileUnavailableReason = 'workspace-unknown' | 'other-workspace' | 'invalid-link';
+
+/**
+ * Why an `intent://` workspace file link that {@link parseIntentFileTarget}
+ * rejected cannot render, or null when the URL is not a file link at all.
+ */
+function intentFileUnavailableReason(
+  src: string,
+  currentWorkspaceId?: string,
+): IntentFileUnavailableReason | null {
+  if (SHORT_FORM_INTENT_FILE_RE.test(src)) {
+    return currentWorkspaceId ? 'invalid-link' : 'workspace-unknown';
+  }
+  const longForm = LONG_FORM_INTENT_FILE_RE.exec(src);
+  if (!longForm) return null;
+  const linkedWorkspaceId = decodeSegment(longForm[1]);
+  if (
+    currentWorkspaceId &&
+    linkedWorkspaceId &&
+    isValidWorkspaceId(linkedWorkspaceId) &&
+    linkedWorkspaceId !== currentWorkspaceId
+  ) {
+    return 'other-workspace';
+  }
+  return 'invalid-link';
+}
 
 /**
  * Cache-busting query parameter on rewritten `workspace-file://` image URLs.
@@ -380,16 +433,31 @@ export function rewriteRelativeImageSrcs(html: string, baseDir: string): string 
   });
 }
 
+type MarkedMediaUnavailableReason = 'other-workspace' | 'invalid-link' | 'load-failed';
+
+/** The placeholder reason for media marked `data-media-unavailable` by the rewrite. */
+export function markedMediaUnavailableReason(media: Element): MarkedMediaUnavailableReason {
+  const marked = media.getAttribute('data-media-unavailable');
+  return marked === 'other-workspace' || marked === 'invalid-link' ? marked : 'load-failed';
+}
+
 /**
  * Rewrite rendered markdown images that reference workspace media. Image links
  * keep their `<img>` tag; video links become a native controlled player.
  *
- * A short-form link rendered without a workspace id cannot be resolved, and the
- * raw `intent://` src would be blocked by CSP as a broken image. Its src is
- * moved to `data-media-src` and the tag is marked
- * `data-media-unavailable="workspace-unknown"` so the viewer mounts a placeholder.
+ * A workspace file link that cannot be served would otherwise keep its raw
+ * `intent://` src, which CSP blocks as a broken image. Its src is moved to
+ * `data-media-src` and the tag is marked `data-media-unavailable` with the
+ * reason so the viewer mounts a placeholder that explains it: always for a
+ * short-form link without a workspace (`workspace-unknown`), and with
+ * `readOnly` also for `other-workspace` and `invalid-link`. Editable surfaces
+ * keep the raw src so saving the note preserves the original link.
  */
-export function rewriteIntentFileImageSrcs(html: string, currentWorkspaceId?: string): string {
+export function rewriteIntentFileImageSrcs(
+  html: string,
+  currentWorkspaceId?: string,
+  options: IntentFileOptions = {},
+): string {
   if (!html.includes('intent://') && !html.includes('workspace-asset://')) return html;
 
   return html.replace(/<img\b[^>]*>/gi, (match) => {
@@ -404,14 +472,13 @@ export function rewriteIntentFileImageSrcs(html: string, currentWorkspaceId?: st
       return `<video src="${escapeAttr(assetVideo.url)}" controls preload="metadata" playsinline class="markdown-video" data-name="${name}"></video>`;
     }
     if (!src.startsWith('intent://')) return match;
-    const target = parseIntentFileTarget(src, currentWorkspaceId);
+    const target = parseIntentFileTarget(src, currentWorkspaceId, options);
     if (!target) {
-      if (!currentWorkspaceId && SHORT_FORM_INTENT_FILE_RE.test(src)) {
-        return match
-          .replace(srcMatch[0], ` data-media-src="${srcMatch[1]}"`)
-          .replace(/>$/, ' data-media-unavailable="workspace-unknown">');
-      }
-      return match;
+      const reason = intentFileUnavailableReason(src, currentWorkspaceId);
+      if (!reason || (reason !== 'workspace-unknown' && !options.readOnly)) return match;
+      return match
+        .replace(srcMatch[0], ` data-media-src="${srcMatch[1]}"`)
+        .replace(/>$/, ` data-media-unavailable="${reason}">`);
     }
     const kind = mediaKindForPath(target.path);
     if (!kind) {

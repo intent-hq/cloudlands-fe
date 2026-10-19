@@ -77,7 +77,10 @@ export type WorkspaceMediaBackendHint =
  * query string is rejected so the protocol handlers never accept arbitrary
  * parameters.
  */
-export function parseWorkspaceMediaBackendHint(search: string): WorkspaceMediaBackendHint {
+export function parseWorkspaceMediaBackendHint(
+  search: string,
+  allowVideoPreview = false,
+): WorkspaceMediaBackendHint {
   if (!search) return { ok: true, backendId: null };
   if (!QUERY_SHAPE_RE.test(search)) return { ok: false, reason: 'unexpected query string' };
   const params = new URLSearchParams(search);
@@ -85,11 +88,14 @@ export function parseWorkspaceMediaBackendHint(search: string): WorkspaceMediaBa
   const keys = entries.map(([key]) => key);
   const backendCount = keys.filter((key) => key === WORKSPACE_MEDIA_BACKEND_PARAM).length;
   const versionCount = keys.filter((key) => key === WORKSPACE_FILE_VERSION_PARAM).length;
+  const previewCount = keys.filter((key) => key === 'preview').length;
   if (
     entries.length === 0 ||
     backendCount > 1 ||
     versionCount > 1 ||
-    backendCount + versionCount !== entries.length
+    previewCount > 1 ||
+    (previewCount > 0 && (!allowVideoPreview || params.get('preview') !== 'h264')) ||
+    backendCount + versionCount + previewCount !== entries.length
   ) {
     return { ok: false, reason: 'unexpected query string' };
   }
@@ -123,7 +129,7 @@ export function withWorkspaceMediaBackendHint(rawUrl: string, backendId: string)
     return null;
   }
   if (!WORKSPACE_MEDIA_PROTOCOLS.has(url.protocol) || url.hash) return null;
-  const hint = parseWorkspaceMediaBackendHint(url.search);
+  const hint = parseWorkspaceMediaBackendHint(url.search, url.protocol === 'workspace-file:');
   if (!hint.ok || hint.backendId === backendId) return null;
   if (!BACKEND_ID_RE.test(backendId)) return null;
   const hintParam = `${WORKSPACE_MEDIA_BACKEND_PARAM}=${encodeURIComponent(backendId)}`;
@@ -131,10 +137,9 @@ export function withWorkspaceMediaBackendHint(rawUrl: string, backendId: string)
     const separator = rawUrl.includes('?') ? '&' : '?';
     return `${rawUrl}${separator}${hintParam}`;
   }
-  const version = url.searchParams.get(WORKSPACE_FILE_VERSION_PARAM);
-  const versionParam =
-    version === null ? '' : `${WORKSPACE_FILE_VERSION_PARAM}=${encodeURIComponent(version)}&`;
-  return `${rawUrl.slice(0, rawUrl.indexOf('?'))}?${versionParam}${hintParam}`;
+  url.searchParams.delete(WORKSPACE_MEDIA_BACKEND_PARAM);
+  const retained = url.searchParams.toString();
+  return `${rawUrl.slice(0, rawUrl.indexOf('?'))}?${retained ? `${retained}&` : ''}${hintParam}`;
 }
 
 /**
@@ -153,13 +158,12 @@ export function withoutWorkspaceMediaBackendHint(rawUrl: string): string | null 
     return null;
   }
   if (!WORKSPACE_MEDIA_PROTOCOLS.has(url.protocol) || url.hash) return null;
-  const hint = parseWorkspaceMediaBackendHint(url.search);
+  const hint = parseWorkspaceMediaBackendHint(url.search, url.protocol === 'workspace-file:');
   if (!hint.ok || hint.backendId === null) return null;
   const base = rawUrl.slice(0, rawUrl.indexOf('?'));
-  const version = url.searchParams.get(WORKSPACE_FILE_VERSION_PARAM);
-  return version === null
-    ? base
-    : `${base}?${WORKSPACE_FILE_VERSION_PARAM}=${encodeURIComponent(version)}`;
+  url.searchParams.delete(WORKSPACE_MEDIA_BACKEND_PARAM);
+  const retained = url.searchParams.toString();
+  return retained ? `${base}?${retained}` : base;
 }
 
 export type WorkspaceFileRequest =
@@ -170,6 +174,7 @@ export type WorkspaceFileRequest =
       mimeType: string;
       /** Requesting window's backend id when the URL carries a hint, else null. */
       backendId: string | null;
+      preview?: 'h264';
     }
   | { ok: false; status: 400 | 403 | 415; reason: string };
 
@@ -193,7 +198,7 @@ export function parseWorkspaceFileRequest(rawUrl: string): WorkspaceFileRequest 
     return { ok: false, status: 400, reason: 'invalid workspace file URL shape' };
   }
 
-  const hint = parseWorkspaceMediaBackendHint(url.search);
+  const hint = parseWorkspaceMediaBackendHint(url.search, true);
   if (!hint.ok) {
     return { ok: false, status: 400, reason: hint.reason };
   }
@@ -241,5 +246,16 @@ export function parseWorkspaceFileRequest(rawUrl: string): WorkspaceFileRequest 
     return { ok: false, status: 415, reason: 'extension not in media allowlist' };
   }
 
-  return { ok: true, workspaceId, filePath, mimeType, backendId: hint.backendId };
+  const preview = url.searchParams.get('preview');
+  if (preview && mimeType !== 'video/mp4') {
+    return { ok: false, status: 415, reason: 'preview requires MP4' };
+  }
+  return {
+    ok: true,
+    workspaceId,
+    filePath,
+    mimeType,
+    backendId: hint.backendId,
+    ...(preview ? { preview: 'h264' as const } : {}),
+  };
 }

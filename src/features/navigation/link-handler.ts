@@ -13,6 +13,7 @@
  * - Workspace preview links → Enter the workspace and open its content panel
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
+ * - Saved assets (workspace-asset://) → Owning view's media preview, never a browser
  * - Other links → External browser as fallback
  */
 
@@ -87,6 +88,14 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         logger.debug('Link handled by custom handler', { url });
         return true;
       }
+    }
+
+    // Media-capable views consume valid saved-video links before reaching here.
+    // Reject unhandled assets before Home routing or external fallback: neither
+    // a browser nor an editor can resolve these internal media URLs safely.
+    if (/^workspace-asset:/i.test(url.trim())) {
+      notify.error(m.ui_linkHandler_assetUnavailable_error());
+      return false;
     }
 
     const gitHubRef = parseGitHubIssueOrPrUrl(url);

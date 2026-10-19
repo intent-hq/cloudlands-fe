@@ -7,6 +7,7 @@
 
 import { Logger } from '$shared/logger';
 import DOMPurify from 'dompurify';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { isWorkspaceAssetVideoCandidate, workspaceAssetVideoSource } from './workspace-file-image';
 
 const logger = new Logger('html-sanitizer');
@@ -17,6 +18,7 @@ const isWorkspaceFileUrl = (value: string): boolean =>
 let sanitizedWorkspaceId: string | undefined;
 let enforceWorkspaceFileScope = false;
 let preserveKatexLayoutStyles = false;
+let allowOtherWorkspaceFiles = false;
 
 const KATEX_DIMENSION = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:em|px|%)$/;
 const KATEX_DIMENSION_PROPERTIES = new Set([
@@ -72,7 +74,12 @@ function isAllowedWorkspaceFileUrl(value: string): boolean {
   const match = /^[\s\u0000-\u001f]*workspace-file:\/\/([^/?#]+)/i.exec(value);
   if (!match || !sanitizedWorkspaceId) return false;
   try {
-    return decodeURIComponent(match[1]) === sanitizedWorkspaceId;
+    const host = decodeURIComponent(match[1]);
+    // Read-only Assistant chat may show media from any workspace (intent-hq/intent#7185).
+    if (allowOtherWorkspaceFiles && sanitizedWorkspaceId === CHIEF_WORKSPACE_ID) {
+      return /^[A-Za-z0-9._-]+$/.test(host) && host !== '.' && host !== '..';
+    }
+    return host === sanitizedWorkspaceId;
   } catch {
     return false;
   }
@@ -346,14 +353,16 @@ function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}):
 export function sanitizeMarkdownHTML(
   html: string,
   workspaceId?: string,
-  options: { preserveKatexLayoutStyles?: boolean } = {},
+  options: { preserveKatexLayoutStyles?: boolean; readOnly?: boolean } = {},
 ): string {
   const previousWorkspaceId = sanitizedWorkspaceId;
   const previousEnforcement = enforceWorkspaceFileScope;
   const previousKatexLayoutStyles = preserveKatexLayoutStyles;
+  const previousAllowOtherWorkspaceFiles = allowOtherWorkspaceFiles;
   sanitizedWorkspaceId = workspaceId;
   enforceWorkspaceFileScope = true;
   preserveKatexLayoutStyles = options.preserveKatexLayoutStyles ?? false;
+  allowOtherWorkspaceFiles = options.readOnly ?? false;
   try {
     return sanitizeHTML(html, {
       // Allow more tags for markdown
@@ -452,5 +461,6 @@ export function sanitizeMarkdownHTML(
     sanitizedWorkspaceId = previousWorkspaceId;
     enforceWorkspaceFileScope = previousEnforcement;
     preserveKatexLayoutStyles = previousKatexLayoutStyles;
+    allowOtherWorkspaceFiles = previousAllowOtherWorkspaceFiles;
   }
 }

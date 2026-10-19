@@ -9,7 +9,9 @@
  *   2. User send — the user sends a message in the conversation
  *      (`sendMessage`): composing there is proof they saw the transcript.
  *   3. Stop-looking boundary — the divider-session boundary seam (chat tab
- *      close / active-workspace switch) fires for the affected agents.
+ *      close / active-workspace switch, or `chatViewEnded` from a chat
+ *      surface outside the agent tabs such as the Home preview) fires for
+ *      the affected agents.
  *   4. View — the conversation becomes the currently viewed tab
  *      (`markAgentAsViewed`) while its newest persisted message is an
  *      assistant reply: opening an already-finished conversation is reading

@@ -209,6 +209,27 @@ describe('Provider Fast mode through live settings client and hydration', () => 
     await settle();
     expect(values().codex).toBe(false);
   });
+  it('keeps per-profile entries independent of the base provider and of each other', async () => {
+    saved = { codex: true, 'codex@pwork': false, 'claude-code@ppersonal': true, auggie: true };
+    await start();
+    expect(values()).toEqual({ codex: true, 'codex@pwork': false, 'claude-code@ppersonal': true });
+    appStore.dispatch(setProviderFastMode('codex@pwork', true));
+    await settle();
+    expect(saved).toEqual({ codex: true, 'codex@pwork': true, 'claude-code@ppersonal': true });
+    appStore.dispatch(setProviderFastMode('codex', false));
+    await settle();
+    expect(saved).toEqual({ codex: false, 'codex@pwork': true, 'claude-code@ppersonal': true });
+    emit({ codex: false }, 20);
+    await settle();
+    expect(values()).toEqual({ codex: false });
+    expect(values()['codex@pwork']).toBeUndefined();
+  });
+  it('never writes a profile of a provider without Fast mode support', async () => {
+    await start();
+    appStore.dispatch(setProviderFastMode('auggie@pother', true));
+    await settle();
+    expect(writes()).toHaveLength(0);
+  });
   it('requires both a settings-list definition and a supported provider catalog row', async () => {
     await start();
     expect(selectFastModeSupportedProviders.select(appStore.state)).toEqual([

@@ -15,7 +15,8 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
-  type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
+  type MediaUnavailableReason =
+    'missing' | 'unsupported' | 'load-failed' | 'other-workspace' | 'invalid-link';
 
   interface Props {
     name?: string;
@@ -29,6 +30,8 @@
   const reasonText = $derived.by(() => {
     if (reason === 'missing') return m.ui_mediaUnavailable_missing_description();
     if (reason === 'unsupported') return m.ui_mediaUnavailable_unsupported_description();
+    if (reason === 'other-workspace') return m.ui_mediaUnavailable_otherWorkspace_description();
+    if (reason === 'invalid-link') return m.ui_mediaUnavailable_invalidLink_description();
     return m.ui_mediaUnavailable_loadFailed_description();
   });
 

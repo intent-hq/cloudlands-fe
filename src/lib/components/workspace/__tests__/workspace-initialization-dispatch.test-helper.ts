@@ -12,7 +12,12 @@ import type {
 
 interface InitializationAction {
   asyncActionType?: string;
-  payload: { request: WorkspaceInitializationRequest; progressId: string };
+  seq: number;
+  payload: {
+    request: WorkspaceInitializationRequest;
+    consumer: { id: string; resourceId: string };
+    progressId: string;
+  };
   success: (result: WorkspaceInitializationResult) => unknown;
   failure: (error: Error) => unknown;
 }
@@ -51,21 +56,36 @@ export function createWorkspaceInitializationDispatchAdapter(options: AdapterOpt
 }
 
 async function settleInitialization(action: InitializationAction, options: AdapterOptions) {
-  const { request, progressId } = action.payload;
-  options.setOutcome?.(undefined);
+  const { request, consumer, progressId } = action.payload;
+  const publish = (outcome: Partial<WorkspaceInitializationOutcome>) =>
+    options.setOutcome?.({
+      ...consumer,
+      seq: action.seq,
+      entrypoint: request.entrypoint,
+      ...outcome,
+    });
+  publish({ status: 'pending' });
+  let failure: Partial<WorkspaceInitializationOutcome> | undefined;
+  let stage: WorkspaceInitializationOutcome['stage'] = request.resume ? 'attachments' : 'create';
+  let workspaceId = request.resume?.workspaceId;
+  let agentId = request.resume?.agentId;
+  let workspacePath = request.resume?.workspacePath;
+  let pullCompleted = false;
+  let stagedItems = request.stagedItems;
   try {
     if (request.pull && !request.resume) {
+      stage = 'pull';
       const result = await options.pull?.(request.pull.repositoryPath, request.pull.branch);
       if (result && !result.success) {
-        options.setOutcome?.({ stage: 'pull', error: result.error });
+        failure = { status: 'failure', stage: 'pull', error: result.error };
+        publish(failure);
         throw new Error(result.error || 'pull-failed');
       }
+      pullCompleted = true;
     }
 
-    let workspaceId = request.resume?.workspaceId;
-    let agentId = request.resume?.agentId;
-    let workspacePath: string | undefined;
     if (!request.resume) {
+      stage = 'create';
       const result = await options.create({ ...request.createRequest, progressId });
       if (!result.ok) throw new Error(result.error);
       const { workspace } = result.data;
@@ -76,16 +96,22 @@ async function settleInitialization(action: InitializationAction, options: Adapt
     if (!workspaceId) throw new Error('missing-workspace-id');
 
     if (request.heldMessage) {
+      stage = 'attachments';
       const items = request.stagedItems as ContextItem[];
       const redemption = await redeemStagedAttachments(workspaceId, items);
+      stagedItems = redemption.items;
       if (redemption.failedCount > 0) {
-        options.setOutcome?.({
+        failure = {
+          status: 'failure',
           stage: 'attachments',
           workspaceId,
           agentId,
+          workspacePath,
+          ...(pullCompleted ? { pullCompleted: true } : {}),
           stagedItems: redemption.items,
           error: 'attachment-placement-failed',
-        });
+        };
+        publish(failure);
         throw new Error('attachment-placement-failed');
       }
       const sent = await sendHeldFirstMessage(
@@ -99,20 +125,44 @@ async function settleInitialization(action: InitializationAction, options: Adapt
         redemption.fileBlocks,
       );
       if (!sent.sent) {
-        options.setOutcome?.({
+        stage = 'first-message';
+        failure = {
+          status: 'failure',
           stage: 'first-message',
           workspaceId,
           agentId,
+          workspacePath,
+          ...(pullCompleted ? { pullCompleted: true } : {}),
           stagedItems: retainImagePlacementIdentity(redemption.items, sent.imageBlocks),
           retryImageBlocks: sent.imageBlocks,
           error: sent.errorDetail || 'first-message-send-failed',
-        });
+        };
+        publish(failure);
         throw new Error(sent.errorDetail || 'first-message-send-failed');
       }
     }
 
+    publish({
+      status: 'success',
+      workspaceId,
+      agentId,
+      workspacePath,
+      ...(pullCompleted ? { pullCompleted: true } : {}),
+      stagedItems,
+    });
     action.success({ workspaceId, agentId, workspacePath });
   } catch (error) {
+    if (!failure) {
+      publish({
+        status: 'failure',
+        stage,
+        workspaceId,
+        agentId,
+        workspacePath,
+        ...(pullCompleted ? { pullCompleted: true } : {}),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     action.failure(error instanceof Error ? error : new Error(String(error)));
   }
 }

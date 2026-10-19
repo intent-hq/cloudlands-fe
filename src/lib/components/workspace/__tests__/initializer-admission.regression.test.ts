@@ -255,6 +255,7 @@ import {
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 import {
   setLabsGitLabEnabled,
   setLabsMultiplayerEnabled,
@@ -463,6 +464,26 @@ it('releases an in-flight create when the initializer unmounts', async () => {
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   expect(mocks.placement).not.toHaveBeenCalled();
+  expect(mocks.goto).not.toHaveBeenCalled();
+});
+
+it('releases the creation lock when a connection reset cancels the in-flight outcome', async () => {
+  const created = Promise.withResolvers<unknown>();
+  mocks.create.mockReturnValue(created.promise);
+  sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
+  const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  const button = view.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  await fireEvent.click(button);
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+
+  store.dispatch(hostExecutionConnectionChanged('replacement-connection'));
+  admitLegacyPrincipal();
+  created.resolve({ ok: false, error: 'connection replaced' });
+
+  await waitFor(() =>
+    expect(screen.getByTestId('mock-rich-textarea').getAttribute('data-disabled')).toBe('false'),
+  );
   expect(mocks.goto).not.toHaveBeenCalled();
 });
 

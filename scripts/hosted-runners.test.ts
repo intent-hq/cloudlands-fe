@@ -139,6 +139,16 @@ describe('GitHub-hosted CI runners', () => {
     expect(r.messages.some((m) => m.includes('queue depth=0 threshold=2 online=2'))).toBe(true);
   });
 
+  it('splits Unit Tests into four routed shards', () => {
+    const test = read('.github/workflows/intent-pr.yml').jobs.test;
+    // Two legs took ~26 min on a heavy slot and ~23 min hosted (30-min timeout).
+    expect(test.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+    expect(test.name).toBe('Unit Tests (shard ${{ matrix.shard }}/4)');
+    expect(test['runs-on']).toBe('${{ fromJSON(needs.route.outputs.linux_labels) }}');
+    const run = test.steps.find((step: { name?: string }) => step.name === 'Unit tests').run;
+    expect(run).toContain('pnpm run test:unit --shard=${{ matrix.shard }}/4');
+  });
+
   it('never routes to tinybox', () => {
     expect(readFileSync('.github/workflows/intent-pr.yml', 'utf8')).not.toMatch(/tinybox/i);
   });

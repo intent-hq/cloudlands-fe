@@ -42,6 +42,7 @@
       | 'board-pr-status'
       | 'board'
       | 'pr-ready'
+      | 'board-pinned'
       | 'board-long-content'
       | 'board-repositories'
       | 'repository-labels'
@@ -75,6 +76,7 @@
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
       'pr-ready': { props: { scenario: 'pr-ready' } },
+      'board-pinned': { props: { scenario: 'board-pinned' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
       'repository-labels': { props: { scenario: 'repository-labels' } },
@@ -576,7 +578,7 @@
     store.dispatch(
       hydrateSidebarNav({
         pinnedWorkspaceIds:
-          scenario === 'status-icons'
+          scenario === 'status-icons' || scenario === 'board-pinned'
             ? ['home-complete']
             : scenario === 'pr-ready' || scenario === 'status-grouping'
               ? []
@@ -618,7 +620,7 @@
           ? []
           : (scenario === 'pr-status-list' || scenario === 'board-pr-status'
               ? prStatusFixtures
-              : scenario === 'status-icons'
+              : scenario === 'status-icons' || scenario === 'board-pinned'
                 ? statusFixtures
                 : scenario === 'pr-ready'
                   ? prReadyFixtures

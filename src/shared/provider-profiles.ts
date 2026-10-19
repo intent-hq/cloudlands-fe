@@ -176,6 +176,24 @@ export function providerRefBaseId(providerRef: string): string {
   return at < 0 ? providerRef : providerRef.slice(0, at);
 }
 
+/** Base providers whose Fast mode / service tier lives in `providers.fastMode`. */
+const FAST_MODE_PROVIDER_IDS: readonly string[] = ['claude-code', 'codex'];
+
+const PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/**
+ * Whether `key` is a valid `providers.fastMode` key: a Fast mode base
+ * provider, or a well-formed profile reference of one. Each profile keeps
+ * its own entry; the Default profile's value never applies to it.
+ */
+export function isFastModeSettingKey(key: string): boolean {
+  const at = key.indexOf('@');
+  if (at < 0) return FAST_MODE_PROVIDER_IDS.includes(key);
+  return (
+    FAST_MODE_PROVIDER_IDS.includes(key.slice(0, at)) && PROFILE_ID_PATTERN.test(key.slice(at + 1))
+  );
+}
+
 /** Minimal profile identity shared by the catalog summary and full profile reads. */
 export interface ProviderProfileRefInfo {
   providerRef: string;

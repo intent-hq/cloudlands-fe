@@ -140,7 +140,7 @@
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerDraftRestore,
-    selectWorkspaceInitializationOutcome,
+    selectWorkspaceInitializationOutcomeForConsumer,
     selectWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
@@ -383,13 +383,48 @@
     request: WorkspaceInitializationRequest;
   } | null>(null);
   const initializationConsumerId = crypto.randomUUID();
+  const initializationOutcome$ =
+    selectWorkspaceInitializationOutcomeForConsumer(initializationConsumerId);
   let onboardingInitializationGeneration = 0;
   let activeInitializationSeq: number | null = null;
+  let onboardingMounted = true;
+  let activeInitialization = $state.raw<{
+    seq: number;
+    resourceId: string;
+    generation: number;
+    request: WorkspaceInitializationRequest;
+    current: () => boolean;
+    setupScriptRecord?: {
+      repoPath: string;
+      githubUrl?: string;
+      name: string;
+      content: string;
+      nameSource: SetupScriptNameSource;
+    };
+  } | null>(null);
+  let consumedInitializationSeq: number | null = null;
 
   function releaseInitialization(seq: number) {
     appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
     if (activeInitializationSeq === seq) activeInitializationSeq = null;
+    if (activeInitialization?.seq === seq) activeInitialization = null;
   }
+
+  $effect(() => {
+    const outcome = $initializationOutcome$;
+    const active = activeInitialization;
+    if (
+      !active ||
+      !outcome ||
+      outcome.status === 'pending' ||
+      outcome.seq !== active.seq ||
+      outcome.resourceId !== active.resourceId ||
+      consumedInitializationSeq === outcome.seq
+    )
+      return;
+    consumedInitializationSeq = outcome.seq;
+    void consumeOnboardingInitialization(active, outcome);
+  });
 
   // §5.31 gate — enhance is auggie-only; the daemon derives the effective
   // provider from settings, so the FE mirror gates on the same derivation.
@@ -429,6 +464,7 @@
         onboardingDraftOwnerId,
         onboardingDraftRestoreRequestId,
         LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
       ),
     );
   });
@@ -491,7 +527,14 @@
       ...onboardingStagedItems,
     ]);
     if (payload)
-      appStore.dispatch(workspaceInitializerDraftSaveScheduled(onboardingDraftOwnerId, payload));
+      appStore.dispatch(
+        workspaceInitializerDraftSaveScheduled(
+          onboardingDraftOwnerId,
+          payload,
+          onboardingDraftRestoreRequestId,
+          selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        ),
+      );
   }
 
   // Text changes flow through the bound value; attachment-only changes don't
@@ -509,7 +552,13 @@
   // keystrokes — flush the pending save on unload and destroy.
   const flushOnboardingDraftSave = () => {
     if (!onboardingDraftCleared)
-      appStore.dispatch(workspaceInitializerDraftFlushRequested(onboardingDraftOwnerId));
+      appStore.dispatch(
+        workspaceInitializerDraftFlushRequested(
+          onboardingDraftOwnerId,
+          onboardingDraftRestoreRequestId,
+          selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        ),
+      );
   };
   onMount(() => {
     window.addEventListener('beforeunload', flushOnboardingDraftSave);
@@ -762,6 +811,8 @@
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
 
   onDestroy(() => {
+    onboardingMounted = false;
+    onboardingInitializationGeneration++;
     appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
     flushOnboardingDraftSave();
     appStore.dispatch(
@@ -1141,9 +1192,12 @@
           : outcome?.error || m.onboarding_page_unexpected_error();
   }
 
-  async function submitWorkspaceInitialization(
+  function submitWorkspaceInitialization(
     request: WorkspaceInitializationRequest,
     resourceId: string,
+    generation: number,
+    current: () => boolean,
+    setupScriptRecord?: NonNullable<typeof activeInitialization>['setupScriptRecord'],
   ) {
     const action = workspaceInitializationRequested(request, {
       id: initializationConsumerId,
@@ -1151,21 +1205,78 @@
     });
     onboardingCreateProgressId = action.payload.progressId;
     activeInitializationSeq = action.seq;
+    activeInitialization = {
+      seq: action.seq,
+      resourceId,
+      generation,
+      request,
+      current,
+      setupScriptRecord,
+    };
+    void appStore.dispatch(action).catch(() => {
+      // Correlated selector outcomes own UI settlement, including reset removal.
+    });
+  }
+
+  async function consumeOnboardingInitialization(
+    active: NonNullable<typeof activeInitialization>,
+    outcome: WorkspaceInitializationOutcome,
+  ) {
     try {
-      const result = await appStore.dispatch(action);
-      return result;
-    } catch {
-      applyInitializationFailure(
-        request,
-        selectWorkspaceInitializationOutcome.select(
-          appStore.state,
-          initializationConsumerId,
-          resourceId,
+      if (!active.current()) return;
+      if (outcome.status === 'cancelled') return;
+      if (outcome.status !== 'success' || !outcome.workspaceId) {
+        applyInitializationFailure(active.request, outcome);
+        return;
+      }
+      const record = active.setupScriptRecord;
+      if (record) {
+        recordLastUsedSetupScript(
+          record.repoPath,
+          { name: record.name, content: record.content, nameSource: record.nameSource },
+          record.githubUrl,
+        );
+      }
+      onboardingPendingSend = null;
+      onboardingStagedItems = [];
+      onboardingImageItems = [];
+      setupRepoStatus = 'done';
+      setupBranchStatus = 'done';
+      if (setupScriptStatus) setupScriptStatus = 'active';
+      setupAgentStatus = setupScriptStatus ? 'pending' : 'active';
+      setupWorktreePath = outcome.workspacePath;
+      setupWorkspaceId = outcome.workspaceId;
+      if (setupScriptStatus) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        if (!active.current()) return;
+        setupScriptStatus = 'done';
+      }
+      setupAgentStatus = 'active';
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (!active.current()) return;
+      setupAgentStatus = 'done';
+      onboardingDraftCleared = true;
+      appStore.dispatch(
+        workspaceInitializerDraftSaveCancelled(
+          onboardingDraftOwnerId,
+          onboardingDraftRestoreRequestId,
+          active.request.admission,
         ),
       );
-      return null;
+      if (!active.current()) return;
+      appStore.dispatch(resetOnboarding());
+      appStore.dispatch(setHasCompletedProviderSetup(true));
+      appStore.dispatch(setOnboardingWorkspaceId(outcome.workspaceId));
+      appStore.dispatch(goToStep('ready'));
+      onHoldActiveChange(true);
+      onFadingOutChange(false);
+      if (!active.current()) return;
+      await goto(`/workspace/${outcome.workspaceId}`, { replaceState: true });
     } finally {
-      releaseInitialization(action.seq);
+      releaseInitialization(active.seq);
+      if (onboardingMounted && active.generation === onboardingInitializationGeneration) {
+        isOnboardingCreating = false;
+      }
     }
   }
 
@@ -1174,7 +1285,17 @@
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
     const admission = selectPrincipalActionContext.select(appStore.state);
     if (admission === null || !selectWorkspaceCreationVisible.select(appStore.state)) return;
-    const resourceId = `onboarding:${admission}:${++onboardingInitializationGeneration}`;
+    const generation = ++onboardingInitializationGeneration;
+    const resourceId = `onboarding:${admission}:${generation}`;
+    const dispatch = appStore.dispatch;
+    const projectSnapshot = JSON.stringify(projectSelection);
+    const current = () =>
+      onboardingMounted &&
+      generation === onboardingInitializationGeneration &&
+      appStore.dispatch === dispatch &&
+      admission === selectPrincipalActionContext.select(appStore.state) &&
+      selectWorkspaceCreationVisible.select(appStore.state) &&
+      projectSnapshot === JSON.stringify(projectSelection);
     const lastSubmittedAgent = {
       selectedSpecialist: setupSpecialistId ?? null,
       isTeamMode: false,
@@ -1183,34 +1304,6 @@
       selectedReasoningEffort: undefined,
       selectedProvider: onboardingSelectedProvider,
     };
-    const complete = async (workspaceId: string, workspacePath?: string) => {
-      onboardingPendingSend = null;
-      onboardingStagedItems = [];
-      onboardingImageItems = [];
-      setupRepoStatus = 'done';
-      setupBranchStatus = 'done';
-      if (setupScriptStatus) setupScriptStatus = 'active';
-      setupAgentStatus = setupScriptStatus ? 'pending' : 'active';
-      setupWorktreePath = workspacePath;
-      setupWorkspaceId = workspaceId;
-      if (setupScriptStatus) {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        setupScriptStatus = 'done';
-      }
-      setupAgentStatus = 'active';
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      setupAgentStatus = 'done';
-      onboardingDraftCleared = true;
-      appStore.dispatch(workspaceInitializerDraftSaveCancelled(onboardingDraftOwnerId));
-      appStore.dispatch(resetOnboarding());
-      appStore.dispatch(setHasCompletedProviderSetup(true));
-      appStore.dispatch(setOnboardingWorkspaceId(workspaceId));
-      appStore.dispatch(goToStep('ready'));
-      onHoldActiveChange(true);
-      onFadingOutChange(false);
-      await goto(`/workspace/${workspaceId}`, { replaceState: true });
-    };
-
     const pending = onboardingPendingSend;
     if (pending) {
       isOnboardingCreating = true;
@@ -1226,9 +1319,7 @@
             }
           : undefined,
       };
-      const result = await submitWorkspaceInitialization(request, resourceId);
-      if (result) await complete(result.workspaceId, result.workspacePath);
-      isOnboardingCreating = false;
+      submitWorkspaceInitialization(request, resourceId, generation, current);
       return;
     }
 
@@ -1263,6 +1354,7 @@
 
     try {
       const reduxState = appStore.state;
+      if (!current()) return;
       const { provider, model, behaviorPrompt, specialistId, specialistName } =
         await resolveOnboardingModel(
           reduxState,
@@ -1270,6 +1362,7 @@
             ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
             : undefined,
         );
+      if (!current()) return;
       setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
       const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
@@ -1291,7 +1384,9 @@
           .filter((item) => item.type === 'folder' && item.path)
           .map((item) => ({ type: 'file', path: item.path, title: item.label })),
       ];
+      if (!current()) return;
       await setupScriptProbeScheduler.settled();
+      if (!current()) return;
       const setupScriptParam = resolveSetupScriptParam({
         setupScript,
         setupScriptName,
@@ -1366,8 +1461,7 @@
             : undefined,
         selectedPrNumber: selectedPRNumber ?? undefined,
       };
-      const result = await submitWorkspaceInitialization(request, resourceId);
-      if (!result) return;
+      let setupScriptRecord: NonNullable<typeof activeInitialization>['setupScriptRecord'];
       if (setupScript.trim() && projectSelection.repoPath) {
         const isUneditedRepoConfigScript =
           setupScriptNameSource === 'repo-config' &&
@@ -1375,24 +1469,29 @@
           repoConfigScriptRepo === projectSelection.repoPath &&
           setupScript.trim() === (repoConfigScript ?? '').trim();
         if (!isUneditedRepoConfigScript) {
-          recordLastUsedSetupScript(
-            projectSelection.repoPath,
-            {
-              name: setupScriptName || m.onboarding_page_customScript_label(),
-              content: setupScript,
-              nameSource: setupScriptName ? setupScriptNameSource : 'named',
-            },
-            projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
-          );
+          setupScriptRecord = {
+            repoPath: projectSelection.repoPath,
+            githubUrl: projectSelection.type === 'github' ? projectSelection.githubUrl : undefined,
+            name: setupScriptName || m.onboarding_page_customScript_label(),
+            content: setupScript,
+            nameSource: setupScriptName ? setupScriptNameSource : 'named',
+          };
         }
       }
-      await complete(result.workspaceId, result.workspacePath);
+      if (!current()) return;
+      submitWorkspaceInitialization(request, resourceId, generation, current, setupScriptRecord);
     } catch (err) {
+      if (!current()) return;
       logger.error('Workspace initialization preparation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
     } finally {
-      isOnboardingCreating = false;
+      if (
+        !activeInitialization &&
+        onboardingMounted &&
+        generation === onboardingInitializationGeneration
+      )
+        isOnboardingCreating = false;
     }
   }
 </script>

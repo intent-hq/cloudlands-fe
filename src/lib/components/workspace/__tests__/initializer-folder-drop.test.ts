@@ -50,7 +50,9 @@ const mocks = vi.hoisted(() => {
     placeAttachment: vi.fn(),
     backendRequest: vi.fn(),
     draftClear: vi.fn(),
-    initializationOutcome: undefined as Partial<WorkspaceInitializationOutcome> | undefined,
+    initializationOutcome$: writable<Partial<WorkspaceInitializationOutcome> | undefined>(
+      undefined,
+    ),
     hydrated$: writable(false),
     compactFormState$: writable<Record<string, unknown> | null>(null),
     isRemote: false,
@@ -84,7 +86,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
-  selectWorkspaceInitializationOutcome: { select: () => mocks.initializationOutcome },
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -305,11 +307,11 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
   beforeEach(() => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
-    mocks.initializationOutcome = undefined;
+    mocks.initializationOutcome$.set(undefined);
     const initialize = createWorkspaceInitializationDispatchAdapter({
       create: mocks.create,
       pull: mocks.pull,
-      setOutcome: (outcome) => (mocks.initializationOutcome = outcome),
+      setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
     });
     const drafts = createWorkspaceDraftDispatchAdapter({ clear: mocks.draftClear });
     mocks.dispatch.mockImplementation((action) => (drafts(action) ? action : initialize(action)));

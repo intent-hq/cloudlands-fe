@@ -16,6 +16,7 @@
  */
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
+import { isFastModeSettingKey } from '$shared/provider-profiles';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
   hydrateProviderFastMode,
@@ -64,7 +65,7 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
     case 'providers.fastMode': {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const entries = Object.entries(value).filter(
-          ([id, enabled]) => ['claude-code', 'codex'].includes(id) && typeof enabled === 'boolean',
+          ([id, enabled]) => isFastModeSettingKey(id) && typeof enabled === 'boolean',
         );
         appStore.dispatch(hydrateProviderFastMode(Object.fromEntries(entries), revision));
       }

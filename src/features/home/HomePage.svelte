@@ -868,6 +868,7 @@
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}
+                            pinnedIds={$pinnedIds$}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
