@@ -151,7 +151,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return await openInExternalBrowser(url);
           case 'open-in-app':
             return options.workspaceId
-              ? await openInBrowserPanel(url, options.workspaceId, sourcePanelId)
+              ? await openLinkInApp(url, options.workspaceId, options)
               : await openInExternalBrowser(url);
           case 'copy-link':
             await writeTextToClipboard(url);
