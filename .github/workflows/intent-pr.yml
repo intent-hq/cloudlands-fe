@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Burst the heavy jobs to Depot larger runners when more than this many
+  # Burst the heavy jobs to GitHub-hosted larger runners when more than this many
   # self-hosted Linux jobs are queued/running ahead of this run (see the route
   # job). Jobs still blocked on `needs` are invisible to the jobs API, so a
   # queued run ahead of us may undercount — with 8 tinybox slots, clearing
@@ -32,23 +32,23 @@ jobs:
   # checkout or permissions and fails red for the guarded skips.
   # Decides where the heavy jobs (checks / build-web / test /
   # test-integration) run:
-  # the local tinybox runner normally, or Depot larger runners when the
+  # the local tinybox runner normally, or GitHub-hosted larger runners when the
   # tinybox queue is backed up or the fleet is unavailable (ported from
-  # intentd's ci.yml route job). Runs on a small Depot runner so the burst
+  # intentd's ci.yml route job). Runs on a small GitHub-hosted runner so the burst
   # decision is independent of the tinybox queue: probing from tinybox
   # would queue behind the very backlog it measures (and deadlock entirely
-  # with tinybox offline). The probe FAILS OPEN TO DEPOT (depot-ubuntu-24.04-8):
+  # with tinybox offline). The probe FAILS OPEN TO GITHUB-HOSTED (gh-linux-8x):
   # on API errors, when no online self-hosted Linux runner is visible, or
   # when a self-hosted job has sat queued past the staleness cutoff, the
   # heavy jobs burst instead of queueing behind an offline fleet — CI must
   # not deadlock when tinybox is down. If the job itself fails (runner
   # outage, timeout), the routed jobs are skipped and need a re-run — a
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
-  # / gate) are not routed — they pin directly to depot-ubuntu-24.04. Required
+  # / gate) are not routed — they pin directly to ubuntu-24.04. Required
   # test-ct and test-playwright also have fixed hosted runners, but keep
   # route's fail-safe guard.
   route:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
     # Runs on merge_group (see the trigger comment) — merge groups come from
@@ -91,7 +91,7 @@ jobs:
             // build-web needs well over 8 GB of heap with sourcemaps on
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
-            const burst = ["depot-ubuntu-24.04-8"];
+            const burst = ["gh-linux-8x"];
             const threshold = parseInt(process.env.THRESHOLD || "8", 10);
             // A self-hosted job queued longer than this has no runner
             // picking it up — treat the fleet as unavailable and burst.
@@ -152,7 +152,7 @@ jobs:
               } else {
                 // Count self-hosted Linux jobs that are queued or running in
                 // queued/in-progress runs: a running job occupies a tinybox
-                // slot just as much as a queued one. Depot jobs —
+                // slot just as much as a queued one. GitHub-hosted jobs —
                 // including this route job and bursted heavy jobs — don't
                 // match the self-hosted+Linux label filter, so they never
                 // inflate the depth. Sibling-repo probe failures are the
@@ -203,7 +203,7 @@ jobs:
     name: Validate PR Title
     # Seconds-long job: pinned to the smallest GH-hosted runner rather than
     # routed — not worth a tinybox slot or a burst decision.
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); guarded directly
     # rather than through needs so it isn't delayed behind the route probe.
     # PR-metadata check: pull_request-only, skipped on merge_group (the gate
@@ -260,8 +260,8 @@ jobs:
   # don't false-positive.
   conflict-markers:
     name: Conflict Markers
-    # Lightweight job on a standard Depot Linux runner.
-    runs-on: depot-ubuntu-24.04
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above). PR-diff check:
     # pull_request-only, skipped on merge_group (the gate accepts the skip
     # there).
@@ -345,8 +345,8 @@ jobs:
   # Root and Electron relevance use the same diff and fail-safe behavior.
   release-fast-path:
     name: Release PR Fast Path
-    # Lightweight job on a standard Depot Linux runner.
-    runs-on: depot-ubuntu-24.04
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); merge groups
     # come from the repo's own ruleset, so no same-repo guard applies there.
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
@@ -475,7 +475,7 @@ jobs:
   # back-to-back.
   pr-static:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -532,7 +532,7 @@ jobs:
           run_install: false
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path — ephemeral Depot runners
+        # cache: 'pnpm' only on the burst path — ephemeral GitHub-hosted runners
         # start cold, while tinybox's persistent pnpm store already survives
         # between jobs.
         uses: actions/setup-node@v7
@@ -813,7 +813,7 @@ jobs:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
     needs: [release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
-    runs-on: depot-macos-latest
+    runs-on: macos-15-xlarge
     timeout-minutes: 15
     permissions:
       contents: read
@@ -989,7 +989,6 @@ jobs:
       contents: read
     secrets:
       CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
-      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
       INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
     uses: intent-hq/intent/.github/workflows/consumer-checks.yml@main
     with:
@@ -1003,8 +1002,8 @@ jobs:
   # classification failures never authorize skips. Forks get a red gate.
   gate:
     name: CI Gate
-    # Lightweight job on a standard Depot Linux runner.
-    runs-on: depot-ubuntu-24.04
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     permissions: {}
     # Deliberately UNGUARDED (the one exception to the fork-PR hardening
     # note): a job skipped by its own `if:` reports a skipped conclusion,

@@ -270,19 +270,20 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
 
-### Depot CI runners
+### CI runners
 
-Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
-when unavailable or busy. Other checks and automation use Depot. Linux ARM64
-builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
-and Apple Silicon jobs use Depot’s latest macOS. Mac desktop release and manual
-packaging builds target ARM64 only.
+Routed Linux jobs prefer free self-hosted runners and burst to the `gh-linux-8x`
+GitHub larger runner when unavailable or busy. Other checks and automation use
+GitHub-hosted runners (`ubuntu-24.04`, or `gh-linux-8x` for heavier jobs). Linux
+ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
+`gh-windows-16x` (Windows Server 2022, 16 CPUs), and Apple Silicon jobs use
+`macos-15-xlarge`. The larger runners' group must allow public repositories.
+Mac desktop release and manual packaging builds target ARM64 only.
 
 From-source Rust sidecars use managed sccache without Rust cache actions.
 The setup script installs a pinned, checksum-verified binary. When the
 `INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
 cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
-`INTENT_SCCACHE_MODE` says otherwise); deleting the variable falls back to
-Depot, which supplies cache access automatically. Without credentials (for
+`INTENT_SCCACHE_MODE` says otherwise). Without the variable or a token (for
 example fork pull requests), compilation proceeds uncached with a notice.
 pnpm dependency caching remains unchanged.

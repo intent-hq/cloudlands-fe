@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-depot-sccache.py
+// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-sccache.py
 // @vitest-environment node
 import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -9,7 +9,18 @@ const require = createRequire(createRequire(import.meta.url).resolve('electron-u
 const { load } = require('js-yaml');
 const read = (path: string) => load(readFileSync(path, 'utf8'));
 
-describe('Depot CI runners', () => {
+// Standard GitHub labels plus the org larger runners; Depot was retired.
+const HOSTED = new Set([
+  'ubuntu-24.04',
+  'gh-linux-8x',
+  'gh-linux-arm64-8x',
+  'gh-windows-16x',
+  'windows-2025',
+  'macos-15-xlarge',
+  'macos-latest-large',
+]);
+
+describe('GitHub-hosted CI runners', () => {
   it.each(['healthy', 'offline', 'busy', 'error'])('routes the %s fleet safely', async (state) => {
     const route = read('.github/workflows/intent-pr.yml').jobs.route;
     const values: Record<string, string> = {};
@@ -55,7 +66,7 @@ describe('Depot CI runners', () => {
       { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1 },
     );
     expect(JSON.parse(values.linux_labels)).toEqual(
-      state === 'healthy' ? ['self-hosted', 'Linux', 'X64'] : ['depot-ubuntu-24.04-8'],
+      state === 'healthy' ? ['self-hosted', 'Linux', 'X64'] : ['gh-linux-8x'],
     );
     expect(values.linux_burst).toBe(state === 'healthy' ? 'false' : 'true');
   });
@@ -72,7 +83,7 @@ describe('Depot CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
-  it('uses Depot except for isolated retirement cleanup', () => {
+  it('uses known GitHub-hosted labels except for isolated retirement cleanup', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
       for (const [id, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
@@ -82,13 +93,16 @@ describe('Depot CI runners', () => {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
           continue;
         }
-        if (runner && !runner.includes('${{')) expect(runner, file).toMatch(/^depot-/);
+        if (runner && !runner.includes('${{')) {
+          expect(runner, `${file}:${id}`).not.toMatch(/^depot-/);
+          expect(HOSTED.has(runner), `${file}:${id} uses ${runner}`).toBe(true);
+        }
       }
     }
   });
 
   it('configures managed caching without Rust cache actions', () => {
-    const result = spawnSync('python3', ['-B', 'scripts/test-setup-depot-sccache.py'], {
+    const result = spawnSync('python3', ['-B', 'scripts/test-setup-sccache.py'], {
       encoding: 'utf8',
     });
     expect(result.status, result.stderr).toBe(0);

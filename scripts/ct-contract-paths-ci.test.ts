@@ -783,7 +783,7 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+      expect(jobField(lines, 'runs-on')).toBe('gh-linux-8x');
     },
   );
 
@@ -1046,7 +1046,7 @@ describe('root Playwright hosted shards', () => {
     ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+    expect(jobField(testPlaywright, 'runs-on')).toBe('gh-linux-8x');
     expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
