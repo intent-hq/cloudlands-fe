@@ -1,4 +1,6 @@
 <script lang="ts">
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import DiscussionAgentTargets from './DiscussionAgentTargets.svelte';
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
   import { faReply, faEllipsisVertical, faCopy } from '@fortawesome/free-solid-svg-icons';
@@ -73,12 +75,25 @@
   {#if continuation}
     <div class="w-8 shrink-0" aria-hidden="true"></div>
   {:else}
-    <PrincipalAvatar label={name} avatarUrl={message.author.avatarUrl} size={32} />
+    {#if message.author.agentId}
+      <div class="flex size-8 shrink-0 items-center justify-center">
+        <AgentAvatar
+          agentId={message.author.agentId}
+          variant="emphasized"
+          ariaLabel={m.workspace_fileChanges_agent_label()}
+        />
+      </div>
+    {:else}
+      <PrincipalAvatar label={name} avatarUrl={message.author.avatarUrl} size={32} />
+    {/if}
   {/if}
   <div class="flex min-w-0 flex-1 flex-col gap-1.5">
     {#if !continuation}
       <div class="flex min-w-0 flex-wrap items-center gap-1 type-caption">
         <span class="truncate font-medium text-foreground">{name}</span>
+        {#if message.author.agentId}<span class="text-muted-foreground" data-discussion-agent-author
+            >{m.workspace_fileChanges_agent_label()}</span
+          >{/if}
         <span class="text-muted-foreground" aria-hidden="true">·</span>
         <time
           class="text-muted-foreground"
@@ -185,6 +200,13 @@
         </div>
       {/if}
     </div>
+    {#if message.recipientAgentIds?.length}
+      <DiscussionAgentTargets
+        ids={message.recipientAgentIds}
+        {workspaceId}
+        mentions={'agentMentions' in message ? message.agentMentions : undefined}
+      />
+    {/if}
     {#if references}{@render references()}{/if}
     {#if workspaceId}<DiscussionMessageBody
         body={message.body}

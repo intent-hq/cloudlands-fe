@@ -12,15 +12,26 @@
   import DiscussionMessageView from './DiscussionMessageView.svelte';
   import DiscussionSkeleton from './DiscussionSkeleton.svelte';
   import DiscussionMicrophone from './DiscussionMicrophone.svelte';
+  import { Badge } from '$lib/components/ui/badge';
+  import DiscussionAgentPicker from './DiscussionAgentPicker.svelte';
+  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   import {
     DISCUSSION_MAX_BODY_BYTES,
+    DISCUSSION_MAX_RECIPIENTS,
     type DiscussionMessage,
     type DiscussionAuthor,
   } from '$shared/types/workspace-discussion';
 
   interface Props {
+    agents?: readonly { id: string; name: string }[];
+    agentMentions?: readonly DiscussionAgentMention[];
+    agentsSupported?: boolean;
+    agentsUnsupported?: boolean;
+    onAgentPickerOpen?: () => void;
+    onAgentSelect?: (agent: { id: string; name: string }, start: number, end: number) => void;
+    onAgentRemove?: (agentId: string) => void;
     workspaceId?: string;
     conversationId?: string;
     sourcePanelId?: string;
@@ -75,6 +86,13 @@
   }
 
   let {
+    agents = [],
+    agentMentions = [],
+    agentsSupported = false,
+    agentsUnsupported = false,
+    onAgentPickerOpen,
+    onAgentSelect,
+    onAgentRemove,
     workspaceId,
     conversationId = 'default',
     sourcePanelId,
@@ -130,6 +148,9 @@
   let scroller: HTMLDivElement | undefined = $state();
   let composer: HTMLTextAreaElement | null = $state(null);
   const tooLong = $derived(new TextEncoder().encode(draft).byteLength > DISCUSSION_MAX_BODY_BYTES);
+  let agentPickerOpen = $state(false);
+  let agentSelection = { start: 0, end: 0 };
+  let typedAt = false;
   let composing = false;
   let lastReportedSequence = 0;
   const firstUnreadId = $derived(
@@ -151,13 +172,16 @@
       !!previous &&
       current.id !== firstUnreadId &&
       previous.author.principalId === current.author.principalId &&
+      previous.author.agentId === current.author.agentId &&
       dayKey(previous.createdAt) === dayKey(current.createdAt) &&
       Date.parse(current.createdAt) - Date.parse(previous.createdAt) < 5 * 60_000
     );
   }
+  let followingBottom = true;
   function reportVisible() {
     const element = scroller;
     if (!element) return;
+    followingBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
     if (
       !isActive ||
       !isPanelFocused ||
@@ -184,6 +208,20 @@
       onReadThrough(sequence);
     }
   }
+  // Recipient chips and wrapping drafts change the history viewport height.
+  // Follow that resize only for readers who were already at the bottom.
+  $effect(() => {
+    const element = scroller;
+    if (!element) return;
+    let initial = true;
+    const observer = new ResizeObserver(() => {
+      if (!initial && followingBottom) element.scrollTop = element.scrollHeight;
+      initial = false;
+      reportVisible();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
   function jumpToNewest() {
     if (!scroller) return;
     scroller.scrollTop = scroller.scrollHeight;
@@ -198,6 +236,7 @@
   let firstRender = true;
   let previousFirstId: string | undefined;
   let previousLastId: string | undefined;
+  let previousTypingLabel: string | null | undefined;
 
   // Preserve the visible message when history is prepended or the loading row changes.
   // Live arrivals follow the bottom only while the reader is already there.
@@ -213,7 +252,10 @@
     if (!element || !active) return;
     const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
     const initial = firstRender;
-    const changed = firstId !== previousFirstId || lastId !== previousLastId;
+    const changed =
+      firstId !== previousFirstId ||
+      lastId !== previousLastId ||
+      typingLabel !== previousTypingLabel;
     const prepended =
       !!previousFirstId &&
       firstId !== previousFirstId &&
@@ -226,6 +268,7 @@
     const priorScroll = element.scrollTop;
     previousFirstId = firstId;
     previousLastId = lastId;
+    previousTypingLabel = typingLabel;
     if (messages.length > 0) firstRender = false;
     void tick().then(() => {
       if (!element.isConnected) return;
@@ -263,6 +306,19 @@
 
   function input(event: Event & { currentTarget: HTMLTextAreaElement }) {
     onDraftChange(event.currentTarget.value);
+    const position = event.currentTarget.selectionStart;
+    if (
+      agentsSupported &&
+      !composing &&
+      event instanceof InputEvent &&
+      event.inputType === 'insertText' &&
+      event.data === '@' &&
+      (position === 1 || /\s/.test(event.currentTarget.value[position - 2]))
+    ) {
+      typedAt = true;
+      agentSelection = { start: position - 1, end: position };
+      agentPickerOpen = true;
+    }
     if (isActive && isPanelFocused && canSend && document.activeElement === composer) {
       onComposerFocusChange?.(true);
       onTypingInput?.(!!event.currentTarget.value.trim());
@@ -280,6 +336,7 @@
     if (
       !canSend ||
       !canSendDraft ||
+      (agentMentions.length > 0 && !agentsSupported) ||
       sending ||
       composing ||
       new TextEncoder().encode(body).byteLength > DISCUSSION_MAX_BODY_BYTES ||
@@ -490,6 +547,34 @@
     {#if sendError || tooLong}<p class="mb-2 type-caption text-danger" role="alert">
         {tooLong ? m.workspace_discussion_tooLong_error() : sendError}
       </p>{/if}
+    {#if agentMentions.length}
+      <div
+        class="mb-2 flex min-w-0 flex-wrap items-center gap-1.5"
+        data-discussion-agent-recipients
+        aria-label={m.workspace_discussion_agentRecipients_label()}
+      >
+        <span class="type-caption text-muted-foreground">{m.workspace_discussion_to_label()}</span>
+        {#each agentMentions as mention (mention.agentId)}
+          <Badge color="gray" class="max-w-full">
+            <span class="inline-flex items-center gap-1">
+              <span class="block max-w-48 truncate">@{mention.name}</span>
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                class="-mr-1 size-4 rounded-full"
+                disabled={!(canCompose ?? canSend)}
+                aria-label={m.workspace_discussion_removeRecipient_label({ name: mention.name })}
+                onclick={() => onAgentRemove?.(mention.agentId)}
+                ><span aria-hidden="true">×</span></Button
+              >
+            </span>
+          </Badge>
+        {/each}
+      </div>
+      {#if agentsUnsupported}<p class="mb-2 type-caption text-danger" role="alert">
+          {m.workspace_discussion_agentsUnsupported_label()}
+        </p>{/if}
+    {/if}
     {#if composerContext}{@render composerContext()}{/if}
     {#if replyTo}
       <div
@@ -546,6 +631,29 @@
           }}
         />
         <div class="flex shrink-0 items-center gap-3">
+          {#if onAgentSelect}
+            <DiscussionAgentPicker
+              {agents}
+              selectedIds={agentMentions.map((mention) => mention.agentId)}
+              disabled={!agentsSupported ||
+                !(canCompose ?? canSend) ||
+                agentMentions.length >= DISCUSSION_MAX_RECIPIENTS}
+              bind:open={agentPickerOpen}
+              onOpen={() => {
+                onAgentPickerOpen?.();
+                if (!typedAt)
+                  agentSelection = {
+                    start: composer?.selectionStart ?? draft.length,
+                    end: composer?.selectionEnd ?? draft.length,
+                  };
+                typedAt = false;
+              }}
+              onSelect={(agent) => {
+                onAgentSelect?.(agent, agentSelection.start, agentSelection.end);
+                void tick().then(() => composer?.focus({ preventScroll: true }));
+              }}
+            />
+          {/if}
           {#if composerActions}{@render composerActions()}{:else if workspaceId}
             <DiscussionReferencePicker
               {workspaceId}
@@ -563,7 +671,12 @@
             variant="primary"
             size="icon-compact"
             class="size-6 rounded-md"
-            disabled={!canSend || !canSendDraft || !draft.trim() || sending || tooLong}
+            disabled={!canSend ||
+              !canSendDraft ||
+              (agentMentions.length > 0 && !agentsSupported) ||
+              !draft.trim() ||
+              sending ||
+              tooLong}
             aria-label={sendError && retryDraft
               ? m.ui_errorToast_retry_label()
               : m.workspace_discussion_send_label()}

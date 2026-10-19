@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { AgentStatus } from '$shared/types/agent.types';
+  import {
+    fetchDelegatedAgentsRequested,
+    fetchBackgroundAgentsRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -6,10 +11,12 @@
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { notify } from '$lib/components/patterns/notify';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store } from '$store/renderer/store';
   import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectWorkspaceDiscussion,
+    selectDiscussionAgentMessagingSupported,
     selectDiscussionMessages,
     selectDiscussionCanSend,
     selectDiscussionUnread,
@@ -26,6 +33,8 @@
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import {
     discussionReadThrough,
+    discussionAgentSelected,
+    discussionAgentRemoved,
     discussionReplySelected,
     discussionReactionRequested,
     discussionEnableSharingRequested,
@@ -64,6 +73,8 @@
   const conversationId$ = writable('default');
   $effect(() => workspaceId$.set(workspaceId));
   $effect(() => conversationId$.set(conversationId));
+  const agents$ = selectAllWorkspaceAgents(workspaceId$);
+  const agentMessaging$ = selectDiscussionAgentMessagingSupported();
   const discussion$ = selectWorkspaceDiscussion(workspaceId$, conversationId$);
   const messages$ = selectDiscussionMessages(workspaceId$, conversationId$);
   const pending$ = selectDiscussionPending(workspaceId$, conversationId$);
@@ -132,17 +143,46 @@
     {conversationId}
     {sourcePanelId}
     messages={$messages$}
+    agents={$agents$
+      .filter((agent) => !agent.retiredAt && agent.status !== AgentStatus.Deleted)
+      .map((agent) => ({
+        id: agent.id,
+        name: agent.name || m.workspace_fileChanges_agent_label(),
+      }))}
+    agentsSupported={$agentMessaging$ === true && conversationId === 'default'}
+    agentsUnsupported={$agentMessaging$ === false}
+    onAgentPickerOpen={() => {
+      store.dispatch(fetchDelegatedAgentsRequested(workspaceId));
+      store.dispatch(fetchBackgroundAgentsRequested(workspaceId));
+    }}
+    agentMentions={$discussion$.agentMentions}
+    onAgentSelect={conversationId === 'default'
+      ? (agent, start, end) =>
+          store.dispatch(
+            discussionAgentSelected(workspaceId, agent.id, agent.name, start, end, conversationId),
+          )
+      : undefined}
+    onAgentRemove={(id) => store.dispatch(discussionAgentRemoved(workspaceId, id, conversationId))}
     pendingMessages={$pending$.flatMap((message) =>
       message.author && message.createdAt
         ? [
             {
               id: message.id,
               body: message.body,
+              recipientAgentIds: message.recipientAgentIds,
+              agentMentions: message.agentMentions,
               author: message.author,
               createdAt: message.createdAt,
               status: message.status,
               ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-              ...(message.error ? { error: errorText(message.error, true) ?? undefined } : {}),
+              ...(message.error
+                ? {
+                    error:
+                      message.error === 'unsupported' && message.recipientAgentIds?.length
+                        ? m.workspace_discussion_agentsUnsupported_label()
+                        : (errorText(message.error, true) ?? undefined),
+                  }
+                : {}),
             },
           ]
         : [],

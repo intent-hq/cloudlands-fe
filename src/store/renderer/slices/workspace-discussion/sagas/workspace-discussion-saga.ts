@@ -1,3 +1,4 @@
+import { discussionAgentIds } from '$features/discussions/discussion-agent-mentions';
 import { readSetting, invalidateSettingsReadCache } from '$lib/client/live/live-settings-client';
 import { selectCanAdministerHost } from '../../principal/principal-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
@@ -44,6 +45,7 @@ import {
 import { takeLeadingInContext, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   discussionMessageActionsReceived,
+  discussionAgentCapabilityReceived,
   discussionReactionRequested,
   discussionReactionStarted,
   discussionReactionFinished,
@@ -78,6 +80,7 @@ import {
 } from '../workspace-discussion-slice';
 import {
   selectDiscussionMessageActionsSupported,
+  selectDiscussionAgentMessagingSupported,
   selectDiscussionCanInteract,
   selectDiscussionCanSend,
   selectDiscussionCanEnableSharing,
@@ -125,6 +128,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
   yield* put(discussionLoadStarted(target, requestId, older));
   try {
     const actionsSupported = yield* ensureMessageActions();
+    const agentsSupported = yield* ensureAgentMessaging();
     const supported =
       conversationId === DEFAULT_DISCUSSION_ID ? false : yield* ensureConversations();
     if (conversationId === NEW_DISCUSSION_ID) {
@@ -145,6 +149,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
         },
         supported,
         actionsSupported,
+        agentsSupported,
       );
       if (!(yield* isCurrent(target))) return;
       if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
@@ -187,6 +192,8 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
     : getItems(row.pending).find(
         (m) =>
           m.body === row.draft &&
+          JSON.stringify([...(m.recipientAgentIds ?? [])].sort()) ===
+            JSON.stringify(discussionAgentIds(row.agentMentions)) &&
           (m.replyToMessageId ?? null) === row.replyToMessageId &&
           m.status === 'failed',
       );
@@ -203,6 +210,10 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   const pending = {
     id: previous?.id ?? uuid(),
     body,
+    recipientAgentIds: previous
+      ? (previous.recipientAgentIds ?? [])
+      : discussionAgentIds(row.agentMentions),
+    agentMentions: previous ? (previous.agentMentions ?? []) : row.agentMentions,
     author: previous?.author ?? author,
     createdAt: previous?.createdAt ?? new Date().toISOString(),
     replyVersion: previous?.replyVersion ?? row.replyVersion,
@@ -228,6 +239,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   }
   try {
     const actionsSupported = yield* ensureMessageActions();
+    const agentsSupported = yield* ensureAgentMessaging();
     const supported = (yield* select(selectDiscussionCapability.select)) === true;
     const { message, conversation } = yield* call(
       workspaceDiscussionClient.send,
@@ -235,6 +247,9 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
         workspaceId,
         messageId: pending.id,
         body,
+        ...(pending.recipientAgentIds.length
+          ? { recipientAgentIds: pending.recipientAgentIds }
+          : {}),
         ...(pending.replyToMessageId ? { replyToMessageId: pending.replyToMessageId } : {}),
         ...(conversationId === NEW_DISCUSSION_ID
           ? { recipientPrincipalIds: pending.recipientPrincipalIds }
@@ -244,9 +259,14 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       },
       supported,
       actionsSupported,
+      agentsSupported,
     );
     const owner = yield* select(selectDiscussionOwner.select);
-    if (!owner || message.author.principalId !== JSON.parse(owner)[1])
+    if (
+      !owner ||
+      message.author.agentId !== undefined ||
+      message.author.principalId !== JSON.parse(owner)[1]
+    )
       throw new Error('Invalid discussion author');
     if (yield* isCurrent(target)) {
       yield* put(discussionSendSucceeded(target, pending.id, message, conversation));
@@ -513,6 +533,16 @@ function* openSharing({
   if (!(yield* select(selectDiscussionCanEnableSharing.select, workspaceId))) return;
   const workspace = yield* select(selectWorkspaceById.select, workspaceId);
   if (workspace) yield* put(openShareDialog({ workspaceId, workspaceTitle: workspace.title }));
+}
+
+function* ensureAgentMessaging(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionAgentMessagingSupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsAgentMessaging);
+  yield* put(discussionAgentCapabilityReceived(context, supported));
+  return supported;
 }
 
 function* ensureMessageActions(): SagaGenerator<boolean> {

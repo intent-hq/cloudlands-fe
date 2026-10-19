@@ -3,6 +3,9 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { DiscussionMessage } from '$shared/types/workspace-discussion';
 import {
   initialState,
+  discussionAgentSelected,
+  discussionAgentRemoved,
+  discussionAgentCapabilityReceived,
   workspaceDiscussionReducer as reduce,
   discussionContextChanged,
   discussionWorkspacesChanged,
@@ -49,6 +52,53 @@ const pending = {
 };
 
 describe('workspace discussion reducer', () => {
+  it('keeps explicit selections per conversation and removes them with edited tokens or account changes', () => {
+    let { state } = setup();
+    state = reduce(state, discussionAgentCapabilityReceived('connection-1', true));
+    state = reduce(state, discussionDraftChanged('ws', 'Review '));
+    state = reduce(state, discussionAgentSelected('ws', 'agent-a', 'Reviewer', 7, 7));
+    expect(state.byWorkspaceId.ws.default.agentMentions).toEqual([
+      { agentId: 'agent-a', name: 'Reviewer', start: 7, end: 16 },
+    ]);
+    state = reduce(state, discussionRequested('other'));
+    expect(state.byWorkspaceId.other.default.agentMentions).toEqual([]);
+    state = reduce(state, discussionContextChanged(null, null));
+    expect(state.byWorkspaceId.ws.default.agentMentions).toHaveLength(1);
+    state = reduce(state, discussionContextChanged('connection-2', 'owner-1'));
+    state = reduce(state, discussionDraftChanged('ws', 'Review @Review '));
+    expect(state.byWorkspaceId.ws.default.agentMentions).toEqual([]);
+    state = reduce(state, discussionAgentCapabilityReceived('connection-2', true));
+    state = reduce(state, discussionAgentSelected('ws', 'agent-b', 'Builder', 0, 0));
+    state = reduce(state, discussionContextChanged('connection-3', 'owner-2'));
+    expect(state.byWorkspaceId).toEqual({});
+  });
+  it('requires agent capability and default discussion, while chip removal deletes only its tracked token', () => {
+    let { state } = setup();
+    expect(reduce(state, discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0))).toBe(state);
+    state = reduce(state, discussionAgentCapabilityReceived('connection-1', true));
+    state = reduce(state, discussionRequested('ws', 'new'));
+    expect(reduce(state, discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0, 'new'))).toBe(
+      state,
+    );
+    state = reduce(state, discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0));
+    state = reduce(state, discussionAgentRemoved('ws', 'agent-a'));
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
+      draft: '',
+      agentMentions: [],
+    });
+  });
+  it('removes only the chosen chip token and keeps later targets and ordinary references', () => {
+    let { state } = setup();
+    state = reduce(state, discussionAgentCapabilityReceived('connection-1', true));
+    state = reduce(state, discussionDraftChanged('ws', 'Plain @Reviewer '));
+    state = reduce(state, discussionAgentSelected('ws', 'agent-a', 'Reviewer', 16, 16));
+    state = reduce(state, discussionAgentSelected('ws', 'agent-b', 'Builder', 26, 26));
+    state = reduce(state, discussionAgentRemoved('ws', 'agent-a'));
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
+      draft: 'Plain @Reviewer @Builder ',
+      agentMentions: [{ agentId: 'agent-b', name: 'Builder', start: 16, end: 24 }],
+    });
+  });
   it('merges live messages with a late history page and deduplicates server IDs', () => {
     const setupState = setup();
     let state = setupState.state;

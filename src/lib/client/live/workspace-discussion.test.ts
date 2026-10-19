@@ -29,6 +29,64 @@ const message = {
   createdAt: conversation.createdAt,
 };
 beforeEach(() => wire.request.mockReset());
+describe('explicit discussion agent wire contract', () => {
+  it.each([undefined, false, true, '1', 0, 2, 1])(
+    'requires exact agent capability %s',
+    async (value) => {
+      wire.request.mockResolvedValue({ discussionAgentMessaging: value });
+      expect(await client.supportsAgentMessaging()).toBe(value === 1);
+      expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+    },
+  );
+  const params = {
+    workspaceId: 'ws',
+    messageId: 'retry',
+    body: 'Review this',
+    recipientAgentIds: ['agent-a'],
+  };
+  const addressed = {
+    ...message,
+    conversationId: 'default',
+    body: params.body,
+    recipientAgentIds: ['agent-a'],
+  };
+  it('blocks old daemons and private targets before touching the wire', async () => {
+    await expect(client.send(params)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    await expect(
+      client.send({ ...params, conversationId: 'c2' }, true, false, true),
+    ).rejects.toThrow();
+    await expect(
+      client.send({ ...params, recipientPrincipalIds: ['other'] }, true, false, true),
+    ).rejects.toThrow();
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('roundtrips exact recipients and refuses mismatched or absent metadata', async () => {
+    wire.request.mockResolvedValue({ message: addressed });
+    expect(await client.send(params, false, false, true)).toEqual({ message: addressed });
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    for (const recipientAgentIds of [undefined, [], ['agent-b'], ['agent-a', 'agent-a'], [null]]) {
+      wire.request.mockResolvedValue({ message: { ...addressed, recipientAgentIds } });
+      await expect(client.send(params, false, false, true)).rejects.toThrow();
+    }
+  });
+  it('accepts agent-authored history, rejects mixed identities and human-send impersonation', async () => {
+    const agent = {
+      ...addressed,
+      author: { ...author('me'), principalId: null, agentId: 'agent-a', displayName: 'Reviewer' },
+    };
+    wire.request.mockResolvedValue({ messages: [agent], hasMore: false });
+    expect((await client.list({ workspaceId: 'ws' }, false, false, true)).messages).toEqual([
+      agent,
+    ]);
+    wire.request.mockResolvedValue({
+      messages: [{ ...agent, author: { ...agent.author, principalId: 'me' } }],
+      hasMore: false,
+    });
+    await expect(client.list({ workspaceId: 'ws' }, false, false, true)).rejects.toThrow();
+    wire.request.mockResolvedValue({ message: agent });
+    await expect(client.send(params, false, false, true)).rejects.toThrow();
+  });
+});
 describe('discussion conversation wire contract', () => {
   it.each([undefined, false, true, '1', 0, 2, 1])(
     'requires the exact capability value %s',

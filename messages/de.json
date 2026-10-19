@@ -7676,5 +7676,11 @@
   "chat_modelPicker_replacementProfileMissing_description": "Das {provider}-Profil dieser Unterhaltung wurde entfernt. Wähle ein Modell, bevor du eine weitere Nachricht sendest.",
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} ist unter Einstellungen > Agents deaktiviert. Wähle ein Modell, bevor du eine weitere Nachricht sendest.",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Nicht angemeldet",
-  "chat_modelPicker_profileSignedOut_hint": "Melde das Konto dieses Profils außerhalb von Intent an. Bis dahin laufen seine Modelle möglicherweise nicht."
+  "chat_modelPicker_profileSignedOut_hint": "Melde das Konto dieses Profils außerhalb von Intent an. Bis dahin laufen seine Modelle möglicherweise nicht.",
+  "workspace_discussion_addressAgent_label": "Agenten ansprechen",
+  "workspace_discussion_addressAgent_description": "Nur ausgewählte Agenten erhalten diese Nachricht und können diese Diskussion lesen.",
+  "workspace_discussion_searchAgents_placeholder": "Workspace-Agenten suchen…",
+  "workspace_discussion_noAgents_label": "Keine verfügbaren Agenten",
+  "workspace_discussion_agentRecipients_label": "Agenten, die diese Nachricht erhalten",
+  "workspace_discussion_agentsUnsupported_label": "Aktualisiere Intent auf dem Host, um diese Nachricht an Agenten zu senden."
 }

@@ -1,4 +1,8 @@
 import {
+  reconcileDiscussionAgentMentions,
+  type DiscussionAgentMention,
+} from '$features/discussions/discussion-agent-mentions';
+import {
   createCollection,
   getItem,
   getItems,
@@ -32,6 +36,8 @@ export interface PendingDiscussionMessage {
   status: 'sending' | 'failed';
   error: DiscussionError | null;
   recipientPrincipalIds?: string[];
+  recipientAgentIds?: string[];
+  agentMentions?: DiscussionAgentMention[];
   author?: DiscussionAuthor;
   createdAt?: string;
   replyToMessageId?: string;
@@ -54,6 +60,7 @@ export interface WorkspaceDiscussion {
   messages: Collection<DiscussionMessage, 'id'>;
   pending: Collection<PendingDiscussionMessage, 'id'>;
   draft: string;
+  agentMentions: DiscussionAgentMention[];
   draftVersion: number;
   loading: boolean;
   loadingOlder: boolean;
@@ -83,6 +90,7 @@ export interface WorkspaceDiscussionState {
   conversationsSupported: boolean | null;
   sharingEnabled: boolean | null;
   messageActionsSupported: boolean | null;
+  agentMessagingSupported: boolean | null;
   directories: Record<string, DiscussionDirectory>;
   recipients: Record<string, DiscussionRecipients>;
   directoryRequestedIds: string[];
@@ -109,6 +117,7 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   messages: createCollection('id'),
   pending: createCollection('id'),
   draft: '',
+  agentMentions: [],
   draftVersion: 0,
   loading: false,
   loadingOlder: false,
@@ -134,6 +143,7 @@ export const initialState: WorkspaceDiscussionState = {
   conversationsSupported: null,
   sharingEnabled: null,
   messageActionsSupported: null,
+  agentMessagingSupported: null,
   directories: {},
   recipients: {},
   directoryRequestedIds: [],
@@ -148,12 +158,28 @@ export const discussionOlderRequested = createAction<
 export const discussionDraftChanged = createAction<
   [workspaceId: string, body: string, conversationId?: string]
 >('workspaceDiscussion/draftChanged');
+export const discussionAgentSelected = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    name: string,
+    start: number,
+    end: number,
+    conversationId?: string,
+  ]
+>('workspaceDiscussion/agentSelected');
+export const discussionAgentRemoved = createAction<
+  [workspaceId: string, agentId: string, conversationId?: string]
+>('workspaceDiscussion/agentRemoved');
 export const discussionSendRequested = createAction<[workspaceId: string, conversationId?: string]>(
   'workspaceDiscussion/sendRequested',
 );
 export const discussionRetryRequested = createAction<
   [workspaceId: string, messageId: string, conversationId?: string]
 >('workspaceDiscussion/retryRequested');
+export const discussionAgentCapabilityReceived = createAction<
+  [context: string, supported: boolean]
+>('workspaceDiscussion/agentCapabilityReceived');
 export const discussionMessageActionsReceived = createAction<[context: string, supported: boolean]>(
   'workspaceDiscussion/messageActionsReceived',
 );
@@ -350,6 +376,7 @@ workspaceDiscussionReducer.with(
       conversationsSupported: null,
       sharingEnabled: null,
       messageActionsSupported: null,
+      agentMessagingSupported: null,
       directories: {},
       recipients: {},
       byWorkspaceId: Object.fromEntries(
@@ -422,9 +449,94 @@ workspaceDiscussionReducer.with(
       ? set(
           state,
           { workspaceId, conversationId },
-          { ...row, draft, draftVersion: row.draftVersion + 1 },
+          {
+            ...row,
+            draft,
+            agentMentions: reconcileDiscussionAgentMentions(row.draft, draft, row.agentMentions),
+            draftVersion: row.draftVersion + 1,
+          },
         )
       : state;
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionAgentSelected,
+  (
+    state,
+    { payload: [workspaceId, agentId, name, start, end, conversationId = DEFAULT_DISCUSSION_ID] },
+  ) => {
+    const row = discussionRow(state, workspaceId, conversationId);
+    if (
+      !row ||
+      !state.context ||
+      !row.authorized ||
+      state.agentMessagingSupported !== true ||
+      conversationId !== DEFAULT_DISCUSSION_ID ||
+      !state.workspaceIds.includes(workspaceId) ||
+      !agentId ||
+      !name.trim() ||
+      row.agentMentions.length >= DISCUSSION_MAX_RECIPIENTS ||
+      row.agentMentions.some((mention) => mention.agentId === agentId) ||
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end < start ||
+      end > row.draft.length
+    )
+      return state;
+    const label = name.replace(/\s+/g, ' ').trim();
+    const prefix = start > 0 && !/\s/.test(row.draft[start - 1]) ? ' ' : '';
+    const token = `@${label}`;
+    const draft = row.draft.slice(0, start) + prefix + token + ' ' + row.draft.slice(end);
+    return set(
+      state,
+      { workspaceId, conversationId },
+      {
+        ...row,
+        draft,
+        draftVersion: row.draftVersion + 1,
+        agentMentions: [
+          ...reconcileDiscussionAgentMentions(row.draft, draft, row.agentMentions),
+          {
+            agentId,
+            name: label,
+            start: start + prefix.length,
+            end: start + prefix.length + token.length,
+          },
+        ],
+      },
+    );
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionAgentRemoved,
+  (state, { payload: [workspaceId, agentId, conversationId = DEFAULT_DISCUSSION_ID] }) => {
+    const row = discussionRow(state, workspaceId, conversationId);
+    if (!row || !state.context || !state.workspaceIds.includes(workspaceId)) return state;
+    const mention = row.agentMentions.find((selected) => selected.agentId === agentId);
+    if (!mention) return state;
+    const end = mention.end + (row.draft[mention.end] === ' ' ? 1 : 0);
+    const draft = row.draft.slice(0, mention.start) + row.draft.slice(end);
+    return set(
+      state,
+      { workspaceId, conversationId },
+      {
+        ...row,
+        draft,
+        agentMentions: row.agentMentions
+          .filter((selected) => selected.agentId !== agentId)
+          .map((selected) =>
+            selected.start >= end
+              ? {
+                  ...selected,
+                  start: selected.start - (end - mention.start),
+                  end: selected.end - (end - mention.start),
+                }
+              : selected,
+          ),
+        draftVersion: row.draftVersion + 1,
+      },
+    );
   },
 );
 workspaceDiscussionReducer.with(discussionReadThrough, (state, { payload: [target, sequence] }) => {
@@ -544,7 +656,10 @@ function failSend(
     pending: createCollection('id', pending),
     sending: pending.some((m) => m.status === 'sending'),
     sendError: error,
-    unsupported: row.unsupported || error === 'unsupported',
+    unsupported:
+      row.unsupported ||
+      (error === 'unsupported' &&
+        !getItems(row.pending).find((m) => m.id === messageId)?.recipientAgentIds?.length),
   };
 }
 workspaceDiscussionReducer.with(
@@ -597,20 +712,23 @@ workspaceDiscussionReducer.with(
           conversation.id === DEFAULT_DISCUSSION_ID
         : !matches(target, message)) ||
       sent.body !== message.body ||
+      message.author.agentId !== undefined ||
+      JSON.stringify([...(sent.recipientAgentIds ?? [])].sort()) !==
+        JSON.stringify([...(message.recipientAgentIds ?? [])].sort()) ||
       (sent.replyToMessageId ?? null) !== (message.replyToMessageId ?? null)
     )
       return set(state, target, failSend(row, messageId, 'unknown'));
     const pending = getItems(row.pending).filter((m) => m.id !== messageId);
     if (conversation) state = rememberConversation(state, conversation);
+    const clearDraft =
+      row.draftVersion === sent.draftVersion &&
+      row.draft === sent.body &&
+      (sent.replyVersion === undefined || row.replyVersion === sent.replyVersion);
     const settled = {
       ...receive(row, [message]),
       pending: createCollection('id', pending),
-      draft:
-        row.draftVersion === sent.draftVersion &&
-        row.draft === sent.body &&
-        (sent.replyVersion === undefined || row.replyVersion === sent.replyVersion)
-          ? ''
-          : row.draft,
+      draft: clearDraft ? '' : row.draft,
+      agentMentions: clearDraft ? [] : row.agentMentions,
       replyToMessageId:
         row.replyVersion === sent.replyVersion &&
         row.replyToMessageId === (sent.replyToMessageId ?? null)
@@ -988,6 +1106,11 @@ workspaceDiscussionReducer.with(
     state.context === context ? { ...state, sharingEnabled: enabled } : state,
 );
 
+workspaceDiscussionReducer.with(
+  discussionAgentCapabilityReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, agentMessagingSupported: supported } : state,
+);
 workspaceDiscussionReducer.with(
   discussionMessageActionsReceived,
   (state, { payload: [context, supported] }) =>

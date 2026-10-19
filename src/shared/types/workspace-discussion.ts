@@ -1,10 +1,20 @@
-/** Plain-text human discussion wire contract. Sequence is monotonic per conversation. */
+/** Plain-text discussion wire contract. Sequence is monotonic per conversation. */
 export interface DiscussionAuthor {
   principalId: string;
+  agentId?: undefined;
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
 }
+
+interface DiscussionAgentAuthor {
+  principalId: null;
+  agentId: string;
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+type DiscussionMessageAuthor = DiscussionAuthor | DiscussionAgentAuthor;
 
 export interface DiscussionMessage {
   id: string;
@@ -13,13 +23,15 @@ export interface DiscussionMessage {
   conversationId?: string;
   sequence: number;
   body: string;
-  author: DiscussionAuthor;
+  author: DiscussionMessageAuthor;
   createdAt: string;
   /** Present together on daemons with discussionMessageActions:1. */
   replyToMessageId?: string | null;
-  replyTo?: { id: string; author: DiscussionAuthor; body: string } | null;
+  replyTo?: { id: string; author: DiscussionMessageAuthor; body: string } | null;
   reactions?: DiscussionReaction[];
   reactionVersion?: number;
+  /** Present on daemons with discussionAgentMessaging:1; never inferred from body text. */
+  recipientAgentIds?: string[];
 }
 
 export interface DiscussionListParams {
@@ -38,6 +50,7 @@ export interface DiscussionSendParams {
   workspaceId: string;
   conversationId?: string;
   recipientPrincipalIds?: string[];
+  recipientAgentIds?: string[];
   messageId: string;
   body: string;
   replyToMessageId?: string;
@@ -96,11 +109,35 @@ const nullableString = (value: unknown): boolean => value === null || typeof val
 export function isDiscussionAuthor(value: unknown): value is DiscussionAuthor {
   return (
     record(value) &&
+    value.agentId === undefined &&
     typeof value.principalId === 'string' &&
     value.principalId.length > 0 &&
     nullableString(value.login) &&
     nullableString(value.displayName) &&
     nullableString(value.avatarUrl)
+  );
+}
+
+function isDiscussionMessageAuthor(value: unknown): value is DiscussionMessageAuthor {
+  return (
+    isDiscussionAuthor(value) ||
+    (record(value) &&
+      value.principalId === null &&
+      typeof value.agentId === 'string' &&
+      value.agentId.length > 0 &&
+      nullableString(value.login) &&
+      nullableString(value.displayName) &&
+      nullableString(value.avatarUrl))
+  );
+}
+
+export function hasDiscussionAgentMessaging(value: unknown): boolean {
+  return (
+    record(value) &&
+    Array.isArray(value.recipientAgentIds) &&
+    value.recipientAgentIds.length <= DISCUSSION_MAX_RECIPIENTS &&
+    value.recipientAgentIds.every((id) => typeof id === 'string' && id.length > 0) &&
+    new Set(value.recipientAgentIds).size === value.recipientAgentIds.length
   );
 }
 
@@ -148,7 +185,10 @@ export function isDiscussionMessage(value: unknown): value is DiscussionMessage 
     typeof value.body === 'string' &&
     typeof value.createdAt === 'string' &&
     Number.isFinite(Date.parse(value.createdAt)) &&
-    isDiscussionAuthor(value.author) &&
+    isDiscussionMessageAuthor(value.author) &&
+    (value.recipientAgentIds === undefined
+      ? value.author.agentId === undefined
+      : hasDiscussionAgentMessaging(value)) &&
     (['replyToMessageId', 'replyTo', 'reactions', 'reactionVersion'].every(
       (key) => value[key] === undefined,
     ) ||
@@ -229,7 +269,7 @@ export function hasDiscussionMessageActions(value: unknown): boolean {
         value.replyTo.id === value.replyToMessageId &&
         typeof value.replyTo.body === 'string' &&
         new TextEncoder().encode(value.replyTo.body).length <= DISCUSSION_MAX_BODY_BYTES &&
-        isDiscussionAuthor(value.replyTo.author);
+        isDiscussionMessageAuthor(value.replyTo.author);
 }
 export function isDiscussionReactionEvent(value: unknown): value is DiscussionReactionEvent {
   return (

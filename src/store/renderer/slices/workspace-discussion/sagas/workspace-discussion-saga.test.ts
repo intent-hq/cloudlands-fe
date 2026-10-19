@@ -19,6 +19,9 @@ import {
 } from '../../principal/principal-selectors';
 import {
   discussionReadThrough,
+  discussionAgentSelected,
+  discussionAgentRemoved,
+  discussionAgentCapabilityReceived,
   discussionReplySelected,
   discussionReactionRequested,
   discussionEnableSharingRequested,
@@ -125,6 +128,7 @@ describe('workspace discussion transport', () => {
     vi.useFakeTimers();
     dispose = store.init();
     vi.spyOn(workspaceDiscussionClient, 'supportsMessageActions').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsAgentMessaging').mockResolvedValue(false);
     wire.readSetting.mockReset().mockResolvedValue({ value: true });
     wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
     store.dispatch(
@@ -147,6 +151,112 @@ describe('workspace discussion transport', () => {
     store.dispatch(discussionRequested('ws'));
     await settle();
   }
+
+  it('keeps explicit agent targets on retry while retaining a different new selection', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    await open();
+    store.dispatch(discussionDraftChanged('ws', 'Review this '));
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 12, 12));
+    wire.request.mockRejectedValueOnce(new Error('offline'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const first = wire.request.mock.calls.at(-1)!;
+    expect(first).toEqual([
+      'discussion.send',
+      {
+        workspaceId: 'ws',
+        body: 'Review this @Reviewer ',
+        messageId: expect.any(String),
+        recipientAgentIds: ['agent-a'],
+      },
+    ]);
+    const id = pending()[0].id;
+    store.dispatch(discussionAgentRemoved('ws', 'agent-a'));
+    store.dispatch(
+      discussionAgentSelected('ws', 'agent-b', 'Builder', row().draft.length, row().draft.length),
+    );
+    const newDraft = row().draft;
+    wire.request.mockResolvedValueOnce({
+      message: { ...message(1, 'ws', first[1].body), recipientAgentIds: ['agent-a'] },
+    });
+    store.dispatch(discussionRetryRequested('ws', id));
+    await settle();
+    expect(wire.request.mock.calls.at(-1)).toEqual(first);
+    expect(row().draft).toBe(newDraft);
+    expect(row().agentMentions.map((m) => m.agentId)).toEqual(['agent-b']);
+  });
+  it('removing a target and retyping plain text uses a fresh retry key', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    await open();
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0));
+    wire.request.mockRejectedValueOnce(new Error('offline'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const first = wire.request.mock.calls.at(-1)!;
+    store.dispatch(discussionAgentRemoved('ws', 'agent-a'));
+    store.dispatch(discussionDraftChanged('ws', first[1].body));
+    wire.request.mockResolvedValueOnce({
+      message: { ...message(1, 'ws', row().draft), recipientAgentIds: [] },
+    });
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const next = wire.request.mock.calls.at(-1)!;
+    expect(next[1].body).toBe(first[1].body);
+    expect(next[1].messageId).not.toBe(first[1].messageId);
+    expect(next[1]).not.toHaveProperty('recipientAgentIds');
+  });
+  it('blocks retained targets when the capability disappears without falling back to text', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    await open();
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0));
+    store.dispatch(
+      discussionAgentCapabilityReceived(store.state.workspaceDiscussion.context!, false),
+    );
+    wire.request.mockClear();
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(pending()[0]).toMatchObject({
+      status: 'failed',
+      error: 'unsupported',
+      recipientAgentIds: ['agent-a'],
+    });
+    expect(row().draft).toBe('@Reviewer ');
+    expect(row().unsupported).toBe(false);
+  });
+  it('counts an agent reply as unread and does not address its author automatically', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    wire.request.mockResolvedValueOnce({
+      messages: [{ ...message(1), recipientAgentIds: [] }],
+      hasMore: false,
+    });
+    await open();
+    const target = selectDiscussionTarget.select(store.state, 'ws')!;
+    store.dispatch(discussionReadThrough(target, 1));
+    store.dispatch(
+      discussionMessageReceived(target, {
+        ...message(2),
+        author: {
+          principalId: null,
+          agentId: 'agent-a',
+          login: null,
+          displayName: 'Reviewer',
+          avatarUrl: null,
+        },
+        recipientAgentIds: [],
+      }),
+    );
+    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(1);
+    store.dispatch(
+      discussionDraftChanged('ws', 'Thanks @Reviewer intent://local/ws/agent/agent-a'),
+    );
+    wire.request.mockResolvedValueOnce({
+      message: { ...message(3, 'ws', row().draft), recipientAgentIds: [] },
+    });
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request.mock.calls.at(-1)![1]).not.toHaveProperty('recipientAgentIds');
+  });
 
   it('merges live delivery during list and loads older pages once per request', async () => {
     const first = deferred<ReturnType<typeof page>>();

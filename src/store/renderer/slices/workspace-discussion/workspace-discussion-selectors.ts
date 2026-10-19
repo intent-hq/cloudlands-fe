@@ -84,7 +84,13 @@ export const selectWorkspaceDiscussion = store.createSelector(
     return conversationId !== DEFAULT_DISCUSSION_ID &&
       conversationId !== NEW_DISCUSSION_ID &&
       !row.authorized
-      ? { ...row, draft: '', messages: emptyDiscussion.messages, pending: emptyDiscussion.pending }
+      ? {
+          ...row,
+          draft: '',
+          agentMentions: [],
+          messages: emptyDiscussion.messages,
+          pending: emptyDiscussion.pending,
+        }
       : row;
   },
 );
@@ -198,7 +204,9 @@ export const selectDiscussionUnread = store.createSelector(
             .select(state, workspaceId, conversationId)
             .filter(
               (message) =>
-                message.sequence > readSequence && message.author.principalId !== principalId,
+                message.sequence > readSequence &&
+                (message.author.agentId !== undefined ||
+                  message.author.principalId !== principalId),
             );
     return { count: unread.length, firstSequence: unread[0]?.sequence ?? null };
   },
@@ -248,4 +256,10 @@ export const selectDiscussionRecipientsForComposer = store.createSelector(
     const principalId = selectDiscussionAuthor.select(state)?.principalId;
     return conversation?.participants.filter((person) => person.principalId !== principalId) ?? [];
   },
+);
+
+export const selectDiscussionAgentMessagingSupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.agentMessagingSupported
+    : null,
 );

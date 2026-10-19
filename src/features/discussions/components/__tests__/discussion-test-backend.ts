@@ -29,6 +29,7 @@ export function installDiscussionTestBackend(
     deferSend?: boolean;
     rejectSend?: 'invalid' | 'forbidden';
     messageActions?: boolean;
+    agentMessaging?: boolean;
   } = {},
 ) {
   const requests: Array<{ method: string; params: unknown }> = [];
@@ -75,6 +76,7 @@ export function installDiscussionTestBackend(
       body,
       author,
       createdAt: '2026-10-14T12:00:00Z',
+      ...(options.agentMessaging ? { recipientAgentIds: [] } : {}),
       ...(options.messageActions !== false
         ? { replyToMessageId: null, replyTo: null, reactions: [], reactionVersion: 0 }
         : {}),
@@ -123,6 +125,7 @@ export function installDiscussionTestBackend(
   installMockElectronBridge({
     'system.capabilities': () => ({
       discussionConversations: 1,
+      ...(options.agentMessaging ? { discussionAgentMessaging: 1 } : {}),
       ...(options.messageActions !== false ? { discussionMessageActions: 1 } : {}),
     }),
     'discussion.react': (value) => {
@@ -253,6 +256,7 @@ export function installDiscussionTestBackend(
         ...message(35 + sendAttempts, params.body),
         id: crypto.randomUUID(),
         author: self,
+        ...(options.agentMessaging ? { recipientAgentIds: params.recipientAgentIds ?? [] } : {}),
         conversationId: descriptor.id,
         ...(quoted
           ? {

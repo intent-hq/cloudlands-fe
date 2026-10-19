@@ -7,6 +7,7 @@ import {
   isDiscussionConversation,
   isDiscussionAuthor,
   hasDiscussionMessageActions,
+  hasDiscussionAgentMessaging,
   isDiscussionReactionResult,
   type DiscussionReactParams,
   type DiscussionReactionResult,
@@ -39,6 +40,17 @@ function requireConversations(supported: boolean): void {
 const pageLimit = (limit?: number) =>
   Math.min(DISCUSSION_PAGE_SIZE, Math.max(1, limit ?? DISCUSSION_PAGE_SIZE));
 export const workspaceDiscussionClient = {
+  async supportsAgentMessaging(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionAgentMessaging?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionAgentMessaging === 1;
+    } catch {
+      return false;
+    }
+  },
   async supportsMessageActions(): Promise<boolean> {
     try {
       const result = await backendRequest<{ discussionMessageActions?: unknown }>(
@@ -72,6 +84,7 @@ export const workspaceDiscussionClient = {
     params: DiscussionListParams,
     supported = false,
     actionsSupported = false,
+    agentsSupported = false,
   ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
@@ -90,6 +103,7 @@ export const workspaceDiscussionClient = {
         (message) =>
           isDiscussionMessage(message) &&
           (!actionsSupported || hasDiscussionMessageActions(message)) &&
+          (!agentsSupported || hasDiscussionAgentMessaging(message)) &&
           message.workspaceId === params.workspaceId &&
           (message.conversationId ?? DEFAULT_DISCUSSION_ID) === id &&
           (params.beforeSequence === undefined || message.sequence < params.beforeSequence) &&
@@ -115,7 +129,17 @@ export const workspaceDiscussionClient = {
     params: DiscussionSendParams,
     supported = false,
     actionsSupported = false,
+    agentsSupported = false,
   ): Promise<DiscussionSendResult> {
+    if (params.recipientAgentIds !== undefined) {
+      requireConversations(agentsSupported);
+      if (
+        (params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+        params.recipientPrincipalIds !== undefined ||
+        !hasDiscussionAgentMessaging(params)
+      )
+        throw new Error('Invalid discussion agent target');
+    }
     if (params.replyToMessageId !== undefined) requireConversations(actionsSupported);
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID || params.recipientPrincipalIds !== undefined)
@@ -127,6 +151,10 @@ export const workspaceDiscussionClient = {
     if (
       !isDiscussionMessage(result?.message) ||
       (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
+      (agentsSupported && !hasDiscussionAgentMessaging(result?.message)) ||
+      result.message.author.agentId !== undefined ||
+      JSON.stringify([...(result.message.recipientAgentIds ?? [])].sort()) !==
+        JSON.stringify([...(params.recipientAgentIds ?? [])].sort()) ||
       (result?.message?.replyToMessageId ?? null) !== (params.replyToMessageId ?? null) ||
       result.message.workspaceId !== params.workspaceId ||
       result.message.body !== params.body ||

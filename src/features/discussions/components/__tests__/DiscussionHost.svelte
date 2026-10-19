@@ -4,8 +4,9 @@
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
-  import { WorkspaceStatus } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { restoreStoredSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { AgentStatus, WorkspaceStatus } from '$shared/types';
+  import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
@@ -16,6 +17,7 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
+    discussionAgentCapabilityReceived,
     discussionLoadStarted,
     discussionPageReceived,
     discussionLoadFinished,
@@ -27,7 +29,14 @@
   let {
     failSend = false,
     messageActions = true,
-  }: { failSend?: boolean; messageActions?: boolean } = $props();
+    agentMessaging = false,
+    conversationId = 'default',
+  }: {
+    failSend?: boolean;
+    messageActions?: boolean;
+    agentMessaging?: boolean;
+    conversationId?: string;
+  } = $props();
   const workspaceId = 'discussion-test';
   let mounted = $state(true);
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
@@ -37,7 +46,7 @@
     (calls) => {
       requests = calls;
     },
-    { messageActions },
+    { messageActions, agentMessaging },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(setLabsMultiplayerEnabled(true));
@@ -57,6 +66,27 @@
       createdAt: '2026-10-14T12:00:00Z',
       updatedAt: '2026-10-14T12:00:00Z',
     }),
+  );
+  store.dispatch(
+    restoreStoredSessions(
+      [
+        ['agent-reviewer', 'Reviewer', workspaceId, null],
+        ['agent-builder', 'Builder', workspaceId, null],
+        ['agent-retired', 'Retired helper', workspaceId, '2026-10-19T10:00:00Z'],
+        ['agent-deleted', 'Deleted helper', workspaceId, null],
+        ['agent-elsewhere', 'Elsewhere helper', 'another-workspace', null],
+      ].map(([id, name, wsId, retiredAt]) => ({
+        id: AgentId(id!),
+        workspaceId: WorkspaceId(wsId!),
+        name: name!,
+        backendSessionId: null,
+        status: id === 'agent-deleted' ? AgentStatus.Deleted : AgentStatus.Active,
+        messages: [],
+        createdAt: '2026-10-14T12:00:00Z',
+        updatedAt: '2026-10-14T12:00:00Z',
+        ...(retiredAt ? { retiredAt } : {}),
+      })),
+    ),
   );
   store.dispatch(openWorkspaceTab(workspaceId));
   admitLegacyPrincipal();
@@ -94,7 +124,7 @@
 </script>
 
 <div class="h-[560px] w-full max-w-[390px]" data-discussion-test-pane>
-  {#if mounted}<WorkspaceDiscussion {workspaceId} isPanelFocused />{/if}
+  {#if mounted}<WorkspaceDiscussion {workspaceId} {conversationId} isPanelFocused />{/if}
 </div>
 <Button
   onclick={() => {
@@ -114,4 +144,31 @@
     store.dispatch(principalContextChanged(null));
   }}>Disconnect</Button
 >
+{#if agentMessaging}
+  <Button
+    onclick={() => {
+      const target = selectDiscussionTarget.select(store.state, workspaceId);
+      if (target)
+        store.dispatch(
+          discussionMessageReceived(target, {
+            ...backend.message(102, 'I checked the changes. The layout looks good.'),
+            recipientAgentIds: [],
+            author: {
+              principalId: null,
+              agentId: 'agent-reviewer',
+              displayName: 'Reviewer',
+              login: null,
+              avatarUrl: null,
+            },
+          }),
+        );
+    }}>Receive agent reply</Button
+  >
+  <Button
+    onclick={() =>
+      store.dispatch(
+        discussionAgentCapabilityReceived(store.state.workspaceDiscussion.context!, false),
+      )}>Disable agent messaging</Button
+  >
+{/if}
 <output data-discussion-requests>{JSON.stringify(requests)}</output>

@@ -7676,5 +7676,11 @@
   "chat_modelPicker_replacementProfileMissing_description": "この会話で使用していた {provider} のプロファイルは削除されました。次のメッセージを送る前にモデルを選択してください。",
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} は 設定 > エージェント で無効になっています。次のメッセージを送る前にモデルを選択してください。",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未サインイン",
-  "chat_modelPicker_profileSignedOut_hint": "このプロファイルのアカウントに Intent の外でサインインしてください。それまではモデルが動作しない場合があります。"
+  "chat_modelPicker_profileSignedOut_hint": "このプロファイルのアカウントに Intent の外でサインインしてください。それまではモデルが動作しない場合があります。",
+  "workspace_discussion_addressAgent_label": "エージェントにメッセージを送る",
+  "workspace_discussion_addressAgent_description": "選択したエージェントだけがこのメッセージを受信し、このディスカッションを読むことができます。",
+  "workspace_discussion_searchAgents_placeholder": "ワークスペースのエージェントを検索…",
+  "workspace_discussion_noAgents_label": "利用できるエージェントがありません",
+  "workspace_discussion_agentRecipients_label": "このメッセージを受信するエージェント",
+  "workspace_discussion_agentsUnsupported_label": "このメッセージをエージェントに送るには、ホストのIntentを更新してください。"
 }
