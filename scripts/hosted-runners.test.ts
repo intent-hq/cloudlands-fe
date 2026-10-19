@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-depot-sccache.py
+// @verify-changed-triggers: .github/workflows/*.yml, scripts/setup-sccache.py
 // @vitest-environment node
 import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -9,7 +9,23 @@ const require = createRequire(createRequire(import.meta.url).resolve('electron-u
 const { load } = require('js-yaml');
 const read = (path: string) => load(readFileSync(path, 'utf8'));
 
-describe('Depot CI runners', () => {
+// Standard GitHub labels plus the org larger runners; Depot was retired.
+// Windows stays on Server 2022 (gh-windows-16x): windows-2025 breaks node-gyp.
+const HOSTED = new Set([
+  'ubuntu-24.04',
+  'gh-linux-8x',
+  'gh-linux-arm64-8x',
+  'gh-windows-16x',
+  'macos-26-xlarge',
+  'macos-15-xlarge',
+]);
+// Runners chosen through a matrix: `runner: <label>` rows and JSON `"runner":"<label>"` targets.
+const matrixRunners = (text: string) => [
+  ...[...text.matchAll(/^\s+runner: ([\w.-]+)\s*$/gm)].map((m) => m[1]),
+  ...[...text.matchAll(/"runner":"([^"]+)"/g)].map((m) => m[1]),
+];
+
+describe('GitHub-hosted CI runners', () => {
   const CACHE = ['self-hosted', 'linux', 'x64', 'intent-cache'];
   // intent-cache slots register with GitHub's default labels plus `intent-cache`.
   const slot = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache'] };
@@ -88,9 +104,9 @@ describe('Depot CI runners', () => {
     ],
     ['one slot online and busy', { runners: [slot], jobs: [running()] }],
     ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
-  ])('bursts to Depot when %s', async (_name, fixture: Fixture) => {
+  ])('bursts to GitHub-hosted runners when %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(r.labels).toEqual(['depot-ubuntu-24.04-8']);
+    expect(r.labels).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
   });
 
@@ -114,7 +130,7 @@ describe('Depot CI runners', () => {
       labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-small'],
     };
     const smallOnly = await route({ runners: Array.from({ length: 6 }, () => small) });
-    expect(smallOnly.labels).toEqual(['depot-ubuntu-24.04-8']);
+    expect(smallOnly.labels).toEqual(['gh-linux-8x']);
     const fastJobs = Array.from({ length: 6 }, () =>
       running(['self-hosted', 'Linux', 'X64', 'intent-cache-small']),
     );
@@ -139,7 +155,7 @@ describe('Depot CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
-  it('uses Depot except for isolated retirement cleanup', () => {
+  it('uses known GitHub-hosted labels except for isolated retirement cleanup', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
       for (const [id, job] of Object.entries(jobs) as [string, { 'runs-on'?: string }][]) {
@@ -149,13 +165,44 @@ describe('Depot CI runners', () => {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
           continue;
         }
-        if (runner && !runner.includes('${{')) expect(runner, file).toMatch(/^depot-/);
+        if (runner && !runner.includes('${{'))
+          expect(HOSTED.has(runner), `${file}:${id} uses ${runner}`).toBe(true);
       }
     }
   });
 
+  it('selects only known GitHub-hosted labels in runner matrices', () => {
+    const found = readdirSync('.github/workflows')
+      .filter((name) => name.endsWith('.yml'))
+      .flatMap((file) =>
+        matrixRunners(readFileSync(`.github/workflows/${file}`, 'utf8')).map((runner) => ({
+          file,
+          runner,
+        })),
+      );
+    expect(found.map(({ runner }) => runner)).toEqual(
+      expect.arrayContaining(['gh-linux-8x', 'gh-linux-arm64-8x', 'macos-15-xlarge']),
+    );
+    for (const { file, runner } of found)
+      expect(HOSTED.has(runner), `${file} matrix uses ${runner}`).toBe(true);
+    expect(matrixRunners('          runner: depot-ubuntu-24.04-arm-8\n')).toEqual([
+      'depot-ubuntu-24.04-arm-8',
+    ]);
+  });
+
+  it('keeps signed desktop Mac builds off macos-26 images', () => {
+    // electron-builder's keychain step fails there (SecKeychainUnlock); see cloudlands-fe#3500.
+    for (const file of ['release-alpha.yml', 'manual-signed-build.yml']) {
+      const macRows = [
+        ...readFileSync(`.github/workflows/${file}`, 'utf8').matchAll(/"runner":"(macos-[^"]+)"/g),
+      ];
+      expect(macRows.length, file).toBeGreaterThan(0);
+      for (const [, runner] of macRows) expect(runner, file).toBe('macos-15-xlarge');
+    }
+  });
+
   it('configures managed caching without Rust cache actions', () => {
-    const result = spawnSync('python3', ['-B', 'scripts/test-setup-depot-sccache.py'], {
+    const result = spawnSync('python3', ['-B', 'scripts/test-setup-sccache.py'], {
       encoding: 'utf8',
     });
     expect(result.status, result.stderr).toBe(0);
