@@ -36,6 +36,7 @@ function fileSpecialist(overrides: Partial<FileSpecialist> & { id: string }): Fi
 
 function mockState({
   activeProviderId = 'auggie',
+  quickActionProviderId,
   providerModels = {},
   fileSpecialists = [],
   bundledSpecialists = [],
@@ -43,6 +44,7 @@ function mockState({
   isGitHubAuthenticated = false,
 }: {
   activeProviderId?: string;
+  quickActionProviderId?: string;
   providerModels?: Record<string, string>;
   fileSpecialists?: FileSpecialist[];
   bundledSpecialists?: Specialist[];
@@ -61,6 +63,7 @@ function mockState({
     },
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: isGitHubAuthenticated },
+    backgroundAgentSettings: { providerId: quickActionProviderId, providerSettings: {} },
   } as unknown as StoreState;
 }
 
@@ -528,6 +531,44 @@ describe('provider in-use selectors', () => {
       expect(selectProviderInUseReason.select(state, 'opencode')).toBeNull();
       expect(selectProviderInUseReason.select(state, 'droid')).toBeNull();
       expect(selectProviderInUseReason.select(state, 'grok')).toBeNull();
+    });
+  });
+
+  describe('named profile references', () => {
+    const WORK = 'codex@pwork';
+
+    it('blocks a profile selected as the default provider even without a default model', () => {
+      const state = mockState({ activeProviderId: WORK });
+      expect(selectProviderInUseReason.select(state, WORK)).not.toBeNull();
+      expect(selectProviderInUseReason.select(state, 'codex')).toBeNull();
+      expect(selectProviderInUseReason.select(state, 'codex@ppersonal')).toBeNull();
+    });
+
+    it('blocks a profile that quick actions run on', () => {
+      const state = mockState({ activeProviderId: 'claude-code', quickActionProviderId: WORK });
+      expect(selectProviderInUseReason.select(state, WORK)).not.toBeNull();
+    });
+
+    it('names every specialist pin and model option that selects the profile', () => {
+      const state = mockState({
+        fileSpecialists: [
+          fileSpecialist({ id: 'pinned', name: 'Pinned', codingAgent: WORK }),
+          fileSpecialist({
+            id: 'options',
+            name: 'Options',
+            modelOptions: [
+              { provider: 'codex', model: 'gpt-5', hint: '' },
+              { provider: WORK, model: 'gpt-5', hint: '' },
+            ],
+          }),
+        ],
+      });
+      const reason = selectProviderInUseReason.select(state, WORK);
+      expect(reason).toContain('Pinned');
+      expect(reason).toContain('Options');
+      expect(reason?.split('\n')).toHaveLength(2);
+      // A base-provider model option does not newly block disabling the base provider.
+      expect(selectProviderInUseReason.select(state, 'codex')).toBeNull();
     });
   });
 });

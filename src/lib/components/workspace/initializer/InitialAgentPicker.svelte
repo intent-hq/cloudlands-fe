@@ -41,7 +41,13 @@
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
     selectProviderCatalogEntries,
+    selectProviderCatalogProfiles,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    findProfileByRef,
+    isProviderProfileRef,
+    providerRefBaseId,
+  } from '$shared/provider-profiles';
   import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import {
     selectActiveProviderId,
@@ -59,6 +65,7 @@
   const logger = createLogger('InitialAgentPicker');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
+  const providerProfiles$ = selectProviderCatalogProfiles();
   const specialists$ = selectSpecialists();
   const orchestrator$ = selectOrchestratorSpecialist();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
@@ -168,9 +175,13 @@
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
 
+  // A named profile (§5.54) is available while it is saved and its base
+  // provider is ready and enabled; readiness is keyed by the base provider.
   function getProviderAvailable(providerId: string): boolean {
+    if (isProviderProfileRef(providerId) && !findProfileByRef($providerProfiles$, providerId))
+      return false;
     return (
-      isProviderReadyInResult(providerAvailability, providerId) &&
+      isProviderReadyInResult(providerAvailability, providerRefBaseId(providerId)) &&
       !isProviderDisabledInSettings($enabledProviders$, providerId)
     );
   }
@@ -194,7 +205,9 @@
       return;
     }
     if (providerAvailability && availableProviders.length > 0) {
-      const isSelectedAvailable = availableProviders.some((p) => p.id === selectedProvider);
+      const isSelectedAvailable = isProviderProfileRef(selectedProvider)
+        ? getProviderAvailable(selectedProvider)
+        : availableProviders.some((p) => p.id === selectedProvider);
       if (!isSelectedAvailable) {
         // Check if this is the user's explicit choice from the provider store.
         // '' (unresolved — settings not hydrated / providers.active unset) is

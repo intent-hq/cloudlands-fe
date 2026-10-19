@@ -20,6 +20,9 @@ import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog'
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
+import type { ProviderProfileSummary } from '$shared/provider-catalog';
+import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import { formatProviderRefLabel } from '$shared/provider-ref-label';
 
 /** True once the first `providers.catalog` hydration landed. */
 export const selectProviderCatalogLoaded = store.createSelector(
@@ -34,6 +37,22 @@ export const selectProviderCatalogEntries = store.createSelector(
       : state.providerCatalog
         ? getItems(state.providerCatalog.providers)
         : [],
+);
+
+const NO_PROFILES: ProviderProfileSummary[] = [];
+
+/**
+ * Named profile summaries (§5.54 catalog `profiles`) in the daemon's stored
+ * order — identity and names only, readable by members. Empty on older
+ * daemons and before hydration.
+ */
+export const selectProviderCatalogProfiles = store.createSelector(
+  (state, workspaceId?: string): ProviderProfileSummary[] => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.profiles ?? NO_PROFILES;
+    const profiles = state.providerCatalog?.profiles;
+    return profiles && profiles.ids.length > 0 ? getItems(profiles) : NO_PROFILES;
+  },
 );
 
 /** All provider ids in registry order. */
@@ -130,9 +149,25 @@ export const selectNormalizedProviderId = store.createSelector(
  * (or the catalog) is missing — safe for labels before hydration.
  */
 export const selectProviderDisplayName = store.createSelector(
-  (state, providerId: string, workspaceId?: string): string =>
-    selectResolvedProviderCatalogEntry.select(state, providerId, workspaceId)?.displayName ??
-    providerId,
+  (state, providerId: string, workspaceId?: string): string => {
+    if (isProviderProfileRef(providerId)) {
+      // A named profile (§5.54) reads `<Provider> · <Profile>`; the name labels
+      // the reference only, so a rename never changes routing.
+      const baseId = providerRefBaseId(providerId);
+      const baseName =
+        selectResolvedProviderCatalogEntry.select(state, baseId, workspaceId)?.displayName ??
+        baseId;
+      return formatProviderRefLabel(
+        providerId,
+        baseName,
+        selectProviderCatalogProfiles.select(state, workspaceId),
+      );
+    }
+    return (
+      selectResolvedProviderCatalogEntry.select(state, providerId, workspaceId)?.displayName ??
+      providerId
+    );
+  },
 );
 
 /**

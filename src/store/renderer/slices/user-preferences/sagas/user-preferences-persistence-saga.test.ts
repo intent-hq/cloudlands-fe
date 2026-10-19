@@ -49,8 +49,10 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsProviderProfilesEnabled,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsProviderProfiles,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
@@ -213,6 +215,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:multiplayerEnabled': true,
       'labs:gitlabEnabled': true,
       'labs:remoteAgentsEnabled': true,
+      'labs:providerProfilesEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -242,6 +245,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsMultiplayerEnabled(true)],
       [setLabsGitLabEnabled(true)],
       [setLabsRemoteAgentsEnabled(true)],
+      [setLabsProviderProfilesEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -402,6 +406,45 @@ describe('userPreferencesPersistenceSaga', () => {
       await restarted.stop();
     },
   );
+
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the Provider profiles lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:providerProfilesEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsProviderProfilesEnabled).toBe(false);
+      expect(
+        mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:providerProfilesEnabled'),
+      ).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])('persists Provider profiles %s across restart', async (enabled) => {
+    const storage: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => storage[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      storage[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+    first.dispatch(setLabsProviderProfilesEnabled(!enabled));
+    first.dispatch(toggleLabsProviderProfiles());
+    await settle();
+    expect(first.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
+    expect(storage['labs:providerProfilesEnabled']).toBe(enabled);
+    expect(first.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
+    await first.stop();
+    const restarted = startPreferenceStore();
+    await settle();
+    expect(restarted.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
+    restarted.dispatch(resetOnboarding());
+    expect(restarted.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
+    await restarted.stop();
+  });
 
   it('keeps RemoteAgents off until delayed preference hydration finishes without resetting it on rerun', async () => {
     let finish!: (enabled: boolean) => void;

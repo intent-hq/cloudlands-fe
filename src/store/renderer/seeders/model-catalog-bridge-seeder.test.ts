@@ -75,6 +75,21 @@ describe('model-catalog-bridge-seeder', () => {
     },
   );
 
+  // §5.54: profile catalogs ride their base provider's channel.
+  it('lists a named profile under its own reference', async () => {
+    mockedRequest.mockResolvedValue({ providerId: 'codex@pwork00000001', models: [] });
+    await mockInvoke<Envelope>('codex:get-models', { providerRef: 'codex@pwork00000001' });
+    expect(mockedRequest).toHaveBeenCalledWith('models.list', {
+      providerId: 'codex@pwork00000001',
+    });
+  });
+
+  it("never lists another provider's profile through a channel", async () => {
+    mockedRequest.mockResolvedValue({ providerId: 'codex', models: [] });
+    await mockInvoke<Envelope>('codex:get-models', { providerRef: 'claude-code@pwork00000001' });
+    expect(mockedRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
+  });
+
   it('forwards forceRefresh: true from the invoke payload', async () => {
     mockedRequest.mockResolvedValue({ providerId: 'auggie', models: [] });
 

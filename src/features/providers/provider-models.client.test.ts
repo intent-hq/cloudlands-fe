@@ -28,6 +28,7 @@ vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', ()
 
 import { getProviderModels } from './provider-models.client';
 import { setupAntigravityIPC } from '../antigravity/main/antigravity.ipc';
+import { setupCodexIPC } from '../codex/main/codex.ipc';
 
 const event = { sender: { id: 730 } } as IpcMainInvokeEvent;
 const wireModel = {
@@ -165,5 +166,43 @@ describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
         expect(mocks.request).not.toHaveBeenCalled();
       });
     }
+  },
+);
+
+// §5.54: a named profile's catalog is listed under its own reference through
+// its base provider's channel, on every transport.
+describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
+  'named profile model catalog via %s',
+  (transport) => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+      mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
+      setupCodexIPC();
+      vi.stubGlobal('window', windowFor(transport));
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('sends models.list for the profile reference', async () => {
+      mocks.request.mockResolvedValue({
+        providerId: 'codex@pwork00000001',
+        models: [{ id: 'gpt-5', name: 'GPT-5', provider: 'codex@pwork00000001' }],
+      });
+      await expect(
+        getProviderModels('codex@pwork00000001', { forceRefresh: true }),
+      ).resolves.toEqual({ models: [{ value: 'gpt-5', label: 'GPT-5' }] });
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', {
+        providerId: 'codex@pwork00000001',
+        forceRefresh: true,
+      });
+    });
+
+    it('keeps the Default configuration on the bare provider id', async () => {
+      mocks.request.mockResolvedValue({ providerId: 'codex', models: [] });
+      await getProviderModels('codex');
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', {
+        providerId: 'codex',
+      });
+    });
   },
 );

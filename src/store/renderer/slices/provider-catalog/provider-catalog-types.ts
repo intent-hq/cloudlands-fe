@@ -26,6 +26,8 @@ export interface ProviderCatalogState {
   providers: Collection<ProviderCatalogEntry, 'id'>;
   /** Flips true once the first `providers.catalog` hydration lands. */
   loaded: boolean;
+  /** Named profile summaries (§5.54 top-level `profiles`), id-keyed in daemon order; empty on older daemons. */
+  profiles?: Collection<import('$shared/provider-catalog').ProviderProfileSummary, 'id'>;
 }
 
 export interface WorkspaceCatalogSnapshot {

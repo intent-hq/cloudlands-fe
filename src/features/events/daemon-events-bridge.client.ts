@@ -7,6 +7,8 @@ import type {
   AgentMetadataPatch,
 } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceCatalogEventReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { providerProfilesChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { PROVIDER_PROFILES_CHANGED_EVENT } from '$shared/provider-profiles';
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import {
   observeSubmissionEvidence,
@@ -3628,6 +3630,7 @@ export function routeDaemonEventsNotification(
       'skills:changed',
       'mcp.servers:status-changed',
       'workspace:updated',
+      PROVIDER_PROFILES_CHANGED_EVENT,
     ].includes(type)
   ) {
     appStore.dispatch(workspaceCatalogEventReceived(event));
@@ -3637,6 +3640,14 @@ export function routeDaemonEventsNotification(
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
     handleSettingsChangedEvent(event, overrides?.onSettingsChanges);
+    return;
+  }
+
+  // `providers:profiles-changed` (§5.54) is global and carries only the
+  // profile revision/identity — never env keys or values.
+  if (type === PROVIDER_PROFILES_CHANGED_EVENT) {
+    const revision = (event as { data?: { revision?: unknown } }).data?.revision;
+    if (typeof revision === 'number') appStore.dispatch(providerProfilesChanged(revision));
     return;
   }
 
@@ -4397,6 +4408,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // this bridge currently handles (handleTerminalExitEvent below).
   'terminal:exit',
   'settings:changed',
+  // Named provider profile mutations (§5.54); global, revision-only refetch trigger.
+  'providers:profiles-changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
   // list migrated off FE localStorage; the daemon emits the full new items
