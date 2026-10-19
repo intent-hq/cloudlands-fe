@@ -19,6 +19,19 @@ describe('app settings schema', () => {
     });
   });
 
+  it('exposes provider profiles as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.providerProfiles')).toMatchObject({
+      label: 'Provider profiles',
+      description: 'Whether the experimental Provider profiles lab is enabled.',
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:providerProfilesEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsProviderProfilesEnabled' },
+    });
+  });
+
   it('exposes remote agents as a local, default-off Labs preference', () => {
     expect(findAppSettingDefinition('labs.remoteAgents')).toMatchObject({
       category: 'labs',

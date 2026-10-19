@@ -767,6 +767,38 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  // §5.54: a turn refused because the selected profile was removed (or its
+  // base provider disabled) asks for a replacement and flags the picker.
+  it('turns a provider-profile-replacement-required refusal into a replacement prompt', async () => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    mocks.send.mockRejectedValue(
+      new BackendError({
+        code: 'invalid_params',
+        rpcCode: -32602,
+        message: 'provider profile codex@pwork needs a replacement',
+        data: {
+          code: 'provider-profile-replacement-required',
+          providerRef: 'codex@pwork',
+          reason: 'profile-missing',
+        },
+      }),
+    );
+    const run = harness();
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+    await settle();
+
+    const failed = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === chatSendFailed.type);
+    expect(failed?.payload[1]).toMatch(/Choose another model/);
+    expect(run.state().agentSessions.byAgentId[AGENT]?.providerReplacementRequired).toEqual({
+      providerRef: 'codex@pwork',
+      reason: 'profile-missing',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {
     mocks.queue.mockResolvedValue({
       success: true,

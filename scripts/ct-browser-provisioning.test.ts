@@ -93,7 +93,7 @@ ${command}`,
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'tinybox'],
+        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'x64', 'intent-cache'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',

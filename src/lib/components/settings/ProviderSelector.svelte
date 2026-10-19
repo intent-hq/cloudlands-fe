@@ -71,6 +71,9 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import ProviderProfiles from './ProviderProfiles.svelte';
+  import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -235,6 +238,19 @@
     if (current !== enabled) appStore.dispatch(setProviderFastMode('codex', enabled));
   }
 
+  // Named profiles are a Labs feature: profile management (and its read) is
+  // offered only while Settings → Labs → Provider profiles is on.
+  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
+
+  // Add profile is offered only on installed rows whose catalog entry
+  // advertises named profiles (§5.54); other providers never show it.
+  function supportsProfiles(providerId: string): boolean {
+    return (
+      $labsProviderProfilesEnabled$ &&
+      $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true
+    );
+  }
+
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
   }
@@ -271,6 +287,10 @@
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
+  });
+
+  $effect(() => {
+    if ($labsProviderProfilesEnabled$) appStore.dispatch(providerProfilesRequested());
   });
 
   function handleInstallPiMcpAdapter() {
@@ -781,6 +801,9 @@
                   </div>
                 </div>
               </div>
+              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+              {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}

@@ -24,6 +24,7 @@ const {
   multiplayerState,
   gitlabState,
   remoteAgentsState,
+  providerProfilesLabState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -148,6 +149,7 @@ const {
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
+    providerProfilesLabState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -261,6 +263,7 @@ vi.mock('$store/renderer/store', async () => {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
+        labsProviderProfilesEnabled: providerProfilesLabState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -399,6 +402,7 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
+    providerProfilesLabState.enabled = undefined;
   });
 
   it.each([
@@ -596,6 +600,40 @@ describe('CommandPalette new actions', () => {
 
       expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
         type: 'userPreferences/setLabsRemoteAgentsEnabled',
+        payload: [!enabled],
+      });
+      expect(invokeMock).not.toHaveBeenCalled();
+      expect(backendRequestMock).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, false, true])(
+    'changes experimental provider profiles from saved=%s without a workspace',
+    async (enabled) => {
+      providerProfilesLabState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, {
+        props: { isOpen: true, initialQuery: 'provider profiles', onClose },
+      });
+      const command = await screen.findByRole('button', {
+        name: enabled
+          ? /Disable experimental provider profiles/i
+          : /Enable experimental provider profiles/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled
+            ? /Enable experimental provider profiles/i
+            : /Disable experimental provider profiles/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      await fireEvent.click(command);
+
+      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'userPreferences/setLabsProviderProfilesEnabled',
         payload: [!enabled],
       });
       expect(invokeMock).not.toHaveBeenCalled();

@@ -191,3 +191,26 @@ describe('SpecialistModelOptions reasoning', () => {
     ]);
   });
 });
+
+describe('SpecialistModelOptions named profiles (§5.54)', () => {
+  afterEach(() => cleanup());
+
+  it('round-trips a profile reference on the row provider', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, {
+      savedOptions: [{ provider: 'codex@pwork00000001', model: 'gpt-5-work', hint: 'work' }],
+      onCommit,
+    });
+    // The picker resolves the saved row under that profile's group.
+    expect(screen.getByTestId('picker-selected').textContent).toBe(
+      'codex@pwork00000001:gpt-5-work',
+    );
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    await fireEvent.click(screen.getAllByTestId('pick-profile-model')[1]);
+    expect(onCommit).toHaveBeenLastCalledWith([
+      { provider: 'codex@pwork00000001', model: 'gpt-5-work', hint: 'work' },
+      { provider: 'codex@pwork00000001', model: 'gpt-5-work', hint: '' },
+    ]);
+  });
+});

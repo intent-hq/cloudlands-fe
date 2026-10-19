@@ -14,6 +14,7 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsProviderProfilesEnabled,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -341,6 +342,35 @@ describe('settings-proposal-actions', () => {
       ).rejects.toThrow('Invalid value');
       expect(mocks.dispatch).not.toHaveBeenCalled();
       expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('applies and reverses the provider profiles lab preference', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('labs.providerProfiles', true)),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsProviderProfilesEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.providerProfiles',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsProviderProfilesEnabled' },
+      },
+    ]);
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsProviderProfilesEnabled(false));
+  });
+
+  it.each(['true', 1, null, {}])(
+    'rejects invalid provider profiles opt-in proposals: %j',
+    async (value) => {
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('labs.providerProfiles', value))),
+      ).rejects.toThrow('Invalid value');
+      expect(mocks.dispatch).not.toHaveBeenCalled();
     },
   );
 

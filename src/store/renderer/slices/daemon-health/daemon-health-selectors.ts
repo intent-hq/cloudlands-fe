@@ -171,6 +171,15 @@ export const selectIsDaemonLocal = store.createSelector((state): boolean => {
   return isLocalTransport(state.daemonHealth.transport);
 });
 
+/**
+ * True only when this app spawned the daemon it is connected to (the desktop
+ * sidecar). Restart guidance names Intent then; otherwise it names intentd
+ * on the provider host. UDS locality alone does not mean app-owned (§5.54).
+ */
+export const selectIsDaemonAppOwned = store.createSelector(
+  (state): boolean => state.daemonHealth.transport?.mode === 'sidecar-uds',
+);
+
 /** True when the sidecar supervisor gave up restarting the daemon (#439). */
 export const selectSidecarGaveUp = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUp,

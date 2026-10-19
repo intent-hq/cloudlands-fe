@@ -26,54 +26,121 @@ const matrixRunners = (text: string) => [
 ];
 
 describe('GitHub-hosted CI runners', () => {
-  it.each(['healthy', 'offline', 'busy', 'error'])('routes the %s fleet safely', async (state) => {
-    const route = read('.github/workflows/intent-pr.yml').jobs.route;
+  const CACHE = ['self-hosted', 'linux', 'x64', 'intent-cache'];
+  // intent-cache slots register with GitHub's default labels plus `intent-cache`.
+  const slot = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache'] };
+  const generic = { status: 'online', labels: ['self-hosted', 'Linux', 'X64'] };
+  type Fixture = {
+    runners?: { status: string; labels: string[] }[];
+    jobs?: { status: string; labels: string[]; created_at?: string }[];
+    error?: boolean;
+    env?: Record<string, string>;
+  };
+  async function route({ runners = [slot, slot], jobs = [], error = false, env = {} }: Fixture) {
+    const workflow = read('.github/workflows/intent-pr.yml');
+    const step = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
     const values: Record<string, string> = {};
-    const script = route.steps.find((step: { id?: string }) => step.id === 'decide').with.script;
+    const messages: string[] = [];
+    const queried: string[] = [];
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
     const actions = {
       listSelfHostedRunnersForOrg: () => {},
       listSelfHostedRunnersForRepo: () => {},
-      listWorkflowRunsForRepo: async () => ({ data: { workflow_runs: [{ id: 2 }] } }),
-      listJobsForWorkflowRun: async () => ({
-        data: {
-          jobs:
-            state === 'busy'
-              ? Array.from({ length: 10 }, () => ({
-                  status: 'in_progress',
-                  labels: ['self-hosted', 'Linux'],
-                }))
-              : [],
-        },
-      }),
+      listWorkflowRunsForRepo: async ({ repo, status }: { repo: string; status: string }) => {
+        queried.push(repo);
+        // Fixture jobs belong to one queued run so each is counted once.
+        return {
+          data: {
+            workflow_runs: repo === 'cloudlands-fe' && status === 'queued' ? [{ id: 2 }] : [],
+          },
+        };
+      },
+      listJobsForWorkflowRun: async () => ({ data: { jobs } }),
     };
-    await new AsyncFunction('core', 'github', 'context', script)(
+    const processEnv = {
+      env: { THRESHOLD: String(workflow.env.LINUX_BURST_THRESHOLD), ...env },
+    };
+    await new AsyncFunction('core', 'github', 'context', 'process', step.with.script)(
       {
         setOutput: (key: string, value: string) => {
           values[key] = value;
         },
-        info: () => {},
+        info: (message: string) => messages.push(message),
       },
       {
         rest: { actions },
         paginate: async () => {
-          if (state === 'error') throw new Error('fixture failure');
-          return state === 'offline'
-            ? []
-            : [
-                {
-                  status: 'online',
-                  labels: ['self-hosted', 'Linux', 'X64'].map((name) => ({ name })),
-                },
-              ];
+          if (error) throw new Error('fixture failure');
+          return runners.map((r) => ({ ...r, labels: r.labels.map((name) => ({ name })) }));
         },
       },
       { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1 },
+      processEnv,
     );
-    expect(JSON.parse(values.linux_labels)).toEqual(
-      state === 'healthy' ? ['self-hosted', 'Linux', 'X64'] : ['gh-linux-8x'],
+    return {
+      labels: JSON.parse(values.linux_labels),
+      burst: values.linux_burst,
+      messages,
+      queried,
+    };
+  }
+  const running = (labels = CACHE) => ({ status: 'in_progress', labels });
+
+  it('routes the heavy jobs to an idle intent-cache slot', async () => {
+    const r = await route({});
+    expect(r.labels).toEqual(CACHE);
+    expect(r.burst).toBe('false');
+    expect([...new Set(r.queried)].sort()).toEqual(['cloudlands-fe', 'intent', 'intentd']);
+    expect(read('.github/workflows/intent-pr.yml').env.LINUX_BURST_THRESHOLD).toBe(2);
+  });
+
+  it.each([
+    ['offline', { runners: [] }],
+    ['error', { error: true }],
+    ['generic self-hosted Linux only', { runners: [generic, generic] }],
+    [
+      'both slots busy',
+      { jobs: [running(), running(['self-hosted', 'Linux', 'X64', 'intent-cache'])] },
+    ],
+    ['one slot online and busy', { runners: [slot], jobs: [running()] }],
+    ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
+  ])('bursts to GitHub-hosted runners when %s', async (_name, fixture: Fixture) => {
+    const r = await route(fixture);
+    expect(r.labels).toEqual(['gh-linux-8x']);
+    expect(r.burst).toBe('true');
+  });
+
+  it('keeps routing to the slots while one is free and ignores non-slot jobs', async () => {
+    const r = await route({
+      jobs: [
+        running(),
+        ...Array.from({ length: 5 }, () => running(['self-hosted', 'Linux', 'X64'])),
+      ],
+    });
+    expect(r.labels).toEqual(CACHE);
+    expect(r.messages.some((m) => m.includes('queue depth=1 threshold=2 online=2'))).toBe(true);
+    const killed = await route({ env: { LINUX_RUNNER_DISABLED: 'true' } });
+    expect(killed.messages).toContain('linux routing: burst=true (disabled for maintenance)');
+    expect(killed.queried).toEqual([]);
+  });
+
+  it('counts only heavy intent-cache slots, not the fast pool that shares the generic labels', async () => {
+    const small = {
+      status: 'online',
+      labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-small'],
+    };
+    const smallOnly = await route({ runners: Array.from({ length: 6 }, () => small) });
+    expect(smallOnly.labels).toEqual(['gh-linux-8x']);
+    const fastJobs = Array.from({ length: 6 }, () =>
+      running(['self-hosted', 'Linux', 'X64', 'intent-cache-small']),
     );
-    expect(values.linux_burst).toBe(state === 'healthy' ? 'false' : 'true');
+    const r = await route({ runners: [slot, slot, small], jobs: fastJobs });
+    expect(r.labels).toEqual(CACHE);
+    expect(r.messages.some((m) => m.includes('queue depth=0 threshold=2 online=2'))).toBe(true);
+  });
+
+  it('never routes to tinybox', () => {
+    expect(readFileSync('.github/workflows/intent-pr.yml', 'utf8')).not.toMatch(/tinybox/i);
   });
 
   it('provisions Python 3.12 before unit tests on either runner path', () => {
