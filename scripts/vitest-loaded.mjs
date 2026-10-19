@@ -22,7 +22,9 @@
 //
 // The busy loops exit on their own when this process disappears (they are
 // told this pid and watch their parent pid against it), on top of being killed
-// on every exit path here.
+// on every exit path here. Once they are spawned, and before vitest starts, the
+// run prints their pids on one stderr line (`LOOP_PIDS_PREFIX`), so a caller can
+// check those exact processes instead of scanning the process list for them.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -44,6 +46,32 @@ export const USAGE = 'Usage: pnpm test:loaded <vitest file or filter> [-- <extra
 // for that reason.
 export const BUSY_LOOP_SOURCE =
   'const parent = Number(process.argv[1]); for (;;) { if (process.ppid !== parent) process.exit(0); for (let i = 0; i < 1e7; i += 1); }';
+
+// The stderr line naming the busy-loop pids: `test:loaded: busy loop pids: 1,2`.
+export const LOOP_PIDS_PREFIX = 'test:loaded: busy loop pids:';
+
+/** The announcement line for `pids` (empty after the colon when there are none). */
+export function formatLoopPids(pids) {
+  return `${LOOP_PIDS_PREFIX} ${pids.join(',')}`.trimEnd();
+}
+
+/**
+ * The pids from the first complete announcement line in `text` (a stream of
+ * stderr output), or `null` when no complete line has arrived yet.
+ */
+export function parseLoopPids(text) {
+  for (const line of text.split('\n').slice(0, -1)) {
+    if (!line.startsWith(LOOP_PIDS_PREFIX)) continue;
+    const list = line.slice(LOOP_PIDS_PREFIX.length).trim();
+    if (list === '') return [];
+    const pids = list.split(',').map(Number);
+    if (pids.some((pid) => !Number.isInteger(pid) || pid <= 0)) {
+      throw new Error(`Malformed busy loop pid line: ${JSON.stringify(line)}`);
+    }
+    return pids;
+  }
+  return null;
+}
 
 /** Parses a Linux cpu list (`0-31`, `0-3,5,7-8`) into the sorted core ids it names. */
 export function parseCpuList(text) {
@@ -180,6 +208,8 @@ function main(argv, env) {
   const loops = plan.busy.map(({ executable, args }) =>
     spawn(executable, args, { cwd: root, stdio: 'ignore' }),
   );
+  // spawn() returns once the exec has succeeded, so these pids are live loops.
+  console.error(formatLoopPids(loops.map((loop) => loop.pid).filter((pid) => pid !== undefined)));
   const vitest = spawn(plan.vitest.executable, plan.vitest.args, { cwd: root, stdio: 'inherit' });
   let signalled;
   const stopLoops = () => {
