@@ -125,7 +125,7 @@ jobs:
   auto-merge-release-pr:
     name: Auto-merge green Release PR
     # API-driven check: use ubuntu-latest so a self-hosted slot is not wasted.
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     # Self-retrigger guard: the cut's own squash-merge push to main
     # (release-please writes the `chore(release): X.Y.Z` commit title) fires
     # the broadened push trigger — skip it at the job level so the run never
@@ -158,6 +158,9 @@ jobs:
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::warning::RELEASE_PAT secret is not configured; skipping Release PR auto-merge"
+            line="auto-cut-decision: skip no-release-token RELEASE_PAT secret is not configured"
+            echo "$line"
+            echo "$line" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           fi
       - name: Checkout trusted release helpers
         if: steps.token.outputs.enabled == 'true'
@@ -218,6 +221,10 @@ jobs:
           if (( age_min < 60 )); then
             echo "::notice::last release $tag was cut ${age_min} min ago (<60 min); throttling this cut — the next cron tick retries"
             echo "defer=true" >> "$GITHUB_OUTPUT"
+            # This run's decision line (see the merge step's decide()).
+            line="auto-cut-decision: throttle recent-cut Last release $tag was cut ${age_min} min ago (<60 min); the next cron tick retries"
+            echo "$line"
+            echo "$line" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           else
             echo "Last release $tag was cut ${age_min} min ago; proceeding."
           fi
@@ -305,6 +312,10 @@ jobs:
           if (( age_min < 90 )); then
             echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"
+            # This run's decision line (see the merge step's decide()).
+            line="auto-cut-decision: defer intentd-build-in-flight intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published)"
+            echo "$line"
+            echo "$line" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
           fi
@@ -331,10 +342,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          # A later push or scheduled attempt retries every unready state.
+          # Decision contract: every run that reaches a verdict prints
+          # exactly one line
+          #   auto-cut-decision: <outcome> <reason> <free-text detail>
+          # (also appended to the step summary). Here every exit goes
+          # through decide(); the token, throttle, and in-flight steps print
+          # their own line when they stop the run before this step.
+          # <outcome> is one of noop, throttle, hold, defer, skip, refuse,
+          # dry-run, merge, queue, error; <reason> is a stable kebab-case
+          # code. Monorepo `make release-status` reads this line instead of
+          # matching the free-text messages, so reword details freely but
+          # keep outcomes and reason codes stable. The EXIT trap reports an
+          # unplanned exit (e.g. a `set -e` failure) as `error unexpected-exit`.
+          # scripts/intentd-release-readiness.test.ts asserts one line on
+          # every path.
+          decided=""
+          decide() {
+            local line="auto-cut-decision: $1 $2 ${3//$'\n'/ }"
+            decided=1
+            echo "$line"
+            echo "$line" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit "${4:-0}"
+          }
+          trap 'status=$?; [[ -n "$decided" ]] || decide error unexpected-exit "step exited with status $status before reaching a decision" "$status"' EXIT
+
+          # A later push or scheduled attempt retries every unready state
+          # (skip <reason> <message>; no-release-pr decides `noop`).
           skip() {
-            echo "$1; skipping."
-            exit 0
+            local outcome=defer
+            [[ "$1" != "no-release-pr" ]] || outcome=noop
+            decide "$outcome" "$1" "$2; skipping."
           }
 
           # BE-dependency freshness guard (cron and push runs; the call
@@ -535,13 +572,14 @@ jobs:
                   and (.title | test("^chore\\(release\\): [0-9]+\\.[0-9]+\\.[0-9]+")))]')
           count=$(jq 'length' <<<"$prs")
           if [[ "$count" -eq 0 ]]; then
-            skip "No open release-please Release PR — no changes, no release (on push runs: the refresh may still be in flight)"
+            skip no-release-pr "No open release-please Release PR — no changes, no release (on push runs: the refresh may still be in flight)"
           fi
           if [[ "$count" -gt 1 ]]; then
             # Should never happen (release-please maintains a single
             # Release PR); refuse to guess rather than merge the wrong one.
-            echo "::warning::Found $count open PRs that look like the Release PR ($(jq -r '[.[].number | tostring] | join(", #")' <<<"$prs" | sed 's/^/#/')); refusing to guess"
-            exit 0
+            msg="Found $count open PRs that look like the Release PR ($(jq -r '[.[].number | tostring] | join(", #")' <<<"$prs" | sed 's/^/#/')); refusing to guess"
+            echo "::warning::$msg"
+            decide refuse multiple-release-prs "$msg"
           fi
           number=$(jq -r '.[0].number' <<<"$prs")
           title=$(jq -r '.[0].title' <<<"$prs")
@@ -560,8 +598,9 @@ jobs:
             --jq '.data.viewer.login')
           author=$(jq -r '.[0].author.login' <<<"$prs")
           if [[ -z "$viewer" || "$author" != "$viewer" ]]; then
-            echo "::warning::Release PR #$number author ($author) is not the RELEASE_PAT identity ($viewer); refusing to auto-merge"
-            exit 0
+            msg="Release PR #$number author ($author) is not the RELEASE_PAT identity ($viewer); refusing to auto-merge"
+            echo "::warning::$msg"
+            decide refuse untrusted-author "$msg"
           fi
 
           # Automated freshness gate: the Release PR head must contain
@@ -573,7 +612,7 @@ jobs:
             head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
               --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || head_pin=""
             if [[ "$head_pin" != "$required_pin" ]]; then
-              skip "Release PR #$number head does not carry the required intentd pin yet (head: ${head_pin:-unreadable}, required: $required_pin)"
+              skip pr-stale "Release PR #$number head does not carry the required intentd pin yet (head: ${head_pin:-unreadable}, required: $required_pin)"
             fi
           fi
 
@@ -598,7 +637,7 @@ jobs:
             if [[ -z "$head_epoch" ]]; then
               echo "::warning::could not resolve the Release PR head commit date; proceeding without the refresh gate"
             elif (( head_epoch < required_epoch )); then
-              skip "Release PR #$number head predates releasable changes (release-please has not refreshed it yet)"
+              skip pr-stale "Release PR #$number head predates releasable changes (release-please has not refreshed it yet)"
             fi
           fi
 
@@ -606,8 +645,9 @@ jobs:
           # to stop auto-cutting (e.g. to batch more changes or hold a bad
           # commit out of an alpha); remove the label to resume.
           if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
-            echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
-            exit 0
+            msg="Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
+            echo "::notice::$msg"
+            decide hold hold-release "$msg"
           fi
 
           # Pipeline ordering guardrail: an open pin-bump PR (the rolling
@@ -623,8 +663,9 @@ jobs:
             --head auto/intentd-pin --json number,isCrossRepository \
             --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
           if [[ -n "$pin_pr" ]]; then
-            echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
-            exit 0
+            msg="Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
+            echo "::notice::$msg"
+            decide defer pin-bump-open "$msg"
           fi
 
           # BE-dependency freshness guardrail (see be_dependency_skew
@@ -636,24 +677,23 @@ jobs:
           # this guard (manual means urgent — same convention as the
           # throttle) so an operator can always force the cut.
           if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then
-            echo "::notice::$be_skew_msg; deferring the alpha cut until the next intentd alpha advances the pin"
-            exit 0
+            msg="$be_skew_msg; deferring the alpha cut until the next intentd alpha advances the pin"
+            echo "::notice::$msg"
+            decide defer intentd-skew "$msg"
           fi
 
           detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,baseRefOid,reviewDecision)
 
           if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
-            echo "Release PR #$number is a draft; skipping."
-            exit 0
+            decide skip draft "Release PR #$number is a draft; skipping."
           fi
 
           # Direct merging must preserve review requirements that the
           # ordinary queue would enforce, including changes requested.
           review_decision=$(jq -r '.reviewDecision // empty' <<<"$detail")
           if [[ "$review_decision" == "CHANGES_REQUESTED" || "$review_decision" == "REVIEW_REQUIRED" ]]; then
-            echo "Release PR #$number has outstanding review requirements ($review_decision); skipping."
-            exit 0
+            decide skip review-required "Release PR #$number has outstanding review requirements ($review_decision); skipping."
           fi
 
           # This repo's ruleset does not require branches to be up to date,
@@ -663,11 +703,10 @@ jobs:
           # UNKNOWN just means GitHub is still computing mergeability.
           mergeable=$(jq -r '.mergeable' <<<"$detail")
           if [[ "$mergeable" == "UNKNOWN" ]]; then
-            skip "Release PR #$number mergeability is still being computed (mergeable=UNKNOWN)"
+            skip mergeable-unknown "Release PR #$number mergeability is still being computed (mergeable=UNKNOWN)"
           fi
           if [[ "$mergeable" != "MERGEABLE" ]]; then
-            echo "Release PR #$number is not mergeable (mergeable=$mergeable, mergeStateStatus=$(jq -r '.mergeStateStatus' <<<"$detail")); skipping."
-            exit 0
+            decide skip not-mergeable "Release PR #$number is not mergeable (mergeable=$mergeable, mergeStateStatus=$(jq -r '.mergeStateStatus' <<<"$detail")); skipping."
           fi
 
           # Required check "CI Gate" must be green on the current head
@@ -684,10 +723,9 @@ jobs:
               end' <<<"$detail")
           if [[ "$gate" != "success" ]]; then
             if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED' <<<"$gate"; then
-              echo "CI Gate concluded unsuccessfully on the current head (state: $gate); skipping."
-              exit 0
+              decide skip ci-gate-failed "CI Gate concluded unsuccessfully on the current head (state: $gate); skipping."
             fi
-            skip "CI Gate is not green on the current head (state: $gate)"
+            skip "$([[ "$gate" == "missing" ]] && echo ci-gate-missing || echo ci-gate-pending)" "CI Gate is not green on the current head (state: $gate)"
           fi
 
           # --paginate walks every reviewThreads page (an unresolved
@@ -727,8 +765,7 @@ jobs:
             | length' \
             | awk '{ sum += $1 } END { print sum + 0 }')
           if [[ "$unresolved" -ne 0 ]]; then
-            echo "Release PR #$number has $unresolved unresolved human review thread(s); skipping."
-            exit 0
+            decide skip review-threads "Release PR #$number has $unresolved unresolved human review thread(s); skipping."
           fi
 
           # Pre-merge throttle re-check (closes the TOCTOU gap between
@@ -747,8 +784,9 @@ jobs:
               --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
               | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || current_tag=""
             if [[ -n "$current_tag" && "$current_tag" != "$THROTTLE_TAG" ]]; then
-              echo "::notice::release tag moved (initial: $THROTTLE_TAG, current: $current_tag); deferring — the next cron tick retries"
-              exit 0
+              msg="release tag moved (initial: $THROTTLE_TAG, current: $current_tag); deferring — the next cron tick retries"
+              echo "::notice::$msg"
+              decide throttle tag-moved "$msg"
             fi
           fi
 
@@ -758,8 +796,9 @@ jobs:
           tested_head=$(jq -r '.headRefOid // empty' <<<"$detail")
           tested_base=$(jq -r '.baseRefOid // empty' <<<"$detail")
           if [[ ! "$tested_head" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::warning::Release PR #$number has no readable tested head; skipping."
-            exit 0
+            msg="Release PR #$number has no readable tested head; skipping."
+            echo "::warning::$msg"
+            decide skip unreadable-head "$msg"
           fi
           merge_args=(--squash --match-head-commit "$tested_head")
           merge_route="queue"
@@ -775,8 +814,7 @@ jobs:
           fi
 
           if [[ "$DRY_RUN" == "true" ]]; then
-            echo "DRY RUN: would squash-merge Release PR #$number ($title) via $merge_route at $tested_head."
-            exit 0
+            decide dry-run "$([[ "$merge_route" == "direct" ]] && echo direct-merge || echo merge-queue)" "DRY RUN: would squash-merge Release PR #$number ($title) via $merge_route at $tested_head."
           fi
 
           # Squash-merge with the PAT so the push to main triggers
@@ -789,11 +827,10 @@ jobs:
           # retries.
           if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" "${merge_args[@]}"; then
             if [[ "$merge_route" == "direct" ]]; then
-              echo "Directly squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
-            else
-              echo "Submitted Release PR #$number ($title) to the merge queue; publication starts after it merges."
+              decide merge direct-merge "Directly squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
             fi
-          else
-            echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
+            decide queue merge-queue "Submitted Release PR #$number ($title) to the merge queue; publication starts after it merges."
           fi
-          exit 0
+          msg="gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
+          echo "::warning::$msg"
+          decide error merge-failed "$msg"

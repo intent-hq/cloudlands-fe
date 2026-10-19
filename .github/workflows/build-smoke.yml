@@ -38,7 +38,7 @@ jobs:
     # gh-linux-8x (GH-hosted, 8-core/32 GB X64): the renderer bundle OOMs
     # 16 GB runners (monorepo#1340) — same class release-alpha's Linux x64
     # leg uses. Never downgrade to ubuntu-latest.
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     timeout-minutes: 60
     env:
       CI: 'true'

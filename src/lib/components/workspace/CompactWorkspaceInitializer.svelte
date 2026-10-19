@@ -12,7 +12,7 @@
     readSkipIsolation,
     resolveSidebarRepositoryDefault,
   } from './initializer/sidebar-repository-default';
-  import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -61,6 +61,7 @@
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerLastSelectedRepo,
     selectWorkspaceInitializerLastSubmittedAgent,
+    selectWorkspaceInitializerAgentForRepo,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerDefaultParentPath,
@@ -69,6 +70,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
+    WorkspaceInitializerAgentSettings,
     WorkspaceInitializationRequest,
     WorkspaceInitializationStagedItem,
     WorkspaceInitializerRepoSelection,
@@ -179,6 +181,8 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { agentSettingsRepoKey } from '$store/renderer/slices/workspace-initializer/utils/agent-settings-repo-key';
+  import { repoAgentSettingsToApply } from './initializer/repo-agent-settings';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
@@ -474,6 +478,7 @@
           const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -859,9 +864,15 @@
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
   let effortPickedThisSession = $state(false);
+  // Whether the user (or a prefill naming an agent) chose any part of the
+  // agent setup in this form session. Repository switches never override it;
+  // unlike the flags above it is not set by automatic effort reconciliation.
+  let setupPickedThisSession = $state(false);
+  const agentSetupPinned = () =>
+    modelPickedThisSession || effortPickedThisSession || setupPickedThisSession;
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
-    if (!settings || modelPickedThisSession || effortPickedThisSession) return;
+    if (!settings || agentSetupPinned()) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     selectedProvider = settings.selectedProvider ?? selectedProvider;
@@ -895,7 +906,7 @@
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     // Keep the provider paired with an in-session pick: restoring a different
     // provider would trip the picker's provider-mismatch effect and clear it.
-    if (!modelPickedThisSession && !effortPickedThisSession) {
+    if (!agentSetupPinned()) {
       selectedProvider = formState.selectedProvider ?? selectedProvider;
     }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
@@ -921,6 +932,80 @@
       applyAgentSettings($lastSubmittedAgent$);
     }
     didApplyHydratedCompactState = true;
+  });
+
+  /**
+   * Replace the whole agent setup (mode, specialist, provider, model, effort)
+   * with a remembered one, so nothing from the previous repository's setup
+   * leaks through fields the remembered setup leaves unset.
+   */
+  async function replaceAgentSettings(settings: WorkspaceInitializerAgentSettings) {
+    if (setupPickedThisSession) return;
+    const provider = settings.selectedProvider || $activeProviderId$ || $defaultProviderId$;
+    const model = settings.selectedModel;
+    const modelAccepted =
+      !!model &&
+      (splitLegacyCompoundId(model).providerId ??
+        settings.selectedProvider ??
+        $defaultProviderId$) === provider;
+    isTeamMode = settings.isTeamMode ?? false;
+    selectedSpecialist =
+      settings.selectedSpecialist !== undefined
+        ? settings.selectedSpecialist
+        : defaultSingleAgentSpecialist;
+    if (provider !== selectedProvider && modelAccepted && selectedModel === model) {
+      // Same model id under another provider: let the picker drop the previous
+      // override first, so the remembered one pairs with the new provider (a
+      // different id re-pairs on its own).
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      selectedProvider = provider;
+      await tick();
+      if (setupPickedThisSession) return;
+    }
+    selectedProvider = provider;
+    selectedModel = modelAccepted ? model : undefined;
+    modelWasOverridden = modelAccepted ? (settings.modelWasOverridden ?? false) : false;
+    selectedReasoningEffort =
+      !model || modelAccepted ? settings.selectedReasoningEffort : undefined;
+  }
+
+  // Remember-per-repository: when the selected repository settles on a new
+  // identity, switch to the agent setup last used to create a workspace there
+  // (or back to the global last-used setup for a repository with none).
+  const agentRepoKey = $derived(
+    agentSettingsRepoKey({
+      type: repoType,
+      path: repoPath,
+      githubUrl,
+      remote: remoteSetup
+        ? { host: remoteSetup.host, workspacePath: remoteSetup.workspacePath }
+        : null,
+      gitlab:
+        repoType === 'gitlab' && $checkoutForm$?.capture && $checkoutForm$.project
+          ? {
+              instanceBaseUrl: $checkoutForm$.capture.instanceBaseUrl,
+              projectPath: $checkoutForm$.project.projectPath,
+            }
+          : null,
+    }),
+  );
+  let lastAgentRepoKey: string | undefined;
+  $effect(() => {
+    const repoKey = agentRepoKey;
+    if (!$workspaceInitializerHydrated$ || !didApplyHydratedCompactState) return;
+    untrack(() => {
+      const settings = repoAgentSettingsToApply({
+        previousRepoKey: lastAgentRepoKey,
+        repoKey,
+        remembered: repoKey
+          ? selectWorkspaceInitializerAgentForRepo.select(appStore.state, repoKey)
+          : null,
+        fallback: $compactFormState$ ?? $lastSubmittedAgent$,
+      });
+      if (repoKey !== null) lastAgentRepoKey = repoKey;
+      if (settings) void replaceAgentSettings(settings);
+    });
   });
 
   $effect(() => {
@@ -1141,6 +1226,7 @@
           );
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -1973,6 +2059,7 @@
     const repositoryCheckout =
       repoType === 'gitlab' ? selectCheckoutSelection.select(appStore.state, checkoutFormId) : null;
     if (repoType === 'gitlab' && !repositoryCheckout) return;
+    const rememberAgentRepoKey = agentRepoKey ?? undefined;
     const checkoutContextUrl = repositoryCheckout
       ? selectCheckoutForm.select(appStore.state, checkoutFormId)?.contextUrl
       : null;
@@ -2445,6 +2532,7 @@
           isTeamMode,
           selectedProvider,
         },
+        rememberAgentRepoKey,
         // Remembered for the repo only once the workspace is created (including
         // an accepted auto-selected default branch).
         rememberBranch:
@@ -2658,6 +2746,12 @@
     pullError = null;
     showPullConflictDialog = false;
     // Note: intentionally not resetting shouldPullBeforeCreate — this preference should persist.
+
+    // The created setup is now remembered (globally and for its repository),
+    // so the next form session may again follow repository switches.
+    modelPickedThisSession = false;
+    effortPickedThisSession = false;
+    setupPickedThisSession = false;
 
     // Save the created choices for the next form now, before navigation can
     // unmount the component. remoteSetup is already cleared above.
@@ -3756,6 +3850,7 @@
             }}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
+            onSetupPick={() => (setupPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider

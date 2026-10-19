@@ -18,7 +18,7 @@ jobs:
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image (see release-alpha.yml build-windows for why Server 2022).
-    runs-on: depot-windows-2022-16
+    runs-on: gh-windows-16x
     timeout-minutes: 60
 
     steps:

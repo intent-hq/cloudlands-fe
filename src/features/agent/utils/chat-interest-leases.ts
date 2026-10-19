@@ -27,6 +27,12 @@
  * wire calls — just a module-level Map with simple accessors over it.
  */
 
+/**
+ * Holder-id prefix for the chat-read saga's hydration leases. Every other
+ * holder is a mounted, active ChatPanel instance.
+ */
+export const HYDRATION_LEASE_HOLDER_PREFIX = 'chat-read:';
+
 const leaseHoldersByAgent = new Map<string, Set<string>>();
 
 type LastLeaseReleasedListener = (agentId: string) => void;
@@ -71,6 +77,19 @@ export function onLastChatInterestLeaseReleased(listener: LastLeaseReleasedListe
 /** Whether any live consumer currently holds a lease on this agent. */
 export function hasChatInterestLease(agentId: string): boolean {
   return leaseHoldersByAgent.has(agentId);
+}
+
+/**
+ * Whether a live ChatPanel (not just an in-flight hydration) currently leases
+ * this agent — i.e. some mounted, active panel is still showing it.
+ */
+export function hasPanelChatInterestLease(agentId: string): boolean {
+  const holders = leaseHoldersByAgent.get(agentId);
+  if (!holders) return false;
+  for (const holder of holders) {
+    if (!holder.startsWith(HYDRATION_LEASE_HOLDER_PREFIX)) return true;
+  }
+  return false;
 }
 
 /** How many distinct holders currently lease this agent. */

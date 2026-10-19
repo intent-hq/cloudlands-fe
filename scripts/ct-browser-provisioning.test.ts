@@ -93,9 +93,7 @@ ${command}`,
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true'
-          ? ['depot-ubuntu-24.04-8']
-          : ['self-hosted', 'linux', 'x64', 'intent-cache'],
+        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'x64', 'intent-cache'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
@@ -105,7 +103,7 @@ ${command}`,
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['depot-ubuntu-24.04-8']);
+    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['gh-linux-8x']);
     expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];

@@ -1548,6 +1548,7 @@ function projectAgentMetadata(
       updates[key] = undefined;
       metadataPatch[key] = { op: 'clear' };
     }
+    metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     consumed.add('attentionRequestCleared');
   }
   if (
@@ -1565,6 +1566,9 @@ function projectAgentMetadata(
       op: 'set',
       value: updates.attentionRequestTimestamp,
     };
+    // The event carries the full reason, so a list row's shortened-copy flag
+    // no longer describes the stored value.
+    metadataPatch.attentionRequestReasonTruncated = { op: 'clear' };
     for (const key of Object.keys(data)) consumed.add(key);
   }
   if (consumed.size === 1) return false;

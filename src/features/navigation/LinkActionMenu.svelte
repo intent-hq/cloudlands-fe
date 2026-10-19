@@ -7,7 +7,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
   import type { PullRequestWorkspace } from '$lib/client/app-client';
-  import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
+  import { openInExternalBrowser, openLinkInApp, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
   const menuAnchor = $derived.by(() => {
@@ -111,13 +111,11 @@
   }
 
   async function handleOpenInApp() {
-    const { url, workspaceId } = linkActionMenuState;
+    const { url, workspaceId, openInWorkspace, sourcePanelId, assistantLayoutId } =
+      linkActionMenuState;
     hideLinkActionMenu();
-    if (workspaceId) {
-      await openInBrowserPanel(url, workspaceId);
-    } else {
-      await openInExternalBrowser(url);
-    }
+    if (!workspaceId) return;
+    await openLinkInApp(url, workspaceId, { openInWorkspace, sourcePanelId, assistantLayoutId });
   }
 
   async function handleCopyLink() {

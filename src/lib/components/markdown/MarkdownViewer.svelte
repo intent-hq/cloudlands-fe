@@ -2,7 +2,7 @@
   import './markdown-math.css';
   import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
-  import { getAllContexts, mount, onDestroy, unmount } from 'svelte';
+  import { getAllContexts, mount, onDestroy, unmount, type ComponentProps } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
@@ -26,6 +26,7 @@
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
+    markedMediaUnavailableReason,
     workspaceAssetVideoSource,
   } from '$lib/utils/workspace-file-image';
   import {
@@ -41,12 +42,12 @@
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
   interface Props {
     content: string;
     isStreaming?: boolean;
     className?: string;
     workspaceId?: string;
+    relativeMediaBase?: string; // File viewer: workspace dir that relative images resolve from.
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
     /** File-only policy; external web and note links remain usable. */
     canOpenFile?: () => boolean;
@@ -75,6 +76,7 @@
     isStreaming = false,
     className = '',
     workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
+    relativeMediaBase,
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     canOpenFile,
@@ -125,7 +127,7 @@
     version: number,
   ) {
     try {
-      const html = await processMarkdownToHTML(markdown, options);
+      const html = await processMarkdownToHTML(markdown, { ...options, readOnly: true });
       if (version !== renderVersion) return;
       // Svelte owns the HTML and overlay anchors; never replace its container manually.
       processedContent = stampMarkdownImageDimensions(html, imageMedia, options?.workspaceId);
@@ -175,6 +177,7 @@
       preserveAnchors: true,
       taskBlockRenderMode,
       workspaceId,
+      relativeMediaBase,
       renderRichFencesAsCode: renderRichFencesAsCode || renderDiagrams,
       processPrimitives: !renderDiagrams,
       allowSanitizedHtml,
@@ -288,7 +291,7 @@
 
     function replaceMedia(
       media: HTMLImageElement | HTMLVideoElement,
-      reason: MediaUnavailableReason,
+      reason: ComponentProps<typeof MediaUnavailable>['reason'],
     ) {
       const source = media.getAttribute('src') || media.getAttribute('data-media-src') || '';
       const workspaceFile = parseWorkspaceFileImageUrl(source);
@@ -339,7 +342,7 @@
         replaceMedia(media, 'unsupported');
       }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unavailable]')) {
-        replaceMedia(media, 'load-failed');
+        replaceMedia(media, markedMediaUnavailableReason(media));
       }
       for (const [host, component] of mountedPlaceholders) {
         if (!node.contains(host)) {
@@ -377,8 +380,7 @@
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Supported inline images open in the lightbox (unless wrapped in a
-    // link, in which case the link wins)
+    // Supported inline images open in the lightbox unless wrapped in a link (the link wins).
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
       if (supportsImageActions(src) && canUseMedia(src)) {
@@ -541,6 +543,7 @@
           content={segment.content}
           {isStreaming}
           {workspaceId}
+          {relativeMediaBase}
           onCodeBlockAction={_onCodeBlockAction}
           {onFileClick}
           {canOpenFile}
