@@ -689,20 +689,24 @@ jobs:
           echo "✓ dist/web/index.html present."
 
   test:
-    # Two-way Vitest shard matrix (intent-hq/monorepo#4260). The job ran
+    # Four-way Vitest shard matrix (two-way since intent-hq/monorepo#4260;
+    # four-way because each of two legs took ~26 min on an intent-cache heavy
+    # slot and ~23 min on gh-linux-8x against the 30-min timeout, runs
+    # 39243214256 / 39265196837). The legs route like the other heavy jobs
+    # (slots first, hosted overflow). The job ran
     # unsharded while the box had a single runner slot (shards would have
     # queued serially there, each paying its own checkout/install); with two
     # self-hosted slots plus the burst route that rationale is stale, and the
     # unit step is the workflow's long pole (p50 ~7.5 min, p90 ~18 min on
     # the burst runner) against ~0.5 min of per-leg setup. Vitest's
-    # --shard=N/2 is a stable partition of the sorted test-file list, so
-    # the two legs cover the full suite exactly once (shard-completeness
+    # --shard=N/4 is a stable partition of the sorted test-file list, so
+    # the four legs cover the full suite exactly once (shard-completeness
     # proof in the #4260 follow-up PR). Integration tests moved to the
     # separate unsharded test-integration job so they still run exactly
     # once.
     # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
-    # cores/2), monorepo#3082), so two concurrent legs on one self-hosted host
-    # can run 2x that fork count (plus the now-concurrent test-integration
+    # cores/2), monorepo#3082), so concurrent legs on one self-hosted host
+    # can run a multiple of that fork count (plus the now-concurrent test-integration
     # job). Per-leg wall time halves the exposure window and the 60s CI
     # test timeout gives slack; if #3082-class load flakes reappear, halve
     # the vitest.config.ts worker cap when --shard is in play.
@@ -710,7 +714,7 @@ jobs:
     # comment for the full skip/fail-safe rationale (a job-level skip
     # reports 'skipped' for the whole matrix; no per-leg required contexts
     # exist — "CI Gate" is the only required check).
-    name: Unit Tests (shard ${{ matrix.shard }}/2)
+    name: Unit Tests (shard ${{ matrix.shard }}/4)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
@@ -719,7 +723,7 @@ jobs:
       # other leg's results (same rationale as test-ct).
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -799,7 +803,7 @@ jobs:
           echo "Transfer selection contract: intent-hq/intent@$contract_sha"
           echo "Transfer selection contract: intent-hq/intent@$contract_sha" >> "$GITHUB_STEP_SUMMARY"
           node scripts/transfer-selection-fixtures.mjs
-          pnpm run test:unit --shard=${{ matrix.shard }}/2
+          pnpm run test:unit --shard=${{ matrix.shard }}/4
 
   test-portable-fixtures:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
