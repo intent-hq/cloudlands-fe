@@ -77,7 +77,7 @@ async function openOriginalSubmenu(): Promise<HTMLElement[]> {
 
 function showIssueMenu(
   workspaceId?: WorkspaceId,
-  source: { openInWorkspace?: boolean; sourcePanelId?: string } = {},
+  source: { openInWorkspace?: boolean; sourcePanelId?: string; assistantLayoutId?: string } = {},
 ) {
   showLinkActionMenu({
     url: ISSUE_URL,
@@ -179,15 +179,21 @@ describe('LinkActionMenu', () => {
     expect(linkActionMenuState.visible).toBe(false);
   });
 
-  it('offers no in-app action for a link in the Assistant', async () => {
+  it('open in app from the Assistant targets the Assistant panel it came from', async () => {
     render(LinkActionMenu);
-    showIssueMenu(CHIEF_WORKSPACE_ID);
+    showIssueMenu(CHIEF_WORKSPACE_ID, { assistantLayoutId: 'assistant-thread-1' });
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
 
-    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
-    expect(
-      screen.queryByRole('menuitem', { name: m.navigation_linkActionMenu_openInApp_label() }),
-    ).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.navigation_linkActionMenu_openInApp_label() }),
+    );
+
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(ISSUE_URL, CHIEF_WORKSPACE_ID, {
+      openInWorkspace: false,
+      sourcePanelId: undefined,
+      assistantLayoutId: 'assistant-thread-1',
+    });
+    expect(linkActionMenuState.visible).toBe(false);
   });
 
   it('copy link writes the URL to the clipboard', async () => {

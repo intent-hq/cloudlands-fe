@@ -42,7 +42,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatDateTime, formatInteger, formatRelativeTime, formatTime } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
-  import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
+  import { handleLink, openLinkInApp } from '$features/navigation/link-handler';
+  import { readLinkSource } from '$features/navigation/link-source';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
   import {
@@ -177,9 +178,17 @@
     return monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
   }
 
+  let rowElement: HTMLElement | null = $state(null);
+
   function handleOpenInApp(monitor: PrMonitorRow) {
-    // Built-in fallback to the external browser when the panel cannot open.
-    void openInBrowserPanel(prUrl(monitor), workspaceId as WorkspaceId);
+    // The menu is portaled, so the row tells where the action came from: a Home
+    // preview enters the workspace first. The panel falls back to the external
+    // browser when it cannot open.
+    const { openInWorkspace, assistantLayoutId } = readLinkSource(rowElement, workspaceId);
+    void openLinkInApp(prUrl(monitor), workspaceId as WorkspaceId, {
+      openInWorkspace,
+      assistantLayoutId,
+    });
   }
 
   function handleOpenExternal(monitor: PrMonitorRow) {
@@ -338,6 +347,7 @@
 
 {#if activeMonitors.length > 0}
   <div
+    bind:this={rowElement}
     class="w-full min-w-0 max-w-full"
     role="group"
     aria-label={m.chat_monitoredPrs_row_ariaLabel()}
