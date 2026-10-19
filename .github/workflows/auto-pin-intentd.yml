@@ -462,6 +462,13 @@ jobs:
             echo "::warning::auto-pin-merge-route failed; using the merge queue."
           fi
 
+          # Residual race: main can move between the route check and this
+          # merge (--match-head-commit binds only the PR head). That is safe
+          # by construction: the route already accepts main moving without
+          # touching the pin files, and a concurrent change to them (another
+          # pin bump; the protocol module is generated, guarded by
+          # lint:intentd-protocol-pin) conflicts on the same lines, so
+          # GitHub rejects the squash and this falls back to the queue.
           if [ "$route" = "direct" ]; then
             if gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --admin --match-head-commit "$HEAD_SHA"; then
               echo "Directly squash-merged pin PR #$PR at $HEAD_SHA."
