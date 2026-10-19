@@ -20,6 +20,12 @@ import {
   getStandaloneToolResultPresentation,
   isStandaloneToolResult,
 } from './tool-result-pairing';
+import { collapseOperationalRuns } from './operational-run-collapse';
+
+export interface ChatSearchOptions {
+  /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
+  collapseToolRuns?: boolean;
+}
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -38,6 +44,7 @@ function buildMessageSearchBlocks(
   message: AgentMessage,
   turnKey: string,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions = {},
 ): ChatSearchBlock[] {
   const contentBlocks = message.contentBlocks;
   if (!contentBlocks?.length) return [];
@@ -60,10 +67,13 @@ function buildMessageSearchBlocks(
   const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
     isStreaming: !!message.isStreaming,
   });
-  const grouped = normalizeResponseGroups(
+  const normalized = normalizeResponseGroups(
     groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
     !!message.isStreaming,
   );
+  const grouped = options.collapseToolRuns
+    ? collapseOperationalRuns(normalized, { isStreaming: !!message.isStreaming })
+    : normalized;
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
@@ -149,12 +159,14 @@ function buildChatSearchIndex(
   messages: AgentMessage[],
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions,
 ): ChatSearchBlock[] {
   return messages.flatMap((message) =>
     buildMessageSearchBlocks(
       message,
       turnKeyByMessageId.get(message.id) ?? message.id,
       ownerPrincipalId,
+      options,
     ),
   );
 }
@@ -173,12 +185,18 @@ export function findChatSearchMatches(
   query: string,
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId?: string | null,
+  options: ChatSearchOptions = {},
 ): ChatSearchMatch[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
   const matches: ChatSearchMatch[] = [];
   const occurrenceByMessage = new Map<string, number>();
-  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId, ownerPrincipalId)) {
+  for (const block of buildChatSearchIndex(
+    messages,
+    turnKeyByMessageId,
+    ownerPrincipalId,
+    options,
+  )) {
     const content = block.text.toLowerCase();
     let offset = 0;
     let occurrenceInBlock = 0;

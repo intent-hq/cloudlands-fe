@@ -1371,6 +1371,8 @@ export interface ContentBlockGroup {
   isReasoningPhase?: boolean;
   sourceName?: string;
   hasAdjacentReasoningHistory?: boolean;
+  /** Renderer-only: set when this group is a collapsed run of tool calls and thinking steps. */
+  collapsedRun?: { tools: number; thinking: number };
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;

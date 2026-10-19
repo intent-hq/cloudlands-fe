@@ -17,6 +17,8 @@
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { collapseOperationalRuns } from './operational-run-collapse';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -199,9 +201,14 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  const groupedBlocks = $derived(
-    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
-  );
+  const collapseToolRuns$ = selectCollapseToolRuns();
+  const groupedBlocks = $derived.by(() => {
+    const normalized = normalizeResponseGroups(
+      groupContentBlocks(blocks, isStreaming),
+      isStreaming,
+    );
+    return $collapseToolRuns$ ? collapseOperationalRuns(normalized, { isStreaming }) : normalized;
+  });
 
   function isVisibleGroupChild(block: RenderContentBlock): boolean {
     return (
@@ -793,11 +800,12 @@
         saved={operationalPanel.state(item.key, () => ({}))}
         name={group.name}
         isStreaming={group.isStreaming}
-        isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+        isTerminal={!group.collapsedRun && blockIndex === lastVisibleTopLevelBlockIndex}
         {isLastConversationMessage}
         blocks={group.children.filter(isVisibleGroupChild)}
         searchPath={chatSearchBlockPath(blockIndex)}
         reasoningPhase={group.isReasoningPhase}
+        collapsedRun={group.collapsedRun}
         adjacentOperationalRow={isAdjacentOperationalClusterRow(
           groupedBlocks,
           blockIndex,

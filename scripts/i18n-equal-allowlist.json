@@ -10,6 +10,7 @@
   "presence_person_roleStatus": "*",
   "chat_proposalCard_agentSetupModelEffort_label": "*",
   "chat_modelChangeNotice_profileModel_label": ["ko", "de", "fr", "es"],
+  "chat_responseGroup_collapsedRunSummary_label": ["de"],
   "settings_sidebar_guestSessions_label": ["fr"],
   "settings_guestSessions_title": ["fr"],
   "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],

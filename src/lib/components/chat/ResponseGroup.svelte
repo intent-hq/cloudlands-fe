@@ -27,6 +27,7 @@
   } from './operational-disclosure-row';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     headerAdmitted?: boolean;
@@ -44,6 +45,8 @@
     children: Snippet;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
+    /** Counts for a collapsed run of tool calls and thinking steps; replaces the name. */
+    collapsedRun?: { tools: number; thinking: number };
     adjacentOperationalRow?: boolean;
     searchPath?: string;
     class?: string;
@@ -60,6 +63,7 @@
     children,
     blocks,
     reasoningPhase = false,
+    collapsedRun,
     adjacentOperationalRow = false,
     searchPath,
     class: className = '',
@@ -226,17 +230,35 @@
   // Keep normal named groups to one inline summary. Reasoning phases match the
   // standard reasoning disclosure and reveal their description only when open.
   const textSnippet = $derived.by(() => {
-    if (reasoningPhase) return '';
+    if (reasoningPhase || collapsedRun) return '';
     const previewBlock = getResponseGroupPreviewBlock(blocks);
     return previewBlock ? getContentBlockText(previewBlock).trim() : '';
   });
+  function collapsedRunLabel({ tools, thinking }: { tools: number; thinking: number }): string {
+    const toolsLabel =
+      tools === 1
+        ? m.chat_responseGroup_collapsedRunTools_one()
+        : m.chat_responseGroup_collapsedRunTools_many({ count: formatInteger(tools) });
+    const thinkingLabel =
+      thinking === 1
+        ? m.chat_responseGroup_collapsedRunThinking_one()
+        : m.chat_responseGroup_collapsedRunThinking_many({ count: formatInteger(thinking) });
+    if (thinking === 0) return toolsLabel;
+    if (tools === 0) return thinkingLabel;
+    return m.chat_responseGroup_collapsedRunSummary_label({
+      tools: toolsLabel,
+      thinking: thinkingLabel,
+    });
+  }
   const displayName = $derived(
-    reasoningPhase
-      ? name.trim() ||
+    collapsedRun
+      ? collapsedRunLabel(collapsedRun)
+      : reasoningPhase
+        ? name.trim() ||
           (isStreaming
             ? m.chat_thinkingBlock_thinking_label()
             : m.chat_thinkingBlock_reasoning_label())
-      : name,
+        : name,
   );
   const accessibleSummary = $derived(textSnippet ? `${displayName}: ${textSnippet}` : displayName);
   const groupContentClass = $derived(

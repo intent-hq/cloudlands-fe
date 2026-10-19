@@ -219,3 +219,30 @@ describe('chat search utilities', () => {
     expect(ranges[0].toString()).toBe('crossnode');
   });
 });
+
+describe('chat search with collapsed tool runs', () => {
+  const message = assistant('assistant-runs', [
+    { type: 'tool_use', id: 'tool-a', name: 'view', input: {} },
+    { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
+    { type: 'tool_result', tool_use_id: 'orphan', output: 'orphan needle output' },
+    { type: 'text', text: 'prose needle after the run' },
+  ] as AgentMessage['contentBlocks']);
+
+  it('indexes prose at the post-collapse block path the renderer uses', () => {
+    const [plain] = findChatSearchMatches([message], 'prose needle', new Map());
+    const [collapsed] = findChatSearchMatches([message], 'prose needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(plain.blockPath).toBe('b:3');
+    expect(collapsed.blockPath).toBe('b:1');
+    expect(collapsed.disclosurePath).toEqual([]);
+  });
+
+  it('reveals a standalone tool result inside a collapsed run through its group', () => {
+    const [match] = findChatSearchMatches([message], 'orphan needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(match.blockPath).toBe('b:0:c:2');
+    expect(match.disclosurePath).toEqual(['group:b:0']);
+  });
+});
