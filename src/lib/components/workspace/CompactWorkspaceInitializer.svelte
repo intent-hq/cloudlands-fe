@@ -1667,7 +1667,7 @@
     )
       return;
     consumedInitializationSeq = outcome.seq;
-    void consumeWorkspaceInitialization(active, outcome);
+    void tick().then(() => consumeWorkspaceInitialization(active, outcome));
   });
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
