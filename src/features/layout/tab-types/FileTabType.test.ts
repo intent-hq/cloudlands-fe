@@ -639,6 +639,10 @@ describe('FileTabType Redux integration', () => {
         await waitFor(() =>
           expect(screen.getByTestId('markdown-viewer').textContent).toBe('# Secondary root A'),
         );
+        // Scoped roots never resolve relative media to primary-checkout workspace files.
+        expect(screen.getByTestId('markdown-viewer').getAttribute('data-relative-media-base')).toBe(
+          '(unset)',
+        );
         expect(backendRequest).toHaveBeenCalledWith('file.read', {
           workspaceId: 'ws-1',
           path: 'new.md',
@@ -1121,6 +1125,27 @@ describe('FileTabType Redux integration', () => {
       expect.objectContaining({ type: 'files/saveFileContentRequested' }),
     );
     expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
+  });
+
+  it.each([
+    ['report/report.md', 'report'],
+    ['README.md', ''],
+  ])('resolves relative preview media for %s against %j', async (filePath, expected) => {
+    mockReduxState.files[filePath] = {
+      localContent: '![Chart](charts/chart.png)',
+      kind: 'editable-text',
+      originalContent: '![Chart](charts/chart.png)',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: filePath, filePath });
+
+    const preview = await screen.findByTestId('markdown-viewer');
+    expect(preview.getAttribute('data-relative-media-base')).toBe(expected);
   });
 
   it('opens markdown line targets in the source editor', async () => {

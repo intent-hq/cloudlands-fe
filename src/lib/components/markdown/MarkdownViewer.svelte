@@ -47,6 +47,7 @@
     isStreaming?: boolean;
     className?: string;
     workspaceId?: string;
+    relativeMediaBase?: string; // File viewer: workspace dir that relative images resolve from.
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
     /** File-only policy; external web and note links remain usable. */
     canOpenFile?: () => boolean;
@@ -75,6 +76,7 @@
     isStreaming = false,
     className = '',
     workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
+    relativeMediaBase,
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     canOpenFile,
@@ -175,6 +177,7 @@
       preserveAnchors: true,
       taskBlockRenderMode,
       workspaceId,
+      relativeMediaBase,
       renderRichFencesAsCode: renderRichFencesAsCode || renderDiagrams,
       processPrimitives: !renderDiagrams,
       allowSanitizedHtml,
@@ -377,8 +380,7 @@
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Supported inline images open in the lightbox (unless wrapped in a
-    // link, in which case the link wins)
+    // Supported inline images open in the lightbox unless wrapped in a link (the link wins).
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
       if (supportsImageActions(src) && canUseMedia(src)) {
@@ -541,6 +543,7 @@
           content={segment.content}
           {isStreaming}
           {workspaceId}
+          {relativeMediaBase}
           onCodeBlockAction={_onCodeBlockAction}
           {onFileClick}
           {canOpenFile}
