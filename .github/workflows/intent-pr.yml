@@ -484,7 +484,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - run: python3 -m pip install 'PyYAML==6.0.3'
@@ -557,7 +557,7 @@ jobs:
       # part of this gate too, and the generated paths are Prettier-ignored
       # (.prettierignore plus Prettier's default .gitignore handling), so
       # running it before generation loses no coverage.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - run: python3 -m pip install 'PyYAML==6.0.3'
@@ -735,7 +735,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup Python for script regression tests
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Checkout shared transfer-selection fixtures
