@@ -290,6 +290,15 @@ export function* workspaceInitializerDraftSaga() {
           continue;
         const save = pending[id];
         if (!save || stoppedOwners.has(id)) continue;
+        if (
+          (save.ownerRequestId !== undefined &&
+            activeRestoreRequestIds[id] !== save.ownerRequestId) ||
+          (save.admission !== undefined &&
+            (yield* selectPrincipalActionContext.effect()) !== save.admission)
+        ) {
+          delete pending[id];
+          continue;
+        }
         delete pending[id];
         const status = restoreStatuses[id];
         if (
@@ -330,9 +339,15 @@ export function* workspaceInitializerDraftSaga() {
         stoppedOwners.add(id);
         mutationEpoch.value++;
         pending = {};
-        const restoreTask = restoreTasks[id];
-        if (restoreTask) yield* cancel(restoreTask);
-        delete restoreTasks[id];
+        const admittedRestores = Object.entries(activeRestoreRequestIds).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        );
+        for (const [ownerId] of admittedRestores) {
+          const restoreTask = restoreTasks[ownerId];
+          if (restoreTask) yield* cancel(restoreTask);
+          delete restoreTasks[ownerId];
+          if (ownerId !== id) restoreStatuses[ownerId] = 'pending';
+        }
         delete activeRestoreRequestIds[id];
         delete restoreStatuses[id];
         yield* call(removeAllLegacyPrompts);
@@ -342,9 +357,23 @@ export function* workspaceInitializerDraftSaga() {
             NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
             NEW_WORKSPACE_DRAFT_AGENT_ID,
           );
+          for (const [ownerId, restoreRequestId] of admittedRestores) {
+            if (ownerId === id || activeRestoreRequestIds[ownerId] !== restoreRequestId) continue;
+            restoreStatuses[ownerId] = 'empty';
+            yield* put(
+              workspaceInitializerDraftRestoreFinished(ownerId, restoreRequestId, 'empty', '', []),
+            );
+          }
           yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'success'));
         } catch (error) {
           logger.warn('drafts.clear failed', { error: String(error) });
+          for (const [ownerId, restoreRequestId] of admittedRestores) {
+            if (ownerId === id || activeRestoreRequestIds[ownerId] !== restoreRequestId) continue;
+            restoreStatuses[ownerId] = 'error';
+            yield* put(
+              workspaceInitializerDraftRestoreFinished(ownerId, restoreRequestId, 'error', '', []),
+            );
+          }
           yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
         }
         continue;

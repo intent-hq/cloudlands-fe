@@ -149,6 +149,51 @@ describe('workspaceInitializerDraftSaga', () => {
     expect(mocks.set).not.toHaveBeenCalled();
   });
 
+  it('does not flush a pending save admitted under a stale principal', async () => {
+    mocks.admission = 'host/member-a';
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'restore-1',
+        'legacy-key',
+        'host/member-a',
+      ),
+    );
+    await settle();
+    channel.put(
+      workspaceInitializerDraftSaveScheduled(
+        'compact',
+        { text: 'stale' },
+        'restore-1',
+        'host/member-a',
+      ),
+    );
+    await settle();
+
+    mocks.admission = 'host/member-b';
+    channel.put(workspaceInitializerDraftFlushRequested('compact', 'restore-1', 'host/member-b'));
+    await settle();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
+  it('does not flush a pending save from a stale owner request', async () => {
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-old', 'legacy-key'));
+    await settle();
+    channel.put(
+      workspaceInitializerDraftSaveScheduled('compact', { text: 'stale' }, 'restore-old'),
+    );
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'restore-new', 'legacy-key'));
+    await settle();
+
+    channel.put(workspaceInitializerDraftFlushRequested('compact', 'restore-new'));
+    await settle();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+
   it('accepts the current admission after a mounted owner reconnects', async () => {
     mocks.admission = 'host/member-a';
     channel.put(
@@ -204,6 +249,53 @@ describe('workspaceInitializerDraftSaga', () => {
     await settle();
 
     expect(mocks.clear).toHaveBeenCalledOnce();
+    expect(mocks.set.mock.calls).toEqual([
+      ['__new-workspace__', '__initializer__', 'compact remains active', undefined],
+    ]);
+  });
+
+  it('invalidates another owner restore that was pending before clear', async () => {
+    const held = deferred<{ text: string; attachments: never[] }>();
+    mocks.get.mockReturnValueOnce(held.promise).mockResolvedValueOnce(null);
+    channel.put(workspaceInitializerDraftRestoreRequested('compact', 'compact-restore', 'compact'));
+    channel.put(
+      workspaceInitializerDraftRestoreRequested('onboarding', 'onboarding-restore', 'onboarding'),
+    );
+    await settle();
+
+    channel.put(
+      workspaceInitializerDraftClearRequested(
+        'onboarding',
+        'onboarding-clear',
+        'onboarding-restore',
+      ),
+    );
+    await settle();
+    held.resolve({ text: 'cleared draft', attachments: [] });
+    await settle();
+
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'compact-restore', 'empty', '', []),
+    );
+    expect(dispatched).not.toContainEqual(
+      workspaceInitializerDraftRestoreFinished(
+        'compact',
+        'compact-restore',
+        'restored',
+        'cleared draft',
+        [],
+      ),
+    );
+    channel.put(
+      workspaceInitializerDraftSaveScheduled(
+        'compact',
+        { text: 'compact remains active' },
+        'compact-restore',
+      ),
+    );
+    channel.put(workspaceInitializerDraftFlushRequested('compact', 'compact-restore'));
+    await settle();
+
     expect(mocks.set.mock.calls).toEqual([
       ['__new-workspace__', '__initializer__', 'compact remains active', undefined],
     ]);
