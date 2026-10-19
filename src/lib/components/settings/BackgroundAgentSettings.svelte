@@ -38,6 +38,7 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { providerRefBaseId } from '$shared/provider-profiles';
 
   const defaultEffort$ = selectBgDefaultReasoningEffort();
   const effortOverrides$ = selectBgTypeReasoningEffortOverrides();
@@ -51,8 +52,10 @@
   const providerAvailable$ = selectIsActiveProviderAvailable();
   // agent.completeOnce uses ACP effort only for these routes (§5.32).
   // Auggie --print has no effort channel, even if ordinary models advertise it.
+  // A named profile (§5.54) runs its base provider's route.
   const supportsQuickActionEffort = $derived(
-    ['codex', 'claude-code', 'pi'].includes($effectiveProviderId$),
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
+    ['codex', 'claude-code', 'pi'].includes(providerRefBaseId($effectiveProviderId$)),
   );
 
   // §5.31 gate mirror: prompt enhancement and layout suggestions stays auggie-only even though

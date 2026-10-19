@@ -173,6 +173,70 @@ describe('modelSelectionSaga', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  // §5.54: a saved profile's reference travels in model.defaultProvider and as
+  // its model.providerDefaults key; it must not be dropped as an unknown provider.
+  it('persists a saved profile pick under its provider reference', async () => {
+    const current = {
+      ...state(),
+      providerCatalog: {
+        providers: createCollection('id', [
+          { id: 'codex', canBeDisabled: true, supportsProfiles: true },
+        ]),
+        profiles: createCollection('id', [
+          {
+            id: 'pwork00000001',
+            providerRef: 'codex@pwork00000001',
+            baseProviderId: 'codex',
+            name: 'Work',
+          },
+        ]),
+        loaded: true,
+      },
+    };
+    const { environment, owner } = selectionEnvironment(current);
+    try {
+      await runSaga(
+        environment,
+        handleSelectModel,
+        selectModel('gpt-5', 'codex@pwork00000001'),
+      ).toPromise();
+      await settle();
+      const [changes] = mocks.update.mock.calls[0] as [AppSettingChange[]];
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          { path: 'model.defaultProvider', value: 'codex@pwork00000001' },
+          {
+            path: 'model.providerDefaults',
+            value: { auggie: 'sonnet4.5', 'codex@pwork00000001': 'gpt-5' },
+          },
+        ]),
+      );
+    } finally {
+      owner.cancel();
+      await owner.toPromise();
+    }
+  });
+
+  it('ignores a pick for a profile reference the catalog no longer lists', async () => {
+    const dispatch = vi.fn();
+    const current = {
+      ...state(),
+      providerCatalog: {
+        providers: createCollection('id', [
+          { id: 'codex', canBeDisabled: true, supportsProfiles: true },
+        ]),
+        profiles: createCollection('id', []),
+        loaded: true,
+      },
+    };
+    await runSaga(
+      { dispatch, getState: () => current },
+      handleSelectModel,
+      selectModel('gpt-5', 'codex@pgone00000001'),
+    ).toPromise();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('sends a compound provider pick before catalog hydration without adopting it locally', async () => {
     const preCatalog = {
       ...state(),

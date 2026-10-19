@@ -5,7 +5,7 @@
   import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
   const hostMember$ = selectIsHostMember();
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { writable, derived } from 'svelte/store';
+  import { writable, derived, get } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -60,7 +60,10 @@
     setModelPickerGroupCollapsed,
   } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import {
+    selectDaemonHealth,
+    selectIsDaemonAppOwned,
+  } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
     selectIsProviderModelAccessAllowed,
@@ -79,6 +82,19 @@
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { selectProviderCatalogProfiles } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import type { ProviderProfileSummary } from '$shared/provider-catalog';
+  import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
+  import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import {
+    expandProviderIdsWithProfiles,
+    findProfileByRef,
+    isProviderProfileRef,
+    providerRefBaseId,
+    providerRefLabelParts,
+  } from '$shared/provider-profiles';
+  import { formatProviderRefLabel, providerRefProfileName } from '$shared/provider-ref-label';
   import {
     providerModelsObserved,
     providerModelsReleased,
@@ -121,6 +137,7 @@
     faPlus,
     faXmark,
     faTriangleExclamation,
+    faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -146,12 +163,42 @@
       )?.id ?? providerId
     );
   }
+  // Group/tab label: bare names until a base has offered profiles, then
+  // `<Provider> · Default` / `<Provider> · <Profile>` (§5.54). A profile
+  // reference always names its profile, even while the Labs toggle is off.
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
-    return (
-      $providerCatalogEntries$.find((p) => p.id === normalizeProviderId(providerId))?.displayName ??
-      providerId
+    const baseId = normalizeProviderId(providerRefBaseId(providerId));
+    const baseName = $providerCatalogEntries$.find((p) => p.id === baseId)?.displayName ?? baseId;
+    const isProfile = isProviderProfileRef(providerId);
+    return formatProviderRefLabel(
+      isProfile ? providerId : baseId,
+      baseName,
+      isProfile ? $allProviderProfiles$ : $providerProfiles$,
+      baseId,
     );
+  }
+  function baseProviderDisplayName(providerId: string): string {
+    const baseId = normalizeProviderId(providerRefBaseId(providerId));
+    return $providerCatalogEntries$.find((p) => p.id === baseId)?.displayName ?? baseId;
+  }
+  function isProfileSignedOut(providerRef: string): boolean {
+    const profile = findProfileByRef($providerProfiles$, providerRef);
+    return !!profile && $profileSignInStatuses$[profile.id] === 'error';
+  }
+  function providerTabLabel(providerId: string): string {
+    const label = providerDisplayName(providerId);
+    return isProfileSignedOut(providerId)
+      ? m.chat_modelPicker_profileSignedOut_ariaLabel({ provider: label })
+      : label;
+  }
+  function baseHasProfiles(providerId: string): boolean {
+    const baseId = normalizeProviderId(providerRefBaseId(providerId));
+    return $providerProfiles$.some((profile) => profile.baseProviderId === baseId);
+  }
+  function profileInitial(providerRef: string): string {
+    const name = findProfileByRef($allProviderProfiles$, providerRef)?.name.trim() ?? '';
+    return name ? [...name][0].toLocaleUpperCase() : '?';
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -163,6 +210,14 @@
 
   function hasResolvedProvider(providerId: string): boolean {
     void $providerCatalogEntries$;
+    // A profile reference resolves only while its profile is saved (§5.54);
+    // a deleted one needs an explicit replacement, never a substitute.
+    if (isProviderProfileRef(providerId)) {
+      return (
+        !!findProfileByRef($allProviderProfiles$, providerId) &&
+        hasResolvedProvider(providerRefBaseId(providerId))
+      );
+    }
     return $providerCatalogEntries$.some((p) => p.id === normalizeProviderId(providerId));
   }
 
@@ -334,8 +389,53 @@
     ([id, scoped, direct]) => (id ? scoped : direct),
   );
   const providerCatalogEntries$ = selectContextProviderEntries(workspaceIdStore);
-  const modelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
-  const availableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
+  // Named profiles (§5.54) ride their base provider's availability: each
+  // available base is followed by its profile references, which the picker
+  // then treats as providers of their own (catalog fetch, group, tab).
+  //
+  // Profiles are a Labs feature (Settings → Labs → Provider profiles). While
+  // it is off the picker offers no profile groups, tabs, `Default` labels or
+  // sign-in probes, but a selection that already references a saved profile
+  // keeps resolving, running and showing its profile name — never a silent
+  // account switch. `allProviderProfiles$` is every saved profile (resolution
+  // and labels); `providerProfiles$` is the offered set.
+  const allProviderProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
+  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
+  const NO_OFFERED_PROFILES: ProviderProfileSummary[] = [];
+  const providerProfiles$ = derived(
+    [allProviderProfiles$, labsProviderProfilesEnabled$],
+    ([profiles, enabled]) => (enabled ? profiles : NO_OFFERED_PROFILES),
+  );
+  // Profile references the current selection already uses; set below once
+  // the selection is known. Kept in the fetch/availability sets while off.
+  const selectionProfileRefs$ = writable<string[]>([]);
+  const runnableProviderProfiles$ = derived(
+    [allProviderProfiles$, labsProviderProfilesEnabled$, selectionProfileRefs$],
+    ([profiles, enabled, refs]) =>
+      enabled ? profiles : profiles.filter((profile) => refs.includes(profile.providerRef)),
+  );
+  const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
+  const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
+  // A signed-out profile stays selectable but is flagged (§5.54 status mapping:
+  // `error` = signed out). Each listed profile is probed once, not forced.
+  const profileSignInStatuses$ = selectProfileSignInStatuses();
+  $effect(() => {
+    const profiles = $providerProfiles$;
+    if (profiles.length === 0 || isGuestLocked) return;
+    appStore.dispatch(
+      providerProfileSummaryStatusesEnsured(
+        profiles.map(({ id, providerRef }) => ({ id, providerRef })),
+      ),
+    );
+  });
+  const modelFetchProviderIds$ = derived(
+    [baseModelFetchProviderIds$, runnableProviderProfiles$],
+    ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
+  );
+  const availableEnabledProviderIds$ = derived(
+    [baseAvailableEnabledProviderIds$, runnableProviderProfiles$],
+    ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
+  );
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
@@ -419,6 +519,12 @@
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
+
+  // §5.54 profile state the daemon reports on this agent's AgentLite row.
+  const boundSession = $derived(
+    agentId && !isGuestLocked && $agentSession$?.id === agentId ? $agentSession$ : undefined,
+  );
+  const usingEarlierProfileSettings = $derived(boundSession?.usingEarlierProfileSettings === true);
   // Effort callbacks retain the compatibility lock funnel. Model intents below
   // carry the same live lease to the shared saga owner.
   const mutate = createAgentModelMutator({
@@ -1207,20 +1313,24 @@
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
   });
 
-  const hasCodexModels = $derived(
-    (allProviderModels['codex']?.length ?? 0) > 0 ||
-      (normalizeProviderId(effectiveProviderId) === 'codex' &&
-        (agentProviderModels?.length ?? 0) > 0),
-  );
-
   // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
   // last-known-good list after a transient probe failure: the models on screen
   // are real and usable, so the "install Codex CLI" notice would be wrong.
   // The notice stays for the degraded case (warning with no codex models).
+  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
+  function hasCatalogModels(providerId: string): boolean {
+    return (
+      (allProviderModels[providerId]?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === providerId &&
+        (agentProviderModels?.length ?? 0) > 0)
+    );
+  }
   const codexFallbackWarning = $derived(
-    $allProviderStaleFlags$['codex'] && hasCodexModels
-      ? null
-      : (providerFallbackWarnings.find((warning) => warning.providerId === 'codex') ?? null),
+    providerFallbackWarnings.find(
+      (warning) =>
+        providerRefBaseId(warning.providerId) === 'codex' &&
+        !($allProviderStaleFlags$[warning.providerId] && hasCatalogModels(warning.providerId)),
+    ) ?? null,
   );
 
   // D1(B): when no provider is available at all, never fall back to a
@@ -1317,6 +1427,7 @@
       allProviderLoading,
       allProviderErrors,
       allProviderWarnings: $allProviderWarnings$,
+      profiles: $providerProfiles$,
     }).filter(
       (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
     ),
@@ -1387,6 +1498,28 @@
     );
   });
 
+  // The next turn needs an explicit replacement (§5.54): the daemon flags it,
+  // or the catalog shows the selected profile was removed. A new pick
+  // supersedes the flagged reference. Never resolved by switching accounts.
+  const replacementRequired = $derived.by(() => {
+    if (!boundSession) return null;
+    const flagged = boundSession.providerReplacementRequired;
+    if (
+      flagged &&
+      boundSession.provider === flagged.providerRef &&
+      (!localPickedProviderId || localPickedProviderId === flagged.providerRef)
+    )
+      return flagged;
+    const gate = selectedModelGateProviderId;
+    if (
+      isProviderProfileRef(gate) &&
+      $providerCatalogEntries$.length > 0 &&
+      !findProfileByRef($allProviderProfiles$, gate)
+    )
+      return { providerRef: gate, reason: 'profile-missing' as const };
+    return null;
+  });
+
   // The provider the selected model is sent through was disabled in settings —
   // the pre-send warning state.
   const isSelectedModelProviderDisabled = $derived(
@@ -1395,9 +1528,21 @@
       isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
   );
 
+  $effect(() => {
+    const refs = [effectiveProviderId, selectedModelGateProviderId].filter(
+      (id): id is string => !!id && isProviderProfileRef(id),
+    );
+    const current = get(selectionProfileRefs$);
+    if (refs.length !== current.length || refs.some((ref, i) => ref !== current[i]))
+      selectionProfileRefs$.set(refs);
+  });
+
+  // A profile kept running while the Labs toggle is off never gets a tab.
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds
+        .filter((id) => $labsProviderProfilesEnabled$ || !isProviderProfileRef(id))
+        .map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1641,8 +1786,44 @@
     showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
+  // The selection's configuration (§5.54): its profile name next to the model
+  // once its base provider has profiles (`Default` for the original one).
+  const triggerProfileName = $derived.by(() => {
+    const ref = triggerProviderId;
+    if (!ref) return undefined;
+    const baseId = normalizeProviderId(providerRefBaseId(ref));
+    const isProfile = isProviderProfileRef(ref);
+    return providerRefProfileName(
+      providerRefLabelParts(
+        isProfile ? ref : baseId,
+        isProfile ? $allProviderProfiles$ : $providerProfiles$,
+        baseId,
+      ),
+    );
+  });
+  const modelAccessibleLabel = $derived(
+    triggerProfileName
+      ? m.chat_modelPicker_modelWithProfile_ariaLabel({
+          model: currentModelLabel,
+          provider: providerDisplayName(triggerProviderId),
+        })
+      : currentModelLabel,
+  );
   const triggerAccessibleLabel = $derived(
-    showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+    [
+      modelAccessibleLabel,
+      ...(showReasoningFooter ? [currentReasoningLabel] : []),
+      ...(usingEarlierProfileSettings ? [m.chat_modelPicker_earlierSettings_label()] : []),
+    ].join(' · '),
+  );
+  // Restart guidance names whoever owns the daemon: Intent for the app's own
+  // sidecar, intentd on the provider host otherwise. A reconnect never applies.
+  const earlierSettingsDescription = $derived(
+    !usingEarlierProfileSettings
+      ? ''
+      : selectIsDaemonAppOwned.select(appStore.state)
+        ? m.chat_modelPicker_earlierSettingsLocal_description()
+        : m.chat_modelPicker_earlierSettingsRemote_description(),
   );
   const lockedButtonTitle = $derived(
     isGuestLocked
@@ -1747,16 +1928,29 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+    !!agentId &&
+      !isGuestLocked &&
+      (replacementRequired !== null || isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    // Settings > Agents toggles the base provider; messages name that toggle.
+    if (replacementRequired) {
+      const provider = baseProviderDisplayName(replacementRequired.providerRef);
+      return {
+        title: m.chat_modelPicker_replacementRequired_title(),
+        description:
+          replacementRequired.reason === 'provider-disabled'
+            ? m.chat_modelPicker_replacementProviderDisabled_description({ provider })
+            : m.chat_modelPicker_replacementProfileMissing_description({ provider }),
+      };
+    }
     if (isSelectedModelProviderDisabled) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
         description: m.chat_modelPicker_providerDisabled_description({
-          provider: providerDisplayName(selectedModelGateProviderId),
+          provider: baseProviderDisplayName(selectedModelGateProviderId),
         }),
       };
     }
@@ -1785,9 +1979,14 @@
           title: warningMessage.title,
           description: warningMessage.description,
         })
-      : isCompact || showReasoningFooter
-        ? triggerAccessibleLabel
-        : undefined,
+      : usingEarlierProfileSettings
+        ? m.chat_modelPicker_warning_tooltip({
+            title: triggerAccessibleLabel,
+            description: earlierSettingsDescription,
+          })
+        : isCompact || showReasoningFooter || triggerProfileName
+          ? triggerAccessibleLabel
+          : undefined,
   );
 
   // Re-home announcement (see `disabledProviderSnapshot`).
@@ -1846,6 +2045,8 @@
     // A disabled provider is re-homed by the daemon on the next send; the FE
     // must not `agent.setModel` its way around the gate (intent#5737).
     if (isSelectedModelProviderDisabled) return;
+    // A removed/disabled profile needs the user's explicit replacement (§5.54).
+    if (replacementRequired) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
@@ -2132,6 +2333,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
+      {#if triggerProfileName}
+        <span class="min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
+          >{triggerProfileName}</span
+        >
+      {/if}
       {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
@@ -2150,6 +2356,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
+        {#if triggerProfileName}
+          <span class="text-xs min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
+            >{triggerProfileName}</span
+          >
+        {/if}
         {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
@@ -2183,6 +2394,30 @@
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
+    {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
+      <!-- Tabs show icons only; name the configuration being browsed (§5.54). -->
+      <div
+        class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
+        data-testid="model-picker-profile-group"
+      >
+        {group.label}
+      </div>
+      {#if isProfileSignedOut(group.key)}
+        <!-- Same cue as a provider's sign-in failure; the models stay selectable. -->
+        <div
+          class="flex items-start gap-2 px-2 pb-1 text-xs"
+          role="status"
+          data-testid="model-picker-profile-signed-out"
+        >
+          <ModelProviderErrorItem
+            providerId={group.key}
+            providerLabel={group.label}
+            error={m.settings_providerProfiles_statusError_label()}
+            hint={m.chat_modelPicker_profileSignedOut_hint()}
+            compact={true}
+          />
+        </div>
+      {/if}
     {/if}
   {/snippet}
 
@@ -2309,6 +2544,8 @@
         {:else if isTriggerLabelResolved}
           {#if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
+          {:else if usingEarlierProfileSettings}
+            <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
@@ -2316,6 +2553,13 @@
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
             >{triggerLabel}</span
           >
+          {#if triggerProfileName}
+            <span
+              class="min-w-0 max-w-24 shrink truncate text-subtle"
+              aria-hidden="true"
+              data-testid="model-picker-profile">{triggerProfileName}</span
+            >
+          {/if}
           {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
@@ -2353,17 +2597,30 @@
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
-              aria-label={providerDisplayName(providerTabId)}
-              title={providerDisplayName(providerTabId)}
+              aria-label={providerTabLabel(providerTabId)}
+              title={providerTabLabel(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
-                'text-muted-foreground hover:bg-muted/40',
+                'relative text-muted-foreground hover:bg-muted/40',
                 providerTabId === activeBrowseProviderId && 'bg-muted text-foreground',
               )}
               onclick={() => selectProviderTab(providerTabId)}
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
+              {#if isProfileSignedOut(providerTabId)}
+                <span
+                  class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+              {#if isProviderProfileRef(providerTabId)}
+                <!-- Tells same-provider profile tabs apart; the tab's label names it. -->
+                <span
+                  class="absolute right-0 bottom-0 min-w-3 rounded-sm bg-popover px-0.5 text-ui-sm leading-3 font-medium text-foreground"
+                  aria-hidden="true">{profileInitial(providerTabId)}</span
+                >
+              {/if}
             </Button>
           {/each}
         </div>
@@ -2434,6 +2691,20 @@
               </div>
               <div class="text-xs text-subtle mt-0.5 leading-tight">
                 {warningMessage.description}
+              </div>
+            </div>
+          </div>
+        </div>
+      {:else if usingEarlierProfileSettings}
+        <div class="px-3 py-2.5 border-b border-border" data-testid="model-picker-earlier-settings">
+          <div class="flex items-start gap-2" role="status">
+            <Fa icon={faCircleInfo} class="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+            <div class="min-w-0">
+              <div class="text-xs font-medium text-foreground leading-tight">
+                {m.chat_modelPicker_earlierSettings_label()}
+              </div>
+              <div class="text-xs text-subtle mt-0.5 leading-tight">
+                {earlierSettingsDescription}
               </div>
             </div>
           </div>

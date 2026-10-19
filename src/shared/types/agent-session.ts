@@ -195,6 +195,12 @@ export interface AgentDelegatedCounts {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
+/** §5.54 `AgentLite.providerReplacementRequired`. */
+interface ProviderReplacementRequired {
+  providerRef: string;
+  reason: 'profile-missing' | 'provider-disabled';
+}
+
 export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
@@ -254,6 +260,20 @@ export interface AgentSession extends AgentNodeFields {
 
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
+
+  /**
+   * §5.54: present (always `true`) while this agent's live provider process
+   * started with settings older than its profile's saved ones. Omitted once
+   * they match or no process is live.
+   */
+  usingEarlierProfileSettings?: true;
+
+  /**
+   * §5.54: present when the next turn would be refused because the selected
+   * profile was removed or its base provider is disabled. The user must pick
+   * a replacement; the daemon never substitutes another account.
+   */
+  providerReplacementRequired?: ProviderReplacementRequired;
 
   /** System prompt for the agent */
   systemPrompt?: string;

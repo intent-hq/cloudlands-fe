@@ -94,16 +94,15 @@ describe('Type Check & Lint pnpm setup recovery', () => {
     for (const gate of gates) expect(result.reached).not.toContain(gate);
   });
 
-  it('replays the full validating action with the same pin and isolated destination', () => {
+  it('replays the full validating action with the same pin and default destination', () => {
     const { calls } = runSetup(['failure', 'success']);
     expect(calls).toHaveLength(2);
+    // Routed Linux jobs run on fresh runners (hosted or intent-cache containers),
+    // so the default ~/setup-pnpm cannot race with another job.
+    expect(calls[1].with).toEqual(calls[0].with);
     for (const call of calls) {
       expect(call.uses).toBe('pnpm/action-setup@v6');
-      expect(call.with).toEqual({
-        version: '10.30.3',
-        run_install: false,
-        dest: '~/setup-pnpm-${{ runner.name }}',
-      });
+      expect(call.with).toEqual({ version: '10.30.3', run_install: false });
     }
   });
 });

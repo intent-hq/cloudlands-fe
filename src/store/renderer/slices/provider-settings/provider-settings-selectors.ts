@@ -2,7 +2,15 @@ import {
   selectHostExecutionContext,
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
+import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
+import type {
+  ProviderProfileMutation,
+  ProviderProfileStatus,
+  ProviderProfilesState,
+} from './provider-settings-types';
+import { initialProfilesState } from './provider-profiles-state';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { store } from '../../store';
@@ -77,8 +85,9 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
   const enabled = new Set(
     catalogEntries.filter((p) => selectIsProviderEnabled.select(state, p.id)).map((p) => p.id),
   );
+  // A default profile reference (§5.54) keeps its base provider listed.
   const activeProviderId = selectActiveProviderId.select(state);
-  if (activeProviderId) enabled.add(activeProviderId);
+  if (activeProviderId) enabled.add(providerRefBaseId(activeProviderId));
 
   for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
     if (isEnabled) {
@@ -165,7 +174,8 @@ export const selectModelFetchProviderIds = store.createSelector((state): string[
 
 /** Whether the currently active provider is in the available+enabled set. */
 export const selectIsActiveProviderAvailable = store.createSelector((state): boolean => {
-  const activeProviderId = selectActiveProviderId.select(state);
+  // A default profile (§5.54) is available while its base provider is.
+  const activeProviderId = providerRefBaseId(selectActiveProviderId.select(state));
   return selectAvailableEnabledProviderIds.select(state).includes(activeProviderId);
 });
 
@@ -188,3 +198,55 @@ export const selectFastModeSupportedProviders = store.createSelector((state): st
     (id) => selectProviderCatalogEntry.select(state, id)?.supportsFastMode === true,
   );
 });
+
+// Named provider profiles (§5.54): masked daemon reads only.
+const profilesState = (state: { providerSettings?: { profiles?: ProviderProfilesState } }) =>
+  state.providerSettings?.profiles ?? initialProfilesState;
+
+/** Base provider ids whose catalog row advertises `supportsProfiles: true`. */
+export const selectProfileCapableProviderIds = store.createSelector((state): string[] =>
+  selectProviderCatalogEntries
+    .select(state)
+    .filter((entry) => entry.supportsProfiles === true)
+    .map((entry) => entry.id),
+);
+
+/** Profiles of one base provider, in the daemon's stored order. */
+export const selectProviderProfilesForBase = store.createSelector(
+  (state, baseProviderId: string): ProviderProfile[] =>
+    getItems(profilesState(state).items).filter(
+      (profile) => profile.baseProviderId === baseProviderId,
+    ),
+);
+
+export const selectProviderProfile = store.createSelector(
+  (state, profileId: string): ProviderProfile | undefined =>
+    getItem(profilesState(state).items, profileId),
+);
+
+export const selectProviderProfilesRevision = store.createSelector(
+  (state): number => profilesState(state).revision,
+);
+
+export const selectProviderProfilesLoadStatus = store.createSelector(
+  (state): ProviderProfilesState['loadStatus'] => profilesState(state).loadStatus,
+);
+
+export const selectProviderProfileStatusMap = store.createSelector(
+  (state): Record<string, ProviderProfileStatus> => profilesState(state).status,
+);
+
+export const selectProviderProfileActivationMap = store.createSelector(
+  (state): ProviderProfilesState['activation'] => profilesState(state).activation,
+);
+
+/** Outstanding and settled-but-undismissed mutations by request id. */
+export const selectProviderProfileMutations = store.createSelector(
+  (state): Record<string, ProviderProfileMutation> =>
+    Object.fromEntries(getItems(profilesState(state).mutations).map((item) => [item.id, item])),
+);
+
+/** True while any Settings → Providers panel is open. */
+export const selectProviderSettingsHasOpenSession = store.createSelector(
+  (state): boolean => (state.providerSettings?.sessions.length ?? 0) > 0,
+);

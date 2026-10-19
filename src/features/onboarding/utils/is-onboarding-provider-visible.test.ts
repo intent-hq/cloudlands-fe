@@ -96,4 +96,21 @@ describe('isOnboardingProviderVisible', () => {
       }),
     ).toBe(true);
   });
+
+  it('offers provider types only, never a named profile reference', () => {
+    expect(
+      isOnboardingProviderVisible({
+        provider: { id: 'codex' },
+        isFeatureEnabled: featureEnabled,
+        status: { available: true },
+      }),
+    ).toBe(true);
+    expect(
+      isOnboardingProviderVisible({
+        provider: { id: 'codex@p3k9x2m4q7t1a' },
+        isFeatureEnabled: featureEnabled,
+        status: { available: true },
+      }),
+    ).toBe(false);
+  });
 });
