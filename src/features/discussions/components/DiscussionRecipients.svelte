@@ -60,7 +60,7 @@
   class="flex min-w-0 items-center gap-2 border-y border-border px-4 py-[9px]"
   data-discussion-recipients
 >
-  <span class="shrink-0 type-caption text-[12px] font-medium text-muted-foreground"
+  <span class="shrink-0 type-caption font-medium text-muted-foreground"
     >{m.workspace_discussion_to_label()}</span
   >
   <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">

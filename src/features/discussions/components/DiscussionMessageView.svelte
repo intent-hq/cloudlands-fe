@@ -77,29 +77,29 @@
   {/if}
   <div class="flex min-w-0 flex-1 flex-col gap-1.5">
     {#if !continuation}
-      <div class="flex min-w-0 flex-wrap items-center gap-1 type-caption leading-[18px]">
-        <span class="truncate font-medium text-foreground text-[12px]">{name}</span>
-        <span class="text-muted-foreground text-[11px]" aria-hidden="true">·</span>
+      <div class="flex min-w-0 flex-wrap items-center gap-1 type-caption">
+        <span class="truncate font-medium text-foreground">{name}</span>
+        <span class="text-muted-foreground" aria-hidden="true">·</span>
         <time
-          class="text-muted-foreground text-[11px]"
+          class="text-muted-foreground"
           datetime={message.createdAt}
           title={formatFullDateTime(message.createdAt)}>{formatTime(message.createdAt)}</time
         >
         {#if status}
-          <span class="text-muted-foreground text-[11px]" aria-hidden="true">·</span>
+          <span class="text-muted-foreground" aria-hidden="true">·</span>
           {#if status === 'sending'}
-            <span class="text-muted-foreground text-[11px]" role="status"
+            <span class="text-muted-foreground" role="status"
               >{m.workspace_discussion_sending_label()}</span
             >
           {:else}
-            <span class="text-danger text-[11px]" role="alert" title={error}
+            <span class="text-danger" role="alert" title={error}
               >{m.workspace_discussion_notSent_label()}</span
             >
-            <span class="text-danger text-[11px]" aria-hidden="true">·</span>
+            <span class="text-danger" aria-hidden="true">·</span>
             <Button
               variant="plain"
               size="compact"
-              class="h-auto text-danger text-[11px]"
+              class="h-auto text-danger"
               {disabled}
               onclick={onRetry}>{m.ui_errorToast_retry_label()}</Button
             >

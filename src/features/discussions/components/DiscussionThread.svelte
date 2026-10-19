@@ -372,7 +372,7 @@
           {#each messages as message, index (message.id)}
             {#if index === 0 ? dayKey(message.createdAt) !== new Date().toDateString() : dayKey(messages[index - 1].createdAt) !== dayKey(message.createdAt)}
               <div
-                class="flex items-center gap-2.5 type-caption text-[11px] leading-4 text-muted-foreground"
+                class="flex items-center gap-2.5 type-caption text-muted-foreground"
                 data-discussion-day
               >
                 <span class="h-px flex-1 bg-border"></span><span
@@ -382,7 +382,7 @@
             {/if}
             {#if message.id === firstUnreadId}
               <div
-                class="flex items-center gap-2.5 type-caption text-[11px] leading-4 text-danger"
+                class="flex items-center gap-2.5 type-caption text-danger"
                 data-discussion-unread
               >
                 <span class="h-px flex-1 bg-danger"></span><span
