@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -7,14 +9,41 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 let server: ViteDevServer;
 let baseUrl = '';
 
+// Pre-bundle every dependency the browser imports before the first page loads.
+// Without explicit entries, Vite scans every HTML file in the package. On a cold
+// cache that scan can miss deep imports such as KebabIcon's
+// `phosphor-svelte/lib/*` icons, so Vite re-optimizes mid-test, logs
+// "optimized dependencies changed. reloading", and destroys the page's
+// execution context (cloudlands-fe#3392). The entries are the /src and /test
+// modules this spec dynamically imports in the page, read from its own source
+// so a newly added import is scanned too.
+const SPEC_PATH = fileURLToPath(import.meta.url);
+const BROWSER_ENTRIES = [
+  ...new Set(
+    [
+      ...readFileSync(SPEC_PATH, 'utf8').matchAll(
+        /import\(\s*(['"`])\/((?:src|test)\/[^'"`]+)\1\s*\)/g,
+      ),
+    ].map(([, , path]) => path),
+  ),
+];
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  // Guard the self-scan: an empty or stale list would silently fall back to the full scan.
+  expect(BROWSER_ENTRIES).toContain('test/fixtures/TitlebarWorkspaceControlsHarness.svelte');
+  for (const entry of BROWSER_ENTRIES) {
+    expect(existsSync(resolve(process.cwd(), entry)), entry).toBe(true);
+  }
   server = await createServer({
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('titlebar-workspace-controls'),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
+    optimizeDeps: {
+      entries: BROWSER_ENTRIES,
+      include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'],
+    },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [

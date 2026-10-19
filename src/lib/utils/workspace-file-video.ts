@@ -41,7 +41,8 @@ function resolvesWorkspaceImage(path: string, workspaceId?: string): boolean {
     const portableUrl = workspaceFileMediaUrlToIntentFileUrl(path);
     return !!portableUrl && !!intentFileImageUrlToWorkspaceFileUrl(portableUrl, workspaceId);
   }
-  return !!intentFileImageUrlToWorkspaceFileUrl(path, workspaceId);
+  // Both callers render chat/viewer markdown read-only (intent-hq/intent#7185).
+  return !!intentFileImageUrlToWorkspaceFileUrl(path, workspaceId, { readOnly: true });
 }
 
 function isParagraphBoundary(lines: string[], index: number): boolean {

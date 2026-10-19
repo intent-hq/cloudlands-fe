@@ -32,6 +32,15 @@ const HEAD = 'b'.repeat(40);
 const FE = 'intent-hq/cloudlands-fe';
 const BE = 'intent-hq/intentd';
 const directories: string[] = [];
+const MERGE_STEP = 'Merge the Release PR when green';
+// Decision contract read by the monorepo `make release-status`: one line per
+// run, `auto-cut-decision: <outcome> <reason> <detail>`.
+const DECISION =
+  /^auto-cut-decision: (noop|throttle|hold|defer|skip|refuse|dry-run|merge|queue|error) ([a-z0-9]+(?:-[a-z0-9]+)*) \S.*$/;
+
+function decisionLines(stdout: string) {
+  return stdout.split('\n').filter((line) => line.startsWith('auto-cut-decision:'));
+}
 
 function fixture() {
   return {
@@ -116,6 +125,7 @@ function runCut(
   stepName = 'Merge the Release PR when green',
   throttleTag = '',
   dryRun = true,
+  expectStatus = 0,
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'intentd-readiness-'));
   directories.push(directory);
@@ -180,7 +190,7 @@ appendFileSync(process.env.READINESS_CALLS, JSON.stringify(a) + '\\n');
 const endpoint = a[0] === 'api' ? a.slice(1).find(x => !x.startsWith('--')) : '';
 if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
-if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : [f.pr];
+if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
 else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
@@ -264,9 +274,26 @@ process.stdout.write(payload);
       GITHUB_EVENT_PATH: join(directory, 'event.json'),
       READINESS_SLEPT: join(directory, 'slept'),
       GITHUB_OUTPUT: join(directory, 'outputs'),
+      GITHUB_STEP_SUMMARY: join(directory, 'summary'),
     },
   });
-  expect(result.status, result.stderr || result.stdout).toBe(0);
+  expect(result.status, result.stderr || result.stdout).toBe(expectStatus);
+  // Every exit of the merge step, and every deferral by an earlier step,
+  // prints exactly one well-formed decision line mirrored to the summary.
+  const decisions = decisionLines(result.stdout);
+  const deferred =
+    stepName !== MERGE_STEP &&
+    /(^|\n)defer=true\n?$/.test(
+      existsSync(join(directory, 'outputs'))
+        ? readFileSync(join(directory, 'outputs'), 'utf8')
+        : '',
+    );
+  expect(decisions, result.stdout).toHaveLength(stepName === MERGE_STEP || deferred ? 1 : 0);
+  for (const line of decisions) expect(line).toMatch(DECISION);
+  const summary = existsSync(join(directory, 'summary'))
+    ? readFileSync(join(directory, 'summary'), 'utf8')
+    : '';
+  expect(decisionLines(summary)).toEqual(decisions);
   const calls = readFileSync(join(directory, 'calls'), 'utf8');
   if (dryRun) expect(calls).not.toContain('"merge"');
   return {
@@ -277,6 +304,7 @@ process.stdout.write(payload);
     slept: existsSync(join(directory, 'slept')),
     headRefOid,
     cut: result.stdout.includes('DRY RUN: would squash-merge'),
+    decision: decisions[0]?.match(DECISION)?.slice(1, 3),
     output: result.stdout,
     outputs:
       stepName === 'Merge the Release PR when green'
@@ -1050,5 +1078,189 @@ describe('confirmed intentd release-plz no-op', () => {
     { feRepo: 'fork/cloudlands-fe' },
   ])('rejects invalid guard inputs %j', (options) => {
     expect(proofHarness().check(options)).toBe(false);
+  });
+});
+
+describe('auto-cut decision line', () => {
+  type Data = ReturnType<typeof pinFixture>;
+  const cases: [string, string, (data: Data) => void, string, string][] = [
+    ['no release PR', 'schedule', (d) => (d.noPr = true), 'noop', 'no-release-pr'],
+    [
+      'untrusted author',
+      'schedule',
+      (d) => (d.pr.author.login = 'other'),
+      'refuse',
+      'untrusted-author',
+    ],
+    ['stale pin', 'schedule', (d) => (d.pins[d.pr.headRefName] = '0.9.109'), 'defer', 'pr-stale'],
+    ['unrefreshed head', 'push', (d) => (d.prDate = '2026-09-26T05:00:00Z'), 'defer', 'pr-stale'],
+    [
+      'hold-release',
+      'schedule',
+      (d) => (d.pr.labels = [{ name: 'hold-release' }]),
+      'hold',
+      'hold-release',
+    ],
+    [
+      'open pin PR',
+      'schedule',
+      (d) => (d.pinPr = [{ number: 7, isCrossRepository: false }]),
+      'defer',
+      'pin-bump-open',
+    ],
+    ['draft', 'workflow_dispatch', (d) => (d.detail.isDraft = true), 'skip', 'draft'],
+    [
+      'review required',
+      'workflow_dispatch',
+      (d) => (d.detail.reviewDecision = 'REVIEW_REQUIRED'),
+      'skip',
+      'review-required',
+    ],
+    [
+      'unknown mergeability',
+      'workflow_dispatch',
+      (d) => (d.detail.mergeable = 'UNKNOWN'),
+      'defer',
+      'mergeable-unknown',
+    ],
+    [
+      'conflict',
+      'workflow_dispatch',
+      (d) => (d.detail.mergeable = 'CONFLICTING'),
+      'skip',
+      'not-mergeable',
+    ],
+    [
+      'failed gate',
+      'workflow_dispatch',
+      (d) => (d.detail.statusCheckRollup[0].conclusion = 'FAILURE'),
+      'skip',
+      'ci-gate-failed',
+    ],
+    [
+      'missing gate',
+      'workflow_dispatch',
+      (d) => (d.detail.statusCheckRollup = []),
+      'defer',
+      'ci-gate-missing',
+    ],
+    [
+      'pending gate',
+      'workflow_dispatch',
+      (d) =>
+        (d.detail.statusCheckRollup = [{ name: 'CI Gate', conclusion: null as unknown as string }]),
+      'defer',
+      'ci-gate-pending',
+    ],
+    ['human thread', 'workflow_dispatch', (d) => (d.unresolved = 1), 'skip', 'review-threads'],
+    [
+      'unreadable head',
+      'workflow_dispatch',
+      (d) => (d.missingHead = true),
+      'skip',
+      'unreadable-head',
+    ],
+    ['dry run direct', 'workflow_dispatch', () => {}, 'dry-run', 'direct-merge'],
+    ['dry run queue', 'workflow_dispatch', (d) => (d.shape = 'source'), 'dry-run', 'merge-queue'],
+  ];
+  it.each(cases)('reports %s', (_name, event, setup, outcome, reason) => {
+    const data = pinFixture();
+    setup(data);
+    expect(runCut(data, event, MERGE_STEP).decision).toEqual([outcome, reason]);
+  });
+
+  it('reports an unconfirmed BE-dependency skew', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    expect(runCut(data, 'schedule', MERGE_STEP, '', false).decision).toEqual([
+      'defer',
+      'intentd-skew',
+    ]);
+  });
+
+  it('reports a release tag that moved during the run', () => {
+    expect(runCut(pinFixture(), 'push', MERGE_STEP, 'v2.9.0').decision).toEqual([
+      'throttle',
+      'tag-moved',
+    ]);
+  });
+
+  it.each([
+    ['metadata', 'merge', 'direct-merge'],
+    ['source', 'queue', 'merge-queue'],
+  ])('reports a %s merge', (shape, outcome, reason) => {
+    const data = { ...pinFixture(), shape };
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false).decision).toEqual([
+      outcome,
+      reason,
+    ]);
+  });
+
+  it('reports a failed merge', () => {
+    const data = { ...pinFixture(), liveHead: 'c'.repeat(40) };
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false).decision).toEqual([
+      'error',
+      'merge-failed',
+    ]);
+  });
+
+  it('reports multiple release PR candidates', () => {
+    const data = pinFixture();
+    data.pr.labels = [];
+    const result = runCut(
+      { ...data, pr: data.pr, extraPr: true } as Data,
+      'workflow_dispatch',
+      MERGE_STEP,
+    );
+    expect(result.decision).toEqual(['refuse', 'multiple-release-prs']);
+  });
+
+  it('reports an unplanned failure through the exit trap', () => {
+    const data = pinFixture();
+    data.fail = 'graphql';
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', true, 1);
+    expect(result.decision).toEqual(['error', 'unexpected-exit']);
+  });
+
+  it('reports throttle and in-flight deferrals from their own steps', () => {
+    const throttled = pinFixture();
+    throttled.feTagDate = '2026-09-26T05:30:00Z';
+    expect(runCut(throttled, 'schedule', 'Throttle to one cut per hour').decision).toEqual([
+      'throttle',
+      'recent-cut',
+    ]);
+    expect(
+      runCut(fixture(), 'schedule', 'Check for an in-flight intentd release build').decision,
+    ).toEqual(['defer', 'intentd-build-in-flight']);
+  });
+
+  it('reports a missing release token', () => {
+    const step = steps.find((s) => s.name === 'Check release token')!;
+    const directory = mkdtempSync(join(tmpdir(), 'auto-cut-token-'));
+    directories.push(directory);
+    const result = spawnSync('bash', ['-e', '-c', step.run!], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        RELEASE_PAT: '',
+        GITHUB_OUTPUT: join(directory, 'outputs'),
+        GITHUB_STEP_SUMMARY: join(directory, 'summary'),
+      },
+    });
+    expect(result.status).toBe(0);
+    const lines = decisionLines(result.stdout);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^auto-cut-decision: skip no-release-token \S/);
+    expect(decisionLines(readFileSync(join(directory, 'summary'), 'utf8'))).toEqual(lines);
+  });
+
+  it('never exits the merge step around decide()', () => {
+    const run = steps.find((s) => s.name === MERGE_STEP)!.run!;
+    const exits = run
+      .split('\n')
+      .map((line) => line.split('#')[0])
+      .filter((line) => /(?<![-\w])exit\b/.test(line))
+      .map((line) => line.trim());
+    expect(exits).toEqual(['exit "${4:-0}"']);
   });
 });

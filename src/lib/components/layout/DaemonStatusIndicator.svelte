@@ -682,10 +682,10 @@
                   {/if}
 
                   <!-- Protocol version -->
-                  {#if $stats$.protocolVersion !== undefined}
+                  {#if $stats$.protocolVersionText !== undefined}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
-                      <span class="text-xs">{$stats$.protocolVersion}</span>
+                      <span class="text-xs">{$stats$.protocolVersionText}</span>
                     </div>
                   {/if}
 

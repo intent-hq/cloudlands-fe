@@ -11,6 +11,7 @@ type Handler = (...args: unknown[]) => unknown;
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
   fromWebContents: vi.fn(),
+  fromId: vi.fn(),
   getFocusedWindow: vi.fn(),
   getAllWindows: vi.fn(() => []),
 }));
@@ -19,7 +20,7 @@ vi.mock('electron', () => ({
   app: { on: vi.fn(), getAppPath: vi.fn(), getVersion: vi.fn(), getName: vi.fn() },
   BrowserWindow: {
     getAllWindows: electronMocks.getAllWindows,
-    fromId: vi.fn(),
+    fromId: electronMocks.fromId,
     getFocusedWindow: electronMocks.getFocusedWindow,
     fromWebContents: electronMocks.fromWebContents,
   },
@@ -41,8 +42,12 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: () => true }));
 
+import { ANY_HOST } from '../window-workspace-tracking';
 import {
   getFocusedWindowWorkspaceId,
+  getViewedWorkspaceIdForWindow,
+  getWindowIdForWorkspace,
+  getWindowIdsForWorkspace,
   getWorkspaceIdForWindow,
   isFocusedWindowBrowserActive,
   setupSystemIPC,
@@ -95,12 +100,18 @@ describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
 });
 
 describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
-  const window = { id: 915 };
+  // A live window; `backendId` is the host stamp read by getBackendIdForWindow.
+  const window: { id: number; isDestroyed: () => boolean; backendId?: string } = {
+    id: 915,
+    isDestroyed: () => false,
+  };
   const event = { sender: {} };
 
   beforeEach(() => {
     electronMocks.handle.mockReset();
+    delete window.backendId;
     electronMocks.fromWebContents.mockReturnValue(window);
+    electronMocks.fromId.mockImplementation((id: number) => (id === window.id ? window : null));
     electronMocks.getFocusedWindow.mockReturnValue(window);
     setupSystemIPC();
   });
@@ -119,6 +130,50 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
 
   it('returns undefined for a window that never reported a workspace', () => {
     expect(getWorkspaceIdForWindow(4242)).toBeUndefined();
+  });
+
+  it('reports the workspace a window is viewing now, independent of focus, and clears it when the window leaves', async () => {
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+    // Notification clicks rank windows while Intent is in the background,
+    // so the lookup must not depend on which window is focused.
+    electronMocks.getFocusedWindow.mockReturnValue(null);
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-a' });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-a');
+
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-b' });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-b');
+
+    await handle(event, { inWorkspace: false });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBeUndefined();
+    expect(getViewedWorkspaceIdForWindow(4243)).toBeUndefined();
+  });
+
+  it('records the reporting window host and scopes workspace lookups to it', async () => {
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+    window.backendId = 'remote-1';
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-shared' });
+
+    expect(getWindowIdsForWorkspace('ws-shared', 'remote-1')).toEqual([window.id]);
+    expect(getWindowIdsForWorkspace('ws-shared', 'local')).toEqual([]);
+    expect(getWindowIdsForWorkspace('ws-shared', ANY_HOST)).toEqual([window.id]);
+    expect(getWindowIdForWorkspace('ws-shared', 'remote-1')).toBe(window.id);
+    expect(getWindowIdForWorkspace('ws-shared', 'local')).toBeUndefined();
+  });
+
+  it('forgets a viewed workspace once the window switches host, until it re-reports', async () => {
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-a' });
+    expect(getFocusedWindowWorkspaceId()).toBe('ws-a');
+
+    // The window reconnects to another host but has not re-reported yet.
+    window.backendId = 'remote-1';
+    expect(getFocusedWindowWorkspaceId()).toBeUndefined();
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBeUndefined();
+    expect(getWindowIdsForWorkspace('ws-a', ANY_HOST)).toEqual([]);
+
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-a' });
+    expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-a');
+    expect(getWindowIdsForWorkspace('ws-a', 'remote-1')).toEqual([window.id]);
   });
 });
 

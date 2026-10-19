@@ -2,7 +2,7 @@ import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 import { setEventSubscriptionsExpanded } from '../agent-subscriptions-view-state';
 import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 /** Real monitor transport, saga, selectors, row, and navigation. Only the daemon is mocked. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   backendRequest,
@@ -30,6 +30,8 @@ import {
 import { notify } from '$lib/components/patterns/notify';
 import MonitoredScriptsRow from '../MonitoredScriptsRow.svelte';
 import type { ScriptMonitor } from '$features/script-monitor/types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -84,7 +86,8 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          // The current daemon generation: a protocol-major gate would hide every row (intent-hq/intent#7206).
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptMonitors: supported ? 2 : undefined, scriptActiveLists: 1 },
         },
       };
@@ -129,16 +132,60 @@ async function mount() {
 async function menu() {
   await fireEvent.click(await screen.findByRole('button', { name: /Actions for/ }));
 }
-function event(row: ScriptMonitor) {
+function event(row: ScriptMonitor, type = `scriptMonitor:${row.state}`) {
   emit({
     method: 'events.event',
     params: {
       subscriptionId: 'sub',
-      event: { workspaceId: ws, type: `scriptMonitor:${row.state}`, data: { monitor: row } },
+      event: { workspaceId: ws, type, data: { monitor: row } },
     },
   });
 }
 describe('script monitor controls', () => {
+  it('shows a live registration only in its owner chat card and retires it on completion without a re-read', async () => {
+    monitors = [];
+    for (const agentId of [active.agentId, 'other-agent']) {
+      store.dispatch(
+        setSubscriptionSnapshot(ws, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      setEventSubscriptionsExpanded(ws, agentId, true);
+    }
+    const owner = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId }).container,
+    );
+    const other = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: 'other-agent' }).container,
+    );
+    await waitFor(() => expect(selectScriptMonitors.select(store.state, ws).status).toBe('ready'));
+    const area = (view: typeof owner) => view.getByTestId('subscription-utility-area');
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('false');
+    const reads = () =>
+      vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'scriptMonitor.list')
+        .length;
+    const readsBefore = reads();
+
+    event(active, 'scriptMonitor:registered');
+
+    const row = await owner.findByTestId('script-monitor-row');
+    expect(row.textContent).toContain(active.scriptName);
+    expect(row.textContent).toContain('Monitoring');
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('true');
+    expect(other.queryByTestId('script-monitor-row')).toBeNull();
+    expect(area(other).getAttribute('data-has-subscriptions')).toBe('false');
+    await fireEvent.click(owner.getAllByRole('button', { name: active.scriptName })[0]);
+    expect(await owner.findByText(/Monitoring ends at/)).toBeTruthy();
+
+    event(settled);
+
+    await waitFor(() => expect(owner.queryByTestId('script-monitor-row')).toBeNull());
+    expect(area(owner).getAttribute('data-has-subscriptions')).toBe('false');
+    expect(reads()).toBe(readsBefore);
+  });
   it('keeps Load more accessible when the initial page belongs to other agents', async () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     let pages = 0;
@@ -391,6 +438,47 @@ describe('script monitor controls', () => {
     supported = false;
     await mount();
     expect(screen.queryByTestId('script-monitor-row')).toBeNull();
+    expect(screen.queryByTestId('script-monitor-load-failed')).toBeNull();
     expect(backendSubscribe).not.toHaveBeenCalled();
+  });
+  it('shows a failed monitor read in the chat card and recovers the real list on Retry', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method === 'scriptMonitor.list' && fail) return Promise.reject(new Error('Timed out'));
+      return original(method, params);
+    });
+    store.dispatch(
+      setSubscriptionSnapshot(ws, active.agentId, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    setEventSubscriptionsExpanded(ws, active.agentId, true);
+    const background = render(EventSubscriptionsCard, {
+      workspaceId: ws,
+      agentId: active.agentId,
+      isActive: false,
+    });
+    const viewed = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: active.agentId }).container,
+    );
+    const failure = await viewed.findByTestId('script-monitor-load-failed');
+    // The failure is workspace-wide: only chats the user is viewing show it.
+    expect(within(background.container).queryByTestId('script-monitor-load-failed')).toBeNull();
+    expect(failure.getAttribute('role')).toBe('alert');
+    expect(failure.textContent).toContain("Couldn't load script monitors.");
+    expect(
+      viewed.getByTestId('subscription-utility-area').getAttribute('data-has-subscriptions'),
+    ).toBe('true');
+    expect(viewed.queryByTestId('script-monitor-row')).toBeNull();
+    fail = false;
+    await fireEvent.click(within(failure).getByRole('button', { name: 'Retry' }));
+    expect((await viewed.findByTestId('script-monitor-row')).textContent).toContain(
+      active.scriptName,
+    );
+    expect(viewed.queryByTestId('script-monitor-load-failed')).toBeNull();
   });
 });

@@ -9,9 +9,8 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI) or a CT spec / geometry golden
- * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
- * was ejected three times), or a direct fixture dependency of a discovered spec.
+ * CT failures after green PR CI), a CT spec, or a direct fixture dependency
+ * of a discovered spec.
  * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
@@ -248,11 +247,9 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
 
     it.each([
       ['a CT-contract path', 'src/lib/styles/tokens.css'],
-      ['a CT spec', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
-      [
-        'a geometry golden',
-        'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
-      ],
+      ['a CT spec', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
+      ['the dependency manifest', 'package.json'],
+      ['the dependency lockfile', 'pnpm-lock.yaml'],
     ])('writes ct_required=true when the diff touches %s', (_name, file) => {
       const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
@@ -361,7 +358,7 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
 
     it.each([
       ['a .svelte component only', 'src/features/agent/view.svelte'],
-      ['a CT spec under src/', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      ['a CT spec under src/', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
       ['a src/ path containing test/', 'src/test/helpers.ts'],
       ['a test-prefixed sibling directory', 'test-results/last-run.json'],
       ['the CT Playwright config', 'playwright-ct.config.ts'],
@@ -452,7 +449,7 @@ describe('test-ct runs on merge_group when ct_required is true', () => {
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant queue (contract path, spec, or golden)', {}, true],
+    ['CT-relevant queue (contract path, spec, or direct import)', {}, true],
     ['ordinary queue', { ctRequired: 'false' }, false],
     ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
@@ -578,7 +575,6 @@ describe('portable fixture relevance', () => {
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
     ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
-    ['Evaluate CT relevance', 'ct_required', 'src/components/__geometry__/example.geometry.json'],
     ['Evaluate root Playwright relevance', 'root_playwright_required', 'test/example.spec.ts'],
     [
       'Evaluate root Playwright relevance',
@@ -787,7 +783,7 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+      expect(jobField(lines, 'runs-on')).toBe('gh-linux-8x');
     },
   );
 
@@ -1050,7 +1046,7 @@ describe('root Playwright hosted shards', () => {
     ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+    expect(jobField(testPlaywright, 'runs-on')).toBe('gh-linux-8x');
     expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));

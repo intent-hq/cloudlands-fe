@@ -792,7 +792,18 @@ export type DomainEvent =
  * Domain event data payloads
  */
 export interface DomainEventPayloads {
-  'workspace:created': { workspaceId: WorkspaceId; workspace: any; initialAgent?: any };
+  'workspace:created': {
+    workspaceId: WorkspaceId;
+    workspace: any;
+    initialAgent?: any;
+    /** Present when the daemon created the workspace on someone's behalf (§6.5). */
+    origin?: {
+      kind: 'proposal';
+      proposalId: string;
+      agentId: string;
+      sourceWorkspaceId: WorkspaceId;
+    };
+  };
   'workspace:updated': { workspaceId: WorkspaceId; changes: any };
   'workspace:deleting': { workspaceId: WorkspaceId };
   'workspace:deleted': { workspaceId: WorkspaceId };

@@ -16,11 +16,11 @@ for (const admittedOwner of [false, true]) {
       );
       const samples = await component.locator('.window-title-bar').evaluate(async (root) => {
         const geometryWindow = window as typeof window & {
-          __INTENT_GEOMETRY_CT__: {
+          __INTENT_PREVIEW_CT__: {
             waitForCaptureStability: typeof import('$lib/component-catalog/capture-stability').waitForCaptureStability;
           };
         };
-        await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(root as HTMLElement);
+        await geometryWindow.__INTENT_PREVIEW_CT__.waitForCaptureStability(root as HTMLElement);
         const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
         const controls = root.querySelector<HTMLElement>('[data-titlebar-workspace-controls]')!;
         const samples = [];

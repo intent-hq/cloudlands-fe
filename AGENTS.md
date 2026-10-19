@@ -173,9 +173,9 @@ instead of polling or rescheduling an expired hook.
 
 ### Visual verification
 
-For every component change that has a sandbox scene, capture geometry before and after
-the change and put both probe outputs (or their diff) in the task report. After the
-change, also capture and inspect a screenshot:
+For a component change that has a sandbox scene, capture and inspect a screenshot.
+Use before/after geometry probes when they help explain a layout change, and include
+the useful evidence in the task report:
 
 ```bash
 pnpm sandbox:probe workspace-hover-card --state landscape-wide
@@ -211,39 +211,11 @@ pixel dimensions, and URL. `sandbox:probe` prints stable JSON to stdout; pass
 .demo-artifacts/sandbox/<name>.json` to save it. `.demo-artifacts/sandbox/` is
 git-ignored; never commit these visual-review artifacts.
 
-Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
-`__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
-field that moves by more than 1px fails with `state/width/key.field expected→actual`.
-Regenerate baselines only for an intentional geometry change, with either equivalent command:
-
-```bash
-SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
-pnpm sandbox:geometry:update
-```
-
-Linux CI is the only verifier and Inter shapes text differently elsewhere, so run the update
-on a Linux host only: it refuses to write off Linux, every baseline records
-`"$meta": { "generatedOn": "<platform>" }` (the geometry spec rejects any value but `linux`),
-and `SANDBOX_GEOMETRY_UPDATE_ALLOW_NON_LINUX=1` is for uncommitted local experiments only.
-Inspect the JSON diff and justify every regenerated snapshot in the PR description. To
-register a scene, add a co-located `<scene>.geometry.ct.spec.ts` that statically imports the
-preview's default component and passes it to `defineGeometrySnapshotSuite` with the scene,
-named states, contract widths, and `__geometry__/<scene>.geometry.json` path; the shared CT
-hook resolves the preview in the browser, so no per-scene registration is needed. Run the
-update command once to create the baseline. See
+Probe output is manual review evidence, not a checked-in pixel baseline or an automated
+pass/fail contract. Register sandbox scenes for visual review without blanket coordinate
+or size snapshot tests. Add browser assertions only for the user-visible contracts in
+[Testing](#do-not-write-decorative-appearance-tests). See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
-
-```ts
-import Preview from './example.preview.svelte';
-
-defineGeometrySnapshotSuite({
-  scene: 'example',
-  component: Preview,
-  states: ['default'],
-  widths: [420],
-  snapshotPath,
-});
-```
 
 ### Put a preview screenshot in user chat
 
@@ -396,6 +368,23 @@ truncates coverage. Review the resolved plan, then raise or omit the limit to ru
 selected checks. Discovery failures also stop before checks; fix the reported config
 or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
 unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+
+Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`:
+`run.json` holds the source, configuration, command and resolved-selection identities;
+`results.jsonl` appends check outcomes and each unit file's result as it finishes; and
+`coverage.json` lists every current check and resolved unit file per lane as
+`executed-passed`, `resumed-passed` (with its source attempt), `failed` or `unfinished`.
+The run passes only when every entry is satisfied. To continue after a failure or
+interruption, rerun with `--resume`; never hand-pick stages. It reruns anything not
+proven compatible. A configuration, lockfile, Node, Vitest setup or runner change voids
+all credit. A non-unit check needs an identical command on identical sources. A unit
+file keeps its pass unless the plan for the changes since then would select it (direct
+edit, `vitest related`, declared trigger, UI invariant, full-risk fallback or deleted
+module). Credit follows the file across lanes, so an edited test that moves from the
+declared to the direct lane simply reruns there (cloudlands-fe#3439).
+`--resolved-plan --resume` previews the continuation; `--max-unit-files` still bounds
+the full resolved plan. Attempts untouched for seven days are pruned.
+
 The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
@@ -610,6 +599,9 @@ These rules apply to unit tests and browser tests alike:
   a decorative assertion a behavioral contract.
 - **Do not use source text, markup order, or CSS-class strings to prove appearance.**
   Those checks constrain implementation spelling without establishing browser behavior.
+  `intent/no-class-name-assertions-in-tests` rejects new `className` / `classList` /
+  `toHaveClass` assertions in `src/**/*.test.ts`; existing ones are counted in
+  `eslint-rules/baselines/no-class-name-assertions-in-tests/`, which may only shrink.
 - **Do not claim layout coverage from jsdom dimensions.** jsdom does not perform layout;
   assigning a width or mocking a bounding box and checking it cannot prove containment.
 - **Do not build circular style oracles:** importing a production class constant and
@@ -634,11 +626,13 @@ behavioral assertion solely because it measures pixels or lives in a geometry-na
 | Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
 | Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
 
-**Explicit exception:** registered sandbox scenes retain the `defineGeometrySnapshotSuite`
-baselines required by [Visual verification](#visual-verification). Review intentional
-baseline changes under that workflow. This exception does not justify additional decorative
-unit tests or parallel appearance matrices. Manual preview and screenshot review remain
-part of visual verification.
+Blanket coordinate/size snapshot tests and saved baselines are prohibited, including
+for registered sandbox scenes. Do not recreate them under another name or regenerate
+baselines to accept changed measurements. `pnpm run lint:geometry-snapshots`, included
+in `lint:architecture`, rejects retired baseline paths, snapshot APIs and regeneration
+hooks. Review must also reject equivalent mechanisms under new names. Manual probes
+and screenshot review remain available under [Visual verification](#visual-verification);
+automated geometry assertions must protect a named behavioral contract.
 
 ### Component tests (Playwright CT) — when and how
 
@@ -682,13 +676,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   or, if it needs more time, tag the individual test
   `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
-  PRs that touch CT-contract paths, specs or geometry goldens also require it
-  (classified by `scripts/ct-contract-paths.mjs`, shared with `verify:changed`).
-  Root Playwright test/config/fixture changes require its four shards on the PR;
-  Electron lifetime test/harness/config changes require its Electron suite.
-  Both also run nightly/manual. Browser suites never run in the merge queue;
-  ordinary application changes can therefore reveal browser regressions after merge.
-  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from PR or nightly artifacts.
+  Merge-queue entries that touch CT-contract paths, specs or their direct local imports
+  also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`). Root Playwright test/config/fixture changes require its four shards
+  in the queue; Electron lifetime test/harness/config changes require its Electron suite.
+  Both also run nightly/manual. Browser suites never run on PR updates (PRs run only
+  type/lint, unit tests and static checks); ordinary application changes can therefore
+  reveal browser regressions in the queue or after merge.
+  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from queue or nightly artifacts.
   All browser lanes retain JSON, HTML and traces for seven days; the nightly
   manifest and per-lane outcomes distinguish missing reports from successful runs.
   `nightly-browser-report.yml` processes every nightly/main manual completion,

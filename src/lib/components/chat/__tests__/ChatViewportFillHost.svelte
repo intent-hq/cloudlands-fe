@@ -17,6 +17,7 @@
     bulkUpsertSessions,
     replaceMessages,
     updateMessage,
+    updateSession,
     seedHistoryAround,
     setHistoryOldestReached,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -49,6 +50,8 @@
     controlled = false,
     releasedPages = 0,
     expanded = false,
+    lastSeen,
+    advanceSeenTo,
   }: {
     progressive?: number;
     received?: number;
@@ -73,8 +76,13 @@
     refreshSnapshot?: boolean;
     retained?: boolean;
     compact?: boolean;
+    /** Seeds the session's daemon seen marker (`metadata.lastSeenMessageId`). */
+    lastSeen?: string;
+    /** Converges the seen marker mid-transfer (e.g. a markSeen landing). */
+    advanceSeenTo?: string;
   } = $props();
   const fixture = untrack(() => scenario);
+  const seenMarker = untrack(() => lastSeen);
   const forwardGap = fixture.startsWith('gap-');
   // One missing row lets a five-row inclusive fallback overlap the tail
   // and close the gap with exactly one successful retry.
@@ -259,6 +267,7 @@
           ),
           createdAt: timestamp,
           updatedAt: timestamp,
+          ...(seenMarker === undefined ? {} : { metadata: { lastSeenMessageId: seenMarker } }),
         } as AgentSession,
       ]),
     );
@@ -336,6 +345,17 @@
         });
       }
     });
+  });
+  $effect(() => {
+    const seen = advanceSeenTo;
+    if (seen === undefined) return;
+    untrack(() =>
+      store.dispatch(
+        updateSession('primary', {
+          metadataPatch: { lastSeenMessageId: { op: 'set', value: seen } },
+        }),
+      ),
+    );
   });
   $effect(() => {
     if (!compact) return;

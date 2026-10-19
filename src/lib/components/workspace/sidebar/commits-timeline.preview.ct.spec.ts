@@ -7,7 +7,7 @@ test('keeps the boundary label and divider disjoint on hover and keyboard focus'
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(CommitsTimelinePreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'commits-timeline', state: 'narrow' } },
+    hooksConfig: { previewScene: { scene: 'commits-timeline', state: 'narrow' } },
   });
   const boundary = component.getByRole('button', { name: 'Workspace start' });
   await boundary.hover();
@@ -39,7 +39,7 @@ test('keeps a loading boundary disabled without shifting the label outside its s
   mount,
 }) => {
   const component = await mount(CommitsTimelinePreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'commits-timeline', state: 'loading' } },
+    hooksConfig: { previewScene: { scene: 'commits-timeline', state: 'loading' } },
   });
   const boundary = component.getByRole('button', { name: 'Workspace start' });
   await expect(boundary).toBeDisabled();

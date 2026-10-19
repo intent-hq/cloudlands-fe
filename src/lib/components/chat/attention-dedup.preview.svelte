@@ -68,11 +68,6 @@
         title: 'Same wording, different request kind',
         expected: 'A discussion does not replace a blocker, or vice versa.',
       },
-      {
-        id: 'wrong-reason',
-        title: 'Same time, different reason',
-        expected: 'Keep both distinct explanations.',
-      },
     ],
     boundaries: [
       {
@@ -93,6 +88,11 @@
       {
         id: 'equivalent-time',
         title: 'Same time, different ISO formatting',
+        expected: 'One notice. No reminder.',
+      },
+      {
+        id: 'shortened-reason',
+        title: 'Same time, shortened pending reason',
         expected: 'One notice. No reminder.',
       },
     ],
@@ -135,7 +135,12 @@
           kind === 'blocker'
             ? 'Git identity is missing. Configure it to save the commit.'
             : 'The change is ready. Please choose whether to open a pull request.';
-        const pendingReason = scenario.id === 'missing-reason' ? undefined : reason;
+        const pendingReason =
+          scenario.id === 'missing-reason'
+            ? undefined
+            : scenario.id === 'shortened-reason'
+              ? reason.slice(0, 24)
+              : reason;
         const requestTimestamp =
           scenario.id === 'missing-time'
             ? undefined
@@ -167,10 +172,7 @@
               contentBlocks: [
                 {
                   type: 'text',
-                  text:
-                    scenario.id === 'wrong-reason'
-                      ? 'The preview server is unavailable. Restart it before continuing.'
-                      : reason,
+                  text: reason,
                   meta: { kind: noticeKind },
                 },
               ],

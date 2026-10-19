@@ -93,6 +93,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -625,7 +626,21 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   });
 
   it('drops hydrated effort when the saved model belongs to another provider', async () => {
-    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
 
     mocks.compactFormState$.set({
       selectedModel: 'codex:gpt-5.3-codex',
@@ -634,20 +649,30 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     mocks.hydrated$.set(true);
 
-    await waitFor(() => {
-      const persisted = mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-        .at(-1)?.payload[0];
-      expect(persisted).toMatchObject({
-        selectedModel: undefined,
-        selectedReasoningEffort: undefined,
-      });
-    });
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    const initialAgent = mocks.create.mock.calls[0][0].initialAgent;
+    expect(initialAgent.model).toBe(undefined);
+    expect(initialAgent).not.toHaveProperty('reasoningEffort');
   });
 
   it('keeps hydrated effort when the saved model matches the active provider', async () => {
-    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
 
     mocks.compactFormState$.set({
       selectedModel: 'auggie:sonnet-4.6',
@@ -656,15 +681,11 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     mocks.hydrated$.set(true);
 
-    await waitFor(() => {
-      const persisted = mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-        .at(-1)?.payload[0];
-      expect(persisted).toMatchObject({
-        selectedModel: 'auggie:sonnet-4.6',
-        selectedReasoningEffort: 'high',
-      });
-    });
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    const initialAgent = mocks.create.mock.calls[0][0].initialAgent;
+    expect(initialAgent).toMatchObject({ provider: 'auggie', model: 'sonnet-4.6' });
+    expect(initialAgent.reasoningEffort).toBe('high');
   });
 });

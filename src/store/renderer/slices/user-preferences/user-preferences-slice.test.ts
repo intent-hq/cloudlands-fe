@@ -31,6 +31,7 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsProviderProfilesEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -53,6 +54,7 @@ import {
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsProviderProfiles,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -79,6 +81,7 @@ import {
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
+  selectLabsProviderProfilesEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -614,6 +617,18 @@ describe('userPreferencesReducer', () => {
       expect(enabled.labsRemoteAgentsEnabled).toBe(true);
       expect(disabled.labsRemoteAgentsEnabled).toBe(false);
     });
+
+    it('defaults the Provider profiles lab to disabled', () => {
+      expect(initialState.labsProviderProfilesEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsProviderProfilesEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsProviderProfilesEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsProviderProfiles());
+      expect(enabled.labsProviderProfilesEnabled).toBe(true);
+      expect(disabled.labsProviderProfilesEnabled).toBe(false);
+      expect(enabled.labsMultiplayerEnabled).toBe(false);
+    });
   });
 
   describe('language preference actions', () => {
@@ -755,6 +770,24 @@ describe('userPreferencesReducer', () => {
       expect(disabled.labsMultiplayerEnabled).toBe(false);
       expect(disabled.labsGitLabEnabled).toBe(false);
     });
+
+    it.each([undefined, null, 'true', 1, {}])(
+      'selects labsProviderProfilesEnabled only for a stored true (got %j), missing slice safe',
+      (value) => {
+        expect(selectLabsProviderProfilesEnabled.select(state)).toBe(false);
+        expect(selectLabsProviderProfilesEnabled.select({} as any)).toBe(false);
+        expect(
+          selectLabsProviderProfilesEnabled.select({
+            userPreferences: { ...initialState, labsProviderProfilesEnabled: value },
+          } as any),
+        ).toBe(false);
+        expect(
+          selectLabsProviderProfilesEnabled.select({
+            userPreferences: { ...initialState, labsProviderProfilesEnabled: true },
+          } as any),
+        ).toBe(true);
+      },
+    );
 
     it('selects font settings from userPreferences', () => {
       expect(selectAgentFontStyle.select(state)).toBe('monospace');

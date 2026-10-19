@@ -94,7 +94,7 @@ jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
@@ -106,7 +106,9 @@ jobs:
         env:
           MACOS_ARCH: ${{ inputs.macos_arch }}
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
+          # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
             *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
@@ -119,7 +121,7 @@ jobs:
 
   smoke-inputs:
     if: ${{ inputs.smoke_macos }}
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require a signed macOS artifact
@@ -303,13 +305,15 @@ jobs:
           rustup target add "$INTENTD_TARGET"
           rustup show active-toolchain
 
-      # Share compiler outputs through Depot on both native macOS architectures.
-      - name: Configure Depot managed compiler cache
+      # Share compiler outputs through the self-hosted cache on the native macOS build.
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
         env:
-          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-        run: python3 scripts/setup-depot-sccache.py
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -588,7 +592,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: depot-windows-2022-16
+    runs-on: gh-windows-16x
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -702,12 +706,14 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Configure Depot managed compiler cache
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
         env:
-          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-        run: python3 scripts/setup-depot-sccache.py
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -891,7 +897,7 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: depot-ubuntu-24.04-8
+            runner: gh-linux-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -912,7 +918,7 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: depot-ubuntu-24.04-arm-8
+            runner: gh-linux-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -1009,12 +1015,14 @@ jobs:
       # be restored here; cache-on-failure keeps the compiled deps when a
       # later step fails after a completed cold cargo build (see the macOS
       # leg for the full rationale).
-      - name: Configure Depot managed compiler cache
+      - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
         env:
-          DEPOT_SCCACHE_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-        run: python3 scripts/setup-depot-sccache.py
+          INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
+          INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
+          INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
+        run: python3 scripts/setup-sccache.py
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands

@@ -17,6 +17,10 @@
     repoPath = '',
     repoType = 'local',
     githubUrl = '',
+    branch = '',
+    skipIsolation = false,
+    isNewRepo = false,
+    remoteSetup = null,
   }: {
     onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
     onBranchChange?: (event: { detail: { branch: string } }) => void;
@@ -33,6 +37,10 @@
     repoPath?: string;
     repoType?: string;
     githubUrl?: string;
+    branch?: string;
+    skipIsolation?: boolean;
+    isNewRepo?: boolean;
+    remoteSetup?: { workspacePath?: string } | null;
     [key: string]: unknown;
   } = $props();
 
@@ -53,3 +61,7 @@
 <div data-testid="picker-repo-path">{repoPath}</div>
 <div data-testid="picker-repo-type">{repoType}</div>
 <div data-testid="picker-github-url">{githubUrl}</div>
+<div data-testid="picker-branch">{branch}</div>
+<div data-testid="picker-skip-isolation">{String(skipIsolation)}</div>
+<div data-testid="picker-is-new-repo">{String(isNewRepo)}</div>
+<div data-testid="picker-remote-path">{remoteSetup?.workspacePath ?? ''}</div>

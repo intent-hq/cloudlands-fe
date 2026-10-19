@@ -119,6 +119,12 @@ describe('protocol version literal scanner', () => {
     expect(findProtocolVersionLiterals(line)).toEqual([]);
   });
 
+  it('honours a reasoned fixture-protocol-version escape from the fixture lint', () => {
+    const line = "fireHello({ protocolVersion: '9.4' }); // fixture-protocol-version: old daemon";
+    expect(findProtocolVersionLiterals(line)).toEqual([]);
+    expect(findProtocolVersionLiterals(line.replace(': old daemon', ':'))).toEqual(['9.4']);
+  });
+
   it.each([
     ['a bare token', `// toon-format v0.5 // ${ESCAPE_TOKEN}`, ['v0.5']],
     ['a token with a colon but no reason', `// protocol v10.1 // ${ESCAPE_TOKEN}:   `, ['v10.1']],

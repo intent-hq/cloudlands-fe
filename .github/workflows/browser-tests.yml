@@ -17,8 +17,8 @@ jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: depot-ubuntu-24.04-8
-    # Four hosted shards, one worker each; preserve the pinned CT browser.
+    runs-on: gh-linux-8x
+    # Four hosted shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -220,7 +220,7 @@ jobs:
           # --fail-on-flaky-tests turns a pass-on-retry into a red shard
           # instead of silent 3x runtime. A flaky required test must be fixed
           # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
+          pnpm run test:ct --workers=2 --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
       - name: Record browser outcome
         if: always()
         env:
@@ -289,7 +289,7 @@ jobs:
   test-playwright:
     name: Playwright (root ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -386,7 +386,7 @@ jobs:
   test-electron:
     name: Electron Browser Lifetime
     if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
     # single-worker run takes ~2-3 min plus setup.
     timeout-minutes: 30

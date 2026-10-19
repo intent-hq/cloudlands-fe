@@ -106,6 +106,13 @@ const mocks = vi.hoisted(() => {
     >,
     availableModels$: writable<Array<{ value: string }>>([]),
     availableModelsProviderId: '',
+    // §5.54 catalog profile summaries.
+    catalogProfiles: [] as Array<{
+      id: string;
+      providerRef: string;
+      baseProviderId: string;
+      name: string;
+    }>,
   };
 });
 
@@ -116,6 +123,7 @@ vi.mock('$store/renderer/store', async () => {
   // providerCatalog slice — hydrate the §5.38-shaped mock catalog.
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
@@ -127,7 +135,10 @@ vi.mock('$store/renderer/store', async () => {
   // the mocked selectActiveProviderId below.
   return createAppStoreMockModule({
     state: () => ({
-      providerCatalog,
+      providerCatalog: {
+        ...providerCatalog,
+        profiles: createCollection('id', mocks.catalogProfiles),
+      },
       providerSettings: { enabledProviders: mocks.enabledProviders },
       model: { defaultProviderId: mocks.defaultProviderId },
       providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
@@ -329,6 +340,74 @@ describe('InitialAgentPicker stale model override clearing', () => {
     });
   });
 
+  describe('named provider profiles (§5.54)', () => {
+    const WORK = {
+      id: 'pwork00000001',
+      providerRef: 'codex@pwork00000001',
+      baseProviderId: 'codex',
+      name: 'Work',
+    };
+    beforeEach(() => {
+      mocks.catalogProfiles = [WORK];
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { auggie: { available: true }, codex: { available: true } },
+      });
+    });
+    afterEach(() => {
+      mocks.catalogProfiles = [];
+    });
+
+    it('creates with the picked profile reference', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      expect(selection()).toEqual({
+        selectedProvider: WORK.providerRef,
+        selectedModel: 'gpt-5-work',
+        modelWasOverridden: true,
+      });
+    });
+
+    it('keeps a default profile selected after a specialist switch resets the model', async () => {
+      mocks.activeProviderId$.set(WORK.providerRef);
+      mocks.specialists$.set([{ id: 'reviewer', name: 'Reviewer', description: '' }]);
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      await fireEvent.click(within(modeCards().single).getByRole('button', { name: /General/ }));
+      await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Reviewer/ }));
+      await flush();
+      expect(selection().selectedProvider).toBe(WORK.providerRef);
+    });
+
+    // This harness has no userPreferences slice, so the Provider profiles
+    // Labs toggle reads as off: a saved default profile still runs.
+    it('keeps an existing profile selection available while the Provider profiles Labs toggle is off', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { auggie: { available: true }, codex: { available: true } },
+      });
+      await flush();
+      expect(selection().selectedProvider).toBe(WORK.providerRef);
+    });
+
+    it('moves a new agent off a profile whose base provider is disabled', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      setEnabledProviders({ codex: false });
+      await waitFor(() => expect(selection().selectedProvider).toBe('auggie'));
+    });
+  });
+
   it('switches away when settings disable the selected provider after availability loads', async () => {
     mocks.getProviderAvailability.mockResolvedValue({
       hasAnyProvider: true,
@@ -430,6 +509,34 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
     expect(teamMode.getAttribute('aria-pressed')).toBe('false');
     expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not report an automatic reset of a deleted specialist as an agent pick', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
+    const onSetupPick = vi.fn();
+    const onTeamModeChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'deleted-custom', onSetupPick, onTeamModeChange },
+    });
+    await flush();
+    expect(onTeamModeChange).toHaveBeenCalledWith(true);
+    expect(onSetupPick).not.toHaveBeenCalled();
+  });
+
+  it('reports user mode picks through onSetupPick', async () => {
+    const onSetupPick = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onSetupPick },
+    });
+    // Re-selecting the active mode is not a pick.
+    await fireEvent.click(modeCards().team);
+    expect(onSetupPick).not.toHaveBeenCalled();
+    await fireEvent.click(modeCards().single);
+    expect(onSetupPick).toHaveBeenCalledTimes(1);
+    await fireEvent.click(modeCards().team);
+    expect(onSetupPick).toHaveBeenCalledTimes(2);
   });
 
   it('defaults to single-agent mode with Developer when nothing is remembered', async () => {

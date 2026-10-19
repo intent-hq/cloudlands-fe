@@ -62,5 +62,11 @@ export interface TokenUsage {
    * snapshot and must not be interpreted as an authoritative empty matrix.
    */
   byAgentModel?: TokenUsageCrossFilterRow[];
+  /**
+   * Daemon-materialized display name per `byAgentId` key (§5.23), covering
+   * agents the renderer has not loaded (retired, unloaded delegated, pending
+   * delete). Absent on older daemons/snapshots and when no agent is named.
+   */
+  agentNames?: Record<string, string>;
   lastScanAt: string | null;
 }

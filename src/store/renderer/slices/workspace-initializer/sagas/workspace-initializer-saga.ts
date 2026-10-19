@@ -28,8 +28,10 @@ import {
   getLocalStorageItem,
   getLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
+import { readAgentByRepo } from '../utils/agent-by-repo';
 import {
   selectCompactWorkspaceInitializerFormState,
+  selectWorkspaceInitializerAgentByRepo,
   selectWorkspaceInitializerBranchByRepo,
   selectWorkspaceInitializerDefaultParentPath,
   selectWorkspaceInitializerLastSelectedRepo,
@@ -46,6 +48,7 @@ import {
   dismissWorkspaceInitializerRecentRepo,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
   setWorkspaceInitializerLastSelectedRepo,
@@ -155,6 +158,7 @@ function* buildWorkspaceInitializerBag() {
   const dismissedRecentRepoKeys = yield* selectWorkspaceInitializerDismissedRecentRepoKeys.effect();
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
+  const agentByRepo = yield* selectWorkspaceInitializerAgentByRepo.effect();
   return {
     compactFormState,
     onboardingFormState,
@@ -165,6 +169,7 @@ function* buildWorkspaceInitializerBag() {
     dismissedRecentRepoKeys,
     remoteSetups,
     lastSubmittedAgent,
+    agentByRepo,
   } satisfies WorkspaceInitializerHydrationState;
 }
 
@@ -268,6 +273,7 @@ export function* hydrateWorkspaceInitializerWorker() {
       lastSubmittedAgent: isRecord(daemonBag.lastSubmittedAgent)
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
         : null,
+      agentByRepo: readAgentByRepo(daemonBag.agentByRepo),
     };
     yield* put(hydrateWorkspaceInitializer(hydrationState));
     return true;
@@ -331,6 +337,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       upsertWorkspaceInitializerRemoteSetup,
       removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
+      setWorkspaceInitializerAgentForRepo,
     ],
     buffers.sliding(1),
   );

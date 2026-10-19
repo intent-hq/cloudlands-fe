@@ -16,7 +16,11 @@ import {
   isBrowserTabViewport,
   type BrowserTabViewport,
 } from '../../../shared/ipc/workspace-command-payloads';
+// Browser commands reach windows with ANY_HOST: this service has no host for
+// a tab's workspace yet (tabs are keyed by workspace id alone). Threading the
+// owning backend id through would let these sends target one host.
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('EmbeddedBrowserCdp');
 
@@ -368,11 +372,16 @@ class EmbeddedBrowserCdpService {
     // Send only to windows displaying the requested workspace. The renderer
     // echoes requestId back so the reply resolves this request specifically,
     // not whichever request happens to be pending.
-    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, {
-      requestId,
+    const delivery = sendToWorkspaceWindows(
       workspaceId,
-      ...(recoverTabId ? { recoverTabId } : {}),
-    });
+      IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
+      {
+        requestId,
+        workspaceId,
+        ...(recoverTabId ? { recoverTabId } : {}),
+      },
+      ANY_HOST,
+    );
     if (!delivery.delivered) {
       // Nothing received the request, so no reply is coming — answer from the
       // same-workspace cache right away instead of waiting for the timeout.
@@ -854,11 +863,16 @@ class EmbeddedBrowserCdpService {
     // Send only to windows displaying the requested workspace. Include
     // workspaceId so the renderer focuses the tab in the owning workspace's
     // panel layout, not whichever workspace is currently visible.
-    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.FOCUS_TAB, {
-      tabId,
+    const delivery = sendToWorkspaceWindows(
       workspaceId,
-      ...(pin === undefined ? {} : { pin }),
-    });
+      IPC_CHANNELS.BROWSER.FOCUS_TAB,
+      {
+        tabId,
+        workspaceId,
+        ...(pin === undefined ? {} : { pin }),
+      },
+      ANY_HOST,
+    );
     if (!delivery.delivered) {
       logger.warn('Focus request for browser tab reached no window', { tabId, workspaceId });
       return false;
@@ -900,11 +914,16 @@ class EmbeddedBrowserCdpService {
       throw new Error('workspaceId is required to show a browser tab');
     }
 
-    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.SHOW_TAB, {
-      tabId,
+    const delivery = sendToWorkspaceWindows(
       workspaceId,
-      ...(focus === undefined ? {} : { focus }),
-    });
+      IPC_CHANNELS.BROWSER.SHOW_TAB,
+      {
+        tabId,
+        workspaceId,
+        ...(focus === undefined ? {} : { focus }),
+      },
+      ANY_HOST,
+    );
     if (!delivery.delivered) {
       throw new Error(
         `Cannot show tab ${tabId}: workspace ${workspaceId} is not open in any window.`, // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -945,12 +964,17 @@ class EmbeddedBrowserCdpService {
     requestedUrl?: string,
   ): void {
     if (!tabId || typeof workspaceId !== 'string' || workspaceId.length === 0 || !url) return;
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_NAVIGATED, {
-      tabId,
+    sendToWorkspaceWindows(
       workspaceId,
-      url,
-      ...(requestedUrl === undefined ? {} : { requestedUrl }),
-    });
+      IPC_CHANNELS.BROWSER.TAB_NAVIGATED,
+      {
+        tabId,
+        workspaceId,
+        url,
+        ...(requestedUrl === undefined ? {} : { requestedUrl }),
+      },
+      ANY_HOST,
+    );
   }
 
   /**
@@ -995,10 +1019,15 @@ class EmbeddedBrowserCdpService {
     // Send only to windows displaying the requested workspace. Include
     // workspaceId so the renderer closes the tab in the owning workspace's
     // panel layout, not whichever workspace is currently visible.
-    const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.CLOSE_TAB, {
-      tabId,
+    const delivery = sendToWorkspaceWindows(
       workspaceId,
-    });
+      IPC_CHANNELS.BROWSER.CLOSE_TAB,
+      {
+        tabId,
+        workspaceId,
+      },
+      ANY_HOST,
+    );
     if (!delivery.delivered) {
       throw new Error(
         `Cannot close tab ${tabId}: workspace ${workspaceId} is not open in any window.`, // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -1612,16 +1641,21 @@ class EmbeddedBrowserCdpService {
     }
     const emulatedSize = this.tabOwnership.get(tabId)?.emulatedSize;
     const viewport = this.tabViewports.get(tabId) ?? { mode: 'fit' as const };
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED, {
-      tabId,
+    sendToWorkspaceWindows(
       workspaceId,
-      ownerAgentId,
-      // Best-effort display name so the sidebar owner group can label the
-      // tab without an agent-store lookup (monorepo#3438).
-      ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
-      ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
-      viewport: { ...viewport },
-    });
+      IPC_CHANNELS.BROWSER.TAB_OWNER_CHANGED,
+      {
+        tabId,
+        workspaceId,
+        ownerAgentId,
+        // Best-effort display name so the sidebar owner group can label the
+        // tab without an agent-store lookup (monorepo#3438).
+        ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
+        ...(emulatedSize === undefined ? {} : { emulatedSize: { ...emulatedSize } }),
+        viewport: { ...viewport },
+      },
+      ANY_HOST,
+    );
   }
 
   /**

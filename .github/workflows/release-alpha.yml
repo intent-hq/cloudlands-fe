@@ -33,7 +33,7 @@ jobs:
   # duplicate-release guard run once here; every build job depends on it and
   # the publish job consumes its tag/version outputs.
   resolve:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -121,7 +121,9 @@ jobs:
             echo "::error::This tag uses the retired alpha Mac feed. Publish a new build using latest-mac.yml."
             exit 1
           fi
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
+          # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
+          # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do
@@ -422,7 +424,7 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: depot-windows-2022-16
+    runs-on: gh-windows-16x
     # 120 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -567,7 +569,7 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: depot-ubuntu-24.04-8
+            runner: gh-linux-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -588,7 +590,7 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: depot-ubuntu-24.04-arm-8
+            runner: gh-linux-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -710,7 +712,7 @@ jobs:
   # Every platform must finish building and verifying before publication.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:

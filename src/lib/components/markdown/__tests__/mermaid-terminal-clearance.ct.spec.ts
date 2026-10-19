@@ -215,7 +215,7 @@ for (const { state, motion, targets } of cases) {
       await document.fonts.ready;
     });
     await mount(Preview, {
-      hooksConfig: { geometrySnapshot: { scene: 'diagram-workbench', state } },
+      hooksConfig: { previewScene: { scene: 'diagram-workbench', state } },
     });
     const root = await settled(page, state);
     const rows = await terminals(root, targets);

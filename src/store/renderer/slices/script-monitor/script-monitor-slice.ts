@@ -20,6 +20,8 @@ export const emptyScriptMonitors: ScriptMonitorWorkspace = {
   status: 'loading',
   operations: {},
 };
+export const scriptMonitorsRetryRequested =
+  createAction<[workspaceId: string]>('scriptMonitor/retry');
 export const scriptMonitorsLoadMoreRequested =
   createAction<[workspaceId: string]>('scriptMonitor/loadMore');
 export const scriptMonitorDetailsRequested =
