@@ -2,5 +2,5 @@
 // PROTOCOL_VERSION from crates/intent-transport/src/protocol.rs at the bundled sidecar tag (intentd.version).
 // Default protocolVersion for fake daemon hellos in tests; regenerate after a pin change.
 // protocol-version-ok-file: the generated value is the pinned daemon version by design.
-// source-pin: 0.11.13
+// source-pin: 0.11.14
 export const CURRENT_PROTOCOL_VERSION = '15.0'; // protocol-version-parse-ok: generated test default, not a gate
