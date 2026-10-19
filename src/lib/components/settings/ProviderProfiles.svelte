@@ -40,10 +40,12 @@
     selectProviderProfilesLoadStatus,
     selectProviderProfileStatusMap,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectFastModeSupportedProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
+  import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
 
   interface Props {
     providerId: string;
@@ -61,6 +63,10 @@
   const inUse$ = selectProviderInUseReasons();
   const defaultProviderId$ = selectActiveProviderId();
   const appOwned$ = selectIsDaemonAppOwned();
+  const fastModeProviders$ = selectFastModeSupportedProviders();
+  // Each profile has its own Fast mode / service tier, offered exactly when
+  // the base provider's is (this whole section is already Labs-gated).
+  const offersFastMode = $derived($fastModeProviders$.includes(providerId));
 
   let dialogOpen = $state(false);
   let editing = $state<ProviderProfile | undefined>(undefined);
@@ -203,7 +209,11 @@
                   align="end"
                   aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: profile.name })}
                 >
-                  <div class="w-56">
+                  <div class={offersFastMode && providerId !== 'codex' ? 'w-64' : 'w-56'}>
+                    {#if offersFastMode}
+                      <ProviderFastModeMenuItems providerRef={profile.providerRef} />
+                      <Menu.Separator />
+                    {/if}
                     <Menu.Item
                       class="cursor-pointer text-foreground"
                       onSelect={() => openEdit(profile)}

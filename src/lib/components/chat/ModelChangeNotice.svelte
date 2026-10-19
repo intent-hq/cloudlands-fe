@@ -10,9 +10,13 @@
   import Fa from 'svelte-fa';
   import { toStore } from 'svelte/store';
   import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
-  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderCatalogProfiles,
+    selectProviderDisplayName,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { faArrowRightArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { providerRefBaseId } from '$shared/provider-profiles';
   import { formatModelChangeLabel, type ModelChangeNoticeInfo } from './model-change-notice';
 
   interface Props {
@@ -37,6 +41,19 @@
   );
   const fromProviderName$ = selectProviderDisplayName(fromProvider);
   const toProviderName$ = selectProviderDisplayName(toProvider);
+  // Profile names (§5.54) label the notice, so renames and removals relabel it.
+  const profiles$ = selectProviderCatalogProfiles(toStore(() => workspaceId));
+  // A profile side falls back to its base provider's model names.
+  const fromBaseName$ = selectModelDisplayName(
+    toStore(() => providerRefBaseId(notice.fromProvider ?? '')),
+    toStore(() => notice.from ?? ''),
+    toStore(() => workspaceId),
+  );
+  const toBaseName$ = selectModelDisplayName(
+    toStore(() => providerRefBaseId(notice.toProvider ?? '')),
+    toStore(() => notice.to ?? ''),
+    toStore(() => workspaceId),
+  );
   const toName$ = selectModelDisplayName(
     toProvider,
     toStore(() => notice.to ?? ''),
@@ -48,6 +65,9 @@
     void $fromProviderName$;
     void $toProviderName$;
     void $toName$;
+    void $profiles$;
+    void $fromBaseName$;
+    void $toBaseName$;
     return formatModelChangeLabel(notice, fallbackText, workspaceId);
   });
 </script>

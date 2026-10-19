@@ -60,7 +60,13 @@ async function seed({
   profiles = [WORK],
   defaultProviderId = 'codex',
   transportMode = 'sidecar-uds',
-}: { profiles?: ProviderProfile[]; defaultProviderId?: string; transportMode?: string } = {}) {
+  fastMode,
+}: {
+  profiles?: ProviderProfile[];
+  defaultProviderId?: string;
+  transportMode?: string;
+  fastMode?: Record<string, boolean>;
+} = {}) {
   const { reducers } = await import('$store/renderer/reducer');
   mocks.reducers = reducers as never;
   const init = { type: '@@test/init' };
@@ -73,9 +79,27 @@ async function seed({
   const { providerProfilesLoaded } =
     await import('$store/renderer/slices/provider-settings/provider-settings-slice');
   const { hydrateDefaultProvider } = await import('$store/renderer/slices/model/model-slice');
+  const { fastModeSupportReceived, hydrateProviderFastMode } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { providerCatalogLoaded } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
+  const fastModeActions = fastMode
+    ? [
+        providerCatalogLoaded({
+          providers: MOCK_PROVIDER_CATALOG.providers.map((p) => ({
+            ...p,
+            supportsFastMode: ['claude-code', 'codex'].includes(p.id),
+          })),
+        }),
+        fastModeSupportReceived(true),
+        hydrateProviderFastMode(fastMode, 1),
+      ]
+    : [];
   for (const action of [
     providerProfilesLoaded(profiles, 3),
     hydrateDefaultProvider(defaultProviderId),
+    ...fastModeActions,
   ]) {
     state = Object.fromEntries(
       Object.entries(state).map(([key, value]) => [
@@ -113,6 +137,18 @@ describe('ProviderProfiles', () => {
     expect(
       screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
     ).toBeTruthy();
+  });
+
+  it('explains that a leading ~ in CODEX_HOME and CLAUDE_CONFIG_DIR means the home folder', async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
+    expect(help.textContent).toMatch(/~.*CODEX_HOME.*CLAUDE_CONFIG_DIR.*home folder/);
   });
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {
@@ -336,6 +372,90 @@ describe('ProviderProfiles', () => {
     expect(lastOf('providerProfiles/deleteRequested')?.payload).toEqual([
       expect.objectContaining({ profileId: 'pwork' }),
     ]);
+  });
+});
+
+const PERSONAL: ProviderProfile = {
+  ...WORK,
+  id: 'ppersonal',
+  providerRef: 'claude-code@ppersonal',
+  baseProviderId: 'claude-code',
+  name: 'Personal',
+  env: [{ key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '********' }],
+};
+
+describe('ProviderProfiles Fast mode', () => {
+  async function openActions(name: string) {
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_actions_ariaLabel({ name }) }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  it('offers a per-profile Fast mode that starts off even when the Default profile has it on', async () => {
+    await seed({ profiles: [PERSONAL], fastMode: { 'claude-code': true } });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'claude-code', providerName: 'Claude Code' });
+    const menu = await openActions('Personal');
+    const item = within(menu).getByRole('menuitemcheckbox', {
+      name: m.settings_providers_fastMode_label(),
+    });
+    expect(item.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(item);
+    await waitFor(() => expect(lastOf('providerSettings/setFastMode')).toBeTruthy());
+    expect(lastOf('providerSettings/setFastMode')?.payload).toEqual([
+      'claude-code@ppersonal',
+      true,
+    ]);
+  });
+
+  it("reflects the profile's own saved Fast mode", async () => {
+    await seed({
+      profiles: [PERSONAL],
+      fastMode: { 'claude-code': false, 'claude-code@ppersonal': true },
+    });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'claude-code', providerName: 'Claude Code' });
+    const menu = await openActions('Personal');
+    expect(
+      within(menu)
+        .getByRole('menuitemcheckbox', { name: m.settings_providers_fastMode_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
+  it('offers a Codex profile its own Service Tier', async () => {
+    await seed({ fastMode: { codex: true } });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    const menu = await openActions('Work');
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_serviceTier_label() }),
+    ).toBeTruthy();
+    expect(within(menu).queryByRole('menuitemcheckbox')).toBeNull();
+    const tier = within(menu).getByRole('menuitem', {
+      name: m.settings_providers_serviceTier_label(),
+    });
+    tier.focus();
+    await fireEvent.keyDown(tier, { key: 'ArrowRight' });
+    const fast = await screen.findByRole('menuitemradio', {
+      name: m.settings_providers_serviceTierFast_label(),
+    });
+    expect(fast.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(fast);
+    await waitFor(() => expect(lastOf('providerSettings/setFastMode')).toBeTruthy());
+    expect(lastOf('providerSettings/setFastMode')?.payload).toEqual(['codex@pwork', true]);
+  });
+
+  it('hides Fast mode when the daemon does not support it', async () => {
+    await seed({ profiles: [PERSONAL] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'claude-code', providerName: 'Claude Code' });
+    const menu = await openActions('Personal');
+    expect(within(menu).queryByRole('menuitemcheckbox')).toBeNull();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providers_serviceTier_label() }),
+    ).toBeNull();
   });
 });
 
