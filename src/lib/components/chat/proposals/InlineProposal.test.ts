@@ -137,6 +137,27 @@ vi.mock('$lib/components/chat/SpecialistDropdown.svelte', async () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: vi.fn(() => readable(() => ({}))),
 }));
+vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
+  selectProviderModelsCacheMap: () => ({
+    subscribe: (run: (value: Record<string, unknown>) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
+}));
+vi.mock(
+  '$store/renderer/slices/provider-catalog/provider-catalog-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/provider-catalog/provider-catalog-selectors')
+    >()),
+    selectProviderDisplayName: {
+      select: vi.fn((_state: unknown, provider: string) =>
+        provider === 'claude-code' ? 'Claude Code' : undefined,
+      ),
+    },
+  }),
+);
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerAgentByRepo: { select: vi.fn(() => ({})) },
   selectNewWorkspaceDefaultSpecialist: Object.assign(

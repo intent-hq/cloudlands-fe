@@ -37,8 +37,8 @@ export interface ProposalRepoAgentDefault {
 
 /**
  * The agent setup remembered for the card's repository, as the specialist to
- * preselect. `null` when nothing is remembered or the remembered agent is no
- * longer available (the card then keeps the global New Workspace default).
+ * preselect. Keys are tried in order, skipping a setup whose agent is no longer
+ * available; `null` keeps the global New Workspace default.
  */
 export function resolveProposalRepoAgentDefault({
   repoKeys,
@@ -51,13 +51,19 @@ export function resolveProposalRepoAgentDefault({
   specialists: ReadonlyArray<{ id: string }>;
   orchestratorId: string | null;
 }): ProposalRepoAgentDefault | null {
-  const key = repoKeys.find((candidate) => agentByRepo[candidate]);
-  if (!key) return null;
-  const settings = agentByRepo[key];
-  if (settings.isTeamMode) return orchestratorId ? { specialist: orchestratorId, settings } : null;
-  const specialist = settings.selectedSpecialist ?? null;
-  if (specialist !== null && !specialists.some((s) => s.id === specialist)) return null;
-  return { specialist, settings };
+  for (const key of repoKeys) {
+    const settings = agentByRepo[key];
+    if (!settings) continue;
+    if (settings.isTeamMode) {
+      if (orchestratorId) return { specialist: orchestratorId, settings };
+      continue;
+    }
+    const specialist = settings.selectedSpecialist ?? null;
+    if (specialist === null || specialists.some((s) => s.id === specialist)) {
+      return { specialist, settings };
+    }
+  }
+  return null;
 }
 
 /** Initial-agent fields a remembered setup contributes, matching New Workspace's submit. */

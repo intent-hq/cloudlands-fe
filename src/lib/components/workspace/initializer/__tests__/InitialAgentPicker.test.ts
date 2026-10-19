@@ -436,28 +436,28 @@ describe('InitialAgentPicker stale model override clearing', () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
     ]);
-    const onAgentPick = vi.fn();
+    const onSetupPick = vi.fn();
     const onTeamModeChange = vi.fn();
     render(InitialAgentPicker, {
-      props: { selectedSpecialist: 'deleted-custom', onAgentPick, onTeamModeChange },
+      props: { selectedSpecialist: 'deleted-custom', onSetupPick, onTeamModeChange },
     });
     await flush();
     expect(onTeamModeChange).toHaveBeenCalledWith(true);
-    expect(onAgentPick).not.toHaveBeenCalled();
+    expect(onSetupPick).not.toHaveBeenCalled();
   });
 
-  it('reports user mode picks through onAgentPick', async () => {
-    const onAgentPick = vi.fn();
+  it('reports user mode picks through onSetupPick', async () => {
+    const onSetupPick = vi.fn();
     render(InitialAgentPicker, {
-      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onAgentPick },
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onSetupPick },
     });
     // Re-selecting the active mode is not a pick.
     await fireEvent.click(modeCards().team);
-    expect(onAgentPick).not.toHaveBeenCalled();
+    expect(onSetupPick).not.toHaveBeenCalled();
     await fireEvent.click(modeCards().single);
-    expect(onAgentPick).toHaveBeenCalledTimes(1);
+    expect(onSetupPick).toHaveBeenCalledTimes(1);
     await fireEvent.click(modeCards().team);
-    expect(onAgentPick).toHaveBeenCalledTimes(2);
+    expect(onSetupPick).toHaveBeenCalledTimes(2);
   });
 
   it('defaults to single-agent mode with Developer when nothing is remembered', async () => {

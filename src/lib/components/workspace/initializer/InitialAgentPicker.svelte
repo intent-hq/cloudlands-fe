@@ -108,8 +108,11 @@
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
     onTeamModeChange?: (isTeamMode: boolean) => void;
-    /** The user picked a mode or specialist (never fired by automatic resets). */
-    onAgentPick?: () => void;
+    /**
+     * The user picked a mode, specialist, model or reasoning effort. Never fired
+     * by automatic resets or effort reconciliation.
+     */
+    onSetupPick?: () => void;
     /** Callback when provider changes (called when auto-selected) */
     onProviderChange?: (providerId: string) => void;
   }
@@ -126,7 +129,7 @@
     onReasoningEffortChange,
     onTeamModeChange,
     onProviderChange,
-    onAgentPick,
+    onSetupPick,
   }: Props = $props();
 
   function updateReasoningEffort(effort: string | undefined) {
@@ -163,6 +166,7 @@
   }
 
   function handleReasoningChange(effort: string | null) {
+    onSetupPick?.();
     // A blank value is the wire's explicit clear. Undefined remains inheritance.
     updateReasoningEffort(effort ?? '');
     return true;
@@ -632,7 +636,7 @@
     if (isTeamMode) return;
     // Team mode requires an orchestrator; the card is hidden without one.
     if (orchestratorId === null) return;
-    onAgentPick?.();
+    onSetupPick?.();
     // Save single-agent state
     lastSingleAgent = {
       model: selectedModel,
@@ -662,7 +666,7 @@
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
-      onAgentPick?.();
+      onSetupPick?.();
       // Save team mode state
       lastTeamMode = {
         model: selectedModel,
@@ -693,7 +697,7 @@
   }
 
   function handleSpecialistSelect(specialistId: string | null) {
-    onAgentPick?.();
+    onSetupPick?.();
     isTeamMode = false;
     selectedSpecialist = specialistId;
     lastSingleAgent.specialist = specialistId;
@@ -725,6 +729,7 @@
     // The picker reports the resolved triple legs on every pick: store the
     // bare model id paired with its provider (no model-string parsing here).
     const explicitModel = (pick?.modelId ?? model) || undefined;
+    onSetupPick?.();
     selectedModel = explicitModel;
     modelWasOverridden = !!explicitModel;
     modelOverriddenThisSession = !!explicitModel;

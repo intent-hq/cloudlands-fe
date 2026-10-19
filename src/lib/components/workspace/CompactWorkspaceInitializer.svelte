@@ -12,7 +12,7 @@
     readSkipIsolation,
     resolveSidebarRepositoryDefault,
   } from './initializer/sidebar-repository-default';
-  import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -478,6 +478,7 @@
           const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -863,11 +864,12 @@
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
   let effortPickedThisSession = $state(false);
-  // Same for an explicit agent mode / specialist pick; repository switches
-  // also never override any of these picks.
-  let agentPickedThisSession = $state(false);
+  // Whether the user (or a prefill naming an agent) chose any part of the
+  // agent setup in this form session. Repository switches never override it;
+  // unlike the flags above it is not set by automatic effort reconciliation.
+  let setupPickedThisSession = $state(false);
   const agentSetupPinned = () =>
-    modelPickedThisSession || effortPickedThisSession || agentPickedThisSession;
+    modelPickedThisSession || effortPickedThisSession || setupPickedThisSession;
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
     if (!settings || agentSetupPinned()) return;
@@ -937,20 +939,31 @@
    * with a remembered one, so nothing from the previous repository's setup
    * leaks through fields the remembered setup leaves unset.
    */
-  function replaceAgentSettings(settings: WorkspaceInitializerAgentSettings) {
-    if (agentSetupPinned()) return;
-    isTeamMode = settings.isTeamMode ?? false;
-    selectedSpecialist =
-      settings.selectedSpecialist !== undefined
-        ? settings.selectedSpecialist
-        : defaultSingleAgentSpecialist;
-    selectedProvider = settings.selectedProvider || $activeProviderId$ || $defaultProviderId$;
+  async function replaceAgentSettings(settings: WorkspaceInitializerAgentSettings) {
+    if (setupPickedThisSession) return;
+    const provider = settings.selectedProvider || $activeProviderId$ || $defaultProviderId$;
     const model = settings.selectedModel;
     const modelAccepted =
       !!model &&
       (splitLegacyCompoundId(model).providerId ??
         settings.selectedProvider ??
-        $defaultProviderId$) === selectedProvider;
+        $defaultProviderId$) === provider;
+    isTeamMode = settings.isTeamMode ?? false;
+    selectedSpecialist =
+      settings.selectedSpecialist !== undefined
+        ? settings.selectedSpecialist
+        : defaultSingleAgentSpecialist;
+    if (provider !== selectedProvider && modelAccepted && selectedModel === model) {
+      // Same model id under another provider: let the picker drop the previous
+      // override first, so the remembered one pairs with the new provider (a
+      // different id re-pairs on its own).
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      selectedProvider = provider;
+      await tick();
+      if (setupPickedThisSession) return;
+    }
+    selectedProvider = provider;
     selectedModel = modelAccepted ? model : undefined;
     modelWasOverridden = modelAccepted ? (settings.modelWasOverridden ?? false) : false;
     selectedReasoningEffort =
@@ -991,7 +1004,7 @@
         fallback: $compactFormState$ ?? $lastSubmittedAgent$,
       });
       if (repoKey !== null) lastAgentRepoKey = repoKey;
-      if (settings) replaceAgentSettings(settings);
+      if (settings) void replaceAgentSettings(settings);
     });
   });
 
@@ -1213,6 +1226,7 @@
           );
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -2737,7 +2751,7 @@
     // so the next form session may again follow repository switches.
     modelPickedThisSession = false;
     effortPickedThisSession = false;
-    agentPickedThisSession = false;
+    setupPickedThisSession = false;
 
     // Save the created choices for the next form now, before navigation can
     // unmount the component. remoteSetup is already cleared above.
@@ -3836,7 +3850,7 @@
             }}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
-            onAgentPick={() => (agentPickedThisSession = true)}
+            onSetupPick={() => (setupPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider

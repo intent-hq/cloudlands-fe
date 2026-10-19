@@ -60,6 +60,16 @@ describe('resolveProposalRepoAgentDefault', () => {
     ).toBeNull();
   });
 
+  it('falls through to the next key when the first remembered agent is unavailable', () => {
+    const github = { isTeamMode: false, selectedSpecialist: 'implementor' };
+    expect(
+      resolve({
+        'local:/a': { selectedSpecialist: 'deleted-custom' },
+        'github:github.com/acme/a': github,
+      }),
+    ).toEqual({ specialist: 'implementor', settings: github });
+  });
+
   it('gives up when the remembered agent is unavailable', () => {
     expect(resolve({ 'local:/a': { selectedSpecialist: 'deleted-custom' } })).toBeNull();
     expect(resolve({ 'local:/a': { isTeamMode: true } }, null)).toBeNull();

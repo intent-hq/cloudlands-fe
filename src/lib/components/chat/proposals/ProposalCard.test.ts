@@ -169,6 +169,27 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
+vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
+  selectProviderModelsCacheMap: () => ({
+    subscribe: (run: (value: Record<string, unknown>) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
+}));
+vi.mock(
+  '$store/renderer/slices/provider-catalog/provider-catalog-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/provider-catalog/provider-catalog-selectors')
+    >()),
+    selectProviderDisplayName: {
+      select: vi.fn((_state: unknown, provider: string) =>
+        provider === 'claude-code' ? 'Claude Code' : undefined,
+      ),
+    },
+  }),
+);
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerAgentByRepo: {
     select: vi.fn(() => newWorkspaceDefaultState.agentByRepo),
@@ -1885,6 +1906,56 @@ describe('ProposalCard', () => {
 
       expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
       expect(await appliedFields()).not.toHaveProperty('agentSetup');
+    });
+
+    it('names the remembered provider when no model was picked, and sends it', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': {
+          isTeamMode: false,
+          selectedSpecialist: 'implementor',
+          selectedProvider: 'claude-code',
+          modelWasOverridden: false,
+        },
+      };
+      const { appliedFields } = renderSibling();
+
+      expect(screen.getByTestId('proposal-agent-setup').textContent).toContain('Claude Code');
+      expect((await appliedFields()).agentSetup).toEqual({ provider: 'claude-code' });
+    });
+
+    it('follows a repository change for the setup line after an explicit agent pick', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': TEAM_OPUS_HIGH,
+      };
+      specialistsState.specialists = [{ id: 'coordinator' }, { id: 'ui-designer' }];
+      render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+        },
+      });
+      expect(screen.getByTestId('proposal-agent-setup')).toBeTruthy();
+      // Pick another agent, then a repository that remembers that agent.
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': TEAM_OPUS_HIGH,
+        'local:/repo/mock': {
+          ...TEAM_OPUS_HIGH,
+          isTeamMode: false,
+          selectedSpecialist: 'ui-designer',
+        },
+      };
+      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
+      await fireEvent.click(screen.getAllByRole('button', { name: 'Mock repo change' })[0]);
+      await waitFor(() =>
+        expect(screen.getByTestId('proposal-agent-setup').textContent).toContain('Opus 4.5'),
+      );
     });
 
     it('keeps the global default when the remembered agent no longer exists', () => {

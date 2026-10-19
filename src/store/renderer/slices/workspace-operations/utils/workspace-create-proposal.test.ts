@@ -212,6 +212,18 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     });
   });
 
+  it('does not mix an adopted model into a proposal that chose its own provider', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go', provider: 'codex' } }),
+      {
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+      },
+    );
+    expect(request.initialAgent.provider).toBe('codex');
+    expect(request.initialAgent).not.toHaveProperty('model');
+    expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
+  });
+
   it('ignores a malformed adopted setup', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),

@@ -62,6 +62,8 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { reasoningEffortLabel } from '$features/agent/utils/reasoning-effort-label';
   import {
     proposalAgentSetup,
@@ -164,6 +166,8 @@
   // subscribed) so later modal edits never rewrite a card's selection; the
   // only re-reads are the late-hydration ones below.
   const workspaceInitializerHydrated = selectWorkspaceInitializerHydrated();
+  // Re-labels the adopted model once its provider's catalog loads.
+  const providerModelsCacheMap = selectProviderModelsCacheMap();
   const specialists = selectSpecialists();
   // True while the card's specialist is still that fallback: never edited by
   // the user, restored from a draft, or named by the proposal.
@@ -249,14 +253,15 @@
   );
   const adoptedAgentSetupLabel = $derived.by(() => {
     if (!adoptedAgentSetup) return '';
+    void $providerModelsCacheMap;
+    const { provider } = adoptedAgentSetup;
     const model =
-      adoptedAgentSetup.model && adoptedAgentSetup.provider
-        ? (selectModelDisplayName.select(
-            appStore.state,
-            adoptedAgentSetup.provider,
-            adoptedAgentSetup.model,
-          ) ?? adoptedAgentSetup.model)
-        : '';
+      adoptedAgentSetup.model && provider
+        ? (selectModelDisplayName.select(appStore.state, provider, adoptedAgentSetup.model) ??
+          adoptedAgentSetup.model)
+        : provider
+          ? (selectProviderDisplayName.select(appStore.state, provider) ?? provider)
+          : '';
     const effort = adoptedAgentSetup.reasoningEffort
       ? reasoningEffortLabel(adoptedAgentSetup.reasoningEffort)
       : '';
@@ -435,7 +440,12 @@
     void $specialists;
     // The repository can change on a non-sibling card before it is created.
     void [workspaceRepoType, workspaceRepoPath, workspaceClonePath, workspaceGithubUrl];
-    if (!isWorkspaceCreate || !specialistIsModalDefault) return;
+    if (!isWorkspaceCreate) return;
+    if (!specialistIsModalDefault) {
+      // Keep the user's agent, but follow the repository for the setup line.
+      repoAgentDefault = untrack(readRepoAgentDefault);
+      return;
+    }
     workspaceSpecialist = untrack(readDefaultSpecialist);
   });
 
@@ -849,7 +859,9 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
-    if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
+    // Sent only together with the line that shows it.
+    if (adoptedAgentSetup && adoptedAgentSetupLabel)
+      editedFields.agentSetup = { ...adoptedAgentSetup };
     return editedFields;
   }
 

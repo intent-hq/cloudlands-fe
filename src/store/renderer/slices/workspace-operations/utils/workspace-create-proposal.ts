@@ -26,23 +26,28 @@ function specialistOverride(value: unknown, fallback?: string): string | undefin
 
 /**
  * Provider / model / effort the card adopted from the repository's remembered
- * New Workspace setup (`editedFields.agentSetup`). They only fill legs the
- * proposal's own initial agent leaves unset.
+ * New Workspace setup (`editedFields.agentSetup`), applied only when the
+ * proposal's own initial agent sets none of them.
  */
 function agentSetupOverrides(
   value: unknown,
   initialAgent: Partial<InitialAgentRequest> | undefined,
 ): Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> {
   const setup = recordValue(value);
-  if (!setup) return {};
+  // Provider, model and effort travel together: a proposal that set any of
+  // them keeps its own choice rather than a mixed triple.
+  if (
+    !setup ||
+    initialAgent?.provider !== undefined ||
+    initialAgent?.model !== undefined ||
+    initialAgent?.reasoningEffort !== undefined
+  )
+    return {};
   const overrides: Partial<Pick<InitialAgentRequest, 'provider' | 'model' | 'reasoningEffort'>> =
     {};
-  if (typeof setup.provider === 'string' && setup.provider && initialAgent?.provider === undefined)
-    overrides.provider = setup.provider;
-  if (typeof setup.model === 'string' && setup.model && initialAgent?.model === undefined)
-    overrides.model = setup.model;
-  if (typeof setup.reasoningEffort === 'string' && initialAgent?.reasoningEffort === undefined)
-    overrides.reasoningEffort = setup.reasoningEffort;
+  if (typeof setup.provider === 'string' && setup.provider) overrides.provider = setup.provider;
+  if (typeof setup.model === 'string' && setup.model) overrides.model = setup.model;
+  if (typeof setup.reasoningEffort === 'string') overrides.reasoningEffort = setup.reasoningEffort;
   return overrides;
 }
 
