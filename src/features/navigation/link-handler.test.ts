@@ -160,6 +160,7 @@ describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in
         gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
         // Only a workspace preview has a workspace for Open in app to enter.
         openInWorkspace: surface === 'workspace preview',
+        assistantLayoutId: surface === 'Assistant' ? 'assistant-thread-1' : undefined,
       }),
     );
     expect(showAssistantContentMock).not.toHaveBeenCalled();
@@ -1362,6 +1363,43 @@ describe('openLinkInApp', () => {
 
     expect(gotoMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, 'panel-chat', undefined);
+  });
+
+  it('shows the link in the Assistant side panel it came from', async () => {
+    expect(
+      await openLinkInApp(url, CHIEF_WORKSPACE_ID, {
+        openInWorkspace: false,
+        assistantLayoutId: 'assistant-thread-1',
+      }),
+    ).toBe(true);
+
+    expect(showAssistantContentMock).toHaveBeenCalledExactlyOnceWith(url, {
+      layoutId: 'assistant-thread-1',
+    });
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant cannot show the link', async () => {
+    showAssistantContentMock.mockResolvedValueOnce(false);
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores the Home panel once it enters the workspace', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: true,
+        sourcePanelId: 'home-panel',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
   });
 
   it('opens nothing when entering the workspace fails', async () => {

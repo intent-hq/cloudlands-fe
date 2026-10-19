@@ -41,6 +41,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { readLinkSource } from './link-source';
 
 const logger = new Logger('LinkHandler');
 
@@ -70,14 +71,15 @@ const logger = new Logger('LinkHandler');
  */
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
-    const openInWorkspace = shouldOpenInWorkspace(options);
-    const sourcePanelId = openInWorkspace ? undefined : getSourcePanelId(options);
-    options = { ...options, openInWorkspace, sourcePanelId };
     const sourceTarget = options.event?.target;
-    const assistantLayoutId =
-      sourceTarget instanceof Element
-        ? sourceTarget.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset.assistantLayoutId
-        : undefined;
+    const source = readLinkSource(
+      sourceTarget instanceof Element ? sourceTarget : null,
+      options.workspaceId,
+    );
+    const openInWorkspace = options.openInWorkspace ?? source.openInWorkspace;
+    const sourcePanelId = openInWorkspace ? undefined : (options.sourcePanelId ?? source.panelId);
+    const { assistantLayoutId } = source;
+    options = { ...options, openInWorkspace, sourcePanelId };
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -167,7 +169,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return true;
           }
           case 'show-choices':
-            return await openLinkActionMenu(url, gitHubRef, event, options);
+            return await openLinkActionMenu(url, gitHubRef, event, options, assistantLayoutId);
         }
       }
 
@@ -288,15 +290,6 @@ function normalizeWorkspaceRelativePath(path: string): string | null {
   return segments.join('/');
 }
 
-function shouldOpenInWorkspace(options: LinkHandlerOptions): boolean {
-  if (options.openInWorkspace !== undefined) return options.openInWorkspace;
-  const target = options.event?.target;
-  if (!(target instanceof Element)) return false;
-  const workspaceId = target.closest<HTMLElement>('[data-workspace-link-target]')?.dataset
-    .workspaceLinkTarget;
-  return !!workspaceId && workspaceId === options.workspaceId;
-}
-
 async function activateLinkWorkspace(
   workspaceId: WorkspaceId | undefined,
   options: LinkHandlerOptions,
@@ -312,13 +305,6 @@ async function activateLinkWorkspace(
     });
     throw error;
   }
-}
-
-function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
-  if (options.sourcePanelId) return options.sourcePanelId;
-  const target = options.event?.target;
-  if (!(target instanceof HTMLElement)) return undefined;
-  return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
 }
 
 function focusSourcePanel(
@@ -464,6 +450,7 @@ async function openLinkActionMenu(
   gitHubRef: GitHubIssueOrPrRef,
   event: MouseEvent | KeyboardEvent,
   { workspaceId, openInWorkspace, sourcePanelId }: LinkHandlerOptions,
+  assistantLayoutId?: string,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
@@ -484,6 +471,7 @@ async function openLinkActionMenu(
       anchorElement,
       openInWorkspace: openInWorkspace ?? false,
       sourcePanelId,
+      assistantLayoutId,
     });
     if (gitHubRef.kind === 'pr') loadLinkedWorkspaces(openingId, url);
     logger.debug('Opened link action menu', { url, workspaceId });
@@ -528,16 +516,25 @@ export async function openLinkedWorkspace(workspaceId: WorkspaceId): Promise<boo
 }
 
 /**
- * Open a URL in a workspace's embedded browser panel. A link clicked in that
- * workspace's Home preview (`openInWorkspace`) enters the workspace first, so
- * the panel is visible; otherwise it opens beside `sourcePanelId` in place.
- * Opens nothing if entering the workspace fails (the user is notified).
+ * Open a URL "in the app". From the Assistant it shows in the Assistant side
+ * panel the action came from (`assistantLayoutId`). Otherwise it opens in the
+ * workspace's embedded browser panel: content from that workspace's Home
+ * preview (`openInWorkspace`) enters the workspace first so the panel is
+ * visible; elsewhere it opens beside `sourcePanelId` in place. Opens nothing
+ * if entering the workspace fails (the user is notified).
  */
 export async function openLinkInApp(
   url: string,
   workspaceId: WorkspaceId,
-  source: Pick<LinkHandlerOptions, 'openInWorkspace' | 'sourcePanelId'> = {},
+  source: Pick<LinkHandlerOptions, 'openInWorkspace' | 'sourcePanelId'> & {
+    assistantLayoutId?: string;
+  } = {},
 ): Promise<boolean> {
+  if (workspaceId === CHIEF_WORKSPACE_ID) {
+    const { showAssistantContent } = await import('$features/home/assistant-panels');
+    if (await showAssistantContent(url, { layoutId: source.assistantLayoutId })) return true;
+    return await openInExternalBrowser(url);
+  }
   try {
     await activateLinkWorkspace(workspaceId, source);
   } catch (error) {
@@ -545,7 +542,9 @@ export async function openLinkInApp(
     logger.warn('Failed to enter workspace for in-app link', { url, workspaceId, error });
     return false;
   }
-  return await openInBrowserPanel(url, workspaceId, source.sourcePanelId);
+  // A Home preview's panel is not part of the workspace layout.
+  const sourcePanelId = source.openInWorkspace ? undefined : source.sourcePanelId;
+  return await openInBrowserPanel(url, workspaceId, sourcePanelId);
 }
 
 /**
