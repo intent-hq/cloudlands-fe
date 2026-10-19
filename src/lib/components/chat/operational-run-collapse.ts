@@ -1,10 +1,13 @@
 import type { ContentBlock } from '$shared/types';
+import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   groupContentBlocks,
+  type CollapsedRunCounts,
   type ContentBlockGroup,
   type RenderContentBlock,
 } from '$lib/utils/messageParser';
 import { normalizeResponseGroups } from './response-group-blocks';
+import { classifyToolResults } from './tool-result-pairing';
 
 /** Fewest tool calls plus thinking steps that collapse into one summary row. */
 const MIN_COLLAPSED_RUN_LENGTH = 2;
@@ -12,31 +15,31 @@ const MIN_COLLAPSED_RUN_LENGTH = 2;
 /** Renderer-only identity for synthetic run groups (never an authored group name). */
 const COLLAPSED_RUN_SOURCE_NAME = 'collapsed-operational-run';
 
-interface CollapsedRunCounts {
-  tools: number;
-  thinking: number;
-}
-
-function isRunMember(block: RenderContentBlock): boolean {
-  return block.type === 'tool_use' || block.type === 'thinking' || block.type === 'tool_result';
+function isRunMember(block: RenderContentBlock, standalone: ReadonlySet<unknown>): boolean {
+  if (block.type === 'tool_result') return !standalone.has(block);
+  return block.type === 'tool_use' || block.type === 'thinking';
 }
 
 /**
  * Wrap each run of consecutive top-level tool calls and thinking steps into a
  * synthetic response group so the chat shows one expandable summary row.
  *
- * Paired `tool_result` blocks travel with their run and are not counted.
- * Prose, media, plans, proposals and authored groups end a run and are never
- * reordered. Runs shorter than {@link MIN_COLLAPSED_RUN_LENGTH} stay as-is.
+ * Paired `tool_result` blocks (which render nothing on their own) travel with
+ * their run and are not counted. Standalone results render a visible card, so
+ * they end a run, as do prose, media, plans, proposals and authored groups;
+ * nothing is reordered. A thinking step counts only once it has text, so the
+ * empty live placeholder never forms a transient group. Runs shorter than
+ * {@link MIN_COLLAPSED_RUN_LENGTH} stay as-is.
  */
 export function collapseOperationalRuns(
   blocks: readonly RenderContentBlock[],
   { isStreaming = false }: { isStreaming?: boolean } = {},
 ): RenderContentBlock[] {
+  const { standaloneResults } = classifyToolResults(blocks);
   const result: RenderContentBlock[] = [];
   let index = 0;
   while (index < blocks.length) {
-    if (!isRunMember(blocks[index])) {
+    if (!isRunMember(blocks[index], standaloneResults)) {
       result.push(blocks[index]);
       index += 1;
       continue;
@@ -44,10 +47,10 @@ export function collapseOperationalRuns(
 
     const start = index;
     const counts: CollapsedRunCounts = { tools: 0, thinking: 0 };
-    while (index < blocks.length && isRunMember(blocks[index])) {
+    while (index < blocks.length && isRunMember(blocks[index], standaloneResults)) {
       const block = blocks[index];
       if (block.type === 'tool_use') counts.tools += 1;
-      else if (block.type === 'thinking') counts.thinking += 1;
+      else if (block.type === 'thinking' && getContentBlockText(block).trim()) counts.thinking += 1;
       index += 1;
     }
     const run = blocks.slice(start, index);

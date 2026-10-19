@@ -792,7 +792,7 @@
         saved={operationalPanel.state(item.key, () => ({}))}
         name={group.name}
         isStreaming={group.isStreaming}
-        isTerminal={!group.collapsedRun && blockIndex === lastVisibleTopLevelBlockIndex}
+        isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
         {isLastConversationMessage}
         blocks={group.children.filter(isVisibleGroupChild)}
         searchPath={chatSearchBlockPath(blockIndex)}

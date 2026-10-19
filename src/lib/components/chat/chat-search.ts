@@ -20,6 +20,9 @@ import {
   isStandaloneToolResult,
 } from './tool-result-pairing';
 import { groupMessageBlocks } from './operational-run-collapse';
+import type { ContentBlock } from '$shared/types';
+import { isQuestionResourceBlock } from '$shared/types/question-resource';
+import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 
 export interface ChatSearchOptions {
   /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
@@ -37,6 +40,22 @@ export interface ChatSearchMatch {
 
 export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
   childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
+
+/**
+ * Mirror the transcript renderers' block filtering that changes block order or
+ * count (resource dedupe, wizard-only questions, superseded tool_use skeletons)
+ * so search block paths match the rendered DOM.
+ */
+function renderedContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const kept = dedupeResourceBlocks(blocks).filter((block) => !isQuestionResourceBlock(block));
+  const lastToolUse = new Map<string, number>();
+  kept.forEach((block, index) => {
+    if (block.type === 'tool_use' && block.id) lastToolUse.set(block.id, index);
+  });
+  return kept.filter(
+    (block, index) => block.type !== 'tool_use' || !block.id || lastToolUse.get(block.id) === index,
+  );
+}
 
 /** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
 function buildMessageSearchBlocks(
@@ -67,7 +86,7 @@ function buildMessageSearchBlocks(
     isStreaming: !!message.isStreaming,
   });
   const grouped = groupMessageBlocks(
-    parsedPromptBlocks.contentBlocks,
+    renderedContentBlocks(parsedPromptBlocks.contentBlocks),
     !!message.isStreaming,
     !!options.collapseToolRuns,
   );

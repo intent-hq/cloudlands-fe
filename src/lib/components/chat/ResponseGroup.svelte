@@ -28,6 +28,7 @@
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { formatInteger } from '$lib/i18n/format';
+  import type { CollapsedRunCounts } from '$lib/utils/messageParser';
 
   interface Props {
     headerAdmitted?: boolean;
@@ -46,7 +47,7 @@
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     /** Counts for a collapsed run of tool calls and thinking steps; replaces the name. */
-    collapsedRun?: { tools: number; thinking: number };
+    collapsedRun?: CollapsedRunCounts;
     adjacentOperationalRow?: boolean;
     searchPath?: string;
     class?: string;
@@ -58,7 +59,7 @@
     saved,
     name,
     isStreaming = false,
-    isTerminal = false,
+    isTerminal: isTerminalProp = false,
     isLastConversationMessage = false,
     children,
     blocks,
@@ -70,6 +71,9 @@
   }: Props = $props();
 
   const hasPreview = $derived((blocks?.length ?? 0) > 0);
+  // A collapsed tool run is a summary by design: it never auto-expands as the
+  // final group of a message.
+  const isTerminal = $derived(isTerminalProp && !collapsedRun);
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let isExpanded = $state(
     saved?.expanded ??
@@ -234,7 +238,7 @@
     const previewBlock = getResponseGroupPreviewBlock(blocks);
     return previewBlock ? getContentBlockText(previewBlock).trim() : '';
   });
-  function collapsedRunLabel({ tools, thinking }: { tools: number; thinking: number }): string {
+  function collapsedRunLabel({ tools, thinking }: CollapsedRunCounts): string {
     const toolsLabel =
       tools === 1
         ? m.chat_responseGroup_collapsedRunTools_one()

@@ -77,6 +77,33 @@ describe('collapseOperationalRuns', () => {
     expect(finished.map((group) => group.isStreaming)).toEqual([false, false]);
   });
 
+  it('ends a run at a standalone result so its visible card is never hidden', () => {
+    const orphan = result('earlier-turn');
+    const blocks = [tool('a'), result('a'), tool('b'), orphan, tool('c'), tool('d')];
+    const collapsed = collapseOperationalRuns(blocks);
+
+    expect(collapsed.map((block) => block.type)).toEqual([
+      'content_group',
+      'tool_result',
+      'content_group',
+    ]);
+    expect(collapsed[1]).toBe(orphan);
+    expect(groups(collapsed).map((group) => group.collapsedRun)).toEqual([
+      { tools: 2, thinking: 0 },
+      { tools: 2, thinking: 0 },
+    ]);
+  });
+
+  it('does not count an empty live thinking placeholder as a step', () => {
+    const placeholder: ContentBlock = { type: 'thinking', id: 'live', text: '' };
+    const blocks = [tool('a'), result('a'), placeholder];
+    expect(collapseOperationalRuns(blocks, { isStreaming: true })).toEqual(blocks);
+
+    const [group] = groups(collapseOperationalRuns([tool('a'), tool('b'), placeholder]));
+    expect(group.collapsedRun).toEqual({ tools: 2, thinking: 0 });
+    expect(group.children).toContain(placeholder);
+  });
+
   it('returns an empty list unchanged', () => {
     expect(collapseOperationalRuns([])).toEqual([]);
   });

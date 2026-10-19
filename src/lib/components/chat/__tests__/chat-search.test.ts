@@ -234,15 +234,34 @@ describe('chat search with collapsed tool runs', () => {
       collapseToolRuns: true,
     });
     expect(plain.blockPath).toBe('b:3');
-    expect(collapsed.blockPath).toBe('b:1');
+    expect(collapsed.blockPath).toBe('b:2');
     expect(collapsed.disclosurePath).toEqual([]);
   });
 
-  it('reveals a standalone tool result inside a collapsed run through its group', () => {
+  it('keeps a standalone tool result outside the collapsed run, like the renderer', () => {
     const [match] = findChatSearchMatches([message], 'orphan needle', new Map(), null, {
       collapseToolRuns: true,
     });
-    expect(match.blockPath).toBe('b:0:c:2');
-    expect(match.disclosurePath).toEqual(['group:b:0']);
+    expect(match.blockPath).toBe('b:1');
+    expect(match.disclosurePath).toEqual([]);
+  });
+
+  it('ignores wizard-only question blocks the renderer strips, so runs line up', () => {
+    const withQuestion = assistant('assistant-question', [
+      { type: 'tool_use', id: 'tool-a', name: 'view', input: {} },
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent://question/q-1',
+          mimeType: 'application/vnd.intent.question+json',
+        },
+      },
+      { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
+      { type: 'text', text: 'prose needle' },
+    ] as AgentMessage['contentBlocks']);
+    const [match] = findChatSearchMatches([withQuestion], 'prose needle', new Map(), null, {
+      collapseToolRuns: true,
+    });
+    expect(match.blockPath).toBe('b:1');
   });
 });
