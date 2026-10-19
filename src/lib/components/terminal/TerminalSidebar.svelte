@@ -679,6 +679,7 @@
         class="py-1 shrink-0"
       >
         {#snippet actions()}
+          <ScriptDetectionControls {workspaceId} />
           {#if hasScripts}
             <Button
               variant="ghost-light"
@@ -710,10 +711,6 @@
             <Fa icon={faPlus} size="xs" />
           </Button>
         {/snippet}
-
-        <div class="px-3 py-2">
-          <ScriptDetectionControls {workspaceId} class="w-full" />
-        </div>
 
         <!-- Add Script Form -->
         {#if showAddForm}

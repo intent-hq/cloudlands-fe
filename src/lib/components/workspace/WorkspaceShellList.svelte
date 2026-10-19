@@ -204,15 +204,17 @@
     {/if}
   </section>
   <section>
-    <SidebarGroupHeader
-      title={m.workspace_devScripts_title()}
-      expanded={scriptsExpanded}
-      onclick={() => (scriptsExpanded = !scriptsExpanded)}
-    />
-    {#if scriptsExpanded}
-      <div class="px-2 py-1.5">
-        <ScriptDetectionControls {workspaceId} />
+    <div class="flex items-center gap-1 pr-2">
+      <div class="min-w-0 flex-1">
+        <SidebarGroupHeader
+          title={m.workspace_devScripts_title()}
+          expanded={scriptsExpanded}
+          onclick={() => (scriptsExpanded = !scriptsExpanded)}
+        />
       </div>
+      <ScriptDetectionControls {workspaceId} />
+    </div>
+    {#if scriptsExpanded}
       {#if $scriptPage$.error && orderedScripts.length > 0}
         <p role="alert" class="px-2 py-1.5 type-caption text-muted-foreground break-words">
           {$scriptPage$.error}

@@ -6,7 +6,6 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { notify } from '$lib/components/patterns/notify';
-  import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -94,20 +93,20 @@
 </script>
 
 <Button
-  variant="outline"
-  size="sm"
-  class={cn('type-caption', className)}
+  variant="ghost-light"
+  size="icon-compact"
+  class={className}
   disabled={isDetecting || !workspaceId}
   aria-busy={isDetecting}
   aria-label={m.terminal_quakeOverlay_detectScripts_label()}
-  tooltip={m.terminal_sidebar_scanLocal_tooltip()}
+  tooltip={isDetecting
+    ? m.terminal_sidebar_scanningFiles_label()
+    : m.terminal_sidebar_scanLocal_tooltip()}
   onclick={detectScripts}
 >
   {#if isDetecting}
     <IntentMarkLoader size={12} />
-    {m.terminal_sidebar_scanningFiles_label()}
   {:else}
     <Fa icon={faSearch} size="xs" />
-    {m.terminal_quakeOverlay_detectScripts_label()}
   {/if}
 </Button>
