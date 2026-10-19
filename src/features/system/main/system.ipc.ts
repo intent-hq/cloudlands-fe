@@ -7,7 +7,17 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { spawn } from 'child_process';
-import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
+import {
+  ANY_HOST,
+  collectOpenWorkspaceIds,
+  collectWindowIdsForWorkspace,
+  entryMatchesScope,
+  type ActiveWorkspaceEntry,
+  type OpenWorkspaceTabsEntry,
+  type WindowHostChecker,
+  type WindowHostScope,
+} from './window-workspace-tracking';
+import { getBackendIdForWindow } from '../../../main/window-backend';
 import {
   clearWindowBrowserFocusOwner,
   hasWindowBrowserFocusOwner,
@@ -173,15 +183,43 @@ function getPayloadWorkspaceId(data: unknown): string | undefined {
 
 /** Track which windows are currently in a workspace (for menu state) */
 const windowWorkspaceState = new Map<number, boolean>();
-/** Track which workspace ID each window is viewing */
-const windowWorkspaceIds = new Map<number, string>();
+/**
+ * Track which workspace each window is viewing, with the host (backend id)
+ * the window was connected to when it reported it. Workspace ids are only
+ * unique per host, so every lookup by workspace id takes a host scope.
+ */
+const windowWorkspaceIds = new Map<number, ActiveWorkspaceEntry>();
 /**
  * Diagnostic only: the last workspace each window ever reported, kept when the
  * window leaves the workspace so hang/crash logs still carry context.
  */
 const lastKnownWindowWorkspaceIds = new Map<number, string>();
-/** Track which workspace tabs are open per window */
-const windowOpenWorkspaceTabs = new Map<number, string[]>();
+/** Track which workspace tabs are open per window, with the window's host. */
+const windowOpenWorkspaceTabs = new Map<number, OpenWorkspaceTabsEntry>();
+
+/** Liveness + current host of a tracked window, read from Electron. */
+const liveWindowHostChecker: WindowHostChecker = {
+  isAlive(windowId: number) {
+    const win = BrowserWindow.fromId(windowId);
+    return !!win && !win.isDestroyed();
+  },
+  backendIdOf(windowId: number) {
+    const win = BrowserWindow.fromId(windowId);
+    return win && !win.isDestroyed() ? getBackendIdForWindow(win) : null;
+  },
+};
+
+/**
+ * The workspace a window is viewing, only while the window is still on the
+ * host it reported from (a window that switched hosts has not re-reported).
+ */
+function currentViewedWorkspaceId(windowId: number): string | undefined {
+  const entry = windowWorkspaceIds.get(windowId);
+  if (!entry) return undefined;
+  return entryMatchesScope(windowId, entry.backendId, ANY_HOST, liveWindowHostChecker)
+    ? entry.workspaceId
+    : undefined;
+}
 
 /**
  * Check if the currently focused window is in a workspace.
@@ -200,7 +238,7 @@ export function isFocusedWindowInWorkspace(): boolean {
 export function getFocusedWindowWorkspaceId(): string | undefined {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return undefined;
-  return windowWorkspaceIds.get(focusedWindow.id);
+  return currentViewedWorkspaceId(focusedWindow.id);
 }
 
 /**
@@ -210,7 +248,7 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
  * hold it in a background tab.
  */
 export function getViewedWorkspaceIdForWindow(windowId: number): string | undefined {
-  return windowWorkspaceIds.get(windowId);
+  return currentViewedWorkspaceId(windowId);
 }
 
 /**
@@ -230,48 +268,55 @@ export function getWorkspaceIdForWindow(windowId: number): string | undefined {
  * tabs (with running agents) are not treated as orphaned during memory cleanup.
  */
 export function getAllOpenWorkspaceIds(): string[] {
-  return collectOpenWorkspaceIds(windowWorkspaceIds, windowOpenWorkspaceTabs, {
-    isAlive(windowId: number) {
-      const win = BrowserWindow.fromId(windowId);
-      return !!win && !win.isDestroyed();
-    },
-  });
+  return collectOpenWorkspaceIds(
+    windowWorkspaceIds,
+    windowOpenWorkspaceTabs,
+    liveWindowHostChecker,
+  );
 }
 
 /**
- * Get the Electron window ID for a given workspace ID.
- * Returns undefined if no window is currently viewing that workspace.
+ * Get the Electron window ID actively viewing a workspace on the hosts allowed
+ * by `scope` (the owning backend id, or the explicit `ANY_HOST`).
+ * Returns undefined if no such window is currently viewing that workspace.
  * NOTE: Returns only the FIRST matching window. Use getWindowIdsForWorkspace()
  * when you need all windows viewing a workspace (e.g., for broadcasting).
  */
-export function getWindowIdForWorkspace(workspaceId: string): number | undefined {
-  for (const [windowId, wsId] of windowWorkspaceIds) {
-    if (wsId === workspaceId) {
-      // Verify window still exists
-      const win = BrowserWindow.fromId(windowId);
-      if (win && !win.isDestroyed()) {
-        return windowId;
-      }
+export function getWindowIdForWorkspace(
+  workspaceId: string,
+  scope: WindowHostScope,
+): number | undefined {
+  for (const [windowId, entry] of windowWorkspaceIds) {
+    if (entry.workspaceId !== workspaceId) continue;
+    if (!liveWindowHostChecker.isAlive(windowId)) {
       // Clean up stale entry
       windowWorkspaceIds.delete(windowId);
+      continue;
+    }
+    if (entryMatchesScope(windowId, entry.backendId, scope, liveWindowHostChecker)) {
+      return windowId;
     }
   }
   return undefined;
 }
 
 /**
- * Get ALL Electron window IDs for a given workspace ID.
+ * Get ALL Electron window IDs that have a workspace open on the hosts allowed
+ * by `scope` — the backend id that owns the workspace, or the explicit
+ * `ANY_HOST` opt-out. Workspace ids are only unique per host (the Assistant's
+ * id is the same on every daemon), so the scope is required.
  * Multiple windows can view the same workspace simultaneously.
  * Includes windows where the workspace is in background tabs, not just actively viewed.
  * Returns an empty array if no windows have the workspace open.
  */
-export function getWindowIdsForWorkspace(workspaceId: string): number[] {
-  return collectWindowIdsForWorkspace(workspaceId, windowWorkspaceIds, windowOpenWorkspaceTabs, {
-    isAlive(windowId: number) {
-      const win = BrowserWindow.fromId(windowId);
-      return !!win && !win.isDestroyed();
-    },
-  });
+export function getWindowIdsForWorkspace(workspaceId: string, scope: WindowHostScope): number[] {
+  return collectWindowIdsForWorkspace(
+    workspaceId,
+    scope,
+    windowWorkspaceIds,
+    windowOpenWorkspaceTabs,
+    liveWindowHostChecker,
+  );
 }
 
 /**
@@ -296,7 +341,9 @@ export interface WorkspaceWindowDelivery {
 /**
  * Send an IPC message to all windows viewing a specific workspace.
  * Workspace-scoped messages are delivered only to windows that have that
- * workspace active or open in a tab. If no matching windows exist, the Electron
+ * workspace active or open in a tab on the hosts allowed by `scope` (the
+ * owning backend id, or the explicit `ANY_HOST`; ignored for global
+ * broadcasts without a workspace). If no matching windows exist, the Electron
  * renderer delivery is dropped instead of falling back to unrelated windows.
  * Messages without a workspace context remain global broadcasts unless they are
  * content-bearing workspace messages with a recoverable workspaceId in the payload.
@@ -311,6 +358,7 @@ export function sendToWorkspaceWindows(
   workspaceId: string | undefined,
   channel: string,
   data: unknown,
+  scope: WindowHostScope,
 ): WorkspaceWindowDelivery {
   let targetWindows: BrowserWindow[];
   const isContentBearing = isContentBearingWorkspaceChannel(channel, data);
@@ -318,7 +366,7 @@ export function sendToWorkspaceWindows(
     workspaceId ?? (isContentBearing ? getPayloadWorkspaceId(data) : undefined);
 
   if (effectiveWorkspaceId) {
-    const windowIds = getWindowIdsForWorkspace(effectiveWorkspaceId);
+    const windowIds = getWindowIdsForWorkspace(effectiveWorkspaceId, scope);
     if (windowIds.length > 0) {
       targetWindows = windowIds
         .map((id) => BrowserWindow.fromId(id))
@@ -879,7 +927,10 @@ export function setupSystemIPC() {
             const windowId = window.id;
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
-              windowWorkspaceIds.set(windowId, validated.workspaceId);
+              windowWorkspaceIds.set(windowId, {
+                workspaceId: validated.workspaceId,
+                backendId: getBackendIdForWindow(window),
+              });
               lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
               windowWorkspaceIds.delete(windowId);
@@ -916,7 +967,10 @@ export function setupSystemIPC() {
       async (event, validated) => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
-          windowOpenWorkspaceTabs.set(window.id, validated.workspaceIds);
+          windowOpenWorkspaceTabs.set(window.id, {
+            workspaceIds: validated.workspaceIds,
+            backendId: getBackendIdForWindow(window),
+          });
           app.emit('window-workspace-state-changed');
         }
         return { success: true };

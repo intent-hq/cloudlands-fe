@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 // FAKE transport: the WSS seam is replaced by the scripted MockBackendTransport
 // so no request reaches a real daemon. The REAL configured store is exercised:
@@ -233,7 +234,7 @@ describe('HUD subscription (mock backend, real store)', () => {
           agents: 2,
           version: '1.2.3',
           uptimeSeconds: 4200,
-          protocolVersion: '3',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'macos', arch: 'arm64', hasDisplay: true, locality: 'local' },
         },
         '2026-08-03T00:00:10.000Z',

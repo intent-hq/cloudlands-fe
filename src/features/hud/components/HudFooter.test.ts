@@ -30,6 +30,7 @@ import type { AgentSession, Workspace, WorkspaceDisplayStatus, WorkspaceId } fro
 import { WorkspaceStatus } from '$shared/types';
 
 import HudFooter from './HudFooter.svelte';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 beforeAll(() => appStore.init());
 afterAll(() => appStore.dispose());
@@ -46,7 +47,7 @@ function systemStatusPayload(
     agents: 2,
     version: '0.9.1',
     uptimeSeconds: 12,
-    protocolVersion: '3',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     host: { os: 'macos', arch: 'arm64', hasDisplay: true, locality: 'local' },
     ...overrides,
   };

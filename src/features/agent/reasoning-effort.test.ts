@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const mockSetReasoningEffort = vi.hoisted(() =>
   vi.fn(
@@ -36,7 +37,7 @@ const storeState = vi.hoisted(() => ({
       }
     >,
   },
-  daemonHealth: { stats: { protocolVersion: '6.1' } },
+  daemonHealth: { stats: { protocolVersion: null as string | null } }, // Set per test in beforeEach.
 }));
 const mockDispatch = vi.hoisted(() => vi.fn());
 
@@ -141,7 +142,7 @@ describe('applyReasoningEffort', () => {
       data: { success: true, modelId },
     }));
     storeState.agentSessions.byAgentId = {};
-    storeState.daemonHealth.stats.protocolVersion = '6.1';
+    storeState.daemonHealth.stats.protocolVersion = CURRENT_PROTOCOL_VERSION;
     mockDispatch.mockImplementation((action: { payload?: unknown[] }) => {
       const [agentId, patch] = (action.payload ?? []) as [
         string,
@@ -179,7 +180,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('uses the compound-model agent.setModel wire when the daemon lacks the reasoningEffort field', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt-5.3-codex',
@@ -194,7 +195,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('resolves a legacy provider from session metadata before building the model id', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt-5.1-codex',
@@ -208,7 +209,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('uses catalog-advertised legacy effort variants for an Auggie model', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt5.6-sol',
@@ -223,7 +224,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('clears a legacy compound-model effort by selecting the base model', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: 'high',
       model: 'gpt-5.3-codex/high',

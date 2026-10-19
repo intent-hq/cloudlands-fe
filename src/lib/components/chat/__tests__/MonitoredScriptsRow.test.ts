@@ -30,6 +30,8 @@ import {
 import { notify } from '$lib/components/patterns/notify';
 import MonitoredScriptsRow from '../MonitoredScriptsRow.svelte';
 import type { ScriptMonitor } from '$features/script-monitor/types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -85,7 +87,7 @@ beforeEach(() => {
       return {
         server: {
           // The current daemon generation: a protocol-major gate would hide every row (intent-hq/intent#7206).
-          protocolVersion: '15.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptMonitors: supported ? 2 : undefined, scriptActiveLists: 1 },
         },
       };

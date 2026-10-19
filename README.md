@@ -139,7 +139,11 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 [intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
-  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify, and
+  `node scripts/sync-intentd-protocol-version.mjs` to regenerate the tests' default
+  `CURRENT_PROTOCOL_VERSION` (`src/test/current-protocol-version.ts`); commit both files.
+  `auto-pin-intentd` does all three, and `lint:intentd-protocol-pin` fails a pin that
+  skipped the sync.
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
@@ -275,7 +279,10 @@ and Apple Silicon jobs use Depot’s latest macOS. Mac desktop release and manua
 packaging builds target ARM64 only.
 
 From-source Rust sidecars use managed sccache without Rust cache actions.
-The setup script installs a pinned, checksum-verified binary. Depot supplies
-cache access automatically. Without credentials, compilation proceeds uncached
-with a notice.
+The setup script installs a pinned, checksum-verified binary. When the
+`INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
+cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
+`INTENT_SCCACHE_MODE` says otherwise); deleting the variable falls back to
+Depot, which supplies cache access automatically. Without credentials (for
+example fork pull requests), compilation proceeds uncached with a notice.
 pnpm dependency caching remains unchanged.

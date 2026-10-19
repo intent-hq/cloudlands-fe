@@ -1,3 +1,4 @@
+// fixture-protocol-version-file: every hello here exercises local-vs-remote major comparison.
 /**
  * T15 — protocol-compatibility check on remote connect (warn-but-allow).
  *

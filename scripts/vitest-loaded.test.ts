@@ -4,14 +4,17 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import {
   BUSY_LOOP_SOURCE,
   DEFAULT_BUSY,
+  LOOP_PIDS_PREFIX,
   VITEST_CONFIG,
+  formatLoopPids,
   parseAllowedCpuList,
   parseArgs,
   parseCpuList,
+  parseLoopPids,
   pickBusyCount,
   pickCore,
   planRun,
@@ -195,6 +198,18 @@ describe('planRun', () => {
   });
 });
 
+describe('busy loop pid announcement', () => {
+  it('reads back the pids it formats, and only from a complete line', () => {
+    expect(formatLoopPids([12, 345])).toBe('test:loaded: busy loop pids: 12,345');
+    expect(parseLoopPids(`${formatLoopPids([12, 345])}\n`)).toEqual([12, 345]);
+    expect(parseLoopPids(`other\n${formatLoopPids([])}\n`)).toEqual([]);
+    expect(parseLoopPids('test:loaded: vitest pinned to core 3 with 1 busy loop(s)\n')).toBeNull();
+    // A line still being written is not an announcement yet.
+    expect(parseLoopPids(formatLoopPids([12]))).toBeNull();
+    expect(() => parseLoopPids(`${LOOP_PIDS_PREFIX} 12,x\n`)).toThrow(/Malformed/);
+  });
+});
+
 describe('busy loop lifecycle', () => {
   /** Runs the loop source exactly as the harness does, told `harnessPid`. */
   function spawnLoop(harnessPid: number): ChildProcess {
@@ -246,58 +261,82 @@ describe.runIf(hasTaskset)('harness end to end', () => {
   // A cheap real suite (not this file: the harness would recurse into itself).
   const cheapFile = 'scripts/check-package-scripts.test.ts';
 
-  /** Live busy loops spawned by the harness with pid `harnessPid`, per `ps`. */
-  function loopsOf(harnessPid: number): number {
-    const { stdout } = spawnSync('ps', ['-eo', 'args'], { encoding: 'utf8' });
-    return stdout
-      .split('\n')
-      .filter(
-        (line) =>
-          line.includes('const parent = Number') && line.trimEnd().endsWith(` ${harnessPid}`),
-      ).length;
-  }
-
-  async function poll(until: () => boolean, ms: number): Promise<boolean> {
-    const deadline = Date.now() + ms;
-    while (Date.now() < deadline) {
-      if (until()) return true;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+  /**
+   * Whether busy loop `pid` is gone: no `/proc/<pid>` entry, a zombie (`Z`,
+   * killed and only waiting to be reaped), or a pid since reused by a process
+   * that is not a busy loop.
+   */
+  function isGone(pid: number): boolean {
+    let stat: string;
+    let cmdline: string;
+    try {
+      stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+    } catch {
+      return true;
     }
-    return until();
+    // `pid (comm) state ...`; comm may hold spaces or parens, so read after the last `)`.
+    const state = stat.charAt(stat.lastIndexOf(')') + 2);
+    return state === 'Z' || !cmdline.includes(BUSY_LOOP_SOURCE);
   }
 
+  // The harness has already SIGKILLed the loops by the time it exits; this only
+  // gives a starved machine time to deliver those kills, not to start anything.
+  async function untilGone(pids: number[], ms: number): Promise<number[]> {
+    const deadline = Date.now() + ms;
+    let alive = pids.filter((pid) => !isGone(pid));
+    while (alive.length && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      alive = alive.filter((pid) => !isGone(pid));
+    }
+    return alive;
+  }
+
+  /**
+   * Runs the harness with one busy loop. Waits for the harness's own pid
+   * announcement (or for its stderr to close without one) and for its exit, so
+   * nothing depends on how fast it got round to spawning the loops.
+   */
   async function runHarness(vitestArgs: string[]) {
     const child = spawn(process.execPath, [harness, ...vitestArgs], {
       cwd: root,
       env: { ...process.env, LOADED_BUSY: '1' },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
+    // A timed-out test must not leave the harness (and its vitest) running.
+    onTestFinished(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    });
     let stderr = '';
-    child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-    const pid = child.pid!;
     const exited = new Promise<number | null>((resolve) =>
       child.once('exit', (code) => resolve(code)),
     );
-    let done = false;
-    void exited.then(() => (done = true));
-    const sawLoops = await poll(() => done || loopsOf(pid) >= 1, 10_000);
+    const announced = new Promise<number[] | null>((resolve) => {
+      child.stderr!.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+        const pids = parseLoopPids(stderr);
+        if (pids) resolve(pids);
+      });
+      child.stderr!.once('close', () => resolve(parseLoopPids(stderr)));
+    });
+    const loopPids = await announced;
     const code = await exited;
-    const loopsGone = await poll(() => loopsOf(pid) === 0, 3_000);
-    return { code, stderr, sawLoops, loopsGone, pid };
+    const survivors = loopPids ? await untilGone(loopPids, 10_000) : [];
+    return { code, stderr, loopPids, survivors };
   }
 
   it('propagates a passing exit code and leaves no busy loop behind', async () => {
     const run = await runHarness([cheapFile]);
     expect(run.stderr).toMatch(/test:loaded: vitest pinned to core \d+ with 1 busy loop/);
-    expect(run.sawLoops).toBe(true);
+    expect(run.loopPids, run.stderr).toHaveLength(1);
     expect(run.code).toBe(0);
-    expect(run.loopsGone).toBe(true);
+    expect(run.survivors).toEqual([]);
   }, 25_000);
 
   it('propagates a failing exit code and leaves no busy loop behind', async () => {
     const run = await runHarness(['scripts/does-not-exist.test.ts']);
-    expect(run.sawLoops).toBe(true);
+    expect(run.loopPids, run.stderr).toHaveLength(1);
     expect(run.code).toBe(1);
-    expect(run.loopsGone).toBe(true);
+    expect(run.survivors).toEqual([]);
   }, 25_000);
 });

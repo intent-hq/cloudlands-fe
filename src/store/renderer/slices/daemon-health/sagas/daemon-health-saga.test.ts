@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -54,7 +55,7 @@ const statusPayload: SystemStatusWirePayload = {
   port: null,
   clients: 1,
   agents: 2,
-  protocolVersion: '2.6',
+  protocolVersion: CURRENT_PROTOCOL_VERSION,
   host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
 };
 

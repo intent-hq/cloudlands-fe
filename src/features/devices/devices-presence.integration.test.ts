@@ -36,6 +36,7 @@ import { MemberProvider } from '$lib/services/mentions/providers/member-provider
 import { personalDevicesSaga } from './personal-devices-saga';
 import { selectPersonalDevicesContext } from './personal-devices-selectors';
 import DevicesPresenceHarness from './__tests__/DevicesPresenceHarness.svelte';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
@@ -191,7 +192,7 @@ async function start(enabled = true, hostRole: HostRole = 'member') {
       {
         running: true,
         listenMode: 'wss',
-        protocolVersion: '10.8', // protocol-version-ok: same identity seam as Devices D2 fixtures
+        protocolVersion: CURRENT_PROTOCOL_VERSION, // protocol-version-ok: same identity seam as Devices D2 fixtures
         host: { os: 'linux', arch: 'x64', locality: 'remote' },
       },
       '2026-09-30T00:00:00Z',

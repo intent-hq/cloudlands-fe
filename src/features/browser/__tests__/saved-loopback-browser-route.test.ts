@@ -7,6 +7,7 @@ import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import type { BackendConnectionConfig } from '../../backend/main/backend-connection';
 import type { TunnelManagerOptions } from '../../backend/main/tunnel-manager';
 import type { ExecutionResult } from '../main/browser-action-executor';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const fixture = vi.hoisted(() => ({
   forwardPort: vi.fn(),
@@ -87,7 +88,7 @@ describe('saved-loopback browser.exec forwarding', () => {
     fixture.realForward = false;
     fixture.options.length = 0;
     fixture.forwardPort.mockReset().mockResolvedValue(45678);
-    fixture.protocol.mockReturnValue('10.4');
+    fixture.protocol.mockReturnValue(CURRENT_PROTOCOL_VERSION);
     fixture.ownerRequest.mockResolvedValue({
       agent: { id: 'fixture-agent', name: 'Fixture agent' },
     });
@@ -184,7 +185,7 @@ describe('saved-loopback browser.exec forwarding', () => {
     expect(result.error).toContain('SAVED_FORWARD_FAILURE');
     expect(fixture.forwardPort).toHaveBeenCalledExactlyOnceWith(8080);
     expect(fixture.options[0].getConfig()).toEqual(route.config);
-    expect(fixture.options[0].getProtocolVersion()).toBe('10.4');
+    expect(fixture.options[0].getProtocolVersion()).toBe(CURRENT_PROTOCOL_VERSION);
     expect(fixture.protocol).toHaveBeenLastCalledWith('saved-loopback-fixture');
     expect(fixture.send).not.toHaveBeenCalled();
     expect(fixture.directRelay).not.toHaveBeenCalled();

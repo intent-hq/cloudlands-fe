@@ -84,8 +84,8 @@ const PROTOCOL_MISMATCH: ConnectionProtocolMismatchEvent = {
   id: 'remote-1',
   host: '10.0.0.5',
   port: 8443,
-  localProtocolVersion: '1',
-  remoteProtocolVersion: '2',
+  localProtocolVersion: '1', // fixture-protocol-version: mismatch payload needs two different majors
+  remoteProtocolVersion: '2', // fixture-protocol-version: mismatch payload needs two different majors
 };
 
 const HOST_WARNING: ConnectionHostCertWarning = {

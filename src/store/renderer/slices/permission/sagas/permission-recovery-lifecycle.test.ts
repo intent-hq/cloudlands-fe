@@ -3,6 +3,7 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
@@ -134,7 +135,7 @@ describe('permission recovery subscription boundary', () => {
           listenMode: 'uds',
           transports: ['uds'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
         };
       if (method === 'agent.pendingPermissions') return { requests: [] };
@@ -306,7 +307,7 @@ describe('permission recovery subscription boundary', () => {
           listenMode: 'uds',
           transports: ['uds'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
         };
       if (method === 'agent.pendingPermissions') return { requests: [] };

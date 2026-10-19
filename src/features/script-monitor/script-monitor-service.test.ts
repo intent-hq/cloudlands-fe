@@ -18,6 +18,8 @@ import {
   scriptFixture,
 } from './script-monitor.fixture';
 import type { ScriptMonitor } from './types';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -71,7 +73,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
         },
       };
@@ -113,12 +115,12 @@ describe('script monitor wire and connection lifecycle', () => {
     connection.dispose();
   });
 
-  it('loads monitors from a protocol 15 daemon that advertises capability v2', async () => {
+  it('loads monitors from a current-protocol daemon that advertises capability v2', async () => {
     vi.mocked(backendRequest).mockImplementation(async (method) => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '15.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
           },
         };
@@ -130,9 +132,9 @@ describe('script monitor wire and connection lifecycle', () => {
     expect(rows.status).toBe('ready');
     expect(rows.monitors).toEqual([summary]);
   });
-  it('still rejects a protocol 15 daemon without monitor capability v2', async () => {
+  it('still rejects a current-protocol daemon without monitor capability v2', async () => {
     vi.mocked(backendRequest).mockResolvedValue({
-      server: { protocolVersion: '15.0', capabilities: { scriptMonitors: 1 } },
+      server: { protocolVersion: CURRENT_PROTOCOL_VERSION, capabilities: { scriptMonitors: 1 } },
     });
     start();
     await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
@@ -143,7 +145,10 @@ describe('script monitor wire and connection lifecycle', () => {
     'never subscribes or reads monitors without capability v2 (%s)',
     async (version) => {
       vi.mocked(backendRequest).mockResolvedValue({
-        server: { protocolVersion: '14.0', capabilities: { scriptMonitors: version } },
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptMonitors: version },
+        },
       });
       start();
       await vi.waitFor(() => expect(rows.status).toBe('unsupported'));

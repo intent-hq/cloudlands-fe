@@ -165,8 +165,8 @@ test('standalone protocol notice supports native dismissal and open-local callba
     id: 'demo',
     host: 'demo.invalid',
     port: 443,
-    localProtocolVersion: '1.0',
-    remoteProtocolVersion: '2.0',
+    localProtocolVersion: '1.0', // fixture-protocol-version: mismatch payload needs two different majors
+    remoteProtocolVersion: '2.0', // fixture-protocol-version: mismatch payload needs two different majors
     origin: 'switch',
   };
   const props = {
