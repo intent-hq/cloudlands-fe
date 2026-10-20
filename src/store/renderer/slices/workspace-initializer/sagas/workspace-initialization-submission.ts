@@ -89,13 +89,14 @@ function setupScriptRecord(
   repoPath: string | null,
   githubUrl: string | undefined,
   fallbackName: string,
+  repoConfigIdentity: string | null = repoPath,
 ): WorkspaceInitializationSetupScriptRecord | undefined {
   const { setupScript, setupScriptName, setupScriptNameSource } = submission;
   if (!repoPath || !setupScript.trim()) return undefined;
   const isUneditedRepoConfigScript =
     setupScriptNameSource === 'repo-config' &&
     setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
-    submission.repoConfigScriptRepo === repoPath &&
+    submission.repoConfigScriptRepo === repoConfigIdentity &&
     setupScript.trim() === (submission.repoConfigScript ?? '').trim();
   if (isUneditedRepoConfigScript) return undefined;
   return {
@@ -369,6 +370,7 @@ export function* prepareCompactWorkspaceInitialization(
       s.setupScriptRepoKey,
       s.repoType === 'github' ? s.githubUrl : undefined,
       m.workspace_setupScriptEditor_customScript_name(),
+      s.setupScriptProbeKey,
     ),
     completion: {
       draft: s.draft,

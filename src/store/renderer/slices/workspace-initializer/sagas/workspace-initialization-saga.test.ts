@@ -24,6 +24,12 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import {
+  chooseDefaultSetupScript,
+  getLastUsedSetupScript,
+  probeIdentityKey,
+  REPO_CONFIG_SCRIPT_NAME,
+} from '$features/setup-scripts';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store as appStore } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -200,6 +206,16 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function useMemoryLocalStorage() {
+  const values = new Map<string, string>();
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
+  vi.mocked(localStorage.getItem).mockImplementation((key) => values.get(key) ?? null);
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
+  vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+    values.set(key, String(value));
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   recorded = [];
@@ -238,10 +254,167 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const stop of stops) stop();
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
+  vi.mocked(localStorage.getItem).mockImplementation(() => null);
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
+  vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   vi.restoreAllMocks();
 });
 
 describe('workspaceInitializerSaga (registered production owner, reducer-backed store)', () => {
+  it.each([
+    {
+      provider: 'GitHub',
+      submission: () => {
+        const repoPath = '/clones/app';
+        const githubUrl = 'https://github.com/acme/app';
+        const setupScriptProbeKey = probeIdentityKey({
+          path: repoPath,
+          type: 'github',
+          githubUrl,
+          branch: 'main',
+        });
+        return {
+          value: compactSubmission({
+            repoType: 'github',
+            repoPath,
+            githubUrl,
+            branch: 'main',
+            remoteSetup: null,
+            setupScript: 'echo from main',
+            setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+            setupScriptNameSource: 'repo-config',
+            repoConfigScript: 'echo from main',
+            repoConfigScriptRepo: setupScriptProbeKey,
+            setupScriptProbeKey,
+            setupScriptRepoKey: repoPath,
+          }),
+          repoPath,
+          githubUrl,
+        };
+      },
+    },
+    {
+      provider: 'GitLab',
+      submission: () => {
+        const instanceBaseUrl = 'https://git.example.test/Forge';
+        const projectPath = 'acme/app';
+        const branch = 'main';
+        const commitSha = 'a'.repeat(40);
+        const checkoutId = 'checkout-1';
+        const revision = 'account-1';
+        const repoPath = JSON.stringify(['gitlab', instanceBaseUrl, projectPath]);
+        const setupScriptProbeKey = probeIdentityKey({
+          path: '/unused/checkout/path',
+          type: 'gitlab',
+          branch,
+          gitlab: { instanceBaseUrl, projectPath, checkoutId, revision, commitSha },
+        });
+        return {
+          value: compactSubmission({
+            repoType: 'gitlab',
+            repoPath: '/unused/checkout/path',
+            remoteSetup: null,
+            repositoryCheckout: {
+              checkoutId,
+              revision,
+              projectPath,
+              branch,
+              commitSha,
+              mode: 'direct',
+            },
+            setupScript: 'echo from main',
+            setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+            setupScriptNameSource: 'repo-config',
+            repoConfigScript: 'echo from main',
+            repoConfigScriptRepo: setupScriptProbeKey,
+            setupScriptProbeKey,
+            setupScriptRepoKey: repoPath,
+          }),
+          repoPath,
+          githubUrl: undefined,
+        };
+      },
+    },
+  ])(
+    'does not persist an untouched $provider repo-config script for a later branch',
+    async ({ submission }) => {
+      useMemoryLocalStorage();
+      const { value, repoPath, githubUrl } = submission();
+      const action = workspaceInitializationSubmitted(value, consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: undefined });
+      const lastUsed = getLastUsedSetupScript(repoPath, githubUrl);
+      expect(lastUsed).toBeUndefined();
+      expect(
+        chooseDefaultSetupScript({
+          repoConfigScript: null,
+          lastUsed,
+          genericTemplate: { name: 'Generic', content: 'echo generic' },
+        }),
+      ).toEqual({ name: 'Generic', content: 'echo generic', source: 'named' });
+    },
+  );
+
+  it('keeps onboarding repo-config comparison keyed to the project path', async () => {
+    useMemoryLocalStorage();
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        setupScript: 'echo from project config',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
+        repoConfigScript: 'echo from project config',
+        repoConfigScriptRepo: '/repo',
+      }),
+      { id: 'onboarding-1', resourceId: 'resource-onboarding' },
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: undefined });
+    expect(getLastUsedSetupScript('/repo')).toBeUndefined();
+  });
+
+  it('persists an intentional compact setup-script override under the repository key', async () => {
+    useMemoryLocalStorage();
+    const repoPath = '/clones/app';
+    const githubUrl = 'https://github.com/acme/app';
+    const setupScriptProbeKey = probeIdentityKey({
+      path: repoPath,
+      type: 'github',
+      githubUrl,
+      branch: 'main',
+    });
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'github',
+        repoPath,
+        githubUrl,
+        branch: 'main',
+        remoteSetup: null,
+        setupScript: 'echo user override',
+        setupScriptName: 'My override',
+        setupScriptNameSource: 'named',
+        repoConfigScript: 'echo from main',
+        repoConfigScriptRepo: setupScriptProbeKey,
+        setupScriptProbeKey,
+        setupScriptRepoKey: repoPath,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: 'echo user override' });
+    expect(getLastUsedSetupScript(repoPath, githubUrl)).toEqual({
+      name: 'My override',
+      content: 'echo user override',
+      nameSource: 'named',
+    });
+  });
+
   it('prepares a compact submission and creates with the exact wire params', async () => {
     const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
     appStore.dispatch(action);
