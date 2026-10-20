@@ -21,12 +21,36 @@ test('message actions toggle a reaction, retain reply target, restore composer f
   await expect(reaction).toHaveCount(0);
   await row.getByRole('button', { name: 'Reply', exact: true }).click();
   await expect(component.locator('[data-reply-target]')).toContainText('message-19');
+  await expect(row).toHaveAttribute('data-discussion-reply-selected', 'true');
+  await expect(
+    component.locator('[data-discussion-composer] [data-discussion-reply-preview]'),
+  ).toBeVisible();
   await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
+  await component.getByRole('button', { name: 'Cancel reply', exact: true }).click();
+  await expect(component.locator('[data-discussion-reply-preview]')).toHaveCount(0);
+  await expect(row).not.toHaveAttribute('data-discussion-reply-selected');
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue(
+    'Keep this draft',
+  );
   await row.hover();
   await expect(row.locator('[data-discussion-message-actions]')).toHaveCSS('opacity', '1');
   await row.getByRole('button', { name: 'Message actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Copy message', exact: true }).click();
   await expect(component.locator('[data-copied]')).toContainText('Review item 20.');
+});
+
+test('a sent reply reference scrolls to and focuses the original message', async ({ mount }) => {
+  const component = await mount(Host);
+  await component.getByRole('button', { name: 'Receive new message', exact: true }).click();
+  const reply = component.locator('[data-discussion-message="arrived"]');
+  await reply.getByRole('button', { name: 'Jump to message from Alex' }).click();
+  const original = component.locator('[data-discussion-message="message-0"]');
+  await expect(original).toBeFocused();
+  const scroll = await component.locator('[data-discussion-scroll]').boundingBox();
+  const bounds = await original.boundingBox();
+  expect(bounds!.y).toBeGreaterThanOrEqual(scroll!.y);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(scroll!.y + scroll!.height);
 });
 
 test('new arrivals preserve the history viewport until the reader jumps to newest', async ({

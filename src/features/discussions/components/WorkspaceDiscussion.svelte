@@ -1,5 +1,6 @@
 <script lang="ts">
   import { AgentStatus } from '$shared/types/agent.types';
+  import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
   import {
     fetchDelegatedAgentsRequested,
     fetchBackgroundAgentsRequested,
@@ -17,6 +18,8 @@
   import {
     selectWorkspaceDiscussion,
     selectDiscussionAgentMessagingSupported,
+    selectDiscussionCanControlAgent,
+    selectDiscussionAgentControlPending,
     selectDiscussionMessages,
     selectDiscussionCanSend,
     selectDiscussionUnread,
@@ -35,6 +38,7 @@
   import {
     discussionReadThrough,
     discussionAgentSelected,
+    discussionAgentControlRequested,
     discussionAgentRemoved,
     discussionReplySelected,
     discussionReactionRequested,
@@ -76,6 +80,8 @@
   $effect(() => conversationId$.set(conversationId));
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
   const agentMessaging$ = selectDiscussionAgentMessagingSupported();
+  const agentActivity$ = selectDiscussionCanControlAgent(workspaceId$, conversationId$);
+  const agentControlPending$ = selectDiscussionAgentControlPending(workspaceId$, conversationId$);
   const discussion$ = selectWorkspaceDiscussion(workspaceId$, conversationId$);
   const messages$ = selectDiscussionMessages(workspaceId$, conversationId$);
   const pending$ = selectDiscussionPending(workspaceId$, conversationId$);
@@ -178,9 +184,37 @@
       .map((agent) => ({
         id: agent.id,
         name: agent.name || m.workspace_fileChanges_agent_label(),
+        status: isAgentRunningState(agent) ? ('working' as const) : ('idle' as const),
       }))}
     agentsSupported={$agentMessaging$ === true && conversationId === 'default'}
     agentsUnsupported={$agentMessaging$ === false}
+    agentActivitySupported={$agentActivity$}
+    agentControlPending={$agentControlPending$}
+    agentControlError={$discussion$.agentControlError
+      ? m.workspace_discussion_agentControl_error()
+      : null}
+    onStopAgent={(messageId, activity) =>
+      store.dispatch(
+        discussionAgentControlRequested(
+          workspaceId,
+          messageId,
+          activity.agentId,
+          activity.attempt,
+          'stop',
+          conversationId,
+        ),
+      )}
+    onRetryAgent={(messageId, activity) =>
+      store.dispatch(
+        discussionAgentControlRequested(
+          workspaceId,
+          messageId,
+          activity.agentId,
+          activity.attempt,
+          'retry',
+          conversationId,
+        ),
+      )}
     onAgentPickerOpen={() => {
       if (conversationId !== 'default' || $agentMessaging$ !== true) return;
       store.dispatch(fetchDelegatedAgentsRequested(workspaceId));

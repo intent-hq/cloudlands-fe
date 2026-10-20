@@ -38,6 +38,7 @@ import {
   DEFAULT_DISCUSSION_ID,
   NEW_DISCUSSION_ID,
   discussionKey,
+  discussionAgentControlKey,
   DISCUSSION_MAX_BODY_BYTES,
   DISCUSSION_PAGE_SIZE,
   type DiscussionConversation,
@@ -46,6 +47,11 @@ import { takeLeadingInContext, takeLatestInContext } from '../../../utils/contex
 import {
   discussionMessageActionsReceived,
   discussionAgentCapabilityReceived,
+  discussionAgentActivityCapabilityReceived,
+  discussionAgentActivityReceived,
+  discussionAgentControlRequested,
+  discussionAgentControlStarted,
+  discussionAgentControlFinished,
   discussionReactionRequested,
   discussionReactionStarted,
   discussionReactionFinished,
@@ -81,6 +87,8 @@ import {
 import {
   selectDiscussionMessageActionsSupported,
   selectDiscussionAgentMessagingSupported,
+  selectDiscussionAgentActivitySupported,
+  selectDiscussionCanControlAgent,
   selectDiscussionCanInteract,
   selectDiscussionCanSend,
   selectDiscussionCanEnableSharing,
@@ -129,6 +137,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
   try {
     const actionsSupported = yield* ensureMessageActions();
     const agentsSupported = yield* ensureAgentMessaging();
+    const activitySupported = yield* ensureAgentActivity();
     const supported =
       conversationId === DEFAULT_DISCUSSION_ID ? false : yield* ensureConversations();
     if (conversationId === NEW_DISCUSSION_ID) {
@@ -150,6 +159,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
         supported,
         actionsSupported,
         agentsSupported,
+        activitySupported,
       );
       if (!(yield* isCurrent(target))) return;
       if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
@@ -160,8 +170,15 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       }
       yield* put(discussionPageReceived(target, requestId, result, direction));
       if (direction !== 'newer' || !result.hasMore) {
-        if (direction === 'newer' && actionsSupported)
-          yield* refreshMessageMetadata(target, requestId, supported);
+        if (direction === 'newer' && (actionsSupported || activitySupported))
+          yield* refreshMessageMetadata(
+            target,
+            requestId,
+            supported,
+            actionsSupported,
+            agentsSupported,
+            activitySupported,
+          );
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
       }
@@ -207,6 +224,8 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   if (!author) return;
   const replyId = previous ? previous.replyToMessageId : (row.replyToMessageId ?? undefined);
   const reply = replyId ? getItem(row.messages, replyId) : undefined;
+  const activitySupported = yield* ensureAgentActivity();
+  if (!(yield* isCurrent(target))) return;
   const pending = {
     id: previous?.id ?? uuid(),
     body,
@@ -214,6 +233,11 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       ? (previous.recipientAgentIds ?? [])
       : discussionAgentIds(row.agentMentions),
     agentMentions: previous ? (previous.agentMentions ?? []) : row.agentMentions,
+    sentAgentMentions: previous
+      ? previous.sentAgentMentions
+      : activitySupported
+        ? row.agentMentions
+        : undefined,
     author: previous?.author ?? author,
     createdAt: previous?.createdAt ?? new Date().toISOString(),
     replyVersion: previous?.replyVersion ?? row.replyVersion,
@@ -247,6 +271,9 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
         workspaceId,
         messageId: pending.id,
         body,
+        ...(pending.sentAgentMentions !== undefined
+          ? { agentMentions: pending.sentAgentMentions }
+          : {}),
         ...(pending.recipientAgentIds.length
           ? { recipientAgentIds: pending.recipientAgentIds }
           : {}),
@@ -260,6 +287,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       supported,
       actionsSupported,
       agentsSupported,
+      activitySupported,
     );
     const owner = yield* select(selectDiscussionOwner.select);
     if (
@@ -335,6 +363,19 @@ function* runDiscussion({
         discussionReactionRequested,
         (a) => JSON.stringify(a.payload),
         reactWhileWorkspaceExists,
+      ),
+    );
+    tasks.push(
+      yield* takeLeadingInContext(
+        discussionAgentControlRequested,
+        (a) =>
+          JSON.stringify([
+            a.payload[0],
+            a.payload[5] ?? DEFAULT_DISCUSSION_ID,
+            a.payload[1],
+            a.payload[2],
+          ]),
+        controlWhileWorkspaceExists,
       ),
     );
     tasks.push(yield* takeEvery(discussionMembershipInvalidated, refreshMembership));
@@ -599,6 +640,9 @@ function* refreshMessageMetadata(
   target: DiscussionTarget,
   requestId: string,
   conversationsSupported: boolean,
+  actionsSupported: boolean,
+  agentsSupported: boolean,
+  activitySupported: boolean,
 ): SagaGenerator<void> {
   const row = yield* select(
     selectWorkspaceDiscussion.select,
@@ -627,7 +671,9 @@ function* refreshMessageMetadata(
         limit: DISCUSSION_PAGE_SIZE,
       },
       conversationsSupported,
-      true,
+      actionsSupported,
+      agentsSupported,
+      activitySupported,
     );
     if (!(yield* isCurrent(target))) return;
     const next = result.messages[0]?.sequence;
@@ -646,4 +692,71 @@ function* refreshMessageMetadata(
     before = next;
   }
   throw new Error('Discussion metadata refresh incomplete');
+}
+
+function* ensureAgentActivity(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionAgentActivitySupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsAgentActivity);
+  yield* put(discussionAgentActivityCapabilityReceived(context, supported));
+  return supported;
+}
+function* controlAgent({
+  payload: [
+    workspaceId,
+    messageId,
+    agentId,
+    attempt,
+    operation,
+    conversationId = DEFAULT_DISCUSSION_ID,
+  ],
+}: ReturnType<typeof discussionAgentControlRequested>): SagaGenerator<void> {
+  const target = yield* select(selectDiscussionTarget.select, workspaceId, conversationId);
+  if (
+    !target ||
+    !(yield* select(selectDiscussionCanControlAgent.select, workspaceId, conversationId))
+  )
+    return;
+  const row = yield* select(selectWorkspaceDiscussion.select, workspaceId, conversationId);
+  const message = getItem(row.messages, messageId);
+  const activity = message?.agentActivity?.find((a) => a.agentId === agentId);
+  const key = discussionAgentControlKey(messageId, agentId);
+  if (
+    !activity ||
+    activity.attempt !== attempt ||
+    getItem(row.agentControls, key) ||
+    !message?.recipientAgentIds?.includes(agentId) ||
+    (operation === 'stop'
+      ? !['queued', 'working'].includes(activity.state)
+      : !['failed', 'stopped'].includes(activity.state))
+  )
+    return;
+  const requestId = uuid();
+  yield* put(
+    discussionAgentControlStarted(target, { key, messageId, agentId, requestId, attempt }),
+  );
+  try {
+    const result = yield* call(
+      workspaceDiscussionClient.controlAgent,
+      operation,
+      { workspaceId, messageId, agentId, attempt },
+      true,
+    );
+    if (!(yield* isCurrent(target))) return;
+    yield* put(discussionAgentActivityReceived(target, messageId, result.activity));
+    yield* put(discussionAgentControlFinished(target, key, requestId, null));
+  } catch (error) {
+    if (yield* isCurrent(target))
+      yield* put(discussionAgentControlFinished(target, key, requestId, discussionError(error)));
+  }
+}
+function* controlWhileWorkspaceExists(
+  action: ReturnType<typeof discussionAgentControlRequested>,
+): SagaGenerator<void> {
+  yield* race({
+    done: call(controlAgent, action),
+    removed: take(workspaceRemoved(action.payload[0])),
+  });
 }

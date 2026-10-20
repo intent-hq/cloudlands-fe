@@ -3,12 +3,16 @@ import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/wor
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   isDiscussionMessageEvent,
+  isDiscussionAgentActivityEvent,
+  hasDiscussionAgentActivity,
+  hasDiscussionAgentMentions,
   isDiscussionReactionEvent,
   hasDiscussionMessageActions,
   DEFAULT_DISCUSSION_ID,
 } from '$shared/types/workspace-discussion';
 import {
   discussionMessageReceived,
+  discussionAgentActivityReceived,
   discussionReactionReceived,
   discussionConversationReceived,
   discussionMembershipInvalidated,
@@ -3770,6 +3774,24 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'discussion:activity') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionAgentActivityEvent(data) ||
+      appStore.state.workspaceDiscussion.agentActivitySupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target)
+      appStore.dispatch(discussionAgentActivityReceived(target, data.messageId, data.activity));
+    return;
+  }
   if (type === 'discussion:reaction') {
     const data = (event as { data?: unknown }).data;
     if (
@@ -3793,6 +3815,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: unknown }).data;
     if (
       isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
+        (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
       (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
         hasDiscussionMessageActions(data.message))
     ) {
@@ -4566,6 +4590,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'presence:changed',
   'discussion:message',
   'discussion:reaction',
+  'discussion:activity',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

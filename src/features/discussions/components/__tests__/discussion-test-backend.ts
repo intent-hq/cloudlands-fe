@@ -10,6 +10,8 @@ import type {
   DiscussionListParams,
   DiscussionSendParams,
   DiscussionReactParams,
+  DiscussionAgentControlParams,
+  DiscussionAgentActivity,
 } from '$shared/types/workspace-discussion';
 
 export const startDiscussionTestSaga = () => {
@@ -30,6 +32,7 @@ export function installDiscussionTestBackend(
     rejectSend?: 'invalid' | 'forbidden';
     messageActions?: boolean;
     agentMessaging?: boolean;
+    agentActivity?: boolean;
   } = {},
 ) {
   const requests: Array<{ method: string; params: unknown }> = [];
@@ -64,6 +67,23 @@ export function installDiscussionTestBackend(
     { reactions: DiscussionMessage['reactions']; reactionVersion: number }
   >();
   const histories = new Map<string, DiscussionMessage[]>();
+  const activities = new Map<string, DiscussionAgentActivity>();
+  function controlAgent(method: string, value: unknown) {
+    const params = value as DiscussionAgentControlParams;
+    record(method, params);
+    const key = JSON.stringify([params.messageId, params.agentId]);
+    const previous = activities.get(key);
+    if (!previous || previous.attempt !== params.attempt) throw new Error('Stale attempt');
+    const activity: DiscussionAgentActivity = {
+      ...previous,
+      attempt: previous.attempt + (method === 'discussion.retryAgent' ? 1 : 0),
+      version: previous.version + 1,
+      state: method === 'discussion.stopAgent' ? 'stopped' : 'queued',
+      updatedAt: '2026-10-20T12:01:00Z',
+    };
+    activities.set(key, activity);
+    return { activity };
+  }
   function message(
     sequence: number,
     body = `Review note ${sequence}: keeping the discussion in view while the team works through the plan.`,
@@ -77,6 +97,7 @@ export function installDiscussionTestBackend(
       author,
       createdAt: '2026-10-14T12:00:00Z',
       ...(options.agentMessaging ? { recipientAgentIds: [] } : {}),
+      ...(options.agentActivity ? { agentMentions: [], agentActivity: [] } : {}),
       ...(options.messageActions !== false
         ? { replyToMessageId: null, replyTo: null, reactions: [], reactionVersion: 0 }
         : {}),
@@ -126,8 +147,11 @@ export function installDiscussionTestBackend(
     'system.capabilities': () => ({
       discussionConversations: 1,
       ...(options.agentMessaging ? { discussionAgentMessaging: 1 } : {}),
+      ...(options.agentActivity ? { discussionAgentActivity: 1 } : {}),
       ...(options.messageActions !== false ? { discussionMessageActions: 1 } : {}),
     }),
+    'discussion.stopAgent': (params) => controlAgent('discussion.stopAgent', params),
+    'discussion.retryAgent': (params) => controlAgent('discussion.retryAgent', params),
     'discussion.react': (value) => {
       const params = value as DiscussionReactParams;
       record('discussion.react', params);
@@ -257,6 +281,21 @@ export function installDiscussionTestBackend(
         id: crypto.randomUUID(),
         author: self,
         ...(options.agentMessaging ? { recipientAgentIds: params.recipientAgentIds ?? [] } : {}),
+        ...(options.agentActivity
+          ? {
+              agentMentions: params.agentMentions ?? [],
+              agentActivity: (params.recipientAgentIds ?? []).map(
+                (agentId): DiscussionAgentActivity => ({
+                  agentId,
+                  attempt: 1,
+                  version: 1,
+                  state: 'queued',
+                  updatedAt: '2026-10-20T12:00:00Z',
+                  error: null,
+                }),
+              ),
+            }
+          : {}),
         conversationId: descriptor.id,
         ...(quoted
           ? {
@@ -266,12 +305,28 @@ export function installDiscussionTestBackend(
           : {}),
       };
       histories.set(descriptor.id, [...(histories.get(descriptor.id) ?? []), sent]);
+      for (const activity of sent.agentActivity ?? [])
+        activities.set(JSON.stringify([sent.id, activity.agentId]), activity);
       return { message: sent, conversation: descriptor };
     },
   });
   return {
     message,
     conversation,
+    lastSent: () => histories.get('default')?.at(-1),
+    completeActivity: (messageId: string, agentId: string) => {
+      const key = JSON.stringify([messageId, agentId]);
+      const previous = activities.get(key);
+      if (!previous) return undefined;
+      const activity: DiscussionAgentActivity = {
+        ...previous,
+        state: 'completed',
+        version: previous.version + 1,
+        updatedAt: '2026-10-20T12:02:00Z',
+      };
+      activities.set(key, activity);
+      return activity;
+    },
     receiveTyping,
     finishOlder: () => finishOlder?.(),
     finishSend: () => finishSend?.(),

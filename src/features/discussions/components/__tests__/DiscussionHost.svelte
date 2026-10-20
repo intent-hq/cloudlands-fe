@@ -18,6 +18,7 @@
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     discussionAgentCapabilityReceived,
+    discussionAgentActivityReceived,
     discussionLoadStarted,
     discussionPageReceived,
     discussionLoadFinished,
@@ -30,11 +31,13 @@
     failSend = false,
     messageActions = true,
     agentMessaging = false,
+    agentActivity = agentMessaging,
     conversationId = 'default',
   }: {
     failSend?: boolean;
     messageActions?: boolean;
     agentMessaging?: boolean;
+    agentActivity?: boolean;
     conversationId?: string;
   } = $props();
   const workspaceId = 'discussion-test';
@@ -46,7 +49,7 @@
     (calls) => {
       requests = calls;
     },
-    { messageActions, agentMessaging },
+    { messageActions, agentMessaging, agentActivity },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(setLabsMultiplayerEnabled(true));
@@ -148,11 +151,21 @@
   <Button
     onclick={() => {
       const target = selectDiscussionTarget.select(store.state, workspaceId);
-      if (target)
+      const request = backend.lastSent();
+      if (target) {
+        const activity = request && backend.completeActivity(request.id, 'agent-reviewer');
+        if (activity)
+          store.dispatch(discussionAgentActivityReceived(target, request!.id, activity));
         store.dispatch(
           discussionMessageReceived(target, {
             ...backend.message(102, 'I checked the changes. The layout looks good.'),
             recipientAgentIds: [],
+            ...(request
+              ? {
+                  replyToMessageId: request.id,
+                  replyTo: { id: request.id, author: request.author, body: request.body },
+                }
+              : {}),
             author: {
               principalId: null,
               agentId: 'agent-reviewer',
@@ -162,6 +175,7 @@
             },
           }),
         );
+      }
     }}>Receive agent reply</Button
   >
   <Button

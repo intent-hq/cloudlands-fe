@@ -37,7 +37,7 @@
 </script>
 
 <div
-  class={menuOverlay({ class: 'absolute inset-x-0 bottom-full mb-2 p-1' })}
+  class={menuOverlay({ class: 'absolute left-0 bottom-full mb-2 w-72 max-w-full p-1' })}
   data-discussion-mention-picker
 >
   <div
@@ -59,6 +59,11 @@
             ? m.workspace_discussion_mentionAgents_label()
             : m.workspace_discussion_mentionUsers_label()}
         >
+          <p class="px-2 py-1 type-caption text-muted-foreground" aria-hidden="true">
+            {kind === 'agent'
+              ? m.workspace_discussion_mentionAgents_label()
+              : m.workspace_discussion_mentionUsers_label()}
+          </p>
           {#each group as option (option.key)}
             {@const index = options.indexOf(option)}
             <Button
@@ -84,6 +89,13 @@
                 <PrincipalAvatar label={option.label} avatarUrl={option.user.avatarUrl} size={24} />
               {/if}
               <span class="min-w-0 flex-1 truncate">{option.label}</span>
+              {#if option.kind === 'agent' && option.agent.status}
+                <span class="text-muted-foreground">
+                  {option.agent.status === 'working'
+                    ? m.workspace_discussion_agentWorking_label()
+                    : m.workspace_discussion_agentIdle_label()}
+                </span>
+              {/if}
               {#if option.kind === 'user' && option.user.login && option.user.login.toLocaleLowerCase() !== option.label.toLocaleLowerCase()}
                 <span class="max-w-1/2 truncate text-muted-foreground">@{option.user.login}</span>
               {:else if option.kind === 'agent' && options.some((other) => other.kind === 'agent' && other.key !== option.key && other.label === option.label)}
@@ -116,4 +128,8 @@
       onclick={onLoadMore}>{m.workspace_discussion_loadMoreMembers_label()}</Button
     >
   {/if}
+  <Separator decorative class="my-1" />
+  <p class="px-2 py-1 type-caption text-muted-foreground">
+    {m.workspace_discussion_mentionKeyboard_hint()}
+  </p>
 </div>

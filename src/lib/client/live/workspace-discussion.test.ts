@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { workspaceDiscussionClient as client } from './workspace-discussion';
 import {
   isDiscussionMessageEvent,
+  isDiscussionAgentActivityEvent,
   type DiscussionConversation,
 } from '$shared/types/workspace-discussion';
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
@@ -289,6 +290,136 @@ describe('discussion reply and reaction wire contract', () => {
     ]) {
       wire.request.mockResolvedValue(invalid);
       await expect(client.react(params, true)).rejects.toThrow();
+    }
+  });
+});
+
+describe('request-correlated discussion activity wire contract', () => {
+  const params = { workspaceId: 'ws', messageId: 'server', agentId: 'agent-a', attempt: 1 };
+  const activity = {
+    agentId: 'agent-a',
+    attempt: 1,
+    version: 2,
+    state: 'working',
+    updatedAt: '2026-10-20T00:00:00Z',
+    error: null,
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])(
+    'requires exact activity capability %s',
+    async (value) => {
+      wire.request.mockResolvedValue({ discussionAgentActivity: value });
+      expect(await client.supportsAgentActivity()).toBe(value === 1);
+    },
+  );
+  it('binds both methods to committed message, recipient and attempt without sending a message', async () => {
+    wire.request.mockResolvedValue({ activity });
+    await expect(client.controlAgent('stop', params)).rejects.toMatchObject({
+      code: 'METHOD_NOT_FOUND',
+    });
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(await client.controlAgent('stop', params, true)).toEqual({ activity });
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.stopAgent', params);
+    const next = { ...activity, attempt: 2, version: 3, state: 'queued' };
+    wire.request.mockResolvedValue({ activity: next });
+    expect(await client.controlAgent('retry', params, true)).toEqual({ activity: next });
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.retryAgent', params);
+  });
+  it('rejects private and malformed control requests before the wire', async () => {
+    for (const extra of [
+      { conversationId: 'c2' },
+      { agentId: '' },
+      { messageId: '' },
+      { attempt: 0 },
+      { attempt: 1.5 },
+    ])
+      await expect(client.controlAgent('stop', { ...params, ...extra }, true)).rejects.toThrow();
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it.each([
+    { agentId: 'other' },
+    { attempt: 0 },
+    { version: 0 },
+    { version: 1.5 },
+    { state: 'running' },
+    { updatedAt: 'invalid' },
+    { error: {} },
+  ])('rejects malformed or mismatched activity %j', async (extra) => {
+    wire.request.mockResolvedValue({ activity: { ...activity, ...extra } });
+    await expect(client.controlAgent('stop', params, true)).rejects.toThrow();
+  });
+  it('rejects absent advertised activity and accepts an explicit empty legacy array', async () => {
+    const row = { ...message, conversationId: 'default', recipientAgentIds: [], agentMentions: [] };
+    wire.request.mockResolvedValue({ messages: [row], hasMore: false });
+    await expect(client.list({ workspaceId: 'ws' }, false, false, true, true)).rejects.toThrow();
+    wire.request.mockResolvedValue({ messages: [{ ...row, agentActivity: [] }], hasMore: false });
+    expect(
+      (await client.list({ workspaceId: 'ws' }, false, false, true, true)).messages[0]
+        .agentActivity,
+    ).toEqual([]);
+    wire.request.mockResolvedValue({
+      messages: [{ ...row, agentActivity: [activity] }],
+      hasMore: false,
+    });
+    await expect(client.list({ workspaceId: 'ws' }, false, false, true, true)).rejects.toThrow();
+  });
+  it('validates event scope and does not accept global agent status shapes', () => {
+    const event = { workspaceId: 'ws', conversationId: 'default', messageId: 'server', activity };
+    expect(isDiscussionAgentActivityEvent(event)).toBe(true);
+    for (const extra of [
+      { conversationId: 'c2' },
+      { conversationId: undefined },
+      { messageId: '' },
+      { activity: { agentId: 'agent-a', status: 'running' } },
+    ])
+      expect(isDiscussionAgentActivityEvent({ ...event, ...extra })).toBe(false);
+  });
+});
+
+describe('immutable selected agent mention metadata', () => {
+  const params = {
+    workspaceId: 'ws',
+    messageId: 'retry-key',
+    body: '😀 @Reviewer plain @Reviewer',
+    recipientAgentIds: ['agent-a'],
+    agentMentions: [{ agentId: 'agent-a', name: 'Reviewer', start: 3, end: 12 }],
+  };
+  const row = {
+    ...message,
+    conversationId: 'default',
+    body: params.body,
+    recipientAgentIds: params.recipientAgentIds,
+    agentMentions: params.agentMentions,
+    agentActivity: [],
+  };
+  it('roundtrips UTF16 offsets and names exactly, leaving ordinary matching text without metadata', async () => {
+    wire.request.mockResolvedValue({ message: row });
+    expect((await client.send(params, false, false, true, true)).message.agentMentions).toEqual(
+      params.agentMentions,
+    );
+    expect(wire.request).toHaveBeenLastCalledWith('discussion.send', params);
+    wire.request.mockResolvedValue({ messages: [row], hasMore: false });
+    expect(
+      (await client.list({ workspaceId: 'ws' }, false, false, true, true)).messages[0]
+        .agentMentions,
+    ).toHaveLength(1);
+  });
+  it('does not send selected metadata to an unadvertised daemon', async () => {
+    await expect(client.send(params, false, false, true, false)).rejects.toMatchObject({
+      code: 'METHOD_NOT_FOUND',
+    });
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('rejects mutated, overlapping, byte-offset, out-of-target and omitted immutable metadata', async () => {
+    for (const agentMentions of [
+      undefined,
+      [],
+      [{ ...params.agentMentions[0], start: 4 }],
+      [{ ...params.agentMentions[0], name: 'Renamed' }],
+      [{ ...params.agentMentions[0], agentId: 'another' }],
+      [params.agentMentions[0], params.agentMentions[0]],
+    ]) {
+      wire.request.mockResolvedValue({ message: { ...row, agentMentions } });
+      await expect(client.send(params, false, false, true, true)).rejects.toThrow();
     }
   });
 });

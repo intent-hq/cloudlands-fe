@@ -1,10 +1,14 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceDiscussionClient } from '$lib/client/live/workspace-discussion';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import { initializeLayout, closeTab, reopenClosedTab } from '../../panel-layout/panel-layout-slice';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
-import type { DiscussionMessage } from '$shared/types/workspace-discussion';
+import type {
+  DiscussionMessage,
+  DiscussionAgentActivity,
+} from '$shared/types/workspace-discussion';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '../../../store';
 import { authRejectedReceived, connectionsListReceived } from '../../connections/connections-slice';
@@ -20,6 +24,7 @@ import {
 import {
   discussionReadThrough,
   discussionAgentSelected,
+  discussionAgentControlRequested,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
   discussionReplySelected,
@@ -129,6 +134,7 @@ describe('workspace discussion transport', () => {
     dispose = store.init();
     vi.spyOn(workspaceDiscussionClient, 'supportsMessageActions').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentMessaging').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsAgentActivity').mockResolvedValue(false);
     wire.readSetting.mockReset().mockResolvedValue({ value: true });
     wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
     store.dispatch(
@@ -151,6 +157,267 @@ describe('workspace discussion transport', () => {
     store.dispatch(discussionRequested('ws'));
     await settle();
   }
+
+  const activity = (
+    state: DiscussionAgentActivity['state'] = 'working',
+    version = 1,
+    attempt = 1,
+  ): DiscussionAgentActivity => ({
+    agentId: 'agent-a',
+    attempt,
+    version,
+    state,
+    updatedAt: '2026-10-20T20:00:00Z',
+    error: null,
+  });
+  const addressed = (a = activity()): DiscussionMessage => ({
+    ...message(1),
+    recipientAgentIds: ['agent-a'],
+    agentActivity: [a],
+    agentMentions: [],
+  });
+  function activityEvent(
+    a: DiscussionAgentActivity,
+    workspaceId = 'ws',
+    messageId = 'server-1',
+    subscriptionId = 'current',
+  ) {
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId,
+        event: {
+          id: `activity-${a.version}`,
+          type: 'discussion:activity',
+          workspaceId,
+          data: { workspaceId, conversationId: 'default', messageId, activity: a },
+        },
+      },
+      ['current'],
+    );
+  }
+  async function openActivity(a = activity()) {
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    wire.request.mockResolvedValueOnce({ messages: [addressed(a)], hasMore: false });
+    await open();
+  }
+  it('merges activity arriving before history without letting older pages or attempts regress it', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    const first = deferred<{ messages: DiscussionMessage[]; hasMore: boolean }>();
+    wire.request.mockReturnValueOnce(first.promise);
+    await open();
+    activityEvent(activity('working', 5, 2));
+    activityEvent(activity('failed', 4, 1));
+    first.resolve({ messages: [addressed(activity('queued', 1))], hasMore: false });
+    await settle();
+    expect(messages()[0].agentActivity).toEqual([activity('working', 5, 2)]);
+    const target = selectDiscussionTarget.select(store.state, 'ws')!;
+    store.dispatch(discussionMessageReceived(target, addressed(activity('failed', 3))));
+    activityEvent(activity('stopped', 6, 1));
+    activityEvent(activity('completed', 7, 2), 'ws', 'server-1', 'old');
+    expect(messages()[0].agentActivity).toEqual([activity('working', 5, 2)]);
+    expect(row().syncedSequence).toBe(1);
+  });
+  it('sends one exact Stop request and ignores its reply after a newer invocation event', async () => {
+    await openActivity();
+    const late = deferred<{ activity: DiscussionAgentActivity }>();
+    wire.request.mockReturnValueOnce(late.promise);
+    const stop = discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'stop');
+    store.dispatch(stop);
+    store.dispatch(stop);
+    await settle();
+    expect(wire.request.mock.calls.filter(([m]) => m === 'discussion.stopAgent')).toEqual([
+      [
+        'discussion.stopAgent',
+        { workspaceId: 'ws', messageId: 'server-1', agentId: 'agent-a', attempt: 1 },
+      ],
+    ]);
+    activityEvent(activity('queued', 4, 2));
+    late.resolve({ activity: activity('stopped', 2) });
+    await settle();
+    expect(messages()[0].agentActivity).toEqual([activity('queued', 4, 2)]);
+    wire.request.mockClear();
+    store.dispatch(stop);
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(getItems(row().agentControls)).toHaveLength(0);
+  });
+  it('controls different recipients independently without cancelling the other invocation', async () => {
+    await openActivity();
+    const target = selectDiscussionTarget.select(store.state, 'ws')!;
+    store.dispatch(
+      discussionMessageReceived(target, {
+        ...message(2),
+        recipientAgentIds: ['agent-b'],
+        agentMentions: [],
+        agentActivity: [{ ...activity(), agentId: 'agent-b' }],
+      }),
+    );
+    const first = deferred<{ activity: DiscussionAgentActivity }>();
+    const second = deferred<{ activity: DiscussionAgentActivity }>();
+    wire.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    store.dispatch(discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'stop'));
+    store.dispatch(discussionAgentControlRequested('ws', 'server-2', 'agent-b', 1, 'stop'));
+    await settle();
+    expect(getItems(row().agentControls)).toHaveLength(2);
+    first.resolve({ activity: activity('stopped', 2) });
+    await settle();
+    expect(getItems(row().agentControls).map((c) => c.agentId)).toEqual(['agent-b']);
+    expect(messages()[1].agentActivity?.[0].state).toBe('working');
+    second.resolve({ activity: { ...activity('stopped', 2), agentId: 'agent-b' } });
+    await settle();
+    expect(getItems(row().agentControls)).toHaveLength(0);
+  });
+  it('retries an uncertain control with the original attempt without resending the discussion message', async () => {
+    await openActivity(activity('failed', 2));
+    wire.request.mockRejectedValueOnce(new Error('connection lost'));
+    const retry = discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'retry');
+    store.dispatch(retry);
+    await settle();
+    expect(row().agentControlError).toBe('unknown');
+    wire.request.mockResolvedValueOnce({ activity: activity('queued', 3, 2) });
+    store.dispatch(retry);
+    await settle();
+    const calls = wire.request.mock.calls.filter(([method]) => method === 'discussion.retryAgent');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(calls[0]);
+    expect(messages()[0].agentActivity).toEqual([activity('queued', 3, 2)]);
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.send')).toBe(false);
+    expect(row().agentControlError).toBeNull();
+  });
+  it('retains progress and draft after a mismatched control reply, then permits an identical retry', async () => {
+    await openActivity(activity('failed', 2));
+    store.dispatch(discussionDraftChanged('ws', 'Keep this unsent text'));
+    wire.request.mockResolvedValueOnce({
+      activity: { ...activity('queued', 3, 2), agentId: 'another-agent' },
+    });
+    const retry = discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'retry');
+    store.dispatch(retry);
+    await settle();
+    expect(row()).toMatchObject({ draft: 'Keep this unsent text', agentControlError: 'unknown' });
+    expect(getItems(row().agentControls)).toEqual([]);
+    expect(messages()[0].agentActivity).toEqual([activity('failed', 2)]);
+    wire.request.mockResolvedValueOnce({ activity: activity('queued', 3, 2) });
+    store.dispatch(retry);
+    await settle();
+    expect(messages()[0].agentActivity).toEqual([activity('queued', 3, 2)]);
+  });
+  it.each(['identity', 'membership', 'backend'] as const)(
+    'cancels late control success after %s changes',
+    async (change) => {
+      await openActivity(activity('failed', 2));
+      const late = deferred<{ activity: DiscussionAgentActivity }>();
+      wire.request.mockReturnValueOnce(late.promise);
+      store.dispatch(discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'retry'));
+      await settle();
+      if (change === 'identity') admit('someone-else');
+      else if (change === 'membership') store.dispatch(discussionMembershipInvalidated('ws'));
+      else
+        store.dispatch(
+          connectionsListReceived({
+            connections: [],
+            activeId: 'remote',
+            windowBackendId: 'remote',
+          }),
+        );
+      await settle();
+      late.resolve({ activity: activity('queued', 3, 2) });
+      await settle();
+      expect(messages().some((m) => m.agentActivity?.some((a) => a.attempt === 2))).toBe(false);
+      expect(getItems(row().agentControls)).toHaveLength(0);
+    },
+  );
+  it('restores terminal activity from cached-message metadata on reconnect without advancing history', async () => {
+    await openActivity();
+    wire.request.mockImplementation((method, params) => {
+      if (method !== 'discussion.list') throw new Error('unexpected');
+      return params.beforeSequence === 2
+        ? { messages: [addressed(activity('completed', 3))], hasMore: false }
+        : { messages: [], hasMore: false };
+    });
+    await reconnect();
+    expect(messages()[0].agentActivity).toEqual([activity('completed', 3)]);
+    expect(row().syncedSequence).toBe(1);
+    expect(wire.request).toHaveBeenCalledWith('discussion.list', {
+      workspaceId: 'ws',
+      beforeSequence: 2,
+      limit: 50,
+    });
+  });
+  it('does not expose controls or consume activity on an unsupported daemon', async () => {
+    await open();
+    activityEvent(activity());
+    store.dispatch(discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'stop'));
+    await settle();
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.stopAgent')).toBe(
+      false,
+    );
+    expect(getItems(row().activityUpdates)).toHaveLength(0);
+  });
+
+  it('persists sorted selected spans and retries their original payload after draft edits and a reconnect', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    await open();
+    store.dispatch(discussionDraftChanged('ws', '😀 plain @Builder '));
+    store.dispatch(discussionAgentSelected('ws', 'agent-b', 'Builder', 18, 18));
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0));
+    const original = row().draft;
+    const selected = row().agentMentions;
+    expect(selected.map((m) => m.agentId)).toEqual(['agent-a', 'agent-b']);
+    wire.request.mockRejectedValueOnce(new Error('lost acknowledgment'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const first = wire.request.mock.calls.find(([method]) => method === 'discussion.send')![1];
+    expect(first).toMatchObject({
+      body: original,
+      agentMentions: selected,
+      recipientAgentIds: ['agent-a', 'agent-b'],
+    });
+    store.dispatch(discussionDraftChanged('ws', 'Keep my new draft'));
+    wire.request.mockResolvedValue({ messages: [], hasMore: false });
+    await reconnect();
+    wire.request.mockResolvedValueOnce({
+      message: {
+        ...message(1, 'ws', original),
+        recipientAgentIds: first.recipientAgentIds,
+        agentMentions: selected,
+        agentActivity: [],
+      },
+    });
+    store.dispatch(discussionRetryRequested('ws', first.messageId));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[1]).toEqual(sends[0]);
+    expect(messages()[0].agentMentions).toEqual(selected);
+    expect(row().draft).toBe('Keep my new draft');
+    expect(pending()).toHaveLength(0);
+  });
+  it('retains exact mention retry metadata when a reconnect loses the required capability', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    await open();
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0));
+    wire.request.mockRejectedValueOnce(new Error('lost acknowledgment'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const original = pending()[0];
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(false);
+    wire.request.mockResolvedValue({ messages: [], hasMore: false });
+    await reconnect();
+    wire.request.mockClear();
+    store.dispatch(discussionRetryRequested('ws', original.id));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(pending()[0]).toMatchObject({
+      id: original.id,
+      sentAgentMentions: original.sentAgentMentions,
+      error: 'unsupported',
+    });
+    expect(row().draft).toBe(original.body);
+  });
 
   it('keeps explicit agent targets on retry while retaining a different new selection', async () => {
     vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);

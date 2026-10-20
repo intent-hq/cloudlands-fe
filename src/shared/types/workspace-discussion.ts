@@ -32,6 +32,114 @@ export interface DiscussionMessage {
   reactionVersion?: number;
   /** Present on daemons with discussionAgentMessaging:1; never inferred from body text. */
   recipientAgentIds?: string[];
+  /** Versioned request progress; never derived from an agent-wide status. */
+  agentActivity?: DiscussionAgentActivity[];
+  /** Immutable selected spans; offsets are UTF-16 code units, end exclusive. */
+  agentMentions?: DiscussionAgentMention[];
+}
+
+export interface DiscussionAgentMention {
+  agentId: string;
+  name: string;
+  start: number;
+  end: number;
+}
+export interface DiscussionAgentActivity {
+  agentId: string;
+  attempt: number;
+  version: number;
+  state: 'queued' | 'working' | 'completed' | 'failed' | 'stopped';
+  updatedAt: string;
+  error: string | null;
+}
+export interface DiscussionAgentControlParams {
+  workspaceId: string;
+  conversationId?: string;
+  messageId: string;
+  agentId: string;
+  attempt: number;
+}
+export interface DiscussionAgentActivityEvent {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  activity: DiscussionAgentActivity;
+}
+export function discussionAgentControlKey(messageId: string, agentId: string): string {
+  return JSON.stringify([messageId, agentId]);
+}
+export function isDiscussionAgentActivity(value: unknown): value is DiscussionAgentActivity {
+  return (
+    record(value) &&
+    typeof value.agentId === 'string' &&
+    value.agentId.length > 0 &&
+    Number.isSafeInteger(value.attempt) &&
+    (value.attempt as number) > 0 &&
+    Number.isSafeInteger(value.version) &&
+    (value.version as number) > 0 &&
+    ['queued', 'working', 'completed', 'failed', 'stopped'].includes(value.state as string) &&
+    typeof value.updatedAt === 'string' &&
+    Number.isFinite(Date.parse(value.updatedAt)) &&
+    nullableString(value.error)
+  );
+}
+export function hasDiscussionAgentActivity(value: unknown): boolean {
+  return (
+    record(value) &&
+    hasDiscussionAgentMessaging(value) &&
+    Array.isArray(value.agentActivity) &&
+    value.agentActivity.length <= DISCUSSION_MAX_RECIPIENTS &&
+    value.agentActivity.every(
+      (activity) =>
+        isDiscussionAgentActivity(activity) &&
+        (value.recipientAgentIds as string[]).includes(activity.agentId),
+    ) &&
+    new Set(value.agentActivity.map((activity) => activity.agentId)).size ===
+      value.agentActivity.length
+  );
+}
+export function hasDiscussionAgentMentions(value: unknown): boolean {
+  if (
+    !record(value) ||
+    !hasDiscussionAgentMessaging(value) ||
+    typeof value.body !== 'string' ||
+    !Array.isArray(value.agentMentions) ||
+    value.agentMentions.length > 100
+  )
+    return false;
+  let end = 0;
+  for (const mention of value.agentMentions) {
+    if (
+      !record(mention) ||
+      typeof mention.agentId !== 'string' ||
+      !(value.recipientAgentIds as string[]).includes(mention.agentId) ||
+      typeof mention.name !== 'string' ||
+      !mention.name.trim() ||
+      new TextEncoder().encode(mention.name).length > 256 ||
+      !Number.isSafeInteger(mention.start) ||
+      !Number.isSafeInteger(mention.end) ||
+      (mention.start as number) < end ||
+      (mention.end as number) <= (mention.start as number) ||
+      (mention.end as number) > value.body.length ||
+      value.body.slice(mention.start as number, mention.end as number) !== `@${mention.name}`
+    )
+      return false;
+    end = mention.end as number;
+  }
+  return true;
+}
+export function isDiscussionAgentActivityEvent(
+  value: unknown,
+): value is DiscussionAgentActivityEvent {
+  return (
+    record(value) &&
+    typeof value.workspaceId === 'string' &&
+    !!value.workspaceId &&
+    value.conversationId === DEFAULT_DISCUSSION_ID &&
+    typeof value.messageId === 'string' &&
+    !!value.messageId &&
+    isDiscussionAgentActivity(value.activity)
+  );
 }
 
 export interface DiscussionListParams {
@@ -51,6 +159,7 @@ export interface DiscussionSendParams {
   conversationId?: string;
   recipientPrincipalIds?: string[];
   recipientAgentIds?: string[];
+  agentMentions?: DiscussionAgentMention[];
   messageId: string;
   body: string;
   replyToMessageId?: string;
@@ -186,6 +295,8 @@ export function isDiscussionMessage(value: unknown): value is DiscussionMessage 
     typeof value.createdAt === 'string' &&
     Number.isFinite(Date.parse(value.createdAt)) &&
     isDiscussionMessageAuthor(value.author) &&
+    (value.agentActivity === undefined || hasDiscussionAgentActivity(value)) &&
+    (value.agentMentions === undefined || hasDiscussionAgentMentions(value)) &&
     (value.recipientAgentIds === undefined
       ? value.author.agentId === undefined
       : hasDiscussionAgentMessaging(value)) &&

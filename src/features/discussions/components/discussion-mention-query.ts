@@ -1,7 +1,13 @@
 import type { DiscussionAuthor } from '$shared/types/workspace-discussion';
 
+export interface DiscussionMentionAgent {
+  id: string;
+  name: string;
+  status?: 'working' | 'idle';
+}
+
 export type DiscussionMentionOption =
-  | { kind: 'agent'; key: string; label: string; agent: { id: string; name: string } }
+  | { kind: 'agent'; key: string; label: string; agent: DiscussionMentionAgent }
   | { kind: 'user'; key: string; label: string; user: DiscussionAuthor };
 
 /** Only the token at a collapsed caret is eligible; email addresses are not mentions. */
@@ -12,7 +18,7 @@ export function discussionMentionQuery(value: string, start: number, end = start
 }
 
 export function discussionMentionOptions(
-  agents: readonly { id: string; name: string }[],
+  agents: readonly DiscussionMentionAgent[],
   users: readonly DiscussionAuthor[],
   query: string,
 ): DiscussionMentionOption[] {

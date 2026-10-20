@@ -17,16 +17,21 @@
   } from '@fortawesome/free-solid-svg-icons';
   import CloudSlashIcon from 'phosphor-svelte/lib/CloudSlashIcon';
   import DiscussionMessageView from './DiscussionMessageView.svelte';
+  import DiscussionAgentActivity from './DiscussionAgentActivity.svelte';
   import DiscussionSkeleton from './DiscussionSkeleton.svelte';
   import DiscussionMicrophone from './DiscussionMicrophone.svelte';
-  import { Badge } from '$lib/components/ui/badge';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiscussionMentionPicker from './DiscussionMentionPicker.svelte';
   import {
     discussionMentionQuery,
     discussionMentionOptions,
     type DiscussionMentionOption,
+    type DiscussionMentionAgent,
   } from './discussion-mention-query';
-  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
+  import {
+    discussionAgentMentionParts,
+    type DiscussionAgentMention,
+  } from '../discussion-agent-mentions';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   import {
@@ -34,6 +39,8 @@
     DISCUSSION_MAX_RECIPIENTS,
     type DiscussionMessage,
     type DiscussionAuthor,
+    type DiscussionAgentActivity as AgentActivity,
+    discussionAgentControlKey,
   } from '$shared/types/workspace-discussion';
 
   interface Props {
@@ -43,10 +50,15 @@
     mentionUsersError?: string | null;
     mentionUsersHasMore?: boolean;
     onMentionLoadMore?: () => void;
-    agents?: readonly { id: string; name: string }[];
+    agents?: readonly DiscussionMentionAgent[];
     agentMentions?: readonly DiscussionAgentMention[];
     agentsSupported?: boolean;
     agentsUnsupported?: boolean;
+    agentActivitySupported?: boolean;
+    agentControlPending?: readonly string[];
+    agentControlError?: string | null;
+    onStopAgent?: (messageId: string, activity: AgentActivity) => void;
+    onRetryAgent?: (messageId: string, activity: AgentActivity) => void;
     onAgentPickerOpen?: () => void;
     onAgentSelect?: (agent: { id: string; name: string }, start: number, end: number) => void;
     onAgentRemove?: (agentId: string) => void;
@@ -115,9 +127,13 @@
     agentMentions = [],
     agentsSupported = false,
     agentsUnsupported = false,
+    agentActivitySupported = false,
+    agentControlPending = [],
+    agentControlError = null,
+    onStopAgent,
+    onRetryAgent,
     onAgentPickerOpen,
     onAgentSelect,
-    onAgentRemove,
     workspaceId,
     conversationId = 'default',
     sourcePanelId,
@@ -185,6 +201,60 @@
   });
   let composer: HTMLTextAreaElement | null = $state(null);
   let composerValue = $state('');
+  let composerScrollTop = $state(0);
+  const composerParts = $derived(discussionAgentMentionParts(composerValue, agentMentions));
+  const addressedNames = $derived(
+    [...new Set(agentMentions.map((mention) => mention.name))].join(', '),
+  );
+  const replyName = $derived(
+    replyTo?.author.displayName ||
+      replyTo?.author.login ||
+      m.workspace_discussion_unknownAuthor_label(),
+  );
+  const effectivePlaceholder = $derived(
+    replyTo
+      ? m.workspace_discussion_reply_placeholder({ name: replyName })
+      : (composerPlaceholder ?? m.workspace_discussion_composer_placeholder()),
+  );
+  let pendingReplyJump = $state<string | null>(null);
+  let replyJumpRequestedSize = -1;
+  let replyJumpUnavailable = $state(false);
+  $effect(() => {
+    void workspaceId;
+    void conversationId;
+    pendingReplyJump = null;
+    replyJumpUnavailable = false;
+  });
+  function jumpToReply(messageId: string) {
+    replyJumpRequestedSize = -1;
+    replyJumpUnavailable = false;
+    pendingReplyJump = messageId;
+  }
+  $effect(() => {
+    const id = pendingReplyJump;
+    if (!id || !scroller) return;
+    const original = messages.find((message) => message.id === id);
+    if (original) {
+      void tick().then(() => {
+        if (pendingReplyJump !== id) return;
+        const row = scroller?.querySelector<HTMLElement>(
+          `[data-discussion-message="${CSS.escape(id)}"]`,
+        );
+        row?.scrollIntoView({ block: 'center' });
+        row?.focus({ preventScroll: true });
+        pendingReplyJump = null;
+        reportVisible();
+      });
+    } else if (!loadingOlder && !error) {
+      if (hasMore && replyJumpRequestedSize !== messages.length) {
+        replyJumpRequestedSize = messages.length;
+        untrack(onLoadOlder);
+      } else {
+        pendingReplyJump = null;
+        replyJumpUnavailable = true;
+      }
+    }
+  });
   // A fast send can return the Redux draft to its previous value before selectors
   // render the edit. Its revision still changes and must reset the local input.
   $effect(() => {
@@ -265,6 +335,8 @@
     return (
       !!previous &&
       current.id !== firstUnreadId &&
+      !current.replyTo &&
+      !previous.agentActivity?.some((activity) => activity.state !== 'completed') &&
       previous.author.principalId === current.author.principalId &&
       previous.author.agentId === current.author.agentId &&
       dayKey(previous.createdAt) === dayKey(current.createdAt) &&
@@ -302,7 +374,7 @@
       onReadThrough(sequence);
     }
   }
-  // Recipient chips and wrapping drafts change the history viewport height.
+  // Reply context and wrapping drafts change the history viewport height.
   // Follow that resize only for readers who were already at the bottom.
   $effect(() => {
     const element = scroller;
@@ -331,12 +403,20 @@
   let previousFirstId: string | undefined;
   let previousLastId: string | undefined;
   let previousTypingLabel: string | null | undefined;
+  let previousActivityVersion = '';
 
   // Preserve the visible message when history is prepended or the loading row changes.
   // Live arrivals follow the bottom only while the reader is already there.
   $effect.pre(() => {
     const firstId = messages[0]?.id;
     const lastId = pendingMessages.at(-1)?.id ?? messages.at(-1)?.id;
+    const activityVersion = messages
+      .flatMap((message) =>
+        (message.agentActivity ?? []).map((activity) =>
+          JSON.stringify([message.id, activity.agentId, activity.version]),
+        ),
+      )
+      .join();
     void typingAuthors.length;
     void loadingOlder;
     void hasMore;
@@ -349,6 +429,7 @@
     const changed =
       firstId !== previousFirstId ||
       lastId !== previousLastId ||
+      activityVersion !== previousActivityVersion ||
       typingLabel !== previousTypingLabel;
     const prepended =
       !!previousFirstId &&
@@ -363,6 +444,7 @@
     previousFirstId = firstId;
     previousLastId = lastId;
     previousTypingLabel = typingLabel;
+    previousActivityVersion = activityVersion;
     if (messages.length > 0) firstRender = false;
     void tick().then(() => {
       if (!element.isConnected) return;
@@ -470,6 +552,14 @@
     } else {
       pendingMentionCaret = { value, position: start + insertion.length };
       onDraftChange(value);
+    }
+    // Accept the picker insertion in the native input before the next key event.
+    // Redux selectors can publish the accepted draft after a fast follow-up key.
+    composerValue = value;
+    if (composer) {
+      composer.value = value;
+      composer.focus({ preventScroll: true });
+      composer.setSelectionRange(start + insertion.length, start + insertion.length);
     }
     mentionPickerOpen = false;
   }
@@ -597,7 +687,7 @@
           >
         {/if}
         <div
-          class="flex flex-col gap-[18px]"
+          class="flex flex-col"
           role="log"
           aria-label={m.workspace_discussion_title()}
           aria-relevant="additions text"
@@ -628,6 +718,9 @@
               {sourcePanelId}
               {message}
               continuation={isContinuation(index)}
+              agentMentions={message.agentMentions}
+              replySelected={replyTo?.id === message.id}
+              onReplyNavigate={jumpToReply}
               reactions={reactionsByMessage[message.id]}
               disabled={!canSend}
               onReply={onReply
@@ -643,12 +736,34 @@
                     message,
                   )}{/if}{/snippet}
             </DiscussionMessageView>
+            {#each message.agentActivity ?? [] as activity (activity.agentId)}
+              <DiscussionAgentActivity
+                messageId={message.id}
+                {activity}
+                name={message.agentMentions?.find((mention) => mention.agentId === activity.agentId)
+                  ?.name ??
+                  agents.find((agent) => agent.id === activity.agentId)?.name ??
+                  m.workspace_tokenUsage_agentUnnamed_label()}
+                disabled={!canSend || !agentActivitySupported}
+                pending={agentControlPending.includes(
+                  discussionAgentControlKey(message.id, activity.agentId),
+                )}
+                onStop={agentActivitySupported && onStopAgent
+                  ? () => onStopAgent?.(message.id, activity)
+                  : undefined}
+                onRetry={agentActivitySupported && onRetryAgent
+                  ? () => onRetryAgent?.(message.id, activity)
+                  : undefined}
+              />
+            {/each}
           {/each}
           {#each pendingMessages as message (message.id)}
             <DiscussionMessageView
               {workspaceId}
               {sourcePanelId}
               {message}
+              agentMentions={message.agentMentions}
+              onReplyNavigate={jumpToReply}
               status={message.status}
               error={message.error}
               disabled={!canSend || sending}
@@ -717,72 +832,53 @@
     {/if}
   </div>
   <div class="shrink-0 px-3 pb-3 pt-2" data-discussion-composer>
+    {#if agentControlError}<p class="mb-2 type-caption text-danger" role="alert">
+        {agentControlError}
+      </p>{/if}
     {#if interactionError}<p class="mb-2 type-caption text-danger" role="alert">
         {interactionError}
       </p>{/if}
     {#if sendError || tooLong}<p class="mb-2 type-caption text-danger" role="alert">
         {tooLong ? m.workspace_discussion_tooLong_error() : sendError}
       </p>{/if}
-    {#if agentMentions.length}
-      <div
-        class="mb-2 flex min-w-0 flex-wrap items-center gap-1.5"
-        data-discussion-agent-recipients
-        aria-label={m.workspace_discussion_agentRecipients_label()}
+    {#if agentMentions.length && agentsUnsupported}<p
+        class="mb-2 type-caption text-danger"
+        role="alert"
       >
-        <span class="type-caption text-muted-foreground">{m.workspace_discussion_to_label()}</span>
-        {#each agentMentions as mention (mention.agentId)}
-          <Badge color="gray" class="max-w-full">
-            <span class="inline-flex items-center gap-1">
-              <span class="block max-w-48 truncate">@{mention.name}</span>
-              <Button
-                variant="ghost"
-                size="icon-compact"
-                class="-mr-1 size-4 rounded-full"
-                disabled={!(canCompose ?? canSend)}
-                aria-label={m.workspace_discussion_removeRecipient_label({ name: mention.name })}
-                onclick={() => onAgentRemove?.(mention.agentId)}
-                ><span aria-hidden="true">×</span></Button
-              >
-            </span>
-          </Badge>
-        {/each}
-      </div>
-      {#if agentsUnsupported}<p class="mb-2 type-caption text-danger" role="alert">
-          {m.workspace_discussion_agentsUnsupported_label()}
-        </p>{/if}
-    {/if}
+        {m.workspace_discussion_agentsUnsupported_label()}
+      </p>{/if}
+    {#if replyJumpUnavailable}<p class="mb-2 type-caption text-muted-foreground" role="status">
+        {m.workspace_discussion_replyUnavailable_label()}
+      </p>{/if}
     {#if composerContext}{@render composerContext()}{/if}
-    {#if replyTo}
-      <div
-        class="mb-2 flex min-w-0 items-start gap-2 rounded-lg border border-border px-3 py-2 type-caption"
-        data-discussion-reply-preview
-      >
-        <Fa icon={faReply} />
-        <div class="min-w-0 flex-1">
-          <p class="text-muted-foreground">
-            {m.workspace_discussion_replyingTo_label({
-              name:
-                replyTo.author.displayName ||
-                replyTo.author.login ||
-                m.workspace_discussion_unknownAuthor_label(),
-            })}
-          </p>
-          <p class="line-clamp-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{replyTo.body}</p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-compact"
-          aria-label={m.workspace_discussion_cancelReply_label()}
-          onclick={onCancelReply}><Fa icon={faXmark} /></Button
-        >
-      </div>
-    {/if}
     <div
       bind:this={composerWrapper}
       class="relative flex flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none transition-[min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none"
       style:min-height={`${composerMinHeight(panelHeight, !!composerValue.trim())}px`}
       class:opacity-45={!(canCompose ?? canSend)}
     >
+      {#if replyTo}
+        <div
+          class="mb-2 flex min-w-0 items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 type-caption text-muted-foreground"
+          data-discussion-reply-preview
+        >
+          <Fa icon={faReply} size="xs" />
+          <span class="max-w-1/2 shrink-0 truncate"
+            >{m.workspace_discussion_replyingTo_label({ name: replyName })}</span
+          >
+          <span class="min-w-0 flex-1 truncate">{replyTo.body.split('\n')[0]}</span>
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            class="size-5 shrink-0"
+            aria-label={m.workspace_discussion_cancelReply_label()}
+            onclick={() => {
+              onCancelReply?.();
+              composer?.focus({ preventScroll: true });
+            }}><Fa icon={faXmark} /></Button
+          >
+        </div>
+      {/if}
       {#if mentionPickerOpen}
         <DiscussionMentionPicker
           id={mentionListId}
@@ -796,96 +892,136 @@
           onSelect={selectMention}
         />
       {/if}
-      <div class="flex flex-1 items-end gap-3">
-        <Textarea
-          bind:ref={composer}
-          bind:value={composerValue}
-          aria-label={m.workspace_discussion_composer_label()}
-          placeholder={composerPlaceholder ?? m.workspace_discussion_composer_placeholder()}
-          class="min-h-6 flex-1 self-start resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent placeholder:opacity-0! focus:placeholder:opacity-100!"
-          rows={1}
-          autoResize
-          noFocusStyle
-          minHeight={24}
-          maxHeight={160}
-          readonly={!(canCompose ?? canSend)}
-          aria-invalid={tooLong || undefined}
-          aria-autocomplete={mentionsAvailable ? 'list' : undefined}
-          aria-haspopup={mentionsAvailable ? 'listbox' : undefined}
-          aria-controls={mentionPickerOpen ? mentionListId : undefined}
-          aria-activedescendant={mentionPickerOpen && activeMentionIndex >= 0
-            ? `${mentionListId}-option-${activeMentionIndex}`
-            : undefined}
-          oninput={input}
-          onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
-          onblur={() => {
-            onComposerFocusChange?.(false);
-            mentionPickerOpen = false;
-            pendingMentionCaret = null;
-          }}
-          onclick={() => {
-            if (mentionPickerOpen) updateMentionQuery();
-          }}
-          onselect={() => {
-            if (mentionPickerOpen) updateMentionQuery();
-          }}
-          onkeyup={(event) => {
-            if (mentionPickerOpen && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
-              updateMentionQuery();
-          }}
-          onkeydown={onKeydown}
-          oncompositionstart={() => {
-            composing = true;
-            mentionPickerOpen = false;
-          }}
-          oncompositionend={() => {
-            composing = false;
-            updateMentionQuery();
-          }}
-        />
-        <div class="flex shrink-0 items-center gap-3">
-          {#if mentionsAvailable}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={!(canCompose ?? canSend)}
-              aria-label={m.workspace_discussion_mentions_label()}
-              tooltip={m.workspace_discussion_mentions_label()}
-              aria-haspopup="listbox"
-              aria-expanded={mentionPickerOpen}
-              aria-controls={mentionPickerOpen ? mentionListId : undefined}
-              onmousedown={(event) => event.preventDefault()}
-              onclick={toggleMentions}><Fa icon={faAt} size="sm" /></Button
-            >
-          {/if}
-          {#if composerActions}{@render composerActions()}{:else if workspaceId}
-            <DiscussionReferencePicker
-              {workspaceId}
-              disabled={!(canCompose ?? canSend)}
-              onSelect={appendToDraft}
-            />
-            <DiscussionMicrophone
-              {workspaceId}
-              {conversationId}
-              active={isActive && isPanelFocused}
-              disabled={!(canCompose ?? canSend)}
-              onTranscript={appendToDraft}
-            />
-          {/if}<Button
-            variant="primary"
-            size="icon-compact"
-            class="size-6 rounded-md"
-            disabled={!canSend ||
-              !canSendDraft ||
-              (agentMentions.length > 0 && !agentsSupported) ||
-              !draft.trim() ||
-              sending ||
-              tooLong}
-            aria-label={sendError && retryDraft
-              ? m.ui_errorToast_retry_label()
-              : m.workspace_discussion_send_label()}
-            onclick={send}><Fa icon={faArrowUp} /></Button
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
+        <div class="relative">
+          <div
+            class="pointer-events-none absolute inset-0 overflow-hidden"
+            aria-hidden="true"
+            data-discussion-mention-highlights
           >
+            <div
+              class="whitespace-pre-wrap break-words py-0.5 type-caption leading-5"
+              class:text-transparent={!agentMentions.length}
+              style:transform={`translateY(${-composerScrollTop}px)`}
+            >
+              {#each composerParts as part}{#if part.agentId}<mark
+                    class="rounded-sm bg-primary text-primary-foreground"
+                    data-discussion-inline-mention={part.agentId}>{part.text}</mark
+                  >{:else}{part.text}{/if}{/each}
+            </div>
+          </div>
+          <Textarea
+            bind:ref={composer}
+            bind:value={composerValue}
+            aria-label={m.workspace_discussion_composer_label()}
+            placeholder={effectivePlaceholder}
+            class={'relative min-h-6 resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent placeholder:opacity-0! focus:placeholder:opacity-100!' +
+              (agentMentions.length
+                ? ' text-transparent caret-foreground selection:text-foreground'
+                : '')}
+            rows={1}
+            autoResize
+            noFocusStyle
+            minHeight={24}
+            maxHeight={160}
+            readonly={!(canCompose ?? canSend)}
+            aria-invalid={tooLong || undefined}
+            aria-autocomplete={mentionsAvailable ? 'list' : undefined}
+            aria-haspopup={mentionsAvailable ? 'listbox' : undefined}
+            aria-controls={mentionPickerOpen ? mentionListId : undefined}
+            aria-activedescendant={mentionPickerOpen && activeMentionIndex >= 0
+              ? `${mentionListId}-option-${activeMentionIndex}`
+              : undefined}
+            oninput={input}
+            onscroll={(event) => (composerScrollTop = event.currentTarget.scrollTop)}
+            onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
+            onblur={() => {
+              onComposerFocusChange?.(false);
+              mentionPickerOpen = false;
+              pendingMentionCaret = null;
+            }}
+            onclick={() => {
+              if (mentionPickerOpen) updateMentionQuery();
+            }}
+            onselect={() => {
+              if (mentionPickerOpen) updateMentionQuery();
+            }}
+            onkeyup={(event) => {
+              if (
+                mentionPickerOpen &&
+                ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+              )
+                updateMentionQuery();
+            }}
+            onkeydown={onKeydown}
+            oncompositionstart={() => {
+              composing = true;
+              mentionPickerOpen = false;
+            }}
+            oncompositionend={() => {
+              composing = false;
+              updateMentionQuery();
+            }}
+          />
+        </div>
+        <div class="mt-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {#if agentMentions.length}
+            <div
+              class="flex min-w-40 max-w-full flex-1 items-center gap-1.5 type-caption text-muted-foreground"
+              data-discussion-agent-hint
+            >
+              <AgentAvatar agentId={agentMentions[0].agentId} variant="compact" class="shrink-0" />
+              <span
+                class="min-w-0 truncate"
+                title={m.workspace_discussion_agentWillReply_label({ names: addressedNames })}
+                >{m.workspace_discussion_agentWillReply_label({ names: addressedNames })}</span
+              >
+            </div>
+          {/if}
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            {#if mentionsAvailable}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={!(canCompose ?? canSend)}
+                aria-label={m.workspace_discussion_mentions_label()}
+                tooltip={m.workspace_discussion_mentions_label()}
+                aria-haspopup="listbox"
+                aria-expanded={mentionPickerOpen}
+                aria-controls={mentionPickerOpen ? mentionListId : undefined}
+                onmousedown={(event) => event.preventDefault()}
+                onclick={toggleMentions}><Fa icon={faAt} size="sm" /></Button
+              >
+            {/if}
+            {#if composerActions}{@render composerActions()}{:else if workspaceId}
+              <DiscussionReferencePicker
+                {workspaceId}
+                disabled={!(canCompose ?? canSend)}
+                onSelect={appendToDraft}
+              />
+              <DiscussionMicrophone
+                {workspaceId}
+                {conversationId}
+                active={isActive && isPanelFocused}
+                disabled={!(canCompose ?? canSend)}
+                onTranscript={appendToDraft}
+              />
+            {/if}<Button
+              variant="primary"
+              size="icon-compact"
+              class="size-6 rounded-md"
+              disabled={!canSend ||
+                !canSendDraft ||
+                (agentMentions.length > 0 && !agentsSupported) ||
+                !draft.trim() ||
+                sending ||
+                tooLong}
+              aria-label={sendError && retryDraft
+                ? m.ui_errorToast_retry_label()
+                : m.workspace_discussion_send_label()}
+              onclick={send}><Fa icon={faArrowUp} /></Button
+            >
+          </div>
         </div>
       </div>
     </div>

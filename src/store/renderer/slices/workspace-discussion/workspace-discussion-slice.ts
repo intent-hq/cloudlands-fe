@@ -11,6 +11,9 @@ import {
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
+  isDiscussionAgentActivity,
+  discussionAgentControlKey,
+  type DiscussionAgentActivity,
   isDiscussionReactionResult,
   type DiscussionReactionResult,
   type DiscussionReactionValue,
@@ -38,11 +41,25 @@ export interface PendingDiscussionMessage {
   recipientPrincipalIds?: string[];
   recipientAgentIds?: string[];
   agentMentions?: DiscussionAgentMention[];
+  /** Exact metadata sent on the first attempt; undefined means the old wire contract. */
+  sentAgentMentions?: DiscussionAgentMention[];
   author?: DiscussionAuthor;
   createdAt?: string;
   replyToMessageId?: string;
   replyTo?: DiscussionMessage['replyTo'];
   replyVersion?: number;
+}
+interface ActivityUpdate {
+  key: string;
+  messageId: string;
+  activity: DiscussionAgentActivity;
+}
+interface AgentControl {
+  key: string;
+  messageId: string;
+  agentId: string;
+  requestId: string;
+  attempt: number;
 }
 export interface WorkspaceDiscussion {
   epoch: number;
@@ -50,6 +67,9 @@ export interface WorkspaceDiscussion {
   replyVersion: number;
   reactionUpdates: Collection<DiscussionReactionResult, 'messageId'>;
   reacting: string[];
+  activityUpdates: Collection<ActivityUpdate, 'key'>;
+  agentControls: Collection<AgentControl, 'key'>;
+  agentControlError: DiscussionError | null;
   reactionError: DiscussionError | null;
   metadataBefore: number | null;
   metadataFloor: number | null;
@@ -91,6 +111,7 @@ export interface WorkspaceDiscussionState {
   sharingEnabled: boolean | null;
   messageActionsSupported: boolean | null;
   agentMessagingSupported: boolean | null;
+  agentActivitySupported: boolean | null;
   directories: Record<string, DiscussionDirectory>;
   recipients: Record<string, DiscussionRecipients>;
   directoryRequestedIds: string[];
@@ -107,6 +128,9 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   replyVersion: 0,
   reactionUpdates: createCollection('messageId'),
   reacting: [],
+  activityUpdates: createCollection('key'),
+  agentControls: createCollection('key'),
+  agentControlError: null,
   reactionError: null,
   metadataBefore: null,
   metadataFloor: null,
@@ -144,6 +168,7 @@ export const initialState: WorkspaceDiscussionState = {
   sharingEnabled: null,
   messageActionsSupported: null,
   agentMessagingSupported: null,
+  agentActivitySupported: null,
   directories: {},
   recipients: {},
   directoryRequestedIds: [],
@@ -177,6 +202,28 @@ export const discussionSendRequested = createAction<[workspaceId: string, conver
 export const discussionRetryRequested = createAction<
   [workspaceId: string, messageId: string, conversationId?: string]
 >('workspaceDiscussion/retryRequested');
+export const discussionAgentActivityCapabilityReceived = createAction<
+  [context: string, supported: boolean]
+>('workspaceDiscussion/agentActivityCapabilityReceived');
+export const discussionAgentActivityReceived = createAction<
+  [target: DiscussionTarget, messageId: string, activity: DiscussionAgentActivity]
+>('workspaceDiscussion/agentActivityReceived');
+export const discussionAgentControlRequested = createAction<
+  [
+    workspaceId: string,
+    messageId: string,
+    agentId: string,
+    attempt: number,
+    operation: 'stop' | 'retry',
+    conversationId?: string,
+  ]
+>('workspaceDiscussion/agentControlRequested');
+export const discussionAgentControlStarted = createAction<
+  [target: DiscussionTarget, control: AgentControl]
+>('workspaceDiscussion/agentControlStarted');
+export const discussionAgentControlFinished = createAction<
+  [target: DiscussionTarget, key: string, requestId: string, error: DiscussionError | null]
+>('workspaceDiscussion/agentControlFinished');
 export const discussionAgentCapabilityReceived = createAction<
   [context: string, supported: boolean]
 >('workspaceDiscussion/agentCapabilityReceived');
@@ -329,6 +376,43 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
         reactions: update.reactions,
         reactionVersion: update.reactionVersion,
       });
+    const existingMessage = merged.get(message.id) ?? message;
+    const metadataAdded =
+      (existingMessage.recipientAgentIds === undefined &&
+        message.recipientAgentIds !== undefined) ||
+      (existingMessage.agentMentions === undefined && message.agentMentions !== undefined);
+    const currentActivityMessage = metadataAdded
+      ? {
+          ...existingMessage,
+          ...(existingMessage.recipientAgentIds === undefined
+            ? { recipientAgentIds: message.recipientAgentIds }
+            : {}),
+          ...(existingMessage.agentMentions === undefined
+            ? { agentMentions: message.agentMentions }
+            : {}),
+        }
+      : existingMessage;
+    let activityChanged =
+      currentActivityMessage.agentActivity === undefined && message.agentActivity !== undefined;
+    const activities = new Map(
+      (currentActivityMessage.agentActivity ?? []).map((a) => [a.agentId, a]),
+    );
+    const updates = getItems(row.activityUpdates)
+      .filter((a) => a.messageId === message.id)
+      .map((a) => a.activity);
+    for (const activity of [...(message.agentActivity ?? []), ...updates]) {
+      if (!currentActivityMessage.recipientAgentIds?.includes(activity.agentId)) continue;
+      const old = activities.get(activity.agentId);
+      if (!old || (activity.version > old.version && activity.attempt >= old.attempt)) {
+        activities.set(activity.agentId, activity);
+        activityChanged = true;
+      }
+    }
+    if (activityChanged || metadataAdded)
+      merged.set(message.id, {
+        ...currentActivityMessage,
+        agentActivity: [...activities.values()],
+      });
   }
   return {
     ...row,
@@ -346,6 +430,8 @@ function interrupted(row: WorkspaceDiscussion): WorkspaceDiscussion {
     requestId: null,
     sending: false,
     reacting: [],
+    agentControls: createCollection('key'),
+    agentControlError: null,
     metadataBefore: null,
     metadataFloor: null,
     pending: createCollection(
@@ -377,6 +463,7 @@ workspaceDiscussionReducer.with(
       sharingEnabled: null,
       messageActionsSupported: null,
       agentMessagingSupported: null,
+      agentActivitySupported: null,
       directories: {},
       recipients: {},
       byWorkspaceId: Object.fromEntries(
@@ -503,7 +590,7 @@ workspaceDiscussionReducer.with(
             start: start + prefix.length,
             end: start + prefix.length + token.length,
           },
-        ],
+        ].sort((a, b) => a.start - b.start),
       },
     );
   },
@@ -659,7 +746,8 @@ function failSend(
     unsupported:
       row.unsupported ||
       (error === 'unsupported' &&
-        !getItems(row.pending).find((m) => m.id === messageId)?.recipientAgentIds?.length),
+        !getItems(row.pending).find((m) => m.id === messageId)?.recipientAgentIds?.length &&
+        getItems(row.pending).find((m) => m.id === messageId)?.sentAgentMentions === undefined),
   };
 }
 workspaceDiscussionReducer.with(
@@ -711,6 +799,9 @@ workspaceDiscussionReducer.with(
           conversation.id !== message.conversationId ||
           conversation.id === DEFAULT_DISCUSSION_ID
         : !matches(target, message)) ||
+      (sent.sentAgentMentions !== undefined &&
+        JSON.stringify(sent.sentAgentMentions.map((m) => [m.agentId, m.name, m.start, m.end])) !==
+          JSON.stringify(message.agentMentions?.map((m) => [m.agentId, m.name, m.start, m.end]))) ||
       sent.body !== message.body ||
       message.author.agentId !== undefined ||
       JSON.stringify([...(sent.recipientAgentIds ?? [])].sort()) !==
@@ -1200,6 +1291,78 @@ workspaceDiscussionReducer.with(
       ...receive(row, messages),
       metadataBefore: before,
       metadataFloor: floor,
+    });
+  },
+);
+
+workspaceDiscussionReducer.with(
+  discussionAgentActivityCapabilityReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, agentActivitySupported: supported } : state,
+);
+workspaceDiscussionReducer.with(
+  discussionAgentActivityReceived,
+  (state, { payload: [target, messageId, activity] }) => {
+    const row = current(state, target);
+    if (
+      !row ||
+      !row.authorized ||
+      (target.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+      state.agentActivitySupported !== true ||
+      !isDiscussionAgentActivity(activity)
+    )
+      return state;
+    const message = getItem(row.messages, messageId);
+    if (message && !message.recipientAgentIds?.includes(activity.agentId)) return state;
+    const key = discussionAgentControlKey(messageId, activity.agentId);
+    const previous = getItem(row.activityUpdates, key)?.activity;
+    const projected = message?.agentActivity?.find((a) => a.agentId === activity.agentId);
+    if (
+      [previous, projected].some(
+        (a) => a && (a.version >= activity.version || a.attempt > activity.attempt),
+      )
+    )
+      return state;
+    const updates = getItems(row.activityUpdates).filter((a) => a.key !== key);
+    // Unknown-message events may precede history; bound that cache. Loaded messages keep their projection.
+    const updated = {
+      ...row,
+      activityUpdates: createCollection(
+        'key',
+        [...updates, { key, messageId, activity }].slice(-500),
+      ),
+    };
+    return set(state, target, receive(updated, getItems(row.messages)));
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionAgentControlStarted,
+  (state, { payload: [target, control] }) => {
+    const row = current(state, target);
+    if (!row || getItem(row.agentControls, control.key)) return state;
+    return set(state, target, {
+      ...row,
+      agentControlError: null,
+      agentControls: createCollection('key', [...getItems(row.agentControls), control]),
+    });
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionAgentControlFinished,
+  (state, { payload: [target, key, requestId, error] }) => {
+    const row = current(state, target);
+    const control = row ? getItem(row.agentControls, key) : undefined;
+    if (!row || !control || control.requestId !== requestId) return state;
+    const activity = getItem(row.messages, control.messageId)?.agentActivity?.find(
+      (a) => a.agentId === control.agentId,
+    );
+    return set(state, target, {
+      ...row,
+      agentControlError: activity?.attempt === control.attempt ? error : null,
+      agentControls: createCollection(
+        'key',
+        getItems(row.agentControls).filter((c) => c.key !== key),
+      ),
     });
   },
 );

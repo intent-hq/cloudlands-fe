@@ -1,10 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { discussionAgentIds, reconcileDiscussionAgentMentions } from './discussion-agent-mentions';
+import {
+  discussionAgentIds,
+  discussionAgentMentionParts,
+  reconcileDiscussionAgentMentions,
+} from './discussion-agent-mentions';
 
 const mention = { agentId: 'agent-a', name: 'Reviewer', start: 3, end: 12 };
 const body = 'Hi @Reviewer check this';
 
 describe('explicit discussion agent selections', () => {
+  it('distinguishes a selected mention from identical plain text without losing text', () => {
+    const text = '🙂 @Reviewer and @Reviewer';
+    const parts = discussionAgentMentionParts(text, [{ ...mention, start: 3, end: 12 }]);
+    expect(parts).toEqual([
+      { text: '🙂 ' },
+      { text: '@Reviewer', agentId: 'agent-a' },
+      { text: ' and @Reviewer' },
+    ]);
+    expect(parts.map((part) => part.text).join('')).toBe(text);
+    expect(discussionAgentMentionParts(text, [])).toEqual([{ text }]);
+  });
+  it('rejects stale, overlapping, and out-of-range mention spans', () => {
+    expect(discussionAgentMentionParts(body, [mention, mention, { ...mention, end: 99 }])).toEqual([
+      { text: 'Hi ' },
+      { text: '@Reviewer', agentId: 'agent-a' },
+      { text: ' check this' },
+    ]);
+    expect(discussionAgentMentionParts('Hi @Review check this', [mention])).toEqual([
+      { text: 'Hi @Review check this' },
+    ]);
+  });
   it('preserves selected tokens through surrounding edits', () => {
     expect(reconcileDiscussionAgentMentions(body, `Please ${body}`, [mention])).toEqual([
       { ...mention, start: 10, end: 19 },

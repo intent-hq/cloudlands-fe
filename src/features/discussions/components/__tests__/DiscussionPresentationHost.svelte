@@ -38,6 +38,8 @@
         body: 'The newly arrived message.',
         author,
         createdAt: '2026-10-16T13:00:00Z',
+        replyToMessageId: messages[0].id,
+        replyTo: { id: messages[0].id, author, body: messages[0].body },
       },
     ];
   }
@@ -60,6 +62,8 @@
     onRetry={() => {}}
     onLoadOlder={() => {}}
     onReply={(message) => (reply = message)}
+    replyTo={reply}
+    onCancelReply={() => (reply = undefined)}
     onCopyMessage={(message) => (copied = message.body)}
     onReaction={(id, emoji) => {
       const prior = reactions[id]?.find((r) => r.emoji === emoji);
@@ -76,11 +80,7 @@
       retried = id;
       pending = pending.map((p) => ({ ...p, status: 'sending' }));
     }}
-  >
-    {#snippet composerContext()}{#if reply}<p data-reply-target>
-          {reply.id}: {reply.body}
-        </p>{/if}{/snippet}
-  </DiscussionThread>
+  />
 </div>
 <Button onclick={arrive}>Receive new message</Button>
 <Button
@@ -106,3 +106,4 @@
 <output data-copied>{copied}</output><output data-read-through>{readThrough}</output><output
   data-retried>{retried}</output
 >
+<output data-reply-target>{reply?.id}</output>

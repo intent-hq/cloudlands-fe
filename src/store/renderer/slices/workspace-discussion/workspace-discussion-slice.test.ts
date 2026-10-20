@@ -3,6 +3,10 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { DiscussionMessage } from '$shared/types/workspace-discussion';
 import {
   initialState,
+  discussionAgentActivityCapabilityReceived,
+  discussionAgentActivityReceived,
+  discussionAgentControlStarted,
+  discussionAgentControlFinished,
   discussionAgentSelected,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
@@ -52,6 +56,103 @@ const pending = {
 };
 
 describe('workspace discussion reducer', () => {
+  it('keeps agent progress independent across messages, recipients and stale control lifetimes', () => {
+    const { target, state: initial } = setup();
+    let state = initial;
+    state = reduce(state, discussionAgentActivityCapabilityReceived(target.context, true));
+    const activity = {
+      agentId: 'agent-a',
+      attempt: 1,
+      version: 1,
+      state: 'working' as const,
+      updatedAt: '2026-10-20T00:00:00Z',
+      error: null,
+    };
+    const first = {
+      ...message(1),
+      recipientAgentIds: ['agent-a', 'agent-b'],
+      agentActivity: [activity, { ...activity, agentId: 'agent-b' }],
+    };
+    state = reduce(state, discussionMessageReceived(target, first));
+    state = reduce(
+      state,
+      discussionMessageReceived(target, {
+        ...message(2),
+        recipientAgentIds: ['agent-a'],
+        agentActivity: [activity],
+      }),
+    );
+    const key = JSON.stringify([first.id, activity.agentId]);
+    const control = {
+      key,
+      messageId: first.id,
+      agentId: activity.agentId,
+      requestId: 'first',
+      attempt: 1,
+    };
+    state = reduce(state, discussionAgentControlStarted(target, control));
+    state = reduce(
+      state,
+      discussionAgentActivityReceived(target, first.id, {
+        ...activity,
+        attempt: 2,
+        version: 3,
+        state: 'queued',
+      }),
+    );
+    state = reduce(state, discussionAgentControlFinished(target, key, 'first', 'unknown'));
+    expect(state.byWorkspaceId.ws.default.agentControlError).toBeNull();
+    state = reduce(
+      state,
+      discussionAgentControlStarted(target, { ...control, requestId: 'second', attempt: 2 }),
+    );
+    const unchanged = reduce(
+      state,
+      discussionAgentControlFinished(target, key, 'first', 'forbidden'),
+    );
+    expect(unchanged).toBe(state);
+    const rows = getItems(state.byWorkspaceId.ws.default.messages);
+    expect(rows[0].agentActivity?.map((a) => [a.agentId, a.attempt])).toEqual([
+      ['agent-a', 2],
+      ['agent-b', 1],
+    ]);
+    expect(rows[1].agentActivity).toEqual([activity]);
+    expect(state.byWorkspaceId.ws.default.syncedSequence).toBeNull();
+  });
+  it('bounds unknown-message activity and rejects events from a prior admission or unaddressed agent', () => {
+    const { target, state: initial } = setup();
+    let state = initial;
+    state = reduce(state, discussionAgentActivityCapabilityReceived(target.context, true));
+    const activity = {
+      agentId: 'agent-a',
+      attempt: 1,
+      version: 1,
+      state: 'working' as const,
+      updatedAt: '2026-10-20T00:00:00Z',
+      error: null,
+    };
+    for (let i = 0; i < 510; i++)
+      state = reduce(state, discussionAgentActivityReceived(target, `message-${i}`, activity));
+    expect(getItems(state.byWorkspaceId.ws.default.activityUpdates)).toHaveLength(500);
+    state = reduce(
+      state,
+      discussionMessageReceived(target, {
+        ...message(1),
+        recipientAgentIds: [],
+        agentActivity: [],
+      }),
+    );
+    expect(reduce(state, discussionAgentActivityReceived(target, 'server-1', activity))).toBe(
+      state,
+    );
+    state = reduce(state, discussionContextChanged('connection-2', 'owner-1'));
+    expect(
+      reduce(
+        state,
+        discussionAgentActivityReceived(target, 'message-509', { ...activity, version: 2 }),
+      ),
+    ).toBe(state);
+  });
   it('keeps explicit selections per conversation and removes them with edited tokens or account changes', () => {
     let { state } = setup();
     state = reduce(state, discussionAgentCapabilityReceived('connection-1', true));

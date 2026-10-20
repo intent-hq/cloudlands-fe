@@ -8,6 +8,11 @@ import {
   isDiscussionAuthor,
   hasDiscussionMessageActions,
   hasDiscussionAgentMessaging,
+  hasDiscussionAgentActivity,
+  hasDiscussionAgentMentions,
+  isDiscussionAgentActivity,
+  type DiscussionAgentActivity,
+  type DiscussionAgentControlParams,
   isDiscussionReactionResult,
   type DiscussionReactParams,
   type DiscussionReactionResult,
@@ -40,6 +45,43 @@ function requireConversations(supported: boolean): void {
 const pageLimit = (limit?: number) =>
   Math.min(DISCUSSION_PAGE_SIZE, Math.max(1, limit ?? DISCUSSION_PAGE_SIZE));
 export const workspaceDiscussionClient = {
+  async supportsAgentActivity(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionAgentActivity?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionAgentActivity === 1;
+    } catch {
+      return false;
+    }
+  },
+  async controlAgent(
+    operation: 'stop' | 'retry',
+    params: DiscussionAgentControlParams,
+    supported = false,
+  ): Promise<{ activity: DiscussionAgentActivity }> {
+    requireConversations(supported);
+    if (
+      (params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+      !params.messageId ||
+      !params.agentId ||
+      !Number.isSafeInteger(params.attempt) ||
+      params.attempt < 1
+    )
+      throw new Error('Invalid discussion agent control');
+    const result = await backendRequest<{ activity: DiscussionAgentActivity }>(
+      operation === 'stop' ? 'discussion.stopAgent' : 'discussion.retryAgent',
+      params,
+    );
+    if (
+      !isDiscussionAgentActivity(result?.activity) ||
+      result.activity.agentId !== params.agentId ||
+      result.activity.attempt < params.attempt
+    )
+      throw new Error('Invalid discussion agent activity response');
+    return result;
+  },
   async supportsAgentMessaging(): Promise<boolean> {
     try {
       const result = await backendRequest<{ discussionAgentMessaging?: unknown }>(
@@ -85,6 +127,7 @@ export const workspaceDiscussionClient = {
     supported = false,
     actionsSupported = false,
     agentsSupported = false,
+    activitySupported = false,
   ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
@@ -104,6 +147,8 @@ export const workspaceDiscussionClient = {
           isDiscussionMessage(message) &&
           (!actionsSupported || hasDiscussionMessageActions(message)) &&
           (!agentsSupported || hasDiscussionAgentMessaging(message)) &&
+          (!activitySupported ||
+            (hasDiscussionAgentActivity(message) && hasDiscussionAgentMentions(message))) &&
           message.workspaceId === params.workspaceId &&
           (message.conversationId ?? DEFAULT_DISCUSSION_ID) === id &&
           (params.beforeSequence === undefined || message.sequence < params.beforeSequence) &&
@@ -130,7 +175,18 @@ export const workspaceDiscussionClient = {
     supported = false,
     actionsSupported = false,
     agentsSupported = false,
+    activitySupported = false,
   ): Promise<DiscussionSendResult> {
+    if (params.agentMentions !== undefined) {
+      requireConversations(activitySupported);
+      if (
+        !hasDiscussionAgentMentions({
+          ...params,
+          recipientAgentIds: params.recipientAgentIds ?? [],
+        })
+      )
+        throw new Error('Invalid discussion agent mentions');
+    }
     if (params.recipientAgentIds !== undefined) {
       requireConversations(agentsSupported);
       if (
@@ -152,6 +208,16 @@ export const workspaceDiscussionClient = {
       !isDiscussionMessage(result?.message) ||
       (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
       (agentsSupported && !hasDiscussionAgentMessaging(result?.message)) ||
+      (activitySupported &&
+        (!hasDiscussionAgentActivity(result?.message) ||
+          !hasDiscussionAgentMentions(result?.message))) ||
+      (activitySupported &&
+        JSON.stringify(
+          (result?.message?.agentMentions ?? []).map((m) => [m.agentId, m.name, m.start, m.end]),
+        ) !==
+          JSON.stringify(
+            (params.agentMentions ?? []).map((m) => [m.agentId, m.name, m.start, m.end]),
+          )) ||
       result.message.author.agentId !== undefined ||
       JSON.stringify([...(result.message.recipientAgentIds ?? [])].sort()) !==
         JSON.stringify([...(params.recipientAgentIds ?? [])].sort()) ||

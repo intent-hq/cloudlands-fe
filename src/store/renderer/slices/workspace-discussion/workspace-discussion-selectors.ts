@@ -263,3 +263,21 @@ export const selectDiscussionAgentMessagingSupported = store.createSelector((sta
     ? state.workspaceDiscussion.agentMessagingSupported
     : null,
 );
+
+export const selectDiscussionAgentActivitySupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.agentActivitySupported
+    : null,
+);
+export const selectDiscussionCanControlAgent = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    conversationId === DEFAULT_DISCUSSION_ID &&
+    selectDiscussionAgentActivitySupported.select(state) === true &&
+    selectDiscussionCanSend.select(state, workspaceId, conversationId),
+);
+export const selectDiscussionAgentControlPending = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    getItems(
+      selectWorkspaceDiscussion.select(state, workspaceId, conversationId).agentControls,
+    ).map((c) => c.key),
+);

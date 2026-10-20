@@ -1,9 +1,31 @@
+import type { DiscussionAgentMention } from '$shared/types/workspace-discussion';
+
 /** Only explicit picker selections create delivery targets. Text alone never does. */
-export interface DiscussionAgentMention {
-  agentId: string;
-  name: string;
-  start: number;
-  end: number;
+export type { DiscussionAgentMention } from '$shared/types/workspace-discussion';
+
+/** Highlight only intact, explicitly selected spans; ordinary @text stays ordinary. */
+export function discussionAgentMentionParts(
+  body: string,
+  mentions: readonly DiscussionAgentMention[],
+): { text: string; agentId?: string }[] {
+  const parts: { text: string; agentId?: string }[] = [];
+  let position = 0;
+  for (const mention of [...mentions].sort((a, b) => a.start - b.start)) {
+    if (
+      !Number.isSafeInteger(mention.start) ||
+      !Number.isSafeInteger(mention.end) ||
+      mention.start < position ||
+      mention.end > body.length ||
+      mention.end <= mention.start ||
+      body.slice(mention.start, mention.end) !== `@${mention.name}`
+    )
+      continue;
+    if (mention.start > position) parts.push({ text: body.slice(position, mention.start) });
+    parts.push({ text: body.slice(mention.start, mention.end), agentId: mention.agentId });
+    position = mention.end;
+  }
+  if (position < body.length) parts.push({ text: body.slice(position) });
+  return parts;
 }
 
 /** Keep only untouched selected tokens, shifting them when surrounding text changes. */
