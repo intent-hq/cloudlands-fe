@@ -22,8 +22,13 @@ import {
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
   clearWorkspaceInitializationOutcome,
+  clearWorkspaceInitializationResume,
   workspaceInitializationFinished,
+  workspaceInitializationPrepared,
   workspaceInitializationRequested,
+  workspaceInitializationResumeRequested,
+  workspaceInitializationResumeStored,
+  workspaceInitializationSubmitted,
   workspaceInitializerDraftClearFinished,
   workspaceInitializerDraftClearRequested,
   workspaceInitializerDraftOwnerReleased,
@@ -558,6 +563,67 @@ describe('workspaceInitializerReducer', () => {
     ).toEqual([]);
   });
 
+  it('correlates submitted preparation and retained resume state', () => {
+    const consumer = { id: 'compact-form', resourceId: 'attempt-3' };
+    const retained = {
+      id: consumer.id,
+      request: {
+        entrypoint: 'compact' as const,
+        admission: 'host/member',
+        agentTitle: 'General',
+        coordinator: false,
+        stagedItems: [],
+        lastSubmittedAgent: {},
+      },
+    };
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializationResumeStored(retained),
+    );
+    expect(getItem(state.initializationResumes, consumer.id)).toEqual(retained);
+
+    const submitted = workspaceInitializationSubmitted(
+      { entrypoint: 'compact', admission: 'host/member' } as Parameters<
+        typeof workspaceInitializationSubmitted
+      >[0],
+      consumer,
+    );
+    state = workspaceInitializerReducer(state, submitted);
+    expect(getItem(state.initializationResumes, consumer.id)).toBeUndefined();
+    expect(getItem(state.initializationOutcomes, consumer.id)).toEqual({
+      ...consumer,
+      seq: submitted.seq,
+      entrypoint: 'compact',
+      status: 'pending',
+    });
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializationPrepared(consumer.id, submitted.seq, {
+        pull: true,
+        specialistId: 'developer',
+      }),
+    );
+    expect(getItem(state.initializationOutcomes, consumer.id)?.prepared).toEqual({
+      pull: true,
+      specialistId: 'developer',
+    });
+
+    state = workspaceInitializerReducer(state, workspaceInitializationResumeStored(retained));
+    const resume = workspaceInitializationResumeRequested(
+      { entrypoint: 'compact', admission: 'host/member', stagedItems: [] },
+      consumer,
+    );
+    state = workspaceInitializerReducer(state, resume);
+    expect(getItem(state.initializationResumes, consumer.id)).toEqual(retained);
+    expect(getItem(state.initializationOutcomes, consumer.id)).toMatchObject({
+      seq: resume.seq,
+      status: 'pending',
+    });
+    state = workspaceInitializerReducer(state, clearWorkspaceInitializationResume(consumer.id));
+    expect(getItem(state.initializationResumes, consumer.id)).toBeUndefined();
+  });
+
   it('correlates draft restore completion and releases only the active request', () => {
     let state = workspaceInitializerReducer(
       initialState,
@@ -595,7 +661,7 @@ describe('workspaceInitializerReducer', () => {
   it('correlates draft clear completion and rejects stale results', () => {
     let state = workspaceInitializerReducer(
       initialState,
-      workspaceInitializerDraftClearRequested('onboarding', 'clear-2'),
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-2', 'restore-2'),
     );
     state = workspaceInitializerReducer(
       state,
@@ -610,8 +676,36 @@ describe('workspaceInitializerReducer', () => {
     expect(getItem(state.draftClears, 'onboarding')).toEqual({
       id: 'onboarding',
       requestId: 'clear-2',
+      ownerRequestId: 'restore-2',
       status: 'failure',
     });
+  });
+
+  it("keeps a replacement owner's clear outcome when an older owner releases", () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializerDraftClearRequested('compact', 'clear-new', 'restore-new'),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftClearFinished('compact', 'clear-new', 'success'),
+    );
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftOwnerReleased('compact', 'restore-old'),
+    );
+    expect(getItem(state.draftClears, 'compact')).toMatchObject({
+      requestId: 'clear-new',
+      ownerRequestId: 'restore-new',
+      status: 'success',
+    });
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftOwnerReleased('compact', 'restore-new'),
+    );
+    expect(getItem(state.draftClears, 'compact')).toBeUndefined();
   });
 });
 

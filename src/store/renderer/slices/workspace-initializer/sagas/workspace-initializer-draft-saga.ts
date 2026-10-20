@@ -9,6 +9,7 @@ import {
   NEW_WORKSPACE_DRAFT_AGENT_ID,
   NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
 } from '$lib/components/workspace/initializer/new-workspace-draft';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import {
   workspaceInitializerDraftClearFinished,
   workspaceInitializerDraftClearRequested,
@@ -35,13 +36,64 @@ type DraftAction =
   | ReturnType<typeof workspaceInitializerDraftFlushRequested>
   | ReturnType<typeof workspaceInitializerDraftSaveCancelled>
   | ReturnType<typeof workspaceInitializerDraftClearRequested>
-  | ReturnType<typeof workspaceInitializerDraftOwnerReleased>;
+  | ReturnType<typeof workspaceInitializerDraftOwnerReleased>
+  | ReturnType<typeof hostExecutionConnectionChanged>;
+
+type RestoreStatus = 'pending' | 'restored' | 'empty' | 'error';
+
+/** A mounted restore owner, bound to the admission it was restored under. */
+interface DraftOwner {
+  requestId: string;
+  admission: string;
+  status: RestoreStatus;
+  task?: Task;
+}
+
+type DraftOwners = Record<string, DraftOwner | undefined>;
 
 interface PendingSave {
   payload: WorkspaceInitializerDraftPayload;
   version: number;
-  ownerRequestId: string | undefined;
-  admission: string | undefined;
+  ownerRequestId: string;
+  admission: string;
+}
+
+// Daemon writes are serialized across saga lifetimes: a write issued by a
+// cancelled root still gates the first write of its replacement.
+let writeTail: Promise<void> = Promise.resolve();
+
+function* serializedWrite(write: () => Promise<unknown>) {
+  const prior = writeTail;
+  let release!: () => void;
+  writeTail = new Promise<void>((done) => {
+    release = done;
+  });
+  let issued: Promise<unknown> | undefined;
+  try {
+    yield* call(() => prior);
+    issued = write();
+    yield* call(() => issued);
+  } finally {
+    if (issued) issued.then(release, release);
+    else void prior.then(release);
+  }
+}
+
+function* currentAdmission() {
+  return (yield* selectPrincipalActionContext.effect()) ?? undefined;
+}
+
+/** Fail closed: an owner action needs its live request and unchanged, current admission. */
+function* ownerAdmitted(
+  owners: DraftOwners,
+  id: string,
+  requestId: string | undefined,
+  admission: string | undefined,
+) {
+  const owner = owners[id];
+  if (!owner || requestId === undefined || admission === undefined) return false;
+  if (owner.requestId !== requestId || owner.admission !== admission) return false;
+  return (yield* currentAdmission()) === admission;
 }
 
 function removeLegacyKey(key: string): void {
@@ -74,12 +126,13 @@ function* draftDebounceTimer(id: string, version: number) {
 
 function* persistDraft(payload: WorkspaceInitializerDraftPayload) {
   try {
-    yield* call(
-      [appClient.drafts, appClient.drafts.set],
-      NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
-      NEW_WORKSPACE_DRAFT_AGENT_ID,
-      payload.text,
-      payload.attachments,
+    yield* call(serializedWrite, () =>
+      appClient.drafts.set(
+        NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+        NEW_WORKSPACE_DRAFT_AGENT_ID,
+        payload.text,
+        payload.attachments,
+      ),
     );
   } catch (error) {
     logger.warn('drafts.set failed; draft kept in memory only', { error: String(error) });
@@ -87,12 +140,13 @@ function* persistDraft(payload: WorkspaceInitializerDraftPayload) {
 }
 
 function* restoreDraft(
+  owners: DraftOwners,
   id: string,
   requestId: string,
   legacyKey: string,
   restoreEpoch: number,
   mutationEpoch: { value: number },
-  admission: string | undefined,
+  admission: string,
 ) {
   try {
     const draft = yield* call(
@@ -100,6 +154,11 @@ function* restoreDraft(
       NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
       NEW_WORKSPACE_DRAFT_AGENT_ID,
     );
+    // A reply read under a replaced authority must not publish or touch legacy data.
+    if (!(yield* ownerAdmitted(owners, id, requestId, admission))) {
+      yield* put(workspaceInitializerDraftRestoreFinished(id, requestId, 'error', '', []));
+      return 'error' as const;
+    }
     if (draft) {
       yield* call(removeLegacyKey, legacyKey);
       yield* put(
@@ -144,17 +203,17 @@ function* restoreDraft(
 }
 
 function* restoreDraftInBackground(
+  owners: DraftOwners,
   id: string,
   requestId: string,
   legacyKey: string,
-  activeRestoreRequestIds: Record<string, string | undefined>,
-  restoreStatuses: Record<string, 'pending' | 'restored' | 'empty' | 'error' | undefined>,
   restoreEpoch: number,
   mutationEpoch: { value: number },
-  admission: string | undefined,
+  admission: string,
 ) {
   const status = yield* call(
     restoreDraft,
+    owners,
     id,
     requestId,
     legacyKey,
@@ -162,7 +221,18 @@ function* restoreDraftInBackground(
     mutationEpoch,
     admission,
   );
-  if (activeRestoreRequestIds[id] === requestId) restoreStatuses[id] = status;
+  const owner = owners[id];
+  if (owner?.requestId === requestId) owner.status = status;
+}
+
+/** Empty saves before a settled read could erase a draft that was never seen. */
+function canPersist(owner: DraftOwner | undefined, payload: WorkspaceInitializerDraftPayload) {
+  return (
+    !!payload.text ||
+    !!payload.attachments?.length ||
+    owner?.status === 'restored' ||
+    owner?.status === 'empty'
+  );
 }
 
 export function* workspaceInitializerDraftSaga() {
@@ -176,37 +246,58 @@ export function* workspaceInitializerDraftSaga() {
       workspaceInitializerDraftSaveCancelled,
       workspaceInitializerDraftClearRequested,
       workspaceInitializerDraftOwnerReleased,
+      hostExecutionConnectionChanged,
     ],
     buffers.expanding(),
   );
   let pending: Record<string, PendingSave | undefined> = {};
-  const restoreStatuses: Record<string, 'pending' | 'restored' | 'empty' | 'error' | undefined> =
-    {};
-  const restoreTasks: Record<string, Task | undefined> = {};
-  const activeRestoreRequestIds: Record<string, string | undefined> = {};
-  const stoppedOwners = new Set<string>();
+  const owners: DraftOwners = {};
   let version = 0;
   const mutationEpoch = { value: 0 };
+
+  function* dropOwner(id: string) {
+    const owner = owners[id];
+    if (owner?.task) yield* cancel(owner.task);
+    delete owners[id];
+    delete pending[id];
+  }
+
+  function* flushPending(id: string) {
+    const save = pending[id];
+    if (!save) return;
+    delete pending[id];
+    if (!(yield* ownerAdmitted(owners, id, save.ownerRequestId, save.admission))) return;
+    if (!canPersist(owners[id], save.payload)) return;
+    yield* call(persistDraft, save.payload);
+  }
 
   try {
     while (true) {
       const action = (yield* take(channel)) as DraftAction;
+      if (action.type === hostExecutionConnectionChanged.type) {
+        for (const id of Object.keys(owners)) yield* call(dropOwner, id);
+        pending = {};
+        mutationEpoch.value++;
+        continue;
+      }
+
       if (action.type === workspaceInitializerDraftRestoreRequested.type) {
         const [id, requestId, legacyKey, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftRestoreRequested>
         ).payload;
-        const previousRestore = restoreTasks[id];
-        if (previousRestore) yield* cancel(previousRestore);
-        stoppedOwners.delete(id);
-        activeRestoreRequestIds[id] = requestId;
-        restoreStatuses[id] = 'pending';
-        restoreTasks[id] = yield* fork(
+        if (admission === undefined || (yield* currentAdmission()) !== admission) {
+          yield* put(workspaceInitializerDraftRestoreFinished(id, requestId, 'error', '', []));
+          continue;
+        }
+        yield* call(dropOwner, id);
+        const owner: DraftOwner = { requestId, admission, status: 'pending' };
+        owners[id] = owner;
+        owner.task = yield* fork(
           restoreDraftInBackground,
+          owners,
           id,
           requestId,
           legacyKey,
-          activeRestoreRequestIds,
-          restoreStatuses,
           mutationEpoch.value,
           mutationEpoch,
           admission,
@@ -219,9 +310,8 @@ export function* workspaceInitializerDraftSaga() {
           action as ReturnType<typeof workspaceInitializerDraftLegacyMigrationRequested>
         ).payload;
         if (
-          activeRestoreRequestIds[id] !== requestId ||
           mutationEpoch.value !== restoreEpoch ||
-          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+          !(yield* ownerAdmitted(owners, id, requestId, admission))
         )
           continue;
         mutationEpoch.value++;
@@ -234,19 +324,14 @@ export function* workspaceInitializerDraftSaga() {
           action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>
         ).payload;
         if (
-          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
+          ownerRequestId === undefined ||
+          admission === undefined ||
+          !(yield* ownerAdmitted(owners, id, ownerRequestId, admission))
         )
           continue;
-        if (stoppedOwners.has(id)) continue;
         mutationEpoch.value++;
         const nextVersion = ++version;
-        pending[id] = {
-          payload,
-          version: nextVersion,
-          ownerRequestId,
-          admission,
-        };
+        pending[id] = { payload, version: nextVersion, ownerRequestId, admission };
         yield* fork(draftDebounceTimer, id, nextVersion);
         continue;
       }
@@ -255,27 +340,8 @@ export function* workspaceInitializerDraftSaga() {
         const [id, elapsedVersion] = (
           action as ReturnType<typeof workspaceInitializerDraftSaveDebounceElapsed>
         ).payload;
-        const save = pending[id];
-        if (!save || save.version !== elapsedVersion || stoppedOwners.has(id)) continue;
-        if (
-          (save.ownerRequestId !== undefined &&
-            activeRestoreRequestIds[id] !== save.ownerRequestId) ||
-          (save.admission !== undefined &&
-            (yield* selectPrincipalActionContext.effect()) !== save.admission)
-        ) {
-          delete pending[id];
-          continue;
-        }
-        delete pending[id];
-        const status = restoreStatuses[id];
-        if (
-          !save.payload.text &&
-          !save.payload.attachments?.length &&
-          status !== 'restored' &&
-          status !== 'empty'
-        )
-          continue;
-        yield* call(persistDraft, save.payload);
+        if (pending[id]?.version !== elapsedVersion) continue;
+        yield* call(flushPending, id);
         continue;
       }
 
@@ -283,45 +349,22 @@ export function* workspaceInitializerDraftSaga() {
         const [id, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftFlushRequested>
         ).payload;
-        if (
-          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
-        )
-          continue;
-        const save = pending[id];
-        if (!save || stoppedOwners.has(id)) continue;
-        if (
-          (save.ownerRequestId !== undefined &&
-            activeRestoreRequestIds[id] !== save.ownerRequestId) ||
-          (save.admission !== undefined &&
-            (yield* selectPrincipalActionContext.effect()) !== save.admission)
-        ) {
-          delete pending[id];
+        if (!(yield* ownerAdmitted(owners, id, ownerRequestId, admission))) {
+          if (pending[id] && owners[id]?.requestId !== pending[id]?.ownerRequestId)
+            delete pending[id];
           continue;
         }
-        delete pending[id];
-        const status = restoreStatuses[id];
-        if (
-          !save.payload.text &&
-          !save.payload.attachments?.length &&
-          status !== 'restored' &&
-          status !== 'empty'
-        )
-          continue;
-        yield* call(persistDraft, save.payload);
+        yield* call(flushPending, id);
         continue;
       }
 
       if (action.type === workspaceInitializerDraftSaveCancelled.type) {
-        const [id, ownerRequestId, admission] = (
+        const [id, ownerRequestId] = (
           action as ReturnType<typeof workspaceInitializerDraftSaveCancelled>
         ).payload;
-        if (
-          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission)
-        )
-          continue;
-        delete pending[id];
+        // Dropping a queued write never needs authority; it only needs the owner.
+        if (ownerRequestId !== undefined && owners[id]?.requestId === ownerRequestId)
+          delete pending[id];
         continue;
       }
 
@@ -329,67 +372,59 @@ export function* workspaceInitializerDraftSaga() {
         const [id, requestId, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftClearRequested>
         ).payload;
-        const rejected =
-          (ownerRequestId !== undefined && activeRestoreRequestIds[id] !== ownerRequestId) ||
-          (admission !== undefined && (yield* selectPrincipalActionContext.effect()) !== admission);
-        if (rejected) {
+        const current = yield* currentAdmission();
+        // An ownerless clear is the root reset; it acts under the current admission.
+        const clearAdmission = ownerRequestId === undefined ? (admission ?? current) : admission;
+        const admitted =
+          ownerRequestId === undefined
+            ? current !== undefined && clearAdmission === current
+            : yield* ownerAdmitted(owners, id, ownerRequestId, admission);
+        if (!admitted || clearAdmission === undefined) {
           yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
           continue;
         }
-        stoppedOwners.add(id);
         mutationEpoch.value++;
         pending = {};
-        const admittedRestores = Object.entries(activeRestoreRequestIds).filter(
-          (entry): entry is [string, string] => entry[1] !== undefined,
-        );
-        for (const [ownerId] of admittedRestores) {
-          const restoreTask = restoreTasks[ownerId];
-          if (restoreTask) yield* cancel(restoreTask);
-          delete restoreTasks[ownerId];
-          if (ownerId !== id) restoreStatuses[ownerId] = 'pending';
+        yield* call(dropOwner, id);
+        const others: [string, string][] = [];
+        for (const [ownerId, owner] of Object.entries(owners)) {
+          if (!owner) continue;
+          if (owner.task) yield* cancel(owner.task);
+          owner.task = undefined;
+          owner.status = 'pending';
+          others.push([ownerId, owner.requestId]);
         }
-        delete activeRestoreRequestIds[id];
-        delete restoreStatuses[id];
-        yield* call(removeAllLegacyPrompts);
+        let cleared = false;
         try {
-          yield* call(
-            [appClient.drafts, appClient.drafts.clear],
-            NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
-            NEW_WORKSPACE_DRAFT_AGENT_ID,
+          yield* call(serializedWrite, () =>
+            appClient.drafts.clear(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID),
           );
-          for (const [ownerId, restoreRequestId] of admittedRestores) {
-            if (ownerId === id || activeRestoreRequestIds[ownerId] !== restoreRequestId) continue;
-            restoreStatuses[ownerId] = 'empty';
-            yield* put(
-              workspaceInitializerDraftRestoreFinished(ownerId, restoreRequestId, 'empty', '', []),
-            );
-          }
-          yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'success'));
+          cleared = (yield* currentAdmission()) === clearAdmission;
         } catch (error) {
           logger.warn('drafts.clear failed', { error: String(error) });
-          for (const [ownerId, restoreRequestId] of admittedRestores) {
-            if (ownerId === id || activeRestoreRequestIds[ownerId] !== restoreRequestId) continue;
-            restoreStatuses[ownerId] = 'error';
-            yield* put(
-              workspaceInitializerDraftRestoreFinished(ownerId, restoreRequestId, 'error', '', []),
-            );
-          }
-          yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
         }
+        // Legacy prompts are removed only after a confirmed clear under unchanged authority.
+        if (cleared) yield* call(removeAllLegacyPrompts);
+        for (const [ownerId, restoreRequestId] of others) {
+          const owner = owners[ownerId];
+          if (owner?.requestId !== restoreRequestId) continue;
+          const status = cleared && owner.admission === clearAdmission ? 'empty' : 'error';
+          owner.status = status;
+          yield* put(
+            workspaceInitializerDraftRestoreFinished(ownerId, restoreRequestId, status, '', []),
+          );
+        }
+        yield* put(
+          workspaceInitializerDraftClearFinished(id, requestId, cleared ? 'success' : 'failure'),
+        );
         continue;
       }
 
       const [id, restoreRequestId] = (
         action as ReturnType<typeof workspaceInitializerDraftOwnerReleased>
       ).payload;
-      if (activeRestoreRequestIds[id] !== restoreRequestId) continue;
-      const restoreTask = restoreTasks[id];
-      if (restoreTask) yield* cancel(restoreTask);
-      delete pending[id];
-      delete restoreStatuses[id];
-      delete restoreTasks[id];
-      delete activeRestoreRequestIds[id];
-      stoppedOwners.delete(id);
+      if (owners[id]?.requestId !== restoreRequestId) continue;
+      yield* call(dropOwner, id);
     }
   } finally {
     channel.close();

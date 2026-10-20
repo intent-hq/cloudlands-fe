@@ -83,6 +83,13 @@ export const selectWorkspaceInitializerDraftRestore = store.createSelector(
   },
 );
 
+export const selectWorkspaceInitializerDraftAuthority = store.createSelector(
+  (state, id: string) => ({
+    restore: getItem(state.workspaceInitializer.draftRestores, id),
+    clear: getItem(state.workspaceInitializer.draftClears, id),
+  }),
+);
+
 export const selectWorkspaceInitializationOutcome = store.createSelector(
   (state, consumerId: string, resourceId: string) => {
     const outcome = getItem(state.workspaceInitializer.initializationOutcomes, consumerId);
@@ -93,6 +100,11 @@ export const selectWorkspaceInitializationOutcome = store.createSelector(
 export const selectWorkspaceInitializationOutcomeForConsumer = store.createSelector(
   (state, consumerId: string) =>
     getItem(state.workspaceInitializer.initializationOutcomes, consumerId),
+);
+
+export const selectWorkspaceInitializationResume = store.createSelector(
+  (state, consumerId: string) =>
+    getItem(state.workspaceInitializer.initializationResumes, consumerId),
 );
 
 /**

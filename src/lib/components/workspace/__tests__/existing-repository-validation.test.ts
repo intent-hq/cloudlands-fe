@@ -2,6 +2,7 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
@@ -51,6 +52,9 @@ const mocks = vi.hoisted(() => {
     toastError: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
+    initializationOutcome$: writable<Partial<WorkspaceInitializationOutcome> | undefined>(
+      undefined,
+    ),
     hydrated$: writable(false),
     compactFormState$: writable<{
       selectedSpecialist?: string | null;
@@ -109,7 +113,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
-  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -292,8 +297,13 @@ describe('existing repository creation boundary (#5771)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.initializationOutcome$.set(undefined);
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create, pull: mocks.pull }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        pull: mocks.pull,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
     sessionStorage.clear();
     resetMockIpcRouter();

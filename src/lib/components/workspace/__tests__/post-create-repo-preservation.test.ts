@@ -102,6 +102,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftRestore: () => mocks.draftRestore$,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -462,10 +463,7 @@ describe('post-create repo-field preservation', () => {
         await vi.advanceTimersByTimeAsync(300);
         expect(getByRole('textbox').textContent?.trim()).toBe('');
         unmount();
-        for (const [, , text, attachments] of mocks.draftSet.mock.calls) {
-          expect(text).toBe('');
-          expect(attachments).toBeUndefined();
-        }
+        expect(mocks.draftSet).not.toHaveBeenCalled();
         expect(mocks.persistedDraft).toBeNull();
       } finally {
         finishNavigation?.();
