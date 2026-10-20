@@ -837,6 +837,16 @@ async function executeAction(
   // that same tab.
   if (!tabId && workspaceId && DEFAULT_TAB_CAPTURE_ACTIONS.has(action.action)) {
     tabId = await defaultCaptureTabId(workspaceId, deadline);
+    // Fail closed for agents: without a resolved target the capture service
+    // would pick its own first tab later, one the ownership check never saw.
+    if (!tabId && agentId) {
+      return {
+        action: action.action,
+        success: false,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `No browser tab to capture in workspace ${workspaceId}: the tab list is unavailable or empty. Pass the tabId of a tab you own (see { action: "listTabs", scope: "mine" }) and retry.`,
+      };
+    }
   }
 
   // Ownership enforcement (monorepo#2857): resolve the tab the action will

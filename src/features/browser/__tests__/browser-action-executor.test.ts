@@ -1379,9 +1379,17 @@ describe('browser-action-executor', () => {
 
   describe('capture workspace boundaries', () => {
     it('routes protocol-shaped snapshot requests through the trusted workspace context', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(browserCapture.snapshot).mockResolvedValueOnce({
         captureId: 'example.test/snap',
       } as any);
+      // The tab-less snapshot captures the workspace's default tab, which
+      // the calling agent owns.
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({
+        tabs: [{ tabId: 'tab-own', webContentsId: 3, mounted: true, url: '', title: '' }],
+        stale: false,
+      } as any);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
 
       const result = await executeActions(
         { actions: [{ action: 'snapshot', name: 'snap' }] },
@@ -1391,9 +1399,10 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.resolveTabOwner).toHaveBeenCalledWith('tab-own', 'workspace-a');
       expect(browserCapture.snapshot).toHaveBeenCalledWith({
         workspaceId: 'workspace-a',
-        tabId: undefined,
+        tabId: 'tab-own',
         name: 'snap',
         reload: undefined,
         waitFor: undefined,
@@ -1611,6 +1620,40 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
       expect(browserCapture.snapshot).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['the tab list fails', () => Promise.reject(new Error('renderer did not respond'))],
+      ['the workspace has no tabs', () => Promise.resolve({ tabs: [], stale: false })],
+    ])(
+      'fails a tab-less agent snapshot closed when %s, never capturing an unchecked tab',
+      async (_label, listing) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        vi.mocked(embeddedBrowserCdp.listAllTabs).mockImplementation(listing as any);
+        // The caller's own live tab would otherwise satisfy the old guard.
+        vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+          tabId: 'tab-mine',
+          webContentsId: 9,
+        } as any);
+        vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+        try {
+          for (const action of ['snapshot', 'startSession'] as const) {
+            const result = await executeActions(
+              { actions: [{ action }] },
+              undefined,
+              'agent-1',
+              'workspace-a',
+            );
+            expect(result.results[0]).toMatchObject({ action, success: false });
+            expect(result.results[0]?.error).toContain('No browser tab to capture');
+          }
+          expect(browserCapture.snapshot).not.toHaveBeenCalled();
+          expect(browserCapture.startSession).not.toHaveBeenCalled();
+        } finally {
+          vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue(null);
+          vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue(undefined);
+        }
+      },
+    );
 
     it('answers still-loading instead of snapshotting a page that has not finished loading', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
