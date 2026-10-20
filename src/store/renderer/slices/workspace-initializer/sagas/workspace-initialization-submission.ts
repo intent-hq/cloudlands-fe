@@ -108,6 +108,29 @@ function setupScriptRecord(
   };
 }
 
+function compactCompletionFormState(
+  s: CompactWorkspaceInitializationSubmission,
+): NonNullable<WorkspaceInitializationRequest['completion']>['compactFormState'] {
+  const remote = s.repoType === 'remote';
+  const repoPath = remote ? '' : s.repoPath;
+  const repoType = remote ? 'local' : s.repoType;
+  const scope = remote ? '' : s.scope;
+  return {
+    repositoryCheckoutDraft: s.repoType === 'gitlab' ? s.repositoryCheckoutDraft : undefined,
+    ...s.agent,
+    skipIsolation: s.skipIsolation,
+    remoteSetup: null,
+    repoPath,
+    repoType,
+    githubUrl: remote ? '' : s.githubUrl,
+    branch: remote ? '' : s.branch,
+    isNewRepo: false,
+    isValidPath: remote ? false : s.isNewRepo ? true : s.isValidPath,
+    scope,
+    scopeRepoPath: scope ? repoPath : undefined,
+  };
+}
+
 /** Request retained after a post-create failure; a retry resumes it instead of re-creating. */
 export function buildWorkspaceInitializationResume(
   id: string,
@@ -374,6 +397,7 @@ export function* prepareCompactWorkspaceInitialization(
     ),
     completion: {
       draft: s.draft,
+      compactFormState: compactCompletionFormState(s),
       // A newly created repository now exists, so the next form opens it as an existing repo.
       lastSelectedRepo:
         s.formPersistence && s.repoPath && (s.repoType === 'local' || s.repoType === 'github')
@@ -502,7 +526,7 @@ export function* prepareOnboardingWorkspaceInitialization(
       project.type === 'github' ? project.githubUrl : undefined,
       m.onboarding_page_customScript_label(),
     ),
-    completion: { draft: s.draft },
+    completion: { draft: s.draft, onboarding: true },
   };
   return {
     request,

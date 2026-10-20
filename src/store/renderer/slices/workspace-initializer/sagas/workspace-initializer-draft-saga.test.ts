@@ -277,6 +277,60 @@ describe('workspaceInitializerDraftSaga', () => {
     );
   });
 
+  it('rejects an ownerless clear without intent-time authority while currently admitted', async () => {
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-without-intent'));
+    await settle();
+
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-without-intent', 'failure'),
+    );
+  });
+
+  it('clears the client-scoped daemon draft and both legacy keys when provenance is replaced', async () => {
+    sessionStorage.setItem('compact-workspace-initializer-state-prompt', 'compact principal');
+    sessionStorage.setItem('onboarding-prompt', 'onboarding principal');
+
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'replacement-restore',
+        'compact-workspace-initializer-state-prompt',
+        A,
+        true,
+      ),
+    );
+    await settle();
+
+    expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('compact-workspace-initializer-state-prompt')).toBeNull();
+    expect(sessionStorage.getItem('onboarding-prompt')).toBeNull();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'replacement-restore', 'empty', '', []),
+    );
+  });
+
+  it('does not expose the replaced daemon draft when the provenance clear fails', async () => {
+    mocks.clear.mockRejectedValueOnce(new Error('offline'));
+
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'replacement-restore',
+        'legacy-key',
+        A,
+        true,
+      ),
+    );
+    await settle();
+
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'replacement-restore', 'error', '', []),
+    );
+  });
+
   it('does not publish or migrate a read that resolves under a replaced authority', async () => {
     const held = deferred<null>();
     mocks.get.mockReturnValueOnce(held.promise);
@@ -469,7 +523,9 @@ describe('workspaceInitializerDraftSaga', () => {
     await settle();
     expect(mocks.set).toHaveBeenCalledOnce();
 
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-migration'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-migration', undefined, A),
+    );
     await settle();
     expect(mocks.clear).not.toHaveBeenCalled();
 
@@ -550,7 +606,7 @@ describe('workspaceInitializerDraftSaga', () => {
     sessionStorage.setItem('onboarding-prompt', 'onboarding');
     channel.put(restore('compact', 'compact-restore', 'unused'));
     await settle();
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-1'));
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-1', undefined, A));
     await settle();
     mocks.admission = B;
     held.resolve();
@@ -626,7 +682,9 @@ describe('workspaceInitializerDraftSaga', () => {
       },
       workspaceInitializerDraftSaga,
     );
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry', undefined, A),
+    );
     await settle();
 
     mocks.admission = B;
@@ -665,7 +723,9 @@ describe('workspaceInitializerDraftSaga', () => {
       },
       workspaceInitializerDraftSaga,
     );
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry', undefined, A),
+    );
     await settle();
     expect(mocks.clear).not.toHaveBeenCalled();
     expect(dispatched.length).toBe(dispatchedBeforeCancel);

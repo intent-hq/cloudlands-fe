@@ -176,7 +176,7 @@ export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
 );
 
 export const workspaceInitializerDraftRestoreRequested = createAction<
-  [id: string, requestId: string, legacyKey: string, admission?: string]
+  [id: string, requestId: string, legacyKey: string, admission?: string, discardRetained?: boolean]
 >('workspaceInitializer/draftRestoreRequested');
 export const workspaceInitializerDraftRestoreFinished = createAction<
   [

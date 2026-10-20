@@ -2,6 +2,7 @@
   import {
     selectWorkspaceCreationVisible,
     selectPrincipalActionContext,
+    selectPrincipalDraftProvenance,
     selectHostRole,
   } from '$store/renderer/slices/principal/principal-selectors';
   const canCreateWorkspace$ = selectWorkspaceCreationVisible();
@@ -22,6 +23,7 @@
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
+  import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
   import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -205,6 +207,7 @@
   const draftOwnerId = 'compact-workspace-initializer';
   const draftAuthority$ = selectWorkspaceInitializerDraftAuthority(draftOwnerId);
   const draftAdmission$ = selectPrincipalActionContext();
+  const draftProvenance$ = selectPrincipalDraftProvenance();
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
@@ -1040,11 +1043,13 @@
   let draftRestoreApplied = false;
   let draftRestoreRequestId = $state(crypto.randomUUID());
   let draftOwnerAdmission: string | null | undefined = undefined;
+  let draftProvenance: string | undefined;
   // The initialization saga clears the daemon draft on a successful create.
   // Prevent the emptied local form and teardown from scheduling a second write.
   let draftCleared = false;
   $effect(() => {
     const admission = $draftAdmission$;
+    const provenance = $draftProvenance$;
     if (draftOwnerAdmission === admission) return;
     const priorRequestId = draftRestoreRequestId;
     const hadOwner = draftOwnerAdmission !== undefined && draftOwnerAdmission !== null;
@@ -1054,6 +1059,13 @@
     if (hadOwner)
       appStore.dispatch(workspaceInitializerDraftOwnerReleased(draftOwnerId, priorRequestId));
     if (admission === null) return;
+    const provenanceReplaced = draftProvenance !== undefined && provenance !== draftProvenance;
+    if (provenanceReplaced) {
+      initialPrompt = '';
+      contextItems = [];
+      richTextarea?.clear();
+    }
+    if (provenance !== null) draftProvenance = provenance;
     draftRestoreRequestId = crypto.randomUUID();
     appStore.dispatch(
       workspaceInitializerDraftRestoreRequested(
@@ -1061,6 +1073,7 @@
         draftRestoreRequestId,
         LEGACY_PROMPT_SESSION_KEY,
         admission,
+        provenanceReplaced,
       ),
     );
   });
@@ -2036,10 +2049,13 @@
 
   let submissionGeneration = 0;
   let mounted = true;
+  let releaseCompactPreparation: (() => void) | null = null;
   onDestroy(() => {
     mounted = false;
     submissionGeneration++;
     if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
+    releaseCompactPreparation?.();
+    releaseCompactPreparation = null;
   });
 
   let pullContinuation: (() => boolean) | null = null;
@@ -2126,94 +2142,119 @@
         })),
       });
 
-      const runtimeReferences: WorkspaceInitializationJson[] = [];
-      // Resolve terminal and script widget state while the component still owns the widgets.
-      for (const mention of fileMentions) {
-        if (mention.type === 'terminal') {
-          try {
-            const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
-            if (!current()) return;
-            const wsId = (mention.meta?.workspaceId as string) || '';
-            const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
-            if (!current()) return;
-            if (bufferContent) {
-              const contextRef = {
-                type: 'terminal',
-                content: bufferContent, // For stdinContext builder compatibility
-                terminalContent: bufferContent,
-                title: mention.label,
-                metadata: { terminalName: mention.label, terminalId: mention.id },
-              };
-              runtimeReferences.push(contextRef as WorkspaceInitializationJson);
+      releaseCompactPreparation?.();
+      const preparationId = crypto.randomUUID();
+      const releasePreparation = registerWorkspaceInitializationPreparation(
+        preparationId,
+        async () => {
+          const runtimeReferences: WorkspaceInitializationJson[] = [];
+          // Resolve terminal and script widget state while the component still owns the widgets.
+          for (const mention of fileMentions) {
+            if (mention.type === 'terminal') {
+              try {
+                const { terminalManager } =
+                  await import('$features/terminal/terminal-manager.svelte');
+                if (!current()) return null;
+                const wsId = (mention.meta?.workspaceId as string) || '';
+                const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
+                if (!current()) return null;
+                if (bufferContent) {
+                  const contextRef = {
+                    type: 'terminal',
+                    content: bufferContent, // For stdinContext builder compatibility
+                    terminalContent: bufferContent,
+                    title: mention.label,
+                    metadata: { terminalName: mention.label, terminalId: mention.id },
+                  };
+                  runtimeReferences.push(contextRef as WorkspaceInitializationJson);
+                }
+              } catch (error) {
+                logger.warn('[CompactWorkspaceInitializer] Failed to read terminal buffer:', error);
+              }
             }
-          } catch (error) {
-            logger.warn('[CompactWorkspaceInitializer] Failed to read terminal buffer:', error);
+
+            if (mention.type === 'script') {
+              try {
+                const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
+                  await import('$store/renderer/slices/scripts/scripts-selectors');
+                if (!current()) return null;
+                const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+                if (!current()) return null;
+                const scriptId = mention.id;
+                const wsId = (mention.meta?.workspaceId as string) || null;
+                const state = appStore.state;
+                const outputLines = scriptOutputToLines(
+                  selectScriptOutput.select(state, wsId, scriptId),
+                );
+                const script = selectScriptById.select(state, wsId, scriptId);
+                const runtime = selectScriptRuntime.select(state, wsId, scriptId);
+
+                let content = `Script: ${script?.name || mention.label}\n`;
+                content += `Command: ${script?.command || 'unknown'}\n`;
+                content += `Status: ${runtime.status}`;
+                if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
+                  content += ` (exit code: ${runtime.exitCode})`;
+                }
+                content += '\n';
+                if (runtime.detectedUrl) {
+                  content += `URL: ${runtime.detectedUrl}\n`;
+                }
+                if (outputLines.length > 0) {
+                  const lastLines = outputLines.slice(-100).join('\n');
+                  content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
+                } else {
+                  content += '\nNo output yet.'; // i18n-ignore (agent-facing context content)
+                }
+
+                const contextRef = {
+                  type: 'script',
+                  content,
+                  title: script?.name || mention.label,
+                  metadata: {
+                    scriptId,
+                    command: script?.command,
+                    status: runtime.status,
+                    exitCode: runtime.exitCode,
+                    detectedUrl: runtime.detectedUrl,
+                  },
+                };
+                runtimeReferences.push(contextRef as WorkspaceInitializationJson);
+              } catch (error) {
+                logger.warn('[ScriptMention] Failed to resolve script context:', error);
+              }
+            }
           }
-        }
 
-        if (mention.type === 'script') {
-          try {
-            const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
-              await import('$store/renderer/slices/scripts/scripts-selectors');
-            if (!current()) return;
-            const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
-            if (!current()) return;
-            const scriptId = mention.id;
-            const wsId = (mention.meta?.workspaceId as string) || null;
-            const state = appStore.state;
-            const outputLines = scriptOutputToLines(
-              selectScriptOutput.select(state, wsId, scriptId),
-            );
-            const script = selectScriptById.select(state, wsId, scriptId);
-            const runtime = selectScriptRuntime.select(state, wsId, scriptId);
-
-            let content = `Script: ${script?.name || mention.label}\n`;
-            content += `Command: ${script?.command || 'unknown'}\n`;
-            content += `Status: ${runtime.status}`;
-            if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
-              content += ` (exit code: ${runtime.exitCode})`;
-            }
-            content += '\n';
-            if (runtime.detectedUrl) {
-              content += `URL: ${runtime.detectedUrl}\n`;
-            }
-            if (outputLines.length > 0) {
-              const lastLines = outputLines.slice(-100).join('\n');
-              content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
-            } else {
-              content += '\nNo output yet.'; // i18n-ignore (agent-facing context content)
-            }
-
-            const contextRef = {
-              type: 'script',
-              content,
-              title: script?.name || mention.label,
-              metadata: {
-                scriptId,
-                command: script?.command,
-                status: runtime.status,
-                exitCode: runtime.exitCode,
-                detectedUrl: runtime.detectedUrl,
-              },
-            };
-            runtimeReferences.push(contextRef as WorkspaceInitializationJson);
-          } catch (error) {
-            logger.warn('[ScriptMention] Failed to resolve script context:', error);
-          }
-        }
-      }
-
-      if (!current()) return;
-      // Await any in-flight repo-config probe (bounded, sub-second) so the
-      // setup-script decision below sees the committed `.intent/config.json`
-      // instead of racing the probe (monorepo#1862).
-      await setupScriptProbeScheduler.settled();
-      if (!current()) return;
+          if (!current()) return null;
+          // Await any in-flight repo-config probe (bounded, sub-second) so the
+          // setup-script decision below sees the committed `.intent/config.json`
+          // instead of racing the probe (monorepo#1862).
+          await setupScriptProbeScheduler.settled();
+          if (!current()) return null;
+          return {
+            runtimeReferences,
+            setupScript,
+            setupScriptName,
+            setupScriptNameSource,
+            repoConfigScript: repoConfigScript ?? null,
+            repoConfigScriptRepo: repoConfigScriptRepo ?? null,
+            repoConfigUnavailable: isRepoConfigLoading,
+          };
+        },
+      );
+      releaseCompactPreparation = releasePreparation;
       const checkoutInstanceBaseUrl = selectCheckoutForm.select(appStore.state, checkoutFormId)
         ?.capture?.instanceBaseUrl;
+      const repositoryCheckoutDraft =
+        repoType === 'gitlab'
+          ? readRepositoryCheckoutDraft(
+              selectCheckoutForm.select(appStore.state, checkoutFormId)?.draft,
+            )
+          : undefined;
       const submission: CompactWorkspaceInitializationSubmission = {
         entrypoint: 'compact',
         admission,
+        preparationId,
         prompt: initialPrompt,
         contextMentions: $state.snapshot(
           contextMentions,
@@ -2221,7 +2262,7 @@
         fileMentions: $state.snapshot(
           fileMentions,
         ) as CompactWorkspaceInitializationSubmission['fileMentions'],
-        runtimeReferences,
+        runtimeReferences: [],
         stagedItems: $state.snapshot(contextItems) as WorkspaceInitializationStagedItem[],
         setupScript,
         setupScriptName,
@@ -2248,6 +2289,7 @@
         remoteSetup: remoteSetupSnapshot,
         checkoutFormId,
         repositoryCheckout,
+        repositoryCheckoutDraft,
         checkoutContextUrl: checkoutContextUrl ?? null,
         checkoutInstanceBaseUrl: checkoutInstanceBaseUrl ?? null,
         selectedPRBranch,
@@ -2286,6 +2328,11 @@
       void initialization.promise.catch(() => {
         // Correlated selector outcomes own UI settlement, including reset removal.
       });
+      const releaseSettledPreparation = () => {
+        releasePreparation();
+        if (releaseCompactPreparation === releasePreparation) releaseCompactPreparation = null;
+      };
+      void initialization.promise.then(releaseSettledPreparation, releaseSettledPreparation);
     } catch (err) {
       if (!current()) return;
       const failureMessage = err instanceof Error ? err.message : '';
@@ -2299,6 +2346,10 @@
           : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
+      if (!handedOff) {
+        releaseCompactPreparation?.();
+        releaseCompactPreparation = null;
+      }
       if (!handedOff && mounted && generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
@@ -2384,6 +2435,7 @@
       isValidPath = true;
     }
     if (
+      !preserveSubmission &&
       debugConfig.get('enableFormPersistence') &&
       repoPath &&
       (repoType === 'local' || repoType === 'github')
@@ -2472,7 +2524,8 @@
     };
     // Snapshot to strip $state proxies: Redux state must be structured-cloneable
     // for daemon persistence (src/store/renderer/AGENTS.md §2).
-    appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
+    if (!preserveSubmission)
+      appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
   }
 
   function handleIssueSelect(_text: string, metadata?: IssueSelectionData) {

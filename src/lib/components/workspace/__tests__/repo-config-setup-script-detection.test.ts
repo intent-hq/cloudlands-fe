@@ -160,13 +160,6 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: mocks.create, update: vi.fn() },
 }));
 
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
-}));
-
 vi.mock('$lib/electron-bridge', () => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(async (channel: string) => {

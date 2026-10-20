@@ -40,7 +40,7 @@ export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>(
   'onboarding/setProjectConfig',
 );
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
-export const resetOnboarding = createAction('onboarding/reset');
+export const resetOnboarding = createAction<[admission?: string]>('onboarding/reset');
 export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
   'onboarding/setFullFlowRequested',
 );

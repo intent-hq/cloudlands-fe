@@ -132,13 +132,6 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
 }));
 
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
-}));
-
 // Route the git probe to a per-test mock; everything else on the bridge is a
 // benign success-with-null.
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));

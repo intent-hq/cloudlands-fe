@@ -5,6 +5,10 @@ import {
   retainImagePlacementIdentity,
   sendHeldFirstMessage,
 } from '$lib/components/workspace/initializer/staged-attachments';
+import {
+  releaseWorkspaceInitializationPreparation,
+  resolveWorkspaceInitializationPreparation,
+} from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import { store as appStore } from '$store/renderer/store';
 import {
   buildWorkspaceInitializationResume,
@@ -14,6 +18,7 @@ import {
 } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-submission';
 import {
   clearWorkspaceInitializationResume,
+  setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerLastSelectedRepo,
@@ -124,6 +129,11 @@ async function settleResumedInitialization(action: ResumeAction, options: Adapte
 async function settleSubmittedInitialization(action: SubmissionAction, options: AdapterOptions) {
   const { submission, consumer, progressId } = action.payload;
   try {
+    const preparation = submission.preparationId
+      ? await resolveWorkspaceInitializationPreparation(submission.preparationId)
+      : undefined;
+    if (submission.preparationId && !preparation) throw new Error('initialization-cancelled');
+    const preparedSubmission = preparation ? { ...submission, ...preparation } : submission;
     const prepare =
       submission.entrypoint === 'compact'
         ? prepareCompactWorkspaceInitialization
@@ -131,7 +141,7 @@ async function settleSubmittedInitialization(action: SubmissionAction, options: 
     const prepared = await runSaga(
       { onError: () => {} },
       prepare,
-      submission as never,
+      preparedSubmission as never,
       () => true,
     ).toPromise();
     if (!prepared) throw new Error('initialization-cancelled');
@@ -153,6 +163,9 @@ async function settleSubmittedInitialization(action: SubmissionAction, options: 
       error: failure.message,
     });
     action.failure(failure);
+  } finally {
+    if (submission.preparationId)
+      releaseWorkspaceInitializationPreparation(submission.preparationId);
   }
 }
 
@@ -172,9 +185,11 @@ function completeInitialization(request: WorkspaceInitializationRequest, consume
     );
   }
   appStore.dispatch(clearWorkspaceInitializationResume(consumerId));
-  const { lastSelectedRepo, draft } = request.completion ?? {};
+  const { lastSelectedRepo, compactFormState, draft } = request.completion ?? {};
   if (lastSelectedRepo)
     appStore.dispatch(setWorkspaceInitializerLastSelectedRepo(lastSelectedRepo));
+  if (compactFormState)
+    appStore.dispatch(setCompactWorkspaceInitializerFormState(compactFormState));
   if (!draft) return;
   appStore.dispatch(
     workspaceInitializerDraftSaveCancelled(
