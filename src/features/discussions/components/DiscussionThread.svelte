@@ -2,6 +2,7 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { composerMinHeight } from '$lib/components/chat/composer-height';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { m } from '$shared/paraglide/messages.js';
@@ -171,6 +172,17 @@
     onRetry,
   }: Props = $props();
   let scroller: HTMLDivElement | undefined = $state();
+  let thread: HTMLDivElement | undefined = $state();
+  let panelHeight = $state<number | null>(null);
+  $effect(() => {
+    if (!thread) return;
+    const panel = thread.closest('.group\\/panel') ?? thread;
+    const observer = new ResizeObserver(([entry]) => {
+      panelHeight = entry.contentRect.height;
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  });
   let composer: HTMLTextAreaElement | null = $state(null);
   let composerValue = $state('');
   // A fast send can return the Redux draft to its previous value before selectors
@@ -529,7 +541,11 @@
       mentionPickerOpen = false;
   }}
 />
-<div class="relative flex h-full min-h-0 min-w-0 flex-col bg-background" data-workspace-discussion>
+<div
+  bind:this={thread}
+  class="relative flex h-full min-h-0 min-w-0 flex-col bg-background"
+  data-workspace-discussion
+>
   {#if header}{@render header()}{/if}
   {#if sharingOff}
     <div
@@ -763,7 +779,8 @@
     {/if}
     <div
       bind:this={composerWrapper}
-      class="relative flex min-h-[76px] flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none"
+      class="relative flex flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none transition-[min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none"
+      style:min-height={`${composerMinHeight(panelHeight, !!composerValue.trim())}px`}
       class:opacity-45={!(canCompose ?? canSend)}
     >
       {#if mentionPickerOpen}
@@ -785,7 +802,7 @@
           bind:value={composerValue}
           aria-label={m.workspace_discussion_composer_label()}
           placeholder={composerPlaceholder ?? m.workspace_discussion_composer_placeholder()}
-          class="min-h-6 flex-1 self-start resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent"
+          class="min-h-6 flex-1 self-start resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent placeholder:opacity-0! focus:placeholder:opacity-100!"
           rows={1}
           autoResize
           noFocusStyle
