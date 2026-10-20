@@ -25,6 +25,7 @@
   data-discussion-collapsed={(overflowing && !expanded) || undefined}
 >
   <div
+    class="discussion-body flow-root"
     bind:this={content}
     id={contentId}
     onfocusin={() => {
@@ -47,3 +48,22 @@
     {expanded ? m.workspace_discussion_showLess_label() : m.workspace_discussion_showMore_label()}
   </Button>
 {/if}
+
+<style>
+  .discussion-body
+    :global(
+      .markdown-viewer:is(.simple-content, .static-content, .streaming-content)
+        > :not(.image-actions-overlay)
+    ) {
+    margin-block: 0;
+  }
+
+  .discussion-body
+    :global(
+      .markdown-viewer:is(.simple-content, .static-content, .streaming-content)
+        > :not(.image-actions-overlay)
+        + :not(.image-actions-overlay)
+    ) {
+    margin-top: 8px;
+  }
+</style>

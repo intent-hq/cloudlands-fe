@@ -2,6 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   interface Props {
     narrow?: boolean;
+    continuationActions?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'discussion-message-refinements',
@@ -14,7 +15,7 @@
 <script lang="ts">
   import type { DiscussionMessage } from '$shared/types/workspace-discussion';
   import DiscussionMessageView from './DiscussionMessageView.svelte';
-  let { narrow = false }: Props = $props();
+  let { narrow = false, continuationActions = true }: Props = $props();
   const human = { principalId: 'alex', displayName: 'Alex', login: 'alex', avatarUrl: null };
   const agent = {
     principalId: null,
@@ -45,7 +46,7 @@
     sequence: 3,
     author: agent,
     replyTo: { id: addressed.id, author: human, body: addressed.body },
-    body: 'Two things to fix before this merges:\n\n- Copy link stays enabled while `createInviteLink` runs.\n- The GitHub search list has no empty state.\n\nEverything else matches the mockups, in light and dark.\n\nThe message row remains usable by keyboard, and the same request keeps its reply reference.\n\nThe list will stop at three items with a hairline above it. The remaining activity is available from the workspace.\n\nThe helper also preserves the selection after retry and keeps the existing recipient names.\n\n[Review notes](https://example.com/review)\n\n[#84](https://github.com/intent-hq/cloudlands-fe/pull/84) [ShareWorkspaceDialog.svelte](intent://local/message-preview/file/src/lib/components/workspace/ShareWorkspaceDialog.svelte)',
+    body: 'Two things to fix before this merges, @alex:\n\n| Literal |\n| --- |\n| `hello @sam_name` |\n\n- Copy link stays enabled while `createInviteLink` runs.\n- The GitHub search list has no empty state.\n\nEverything else matches the mockups, in light and dark.\n\nThe message row remains usable by keyboard, and the same request keeps its reply reference.\n\nThe list will stop at three items with a hairline above it. The remaining activity is available from the workspace.\n\nThe helper also preserves the selection after retry and keeps the existing recipient names.\n\n[Review notes](https://example.com/review)\n\n[#84](https://github.com/intent-hq/cloudlands-fe/pull/84) [ShareWorkspaceDialog.svelte](intent://local/message-preview/file/src/lib/components/workspace/ShareWorkspaceDialog.svelte)',
   };
   const followup: DiscussionMessage = {
     ...base,
@@ -86,7 +87,9 @@
     workspaceId={base.workspaceId}
     continuation
     agentMentions={[{ agentId: 'reviewer', name: 'Reviewer', start: 0, end: 9 }]}
-    onReply={() => (selected = addressed.id)}
+    onReply={continuationActions ? () => (selected = addressed.id) : undefined}
+    onReaction={continuationActions ? () => {} : undefined}
+    onCopy={continuationActions ? () => (copied = addressed.body) : undefined}
   />
   <DiscussionMessageView
     message={response}

@@ -26,6 +26,7 @@
     replySelected = false,
     onReplyNavigate,
     agentMentions = [],
+    mentionNames = [],
     status,
     error,
     reactions = [],
@@ -43,6 +44,7 @@
     replySelected?: boolean;
     onReplyNavigate?: (messageId: string) => void;
     agentMentions?: readonly DiscussionAgentMention[];
+    mentionNames?: readonly string[];
     status?: 'sending' | 'failed';
     error?: string;
     reactions?: readonly DiscussionReactionDisplay[];
@@ -61,6 +63,7 @@
   const reply = $derived('replyTo' in message ? message.replyTo : undefined);
   const isAgent = $derived(!!message.author.agentId);
   const hasActions = $derived(!status && !!(onReply || onReaction || onCopy));
+  let actionWidth = $state(0);
   const replyName = $derived(
     reply?.author.displayName ||
       reply?.author.login ||
@@ -82,10 +85,12 @@
 </script>
 
 <article
-  class={'group/message relative min-w-0 rounded-[10px] px-2 pb-[7px] ' +
-    (continuation && hasActions ? 'pt-9' : 'pt-[7px]') +
+  class={'group/message relative min-w-0 rounded-[10px] px-2 ' +
+    (continuation ? 'py-1' : 'py-[7px]') +
     (replySelected ? ' bg-primary/10' : '')}
   class:opacity-60={status === 'sending'}
+  class:continuation-actions={continuation && hasActions}
+  style:--discussion-actions-width={`${actionWidth}px`}
   data-discussion-message={message.id}
   data-discussion-failed={status === 'failed' ? message.id : undefined}
   data-discussion-continuation={continuation || undefined}
@@ -197,6 +202,7 @@
                   workspaceId={workspaceId ?? ''}
                   {sourcePanelId}
                   {agentMentions}
+                  {mentionNames}
                   mode="markdown"
                 />
               </div>
@@ -205,13 +211,14 @@
           {/key}
         {:else}
           <p
-            class="m-0 whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
+            class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
           >
             <DiscussionMessageBody
               body={message.body}
               workspaceId={workspaceId ?? ''}
               {sourcePanelId}
               {agentMentions}
+              {mentionNames}
               mode="text"
             />
           </p>
@@ -247,6 +254,7 @@
     <div
       class="absolute top-0.5 right-2 z-10 flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-md pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
       data-discussion-message-actions
+      bind:clientWidth={actionWidth}
     >
       {#if onReaction}
         <ActionMenu
@@ -293,7 +301,7 @@
 </article>
 
 {#snippet messageReferences()}
-  <div class="empty:hidden [&:not(:empty)]:mt-2" data-discussion-message-references>
+  <div class="hidden has-[>_*]:mt-2 has-[>_*]:block" data-discussion-message-references>
     {#if references}{@render references()}{/if}
     {#if workspaceId}<DiscussionMessageBody
         body={message.body}
@@ -303,3 +311,25 @@
       />{/if}
   </div>
 {/snippet}
+
+<style>
+  .continuation-actions:is(:hover, :has([data-discussion-message-actions]:focus-within))
+    .discussion-text::before,
+  .continuation-actions:is(:hover, :has([data-discussion-message-actions]:focus-within))
+    :global(.markdown-viewer)::before {
+    content: '';
+    float: right;
+    width: calc(var(--discussion-actions-width) + 8px);
+    height: 20px;
+  }
+
+  @media (hover: none) {
+    .continuation-actions .discussion-text::before,
+    .continuation-actions :global(.markdown-viewer)::before {
+      content: '';
+      float: right;
+      width: calc(var(--discussion-actions-width) + 8px);
+      height: 20px;
+    }
+  }
+</style>

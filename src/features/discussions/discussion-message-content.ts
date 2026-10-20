@@ -3,9 +3,11 @@ import type { DiscussionAgentMention } from './discussion-agent-mentions';
 import { parseDiscussionReference, type DiscussionReference } from './discussion-references';
 
 export type DiscussionMessagePart =
-  string | DiscussionReference | (DiscussionAgentMention & { kind: 'mention' });
+  | string
+  | DiscussionReference
+  | (Omit<DiscussionAgentMention, 'agentId'> & { kind: 'mention'; agentId?: string });
 
-function literalRanges(body: string) {
+function literalRanges(body: string, includeLinks = false) {
   const ranges: { start: number; end: number }[] = [];
   function walk(tokens: readonly Token[], text: string, base: number) {
     let cursor = 0;
@@ -13,10 +15,21 @@ function literalRanges(body: string) {
       const offset = text.indexOf(token.raw, cursor);
       if (offset < 0) continue;
       cursor = offset + token.raw.length;
-      if (token.type === 'code' || token.type === 'codespan' || token.type === 'html') {
+      if (
+        token.type === 'code' ||
+        token.type === 'codespan' ||
+        token.type === 'html' ||
+        (includeLinks && (token.type === 'link' || token.type === 'image'))
+      ) {
         ranges.push({ start: base + offset, end: base + cursor });
       } else if ('tokens' in token && Array.isArray(token.tokens)) {
         walk(token.tokens, token.raw, base + offset);
+      } else if (token.type === 'table') {
+        walk(
+          [...token.header, ...token.rows.flat()].flatMap((cell) => cell.tokens),
+          token.raw,
+          base + offset,
+        );
       } else if (token.type === 'list') {
         walk(token.items, token.raw, base + offset);
       }
@@ -26,11 +39,36 @@ function literalRanges(body: string) {
   return ranges;
 }
 
-/** Only retained, exact mention spans carry a person's agent selection into presentation. */
+/** Visual @labels never imply delivery or create an agent link. */
+function textMentions(body: string, names: readonly string[]) {
+  const labels = [...new Set(names.filter((name) => name && !/\p{Cc}/u.test(name)))].sort(
+    (a, b) => b.length - a.length,
+  );
+  const literals = literalRanges(body, true);
+  const mentions: { start: number; end: number; name: string }[] = [];
+  for (const match of body.matchAll(/@[\p{L}\p{N}_][\p{L}\p{N}_-]*/gu)) {
+    const start = match.index;
+    if (start > 0 && !/[\s([{]/.test(body[start - 1])) continue;
+    const known = labels.find((name) => {
+      const end = start + name.length + 1;
+      return (
+        body.slice(start + 1, end).toLocaleLowerCase() === name.toLocaleLowerCase() &&
+        (end === body.length || /[\s.,!?;:)\]}]/.test(body[end]))
+      );
+    });
+    const end = start + (known ? known.length + 1 : match[0].length);
+    if (literals.some((range) => start < range.end && end > range.start)) continue;
+    mentions.push({ start, end, name: body.slice(start + 1, end) });
+  }
+  return mentions;
+}
+
+/** Only validated immutable metadata can turn a highlighted label into an agent link. */
 export function discussionMessageParts(
   body: string,
   workspaceId: string,
   mentions: readonly DiscussionAgentMention[] = [],
+  mentionNames: readonly string[] = [],
 ): DiscussionMessagePart[] {
   const ranges: { start: number; end: number; part: Exclude<DiscussionMessagePart, string> }[] = [];
   const literals = literalRanges(body);
@@ -64,6 +102,10 @@ export function discussionMessageParts(
       continue;
     ranges.push({ start: mention.start, end: mention.end, part: { ...mention, kind: 'mention' } });
   }
+  for (const mention of textMentions(body, mentionNames)) {
+    if (ranges.some((range) => mention.start < range.end && mention.end > range.start)) continue;
+    ranges.push({ start: mention.start, end: mention.end, part: { ...mention, kind: 'mention' } });
+  }
   ranges.sort((a, b) => a.start - b.start);
   const parts: DiscussionMessagePart[] = [];
   let cursor = 0;
@@ -90,6 +132,7 @@ export function discussionMessageMarkdown(
     .map((part) => {
       if (typeof part === 'string') return part;
       if (part.kind !== 'mention') return '';
+      if (!part.agentId) return `@${part.name}`;
       const label = escapeLabel(`@${part.name}`);
       const url = `intent://local/${workspaceId}/agent/${part.agentId}`;
       return parseDiscussionReference(url, part.name, workspaceId) ? `[${label}](${url})` : label;

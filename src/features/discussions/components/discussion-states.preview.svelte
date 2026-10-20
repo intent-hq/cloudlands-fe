@@ -1,6 +1,7 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   type State =
+    | 'mentions'
     | 'new'
     | 'direct'
     | 'unread'
@@ -18,6 +19,7 @@
     title: 'Discussion states',
     defaultState: 'direct',
     states: {
+      mentions: { props: { state: 'mentions' } },
       new: { props: { state: 'new' } },
       direct: { props: { state: 'direct' } },
       unread: { props: { state: 'unread' } },
@@ -34,7 +36,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import type { DiscussionAuthor, DiscussionMessage } from '$shared/types/workspace-discussion';
+  import type { DiscussionMessage } from '$shared/types/workspace-discussion';
   import { m } from '$shared/paraglide/messages.js';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
@@ -60,7 +62,7 @@
   function message(
     id: number,
     body: string,
-    author: DiscussionAuthor = alex,
+    author: DiscussionMessage['author'] = alex,
     minute = id,
     previous = false,
   ): DiscussionMessage {
@@ -95,6 +97,32 @@
     reply = null;
     draft = '';
     closed = false;
+    if (next === 'mentions') {
+      const peer = { ...alex, displayName: 'sambreed2', login: 'sambreed2' };
+      const developer = {
+        principalId: null,
+        agentId: 'developer',
+        displayName: 'Developer',
+        login: null,
+        avatarUrl: null,
+      };
+      const addressed = message(3, '@Developer summarize this conversation', sam, 34);
+      messages = [
+        message(1, 'hey bro whats gooood', peer, 30),
+        message(2, "it's a sams club", sam, 34),
+        addressed,
+        {
+          ...message(
+            4,
+            'sambreed2 opened with “hey bro whats gooood,” and Sam Breed replied, *“it’s a sams club,”* before asking for this summary. So far, the conversation is casual greetings and a Sam’s Club joke, with no project decisions or tasks discussed.',
+            developer,
+            35,
+          ),
+          replyTo: { id: addressed.id, body: addressed.body, author: sam },
+        },
+        message(5, '@sambreed2 hello world', sam, 36),
+      ];
+    }
     if (next === 'direct')
       messages = [
         message(1, 'Can you review the sidebar?', alex, 2, true),
@@ -277,6 +305,7 @@
         {workspaceId}
         conversationId={scene === 'new' ? 'new' : scene === 'direct' ? 'direct' : 'default'}
         {messages}
+        mentionUsers={[sam, alex, jordan]}
         {draft}
         composerPlaceholder={scene === 'direct'
           ? m.workspace_discussion_composerPerson_placeholder({ name: 'Alex' })

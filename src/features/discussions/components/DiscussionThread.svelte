@@ -28,10 +28,8 @@
     type DiscussionMentionOption,
     type DiscussionMentionAgent,
   } from './discussion-mention-query';
-  import {
-    discussionAgentMentionParts,
-    type DiscussionAgentMention,
-  } from '../discussion-agent-mentions';
+  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
+  import { discussionMessageParts } from '../discussion-message-content';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   import {
@@ -202,7 +200,16 @@
   let composer: HTMLTextAreaElement | null = $state(null);
   let composerValue = $state('');
   let composerScrollTop = $state(0);
-  const composerParts = $derived(discussionAgentMentionParts(composerValue, agentMentions));
+  const mentionNames = $derived([
+    ...agents.map((agent) => agent.name),
+    ...[...mentionUsers, ...messages.map((message) => message.author)].flatMap((author) =>
+      [author.displayName, author.login].filter((name): name is string => !!name),
+    ),
+  ]);
+  const composerParts = $derived(
+    discussionMessageParts(composerValue, '', agentMentions, mentionNames),
+  );
+  const hasComposerMentions = $derived(composerParts.some((part) => typeof part !== 'string'));
   const addressedNames = $derived(
     [...new Set(agentMentions.map((mention) => mention.name))].join(', '),
   );
@@ -719,6 +726,7 @@
               {message}
               continuation={isContinuation(index)}
               agentMentions={message.agentMentions}
+              {mentionNames}
               replySelected={replyTo?.id === message.id}
               onReplyNavigate={jumpToReply}
               reactions={reactionsByMessage[message.id]}
@@ -763,6 +771,7 @@
               {sourcePanelId}
               {message}
               agentMentions={message.agentMentions}
+              {mentionNames}
               onReplyNavigate={jumpToReply}
               status={message.status}
               error={message.error}
@@ -901,13 +910,14 @@
           >
             <div
               class="whitespace-pre-wrap break-words py-0.5 type-caption leading-5"
-              class:text-transparent={!agentMentions.length}
+              class:text-transparent={!hasComposerMentions}
               style:transform={`translateY(${-composerScrollTop}px)`}
             >
-              {#each composerParts as part}{#if part.agentId}<mark
+              {#each composerParts as part}{#if typeof part !== 'string' && part.kind === 'mention'}<mark
                     class="rounded-sm bg-primary text-primary-foreground"
-                    data-discussion-inline-mention={part.agentId}>{part.text}</mark
-                  >{:else}{part.text}{/if}{/each}
+                    data-discussion-composer-mention
+                    data-discussion-inline-mention={part.agentId}>@{part.name}</mark
+                  >{:else if typeof part === 'string'}{part}{/if}{/each}
             </div>
           </div>
           <Textarea
@@ -916,7 +926,7 @@
             aria-label={m.workspace_discussion_composer_label()}
             placeholder={effectivePlaceholder}
             class={'relative min-h-6 resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent placeholder:opacity-0! focus:placeholder:opacity-100!' +
-              (agentMentions.length
+              (hasComposerMentions
                 ? ' text-transparent caret-foreground selection:text-foreground'
                 : '')}
             rows={1}

@@ -5,10 +5,13 @@ test('whole-row hover includes spacing and keeps the toolbar inside its row', as
   mount,
   page,
 }) => {
-  const component = await mount(Preview);
+  const component = await mount(Preview, { props: { continuationActions: false } });
   const original = component.locator('[data-discussion-message="original"]');
   const row = component.locator('[data-discussion-message="addressed"]');
+  const withoutActions = (await row.boundingBox())!;
+  await component.update({ props: { continuationActions: true } });
   const bounds = (await row.boundingBox())!;
+  expect(bounds.height).toBe(withoutActions.height);
   await page.mouse.move(bounds.x + 2, bounds.y + 2);
   const toolbar = row.locator('[data-discussion-message-actions]');
   await expect(toolbar).toHaveCSS('opacity', '1');
@@ -36,7 +39,12 @@ test('agent markdown, inline mentions, reply navigation and expansion remain usa
   await expect(human.locator('time')).toHaveCount(0);
   const agent = component.locator('[data-discussion-message="response"]');
   await expect(agent.locator('li')).toHaveCount(2);
-  await expect(agent.locator('code')).toContainText('createInviteLink');
+  await expect(agent.locator('code').filter({ hasText: 'createInviteLink' })).toHaveText(
+    'createInviteLink',
+  );
+  await expect(agent.locator('td code')).toHaveText('hello @sam_name');
+  await expect(agent.locator('[data-discussion-text-mention]')).toHaveText('@alex');
+  await expect(agent.getByRole('link', { name: '@alex', exact: true })).toHaveCount(0);
   await expect(
     agent.locator('[data-discussion-bubble="agent"] button', { hasText: '#84' }),
   ).toBeVisible();
@@ -59,6 +67,9 @@ test('agent markdown, inline mentions, reply navigation and expansion remain usa
 
 test('narrow control containment', async ({ mount }) => {
   const component = await mount(Preview, { props: { narrow: true } });
+  await expect(
+    component.locator('[data-discussion-message="original"] [data-discussion-message-references]'),
+  ).toBeHidden();
   await expect(component.getByRole('button', { name: 'Show more', exact: true })).toBeVisible();
   expect(await component.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   const bubble = component.locator('[data-discussion-bubble="agent"]');
