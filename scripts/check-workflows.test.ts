@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import {
   ACTIONLINT_SHA256,
   ACTIONLINT_VERSION,
   archiveName,
+  binaryVersion,
   installFromArchive,
   main,
   platformKey,
@@ -81,6 +82,22 @@ describe('check-workflows pinned download', () => {
     expect(existsSync(join(cacheDir, ACTIONLINT_VERSION, 'actionlint'))).toBe(false);
   });
 
+  it('reads release and go-install version banners, and null for a broken binary', () => {
+    const dir = tempDir('check-workflows-bin-');
+    const fake = (name: string, body: string) => {
+      const file = join(dir, name);
+      writeFileSync(file, `#!/bin/sh\n${body}\n`);
+      chmodSync(file, 0o755);
+      return file;
+    };
+    expect(binaryVersion(fake('release', 'printf "1.7.12\\ninstalled by downloading\\n"'))).toBe(
+      '1.7.12',
+    );
+    expect(binaryVersion(fake('go-install', 'echo v1.7.12'))).toBe('1.7.12');
+    expect(binaryVersion(fake('broken', 'exit 1'))).toBeNull();
+    expect(binaryVersion(join(dir, 'missing'))).toBeNull();
+  });
+
   it('accepts a buffer whose digest matches', () => {
     const buffer = Buffer.from('payload');
     const digest = createHash('sha256').update(buffer).digest('hex');
@@ -92,7 +109,12 @@ describe('check-workflows shellcheck requirement', () => {
   it('fails instead of letting actionlint skip the shell pass', async () => {
     expect(() => resolveShellcheck('/nonexistent/shellcheck')).toThrow(/would skip every run/);
     process.env.ACTIONLINT_SHELLCHECK = '/nonexistent/shellcheck';
-    await expect(main({ cwd: repoWithWorkflow('ok.yml', CLEAN_WORKFLOW) })).resolves.toBe(2);
+    await expect(
+      main({
+        cwd: repoWithWorkflow('ok.yml', CLEAN_WORKFLOW),
+        cacheDir: tempDir('check-workflows-cache-'),
+      }),
+    ).resolves.toBe(2);
   });
 });
 

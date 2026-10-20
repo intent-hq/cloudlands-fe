@@ -49,12 +49,13 @@ export function verifyChecksum(buffer, expected, label) {
   }
 }
 
-// The first line of `actionlint --version` is the bare version; null when the
+// The first line of `actionlint --version` is the version: bare for release
+// archives, v-prefixed for a `go install ...@vX.Y.Z` build. Null when the
 // binary is missing or cannot run.
 export function binaryVersion(command) {
   const result = spawnSync(command, ['--version'], { encoding: 'utf8' });
   if (result.error || result.status !== 0) return null;
-  return result.stdout.split('\n')[0].trim() || null;
+  return result.stdout.split('\n')[0].trim().replace(/^v/, '') || null;
 }
 
 // Writes the verified archive's binary to `<cacheDir>/<version>/actionlint`
@@ -82,8 +83,10 @@ export function installFromArchive(buffer, { key, cacheDir }) {
   return target;
 }
 
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+
 async function download(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`downloading ${url} failed: HTTP ${response.status}`);
   return Buffer.from(await response.arrayBuffer());
 }
@@ -107,7 +110,7 @@ export async function resolveActionlint({
 // actionlint silently skips its shell pass when shellcheck is absent, which
 // would turn this gate green while checking nothing, so a missing shellcheck
 // is an error rather than a skip.
-export function resolveShellcheck(command = process.env.ACTIONLINT_SHELLCHECK ?? 'shellcheck') {
+export function resolveShellcheck(command = process.env.ACTIONLINT_SHELLCHECK || 'shellcheck') {
   const result = spawnSync(command, ['--version'], { encoding: 'utf8' });
   if (result.error || result.status !== 0) {
     throw new Error(
@@ -118,7 +121,7 @@ export function resolveShellcheck(command = process.env.ACTIONLINT_SHELLCHECK ??
   return command;
 }
 
-// Exit status 0 is clean, 1 is findings, other values are errors. pyflakes is
+// Exit status 0 is clean, 1 is findings; other statuses or a signal are errors. pyflakes is
 // disabled so results do not depend on whether a host has it.
 export function runActionlint({ actionlint, shellcheck, cwd = REPO_ROOT, stdio = 'inherit' }) {
   const result = spawnSync(actionlint, ['-shellcheck', shellcheck, '-pyflakes=', '-no-color'], {
@@ -127,7 +130,7 @@ export function runActionlint({ actionlint, shellcheck, cwd = REPO_ROOT, stdio =
     encoding: 'utf8',
   });
   if (result.error) throw result.error;
-  return { status: result.status ?? 1, stdout: result.stdout ?? '' };
+  return { status: result.status, signal: result.signal, stdout: result.stdout ?? '' };
 }
 
 export async function main({ cwd = REPO_ROOT, cacheDir } = {}) {
@@ -140,7 +143,11 @@ export async function main({ cwd = REPO_ROOT, cacheDir } = {}) {
     console.error(`workflow lint: ${error.message}`);
     return 2;
   }
-  const { status } = runActionlint({ actionlint, shellcheck, cwd });
+  const { status, signal } = runActionlint({ actionlint, shellcheck, cwd });
+  if (signal || (status !== 0 && status !== 1)) {
+    console.error(`workflow lint: actionlint exited abnormally (${signal ?? `status ${status}`}).`);
+    return 2;
+  }
   if (status === 0) {
     console.log(`workflow lint passed: actionlint ${ACTIONLINT_VERSION} with shellcheck.`);
   } else {

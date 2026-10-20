@@ -568,7 +568,7 @@ function isKnownNonCode(file) {
 
 // `lint:workflows` (actionlint) inputs: the workflows and their lint config.
 function isWorkflowLintInput(file) {
-  return /^\.github\/workflows\/[^/]+\.ya?ml$/.test(file) || file === '.github/actionlint.yaml';
+  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
 }
 
 function isArchitectureSource(file) {

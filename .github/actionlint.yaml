@@ -10,9 +10,9 @@ self-hosted-runner:
 paths:
   .github/workflows/**/*.{yml,yaml}:
     ignore:
-      # GitHub documents `concurrency.queue: max` (used by the nightly report
-      # writers to retain pending completions), but actionlint 1.7.12 does not
-      # know the key yet:
+      # GitHub documents `concurrency.queue: max`, which the release workflows
+      # and the nightly report writer use to retain pending runs, but
+      # actionlint 1.7.12 does not know the key yet:
       # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
       - 'unexpected key "queue" for "concurrency" section'
   .github/workflows/member-controls-disposable.yml:

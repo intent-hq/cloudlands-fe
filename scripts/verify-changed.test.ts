@@ -1325,6 +1325,7 @@ describe('verification planning', () => {
       '.github/workflows/promote-beta.yml',
       '.github/workflows/example.yaml',
       '.github/actionlint.yaml',
+      '.github/actionlint.yml',
     ];
     const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
     for (const file of changed) {
