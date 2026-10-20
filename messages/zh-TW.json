@@ -1165,6 +1165,7 @@
   "workspace_branchSelector_connectWithGithub_description": "存取私有儲存庫需要連線",
   "workspace_branchSelector_connectWithGithub_label": "使用 GitHub 連線",
   "workspace_branchSelector_connectingGithub_label": "正在連線 GitHub…",
+  "workspace_branchSelector_currentBranch_label": "目前分支",
   "workspace_branchSelector_current_label": "當前",
   "workspace_branchSelector_default_label": "預設",
   "workspace_branchSelector_dependabotBranches_label": "Dependabot 更新",

@@ -1165,6 +1165,7 @@
   "workspace_branchSelector_connectWithGithub_description": "비공개 저장소에 접근하려면 필요합니다",
   "workspace_branchSelector_connectWithGithub_label": "GitHub으로 연결",
   "workspace_branchSelector_connectingGithub_label": "GitHub에 연결 중...",
+  "workspace_branchSelector_currentBranch_label": "현재 브랜치",
   "workspace_branchSelector_current_label": "현재",
   "workspace_branchSelector_default_label": "기본값",
   "workspace_branchSelector_dependabotBranches_label": "Dependabot 업데이트",

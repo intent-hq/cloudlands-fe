@@ -1165,6 +1165,7 @@
   "workspace_branchSelector_connectWithGithub_description": "Required to access private repositories",
   "workspace_branchSelector_connectWithGithub_label": "Connect with GitHub",
   "workspace_branchSelector_connectingGithub_label": "Connecting to GitHub...",
+  "workspace_branchSelector_currentBranch_label": "current branch",
   "workspace_branchSelector_current_label": "current",
   "workspace_branchSelector_default_label": "default",
   "workspace_branchSelector_dependabotBranches_label": "Dependabot updates",

@@ -1165,6 +1165,7 @@
   "workspace_branchSelector_connectWithGithub_description": "プライベートリポジトリへのアクセスに必要です",
   "workspace_branchSelector_connectWithGithub_label": "GitHub で接続",
   "workspace_branchSelector_connectingGithub_label": "GitHub に接続しています...",
+  "workspace_branchSelector_currentBranch_label": "現在のブランチ",
   "workspace_branchSelector_current_label": "現在",
   "workspace_branchSelector_default_label": "デフォルト",
   "workspace_branchSelector_dependabotBranches_label": "Dependabot の更新",

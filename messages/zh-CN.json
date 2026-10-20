@@ -1165,6 +1165,7 @@
   "workspace_branchSelector_connectWithGithub_description": "访问私有仓库需要连接",
   "workspace_branchSelector_connectWithGithub_label": "使用 GitHub 连接",
   "workspace_branchSelector_connectingGithub_label": "正在连接 GitHub…",
+  "workspace_branchSelector_currentBranch_label": "当前分支",
   "workspace_branchSelector_current_label": "当前",
   "workspace_branchSelector_default_label": "默认",
   "workspace_branchSelector_dependabotBranches_label": "Dependabot 更新",
