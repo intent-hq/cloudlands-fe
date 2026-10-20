@@ -132,8 +132,9 @@ export function collectOpenWorkspaceIds(
 
 /**
  * Collect all window IDs that have a specific workspace open — as the
- * actively viewed workspace, in that window's tab bar, or hosted in the
- * background for agent browser ops — on the host(s) allowed by `scope`.
+ * actively viewed workspace or in that window's tab bar — on the host(s)
+ * allowed by `scope`; when none does, the windows hosting it in the
+ * background for agent browser ops.
  *
  * Any windowId that fails the `isAlive` check is removed from **every** map
  * as a side-effect (stale-entry cleanup).
@@ -147,6 +148,7 @@ export function collectWindowIdsForWorkspace(
   windowBackgroundWorkspaces: Map<number, OpenWorkspaceTabsEntry> = new Map(),
 ): number[] {
   const matchingWindowIds: number[] = [];
+  const backgroundWindowIds: number[] = [];
   const staleWindowIds: number[] = [];
 
   // Collect all window IDs that appear in any map
@@ -184,7 +186,7 @@ export function collectWindowIdsForWorkspace(
         background?.workspaceIds.includes(workspaceId) &&
         entryMatchesScope(windowId, background.backendId, scope, checker)
       ) {
-        matchingWindowIds.push(windowId);
+        backgroundWindowIds.push(windowId);
       }
     } else {
       staleWindowIds.push(windowId);
@@ -198,7 +200,10 @@ export function collectWindowIdsForWorkspace(
     windowBackgroundWorkspaces.delete(windowId);
   }
 
-  return matchingWindowIds;
+  // Background hosting only stands in while no window genuinely has the
+  // workspace open: once one does, it alone receives the workspace's
+  // messages, so a stale background host never doubles them.
+  return matchingWindowIds.length > 0 ? matchingWindowIds : backgroundWindowIds;
 }
 
 /**

@@ -382,6 +382,7 @@ class EmbeddedBrowserCdpService {
   async requestPanelBrowserTabs(
     workspaceId?: string,
     recoverTabId?: string,
+    options: { deadline?: number } = {},
   ): Promise<{ tabs: PanelBrowserTab[]; stale: boolean }> {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -434,7 +435,7 @@ class EmbeddedBrowserCdpService {
       return { tabs: cached, stale: true };
     }
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
-    const timeoutMs = this.listTabsTimeoutMs(workspaceId);
+    const timeoutMs = this.listTabsTimeoutMs(workspaceId, options.deadline);
 
     // Create per-request timeout promise. The fallback only consults the
     // cache entry for the SAME workspace target, so a timed-out request
@@ -482,15 +483,22 @@ class EmbeddedBrowserCdpService {
     this.adoptedWorkspaceDeadlines.set(workspaceId, Date.now() + ADOPTED_MARKER_TTL_MS);
   }
 
-  /** Reply window for a tab-list request (longer right after an adoption). */
-  private listTabsTimeoutMs(workspaceId: string): number {
+  /**
+   * Reply window for a tab-list request: longer right after an adoption,
+   * but never more than half the time left until the caller's `deadline`
+   * (the rest is the mount and capture budget), and never below the usual
+   * window.
+   */
+  private listTabsTimeoutMs(workspaceId: string, deadline?: number): number {
     const expiresAt = this.adoptedWorkspaceDeadlines.get(workspaceId);
     if (expiresAt === undefined) return LIST_TABS_TIMEOUT_MS;
     if (Date.now() >= expiresAt) {
       this.adoptedWorkspaceDeadlines.delete(workspaceId);
       return LIST_TABS_TIMEOUT_MS;
     }
-    return ADOPTED_LIST_TABS_TIMEOUT_MS;
+    if (deadline === undefined) return ADOPTED_LIST_TABS_TIMEOUT_MS;
+    const halfRemaining = Math.floor((deadline - Date.now()) / 2);
+    return Math.max(LIST_TABS_TIMEOUT_MS, Math.min(ADOPTED_LIST_TABS_TIMEOUT_MS, halfRemaining));
   }
 
   /**
@@ -751,6 +759,7 @@ class EmbeddedBrowserCdpService {
   async listAllTabs(
     workspaceId?: string,
     recoverTabId?: string,
+    options: { deadline?: number } = {},
   ): Promise<{
     tabs: (TabInfo & {
       mounted: boolean;
@@ -766,6 +775,7 @@ class EmbeddedBrowserCdpService {
     const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(
       workspaceId,
       recoverTabId,
+      options,
     );
 
     // Get mounted webviews
@@ -2151,21 +2161,23 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Keep a guest and the window hosting it drawing frames for the duration
-   * of one capture, even while that window is minimized or covered by other
-   * apps: Chromium stops producing frames for a backgrounded window, so the
-   * capture would otherwise hang until "not-painting". Background
-   * throttling is turned off on the guest and its host webContents (a
-   * window with one unthrottled webContents draws all of them) and restored
-   * when the last overlapping capture releases, so an idle window keeps its
-   * normal throttling. Returns the release function; never throws.
+   * Keep a guest drawing frames for the duration of one capture, even while
+   * its window is minimized or covered by other apps: Chromium stops
+   * producing frames for a backgrounded window, so the capture would
+   * otherwise hang until "not-painting". Background throttling is turned
+   * off on the guest and restored when the last overlapping capture of it
+   * releases, so an idle tab keeps its normal throttling. Returns the
+   * release function; never throws.
    */
   private holdCaptureDrawing(webContentsId: number): () => void {
     const guest = webContents.fromId(webContentsId);
     if (!guest || guest.isDestroyed()) return () => {};
-    const targets = [guest, guest.hostWebContents].filter(
-      (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
-    );
+    // Only the guest: lifting throttling on its host (the app window
+    // itself) would also flip the app UI's Page Visibility to visible for
+    // every capture — presence would report the user present while the
+    // window is minimized. A window with one unthrottled webContents
+    // displayed in it still draws all of them.
+    const targets = [guest];
     const held: Electron.WebContents[] = [];
     for (const wc of targets) {
       try {

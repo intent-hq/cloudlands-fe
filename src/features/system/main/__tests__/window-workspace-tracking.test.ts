@@ -400,6 +400,17 @@ describe('background-hosted workspaces', () => {
     expect(lookup('ws-closed', ANY_HOST)).toEqual([]);
   });
 
+  it('ignores background hosts while a window genuinely has the workspace open', () => {
+    windowBackgroundWorkspaces.set(1, tabs(['ws-A']));
+    windowOpenWorkspaceTabs.set(2, tabs(['ws-A']));
+    aliveWindows.add(1);
+    aliveWindows.add(2);
+
+    expect(lookup('ws-A', LOCAL)).toEqual([2]);
+    windowOpenWorkspaceTabs.delete(2);
+    expect(lookup('ws-A', LOCAL)).toEqual([1]);
+  });
+
   it('counts background workspaces as open so their caches are not trimmed', () => {
     windowOpenWorkspaceTabs.set(1, tabs(['ws-tab']));
     windowBackgroundWorkspaces.set(1, tabs(['ws-closed']));

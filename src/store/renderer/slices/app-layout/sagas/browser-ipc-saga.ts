@@ -53,20 +53,38 @@ import {
   requestBrowserTabRecovery,
 } from '../../tab-state/tab-state-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
 
 /**
  * Workspaces main asked this window to host in the background
- * (`browser:host-workspace`): no window had them open, so this window hosts
- * them without a tab or display so agent browser ops keep working. A
- * saga-local routing hint like the tab strip and route checks below — it
- * only widens which browser IPC requests this window answers; the layout
+ * (`browser:host-workspace`), each with the backend it belongs to: no window
+ * had them open, so this window hosts them without a tab or display so agent
+ * browser ops keep working. A saga-local routing hint like the tab strip and
+ * route checks below — it only widens which browser IPC requests this window
+ * answers (and only while the window is still on that backend); the layout
  * itself lives in the panel-layout slice. Main forgets the adoption on a
  * renderer reload, matching this module state's lifetime.
  */
-const backgroundHostedWorkspaceIds = new Set<string>();
+const backgroundHostedWorkspaces = new Map<string, string>();
+
+/** Report the background-hosted set so main confirms (or drops) its adoptions. */
+function* reportBackgroundHostedWorkspaces(): SagaGenerator<void> {
+  try {
+    yield* call(invoke, 'browser:background-hosted-workspaces', {
+      workspaceIds: [...backgroundHostedWorkspaces.keys()],
+    });
+  } catch (error) {
+    logger.warn('browser:background-hosted-workspaces report failed', { error });
+  }
+}
+
+function* isBackgroundHosted(workspaceId: string): SagaGenerator<boolean> {
+  const backendId = backgroundHostedWorkspaces.get(workspaceId);
+  return backendId !== undefined && backendId === (yield* selectActiveBackendId());
+}
 
 const logger = createLogger('BrowserIpcSaga');
 
@@ -151,7 +169,7 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
   if (
     !held &&
-    !backgroundHostedWorkspaceIds.has(workspaceId) &&
+    !(yield* call(isBackgroundHosted, workspaceId)) &&
     !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId) &&
     routedWorkspaceId() !== workspaceId
   ) {
@@ -191,20 +209,28 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
 function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator<void> {
   if (!isWorkspaceCommandPayload(data)) return;
   const workspaceId = data.workspaceId;
-  backgroundHostedWorkspaceIds.add(workspaceId);
+  const backendId =
+    typeof data.backendId === 'string' && data.backendId.length > 0
+      ? data.backendId
+      : yield* selectActiveBackendId();
+  backgroundHostedWorkspaces.set(workspaceId, backendId);
   const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
   if (readiness.status === 'hydration-failed') {
+    // Stay hosted: requests for the workspace are answered with the
+    // truthful hydration error instead of a silent timeout.
     logger.warn('Layout hydration failed while background-hosting a workspace', {
       workspaceId,
       error: readiness.message,
     });
   }
+  yield* call(reportBackgroundHostedWorkspaces);
 }
 
 function* forgetBackgroundHostedWorkspace(
   action: ReturnType<typeof workspaceDeleted>,
 ): SagaGenerator<void> {
-  backgroundHostedWorkspaceIds.delete(action.payload[0]);
+  if (!backgroundHostedWorkspaces.delete(action.payload[0])) return;
+  yield* call(reportBackgroundHostedWorkspaces);
 }
 
 function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
@@ -756,6 +782,6 @@ export function* browserIpcSaga(): SagaGenerator<void> {
     yield* all(tasks.map((task) => join(task)));
   } finally {
     running = false;
-    backgroundHostedWorkspaceIds.clear();
+    backgroundHostedWorkspaces.clear();
   }
 }

@@ -5,9 +5,11 @@ import { IPC_CHANNELS } from '../../../../shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
-  getWindowIdsForWorkspace: vi.fn((_workspaceId: string, _scope: unknown): number[] => [1]),
   adoptWorkspaceForBackgroundHosting: vi.fn(
-    (_workspaceId: string, _backendId: string): number | undefined => 7,
+    (
+      _workspaceId: string,
+      _backendId: string,
+    ): { windowId: number | undefined; adopted: boolean } => ({ windowId: 1, adopted: false }),
   ),
   connection: {},
   backendClient: {
@@ -24,7 +26,6 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
-  getWindowIdsForWorkspace: mocks.getWindowIdsForWorkspace,
   adoptWorkspaceForBackgroundHosting: mocks.adoptWorkspaceForBackgroundHosting,
 }));
 
@@ -110,8 +111,9 @@ describe('browser:exec IPC workspace routing', () => {
       browserClientsNotified: false,
       delivered: true,
     });
-    mocks.getWindowIdsForWorkspace.mockReset().mockReturnValue([1]);
-    mocks.adoptWorkspaceForBackgroundHosting.mockReset().mockReturnValue(7);
+    mocks.adoptWorkspaceForBackgroundHosting
+      .mockReset()
+      .mockReturnValue({ windowId: 1, adopted: false });
     vi.mocked(embeddedBrowserCdp.noteWorkspaceAdopted).mockReset();
     vi.spyOn(Date, 'now').mockReturnValue(123);
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
@@ -201,7 +203,7 @@ describe('browser:exec IPC workspace routing', () => {
   // The batch now first asks a window on the owning backend to host it in
   // the background, then routes as usual.
   it('background-hosts a workspace no window has open before routing the batch', async () => {
-    mocks.getWindowIdsForWorkspace.mockReturnValue([]);
+    mocks.adoptWorkspaceForBackgroundHosting.mockReturnValue({ windowId: 7, adopted: true });
     const handler = registerAndGetExecHandler();
 
     const result = await handler(
@@ -212,7 +214,6 @@ describe('browser:exec IPC workspace routing', () => {
       },
     );
 
-    expect(mocks.getWindowIdsForWorkspace).toHaveBeenCalledWith('ws-closed', 'local');
     expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledExactlyOnceWith(
       'ws-closed',
       'local',
@@ -227,7 +228,7 @@ describe('browser:exec IPC workspace routing', () => {
     });
   });
 
-  it('does not adopt when a window already hosts the workspace', async () => {
+  it('does not widen the reply window when a window already hosts the workspace', async () => {
     const handler = registerAndGetExecHandler();
 
     await handler(
@@ -235,22 +236,36 @@ describe('browser:exec IPC workspace routing', () => {
       { actions: [{ action: 'openTab', url: 'https://example.test' }], workspaceId: 'ws-1' },
     );
 
-    expect(mocks.adoptWorkspaceForBackgroundHosting).not.toHaveBeenCalled();
+    expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      'local',
+    );
     expect(embeddedBrowserCdp.noteWorkspaceAdopted).not.toHaveBeenCalled();
   });
 
-  it('does not adopt for a batch that never touches a tab', async () => {
-    mocks.getWindowIdsForWorkspace.mockReturnValue([]);
+  it.each([
+    [[{ action: 'listTunnels' }]],
+    [[{ action: 'readCapture', captureId: 'c', artifact: 'a11y.yaml' }]],
+    [
+      [
+        { action: 'endSession', sessionId: 's' },
+        { action: 'getSummary', captureDir: 'c' },
+      ],
+    ],
+    [[{ action: 42 }]],
+  ])('does not adopt for a batch that never touches a tab: %j', async (actions) => {
     const handler = registerAndGetExecHandler();
 
-    await handler({}, { actions: [{ action: 'listTunnels' }], workspaceId: 'ws-closed' });
+    await handler({}, { actions, workspaceId: 'ws-closed' });
 
     expect(mocks.adoptWorkspaceForBackgroundHosting).not.toHaveBeenCalled();
   });
 
   it('keeps the not-open error when no window on the backend can host the workspace', async () => {
-    mocks.getWindowIdsForWorkspace.mockReturnValue([]);
-    mocks.adoptWorkspaceForBackgroundHosting.mockReturnValue(undefined);
+    mocks.adoptWorkspaceForBackgroundHosting.mockReturnValue({
+      windowId: undefined,
+      adopted: false,
+    });
     mocks.sendToWorkspaceWindows.mockReturnValue({
       windowCount: 0,
       browserClientsNotified: false,

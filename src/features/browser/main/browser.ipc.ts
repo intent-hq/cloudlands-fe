@@ -42,7 +42,6 @@ import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import {
   adoptWorkspaceForBackgroundHosting,
-  getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
@@ -479,8 +478,21 @@ export async function executeBrowserActions(
   );
 }
 
-/** Actions that never touch a tab, so they need no window hosting the workspace. */
-const TAB_FREE_ACTIONS = new Set(['openTunnel', 'listTunnels', 'closeTunnel']);
+/**
+ * Actions that never touch a tab — tunnels, and capture bookkeeping main
+ * answers from its own session state and the capture directory — so they
+ * need no window hosting the workspace.
+ */
+const TAB_FREE_ACTIONS = new Set([
+  'openTunnel',
+  'listTunnels',
+  'closeTunnel',
+  'endCapture',
+  'stopTrace',
+  'endSession',
+  'readCapture',
+  'getSummary',
+]);
 
 /**
  * Make sure a window on the owning backend hosts the batch's workspace
@@ -500,14 +512,14 @@ function ensureBrowserWorkspaceHost(
 ): void {
   const payload = workspaceCommandPayload(workspaceId);
   if (!payload) return;
+  // Malformed actions fail validation without touching a tab.
   const touchesTabs = actions.some((action) => {
     const name = (action as { action?: unknown } | null)?.action;
-    return typeof name !== 'string' || !TAB_FREE_ACTIONS.has(name);
+    return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
   });
   if (!touchesTabs) return;
-  if (getWindowIdsForWorkspace(payload.workspaceId, backendId).length > 0) return;
-  const windowId = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
-  if (windowId !== undefined) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
+  const { adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
+  if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
 }
 
 /**

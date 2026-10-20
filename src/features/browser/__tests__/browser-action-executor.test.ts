@@ -1571,6 +1571,46 @@ describe('browser-action-executor', () => {
       });
     });
 
+    it('mounts the default (first) tab for a snapshot without a tabId and captures that tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(browserCapture.snapshot).mockResolvedValue({ captureId: 'c-2' } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
+      expect(browserCapture.snapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ tabId: 'tab-hidden', workspaceId: 'workspace-a' }),
+      );
+    });
+
+    it('answers still-loading instead of snapshotting a page that has not finished loading', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(embeddedBrowserCdp.waitForTabLoad).mockResolvedValueOnce({
+        loading: true,
+        url: 'http://127.0.0.1:5199/',
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot', tabId: 'tab-hidden' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]).toMatchObject({ success: false, errorCode: 'still-loading' });
+      expect(browserCapture.snapshot).not.toHaveBeenCalled();
+    });
+
     it('fails snapshot with the structured mount error instead of calling the capture service', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);

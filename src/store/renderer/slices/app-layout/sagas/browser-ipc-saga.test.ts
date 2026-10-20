@@ -2280,19 +2280,29 @@ describe('browserIpcSaga', () => {
       expect(
         actions.filter((action: any) => action.type === 'panelLayout/initializeLayout'),
       ).toHaveLength(1);
-      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
-        requestId: 'req-bg',
-        tabs: [
-          {
-            tabId: 'browser-1',
-            url: 'http://sandbox/',
-            title: 'Sandbox',
-            closable: true,
-            ownerAgentId: 'agent-1',
-            active: true,
-          },
-        ],
-      });
+      const replies = (channel: string) =>
+        mocks.invoke.mock.calls
+          .filter((call: any[]) => call[0] === channel)
+          .map((call: any[]) => call[1]);
+      expect(replies('browser:list-tabs-response')).toEqual([
+        {
+          requestId: 'req-bg',
+          tabs: [
+            {
+              tabId: 'browser-1',
+              url: 'http://sandbox/',
+              title: 'Sandbox',
+              closable: true,
+              ownerAgentId: 'agent-1',
+              active: true,
+            },
+          ],
+        },
+      ]);
+      // The window confirms the adoption so main keeps routing to it.
+      expect(replies('browser:background-hosted-workspaces')).toEqual([
+        { workspaceIds: ['ws-closed'] },
+      ]);
       expect(state.tabState.workspaceStacks).toEqual([['ws-viewed']]);
       task.cancel();
       await task.toPromise();
@@ -2339,7 +2349,32 @@ describe('browserIpcSaga', () => {
       await settle();
       expect(state.panelLayout.byWorkspaceId['ws-gone']).toBeUndefined();
 
+      // The window tells main it no longer hosts the deleted workspace.
+      expect(mocks.invoke).toHaveBeenLastCalledWith('browser:background-hosted-workspaces', {
+        workspaceIds: [],
+      });
+      mocks.invoke.mockClear();
+
       await emit({ workspaceId: 'ws-gone', requestId: 'req-gone' }, 'browser:list-tabs-request');
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not answer for a background-hosted workspace of another backend', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-remote', backendId: 'remote-1' });
+      await settle();
+      mocks.invoke.mockClear();
+      state = {
+        ...state,
+        panelLayout: { byWorkspaceId: {} },
+      };
+      actions.length = 0;
+      await emit({ workspaceId: 'ws-remote', requestId: 'req-r' }, 'browser:list-tabs-request');
+
       expect(mocks.invoke).not.toHaveBeenCalled();
       task.cancel();
       await task.toPromise();

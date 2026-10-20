@@ -4,7 +4,7 @@
  * asks one window on the owning backend to host it in the background, then
  * routes workspace-scoped messages there like an open workspace.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = (...args: unknown[]) => unknown;
 type Listener = (...args: unknown[]) => void;
@@ -128,17 +128,30 @@ function freshId() {
   return nextWindowId++;
 }
 
+async function reportBackgroundHosting(window: FakeWindow, workspaceIds: string[]) {
+  electronMocks.fromWebContents.mockReturnValue(window);
+  await handlerFor(IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES)(
+    { sender: {} },
+    { workspaceIds },
+  );
+}
+
 describe('adoptWorkspaceForBackgroundHosting', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('asks an app window on the owning backend to host the workspace and routes to it', async () => {
     const win = makeWindow(freshId());
     await reportTabStrip(win, ['ws-viewed']);
     expect(getWindowIdsForWorkspace('ws-closed', 'local')).toEqual([]);
 
-    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local')).toBe(win.id);
+    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local')).toEqual({
+      windowId: win.id,
+      adopted: true,
+    });
 
     expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith(
       IPC_CHANNELS.BROWSER.HOST_WORKSPACE,
-      { workspaceId: 'ws-closed' },
+      { workspaceId: 'ws-closed', backendId: 'local' },
     );
     expect(getWindowIdsForWorkspace('ws-closed', 'local')).toEqual([win.id]);
     expect(getAllOpenWorkspaceIds()).toContain('ws-closed');
@@ -165,27 +178,81 @@ describe('adoptWorkspaceForBackgroundHosting', () => {
     await reportTabStrip(focused, []);
     electronMocks.getFocusedWindow.mockReturnValue(focused);
 
-    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local')).toBe(focused.id);
-    expect(adoptWorkspaceForBackgroundHosting('ws-remote', 'remote-1')).toBe(remote.id);
+    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local').windowId).toBe(focused.id);
+    expect(adoptWorkspaceForBackgroundHosting('ws-remote', 'remote-1').windowId).toBe(remote.id);
     expect(first.webContents.send).not.toHaveBeenCalled();
   });
 
-  it('is a no-op when a window already has the workspace open', async () => {
+  it('only reports the host when a window already has the workspace open', async () => {
     const win = makeWindow(freshId());
     await reportTabStrip(win, ['ws-open']);
 
-    expect(adoptWorkspaceForBackgroundHosting('ws-open', 'local')).toBe(win.id);
+    expect(adoptWorkspaceForBackgroundHosting('ws-open', 'local')).toEqual({
+      windowId: win.id,
+      adopted: false,
+    });
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 
-  it('returns undefined when no app window is connected to the backend', async () => {
+  it('returns no window when no app window is connected to the backend', async () => {
     const remote = makeWindow(freshId(), 'remote-1');
     await reportTabStrip(remote, []);
     // A window that never reported a tab strip (e.g. a dev console) cannot host.
     makeWindow(freshId());
 
-    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local')).toBeUndefined();
+    expect(adoptWorkspaceForBackgroundHosting('ws-closed', 'local')).toEqual({
+      windowId: undefined,
+      adopted: false,
+    });
     expect(getWindowIdsForWorkspace('ws-closed', ANY_HOST)).toEqual([]);
+  });
+
+  it('lets an adoption the window never confirms lapse, so the next op adopts again', async () => {
+    vi.useFakeTimers();
+    const win = makeWindow(freshId());
+    await reportTabStrip(win, []);
+    adoptWorkspaceForBackgroundHosting('ws-lost', 'local');
+    // A report sent before the request arrived does not cancel the adoption.
+    await reportBackgroundHosting(win, []);
+    expect(getWindowIdsForWorkspace('ws-lost', 'local')).toEqual([win.id]);
+
+    vi.advanceTimersByTime(10_001);
+    expect(getWindowIdsForWorkspace('ws-lost', 'local')).toEqual([]);
+    expect(adoptWorkspaceForBackgroundHosting('ws-lost', 'local').adopted).toBe(true);
+    expect(win.webContents.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a confirmed adoption and drops it once the window stops reporting it', async () => {
+    vi.useFakeTimers();
+    const win = makeWindow(freshId());
+    await reportTabStrip(win, []);
+    adoptWorkspaceForBackgroundHosting('ws-kept', 'local');
+    await reportBackgroundHosting(win, ['ws-kept']);
+
+    vi.advanceTimersByTime(60_000);
+    expect(getWindowIdsForWorkspace('ws-kept', 'local')).toEqual([win.id]);
+
+    // The workspace was deleted: the window reports it no longer hosts it.
+    await reportBackgroundHosting(win, []);
+    expect(getWindowIdsForWorkspace('ws-kept', 'local')).toEqual([]);
+    expect(getAllOpenWorkspaceIds()).not.toContain('ws-kept');
+  });
+
+  it('routes only to the real window once the workspace is opened in one', async () => {
+    const host = makeWindow(freshId());
+    const other = makeWindow(freshId());
+    await reportTabStrip(host, []);
+    await reportTabStrip(other, []);
+    electronMocks.getFocusedWindow.mockReturnValue(host);
+    adoptWorkspaceForBackgroundHosting('ws-later', 'local');
+    await reportBackgroundHosting(host, ['ws-later']);
+
+    await reportTabStrip(other, ['ws-later']);
+    expect(getWindowIdsForWorkspace('ws-later', 'local')).toEqual([other.id]);
+
+    // Closing it there hands routing back to the background host.
+    await reportTabStrip(other, []);
+    expect(getWindowIdsForWorkspace('ws-later', 'local')).toEqual([host.id]);
   });
 
   it('forgets the adoption when the window renderer reloads or crashes', async () => {

@@ -590,6 +590,8 @@ export const IPC_CHANNELS = {
      * (main->renderer event)
      */
     HOST_WORKSPACE: 'browser:host-workspace',
+    /** Report the workspaces this window hosts in the background (renderer->main) */
+    BACKGROUND_HOSTED_WORKSPACES: 'browser:background-hosted-workspaces',
     /** Response with browser tab list (renderer->main) */
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */

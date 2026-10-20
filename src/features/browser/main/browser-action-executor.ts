@@ -443,7 +443,9 @@ async function ensureCaptureTabMounted(
     listed =
       actionName === 'navigate'
         ? await embeddedBrowserCdp.listAllTabs(workspaceId, tabId)
-        : await embeddedBrowserCdp.listAllTabs(workspaceId);
+        : deadline === undefined
+          ? await embeddedBrowserCdp.listAllTabs(workspaceId)
+          : await embeddedBrowserCdp.listAllTabs(workspaceId, undefined, { deadline });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
@@ -518,6 +520,27 @@ async function ensureCaptureTabMounted(
     ...workspaceNotVisibleWarning(workspaceId),
     ...(registryUrl ? { registryUrl } : {}),
   };
+}
+
+/**
+ * The tab a `snapshot` / `startSession` without a `tabId` captures: the
+ * workspace's first listed tab (the capture service's own default), so the
+ * mount-on-demand step can mount that same tab first. Undefined when the
+ * list is unavailable — the capture then fails with its own error.
+ */
+async function defaultCaptureTabId(
+  workspaceId: string,
+  deadline?: number,
+): Promise<string | undefined> {
+  try {
+    const { tabs } =
+      deadline === undefined
+        ? await embeddedBrowserCdp.listAllTabs(workspaceId)
+        : await embeddedBrowserCdp.listAllTabs(workspaceId, undefined, { deadline });
+    return tabs[0]?.tabId;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Whether two URLs name different origins; false when either does not parse. */
@@ -1039,12 +1062,28 @@ async function executeAction(
       case 'snapshot': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         // Snapshots capture a screenshot + accessibility tree, so they mount
-        // an unmounted tab on demand like the capture ops above.
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        // an unmounted tab on demand and let a loading guest settle, like
+        // the capture ops above.
+        const targetTabId = tabId ?? (await defaultCaptureTabId(captureWorkspaceId, deadline));
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          targetTabId,
+          captureWorkspaceId,
+          deadline,
+        );
         if (mount.failure) return mount.failure;
+        if (!action.reload) {
+          const guest = await ensureCaptureGuestSettled(
+            action.action,
+            targetTabId,
+            mount.registryUrl,
+            deadline,
+          );
+          if (guest.failure) return guest.failure;
+        }
         const options: SnapshotOptions = {
           workspaceId: captureWorkspaceId,
-          tabId,
+          tabId: targetTabId,
           name: action.name,
           reload: action.reload,
           waitFor: action.waitFor,
@@ -1060,12 +1099,25 @@ async function executeAction(
 
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        const targetTabId = tabId ?? (await defaultCaptureTabId(captureWorkspaceId, deadline));
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          targetTabId,
+          captureWorkspaceId,
+          deadline,
+        );
         if (mount.failure) return mount.failure;
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          targetTabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
         const options: SessionOptions = {
           ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
-          tabId,
+          tabId: targetTabId,
           name: action.name,
         };
         const result = await browserCapture.startSession(options);
@@ -1104,13 +1156,23 @@ async function executeAction(
 
       case 'captureStep': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const sessionTabId = browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId);
         const mount = await ensureCaptureTabMounted(
           action.action,
-          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          sessionTabId,
           captureWorkspaceId,
           deadline,
         );
         if (mount.failure) return mount.failure;
+        if (!action.reload && sessionTabId) {
+          const guest = await ensureCaptureGuestSettled(
+            action.action,
+            sessionTabId,
+            mount.registryUrl,
+            deadline,
+          );
+          if (guest.failure) return guest.failure;
+        }
         const options: CaptureStepOptions | undefined =
           action.reload || action.waitFor
             ? { reload: action.reload, waitFor: action.waitFor }
