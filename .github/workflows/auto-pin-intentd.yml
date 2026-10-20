@@ -352,6 +352,7 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
 
           body_file=$(mktemp)
+          trap 'rm -f "$body_file"' EXIT
           {
             echo "Automated intentd sidecar pin bump: \`intentd.version\` $CURRENT -> $LATEST,"
             echo "following the alpha channel manifest on [intent-hq/intentd-releases](https://github.com/intent-hq/intentd-releases)."
@@ -394,7 +395,6 @@ jobs:
             fi
             echo "Created PR #$pr."
           fi
-          rm -f "$body_file"
           echo "number=$pr" >> "$GITHUB_OUTPUT"
 
       # Bounded wait for CI Gate on exactly the pushed head; the pin fast path

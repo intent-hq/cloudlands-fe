@@ -14,6 +14,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -29,9 +30,12 @@ const workflow = load(
   readFileSync(resolve(__dirname, '../.github/workflows/auto-pin-intentd.yml'), 'utf8'),
 );
 const BRANCH = (workflow.env as Record<string, string>).BRANCH;
+const STEP_NAME = 'Push branch and open/update rolling PR';
 const step = (workflow.jobs.pin.steps as { name: string; run?: string }[]).find(
-  (s) => s.name === 'Push branch and open/update rolling PR',
-)!;
+  (s) => s.name === STEP_NAME,
+);
+if (!step?.run) throw new Error(`auto-pin-intentd.yml has no "${STEP_NAME}" run step`);
+const script = step.run;
 
 const REPO = 'intent-hq/cloudlands-fe';
 const VIEWER = 'intent-release-bot';
@@ -58,6 +62,8 @@ type Fixture = {
   prs: ReturnType<typeof ownPr>[] | null;
   /** Stdout of `gh pr create`. */
   createOutput?: string;
+  /** Seed `origin` with the rolling branch already carrying the desired pin. */
+  remoteHasPin?: boolean;
 };
 
 function git(cwd: string, ...args: string[]) {
@@ -99,11 +105,36 @@ function runPush(fixture: Fixture) {
     '-m',
     'init',
   );
-  writeFileSync(join(work, 'intentd.version'), '0.11.20\n');
-  writeFileSync(
-    join(work, 'src', 'test', 'current-protocol-version.ts'),
-    "export const V = '2';\n",
-  );
+  const bump = () => {
+    writeFileSync(join(work, 'intentd.version'), '0.11.20\n');
+    writeFileSync(
+      join(work, 'src', 'test', 'current-protocol-version.ts'),
+      "export const V = '2';\n",
+    );
+  };
+  bump();
+  let seededHead: string | undefined;
+  if (fixture.remoteHasPin) {
+    git(work, 'checkout', '--quiet', '-b', 'seed');
+    git(work, 'add', '-A');
+    git(
+      work,
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.com',
+      'commit',
+      '--quiet',
+      '-m',
+      'seed',
+    );
+    git(work, 'push', '--quiet', 'origin', `HEAD:refs/heads/${BRANCH}`);
+    seededHead = git(work, 'rev-parse', 'HEAD');
+    git(work, 'checkout', '--quiet', 'main');
+    bump();
+  }
+  const tmp = join(dir, 'tmp');
+  mkdirSync(tmp);
 
   writeFileSync(join(dir, 'fixture.json'), JSON.stringify(fixture));
   writeFileSync(
@@ -115,6 +146,7 @@ const f = JSON.parse(fs.readFileSync(dir + '/fixture.json', 'utf8'));
 const a = process.argv.slice(2);
 fs.appendFileSync(dir + '/calls', JSON.stringify(a) + '\\n');
 const opt = (name) => { const i = a.indexOf(name); return i < 0 ? undefined : a[i + 1]; };
+if (a[0] === 'pr' && opt('--repo') !== undefined && opt('--repo') !== ${JSON.stringify(REPO)}) process.exit(3);
 if (a[0] === 'pr' && a[1] === 'list') {
   if (f.prs === null) { process.stderr.write('HTTP 502\\n'); process.exit(1); }
   const state = (opt('--state') || 'open').toUpperCase();
@@ -130,15 +162,14 @@ process.exit(2);
   );
   writeFileSync(join(dir, 'outputs'), '');
   // GitHub's default `run` shell on Linux is `bash -e {0}`.
-  const result = spawnSync('bash', ['-e', '-c', step.run!], {
+  const result = spawnSync('bash', ['-e', '-c', script], {
     cwd: work,
     encoding: 'utf8',
     timeout: 30_000,
     env: {
       ...gitEnv(),
       PATH: `${join(dir, 'bin')}:${process.env.PATH}`,
-      // The step's mktemp body file is left behind when it fails early.
-      TMPDIR: dir,
+      TMPDIR: tmp,
       GITHUB_REPOSITORY: REPO,
       GITHUB_OUTPUT: join(dir, 'outputs'),
       BRANCH,
@@ -164,6 +195,8 @@ process.exit(2);
       cwd: origin,
       encoding: 'utf8',
     }).stdout.trim(),
+    seededHead,
+    leftoverTmp: readdirSync(tmp),
     creates: sub('create'),
     edits: sub('edit'),
   };
@@ -193,6 +226,15 @@ describe('auto-pin "Push branch and open/update rolling PR"', () => {
     expect(run.pushedHead).toBe(run.head);
   });
 
+  it('skips the push and keeps the remote head when the branch already carries the pin', () => {
+    const run = runPush({ prs: [ownPr(77)], remoteHasPin: true });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('skipping push');
+    expect(run.head).toBe(run.seededHead);
+    expect(run.pushedHead).toBe(run.seededHead);
+    expect(run.number).toBe('77');
+  });
+
   it('opens a new PR when the previously seen rolling PR closed meanwhile', () => {
     const run = runPush({ prs: [ownPr(77, 'CLOSED')], createOutput: url(124) });
     expect(run.status).toBe(0);
@@ -218,5 +260,6 @@ describe('auto-pin "Push branch and open/update rolling PR"', () => {
     expect(run.creates).toHaveLength(1);
     expect(run.number).toBeUndefined();
     expect(run.stdout).toContain('::error::');
+    expect(run.leftoverTmp).toEqual([]);
   });
 });
