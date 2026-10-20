@@ -93,6 +93,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -108,7 +109,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
-  selectWorkspaceInitializationOutcome: { select: () => undefined },
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({

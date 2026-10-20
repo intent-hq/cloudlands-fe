@@ -41,7 +41,7 @@ jobs:
     # ephemeral runner and it keeps the guarantee that a previous run's
     # assets can never leak into this promotion (#553) even if this ever
     # moves back to a persistent runner.
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     timeout-minutes: 30
 
     steps:

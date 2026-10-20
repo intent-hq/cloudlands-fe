@@ -12,7 +12,7 @@
     readSkipIsolation,
     resolveSidebarRepositoryDefault,
   } from './initializer/sidebar-repository-default';
-  import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -61,14 +61,17 @@
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerLastSelectedRepo,
     selectWorkspaceInitializerLastSubmittedAgent,
+    selectWorkspaceInitializerAgentForRepo,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerDefaultParentPath,
     selectWorkspaceInitializerDraftRestore,
-    selectWorkspaceInitializationOutcome,
+    selectWorkspaceInitializationOutcomeForConsumer,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
+    WorkspaceInitializationOutcome,
+    WorkspaceInitializerAgentSettings,
     WorkspaceInitializationRequest,
     WorkspaceInitializationStagedItem,
     WorkspaceInitializerRepoSelection,
@@ -179,6 +182,8 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { agentSettingsRepoKey } from '$store/renderer/slices/workspace-initializer/utils/agent-settings-repo-key';
+  import { repoAgentSettingsToApply } from './initializer/repo-agent-settings';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
@@ -474,6 +479,7 @@
           const matchedSpecialist = specialists.find((s) => s.id === data.specialist);
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -859,9 +865,15 @@
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
   let effortPickedThisSession = $state(false);
+  // Whether the user (or a prefill naming an agent) chose any part of the
+  // agent setup in this form session. Repository switches never override it;
+  // unlike the flags above it is not set by automatic effort reconciliation.
+  let setupPickedThisSession = $state(false);
+  const agentSetupPinned = () =>
+    modelPickedThisSession || effortPickedThisSession || setupPickedThisSession;
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
-    if (!settings || modelPickedThisSession || effortPickedThisSession) return;
+    if (!settings || agentSetupPinned()) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
     selectedProvider = settings.selectedProvider ?? selectedProvider;
@@ -895,7 +907,7 @@
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     // Keep the provider paired with an in-session pick: restoring a different
     // provider would trip the picker's provider-mismatch effect and clear it.
-    if (!modelPickedThisSession && !effortPickedThisSession) {
+    if (!agentSetupPinned()) {
       selectedProvider = formState.selectedProvider ?? selectedProvider;
     }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
@@ -921,6 +933,80 @@
       applyAgentSettings($lastSubmittedAgent$);
     }
     didApplyHydratedCompactState = true;
+  });
+
+  /**
+   * Replace the whole agent setup (mode, specialist, provider, model, effort)
+   * with a remembered one, so nothing from the previous repository's setup
+   * leaks through fields the remembered setup leaves unset.
+   */
+  async function replaceAgentSettings(settings: WorkspaceInitializerAgentSettings) {
+    if (setupPickedThisSession) return;
+    const provider = settings.selectedProvider || $activeProviderId$ || $defaultProviderId$;
+    const model = settings.selectedModel;
+    const modelAccepted =
+      !!model &&
+      (splitLegacyCompoundId(model).providerId ??
+        settings.selectedProvider ??
+        $defaultProviderId$) === provider;
+    isTeamMode = settings.isTeamMode ?? false;
+    selectedSpecialist =
+      settings.selectedSpecialist !== undefined
+        ? settings.selectedSpecialist
+        : defaultSingleAgentSpecialist;
+    if (provider !== selectedProvider && modelAccepted && selectedModel === model) {
+      // Same model id under another provider: let the picker drop the previous
+      // override first, so the remembered one pairs with the new provider (a
+      // different id re-pairs on its own).
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      selectedProvider = provider;
+      await tick();
+      if (setupPickedThisSession) return;
+    }
+    selectedProvider = provider;
+    selectedModel = modelAccepted ? model : undefined;
+    modelWasOverridden = modelAccepted ? (settings.modelWasOverridden ?? false) : false;
+    selectedReasoningEffort =
+      !model || modelAccepted ? settings.selectedReasoningEffort : undefined;
+  }
+
+  // Remember-per-repository: when the selected repository settles on a new
+  // identity, switch to the agent setup last used to create a workspace there
+  // (or back to the global last-used setup for a repository with none).
+  const agentRepoKey = $derived(
+    agentSettingsRepoKey({
+      type: repoType,
+      path: repoPath,
+      githubUrl,
+      remote: remoteSetup
+        ? { host: remoteSetup.host, workspacePath: remoteSetup.workspacePath }
+        : null,
+      gitlab:
+        repoType === 'gitlab' && $checkoutForm$?.capture && $checkoutForm$.project
+          ? {
+              instanceBaseUrl: $checkoutForm$.capture.instanceBaseUrl,
+              projectPath: $checkoutForm$.project.projectPath,
+            }
+          : null,
+    }),
+  );
+  let lastAgentRepoKey: string | undefined;
+  $effect(() => {
+    const repoKey = agentRepoKey;
+    if (!$workspaceInitializerHydrated$ || !didApplyHydratedCompactState) return;
+    untrack(() => {
+      const settings = repoAgentSettingsToApply({
+        previousRepoKey: lastAgentRepoKey,
+        repoKey,
+        remembered: repoKey
+          ? selectWorkspaceInitializerAgentForRepo.select(appStore.state, repoKey)
+          : null,
+        fallback: $compactFormState$ ?? $lastSubmittedAgent$,
+      });
+      if (repoKey !== null) lastAgentRepoKey = repoKey;
+      if (settings) void replaceAgentSettings(settings);
+    });
   });
 
   $effect(() => {
@@ -972,6 +1058,7 @@
         draftOwnerId,
         draftRestoreRequestId,
         LEGACY_PROMPT_SESSION_KEY,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
       ),
     );
   });
@@ -1002,13 +1089,27 @@
   $effect(() => {
     if (!draftRestored) return;
     const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
-    if (payload) appStore.dispatch(workspaceInitializerDraftSaveScheduled(draftOwnerId, payload));
+    if (payload)
+      appStore.dispatch(
+        workspaceInitializerDraftSaveScheduled(
+          draftOwnerId,
+          payload,
+          draftRestoreRequestId,
+          selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        ),
+      );
   });
 
   // A reload (cmd+R) or window close inside the debounce window would drop
   // the newest keystrokes — flush the pending save on unload and destroy.
   const flushDraftSave = () =>
-    appStore.dispatch(workspaceInitializerDraftFlushRequested(draftOwnerId));
+    appStore.dispatch(
+      workspaceInitializerDraftFlushRequested(
+        draftOwnerId,
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
   onMount(() => {
     window.addEventListener('beforeunload', flushDraftSave);
     return () => window.removeEventListener('beforeunload', flushDraftSave);
@@ -1141,6 +1242,7 @@
           );
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
+            setupPickedThisSession = true;
             // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
             isTeamMode =
               data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
@@ -1526,12 +1628,47 @@
   const isProcessingImages = $derived(processingImageCount > 0);
   let creationStage = $state(0); // 0-3 for progress stages
   const initializationConsumerId = `compact-workspace-initializer:${uuidv4()}`;
+  const initializationOutcome$ =
+    selectWorkspaceInitializationOutcomeForConsumer(initializationConsumerId);
   let activeInitializationSeq: number | null = null;
+  let activeInitialization = $state.raw<{
+    seq: number;
+    resourceId: string;
+    generation: number;
+    request: WorkspaceInitializationRequest;
+    current: () => boolean;
+    mode: 'create' | 'resume';
+    setupScriptRecord?: {
+      repoPath: string;
+      githubUrl?: string;
+      name: string;
+      content: string;
+      nameSource: SetupScriptNameSource;
+    };
+  } | null>(null);
+  let consumedInitializationSeq: number | null = null;
 
   function releaseInitialization(seq: number) {
     appStore.dispatch(clearWorkspaceInitializationOutcome(initializationConsumerId, seq));
     if (activeInitializationSeq === seq) activeInitializationSeq = null;
+    if (activeInitialization?.seq === seq) activeInitialization = null;
   }
+
+  $effect(() => {
+    const outcome = $initializationOutcome$;
+    const active = activeInitialization;
+    if (
+      !active ||
+      !outcome ||
+      outcome.status === 'pending' ||
+      outcome.seq !== active.seq ||
+      outcome.resourceId !== active.resourceId ||
+      consumedInitializationSeq === outcome.seq
+    )
+      return;
+    consumedInitializationSeq = outcome.seq;
+    void tick().then(() => consumeWorkspaceInitialization(active, outcome));
+  });
   // progressId of the in-flight create — drives the live progress label/bar
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
@@ -1973,6 +2110,7 @@
     const repositoryCheckout =
       repoType === 'gitlab' ? selectCheckoutSelection.select(appStore.state, checkoutFormId) : null;
     if (repoType === 'gitlab' && !repositoryCheckout) return;
+    const rememberAgentRepoKey = agentRepoKey ?? undefined;
     const checkoutContextUrl = repositoryCheckout
       ? selectCheckoutForm.select(appStore.state, checkoutFormId)?.contextUrl
       : null;
@@ -2003,6 +2141,7 @@
     const initializationResourceId = `${admission}:${generation}`;
     let initializationRequest: WorkspaceInitializationRequest | null = null;
     let initializationSeq: number | null = null;
+    let handedOff = false;
 
     try {
       // Validate
@@ -2445,6 +2584,7 @@
           isTeamMode,
           selectedProvider,
         },
+        rememberAgentRepoKey,
         // Remembered for the repo only once the workspace is created (including
         // an accepted auto-selected default branch).
         rememberBranch:
@@ -2473,66 +2613,102 @@
       activeInitializationSeq = initialization.seq;
       activeCreateProgressId = initialization.payload.progressId;
       isPulling = Boolean(initializationRequest.pull);
-      const result = await dispatch(initialization);
-      isPulling = false;
-      if (!current()) return;
-
-      // Record the script as this repo's last-used default (localStorage).
-      // Skip the unedited repo-config script — the committed .intent/config.json
-      // is its source of truth, and recording a copy would shadow future
-      // repo-config changes as the last-used default.
       const isUneditedRepoConfigScript =
         setupScriptNameSource === 'repo-config' &&
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === setupScriptProbeKey &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
-      if (setupScriptRepoKey && setupScript.trim() && !isUneditedRepoConfigScript) {
-        recordLastUsedSetupScript(
-          setupScriptRepoKey,
-          {
-            name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
-            content: setupScript,
-            nameSource: setupScriptName ? setupScriptNameSource : 'named',
-          },
-          repoType === 'github' ? githubUrl : undefined,
-        );
-      }
-
-      // Clear before navigation can unmount the form and flush its draft.
-      clearForm(true);
-      if (!current()) return;
-      // Close the accepted form before the route loader can renegotiate the
-      // connection and retire its checkout. Admission still owns this callback.
-      const navigation = goto(`/workspace/${result.workspaceId}`);
-      if (current()) oncreate?.();
-      await navigation;
+      activeInitialization = {
+        seq: initialization.seq,
+        resourceId: initializationResourceId,
+        generation,
+        request: initializationRequest,
+        current,
+        mode: 'create',
+        setupScriptRecord:
+          setupScriptRepoKey && setupScript.trim() && !isUneditedRepoConfigScript
+            ? {
+                repoPath: setupScriptRepoKey,
+                githubUrl: repoType === 'github' ? githubUrl : undefined,
+                name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
+                content: setupScript,
+                nameSource: setupScriptName ? setupScriptNameSource : 'named',
+              }
+            : undefined,
+      };
+      handedOff = true;
+      void dispatch(initialization).catch(() => {
+        // Correlated selector outcomes own UI settlement, including reset removal.
+      });
     } catch (err) {
       if (!current()) return;
-      const outcome = selectWorkspaceInitializationOutcome.select(
-        appStore.state,
-        initializationConsumerId,
-        initializationResourceId,
-      );
-      if (outcome?.pullCompleted) branchBehind = 0;
+      const failureMessage = err instanceof Error ? err.message : '';
+      if (failureMessage.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
+        appStore.dispatch(refetchSpecialistsRequested());
+        resetUnavailableSpecialist();
+        error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else {
+        error = failureMessage
+          ? getGitErrorMessage(failureMessage)
+          : m.workspace_compactInitializer_createFailed_error();
+      }
+    } finally {
+      if (!handedOff && initializationSeq !== null) releaseInitialization(initializationSeq);
+      if (!handedOff && mounted && generation === submissionGeneration) {
+        isCreating = false;
+        activeCreateProgressId = null;
+      }
+    }
+  }
+
+  async function consumeWorkspaceInitialization(
+    active: NonNullable<typeof activeInitialization>,
+    outcome: WorkspaceInitializationOutcome,
+  ) {
+    try {
+      if (!active.current()) return;
       isPulling = false;
-      if (outcome?.stage === 'pull') {
+      if (outcome.status === 'success' && outcome.workspaceId) {
+        const record = active.setupScriptRecord;
+        if (record) {
+          recordLastUsedSetupScript(
+            record.repoPath,
+            {
+              name: record.name,
+              content: record.content,
+              nameSource: record.nameSource,
+            },
+            record.githubUrl,
+          );
+        }
+        pendingFirstMessage = null;
+        // Clear before navigation can unmount the form and flush its draft.
+        clearForm(true);
+        if (!active.current()) return;
+        const navigation = goto(`/workspace/${outcome.workspaceId}`);
+        if (active.current()) oncreate?.();
+        await navigation;
+        return;
+      }
+      if (outcome.status === 'cancelled') return;
+      if (outcome.pullCompleted) branchBehind = 0;
+      if (outcome.stage === 'pull') {
         pullError = outcome.error || m.workspace_compactInitializer_pullFailed_error();
-        pullContinuation = current;
+        pullContinuation = active.current;
         showPullConflictDialog = true;
         return;
       }
       if (
-        initializationRequest &&
-        outcome?.workspaceId &&
+        outcome.workspaceId &&
         (outcome.stage === 'post-create' ||
           outcome.stage === 'attachments' ||
           outcome.stage === 'first-message')
       ) {
-        const stagedItems = outcome.stagedItems ?? initializationRequest.stagedItems;
+        const stagedItems = outcome.stagedItems ?? active.request.stagedItems;
         contextItems = stagedItems as ContextItem[];
         pendingFirstMessage = {
           request: {
-            ...initializationRequest,
+            ...active.request,
             createRequest: undefined,
             pull: undefined,
             resume: {
@@ -2541,11 +2717,10 @@
               workspacePath: outcome.workspacePath,
             },
             stagedItems,
-            heldMessage: initializationRequest.heldMessage
+            heldMessage: active.request.heldMessage
               ? {
-                  ...initializationRequest.heldMessage,
-                  imageBlocks:
-                    outcome.retryImageBlocks ?? initializationRequest.heldMessage.imageBlocks,
+                  ...active.request.heldMessage,
+                  imageBlocks: outcome.retryImageBlocks ?? active.request.heldMessage.imageBlocks,
                 }
               : undefined,
           },
@@ -2560,7 +2735,7 @@
               : m.workspace_compactInitializer_firstMessageSendFailed_error();
         return;
       }
-      const failureMessage = outcome?.error ?? (err instanceof Error ? err.message : '');
+      const failureMessage = outcome.error ?? '';
       if (failureMessage.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2571,8 +2746,8 @@
           : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
-      if (initializationSeq !== null) releaseInitialization(initializationSeq);
-      if (mounted && generation === submissionGeneration) {
+      releaseInitialization(active.seq);
+      if (mounted && active.generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
       }
@@ -2632,10 +2807,23 @@
     richTextarea?.clear(); // Clear the TipTap editor content
     // Cancel the queued save before clearing: an immediate close/unmount can
     // flush the submitted prompt before the empty-state effect runs (#5569).
-    appStore.dispatch(workspaceInitializerDraftSaveCancelled(draftOwnerId));
+    appStore.dispatch(
+      workspaceInitializerDraftSaveCancelled(
+        draftOwnerId,
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
-    appStore.dispatch(workspaceInitializerDraftClearRequested(draftOwnerId, crypto.randomUUID()));
+    appStore.dispatch(
+      workspaceInitializerDraftClearRequested(
+        draftOwnerId,
+        crypto.randomUUID(),
+        draftRestoreRequestId,
+        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+      ),
+    );
     // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
@@ -2658,6 +2846,12 @@
     pullError = null;
     showPullConflictDialog = false;
     // Note: intentionally not resetting shouldPullBeforeCreate — this preference should persist.
+
+    // The created setup is now remembered (globally and for its repository),
+    // so the next form session may again follow repository switches.
+    modelPickedThisSession = false;
+    effortPickedThisSession = false;
+    setupPickedThisSession = false;
 
     // Save the created choices for the next form now, before navigation can
     // unmount the component. remoteSetup is already cleared above.
@@ -2996,55 +3190,22 @@
     };
     isCreating = true;
     error = null;
-    let initializationSeq: number | null = null;
-    try {
-      const initialization = workspaceInitializationRequested(request, {
-        id: initializationConsumerId,
-        resourceId,
-      });
-      initializationSeq = initialization.seq;
-      activeInitializationSeq = initialization.seq;
-      await dispatch(initialization);
-      if (!current()) return;
-      pendingFirstMessage = null;
-      clearForm(true);
-      await goto(`/workspace/${request.resume?.workspaceId}`);
-      if (current()) oncreate?.();
-    } catch (retryError) {
-      if (!current()) return;
-      const outcome = selectWorkspaceInitializationOutcome.select(
-        appStore.state,
-        initializationConsumerId,
-        resourceId,
-      );
-      const stagedItems = outcome?.stagedItems ?? request.stagedItems;
-      contextItems = stagedItems as ContextItem[];
-      pendingFirstMessage = {
-        request: {
-          ...request,
-          stagedItems,
-          heldMessage: request.heldMessage
-            ? {
-                ...request.heldMessage,
-                imageBlocks: outcome?.retryImageBlocks ?? request.heldMessage.imageBlocks,
-              }
-            : undefined,
-        },
-      };
-      error =
-        outcome?.stage === 'attachments'
-          ? m.workspace_compactInitializer_attachmentPlacementFailed_error()
-          : outcome?.error
-            ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
-                detail: outcome.error,
-              })
-            : retryError instanceof Error
-              ? retryError.message
-              : m.workspace_compactInitializer_firstMessageSendFailed_error();
-    } finally {
-      if (initializationSeq !== null) releaseInitialization(initializationSeq);
-      if (current()) isCreating = false;
-    }
+    const initialization = workspaceInitializationRequested(request, {
+      id: initializationConsumerId,
+      resourceId,
+    });
+    activeInitializationSeq = initialization.seq;
+    activeInitialization = {
+      seq: initialization.seq,
+      resourceId,
+      generation,
+      request,
+      current,
+      mode: 'resume',
+    };
+    void dispatch(initialization).catch(() => {
+      // Correlated selector outcomes own UI settlement, including reset removal.
+    });
   }
 
   /**
@@ -3756,6 +3917,7 @@
             }}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
+            onSetupPick={() => (setupPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider

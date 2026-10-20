@@ -76,11 +76,11 @@ export default defineConfig({
 
   expect: {
     /* Screenshot baselines are generated on the GH-hosted runner image, but
-       the CI shards can also route to the self-hosted tinybox runners, which
+       the CI shards can also run on self-hosted runners, which
        rasterize the odd pixel differently (a 1-pixel diff at 200% zoom
        failed a shard deterministically). Tolerate sub-percent rasterization
        drift so baselines stay portable across runner environments — do NOT
-       regenerate baselines on tinybox instead, that just flips the failure
+       regenerate baselines on a self-hosted runner instead, that just flips the failure
        onto the GH-hosted burst path. Ratio-based rather than maxDiffPixels:
        config- and assertion-level options merge per key and ALL set bounds
        must hold, so a pixel-count default here would tighten (not loosen)

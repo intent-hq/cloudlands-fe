@@ -3,7 +3,8 @@
   import WorkspaceTokenUsage from '../WorkspaceTokenUsage.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+  import { tokenUsageReceived as tokenUsageReceivedAction } from '$store/renderer/slices/token-usage/token-usage-slice';
+  import type { TokenUsage } from '$features/token-usage/token-usage-types';
   import { applyLanguagePreference, type AppLocale } from '$lib/i18n/locale';
   import { Button } from '$lib/components/ui/button';
   import { costOnlyUsage } from './token-usage-cost-fixture';
@@ -47,6 +48,16 @@
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
   const workspaceId = 'token-usage-accessibility-ct';
+  // Fixture agents are never loaded into the agent list, so name them through
+  // the daemon's `agentNames` (§5.23); the specs locate rows by these labels.
+  function tokenUsageReceived(wsId: string, usage: TokenUsage) {
+    const ids = new Set([
+      ...Object.keys(usage.byAgentId),
+      ...(usage.byAgentModel ?? []).map((row) => row.agentId),
+    ]);
+    const agentNames = Object.fromEntries([...ids].map((id) => [id, `Agent ${id.slice(0, 8)}`]));
+    return tokenUsageReceivedAction(wsId, { ...usage, agentNames });
+  }
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   const reportedCost = (amount: number) =>
     scopedCosts ? { cost: { amount, currency: 'USD' } } : {};

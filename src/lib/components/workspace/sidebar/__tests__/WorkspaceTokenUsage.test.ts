@@ -7,6 +7,7 @@ import type { TokenUsage } from '$features/token-usage/token-usage-types';
 import { emptyWorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
 import { warmImport } from '../../../../../test/warm-import';
 import { costOnlyUsage } from './token-usage-cost-fixture';
+import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -1519,5 +1520,118 @@ describe('WorkspaceTokenUsage', () => {
 
     expect(screen.queryByTestId('workspace-token-usage')).toBeNull();
     expect(container.textContent?.trim()).toBe('');
+  });
+
+  describe('agent labels for agents the app has not loaded', () => {
+    const RETIRED = 'agent-db0f3c2a-1111-4c4c-8888-000000000001';
+    const DELEGATED = 'agent-db7e9a10-2222-4c4c-8888-000000000002';
+    const LIVE = 'agent-a1b2c3d4-3333-4c4c-8888-000000000003';
+    const totals = (inputTokens: number) => ({
+      inputTokens,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+
+    function namedUsage(agentNames?: Record<string, string>, crossFilter = true) {
+      const byAgentId = {
+        [RETIRED]: totals(500),
+        [DELEGATED]: totals(300),
+        [LIVE]: totals(200),
+      };
+      return makeUsage({
+        byAgentId,
+        byModel: { 'model-a': totals(1000) },
+        totals: totals(1000),
+        ...(crossFilter
+          ? {
+              byAgentModel: [RETIRED, DELEGATED, LIVE].sort().map((agentId) => ({
+                agentId,
+                model: 'model-a',
+                totals: byAgentId[agentId],
+                humanMessages: 1,
+                agentMessages: 1,
+              })),
+            }
+          : {}),
+        ...(agentNames ? { agentNames } : {}),
+        lastScanAt: 5000,
+        isStale: false,
+      });
+    }
+
+    function agentRowTitles(): string[] {
+      return within(screen.getByTestId('token-usage-by-agent'))
+        .getAllByRole('radio')
+        .map((row) => row.getAttribute('title') ?? '');
+    }
+
+    it.each([true, false])(
+      'never shows a raw agent id fragment for unloaded agents (cross-filter %s)',
+      async (crossFilter) => {
+        mocks.state.usage = namedUsage(undefined, crossFilter);
+        mocks.state.agents = [{ id: LIVE, name: 'Coordinator' }];
+
+        await renderExpandedTokenUsage();
+
+        const section = screen.getByTestId('token-usage-by-agent');
+        const titles = agentRowTitles();
+        expect(section.innerHTML).not.toContain('agent-');
+        expect(new Set(titles).size).toBe(titles.length);
+        expect(titles).toEqual([
+          m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 1 }),
+          m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 2 }),
+          'Coordinator',
+        ]);
+      },
+    );
+
+    it('uses daemon-provided agentNames, preferring the loaded agent name', async () => {
+      mocks.state.usage = namedUsage({
+        [RETIRED]: 'PR reviewer',
+        [DELEGATED]: 'Implementor',
+        [LIVE]: 'Stale coordinator name',
+      });
+      mocks.state.agents = [{ id: LIVE, name: 'Coordinator' }];
+
+      await renderExpandedTokenUsage();
+
+      expect(agentRowTitles()).toEqual(['PR reviewer', 'Implementor', 'Coordinator']);
+    });
+
+    it('numbers unnamed agents in display order and ignores id-shaped names', async () => {
+      const usage = namedUsage({ [RETIRED]: RETIRED }, false);
+      mocks.state.usage = {
+        ...usage,
+        byAgentId: { ...usage.byAgentId, [RETIRED]: totals(100), [DELEGATED]: totals(900) },
+      };
+      mocks.state.agents = [{ id: LIVE, name: 'Coordinator' }];
+
+      await renderExpandedTokenUsage();
+
+      expect(screen.getByTestId('token-usage-by-agent').innerHTML).not.toContain('agent-');
+      expect(agentRowTitles()).toEqual([
+        m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 1 }),
+        'Coordinator',
+        m.workspace_tokenUsage_agentUnnamedNumbered_label({ number: 2 }),
+      ]);
+    });
+
+    it('numbers unresolved agents only among rows that render', async () => {
+      const usage = namedUsage({ [DELEGATED]: 'Implementor' });
+      mocks.state.usage = {
+        ...usage,
+        byAgentId: { ...usage.byAgentId, 'agent-00000000-zero': totals(0) },
+      };
+      mocks.state.agents = [{ id: LIVE, name: 'Coordinator' }];
+
+      await renderExpandedTokenUsage();
+
+      expect(agentRowTitles()).toEqual([
+        m.workspace_tokenUsage_agentUnnamed_label(),
+        'Implementor',
+        'Coordinator',
+      ]);
+    });
   });
 });

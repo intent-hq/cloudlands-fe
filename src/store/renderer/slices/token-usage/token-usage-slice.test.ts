@@ -112,6 +112,17 @@ describe('token-usage-slice', () => {
     expect(legacy.byWorkspaceId[WS]).not.toHaveProperty('byAgentModel');
   });
 
+  it('mirrors daemon agentNames and drops them when a later snapshot omits them', () => {
+    const named = tokenUsageReducer(
+      initialState,
+      tokenUsageReceived(WS, { ...snapshot, agentNames: { 'agent-1': 'PR reviewer' } }),
+    );
+    expect(named.byWorkspaceId[WS].agentNames).toEqual({ 'agent-1': 'PR reviewer' });
+
+    const legacy = tokenUsageReducer(named, tokenUsageReceived(WS, snapshot));
+    expect(legacy.byWorkspaceId[WS]).not.toHaveProperty('agentNames');
+  });
+
   it('replaces rather than merges matrix snapshots and keeps cached rows on failure', () => {
     const present = tokenUsageReducer(
       initialState,

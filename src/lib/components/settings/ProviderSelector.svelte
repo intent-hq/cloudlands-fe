@@ -11,7 +11,6 @@
   import { shell } from '$lib/electron-bridge';
   import {
     selectFastModeSupportedProviders,
-    selectProviderFastModeValues,
     selectActiveProviderId,
     selectEnabledProviders,
     selectProviderPaths,
@@ -20,7 +19,6 @@
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
-    setProviderFastMode,
     setActiveProvider,
     setProviderEnabled,
     providerSettingsSessionOpened,
@@ -71,6 +69,10 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import ProviderProfiles from './ProviderProfiles.svelte';
+  import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
+  import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -80,7 +82,6 @@
   let antigravityConnectOpen = $state(false);
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
-  const fastModeValues$ = selectProviderFastModeValues();
   const sessionId = crypto.randomUUID();
   const requests$ = selectProviderSettingsSessionRequests(sessionId);
   const paths$ = selectProviderPaths();
@@ -220,19 +221,17 @@
     return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
-  function handleToggleFastMode(providerId: string, event: Event) {
-    // Keep Redux as the only checked state: local checkbox mutation can hide a
-    // fast rejection, and cached binding values can coalesce rapid activations.
-    event.preventDefault();
-    const enabled = selectProviderFastModeValues.select(appStore.state)[providerId] ?? false;
-    appStore.dispatch(setProviderFastMode(providerId, !enabled));
-  }
+  // Named profiles are a Labs feature: profile management (and its read) is
+  // offered only while Settings → Labs → Provider profiles is on.
+  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
 
-  function handleSelectCodexServiceTier(enabled: boolean, event: Event) {
-    // Keep selection tied to the confirmed/optimistic Redux value, including failed saves.
-    event.preventDefault();
-    const current = selectProviderFastModeValues.select(appStore.state).codex ?? false;
-    if (current !== enabled) appStore.dispatch(setProviderFastMode('codex', enabled));
+  // Add profile is offered only on installed rows whose catalog entry
+  // advertises named profiles (§5.54); other providers never show it.
+  function supportsProfiles(providerId: string): boolean {
+    return (
+      $labsProviderProfilesEnabled$ &&
+      $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true
+    );
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
@@ -271,6 +270,10 @@
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
+  });
+
+  $effect(() => {
+    if ($labsProviderProfilesEnabled$) appStore.dispatch(providerProfilesRequested());
   });
 
   function handleInstallPiMcpAdapter() {
@@ -499,70 +502,7 @@
                             : 'w-44'}
                         >
                           {#if $fastModeProviders$.includes(provider.id)}
-                            {#if provider.id === 'codex'}
-                              <Menu.Sub>
-                                <Menu.SubTrigger
-                                  >{m.settings_providers_serviceTier_label()}</Menu.SubTrigger
-                                >
-                                <Menu.SubContent class="w-64">
-                                  <Menu.RadioGroup
-                                    value={$fastModeValues$.codex ? 'fast' : 'standard'}
-                                    aria-label={m.settings_providers_serviceTier_label()}
-                                  >
-                                    <Menu.RadioItem
-                                      value="standard"
-                                      onSelect={(event) =>
-                                        handleSelectCodexServiceTier(false, event)}
-                                      aria-describedby="fast-mode-description-codex"
-                                    >
-                                      {m.settings_providers_serviceTierStandard_label()}
-                                    </Menu.RadioItem>
-                                    <Menu.RadioItem
-                                      value="fast"
-                                      onSelect={(event) =>
-                                        handleSelectCodexServiceTier(true, event)}
-                                      aria-describedby="fast-mode-description-codex"
-                                    >
-                                      {m.settings_providers_serviceTierFast_label()}
-                                    </Menu.RadioItem>
-                                    <Menu.RadioItem
-                                      value="ultra-fast"
-                                      disabled
-                                      aria-describedby="ultra-fast-description-codex"
-                                    >
-                                      {m.settings_providers_serviceTierUltraFast_label()}
-                                    </Menu.RadioItem>
-                                  </Menu.RadioGroup>
-                                  <Menu.Separator />
-                                  <p
-                                    id="fast-mode-description-codex"
-                                    class="px-2 py-1.5 type-caption text-muted-foreground"
-                                  >
-                                    {m.settings_providers_fastMode_description()}
-                                  </p>
-                                  <p
-                                    id="ultra-fast-description-codex"
-                                    class="px-2 py-1.5 type-caption text-muted-foreground"
-                                  >
-                                    {m.settings_providers_serviceTierUltraFast_description()}
-                                  </p>
-                                </Menu.SubContent>
-                              </Menu.Sub>
-                            {:else}
-                              <Menu.CheckboxItem
-                                checked={$fastModeValues$[provider.id] ?? false}
-                                onSelect={(event) => handleToggleFastMode(provider.id, event)}
-                                aria-describedby={`fast-mode-description-${provider.id}`}
-                              >
-                                {m.settings_providers_fastMode_label()}
-                              </Menu.CheckboxItem>
-                              <p
-                                id={`fast-mode-description-${provider.id}`}
-                                class="px-2 py-1.5 type-caption text-muted-foreground"
-                              >
-                                {m.settings_providers_fastMode_description()}
-                              </p>
-                            {/if}
+                            <ProviderFastModeMenuItems providerRef={provider.id} />
                             <Menu.Separator />
                           {/if}
                           {#if provider.id === 'antigravity'}
@@ -781,6 +721,9 @@
                   </div>
                 </div>
               </div>
+              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+              {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}

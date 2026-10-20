@@ -7,7 +7,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
   import type { PullRequestWorkspace } from '$lib/client/app-client';
-  import { openInBrowserPanel, openInExternalBrowser, openLinkedWorkspace } from './link-handler';
+  import { openInExternalBrowser, openLinkInApp, openLinkedWorkspace } from './link-handler';
 
   let menuElement: HTMLElement | null = $state(null);
   const menuAnchor = $derived.by(() => {
@@ -111,13 +111,11 @@
   }
 
   async function handleOpenInApp() {
-    const { url, workspaceId } = linkActionMenuState;
+    const { url, workspaceId, openInWorkspace, sourcePanelId, assistantLayoutId } =
+      linkActionMenuState;
     hideLinkActionMenu();
-    if (workspaceId) {
-      await openInBrowserPanel(url, workspaceId);
-    } else {
-      await openInExternalBrowser(url);
-    }
+    if (!workspaceId) return;
+    await openLinkInApp(url, workspaceId, { openInWorkspace, sourcePanelId, assistantLayoutId });
   }
 
   async function handleCopyLink() {
@@ -176,12 +174,7 @@
         {@const workspace = originalWorkspaces[0]}
         <Menu.Separator />
         <Menu.Item onSelect={() => handleOpenOriginalWorkspace(workspace)}>
-          <span class="shrink-0">{m.navigation_linkActionMenu_openInOriginalWorkspace_label()}</span
-          >
-          <span class="min-w-0 flex-1 truncate text-muted-foreground">
-            {workspaceName(workspace)}
-          </span>
-          {@render archivedTag(workspace)}
+          {m.navigation_linkActionMenu_openInOriginalWorkspace_label()}
         </Menu.Item>
       {:else if originalWorkspaces.length > 1}
         <Menu.Separator />

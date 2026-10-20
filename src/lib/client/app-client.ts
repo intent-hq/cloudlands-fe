@@ -77,6 +77,14 @@ import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type {
+  ProviderProfileCreateParams,
+  ProviderProfileCreateResult,
+  ProviderProfileDeleteResult,
+  ProviderProfilesListResult,
+  ProviderProfileUpdateParams,
+  ProviderProfileUpdateResult,
+} from '$shared/provider-profiles';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
   BrowserActionEnvelope,
@@ -2178,6 +2186,11 @@ export interface ModelsClient {
  */
 export interface ProvidersClient {
   catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
+  /** `providers.profiles.*` (§5.54), administrator-only; call only when the catalog advertises `supportsProfiles`. */
+  listProfiles(baseProviderId?: string): Promise<ProviderProfilesListResult>;
+  createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
+  updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
+  deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */

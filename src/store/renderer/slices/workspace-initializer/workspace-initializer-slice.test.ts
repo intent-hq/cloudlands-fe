@@ -11,6 +11,7 @@ import {
   removeWorkspaceInitializerRemoteSetup,
   dismissWorkspaceInitializerRecentRepo,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
@@ -327,6 +328,42 @@ describe('workspaceInitializerReducer', () => {
     expect(state.branchByRepo).toEqual({});
   });
 
+  it('remembers the agent setup per repository and ignores an empty repo key', () => {
+    const team = { isTeamMode: true, selectedSpecialist: 'spec-writer', selectedModel: 'opus' };
+    const solo = { isTeamMode: false, selectedSpecialist: 'implementor', selectedModel: 'sonnet' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('github:github.com/acme/app', team),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerAgentForRepo('local:/code/app', solo),
+    );
+    state = workspaceInitializerReducer(state, setWorkspaceInitializerAgentForRepo('', solo));
+    expect(state.agentByRepo).toEqual({
+      'github:github.com/acme/app': team,
+      'local:/code/app': solo,
+    });
+    // The global last-used setup is a separate record.
+    expect(state.lastSubmittedAgent).toBeNull();
+  });
+
+  it('keeps a per-repo setup written before hydration over the persisted one', () => {
+    const persisted = { selectedModel: 'sonnet' };
+    const fresh = { selectedModel: 'opus' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('local:/a', fresh),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({
+        agentByRepo: { 'local:/a': persisted, 'local:/b': persisted },
+      }),
+    );
+    expect(state.agentByRepo).toEqual({ 'local:/a': fresh, 'local:/b': persisted });
+  });
+
   it('sets and clears the pending GitHub prefill', () => {
     expect(initialState.pendingGitHubPrefill).toBeNull();
 
@@ -531,14 +568,34 @@ it('keeps Git probe results transient and clears them for a fresh request', () =
   expect(next.gitCheck).toBeNull();
 });
 
-it('renews an already mounted Git check when host execution resets initializer state', () => {
+it('renews the Git check and cancels pending initialization on host execution reset', () => {
   const requested = workspaceInitializerReducer(
     initialState,
     workspaceInitializerGitCheckRequested(),
   );
-  const changed = workspaceInitializerReducer(requested, hostExecutionConnectionChanged('host-B'));
+  const initialization = workspaceInitializationRequested(
+    {
+      entrypoint: 'compact',
+      admission: 'host-A/member',
+      agentTitle: 'General',
+      coordinator: false,
+      stagedItems: [],
+      lastSubmittedAgent: { selectedSpecialist: null },
+    },
+    { id: 'compact-form', resourceId: 'attempt-1' },
+  );
+  const changed = workspaceInitializerReducer(
+    workspaceInitializerReducer(requested, initialization),
+    hostExecutionConnectionChanged('host-B'),
+  );
   expect(changed.gitCheckRequest).toBe(2);
   expect(changed.gitCheck).toBeNull();
+  expect(getItem(changed.initializationOutcomes, 'compact-form')).toMatchObject({
+    resourceId: 'attempt-1',
+    seq: initialization.seq,
+    status: 'cancelled',
+    error: 'initialization-cancelled',
+  });
   expect(
     workspaceInitializerReducer(initialState, hostExecutionConnectionChanged('host-B'))
       .gitCheckRequest,

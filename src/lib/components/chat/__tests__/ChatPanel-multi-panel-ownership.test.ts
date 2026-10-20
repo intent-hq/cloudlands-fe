@@ -162,6 +162,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectChatAuroraEnabled: testState.selectorFrom(() => testState.chatAuroraEnabled),
+  selectCollapseToolRuns: testState.selector(false),
   selectIsAgentMonospace: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({

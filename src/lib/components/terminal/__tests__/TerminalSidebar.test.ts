@@ -392,13 +392,18 @@ describe('TerminalSidebar detection flow', () => {
     expect(requests).toHaveLength(1);
   });
 
-  it('shows a list failure without misleading empty-state guidance', async () => {
+  it('retries a failed list without misleading empty-state guidance', async () => {
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
     appStore.dispatch(setScriptListState('ws-1', false, 'List unavailable'));
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toContain('List unavailable'),
     );
     expect(screen.queryByText('No scripts detected yet')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'scripts/refreshScripts',
+      payload: ['ws-1'],
+    });
     appStore.dispatch(setScriptListState('ws-1', false));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });

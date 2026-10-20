@@ -24,6 +24,12 @@ export interface LinkActionMenuState {
   workspaceId?: WorkspaceId;
   /** Element that triggered the menu; focus is restored to it on close. */
   anchorElement?: HTMLElement | null;
+  /** The link was clicked in the workspace's Home preview: Open in app enters the workspace. */
+  openInWorkspace: boolean;
+  /** Panel the link was clicked in; Open in app opens beside it. */
+  sourcePanelId?: string;
+  /** Assistant side panel the link was clicked in; Open in app shows the link there. */
+  assistantLayoutId?: string;
   /**
    * Workspaces the daemon linked to the clicked PR (`workspace.findByPullRequest`),
    * most recently linked first. Empty until the lookup for this opening resolves.
@@ -41,6 +47,9 @@ export const linkActionMenuState = $state<LinkActionMenuState>({
   y: 0,
   workspaceId: undefined,
   anchorElement: null,
+  openInWorkspace: false,
+  sourcePanelId: undefined,
+  assistantLayoutId: undefined,
   linkedWorkspaces: [],
   openingId: 0,
 });
@@ -56,6 +65,9 @@ export function showLinkActionMenu(params: {
   y: number;
   workspaceId?: WorkspaceId;
   anchorElement?: HTMLElement | null;
+  openInWorkspace?: boolean;
+  sourcePanelId?: string;
+  assistantLayoutId?: string;
 }): number {
   linkActionMenuState.openingId += 1;
   linkActionMenuState.linkedWorkspaces = [];
@@ -65,6 +77,9 @@ export function showLinkActionMenu(params: {
   linkActionMenuState.y = params.y;
   linkActionMenuState.workspaceId = params.workspaceId;
   linkActionMenuState.anchorElement = params.anchorElement ?? null;
+  linkActionMenuState.openInWorkspace = params.openInWorkspace ?? false;
+  linkActionMenuState.sourcePanelId = params.sourcePanelId;
+  linkActionMenuState.assistantLayoutId = params.assistantLayoutId;
   linkActionMenuState.visible = true;
   return linkActionMenuState.openingId;
 }
@@ -88,6 +103,9 @@ export function hideLinkActionMenu(): void {
   linkActionMenuState.gitHubRef = null;
   linkActionMenuState.workspaceId = undefined;
   linkActionMenuState.anchorElement = null;
+  linkActionMenuState.openInWorkspace = false;
+  linkActionMenuState.sourcePanelId = undefined;
+  linkActionMenuState.assistantLayoutId = undefined;
   linkActionMenuState.linkedWorkspaces = [];
   linkActionMenuState.openingId += 1;
 }

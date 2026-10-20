@@ -79,3 +79,16 @@ export function hasMatchingAttentionNotice(
     return getAttentionNotice(message)?.kind === kind;
   });
 }
+
+/**
+ * Identity of one pending request, or `null` when it has no parseable
+ * timestamp: without one, two same-kind requests are indistinguishable, so a
+ * loaded full reason could be shown for the wrong request.
+ */
+export function attentionRequestKey(
+  agentId: string,
+  request: AgentAttentionRequest,
+): string | null {
+  const stamp = request.timestamp ? timestampIdentity(request.timestamp) : null;
+  return stamp === null ? null : `${agentId}\u0000${request.kind}\u0000${stamp}`;
+}

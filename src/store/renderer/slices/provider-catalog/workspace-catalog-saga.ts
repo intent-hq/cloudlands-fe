@@ -296,6 +296,10 @@ function* onEvent(
         if (resources.size) yield* put(workspaceCatalogRequested(workspaceId, [...resources]));
         break;
       }
+      case 'providers:profiles-changed':
+        // Global (§5.54): the catalog's profile summaries are stale for every workspace.
+        yield* put(workspaceCatalogRequested(workspaceId, ['catalog']));
+        break;
       case 'specialists:changed':
       case 'skills:changed':
         // Both supported events name the affected workspace, including user-tier changes.

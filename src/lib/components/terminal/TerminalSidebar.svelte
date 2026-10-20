@@ -2,8 +2,10 @@
   import {
     selectScriptListPageState,
     selectScriptWorkflowOutcome,
+    selectWorkspaceScriptsInitialized,
+    selectScriptDetectionOperation,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
+  import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
@@ -32,6 +34,7 @@
   import { Button } from '$lib/components/ui/button';
   import ScriptDetectionControls from '$features/scripts/components/ScriptDetectionControls.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
+  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { notify } from '$lib/components/patterns/notify';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
@@ -644,12 +647,20 @@
     return pushEscapeLayer(() => closeContextMenu());
   });
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
+  const detectionOperation$ = selectScriptDetectionOperation(workspaceIdStore);
 </script>
+
+{#snippet scriptListError()}
+  <ErrorState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+    {#snippet message()}<p class="break-words">{$scriptPage$.error}</p>{/snippet}
+  </ErrorState>
+{/snippet}
 
 <!-- Sidebar Container -->
 <div
   class={cn(
-    'flex flex-col h-full bg-sidebar border-l border-border shrink-0 relative select-none',
+    'relative flex h-full min-w-0 shrink-0 flex-col select-none border-l border-border bg-sidebar',
     isResizing && 'pointer-events-none',
     className,
   )}
@@ -670,16 +681,29 @@
     </div>
   {:else}
     <!-- Expanded: full sidebar -->
-    <div class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-0">
+    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-2">
       <!-- Scripts Section -->
       <ListSection
         title={m.terminal_quakeOverlay_scripts_title()}
-        titleClass="mb-0 px-3! py-1!"
+        titleClass="mb-0 flex-wrap gap-y-0 px-3.5 py-0"
         icon={faPlay}
-        class="py-1 shrink-0"
+        class="shrink-0"
       >
         {#snippet actions()}
           <ScriptDetectionControls {workspaceId} />
+          {#if $scriptPage$.error || (!$scriptsInitialized$ && !$scriptPage$.loading && !$detectionOperation$?.pending)}
+            <Button
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
+              aria-label={m.terminal_sidebar_retryScripts_label()}
+              tooltip={m.terminal_sidebar_retryScripts_label()}
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+            >
+              <Fa icon={faRotateRight} size="xs" />
+            </Button>
+          {/if}
           {#if hasScripts}
             <Button
               variant="ghost-light"
@@ -695,7 +719,7 @@
               <Fa
                 icon={saveToRepoStatus === 'saved' ? faCheck : faFloppyDisk}
                 size="xs"
-                class={saveToRepoStatus === 'saved' ? 'text-green-500' : ''}
+                class={saveToRepoStatus === 'saved' ? 'text-success' : ''}
               />
             </Button>
           {/if}
@@ -707,6 +731,7 @@
               showAddForm = !showAddForm;
             }}
             tooltip={m.terminal_sidebar_addScript_tooltip()}
+            aria-label={m.terminal_sidebar_addScript_tooltip()}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
@@ -715,10 +740,7 @@
         <!-- Add Script Form -->
         {#if showAddForm}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
-            onkeydown={handleAddFormKeydown}
-          >
+          <div class="flex flex-col gap-1.5 px-3.5 py-2" onkeydown={handleAddFormKeydown}>
             <Input
               type="text"
               bind:value={newName}
@@ -748,26 +770,12 @@
           </div>
         {/if}
 
-        {#if $scriptPage$.nextCursor}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={$scriptPage$.loading}
-            onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
-            >{m.gitlabCheckout_loadMore_label()}</Button
-          >
-        {/if}
-        {#if $scriptPage$.error}
-          <p
-            role="alert"
-            class="type-caption px-3 py-2 text-left text-muted-foreground break-words"
-          >
-            {$scriptPage$.error}
-          </p>
+        {#if $scriptPage$.error && !hasScripts}
+          {@render scriptListError()}
         {/if}
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-1 px-1.5">
+          <ListContainer spacing="compact" class="px-2 py-1">
             {#each visibleScripts as script (script.id)}
               <div
                 animate:flip={{
@@ -934,9 +942,31 @@
             </div>
           {/if}
         {:else if !showAddForm && !$scriptPage$.error}
-          <p class="type-caption px-3 py-2 text-left text-muted-foreground">
-            {m.terminal_quakeOverlay_noScriptsYet_label()}
-          </p>
+          {#if $detectionOperation$?.pending || $scriptPage$.loading || !$scriptsInitialized$}
+            <LoadingState
+              density="compact"
+              count={3}
+              label={m.terminal_sidebar_loadingScripts_label()}
+              class="gap-1 px-3.5 py-2 [&_[data-slot=skeleton]]:h-(--control-height-compact)"
+            />
+          {:else}
+            <EmptyState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+              {#snippet description()}{m.terminal_quakeOverlay_noScriptsYet_label()}{/snippet}
+            </EmptyState>
+          {/if}
+        {/if}
+        {#if $scriptPage$.error && hasScripts}
+          {@render scriptListError()}
+        {:else if hasScripts && $scriptPage$.nextCursor}
+          <div class="px-3.5 py-1">
+            <Button
+              variant="ghost"
+              size="compact"
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
+              >{m.gitlabCheckout_loadMore_label()}</Button
+            >
+          </div>
         {/if}
       </ListSection>
     </div>

@@ -16,6 +16,7 @@ import type { DraftAttachment } from '$lib/client/app-client';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerDraftRestore,
+  WorkspaceInitializationOutcome,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceDraftDispatchAdapter } from './workspace-draft-dispatch.test-helper';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
@@ -64,6 +65,9 @@ const mocks = vi.hoisted(() => {
     getLastUsedSetupScript: vi.fn(() => undefined),
     recordLastUsedSetupScript: vi.fn(),
     draftRestore$: writable<WorkspaceInitializerDraftRestore | undefined>(undefined),
+    initializationOutcome$: writable<Partial<WorkspaceInitializationOutcome> | undefined>(
+      undefined,
+    ),
     // Per-test persisted form state returned by the selector mock (read
     // synchronously at component init as `savedState`).
     savedFormState: null as unknown,
@@ -82,6 +86,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -96,7 +101,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftRestore: () => mocks.draftRestore$,
-  selectWorkspaceInitializationOutcome: { select: () => undefined },
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -286,7 +291,10 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('post-create repo-field preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    const initialize = createWorkspaceInitializationDispatchAdapter({ create: mocks.create });
+    const initialize = createWorkspaceInitializationDispatchAdapter({
+      create: mocks.create,
+      setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+    });
     const drafts = createWorkspaceDraftDispatchAdapter({
       get: mocks.draftGet,
       set: mocks.draftSet,
@@ -296,6 +304,7 @@ describe('post-create repo-field preservation', () => {
     mocks.dispatch.mockImplementation((action) => (drafts(action) ? action : initialize(action)));
     sessionStorage.clear();
     mocks.draftRestore$.set(undefined);
+    mocks.initializationOutcome$.set(undefined);
     mocks.savedFormState = null;
     mocks.persistedDraft = null;
     mocks.goto.mockReset();

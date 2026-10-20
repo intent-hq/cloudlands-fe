@@ -26,6 +26,7 @@ import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -35,7 +36,7 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createMockWorkspace } from '../../../../../test/factories/workspace.factory';
-import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
+import { selectWorkspaceInitializationOutcomeForConsumer } from '../workspace-initializer-selectors';
 import {
   clearWorkspaceInitializationOutcome,
   workspaceInitializationRequested,
@@ -81,7 +82,7 @@ function request(overrides: Partial<WorkspaceInitializationRequest> = {}) {
 }
 
 const outcome = () =>
-  selectWorkspaceInitializationOutcome.select(appStore.state, consumer.id, consumer.resourceId);
+  selectWorkspaceInitializationOutcomeForConsumer.select(appStore.state, consumer.id);
 const types = () => recorded.map((action) => action.type);
 const installationActionTypes = [
   setWorkspaceEntity.type,
@@ -280,6 +281,51 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
     expect(appStore.state.workspaceInitializer.branchByRepo['/repo']).toBe('feature');
   });
 
+  it('remembers the agent setup for the repo only once the workspace is fully created', async () => {
+    const repoKey = 'github:github.com/acme/app';
+    const teamSetup = {
+      isTeamMode: true,
+      selectedSpecialist: 'spec-writer',
+      selectedProvider: 'claude-code',
+      selectedModel: 'opus',
+      selectedReasoningEffort: 'high',
+    };
+    mocks.redeem.mockResolvedValue({ items: failed, fileBlocks: [], failedCount: 1 });
+    const action = workspaceInitializationRequested(
+      request({ rememberAgentRepoKey: repoKey, lastSubmittedAgent: teamSetup }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow('attachment-placement-failed');
+    expect(appStore.state.workspaceInitializer.agentByRepo).toEqual({});
+
+    mocks.redeem.mockResolvedValue({
+      items: placed,
+      fileBlocks: [{ id: 'block' }],
+      failedCount: 0,
+    });
+    const resume = workspaceInitializationRequested(
+      request({
+        rememberAgentRepoKey: repoKey,
+        lastSubmittedAgent: teamSetup,
+        resume: { workspaceId: 'ws-1', agentId: 'agent-1', workspacePath: '/wt/ws-1' },
+        stagedItems: failed,
+      }),
+      consumer,
+    );
+    appStore.dispatch(resume);
+    await expect(resume.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.agentByRepo).toEqual({ [repoKey]: teamSetup });
+  });
+
+  it('does not remember a per-repo agent setup when the request names no repo', async () => {
+    const action = workspaceInitializationRequested(request(), consumer);
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual(agentSettings);
+    expect(appStore.state.workspaceInitializer.agentByRepo).toEqual({});
+  });
+
   it('retains redeemed files when the held first message fails', async () => {
     mocks.send.mockResolvedValue({ sent: false, errorDetail: 'send failed' });
     const action = workspaceInitializationRequested(request(), consumer);
@@ -309,6 +355,40 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       stage: 'create',
       pullCompleted: true,
     });
+  });
+
+  it('rejects stale admission before pull or create starts', async () => {
+    const action = workspaceInitializationRequested(
+      request({
+        admission: 'stale/backend/member',
+        pull: { repositoryPath: '/repo', branch: 'main' },
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(pull).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled' });
+  });
+
+  it('does not create when principal admission changes during pull', async () => {
+    const held = deferred<{ success: true }>();
+    pull.mockReturnValue(held.promise);
+    const action = workspaceInitializationRequested(
+      request({ pull: { repositoryPath: '/repo', branch: 'main' } }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(pull).toHaveBeenCalledOnce());
+
+    appStore.dispatch(principalContextChanged('replacement/backend/member'));
+    held.resolve({ success: true });
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled', stage: 'pull' });
   });
 
   it('publishes an unexpected post-create delivery failure as resumable', async () => {

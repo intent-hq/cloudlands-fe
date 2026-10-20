@@ -29,6 +29,8 @@ export type WorkspaceTokenUsageState = {
   byModel: TokenUsageByModel;
   /** Presence-detected sparse agent × model projection from the daemon. */
   byAgentModel?: Collection<TokenUsageCrossFilterEntry, 'id'>;
+  /** Daemon-materialized agent display names (§5.23); absent on older daemons. */
+  agentNames?: Record<string, string>;
   /** RFC-3339 timestamp of the daemon's last internal scan; null before the first. */
   lastScanAt: string | null;
   /** True until a rollup is received, or after a fetch failure. */
