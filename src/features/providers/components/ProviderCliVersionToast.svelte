@@ -40,13 +40,12 @@
       ]);
       if (shown.has(key)) continue;
       shown.add(key);
-      notify.warning(
-        m.providers_cliVersionWarning_message({
-          provider: warning.providerName,
+      notify.warning(m.providers_cliVersionWarning_title({ provider: warning.providerName }), {
+        description: m.providers_cliVersionWarning_description({
           version: warning.version,
           minimumVersion: warning.minimumVersion,
         }),
-      );
+      });
     }
   });
 </script>
