@@ -166,15 +166,21 @@ jobs:
           fi
 
           # hold-release on the rolling PR pauses the pipeline for this repo.
-          # gh pr list --head also matches FORK PRs with the same branch name,
-          # so restrict to same-repo heads authored by the PAT identity —
-          # otherwise a fork PR named auto/intentd-pin could be picked up
-          # (same hardening as the auto-cut-alpha Release PR lookup).
-          VIEWER=$(gh api user --jq .login)
-          export VIEWER
-          held=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
-            --json labels,isCrossRepository,author \
-            --jq '[[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].labels[]?.name] | contains(["hold-release"])' || echo false)
+          # rolling-pr.mjs only accepts a same-repo PR authored by the PAT
+          # identity, so a fork PR named auto/intentd-pin cannot pause it.
+          # The PAT login is resolved once here and reused by every later
+          # lookup; failing to read it stops the run (set -e), so a hold is
+          # never skipped for that reason. An unreadable PR list does not
+          # hold the bump (fail open, as before).
+          viewer=$(gh api user --jq .login)
+          if [ -z "$viewer" ]; then
+            echo "::error::could not resolve the RELEASE_PAT login."
+            exit 1
+          fi
+          held=false
+          if rolling=$(node scripts/rolling-pr.mjs --repo "$GITHUB_REPOSITORY" --branch "$BRANCH" --viewer "$viewer"); then
+            held=$(sed -n 's/^hold_release=//p' <<<"$rolling")
+          fi
           if [ "$held" = "true" ]; then
             echo "::notice::Rolling PR on $BRANCH carries the hold-release label; skipping."
             exit 0
@@ -185,6 +191,7 @@ jobs:
             echo "bump=true"
             echo "current=$current"
             echo "latest=$latest"
+            echo "viewer=$viewer"
           } >> "$GITHUB_OUTPUT"
 
       - name: Dry-run report
@@ -288,18 +295,17 @@ jobs:
         if: steps.live.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VIEWER: ${{ steps.decide.outputs.viewer }}
         run: |
           set -euo pipefail
           echo "queued=false" >> "$GITHUB_OUTPUT"
-          # gh pr list --head also matches FORK PRs with the same branch name;
-          # editing/merging .[0] blindly could target attacker code. Only
-          # accept a same-repo PR authored by the PAT identity (same hardening
-          # as the auto-cut-alpha Release PR lookup).
-          VIEWER=$(gh api user --jq .login)
-          export VIEWER
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
-            --json number,isCrossRepository,author \
-            --jq '[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].number // empty')
+          # Only a same-repo PR authored by the PAT identity counts: a fork PR
+          # on the same branch name must never be edited or merged. Output
+          # without the `number=` line fails the step instead of reading as
+          # "no PR".
+          rolling=$(node scripts/rolling-pr.mjs --repo "$GITHUB_REPOSITORY" --branch "$BRANCH" --viewer "$VIEWER")
+          grep -Eq '^number=[0-9]*$' <<<"$rolling"
+          pr=$(sed -n 's/^number=//p' <<<"$rolling")
           echo "number=$pr" >> "$GITHUB_OUTPUT"
           if [ -n "$pr" ]; then
             # shellcheck disable=SC2016 # GraphQL variables, not shell expansions.
@@ -320,6 +326,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           CURRENT: ${{ steps.decide.outputs.current }}
           LATEST: ${{ steps.decide.outputs.latest }}
+          VIEWER: ${{ steps.decide.outputs.viewer }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -360,12 +367,12 @@ jobs:
             echo "- Add the \`hold-release\` label to pause future automated updates of this PR."
           } > "$body_file"
 
-          VIEWER=$(gh api user --jq .login)
-          export VIEWER
+          # Same-repo, PAT-authored PRs only (see the Find rolling PR step).
           find_pr() {
-            gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
-              --json number,isCrossRepository,author \
-              --jq '[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].number // empty'
+            local rolling
+            rolling=$(node scripts/rolling-pr.mjs --repo "$GITHUB_REPOSITORY" --branch "$BRANCH" --viewer "$VIEWER") || return 1
+            grep -Eq '^number=[0-9]*$' <<<"$rolling" || return 1
+            sed -n 's/^number=//p' <<<"$rolling"
           }
           # Re-find after the push: the PR seen by the queue check may have
           # landed or closed meanwhile, and editing a dead PR would leave the
@@ -406,26 +413,27 @@ jobs:
           while :; do
             detail=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" \
               --json headRefOid,reviewDecision,statusCheckRollup 2>/dev/null) || detail=""
-            current=$(jq -r '.headRefOid // empty' <<<"$detail" 2>/dev/null) || current=""
-            if [ -z "$detail" ] || [ -z "$current" ]; then
-              gate=unreadable
-            elif [ "$current" != "$HEAD_SHA" ]; then
-              gate="head-mismatch:$current"
-            elif [ "$(jq -r '.reviewDecision // empty' <<<"$detail")" = "CHANGES_REQUESTED" ]; then
-              gate=blocked:changes-requested
-              break
-            else
-              gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
-                | if length == 0 then "missing"
-                  elif all(.conclusion == "SUCCESS") then "success"
-                  else (map(.conclusion // .status // "PENDING") | join(","))
-                  end' <<<"$detail" 2>/dev/null) || gate=unreadable
-              [ "$gate" = "success" ] && break
-              if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE|STALE|SKIPPED|NEUTRAL' <<<"$gate"; then
-                echo "::warning::CI Gate concluded unsuccessfully on $HEAD_SHA (state: $gate)."
-                break
-              fi
-            fi
+            # scripts/ci-gate-state.mjs: success | missing | pending:* |
+            # failed:* (any concluded non-SUCCESS, terminal) |
+            # head-mismatch:<sha> | unreadable. The last two are re-polled.
+            gate=$(node scripts/ci-gate-state.mjs --head "$HEAD_SHA" <<<"$detail") || gate=unreadable
+            [ -n "$gate" ] || gate=unreadable
+            case "$gate" in
+              unreadable | head-mismatch:*) ;;
+              *)
+                if [ "$(jq -r '.reviewDecision // empty' <<<"$detail")" = "CHANGES_REQUESTED" ]; then
+                  gate=blocked:changes-requested
+                  break
+                fi
+                case "$gate" in
+                  success) break ;;
+                  failed:*)
+                    echo "::warning::CI Gate concluded unsuccessfully on $HEAD_SHA (state: $gate)."
+                    break
+                    ;;
+                esac
+                ;;
+            esac
             if [ "$SECONDS" -ge "$deadline" ]; then
               echo "::notice::CI Gate not green on $HEAD_SHA after ${WAIT_GATE_SECONDS}s (state: $gate)."
               break
