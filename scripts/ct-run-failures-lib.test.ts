@@ -11,6 +11,8 @@ import {
   // @ts-ignore — plain .mjs module without type declarations
 } from './ct-run-failures-lib.mjs';
 
+// Historical report fixtures retain retired suite names so old CI runs remain diagnosable.
+// These paths are report data, never imports or test-discovery inputs.
 const HOVER_SPEC =
   'src/lib/components/workspace/__tests__/workspace-hover-card.geometry.ct.spec.ts';
 const GENERATOR = 'src/lib/component-catalog/geometry-snapshot.ts';

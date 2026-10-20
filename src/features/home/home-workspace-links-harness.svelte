@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
+  import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { setupHomeWorkspaceLinksFixtures } from '../../test/fixtures/home-workspace-links';
   import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 
@@ -36,6 +37,8 @@
   let closed = $state(false);
   onDestroy(dispose);
 </script>
+
+<LinkActionMenu />
 
 <div
   data-workspace-chat-review

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { supportsReasoningEffortProtocol } from './reasoning-effort-protocol';
+import { parseProtocolVersion } from '$shared/protocol-version';
+import {
+  supportsReasoningEffortProtocol,
+  usesLegacyReasoningEffort,
+} from './reasoning-effort-protocol';
 
 describe('supportsReasoningEffortProtocol', () => {
   it.each([
@@ -11,6 +15,22 @@ describe('supportsReasoningEffortProtocol', () => {
     ['invalid', false],
     [undefined, false],
   ])('returns %s support as %s', (version, expected) => {
-    expect(supportsReasoningEffortProtocol(version)).toBe(expected);
+    expect(supportsReasoningEffortProtocol(parseProtocolVersion(version))).toBe(expected);
+  });
+});
+
+describe('usesLegacyReasoningEffort', () => {
+  it.each([
+    ['5.1', true],
+    ['4.9', true],
+    ['5.2', false],
+    ['16.0', false],
+    // Malformed or missing metadata never downgrades a modern daemon.
+    ['16', false],
+    ['16.0-dev', false],
+    [undefined, false],
+    [null, false],
+  ])('%s → %s', (version, expected) => {
+    expect(usesLegacyReasoningEffort(parseProtocolVersion(version))).toBe(expected);
   });
 });

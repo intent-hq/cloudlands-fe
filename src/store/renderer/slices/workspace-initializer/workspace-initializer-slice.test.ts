@@ -1,4 +1,5 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import {
   workspaceInitializerGitCheckRequested,
@@ -10,6 +11,7 @@ import {
   removeWorkspaceInitializerRemoteSetup,
   dismissWorkspaceInitializerRecentRepo,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerPendingGitHubPrefill,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
@@ -19,6 +21,14 @@ import {
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
+  clearWorkspaceInitializationOutcome,
+  workspaceInitializationFinished,
+  workspaceInitializationRequested,
+  workspaceInitializerDraftClearFinished,
+  workspaceInitializerDraftClearRequested,
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreFinished,
+  workspaceInitializerDraftRestoreRequested,
   workspaceInitializerReducer,
 } from './workspace-initializer-slice';
 
@@ -318,6 +328,106 @@ describe('workspaceInitializerReducer', () => {
     expect(state.branchByRepo).toEqual({});
   });
 
+  it('remembers the agent setup per repository and ignores an empty repo key', () => {
+    const team = { isTeamMode: true, selectedSpecialist: 'spec-writer', selectedModel: 'opus' };
+    const solo = { isTeamMode: false, selectedSpecialist: 'implementor', selectedModel: 'sonnet' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('github:github.com/acme/app', team),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerAgentForRepo('local:/code/app', solo),
+    );
+    state = workspaceInitializerReducer(state, setWorkspaceInitializerAgentForRepo('', solo));
+    expect(state.agentByRepo).toEqual({
+      'github:github.com/acme/app': team,
+      'local:/code/app': solo,
+    });
+    // The global last-used setup is a separate record.
+    expect(state.lastSubmittedAgent).toBeNull();
+  });
+
+  it('records single-agent specialists as most recently used, skipping General and team mode', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'spec-writer' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['implementor', 'spec-writer']);
+
+    for (const settings of [
+      { selectedSpecialist: null },
+      { isTeamMode: true, selectedSpecialist: 'coordinator' },
+      null,
+    ]) {
+      state = workspaceInitializerReducer(
+        state,
+        setWorkspaceInitializerLastSubmittedAgent(settings),
+      );
+    }
+    expect(state.recentSpecialistIds).toEqual(['implementor', 'spec-writer']);
+  });
+
+  it('keeps specialists used before hydration ahead of the persisted ones', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'reviewer' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['implementor', 'reviewer'] }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['reviewer', 'implementor']);
+  });
+
+  it('takes the persisted recent specialists as-is when re-hydrating an already hydrated slice', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['implementor', 'reviewer'] }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['reviewer', 'implementor'] }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['reviewer', 'implementor']);
+  });
+
+  it('keeps the same recent specialists reference when General is submitted', () => {
+    const state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    const next = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: null }),
+    );
+    expect(next.recentSpecialistIds).toBe(state.recentSpecialistIds);
+  });
+
+  it('keeps a per-repo setup written before hydration over the persisted one', () => {
+    const persisted = { selectedModel: 'sonnet' };
+    const fresh = { selectedModel: 'opus' };
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerAgentForRepo('local:/a', fresh),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({
+        agentByRepo: { 'local:/a': persisted, 'local:/b': persisted },
+      }),
+    );
+    expect(state.agentByRepo).toEqual({ 'local:/a': fresh, 'local:/b': persisted });
+  });
+
   it('sets and clears the pending GitHub prefill', () => {
     expect(initialState.pendingGitHubPrefill).toBeNull();
 
@@ -369,6 +479,140 @@ describe('workspaceInitializerReducer', () => {
     // Hydration leaves the transient prefill untouched (it is never part of the persisted bag)
     expect(state.pendingGitHubPrefill).toEqual(prefill);
   });
+
+  it('correlates workspace initialization outcomes and rejects stale completion', () => {
+    const request = workspaceInitializationRequested(
+      {
+        entrypoint: 'compact',
+        admission: 'host/member',
+        agentTitle: 'General',
+        coordinator: false,
+        stagedItems: [],
+        lastSubmittedAgent: { selectedSpecialist: null },
+      },
+      { id: 'compact-form', resourceId: 'attempt-2' },
+    );
+    let state = workspaceInitializerReducer(initialState, request);
+    expect(getItem(state.initializationOutcomes, 'compact-form')).toEqual({
+      id: 'compact-form',
+      resourceId: 'attempt-2',
+      seq: request.seq,
+      entrypoint: 'compact',
+      status: 'pending',
+    });
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializationFinished({
+        id: 'compact-form',
+        resourceId: 'attempt-1',
+        seq: request.seq,
+        entrypoint: 'compact',
+        status: 'success',
+        workspaceId: 'stale',
+      }),
+    );
+    expect(getItem(state.initializationOutcomes, 'compact-form')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializationFinished({
+        id: 'compact-form',
+        resourceId: 'attempt-2',
+        seq: request.seq,
+        entrypoint: 'compact',
+        status: 'success',
+        workspaceId: 'workspace-1',
+      }),
+    );
+    expect(getItem(state.initializationOutcomes, 'compact-form')).toMatchObject({
+      status: 'success',
+      workspaceId: 'workspace-1',
+    });
+  });
+
+  it('clears only the requested workspace initialization sequence', () => {
+    const request = workspaceInitializationRequested(
+      {
+        entrypoint: 'onboarding',
+        admission: 'host/member',
+        agentTitle: 'General',
+        coordinator: false,
+        stagedItems: [],
+        lastSubmittedAgent: {},
+      },
+      { id: 'onboarding', resourceId: 'attempt' },
+    );
+    const pending = workspaceInitializerReducer(initialState, request);
+    expect(
+      workspaceInitializerReducer(
+        pending,
+        clearWorkspaceInitializationOutcome('onboarding', request.seq + 1),
+      ),
+    ).toBe(pending);
+    expect(
+      workspaceInitializerReducer(
+        pending,
+        clearWorkspaceInitializationOutcome('onboarding', request.seq),
+      ).initializationOutcomes.ids,
+    ).toEqual([]);
+  });
+
+  it('correlates draft restore completion and releases only the active request', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializerDraftRestoreRequested('compact', 'restore-2', 'legacy-key'),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftRestoreFinished('compact', 'restore-1', 'restored', 'stale', []),
+    );
+    expect(getItem(state.draftRestores, 'compact')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftRestoreFinished('compact', 'restore-2', 'restored', 'saved', []),
+    );
+    expect(getItem(state.draftRestores, 'compact')).toMatchObject({
+      requestId: 'restore-2',
+      status: 'restored',
+      text: 'saved',
+    });
+    expect(
+      workspaceInitializerReducer(
+        state,
+        workspaceInitializerDraftOwnerReleased('compact', 'restore-1'),
+      ).draftRestores,
+    ).toEqual(state.draftRestores);
+    expect(
+      workspaceInitializerReducer(
+        state,
+        workspaceInitializerDraftOwnerReleased('compact', 'restore-2'),
+      ).draftRestores.ids,
+    ).toEqual([]);
+  });
+
+  it('correlates draft clear completion and rejects stale results', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-2'),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-1', 'success'),
+    );
+    expect(getItem(state.draftClears, 'onboarding')?.status).toBe('pending');
+
+    state = workspaceInitializerReducer(
+      state,
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-2', 'failure'),
+    );
+    expect(getItem(state.draftClears, 'onboarding')).toEqual({
+      id: 'onboarding',
+      requestId: 'clear-2',
+      status: 'failure',
+    });
+  });
 });
 
 it('keeps Git probe results transient and clears them for a fresh request', () => {
@@ -388,14 +632,34 @@ it('keeps Git probe results transient and clears them for a fresh request', () =
   expect(next.gitCheck).toBeNull();
 });
 
-it('renews an already mounted Git check when host execution resets initializer state', () => {
+it('renews the Git check and cancels pending initialization on host execution reset', () => {
   const requested = workspaceInitializerReducer(
     initialState,
     workspaceInitializerGitCheckRequested(),
   );
-  const changed = workspaceInitializerReducer(requested, hostExecutionConnectionChanged('host-B'));
+  const initialization = workspaceInitializationRequested(
+    {
+      entrypoint: 'compact',
+      admission: 'host-A/member',
+      agentTitle: 'General',
+      coordinator: false,
+      stagedItems: [],
+      lastSubmittedAgent: { selectedSpecialist: null },
+    },
+    { id: 'compact-form', resourceId: 'attempt-1' },
+  );
+  const changed = workspaceInitializerReducer(
+    workspaceInitializerReducer(requested, initialization),
+    hostExecutionConnectionChanged('host-B'),
+  );
   expect(changed.gitCheckRequest).toBe(2);
   expect(changed.gitCheck).toBeNull();
+  expect(getItem(changed.initializationOutcomes, 'compact-form')).toMatchObject({
+    resourceId: 'attempt-1',
+    seq: initialization.seq,
+    status: 'cancelled',
+    error: 'initialization-cancelled',
+  });
   expect(
     workspaceInitializerReducer(initialState, hostExecutionConnectionChanged('host-B'))
       .gitCheckRequest,

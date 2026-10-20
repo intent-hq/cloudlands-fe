@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gitRootsConsumerMounted,
+    gitRootsConsumerUnmounted,
+  } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
   import { Button } from '$lib/components/ui/button';
   /**
@@ -82,6 +86,7 @@
 
   interface Props {
     workspaceId: string;
+    active?: boolean;
     /** Path of the currently active/selected file (for highlighting) */
     activeFilePath?: string | null;
     /** Whether the active file is from the staged list (true) or unstaged list (false) */
@@ -100,6 +105,7 @@
 
   let {
     workspaceId,
+    active = true,
     activeFilePath = null,
     activeFileStaged = null,
     isAllChangesViewActive = false,
@@ -821,6 +827,13 @@
         workspaceSwitchTimeout = null;
       }, 300); // Disable animations for 300ms during $workspace switch
     });
+  });
+  const gitRootsConsumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!active || !wsId) return;
+    appStore.dispatch(gitRootsConsumerMounted(wsId, gitRootsConsumerId));
+    return () => appStore.dispatch(gitRootsConsumerUnmounted(wsId, gitRootsConsumerId));
   });
 </script>
 

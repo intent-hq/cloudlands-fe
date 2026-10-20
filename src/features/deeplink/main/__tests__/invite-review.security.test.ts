@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shell } from 'electron';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   logs: [] as string[],
@@ -77,7 +78,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   captureLocalIdentityConnection: () => ({ supported: false }),
   // A local sidecar that serves the identity seam, so the GitLab probe runs
   // when GitHub is not connected (the review covers the GitHub proof path).
-  getConnectedDaemonProtocolVersion: () => '10.8', // protocol-version-ok: fixture hello
+  getConnectedDaemonProtocolVersion: () => CURRENT_PROTOCOL_VERSION,
   onBackendNotification: () => () => {},
 }));
 vi.mock('../../../backend/main/backend-connection', () => ({

@@ -88,6 +88,14 @@ export interface PrMonitorSnapshot {
   /** Additive: present (true) when the host reports the PR queued to merge;
    * absent when not queued or unknown. */
   isInMergeQueue?: boolean;
+  /** Additive queue metadata; absent on older daemons. */
+  mergeQueue?: {
+    position: number;
+    queueSize?: number;
+    state?: string;
+    enqueuedAt?: string;
+    estimatedTimeToMerge?: number;
+  };
   rulesKnown: boolean;
 }
 

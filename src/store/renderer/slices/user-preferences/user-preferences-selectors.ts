@@ -63,6 +63,10 @@ export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
+export const selectCollapseToolRuns = store.createSelector((state) => {
+  return state.userPreferences?.collapseToolRuns ?? false;
+});
+
 export const selectShellTransparencyEnabled = store.createSelector((state) => {
   return state.userPreferences?.shellTransparencyEnabled ?? true;
 });
@@ -91,6 +95,15 @@ export const selectLabsGitLabEnabled = store.createSelector((state) => {
  */
 export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsRemoteAgentsEnabled === true;
+});
+
+/**
+ * Entry-point policy for named provider profiles (Labs): profile management,
+ * picker profile groups and sign-in probes. Never use it to resolve, relabel
+ * or reroute a selection that already references a profile.
+ */
+export const selectLabsProviderProfilesEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsProviderProfilesEnabled === true;
 });
 
 export const selectCounterScale = store.createSelector((state) => {

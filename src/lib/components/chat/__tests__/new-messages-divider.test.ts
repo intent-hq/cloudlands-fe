@@ -10,6 +10,7 @@ import {
   dividerDefersToTurnBoundary,
   dividerEntryScrollTop,
   DIVIDER_ENTRY_VIEWPORT_FRACTION,
+  resolveUnreadEntryPhase,
 } from '../new-messages-divider';
 import { indexConversationTurns } from '../conversation-turns';
 import type { AgentMessage } from '$shared/types';
@@ -50,55 +51,74 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
 );
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectAllTabs: [] }),
-);
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectNoteById: null }),
-);
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectWorkspaceTasks: [],
-    selectWorkspaceTasksInitialized: false,
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectAllTabs: [],
   }),
 );
-vi.mock('$store/renderer/slices/presence/presence-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
+vi.mock(
+  '$store/renderer/slices/workspace-notes/workspace-notes-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectNoteById: null,
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectWorkspaceTasks: [],
+      selectWorkspaceTasksInitialized: false,
+    }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
     selectAgentTypingPeople: [],
     selectPresenceOwnPrincipalId: null,
   }),
 );
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectCheckedPanels: [],
-    selectPanels: [],
-    selectCheckedSelections: [],
-  }),
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectCheckedPanels: [],
+      selectPanels: [],
+      selectCheckedSelections: [],
+    }),
 );
-vi.mock('$store/renderer/slices/terminals/terminals-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectWorkspaceSetupTerminal: null }),
-);
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectWorkspaceNavigationMainPanel: { type: 'empty' },
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectWorkspaceSetupTerminal: null,
   }),
 );
 vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectWorkspaceNavigationMainPanel: { type: 'empty' },
+    }),
+);
+vi.mock(
   '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
-  async () =>
-    (await import('./mocks/chat-panel-render-scaffold')).stub({ selectTasksForAgent: [] }),
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectTasksForAgent: [],
+    }),
 );
-vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectPermissionRequests: [] }),
-);
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectChatAuroraEnabled: false,
-    selectIsAgentMonospace: false,
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectPermissionRequests: [],
   }),
 );
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
+vi.mock(
+  '$store/renderer/slices/user-preferences/user-preferences-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectChatAuroraEnabled: false,
+    }),
+);
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
     selectSpecialists: [],
     selectEffectiveBehaviorPrompt: '',
     selectEffectiveModel: '',
@@ -210,6 +230,51 @@ describe('resolveNewMessagesDividerAnchor', () => {
 
   it('returns null for an empty transcript', () => {
     expect(resolveNewMessagesDividerAnchor([], 'm1')).toBeNull();
+  });
+});
+
+describe('resolveUnreadEntryPhase', () => {
+  // Chronological ids; progressive delivery loads them newest-first.
+  const ids = ['m-1', 'm-2', 'm-3', 'm-4'];
+  const loading = { complete: false, truncated: false };
+  const doneWithOlder = { complete: true, truncated: true };
+  const doneWhole = { complete: true, truncated: false };
+
+  it('is none without a marker, regardless of transfer state', () => {
+    expect(resolveUnreadEntryPhase(ids, undefined, loading)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, null, doneWithOlder)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, '', loading)).toBe('none');
+  });
+
+  it('is none for an empty transcript', () => {
+    expect(resolveUnreadEntryPhase([], 'm-1', loading)).toBe('none');
+  });
+
+  it('is none when the marker is the newest message (nothing unseen)', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-4', loading)).toBe('none');
+    expect(resolveUnreadEntryPhase(ids, 'm-4', doneWhole)).toBe('none');
+  });
+
+  it('is marker-pending while loading and the marker row has not arrived', () => {
+    // Only the newest two rows have arrived so far.
+    expect(resolveUnreadEntryPhase(['m-3', 'm-4'], 'm-1', loading)).toBe('marker-pending');
+  });
+
+  it('is marker-loaded as soon as the marker row arrives, before completion', () => {
+    expect(resolveUnreadEntryPhase(['m-2', 'm-3', 'm-4'], 'm-2', loading)).toBe('marker-loaded');
+  });
+
+  it('is marker-loaded after completion when the marker is in the window', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-2', doneWithOlder)).toBe('marker-loaded');
+    expect(resolveUnreadEntryPhase(ids, 'm-1', doneWhole)).toBe('marker-loaded');
+  });
+
+  it('is marker-beyond-window when complete without the marker and older history exists', () => {
+    expect(resolveUnreadEntryPhase(ids, 'm-0', doneWithOlder)).toBe('marker-beyond-window');
+  });
+
+  it('is none for a dangling marker once the whole conversation is loaded', () => {
+    expect(resolveUnreadEntryPhase(ids, 'gone', doneWhole)).toBe('none');
   });
 });
 

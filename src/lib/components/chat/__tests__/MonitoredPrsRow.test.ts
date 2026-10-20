@@ -31,7 +31,7 @@ const {
   snapshotState,
   workspaceState,
   handleLinkMock,
-  openInBrowserPanelMock,
+  openLinkInAppMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   monitorsState: {
@@ -48,7 +48,7 @@ const {
     } as unknown,
   },
   handleLinkMock: vi.fn(),
-  openInBrowserPanelMock: vi.fn(),
+  openLinkInAppMock: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -106,7 +106,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 
 vi.mock('$features/navigation/link-handler', () => ({
   handleLink: handleLinkMock,
-  openInBrowserPanel: openInBrowserPanelMock,
+  openLinkInApp: openLinkInAppMock,
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
@@ -322,7 +322,7 @@ describe('MonitoredPrsRow', () => {
     captureSession.mockReset();
     monitorsState.listeners.clear();
     handleLinkMock.mockClear();
-    openInBrowserPanelMock.mockClear();
+    openLinkInAppMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
@@ -735,6 +735,40 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('still being checked');
   });
 
+  it('adds the queue position and estimate when the snapshot carries mergeQueue', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 2, queueSize: 2, estimatedTimeToMerge: 2254 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain(
+      'Open; queued to merge (#2 of 2 in queue · ~38 min to merge).',
+    );
+  });
+
+  it('shows the position alone while GitHub has no estimate yet', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 1, queueSize: 3 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open; queued to merge (#1 of 3 in queue).');
+  });
+
   it('renders the pre-existing readiness statuses when isInMergeQueue is absent', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
@@ -1121,12 +1155,34 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      { openInWorkspace: false, assistantLayoutId: undefined },
     );
     expect(handleLinkMock).not.toHaveBeenCalled();
+  });
+
+  it('chip menu Open in App enters the workspace from its Home preview', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    const preview = document.createElement('div');
+    preview.dataset.workspaceLinkTarget = 'ws-1';
+    document.body.append(preview);
+    render(MonitoredPrsRow, {
+      target: preview,
+      props: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
+    await fireEvent.click(openInAppItem);
+
+    expect(openLinkInAppMock).toHaveBeenCalledExactlyOnceWith(
+      'https://github.com/acme/widgets/pull/42',
+      'ws-1',
+      { openInWorkspace: true, assistantLayoutId: undefined },
+    );
+    preview.remove();
   });
 
   it('chip menu Open in External Browser routes the PR URL through the forceExternal link handler', async () => {
@@ -1142,7 +1198,7 @@ describe('MonitoredPrsRow', () => {
       'https://github.com/acme/widgets/pull/42',
       expect.objectContaining({ forceExternal: true }),
     );
-    expect(openInBrowserPanelMock).not.toHaveBeenCalled();
+    expect(openLinkInAppMock).not.toHaveBeenCalled();
   });
 
   it('open actions fall back to the canonical GitHub URL when the monitor has no url', async () => {
@@ -1153,10 +1209,11 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
-    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
-    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+    expect(openLinkInAppMock).toHaveBeenCalledTimes(1);
+    expect(openLinkInAppMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
+      expect.anything(),
     );
   });
 });

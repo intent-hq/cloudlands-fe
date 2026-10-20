@@ -123,6 +123,39 @@ describe('LinkTooltip with the live integrations seam', () => {
     expect(screen.queryByText('Late workspace A')).toBeNull();
   });
 
+  it('shows the merge-queue position and estimate on a queued PR through the real client', async () => {
+    request.mockResolvedValueOnce({
+      pull: {
+        ...PULL,
+        isInMergeQueue: true,
+        mergeQueue: {
+          position: 2,
+          queueSize: 3,
+          state: 'queued',
+          enqueuedAt: '2026-10-20T03:50:26Z',
+          estimatedTimeToMerge: 2254,
+        },
+      },
+    });
+    render(LinkTooltip);
+    await hover(PR_URL);
+    expect(screen.getByText(m.ui_linkTooltip_gitHubStateQueued_label())).toBeTruthy();
+    expect(screen.getByTestId('github-link-card-merge-queue').textContent).toContain(
+      '#2 of 3 in queue · ~38 min to merge',
+    );
+  });
+
+  it.each([
+    ['an older daemon without mergeQueue', { isInMergeQueue: true }],
+    ['a non-queued PR with a stale entry', { isInMergeQueue: false, mergeQueue: { position: 1 } }],
+  ])('omits the queue line for %s', async (_label, extra) => {
+    request.mockResolvedValueOnce({ pull: { ...PULL, ...extra } });
+    render(LinkTooltip);
+    await hover(PR_URL);
+    expect(screen.getByText('Fresh pull request details')).toBeTruthy();
+    expect(screen.queryByTestId('github-link-card-merge-queue')).toBeNull();
+  });
+
   it.each(['mergeRequest', 'issue'] as const)(
     'renders safe GitLab %s facts through the real client',
     async (key) => {

@@ -1,8 +1,12 @@
+import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import type { TaskStatus, Workspace, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
+  addItem,
+  replaceItem,
+  removeItem,
   getItem,
   updateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
@@ -37,6 +41,10 @@ export const emptyWorkspaceTasksState: WorkspaceTasksWorkspaceState = {
   stale: true,
   revision: 0,
   readRevision: 0,
+  statsPushed: false,
+  statsRevision: 0,
+  readStatsRevision: 0,
+  pendingPushes: {},
 };
 
 export const initialState: WorkspaceTasksState = {
@@ -99,6 +107,12 @@ export const applyTaskStatusChanged = createAction<
   [workspaceId: string, taskId: string, newStatus: TaskStatus]
 >('workspaceTasks/applyTaskStatusChanged');
 
+/** Complete changed task rows and tombstones from the ordered daemon stream. */
+export const workspaceTasksPushed =
+  createAction<[workspaceId: string, tasks: WorkspaceTask[], removedIds: string[]]>(
+    'workspaceTasks/pushed',
+  );
+
 /** Clear all task state for a workspace. */
 export const clearWorkspaceTasks = createAction<[workspaceId: string]>(
   'workspaceTasks/clearWorkspaceTasks',
@@ -119,7 +133,13 @@ workspaceTasksReducer.with(invalidateWorkspaceTasks, (state, { payload: [id] }) 
 // Events may have been missed while disconnected. Retain rows and demand,
 // but invalidate every cache; the read owner refreshes displayed consumers only.
 workspaceTasksReducer.with(backendReconnected, (state) =>
-  Object.keys(state.byWorkspaceId).reduce(invalidate, state),
+  Object.keys(state.byWorkspaceId).reduce((next, id) => {
+    const invalidated = invalidate(next, id);
+    return setWorkspaceState(invalidated, id, {
+      ...getWorkspaceState(invalidated, id),
+      statsPushed: false,
+    });
+  }, state),
 );
 workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [id] }) =>
   invalidate(state, id),
@@ -145,6 +165,8 @@ workspaceTasksReducer.with(workspaceTasksReadStarted, (state, { payload: [worksp
     loading: true,
     error: null,
     readRevision: ws.revision,
+    readStatsRevision: ws.statsRevision,
+    pendingPushes: {},
   });
 });
 workspaceTasksReducer.with(
@@ -153,10 +175,22 @@ workspaceTasksReducer.with(
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
-      tasks: createCollection<WorkspaceTask, 'id'>('id', tasks),
+      tasks: Object.entries(ws.pendingPushes).reduce(
+        (rows, [id, task]) =>
+          task
+            ? getItem(rows, task.id)
+              ? replaceItem(rows, task.id, task)
+              : addItem(rows, task)
+            : removeItem(rows, id),
+        createCollection<WorkspaceTask, 'id'>('id', tasks),
+      ),
+      pendingPushes: {},
       // An invalidated read may finish after a newer workspace summary.
       // Keep that aggregate, especially when no demand remains to re-read tasks.
-      stats: ws.revision === ws.readRevision ? stats : ws.stats,
+      stats:
+        ws.revision === ws.readRevision && ws.statsRevision === ws.readStatsRevision
+          ? stats
+          : ws.stats,
       loading: false,
       error: null,
       initialized: true,
@@ -164,6 +198,32 @@ workspaceTasksReducer.with(
     });
   },
 );
+workspaceTasksReducer.with(
+  workspaceTasksPushed,
+  (state, { payload: [workspaceId, tasks, removedIds] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    let rows = ws.tasks;
+    const pendingPushes = { ...ws.pendingPushes };
+    for (const task of tasks) {
+      rows = getItem(rows, task.id) ? replaceItem(rows, task.id, task) : addItem(rows, task);
+      if (ws.loading) pendingPushes[task.id] = task;
+    }
+    for (const id of removedIds) {
+      rows = removeItem(rows, id);
+      if (ws.loading) pendingPushes[id] = null;
+    }
+    return setWorkspaceState(state, workspaceId, { ...ws, tasks: rows, pendingPushes });
+  },
+);
+workspaceTasksReducer.with(workspaceTaskStatsPushed, (state, { payload: [workspaceId, stats] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    stats,
+    statsPushed: true,
+    statsRevision: ws.statsRevision + 1,
+  });
+});
 workspaceTasksReducer.with(loadWorkspaceTasksFailed, (state, { payload: [workspaceId, error] }) => {
   const ws = getWorkspaceState(state, workspaceId);
   if (!ws.loading && ws.error === error) return state;
@@ -222,7 +282,7 @@ function seedStatsFromListRow(
   if (!stats) return state;
 
   const ws = getWorkspaceState(state, workspace.id);
-  if (ws.initialized && !ws.stale) return state;
+  if (ws.statsPushed || (ws.initialized && !ws.stale)) return state;
   // Shallow-compare every field present on the incoming rollup so the no-op
   // check stays correct if the wire shape grows beyond the current trio.
   const keys = Object.keys(stats) as (keyof WorkspaceTaskStats)[];

@@ -129,6 +129,7 @@ describe('browser:exec IPC workspace routing', () => {
         workspaceId,
         tabId: 'tab-123-i',
       },
+      'local',
     );
     expect(result).toEqual({
       success: true,

@@ -21,44 +21,41 @@ const { computeArchToTargetNamesMap } = builderRequire('app-builder-lib/out/targ
 vi.unstubAllEnvs();
 
 describe('native Mac packaging entry point', () => {
-  it.each(['x64', 'arm64'])(
-    'stages only the native %s CPU for the fixed isolated profile',
-    (arch) => {
-      const execute = vi.fn();
-      packageMac([`--${arch}`, '--isolated-test', '--publish', 'never'], {
-        platform: 'darwin',
-        hostArch: arch,
-        env: {
-          INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
-          INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
-        },
-        execute,
-      });
-      expect(execute.mock.calls.at(-1)?.[1]).toEqual([
-        '--mac',
-        `--${arch}`,
-        '--publish',
-        'never',
-        '--config',
-        'electron-builder.isolated-test.cjs',
-      ]);
-      expect(execute.mock.calls.some((call) => call[1].includes(`--targets=darwin-${arch}`))).toBe(
-        true,
-      );
-    },
-  );
+  it.each(['arm64'])('stages only the native %s CPU for the fixed isolated profile', (arch) => {
+    const execute = vi.fn();
+    packageMac([`--${arch}`, '--isolated-test', '--publish', 'never'], {
+      platform: 'darwin',
+      hostArch: arch,
+      env: {
+        INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+        INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+      },
+      execute,
+    });
+    expect(execute.mock.calls.at(-1)?.[1]).toEqual([
+      '--mac',
+      `--${arch}`,
+      '--publish',
+      'never',
+      '--config',
+      'electron-builder.isolated-test.cjs',
+    ]);
+    expect(execute.mock.calls.some((call) => call[1].includes(`--targets=darwin-${arch}`))).toBe(
+      true,
+    );
+  });
 
   it.each([
     ['--config', 'other.json'],
     ['--config.appId=app.cloudlands.intent'],
     ['--publish', 'always'],
-    ['--mac=zip:arm64'],
+    ['--mac=zip:x64'],
   ])('refuses isolated build overrides %j before staging', (...args) => {
     const execute = vi.fn();
     expect(() =>
-      packageMac(['--x64', '--isolated-test', ...args], {
+      packageMac(['--arm64', '--isolated-test', ...args], {
         platform: 'darwin',
-        hostArch: 'x64',
+        hostArch: 'arm64',
         env: {
           INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
           INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
@@ -86,20 +83,20 @@ describe('native Mac packaging entry point', () => {
     configureBuildCommand(createYargs()).exitProcess(false).strict().parseSync(args);
 
   it.each(['--config', '-c', '--config=', '--c='])(
-    'rejects an ARM preset loaded via %s before staging',
+    'rejects an Intel preset loaded via %s before staging',
     async (flag) => {
       const directory = mkdtempSync(join(tmpdir(), 'mac-packaging-config-'));
-      const file = join(directory, 'arm-preset.json');
+      const file = join(directory, 'intel-preset.json');
       try {
         writeFileSync(
           file,
           JSON.stringify({
             extends: resolve('electron-builder.yml'),
-            mac: { target: [{ target: 'zip', arch: ['arm64'] }] },
+            mac: { target: [{ target: 'zip', arch: ['x64'] }] },
           }),
         );
         const args = flag.endsWith('=') ? [`${flag}${file}`] : [flag, file];
-        const parsed = parseBuilder(['--mac', '--x64', ...args]);
+        const parsed = parseBuilder(['--mac', '--arm64', ...args]);
         expect(parsed.config).toBe(file);
         const config = await getConfig(process.cwd(), parsed.config, undefined);
         const raw = normalizeOptions(parsed).targets.get(Platform.MAC);
@@ -108,10 +105,10 @@ describe('native Mac packaging entry point', () => {
           { platformSpecificBuildOptions: config.mac, defaultTarget: ['dmg', 'zip'] },
           Platform.MAC,
         );
-        expect([...targets.keys()]).toEqual([1, 3]);
+        expect([...targets.keys()]).toEqual([3, 1]);
         const execute = vi.fn();
         expect(() =>
-          packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+          packageMac(args, { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
         ).toThrow(/config/i);
         expect(execute).not.toHaveBeenCalled();
       } finally {
@@ -123,10 +120,10 @@ describe('native Mac packaging entry point', () => {
   it.each(['--config.extends=preset.json', '-c.extends=preset.json', '--c.extends=preset.json'])(
     'rejects config inheritance through %s before staging',
     (arg) => {
-      expect(parseBuilder(['--mac', '--x64', arg]).config.extends).toBe('preset.json');
+      expect(parseBuilder(['--mac', '--arm64', arg]).config.extends).toBe('preset.json');
       const execute = vi.fn();
       expect(() =>
-        packageMac([arg], { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+        packageMac([arg], { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
       ).toThrow(/config/i);
       expect(execute).not.toHaveBeenCalled();
     },
@@ -136,10 +133,10 @@ describe('native Mac packaging entry point', () => {
     'rejects alternate project roots through %s before staging',
     (flag) => {
       const args = flag.endsWith('=') ? [`${flag}/fixture/project`] : [flag, '/fixture/project'];
-      expect(parseBuilder(['--mac', '--x64', ...args]).projectDir).toBe('/fixture/project');
+      expect(parseBuilder(['--mac', '--arm64', ...args]).projectDir).toBe('/fixture/project');
       const execute = vi.fn();
       expect(() =>
-        packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+        packageMac(args, { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
       ).toThrow(/project/i);
       expect(execute).not.toHaveBeenCalled();
     },
@@ -148,9 +145,9 @@ describe('native Mac packaging entry point', () => {
   it('rejects inline architecture overrides through the long c alias', () => {
     const execute = vi.fn();
     expect(() =>
-      packageMac(['--c.mac.target=zip:arm64'], {
+      packageMac(['--c.mac.target=zip:x64'], {
         platform: 'darwin',
-        hostArch: 'x64',
+        hostArch: 'arm64',
         env: {},
         execute,
       }),
@@ -164,36 +161,38 @@ describe('native Mac packaging entry point', () => {
     ['--prepackaged=/fixture/Intent-arm64.app'],
     ['--pd=/fixture/Intent-arm64.app'],
   ])('rejects existing app input %j before staging or archiving', (...args) => {
-    expect(parseBuilder(['--mac', '--x64', ...args]).prepackaged).toBe('/fixture/Intent-arm64.app');
+    expect(parseBuilder(['--mac', '--arm64', ...args]).prepackaged).toBe(
+      '/fixture/Intent-arm64.app',
+    );
     const execute = vi.fn();
     expect(() =>
-      packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+      packageMac(args, { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
     ).toThrow(/prepackaged/i);
     expect(execute).not.toHaveBeenCalled();
   });
 
   it.each([
-    { args: ['--arm64=true'], targets: [['mac', [1, 3]]] },
-    { args: ['--macos=zip:arm64'], targets: [['mac', [3]]] },
+    { args: ['--x64=true'], targets: [['mac', [1, 3]]] },
+    { args: ['--macos=zip:x64'], targets: [['mac', [1]]] },
     {
       args: ['--windows'],
       targets: [
-        ['mac', [1]],
-        ['win', [1]],
+        ['mac', [3]],
+        ['win', [3]],
       ],
     },
     {
       args: ['-mwl'],
       targets: [
-        ['mac', [1]],
-        ['linux', [1]],
-        ['win', [1]],
+        ['mac', [3]],
+        ['linux', [3]],
+        ['win', [3]],
       ],
     },
   ])('rejects builder alias $args before staging anything', ({ args, targets }) => {
     // Independent oracle: these exact forwarded arguments select a foreign CPU/platform
     // in the installed electron-builder CLI, even though none uses our primary spellings.
-    const parsed = normalizeOptions(parseBuilder(['--mac', '--x64', ...args]));
+    const parsed = normalizeOptions(parseBuilder(['--mac', '--arm64', ...args]));
     expect(
       [...parsed.targets].map(
         ([platform, arches]: [typeof Platform.MAC, Map<number, string[]>]) => [
@@ -204,49 +203,46 @@ describe('native Mac packaging entry point', () => {
     ).toEqual(targets);
     const execute = vi.fn();
     expect(() =>
-      packageMac(args, { platform: 'darwin', hostArch: 'x64', env: {}, execute }),
+      packageMac(args, { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
     ).toThrow();
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each(['x64', 'arm64'])(
-    'preserves native %s target aliases, publish and signing options',
-    (arch) => {
-      const execute = vi.fn();
-      packageMac(
-        [
-          `--${arch}=true`,
-          `--macos=zip:${arch}`,
-          '-p',
-          'never',
-          '-c.mac.identity=null',
-          '-c.mac.notarize=false',
-        ],
-        {
-          platform: 'darwin',
-          hostArch: arch,
-          env: {},
-          execute,
-        },
-      );
-      const finalCommand = execute.mock.calls.at(-1)![1];
-      const parsed = normalizeOptions(parseBuilder(finalCommand));
-      expect([...parsed.targets.get(Platform.MAC)]).toEqual([[arch === 'x64' ? 1 : 3, ['zip']]]);
-      expect(parsed.publish).toBe('never');
-      expect(parsed.config.mac).toMatchObject({ identity: null, notarize: 'false' });
-      expect(execute.mock.calls.some((call) => call[1].includes(`--targets=darwin-${arch}`))).toBe(
-        true,
-      );
-    },
-  );
+  it.each(['arm64'])('preserves native %s target aliases, publish and signing options', (arch) => {
+    const execute = vi.fn();
+    packageMac(
+      [
+        `--${arch}=true`,
+        `--macos=zip:${arch}`,
+        '-p',
+        'never',
+        '-c.mac.identity=null',
+        '-c.mac.notarize=false',
+      ],
+      {
+        platform: 'darwin',
+        hostArch: arch,
+        env: {},
+        execute,
+      },
+    );
+    const finalCommand = execute.mock.calls.at(-1)![1];
+    const parsed = normalizeOptions(parseBuilder(finalCommand));
+    expect([...parsed.targets.get(Platform.MAC)]).toEqual([[3, ['zip']]]);
+    expect(parsed.publish).toBe('never');
+    expect(parsed.config.mac).toMatchObject({ identity: null, notarize: 'false' });
+    expect(execute.mock.calls.some((call) => call[1].includes(`--targets=darwin-${arch}`))).toBe(
+      true,
+    );
+  });
 
   it.each([
-    ['x64', ['-o', 'zip:arm64']],
+    ['arm64', ['-o', 'zip:x64']],
     ['arm64', ['--x64=true']],
     ['arm64', ['-m', 'dmg:x64']],
     ['arm64', ['--universal=true']],
-    ['x64', ['-lw']],
-    ['x64', ['--win=zip']],
+    ['arm64', ['-lw']],
+    ['arm64', ['--win=zip']],
   ])('rejects other foreign CLI forms on %s: %j', (hostArch, args) => {
     const execute = vi.fn();
     expect(() =>
@@ -274,7 +270,7 @@ describe('native Mac packaging entry point', () => {
     expect(filter(resolve('node_modules/node-pty/build/Release/pty.node'), stats)).toBe(true);
     expect(filter(resolve('node_modules/node-pty/build/Release/spawn-helper'), stats)).toBe(true);
   });
-  it.each(['x64', 'arm64'])('stages and packages the selected native %s architecture', (arch) => {
+  it.each(['arm64'])('stages and packages the selected native %s architecture', (arch) => {
     const execute = vi.fn();
     packageMac([`--${arch}`, '--publish', 'never'], {
       platform: 'darwin',
@@ -296,7 +292,7 @@ describe('native Mac packaging entry point', () => {
     for (const call of calls) expect(call[2].env.INTENT_MAC_ARCH).toBe(arch);
   });
 
-  it.each(['x64', 'arm64'])('defaults to the %s host and preserves builder arguments', (arch) => {
+  it.each(['arm64'])('defaults to the %s host and preserves builder arguments', (arch) => {
     expect(
       resolveMacArguments(['--', '--publish=always', '-c.mac.identity=null'], 'darwin', arch),
     ).toEqual({ arch, builderArgs: ['--publish=always', '-c.mac.identity=null'] });
@@ -304,14 +300,16 @@ describe('native Mac packaging entry point', () => {
 
   it.each([
     ['linux', 'x64', []],
+    ['darwin', 'x64', []],
+    ['darwin', 'x64', ['--x64']],
     ['darwin', 'x64', ['--arm64']],
     ['darwin', 'arm64', ['--x64']],
     ['darwin', 'arm64', ['--x64', '--arm64']],
     ['darwin', 'arm64', ['--universal']],
-    ['darwin', 'x64', ['--ia32']],
-    ['darwin', 'x64', ['--arch=arm64']],
-    ['darwin', 'x64', ['--mac', 'zip:arm64']],
-    ['darwin', 'x64', ['-c.mac.target[0].arch=arm64']],
+    ['darwin', 'arm64', ['--ia32']],
+    ['darwin', 'arm64', ['--arch=x64']],
+    ['darwin', 'arm64', ['--mac', 'zip:x64']],
+    ['darwin', 'arm64', ['-c.mac.target[0].arch=x64']],
   ])('rejects unsupported build %s/%s %j before doing work', (platform, hostArch, args) => {
     const execute = vi.fn();
     expect(() => packageMac(args as string[], { platform, hostArch, env: {}, execute })).toThrow();
@@ -321,10 +319,10 @@ describe('native Mac packaging entry point', () => {
   it('rejects a conflicting daemon target override before building', () => {
     const execute = vi.fn();
     expect(() =>
-      packageMac(['--x64'], {
+      packageMac(['--arm64'], {
         platform: 'darwin',
-        hostArch: 'x64',
-        env: { INTENTD_TARGET: 'aarch64-apple-darwin' },
+        hostArch: 'arm64',
+        env: { INTENTD_TARGET: 'x86_64-apple-darwin' },
         execute,
       }),
     ).toThrow(/INTENTD_TARGET/);
@@ -335,13 +333,13 @@ describe('native Mac packaging entry point', () => {
     const execute = vi.fn((_command, args) => {
       if (args[0] === 'scripts/validate-macos-native.cjs') throw new Error('wrong sidecar');
     });
-    expect(() => packageMac([], { platform: 'darwin', hostArch: 'x64', env: {}, execute })).toThrow(
-      'wrong sidecar',
-    );
+    expect(() =>
+      packageMac([], { platform: 'darwin', hostArch: 'arm64', env: {}, execute }),
+    ).toThrow('wrong sidecar');
     expect(execute.mock.calls.some((call) => call[1][0] === '--mac')).toBe(false);
   });
 
-  it.each(['x64', 'arm64'])('names %s DMG and ZIP distinctly using the builder macros', (arch) => {
+  it.each(['arm64'])('names %s DMG and ZIP distinctly using the builder macros', (arch) => {
     const config = load(readFileSync('electron-builder.yml', 'utf8'));
     const appInfo = { productName: 'Intent', sanitizedProductName: 'Intent', version: '2.200.0' };
     expect(expandMacro(config.dmg.artifactName, arch, appInfo, { ext: 'dmg' })).toBe(
@@ -350,10 +348,12 @@ describe('native Mac packaging entry point', () => {
     expect(expandMacro(config.mac.artifactName, arch, appInfo, { ext: 'zip' })).toBe(
       `Intent-2.200.0-${arch}-mac.zip`,
     );
-    // Run builder's target normalizer: neither configured target can override the CPU.
-    const { targets } = normalizeOptions({ mac: config.mac.target, [arch]: true });
-    expect([...targets.get(Platform.MAC).entries()]).toEqual([
-      [arch === 'x64' ? 1 : 3, ['dmg', 'zip']],
-    ]);
+    // Resolve the real config through builder's target mapper.
+    const targets = computeArchToTargetNamesMap(
+      normalizeOptions({ mac: [], arm64: true }).targets.get(Platform.MAC),
+      { platformSpecificBuildOptions: config.mac, defaultTarget: ['dmg', 'zip'] },
+      Platform.MAC,
+    );
+    expect([...targets.entries()]).toEqual([[3, ['dmg', 'zip']]]);
   });
 });

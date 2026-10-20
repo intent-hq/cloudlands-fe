@@ -11,9 +11,9 @@ const MACH_MAGICS = new Set([
 ]);
 
 function assertNativeMacArch(arch, platform = process.platform, hostArch = process.arch) {
-  if (platform !== 'darwin' || !['x64', 'arm64'].includes(arch) || arch !== hostArch) {
+  if (platform !== 'darwin' || arch !== 'arm64' || hostArch !== 'arm64') {
     throw new Error(
-      `Mac packaging requires a native ${arch} macOS host (got ${platform}/${hostArch}); cross-building and universal builds are unsupported.`,
+      `Mac packaging requires a native Apple Silicon macOS host and arm64 target (got ${platform}/${hostArch}, target ${arch}); Intel, cross-building and universal builds are unsupported.`,
     );
   }
   return arch;

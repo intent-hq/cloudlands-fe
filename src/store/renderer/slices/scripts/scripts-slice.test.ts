@@ -17,7 +17,7 @@ import {
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   clearScriptOperations,
-  applyScriptDefinitionChangesRequested,
+  detectScriptDefinitionsRequested,
   emptyWorkspaceState,
   removeScriptDefinitionRequested,
   restartScriptRequested,
@@ -252,12 +252,7 @@ describe('scriptsReducer', () => {
 
   it('correlates workflow outcomes by consumer, workspace, and resource', () => {
     const consumer = { consumerId: 'consumer-1', requestId: 'request-1', resourceId: 'resource-1' };
-    const request = applyScriptDefinitionChangesRequested(
-      WS,
-      { add: [], update: [], remove: [] },
-      [],
-      consumer,
-    );
+    const request = detectScriptDefinitionsRequested(WS, consumer);
     let state = scriptsReducer(undefined, request);
     state = scriptsReducer(state, scriptWorkflowFinished(WS, consumer, 'cancelled'));
     const root = { scripts: state } as never;

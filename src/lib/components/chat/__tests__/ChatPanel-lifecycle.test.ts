@@ -174,12 +174,15 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const [{ createAppStoreMockModule }, { chatPanelSliceState }] = await Promise.all([
+    import('$store/renderer/utils/test-helpers/store-mock'),
+    import('./mocks/chat-panel-render-scaffold'),
+  ]);
   // Shallow-dedup emits like the production selector stream, so a test that
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
     state: () => ({
+      ...chatPanelSliceState(),
       git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
@@ -211,13 +214,21 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async ()
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
 );
-vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
-  selectTasksForAgent: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasks: mocks.selector([]),
-  selectWorkspaceTasksInitialized: mocks.selector(false),
-}));
+vi.mock(
+  '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectTasksForAgent: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceTasks: mocks.selector([]),
+      selectWorkspaceTasksInitialized: mocks.selector(false),
+    }),
+);
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
   ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
   selectChatAgentState: mocks.selector({
@@ -253,20 +264,26 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
     select: () => undefined,
   }),
 }));
-vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', () => ({
-  selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
-    select: () => mocks.userMessageIndexUi.get(),
+vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
+      select: () => mocks.userMessageIndexUi.get(),
+    }),
+    selectRetryAgentUi: mocks.selector(undefined),
   }),
-  selectRetryAgentUi: mocks.selector(undefined),
-}));
-vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', () => ({
-  selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
-    select: () => mocks.questionUiConsumer.get(),
+);
+vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
+      select: () => mocks.questionUiConsumer.get(),
+    }),
   }),
-}));
-vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
-  selectPermissionRequests: mocks.selector([]),
-}));
+);
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPermissionRequests: mocks.selector([]),
+  }),
+);
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () => ({
   ...(await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
   selectDividerSession: Object.assign(
@@ -279,40 +296,49 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', asyn
     { select: () => mocks.dividerSessionValue },
   ),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectChatAuroraEnabled: mocks.selector(true),
-  selectIsAgentMonospace: mocks.selector(false),
-}));
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
-  selectActiveTab: { select: () => mocks.focusedActiveTab },
-  selectAllTabs: mocks.selector([]),
-  selectPanels: mocks.selector({}),
-  selectHiddenTabs: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
-  selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
-}));
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
-  selectCheckedPanels: mocks.selector([]),
-  selectPanels: mocks.selector([]),
-  selectCheckedSelections: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
-  selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
-}));
-vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
-  selectAgentTypingPeople: mocks.selector([]),
-  selectPresenceOwnPrincipalId: mocks.selector(null),
-}));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
-  >()),
-  selectChatDraft: {
-    select: (_state: unknown, workspaceId: string, agentId: string) =>
-      mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
-  },
-}));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectActiveTab: { select: () => mocks.focusedActiveTab },
+    selectAllTabs: mocks.selector([]),
+    selectPanels: mocks.selector({}),
+    selectHiddenTabs: mocks.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/browser/browser-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
+  }),
+);
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectCheckedPanels: mocks.selector([]),
+      selectPanels: mocks.selector([]),
+      selectCheckedSelections: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
+    }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectAgentTypingPeople: mocks.selector([]),
+    selectPresenceOwnPrincipalId: mocks.selector(null),
+  }),
+);
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectChatDraft: {
+      select: (_state: unknown, workspaceId: string, agentId: string) =>
+        mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
+    },
+  }),
+);
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));

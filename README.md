@@ -4,6 +4,15 @@ Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
+## CI
+
+PR updates run Linux metadata, static consumer contracts, workflow policy checks,
+type/lint checks, and unit tests. The merge queue reruns type/lint and unit tests
+and adds builds, integration tests, and relevant browser/native fixture suites
+against the merged tree. Browser suites also retain complete nightly/manual runs.
+Release-only diffs keep their validated exemptions; the required CI Gate rejects
+unexpected PR or queue skips and failed jobs.
+
 ## Architecture
 
 The renderer is a SvelteKit application running inside Electron. It never talks
@@ -130,7 +139,11 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 [intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
-  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify, and
+  `node scripts/sync-intentd-protocol-version.mjs` to regenerate the tests' default
+  `CURRENT_PROTOCOL_VERSION` (`src/test/current-protocol-version.ts`); commit both files.
+  `auto-pin-intentd` does all three, and `lint:intentd-protocol-pin` fails a pin that
+  skipped the sync.
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
@@ -162,6 +175,21 @@ each pointing the auto-updater at the latest build for that channel:
   `beta` release.
 - **stable** — same promotion model via `.github/workflows/release-stable.yml`;
   it additionally marks the promoted version as Latest.
+
+Mac desktop builds support **Apple Silicon only**; new Intel Mac builds are no
+longer published. Each channel publishes the selected release's ARM64 metadata
+under `latest-mac.yml`, restoring automatic discovery for older native Apple
+Silicon installations. Beta and stable feeds
+advance only when that version is promoted to the respective channel.
+
+Alpha builds using the retired `latest-arm64-mac.yml` feed need a one-time Apple
+Silicon reinstall to return to the standard feed. That feed never reached beta
+or stable.
+
+Intel Macs are unsupported and cannot use the Apple Silicon installer.
+
+The pinned prerelease cleanup command protects versions referenced by the Mac
+feed in both the source and release-mirror repositories.
 
 ## Project layout
 
@@ -242,16 +270,22 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
 
-### Depot CI runners
+### CI runners
 
-Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
-when unavailable or busy. Other checks and automation use Depot. Linux ARM64
-builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
-and Apple Silicon jobs use Depot’s latest macOS. Native Intel desktop release and
-manual packaging builds deliberately retain GitHub's `macos-latest-large` runners.
+Routed Linux jobs prefer free self-hosted runners and burst to the `gh-linux-8x`
+GitHub larger runner when unavailable or busy. Other checks and automation use
+GitHub-hosted runners (`ubuntu-24.04`, or `gh-linux-8x` for heavier jobs). Linux
+ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
+`gh-windows-16x` (Windows Server 2022, 16 CPUs), and Apple Silicon jobs use
+`macos-26-xlarge`, except signed desktop Mac builds, which stay on `macos-15-xlarge`
+(electron-builder's keychain step fails on macOS 26 images). The larger runners'
+group must allow public repositories.
+Mac desktop release and manual packaging builds target ARM64 only.
 
-From-source Rust sidecars use managed sccache without Rust cache actions.
-The setup script installs a pinned, checksum-verified binary. Depot supplies
-cache access automatically; GitHub Intel runners use the `DEPOT_TOKEN` Actions
-secret. Without credentials, compilation proceeds uncached with a notice.
+From-source Rust sidecars use the self-hosted sccache without Rust cache actions.
+The setup script installs a pinned, checksum-verified binary. When the
+`INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
+cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
+`INTENT_SCCACHE_MODE` says otherwise). Without the variable or a token (for
+example fork pull requests), compilation proceeds uncached with a notice.
 pnpm dependency caching remains unchanged.

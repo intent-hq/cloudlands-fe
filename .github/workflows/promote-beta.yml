@@ -34,7 +34,7 @@ jobs:
     # ephemeral runner and it keeps the guarantee that a previous run's
     # assets can never leak into this promotion (#553) even if this ever
     # moves back to a persistent runner.
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     timeout-minutes: 30
 
     steps:
@@ -86,7 +86,7 @@ jobs:
       - name: Read current beta version
         id: beta_version
         run: |
-          # Attempt to fetch latest-mac.yml from beta; tolerate 404 (first promotion)
+          # Read the standard Mac feed from beta; tolerate 404 (first promotion)
           BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
           PREV_BETA=""
 
@@ -267,6 +267,31 @@ jobs:
           echo "Downloaded assets:"
           ls -lh
 
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+
+      - name: Setup publication pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+
+      - name: Setup publication Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install feed dependencies
+        working-directory: .release-tools
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
+
+      - name: Prepare architecture-safe Mac channel feeds
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "$RUNNER_TEMP/release-assets" beta "$VERSION"
+
       - name: Ensure beta release exists
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -292,13 +317,12 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/release-assets"
 
-          # Auto-updater feed files, one per platform. latest-mac.yml is
-          # required; the others are promoted when present so older mac-only
-          # releases can still be promoted.
+          # The Mac feed is required. Other platform feeds are promoted
+          # when present so older Mac-only releases can still be promoted.
           FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
 
           if [ ! -f "latest-mac.yml" ]; then
-            echo "::error::Missing required latest-mac.yml"
+            echo "::error::Missing required Mac update feed"
             exit 1
           fi
 
@@ -333,8 +357,7 @@ jobs:
             gh release upload beta --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
           fi
 
-          # Replace the feed files last with --clobber (atomic switch of all
-          # auto-updater feeds, after every referenced asset is in place)
+          # Replace feeds only after every referenced asset is in place.
           echo "Replacing auto-updater feeds: ${PROMOTED_FEEDS[*]}"
           gh release upload beta --repo intent-hq/cloudlands-releases --clobber -- "${PROMOTED_FEEDS[@]}"
 
@@ -355,7 +378,8 @@ jobs:
             fi
           done
 
-          # Clean up old versioned assets from beta release
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after the new canonical feed and payloads were uploaded successfully.
           echo "Cleaning up old versioned assets (keeping newly promoted files)"
           gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             if [ -z "$asset" ]; then
@@ -401,10 +425,16 @@ jobs:
           for feed in "${FEEDS[@]}"; do
             echo "Verifying $feed"
 
-            # Fetch versioned release feed digest
-            VERSIONED_SHA=$(feed_hash "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}") || VERSIONED_SHA=""
+            # Compare the exact prepared feed from the selected versioned release.
+            # Both Mac aliases describe that release's Apple Silicon payload.
+            if [ -f "$RUNNER_TEMP/release-assets/$feed" ]; then
+              VERSIONED_SHA=$(cat "$RUNNER_TEMP/release-assets/$feed")
+              VERSIONED_SHA=$(printf '%s' "$VERSIONED_SHA" | sha512sum | awk '{print $1}')
+            else
+              VERSIONED_SHA=""
+            fi
             if [ -z "$VERSIONED_SHA" ]; then
-              echo "::error::Failed to fetch feed digest for $feed from versioned release v${VERSION}"
+              echo "::error::Missing prepared feed digest for $feed"
               exit 1
             fi
 
@@ -427,7 +457,7 @@ jobs:
               fi
 
               if [ "$VERSIONED_SHA" = "$BETA_SHA" ]; then
-                echo "✓ Beta $feed feed digest matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                echo "✓ Beta $feed feed digest matches prepared publication ($VERSIONED_SHA) [attempt $i]"
                 break
               else
                 echo "::warning::Retry $i/$MAX_RETRIES: $feed feed digest mismatch - versioned: $VERSIONED_SHA, beta: $BETA_SHA (likely CDN propagation delay)"
@@ -557,7 +587,7 @@ jobs:
         run: |
           feed_platform() {
             case "$1" in
-              latest-mac.yml) echo "macOS" ;;
+              latest-mac.yml) echo "macOS (Apple Silicon)" ;;
               latest.yml) echo "Windows" ;;
               latest-linux.yml) echo "Linux x64" ;;
               latest-linux-arm64.yml) echo "Linux arm64" ;;

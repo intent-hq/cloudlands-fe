@@ -123,7 +123,12 @@
   const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
   const scriptPage$ = selectScriptMonitors(workspaceIdStore);
-  const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor);
+  // Only a chat the user is viewing holds the monitor lease that Retry acts on, and the
+  // failure is workspace-wide: background chats stay quiet instead of all showing it.
+  const scriptsFailed = $derived(!isolatedPreview && isActive && $scriptPage$.status === 'failed');
+  const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
+  // "+": more script monitors may exist than this chat has read.
+  const countSuffix = $derived($scriptPage$.nextCursor || scriptsFailed ? '+' : '');
   const monitors$ = selectAgentReviewMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
@@ -192,10 +197,10 @@
         ? m.events_ipc_subscribed_description()
         : totalCount === 1
           ? m.chat_eventSubscriptions_heading_one({
-              count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+              count: formatInteger(totalCount) + countSuffix,
             })
           : m.chat_eventSubscriptions_heading_many({
-              count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+              count: formatInteger(totalCount) + countSuffix,
             });
     }
 
@@ -211,10 +216,10 @@
       ? m.events_ipc_subscribed_description()
       : totalCount === 1
         ? m.chat_eventSubscriptions_heading_one({
-            count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+            count: formatInteger(totalCount) + countSuffix,
           })
         : m.chat_eventSubscriptions_heading_many({
-            count: formatInteger(totalCount) + ($scriptPage$.nextCursor ? '+' : ''),
+            count: formatInteger(totalCount) + countSuffix,
           });
   });
 
@@ -392,7 +397,7 @@
               class={isSingleEvent ? '' : 'border-t border-border'}
               data-testid="event-subscriptions-scripts"
             >
-              <MonitoredScriptsRow {workspaceId} {agentId} />
+              <MonitoredScriptsRow {workspaceId} {agentId} showLoadFailure={scriptsFailed} />
             </div>
           {/if}
           <div

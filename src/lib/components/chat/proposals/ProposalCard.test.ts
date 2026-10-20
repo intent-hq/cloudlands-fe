@@ -28,6 +28,7 @@ const newWorkspaceDefaultState = vi.hoisted(() => {
   const listeners = new Set<(value: string | null) => void>();
   return {
     specialist: null as string | null,
+    agentByRepo: {} as Record<string, Record<string, unknown>>,
     listeners,
     setSpecialist(value: string | null) {
       this.specialist = value;
@@ -57,6 +58,7 @@ const specialistsState = vi.hoisted(() => {
   const initial: SpecialistRow[] = [];
   return {
     specialists: initial,
+    orchestratorId: null as string | null,
     listeners,
     setSpecialists(value: SpecialistRow[]) {
       this.specialists = value;
@@ -167,7 +169,31 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
+vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
+  selectProviderModelsCacheMap: () => ({
+    subscribe: (run: (value: Record<string, unknown>) => void) => {
+      run({});
+      return () => {};
+    },
+  }),
+}));
+vi.mock(
+  '$store/renderer/slices/provider-catalog/provider-catalog-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/provider-catalog/provider-catalog-selectors')
+    >()),
+    selectProviderDisplayName: {
+      select: vi.fn((_state: unknown, provider: string) =>
+        provider === 'claude-code' ? 'Claude Code' : undefined,
+      ),
+    },
+  }),
+);
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentByRepo: {
+    select: vi.fn(() => newWorkspaceDefaultState.agentByRepo),
+  },
   selectNewWorkspaceDefaultSpecialist: Object.assign(
     vi.fn(() => ({
       subscribe: (run: (value: string | null) => void) => {
@@ -203,6 +229,19 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (impor
     })),
     { select: vi.fn(() => specialistsState.specialists) },
   ),
+  selectOrchestratorSpecialist: {
+    select: vi.fn(() =>
+      specialistsState.orchestratorId ? { id: specialistsState.orchestratorId } : null,
+    ),
+  },
+}));
+vi.mock('$store/renderer/slices/model/model-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/model/model-selectors')>()),
+  selectModelDisplayName: {
+    select: vi.fn((_state: unknown, provider: string, model: string) =>
+      provider === 'claude-code' && model === 'claude-opus-4-5' ? 'Opus 4.5' : undefined,
+    ),
+  },
 }));
 vi.mock('$store/renderer/store', () => ({
   store: {
@@ -270,10 +309,12 @@ beforeEach(() => {
   historySelectorState.settingsApplied = null;
   historySelectorState.specialistApplied = null;
   newWorkspaceDefaultState.specialist = null;
+  newWorkspaceDefaultState.agentByRepo = {};
   newWorkspaceDefaultState.listeners.clear();
   workspaceInitializerHydratedState.hydrated = true;
   workspaceInitializerHydratedState.listeners.clear();
   specialistsState.specialists = [];
+  specialistsState.orchestratorId = null;
   specialistsState.listeners.clear();
   navigationMocks.goto.mockReset();
   electronBridgeMocks.invoke.mockReset();
@@ -1771,5 +1812,170 @@ describe('ProposalCard', () => {
     expect(
       screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning'),
     ).toBeNull();
+  });
+
+  describe('agent setup remembered for the repository', () => {
+    const TEAM_OPUS_HIGH = {
+      isTeamMode: true,
+      selectedSpecialist: 'coordinator',
+      selectedProvider: 'claude-code',
+      selectedModel: 'claude-opus-4-5',
+      modelWasOverridden: true,
+      selectedReasoningEffort: 'high',
+    };
+
+    function renderSibling(workspaceCreate: Record<string, unknown> = {}) {
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+              ...workspaceCreate,
+            },
+          }),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      const appliedFields = async () => {
+        await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+        return (applyListener.mock.calls[0]?.[0] as CustomEvent).detail.editedFields;
+      };
+      return { appliedFields };
+    }
+
+    beforeEach(() => {
+      newWorkspaceDefaultState.specialist = 'implementor';
+      specialistsState.specialists = [{ id: 'coordinator' }, { id: 'implementor' }];
+      specialistsState.orchestratorId = 'coordinator';
+    });
+
+    it("starts on the repository's remembered orchestration setup and applies its model and effort", async () => {
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+      // The remembered setup applies without any caption under the agent picker.
+      const agentRow = screen.getByTestId('proposal-specialist-dropdown');
+      const rowLabel = agentRow.querySelector('[data-metadata-label]')?.textContent ?? '';
+      const picker = screen.getByTestId('mock-specialist-dropdown').textContent ?? '';
+      const squash = (text: string) => text.replace(/\s+/g, '');
+      expect(squash(agentRow.textContent ?? '')).toBe(squash(rowLabel + picker));
+      expect(await appliedFields()).toMatchObject({
+        specialist: 'coordinator',
+        agentSetup: {
+          provider: 'claude-code',
+          model: 'claude-opus-4-5',
+          reasoningEffort: 'high',
+        },
+      });
+    });
+
+    it('finds the setup remembered for the GitHub repository of the card', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'github:github.com/example-org/example-repo': {
+          isTeamMode: false,
+          selectedSpecialist: null,
+          selectedReasoningEffort: 'low',
+        },
+      };
+      const { appliedFields } = renderSibling({
+        repoPath: '/elsewhere/clone',
+        githubUrl: 'https://github.com/example-org/example-repo',
+      });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+      expect((await appliedFields()).agentSetup).toEqual({ reasoningEffort: 'low' });
+    });
+
+    it('drops the remembered model and effort once the user picks another agent', async () => {
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      const fields = await appliedFields();
+      expect(fields.specialist).toBe('ui-designer');
+      expect(fields).not.toHaveProperty('agentSetup');
+    });
+
+    it("keeps an agent named by the suggestion and adds none of the repository's setup", async () => {
+      newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
+      const { appliedFields } = renderSibling({ specialist: 'coordinator' });
+
+      expect(await appliedFields()).not.toHaveProperty('agentSetup');
+    });
+
+    it('sends the remembered provider when no model was picked', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': {
+          isTeamMode: false,
+          selectedSpecialist: 'implementor',
+          selectedProvider: 'claude-code',
+          modelWasOverridden: false,
+        },
+      };
+      const { appliedFields } = renderSibling();
+
+      expect((await appliedFields()).agentSetup).toEqual({ provider: 'claude-code' });
+    });
+
+    it('follows a repository change for the remembered setup after an explicit agent pick', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': TEAM_OPUS_HIGH,
+      };
+      specialistsState.specialists = [{ id: 'coordinator' }, { id: 'ui-designer' }];
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      // Pick another agent, then a repository that remembers that agent.
+      await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': TEAM_OPUS_HIGH,
+        'local:/repo/mock': {
+          ...TEAM_OPUS_HIGH,
+          isTeamMode: false,
+          selectedSpecialist: 'ui-designer',
+          selectedReasoningEffort: 'low',
+        },
+      };
+      await fireEvent.click(screen.getAllByRole('button', { name: 'Mock repo change' })[0]);
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const fields = (applyListener.mock.calls[0]?.[0] as CustomEvent).detail.editedFields;
+      expect(fields.specialist).toBe('ui-designer');
+      expect(fields.agentSetup).toEqual({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        reasoningEffort: 'low',
+      });
+    });
+
+    it('keeps the global default when the remembered agent no longer exists', async () => {
+      newWorkspaceDefaultState.agentByRepo = {
+        'local:/repo/current': { isTeamMode: false, selectedSpecialist: 'deleted-custom' },
+      };
+      const { appliedFields } = renderSibling();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
+      expect(await appliedFields()).not.toHaveProperty('agentSetup');
+    });
   });
 });

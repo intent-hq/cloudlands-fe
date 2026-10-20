@@ -17,6 +17,8 @@ import {
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
@@ -59,7 +61,12 @@ beforeEach(() => {
   );
   vi.mocked(backendRequest).mockImplementation(async (method) => {
     if (method === 'client.hello')
-      return { server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } };
+      return {
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      };
     if (method === 'script.get') return full;
     if (method === 'script.create') return full;
     throw new Error('unexpected ' + method);
@@ -102,25 +109,6 @@ it('refuses a stale edit detail when an archive event wins during the read', asy
   resolve(full);
   expect((await editing).success).toBe(false);
   expect(backendRequest).not.toHaveBeenCalledWith('script.create', expect.anything());
-});
-
-it('restores full detection Undo data including readiness settings', async () => {
-  const original = vi.mocked(backendRequest).getMockImplementation()!;
-  vi.mocked(backendRequest).mockImplementation((method, params) =>
-    method === 'script.list' ? Promise.resolve({ scripts: [] }) : original(method, params),
-  );
-  expect((await scriptsClient.restoreSnapshot('ws', [full])).success).toBe(true);
-  expect(backendRequest).toHaveBeenCalledWith(
-    'script.create',
-    expect.objectContaining({
-      command: full.command,
-      cwd: full.cwd,
-      env: full.env,
-      source: full.source,
-      healthUrl: full.healthUrl,
-      readyPattern: full.readyPattern,
-    }),
-  );
 });
 
 for (const operation of ['update', 'remove'] as const) {

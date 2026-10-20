@@ -30,6 +30,13 @@ const LOCAL_IMPORT_SOURCE_PATTERN = /^(?:\.{1,2}\/|\$lib\/|\$features\/|\$shared
 const STORE_IMPORT_SOURCE_PATTERN = /^(?:\$lib\/store\/|\$store\/)/;
 const WRAPPER_IMPORT_SOURCE_PATTERN =
   /(?:^|[./-])(?:commands?|electron|ipc)(?:[./-]|$)|choose-parent-folder|patch-block-commands|rtk-settings-commands/i;
+const MODULE_ASYNC_SIGNAL_PATTERN =
+  /\b(?:async|await|Promise|XMLHttpRequest|WebSocket|EventSource)\b|\.then\s*\(|(?:^|[^\w$.])import\s*\(/;
+const STATIC_MODULE_SPECIFIER_PATTERN =
+  /(?:^|[;\n}])\s*(?:import|export)\s+(?:([^'";]*?)\s+from\s+)?['"]([^'"\n]+)['"]/g;
+const MODULE_FILE_EXTENSIONS = ['.ts', '.js', '.svelte.ts', '.svelte.js', '.svelte'];
+const INDEX_FILE_EXTENSIONS = ['.ts', '.js'];
+const MAX_SYNCHRONOUS_MODULE_DEPTH = 8;
 const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN =
   /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
 
@@ -138,18 +145,36 @@ function resolveImportBase(filename, source) {
   return null;
 }
 
-function readImportSourceText(context, source) {
-  const basePath = resolveImportBase(getFilename(context), source);
+function getImportCandidates(basePath) {
+  const extension = path.extname(basePath);
+
+  if (extension === '.js') {
+    return [basePath, `${basePath.slice(0, -extension.length)}.ts`];
+  }
+
+  if (extension && extension !== '.svelte') {
+    return [basePath];
+  }
+
+  if (extension === '.svelte') {
+    return [basePath, `${basePath}.ts`, `${basePath}.js`];
+  }
+
+  return [
+    ...MODULE_FILE_EXTENSIONS.map((moduleExtension) => `${basePath}${moduleExtension}`),
+    ...INDEX_FILE_EXTENSIONS.map((indexExtension) => path.join(basePath, `index${indexExtension}`)),
+  ];
+}
+
+/** Resolves a local import to the file it names and reads it, or returns null. */
+function readImportedModule(fromFilename, source) {
+  const basePath = resolveImportBase(fromFilename, source);
   if (!basePath) return null;
 
-  const candidates = path.extname(basePath)
-    ? [basePath]
-    : ['.ts', '.js', '.svelte'].map((extension) => `${basePath}${extension}`);
-
-  for (const candidate of candidates) {
+  for (const candidate of getImportCandidates(basePath)) {
     try {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, 'utf8');
+      if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) {
+        return { filePath: candidate, text: fs.readFileSync(candidate, 'utf8') };
       }
     } catch {
       return null;
@@ -157,6 +182,93 @@ function readImportSourceText(context, source) {
   }
 
   return null;
+}
+
+function readImportSourceText(context, source) {
+  return readImportedModule(getFilename(context), source)?.text ?? null;
+}
+
+function stripComments(sourceText) {
+  return sourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+}
+
+/** Value (non type-only) module specifiers a source file imports or re-exports. */
+function getValueModuleSpecifiers(sourceText) {
+  const specifiers = [];
+
+  for (const match of sourceText.matchAll(STATIC_MODULE_SPECIFIER_PATTERN)) {
+    const [, clause = '', source] = match;
+    if (/^\s*type\b/.test(clause)) continue;
+    specifiers.push(source);
+  }
+
+  return specifiers;
+}
+
+function isSafeNestedImport(fromFilename, source, state) {
+  if (isStoreImportSource(source)) {
+    return true;
+  }
+
+  if (!isLocalWrapperImportSource(source)) {
+    return !isDomainImportSource(source) && !WRAPPER_IMPORT_SOURCE_PATTERN.test(source);
+  }
+
+  if (WRAPPER_IMPORT_SOURCE_PATTERN.test(source)) {
+    return false;
+  }
+
+  const module = readImportedModule(fromFilename, source);
+
+  if (!isDomainImportSource(source)) {
+    return !module || !ASYNC_WRAPPER_SOURCE_TEXT_PATTERN.test(module.text);
+  }
+
+  return Boolean(module && isSynchronousModule(module, state));
+}
+
+/**
+ * A module is a plain synchronous helper when its own code shows no async or IO work and
+ * nothing it imports would be reported if a component imported it directly: domain-named
+ * imports must themselves be synchronous helpers, other local imports must not wrap IPC
+ * or fetch, and packages must not be domain-named.
+ */
+function isSynchronousModule(module, state) {
+  const cached = state.cache.get(module.filePath);
+  if (cached !== undefined) return cached;
+
+  if (state.visiting.has(module.filePath)) {
+    return true;
+  }
+
+  if (state.visiting.size >= MAX_SYNCHRONOUS_MODULE_DEPTH) {
+    return false;
+  }
+
+  state.visiting.add(module.filePath);
+  const code = stripComments(module.text);
+  const result =
+    !MODULE_ASYNC_SIGNAL_PATTERN.test(code) &&
+    !ASYNC_WRAPPER_SOURCE_TEXT_PATTERN.test(code) &&
+    getValueModuleSpecifiers(code).every((source) =>
+      isSafeNestedImport(module.filePath, source, state),
+    );
+  state.visiting.delete(module.filePath);
+
+  if (state.visiting.size === 0) {
+    state.cache.set(module.filePath, result);
+  }
+
+  return result;
+}
+
+function isSynchronousLocalModule(context, source, cache) {
+  if (!isLocalWrapperImportSource(source)) {
+    return false;
+  }
+
+  const module = readImportedModule(getFilename(context), source);
+  return Boolean(module && isSynchronousModule(module, { cache, visiting: new Set() }));
 }
 
 function isModuleScriptElement(node) {
@@ -324,12 +436,16 @@ export default {
     const domainImportNames = new Set();
     const domainApiImportNames = new Set();
     const asyncWrapperImportNames = new Set();
+    const synchronousModuleCache = new Map();
 
     return {
       ImportDeclaration(node) {
         const source = node.source.value;
-        const isDomainSource = isDomainImportSource(source);
         const isAsyncWrapperSource = isAsyncWrapperImportSource(context, source);
+        const isDomainSource =
+          isDomainImportSource(source) &&
+          (isAsyncWrapperSource ||
+            !isSynchronousLocalModule(context, source, synchronousModuleCache));
 
         if (!isDomainSource && !isAsyncWrapperSource) return;
 
@@ -346,7 +462,7 @@ export default {
             asyncWrapperImportNames.add(specifier.local.name);
           }
 
-          if (DOMAIN_API_IMPORT_SOURCE_PATTERN.test(source)) {
+          if (isDomainSource && DOMAIN_API_IMPORT_SOURCE_PATTERN.test(source)) {
             domainApiImportNames.add(specifier.local.name);
           }
         }

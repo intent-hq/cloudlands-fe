@@ -41,12 +41,50 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
 }
 
 describe('required CT hosted routing', () => {
+  it.each([1, 2, 3, 4])('runs shard %i with two workers and propagates test failures', (shard) => {
+    const dir = mkdtempSync(join(os.tmpdir(), 'ct-ci-workers-'));
+    dirs.push(dir);
+    const argsFile = join(dir, 'args');
+    const command = runBlock('Component tests').replaceAll('${{ matrix.shard }}', String(shard));
+    for (const exitCode of [0, 7]) {
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `pnpm() { printf '%s\\n' "$@" > "$CT_ARGS"; return "$CT_EXIT"; }
+sleep() { /bin/sleep 0.01; }
+${command}`,
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, CT_ARGS: argsFile, CT_EXIT: String(exitCode) },
+          encoding: 'utf8',
+          timeout: 5_000,
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(exitCode);
+      expect(readFileSync(argsFile, 'utf8').trim().split('\n')).toEqual([
+        'run',
+        'test:ct',
+        '--workers=2',
+        `--shard=${shard}/4`,
+        '--grep-invert',
+        '@quarantine\\b',
+        '--fail-on-flaky-tests',
+        '--reporter=list,html,json',
+      ]);
+    }
+  });
+
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
+    ['merge_group', 'false'],
+    ['merge_group', 'true'],
     ['schedule', 'false'],
     ['workflow_dispatch', 'true'],
-  ])('uses hosted provisioning on %s with global linux_burst=%s', (event, burst) => {
+  ])('routes CT provisioning on %s with global linux_burst=%s', (event, burst) => {
     const context = {
       'github.event_name': event,
       'github.event.pull_request.head.repo.full_name': 'intent-hq/cloudlands-fe',
@@ -55,16 +93,17 @@ describe('required CT hosted routing', () => {
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['depot-ubuntu-24.04-8'] : ['self-hosted', 'linux', 'tinybox'],
+        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'x64', 'intent-cache'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
-      'needs.release-fast-path.outputs.ct_required': event === 'pull_request' ? 'true' : '',
+      'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
     };
     const value = (scalar: string) =>
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
-    expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(true);
+    expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
+    if (event === 'pull_request') return;
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['depot-ubuntu-24.04-8']);
+    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['gh-linux-8x']);
     expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];

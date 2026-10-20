@@ -19,6 +19,7 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
+  import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import { formatUrlForDisplay, type LinkTooltipPreview } from './link-tooltip-state.svelte';
 
   interface Props {
@@ -120,6 +121,11 @@
   const owner = $derived(data && 'owner' in data ? data.owner : (ref?.owner ?? ''));
   const repo = $derived(data && 'repo' in data ? data.repo : (ref?.repo ?? ''));
   const number = $derived(data?.number ?? resource?.number ?? ref?.number ?? 0);
+  const mergeQueueSummary = $derived(
+    data?.kind === 'pr' && data.state === 'queued' && 'mergeQueue' in data
+      ? formatMergeQueueSummary(data.mergeQueue)
+      : null,
+  );
 </script>
 
 <div class="github-link-card" data-preview-status={preview.status} data-kind={kind}>
@@ -169,6 +175,12 @@
         <span class="truncate">{data.headRef}</span>
         <span aria-hidden="true" class="shrink-0">→</span>
         <span class="truncate">{data.baseRef}</span>
+      </div>
+    {/if}
+    {#if mergeQueueSummary}
+      <div class="github-link-card-queue" data-testid="github-link-card-merge-queue">
+        <Fa icon={faHourglassHalf} class="h-3 w-3 shrink-0 text-info" />
+        <span class="truncate">{mergeQueueSummary}</span>
       </div>
     {/if}
   {:else if preview.status === 'error'}

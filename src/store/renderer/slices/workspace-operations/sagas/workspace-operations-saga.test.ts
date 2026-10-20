@@ -55,6 +55,7 @@ import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   initialState as workspaceInitialState,
   removeWorkspaceEntity,
@@ -1227,6 +1228,35 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('adds a created proposal workspace as a background tab without stealing focus', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-from-proposal') } })
+      .mockResolvedValueOnce({ ok: false, error: 'cannot resolve base ref' });
+    const run = harness([]);
+    store.dispatch(openWorkspaceTab('ws-current'));
+    const tabs = () => run.state().tabState;
+    const tabOrder = () => tabs().workspaceStacks.flat();
+
+    const proposal = createProposal('create-background-tab');
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+    expect(tabs().currentTabId).toBe('ws-current');
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-background-failure') }));
+    await settle();
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+    expect(tabs().currentTabId).toBe('ws-current');
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -4,6 +4,7 @@ import { appClient } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { createLogger } from '$lib/utils/client-logger';
+import { providerRefBaseId } from '$shared/provider-profiles';
 import {
   fastModeHydrationStarted,
   fastModeWriteSettled,
@@ -23,7 +24,8 @@ function* queueEdit(edits: Channel<Edit>, action: ReturnType<typeof setProviderF
   const state = yield* selectProviderFastModeState.effect();
   const edit = state?.pending[providerId];
   if (!edit) return;
-  if (!(yield* selectFastModeSupportedProviders.effect()).includes(providerId)) {
+  // A profile reference (§5.54) is supported exactly when its base provider is.
+  if (!(yield* selectFastModeSupportedProviders.effect()).includes(providerRefBaseId(providerId))) {
     yield* put(fastModeWriteSettled(providerId, edit.editId));
     return;
   }

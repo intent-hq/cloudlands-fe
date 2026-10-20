@@ -147,7 +147,10 @@ export function subscribeScriptMonitors(
       if (!current(read.epoch)) return;
       if (isMonitorMethodMissing(error)) connection.reject();
       else {
-        snapshot = { ...snapshot, status: 'failed', loadingMore: false };
+        // A failed extra page keeps the loaded rows usable; Load more stays the retry.
+        snapshot = append
+          ? { ...snapshot, loadingMore: false }
+          : { ...snapshot, status: 'failed', loadingMore: false };
         emit();
       }
     } finally {
@@ -169,14 +172,11 @@ export function subscribeScriptMonitors(
     }
     try {
       const hello = await backendRequest<{
-        server?: { protocolVersion?: string; capabilities?: { scriptMonitors?: number } };
+        server?: { capabilities?: { scriptMonitors?: number } };
       }>('client.hello', {});
       if (disposed || version !== epoch) return;
-      if (
-        connection.isRejected() ||
-        !/^14\.\d+(?:\.\d+)?$/.test(hello.server?.protocolVersion ?? '') ||
-        hello.server?.capabilities?.scriptMonitors !== 2
-      ) {
+      // Capability-gated only: the protocol major moves for unrelated changes.
+      if (connection.isRejected() || hello.server?.capabilities?.scriptMonitors !== 2) {
         disable();
         return;
       }
@@ -255,6 +255,15 @@ export function subscribeScriptMonitors(
   void register();
   return {
     loadMore: () => readPage(true),
+    /**
+     * Recover from a failed read: re-read the first page on a healthy subscription,
+     * otherwise register again. A no-op unless the snapshot failed (intent-hq/intent#7206).
+     */
+    retry() {
+      if (disposed || snapshot.status !== 'failed') return;
+      if (supported && subscriptionId) void readPage();
+      else void register();
+    },
     async details(monitorId: string) {
       if (!supported || disposed || detailReads.has(monitorId)) return;
       const row = snapshot.monitors.find((item) => item.monitorId === monitorId);

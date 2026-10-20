@@ -19,6 +19,7 @@ import {
   selectActivityLogPresets,
   selectAgentFontStyle,
   selectChatAuroraEnabled,
+  selectCollapseToolRuns,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -27,6 +28,7 @@ import {
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
+  selectLabsProviderProfilesEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectReduceMotionOnBattery,
@@ -47,6 +49,7 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -56,6 +59,7 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsProviderProfilesEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -68,10 +72,12 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleCollapseToolRuns,
   toggleLabsSettingsVisibility,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsProviderProfiles,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -88,12 +94,14 @@ const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
+const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
+const LABS_PROVIDER_PROFILES_STORAGE_KEY = 'labs:providerProfilesEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -190,6 +198,11 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setChatAuroraEnabled(chatAuroraEnabled));
   }
 
+  const collapseToolRuns = yield* getLocalStorageJSON<boolean>(COLLAPSE_TOOL_RUNS_STORAGE_KEY);
+  if (typeof collapseToolRuns === 'boolean') {
+    yield* put(setCollapseToolRuns(collapseToolRuns));
+  }
+
   const shellTransparencyEnabled = yield* getLocalStorageJSON<boolean>(
     SHELL_TRANSPARENCY_STORAGE_KEY,
   );
@@ -226,6 +239,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof labsRemoteAgentsEnabled === 'boolean') {
     yield* put(setLabsRemoteAgentsEnabled(labsRemoteAgentsEnabled));
+  }
+
+  const labsProviderProfilesEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_PROVIDER_PROFILES_STORAGE_KEY,
+  );
+  if (typeof labsProviderProfilesEnabled === 'boolean') {
+    yield* put(setLabsProviderProfilesEnabled(labsProviderProfilesEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -323,6 +343,13 @@ function* persistChatAuroraWorker() {
   yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
 }
 
+function* persistCollapseToolRunsWorker() {
+  yield* setLocalStorageJSON(
+    COLLAPSE_TOOL_RUNS_STORAGE_KEY,
+    yield* selectCollapseToolRuns.effect(),
+  );
+}
+
 function* persistShellTransparencyWorker() {
   yield* setLocalStorageJSON(
     SHELL_TRANSPARENCY_STORAGE_KEY,
@@ -359,6 +386,13 @@ function* persistLabsRemoteAgentsWorker() {
   yield* setLocalStorageJSON(
     LABS_REMOTE_AGENTS_STORAGE_KEY,
     yield* selectLabsRemoteAgentsEnabled.effect(),
+  );
+}
+
+function* persistLabsProviderProfilesWorker() {
+  yield* setLocalStorageJSON(
+    LABS_PROVIDER_PROFILES_STORAGE_KEY,
+    yield* selectLabsProviderProfilesEnabled.effect(),
   );
 }
 
@@ -450,6 +484,7 @@ function* watchUserPreferenceWrites() {
     persistShowReasoningBlocksWorker,
   );
   yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
+  yield* takeEvery([setCollapseToolRuns, toggleCollapseToolRuns], persistCollapseToolRunsWorker);
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,
@@ -470,6 +505,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
     persistLabsRemoteAgentsWorker,
+  );
+  yield* takeEvery(
+    [setLabsProviderProfilesEnabled, toggleLabsProviderProfiles],
+    persistLabsProviderProfilesWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

@@ -492,6 +492,21 @@ describe('settings state and save-mode fixtures', () => {
 });
 
 describe('settings tab route and focus behavior', () => {
+  it('keeps Advanced settings usable without the retired legacy import controls', async () => {
+    renderSettings('/settings?tab=advanced');
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Advanced' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(document.querySelector('#agent-backend')).not.toBeNull();
+    expect(document.querySelector('#reset')).not.toBeNull();
+    expect(document.querySelector('#data')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Import Legacy Workspaces' })).toBeNull();
+    expect(appStore.state).not.toHaveProperty('legacyImport');
+  });
+
   it('labels the main region with the accessible page name', () => {
     const { container } = renderSettings('/settings?tab=display');
     const main = container.querySelector('main');

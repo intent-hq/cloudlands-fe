@@ -22,7 +22,6 @@
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
-  import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
@@ -54,6 +53,7 @@
     resetNotificationSettings,
     setAgentFontStyle,
     setChatAuroraEnabled,
+    setCollapseToolRuns,
     setCodeFontFamily,
     setNoteFontStyle,
     setShellTransparencyEnabled,
@@ -63,6 +63,7 @@
   import {
     selectAgentFontStyle,
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
@@ -98,6 +99,7 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
+  const collapseToolRuns = selectCollapseToolRuns();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
@@ -168,6 +170,7 @@
     theme: 'display',
     appearance: 'display',
     'chat-aurora': 'display',
+    'collapse-tool-runs': 'display',
     'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
@@ -184,7 +187,6 @@
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
-    data: 'advanced',
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
@@ -705,6 +707,28 @@
                 </SettingsFieldRow>
               </section>
               <section
+                id="collapse-tool-runs"
+                data-highlight-id="collapse-tool-runs"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-appearance-collapseToolRuns-label-field"
+                  label={m.settings_appearance_collapseToolRuns_label()}
+                  description={m.settings_appearance_collapseToolRuns_description()}
+                >
+                  <Switch
+                    id="collapse-tool-runs-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$collapseToolRuns}
+                    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
+                    ariaLabel={m.settings_appearance_collapseToolRuns_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
                 id="translucent-window"
                 data-highlight-id="translucent-window"
                 use:highlightTarget
@@ -1027,14 +1051,6 @@
               <HardwareConsoleSettings />
             </div>
           {/if}
-
-          <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_data()}
-            </h2>
-            <LegacyImportSettings />
-          </div>
 
           <!-- Reset -->
           <div id="reset" data-highlight-id="general" use:highlightTarget>

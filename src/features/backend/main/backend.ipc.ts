@@ -158,7 +158,12 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
+import { compareProtocolMajor } from './protocol-compat';
+import {
+  parseProtocolVersion,
+  protocolVersionAtLeast,
+  type ProtocolVersion,
+} from '$shared/protocol-version';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
@@ -202,8 +207,9 @@ const connectedDaemonVersions = new Map<string, string>();
 // Each connected daemon's `client.hello` `protocolVersion`, keyed by
 // connection id and cleared whenever that connection leaves `connected`, so
 // feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
-// version rather than a stale one after a reconnect or daemon upgrade.
-const connectedProtocolVersions = new Map<string, string>();
+// version rather than a stale one after a reconnect or daemon upgrade. Parsed
+// once when the hello answers; an absent or malformed version is not stored.
+const connectedProtocolVersions = new Map<string, ProtocolVersion>();
 // Whether the local client's hello has answered at least once this session:
 // until then the sidecar's startup probe may seed the local version, after
 // that the hello result is the only source (a null/absent hello stays null).
@@ -238,11 +244,11 @@ export function captureLocalIdentityConnection() {
  * ({@link getLocalDaemonProtocolVersion}) only seeds the local id BEFORE the
  * first local hello of the session, never after a hello answered without one.
  */
-export function getConnectedDaemonProtocolVersion(connectionId: string): string | null {
+export function getConnectedDaemonProtocolVersion(connectionId: string): ProtocolVersion | null {
   const captured = connectedProtocolVersions.get(connectionId);
   if (captured) return captured;
   if (connectionId === LOCAL_CONNECTION_ID && !localHelloObserved) {
-    return getLocalDaemonProtocolVersion();
+    return parseProtocolVersion(getLocalDaemonProtocolVersion());
   }
   return null;
 }
@@ -1946,7 +1952,9 @@ function createAdditionalBackendClient(
           // latched per connection id and broadcast to this backend's windows only.
           const helloProtocolVersion =
             typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
-          if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+          const parsedHelloProtocolVersion = parseProtocolVersion(helloProtocolVersion);
+          if (parsedHelloProtocolVersion)
+            connectedProtocolVersions.set(id, parsedHelloProtocolVersion);
           else connectedProtocolVersions.delete(id);
           if (id === LOCAL_CONNECTION_ID) {
             localHelloObserved = true;

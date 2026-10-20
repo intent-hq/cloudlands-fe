@@ -54,9 +54,20 @@
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
   import {
     selectNewWorkspaceDefaultSpecialist,
+    selectWorkspaceInitializerAgentByRepo,
     selectWorkspaceInitializerHydrated,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
-  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
+  import {
+    selectOrchestratorSpecialist,
+    selectSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
+  import {
+    hasAgentSetupFields,
+    proposalAgentSetup,
+    proposalRepoKeys,
+    resolveProposalRepoAgentDefault,
+    type ProposalRepoAgentDefault,
+  } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -156,6 +167,38 @@
   // True while the card's specialist is still that fallback: never edited by
   // the user, restored from a draft, or named by the proposal.
   let specialistIsModalDefault = false;
+  // Whether the proposal itself named the initial agent; its own choice is
+  // never combined with a remembered provider/model/effort.
+  let proposalNamesAgent = false;
+  // The setup New Workspace last used to create a workspace in the card's
+  // repository (read, not subscribed, like the modal default above).
+  let repoAgentDefault = $state<ProposalRepoAgentDefault | null>(null);
+
+  function readRepoAgentDefault(): ProposalRepoAgentDefault | null {
+    const state = appStore.state;
+    const repoKeys = proposalRepoKeys({
+      repoType: workspaceRepoType,
+      repoPath: workspaceRepoPath,
+      clonePath: workspaceClonePath,
+      githubUrl: workspaceGithubUrl,
+    });
+    const agentByRepo = selectWorkspaceInitializerAgentByRepo.select(state);
+    if (!repoKeys.some((key) => agentByRepo[key])) return null;
+    return resolveProposalRepoAgentDefault({
+      repoKeys,
+      agentByRepo,
+      specialists: selectSpecialists.select(state),
+      orchestratorId: selectOrchestratorSpecialist.select(state)?.id ?? null,
+    });
+  }
+
+  /** The card's starting agent: the repository's remembered one, else the modal default. */
+  function readDefaultSpecialist(): string | null {
+    repoAgentDefault = readRepoAgentDefault();
+    return repoAgentDefault
+      ? repoAgentDefault.specialist
+      : selectNewWorkspaceDefaultSpecialist.select(appStore.state);
+  }
 
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
@@ -196,6 +239,15 @@
       ? (getSpecialistById(workspaceSpecialist)?.name ?? workspaceSpecialist)
       : '',
   );
+  // Provider/model/effort adopted from the repository's remembered setup while
+  // the card still starts that remembered agent; `null` when there is nothing
+  // to send. Applied on create without being shown on the card.
+  const adoptedAgentSetup = $derived.by(() => {
+    if (!repoAgentDefault || proposalNamesAgent) return null;
+    if (workspaceSpecialist !== repoAgentDefault.specialist) return null;
+    const setup = proposalAgentSetup(repoAgentDefault.settings);
+    return hasAgentSetupFields(setup) ? setup : null;
+  });
   const statusMessage = $derived(getStatusMessage());
   const prBranchLookup = $derived(
     prBranchLookupKey ? $prBranchLookupEntries[prBranchLookupKey] : undefined,
@@ -330,8 +382,9 @@
     workspaceIsValidPath = workspaceCreate.isValidPath ?? false;
     workspaceScope = workspaceCreate.scope ?? '';
     specialistIsModalDefault = workspaceCreate.specialist === undefined;
+    proposalNamesAgent = !specialistIsModalDefault;
     workspaceSpecialist = specialistIsModalDefault
-      ? selectNewWorkspaceDefaultSpecialist.select(appStore.state)
+      ? readDefaultSpecialist()
       : (workspaceCreate.specialist ?? null);
     prBranchUserEdited = false;
     prBranchLookupKey = '';
@@ -362,8 +415,16 @@
   $effect(() => {
     if (!$workspaceInitializerHydrated) return;
     void $specialists;
-    if (!isWorkspaceCreate || !specialistIsModalDefault) return;
-    workspaceSpecialist = untrack(() => selectNewWorkspaceDefaultSpecialist.select(appStore.state));
+    // The repository can change on a non-sibling card before it is created.
+    void [workspaceRepoType, workspaceRepoPath, workspaceClonePath, workspaceGithubUrl];
+    if (!isWorkspaceCreate) return;
+    if (!specialistIsModalDefault) {
+      // Keep the user's agent, but follow the repository for its remembered
+      // model and effort (sent on create when that agent is selected).
+      repoAgentDefault = untrack(readRepoAgentDefault);
+      return;
+    }
+    workspaceSpecialist = untrack(readDefaultSpecialist);
   });
 
   $effect(() => {
@@ -776,6 +837,7 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
+    if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
     return editedFields;
   }
 
@@ -1141,15 +1203,17 @@
               >
                 {m.chat_proposalCard_initialAgent_label()}
               </span>
-              <SpecialistDropdown
-                value={workspaceSpecialist}
-                variant="bare"
-                class="w-full"
-                onchange={(id) => {
-                  workspaceSpecialist = id;
-                  specialistIsModalDefault = false;
-                }}
-              />
+              <div class="flex min-w-0 flex-1 flex-col">
+                <SpecialistDropdown
+                  value={workspaceSpecialist}
+                  variant="bare"
+                  class="w-full"
+                  onchange={(id) => {
+                    workspaceSpecialist = id;
+                    specialistIsModalDefault = false;
+                  }}
+                />
+              </div>
             </div>
           </div>
 

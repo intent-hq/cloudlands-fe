@@ -1362,6 +1362,12 @@ export function filterWorkspaceCardsCoveredByIds(
  * Grouped content block structure for rendering at the ContentBlock level.
  * Wraps ContentBlocks that appear between group open and group close tags.
  */
+/** Renderer-only counts for a collapsed run of tool calls and thinking steps. */
+export interface CollapsedRunCounts {
+  tools: number;
+  thinking: number;
+}
+
 export interface ContentBlockGroup {
   type: 'content_group';
   name: string;
@@ -1371,6 +1377,8 @@ export interface ContentBlockGroup {
   isReasoningPhase?: boolean;
   sourceName?: string;
   hasAdjacentReasoningHistory?: boolean;
+  /** Renderer-only: set when this group is a collapsed run of tool calls and thinking steps. */
+  collapsedRun?: CollapsedRunCounts;
 }
 
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;

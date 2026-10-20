@@ -37,12 +37,14 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
+  import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { formatDateTime, formatInteger, formatRelativeTime, formatTime } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
-  import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
+  import { handleLink, openLinkInApp } from '$features/navigation/link-handler';
+  import { readLinkSource } from '$features/navigation/link-source';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { ReviewMonitorRow as PrMonitorRow } from '$shared/types/pr-monitor';
   import {
@@ -215,9 +217,18 @@
     return monitorUrl(monitor);
   }
 
+  let rowElement: HTMLElement | null = $state(null);
+
   function handleOpenInApp(monitor: PrMonitorRow) {
-    // Built-in fallback to the external browser when the panel cannot open.
-    if (prUrl(monitor)) void openInBrowserPanel(prUrl(monitor), workspaceId as WorkspaceId);
+    // The menu is portaled, so the row tells where the action came from: a Home
+    // preview enters the workspace first. The panel falls back to the external
+    // browser when it cannot open.
+    const { openInWorkspace, assistantLayoutId } = readLinkSource(rowElement, workspaceId);
+    if (prUrl(monitor))
+      void openLinkInApp(prUrl(monitor), workspaceId as WorkspaceId, {
+        openInWorkspace,
+        assistantLayoutId,
+      });
   }
 
   function handleOpenExternal(monitor: PrMonitorRow) {
@@ -383,7 +394,10 @@
     const snapshot = monitor.lastSnapshot;
     if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
     if (snapshot?.state === 'open' && snapshot.isInMergeQueue) {
-      return m.chat_monitoredPrs_status_mergeQueue();
+      const detail = formatMergeQueueSummary(snapshot.mergeQueue);
+      return detail
+        ? m.chat_monitoredPrs_status_mergeQueueDetail({ detail })
+        : m.chat_monitoredPrs_status_mergeQueue();
     }
     const blocker = inferredBlocker(monitor);
     if (blocker) return m.chat_monitoredPrs_status_blocked({ reason: blocker });
@@ -419,6 +433,7 @@
 
 {#if activeMonitors.length > 0}
   <div
+    bind:this={rowElement}
     class="w-full min-w-0 max-w-full"
     role="group"
     aria-label={activeMonitors.every(isMergeRequest)

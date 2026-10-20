@@ -41,7 +41,10 @@
  */
 
 export interface WorkspaceBackendLookup<C> {
-  /** Window ids currently hosting the workspace (active view or tab bar). */
+  /**
+   * Window ids currently hosting the workspace (active view or tab bar) on ANY
+   * host — the resolver derives the host from these windows.
+   */
   getWindowIdsForWorkspace(workspaceId: string): number[];
   /** Backend id a window is stamped with, or null for a dead window. */
   getBackendIdForWindowId(windowId: number): string | null;

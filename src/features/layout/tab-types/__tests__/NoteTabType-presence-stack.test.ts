@@ -53,6 +53,8 @@ const mockState = vi.hoisted(() => {
     noteContentView: store<unknown>(undefined),
     noteWorkspaceRoot: store<unknown>(undefined),
     notePresenceView: store<{ viewers: unknown[] } | undefined>(undefined),
+    windowVisible: store(true),
+    currentWorkspace: store('ws-1'),
     principalConnectionContext: store('test-connection'),
   };
 });
@@ -99,6 +101,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
   selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
+  selectNoteWindowVisible: () => mockState.windowVisible,
 }));
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
@@ -120,6 +123,7 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectAllScrollPositions: () => mockState.scrollPositions,
+  selectCurrentWorkspaceTabId: () => mockState.currentWorkspace,
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectNoteViewMode: () => mockState.noteViewMode,

@@ -18,6 +18,8 @@ import {
   scriptFixture,
 } from './script-monitor.fixture';
 import type { ScriptMonitor } from './types';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -71,7 +73,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
         },
       };
@@ -113,11 +115,40 @@ describe('script monitor wire and connection lifecycle', () => {
     connection.dispose();
   });
 
+  it('loads monitors from a current-protocol daemon that advertises capability v2', async () => {
+    vi.mocked(backendRequest).mockImplementation(async (method) => {
+      if (method === 'client.hello')
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptMonitors: 2, scriptActiveLists: 1, scriptLifecycle: 1 },
+          },
+        };
+      if (method === 'scriptMonitor.list') return { view: 'summary', monitors: [summary] };
+      throw new Error(`Unexpected wire call ${method}`);
+    });
+    start();
+    await ready();
+    expect(rows.status).toBe('ready');
+    expect(rows.monitors).toEqual([summary]);
+  });
+  it('still rejects a current-protocol daemon without monitor capability v2', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({
+      server: { protocolVersion: CURRENT_PROTOCOL_VERSION, capabilities: { scriptMonitors: 1 } },
+    });
+    start();
+    await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 0, 1, 3])(
     'never subscribes or reads monitors without capability v2 (%s)',
     async (version) => {
       vi.mocked(backendRequest).mockResolvedValue({
-        server: { protocolVersion: '14.0', capabilities: { scriptMonitors: version } },
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptMonitors: version },
+        },
       });
       start();
       await vi.waitFor(() => expect(rows.status).toBe('unsupported'));
@@ -259,5 +290,68 @@ describe('script monitor wire and connection lifecycle', () => {
         },
       });
     expect(backendRequest).toHaveBeenCalledTimes(before);
+  });
+});
+
+describe('script monitor read failures (intent-hq/intent#7206)', () => {
+  const calls = (method: string) =>
+    vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method).length;
+
+  it('retries a failed first page on the healthy subscription without re-registering', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list' && fail
+        ? Promise.reject(new Error('Timed out'))
+        : original(method, params),
+    );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    const hellos = calls('client.hello');
+    fail = false;
+    service.retry();
+    await ready();
+    expect(rows.monitors.map((row) => row.monitorId)).toEqual([active.monitorId]);
+    expect(calls('client.hello')).toBe(hellos);
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(backendUnsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('re-registers when the hello itself failed', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let fail = true;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'client.hello' && fail
+        ? Promise.reject(new Error('Socket closed'))
+        : original(method, params),
+    );
+    const service = start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+    fail = false;
+    service.retry();
+    await ready();
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(rows.monitors).toHaveLength(1);
+  });
+
+  it('keeps loaded rows usable when only an extra page fails', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) => {
+      if (method !== 'scriptMonitor.list') return original(method, params);
+      return (params as { cursor?: string }).cursor
+        ? Promise.reject(new Error('Timed out'))
+        : Promise.resolve({ view: 'summary', monitors: [summary], nextCursor: 'more' });
+    });
+    const service = start();
+    await ready();
+    await service.loadMore();
+    expect(rows.status).toBe('ready');
+    expect(rows.loadingMore).toBe(false);
+    expect(rows.nextCursor).toBe('more');
+    expect(rows.monitors).toHaveLength(1);
+    service.retry();
+    expect(calls('scriptMonitor.list')).toBe(2);
   });
 });

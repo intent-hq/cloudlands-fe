@@ -17,7 +17,7 @@ import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
-import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type { ProviderCatalogResult, ProviderProfileSummary } from '$shared/provider-catalog';
 import type { WorkspaceEvent } from '$features/events/types';
 import { applyWorkspaceCatalogUpdate } from './workspace-catalog-updates';
 import type {
@@ -45,6 +45,7 @@ export const providerCatalogReducer = createReducer<ProviderCatalogState>(initia
 providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
   ...state,
   providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
+  profiles: createCollection<ProviderProfileSummary, 'id'>('id', catalog.profiles ?? []),
   loaded: true,
 }));
 

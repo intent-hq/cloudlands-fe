@@ -21,6 +21,7 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 import { capitalize } from '$shared/utils-client';
+import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
 
 /**
  * Validate a git branch name according to git-check-ref-format rules.
@@ -729,6 +730,10 @@ export function getPRStatusTooltip(pr: PRInfo): string {
             ? m.workspace_prSection_statusQueued_label()
             : m.workspace_prSection_statusOpen_label();
   const lines: string[] = [monitorAvailabilitySummary(pr) ?? stateLine];
+  // A queued row adds its queue position and time-to-merge estimate when the
+  // monitor snapshot carries them (additive; absent on older daemons).
+  const queueLine = isPRQueued(pr) ? formatMergeQueueSummary(pr.monitorSnapshot?.mergeQueue) : null;
+  if (queueLine) lines.push(queueLine);
   // Merged/closed rows no longer have merge requirements — the snapshot
   // detail lines would just be stale noise on a settled PR.
   const snapshot =

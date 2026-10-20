@@ -2,25 +2,20 @@
   import {
     selectScriptListPageState,
     selectScriptWorkflowOutcome,
+    selectWorkspaceScriptsInitialized,
+    selectScriptDetectionOperation,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { loadMoreScripts } from '$store/renderer/slices/scripts/scripts-slice';
-  import { scriptCommandLabel } from '$features/scripts/types';
+  import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
-  /* eslint-disable max-lines */
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
   import { prefersReducedMotion, spring } from '$lib/motion';
-  import type { ScriptCategory, ScriptMode, ScriptListEntry } from '$features/scripts/types';
+  import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-    applyScriptDefinitionChangesRequested,
     createScriptDefinitionRequested,
-    deleteScriptRequested,
-    detectScriptDefinitionsRequested,
-    listScriptDefinitionsRequested,
-    restoreScriptDefinitionsRequested,
+    removeScriptDefinitionsRequested,
     saveScriptDefinitionsToRepoRequested,
     scriptWorkflowConsumed,
     scriptWorkflowReleased,
@@ -30,38 +25,17 @@
     updateScriptDefinitionRequested,
   } from '$store/renderer/slices/scripts/scripts-slice';
   import type {
-    ScriptDefinitionChanges,
-    ScriptDefinitionChangesOutcome,
-    ScriptDefinitionInput,
-    ScriptDefinitionUpdate,
-    ScriptDetectionOutcome,
+    ScriptBulkRemovalOutcome,
     ScriptWorkflowConsumer,
-    ScriptWithState,
   } from '$store/renderer/slices/scripts/scripts-types';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import { onDestroy } from 'svelte';
 
-  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import ScriptDetectionControls from '$features/scripts/components/ScriptDetectionControls.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
-  import { Skeleton } from '$lib/components/ui/skeleton';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
-  import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
-  import {
-    selectExecutorIsRunning,
-    selectExecutorAgentId,
-  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
-  import {
-    selectActiveTerminalId as selectActiveTerminalIdSelector,
-    selectUserTerminals as selectTerminalsSelector,
-  } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
-  import { terminalDisplayName } from '$lib/utils/terminal-display-name';
-
-  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
+  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
+  import { notify } from '$lib/components/patterns/notify';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
@@ -71,11 +45,7 @@
     faPlay,
     faPlus,
     faRotateRight,
-    faSearch,
     faStop,
-    faTerminal,
-    faTrash,
-    faWandMagicSparkles,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
@@ -85,53 +55,24 @@
     workspaceId: string;
     selectedScriptId?: string | null;
     onSelectScript?: (scriptId: string | null) => void;
-    onSelectTerminal?: (terminalId: string) => void;
-    onCreateTerminal?: () => void;
     class?: string;
   }
 
-  let {
-    workspaceId,
-    selectedScriptId = null,
-    onSelectScript,
-    onSelectTerminal,
-    onCreateTerminal,
-    class: className,
-  }: Props = $props();
+  let { workspaceId, selectedScriptId = null, onSelectScript, class: className }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
-  const activeWorkspace = selectWorkspaceById(workspaceIdStore);
-
   const logger = createLogger('TerminalSidebar');
-  const applyConsumerId = crypto.randomUUID();
   const createConsumerId = crypto.randomUUID();
-  const detectConsumerId = crypto.randomUUID();
-  const listConsumerId = crypto.randomUUID();
-  const restoreConsumerId = crypto.randomUUID();
+  const removeConsumerId = crypto.randomUUID();
   const saveConsumerId = crypto.randomUUID();
   const updateConsumerId = crypto.randomUUID();
   const updateResourceIdStore = writable('');
-  const applyOutcome$ = selectScriptWorkflowOutcome(
-    applyConsumerId,
-    workspaceIdStore,
-    'agent-detection',
-  );
   const createOutcome$ = selectScriptWorkflowOutcome(createConsumerId, workspaceIdStore, 'create');
-  const detectOutcome$ = selectScriptWorkflowOutcome(
-    detectConsumerId,
+  const removeOutcome$ = selectScriptWorkflowOutcome(
+    removeConsumerId,
     workspaceIdStore,
-    'local-detection',
-  );
-  const listOutcome$ = selectScriptWorkflowOutcome(
-    listConsumerId,
-    workspaceIdStore,
-    'agent-context',
-  );
-  const restoreOutcome$ = selectScriptWorkflowOutcome(
-    restoreConsumerId,
-    workspaceIdStore,
-    'restore',
+    'bulk-remove',
   );
   const saveOutcome$ = selectScriptWorkflowOutcome(saveConsumerId, workspaceIdStore, 'save');
   const updateOutcome$ = selectScriptWorkflowOutcome(
@@ -140,40 +81,6 @@
     updateResourceIdStore,
   );
 
-  // i18n-ignore (agent-facing prompt, kept in English)
-  const SCRIPT_DETECT_PROMPT = `Read package.json (and Makefile, docker-compose.yml, Cargo.toml, or pyproject.toml if they exist) to find runnable scripts.
-
-For each script, determine: name, command, mode ("service" for long-running like dev servers, "command" for one-shot like build/test), category (one of: dev, build, test, lint, typecheck, format, storybook, other).
-
-CRITICAL INSTRUCTIONS:
-1. You MUST wrap your JSON result in <<<DETECTED_SCRIPTS>>> and <<</DETECTED_SCRIPTS>>> tags
-2. Do NOT use markdown code blocks
-3. Do NOT add any text outside the tags
-4. Return ONLY a JSON object with keys "add", "update", and "remove"
-
-Example response (you MUST follow this exact format):
-<<<DETECTED_SCRIPTS>>>
-{"add":[{"name":"dev","command":"npm run dev","mode":"service","category":"dev"}],"update":[],"remove":[]}
-<<</DETECTED_SCRIPTS>>>
-
-Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
-
-  const validCategories = new Set([
-    'dev',
-    'build',
-    'test',
-    'lint',
-    'typecheck',
-    'format',
-    'storybook',
-    'other',
-  ]);
-  const validModes = new Set(['service', 'command']);
-
-  type DetectFlow = 'idle' | 'local' | 'agent';
-
-  let detectFlow = $state<DetectFlow>('idle');
-  let showAgentAssist = $state(false);
   let showAllScripts = $state(false);
 
   let selectedScriptIds = $state<Set<string>>(new Set());
@@ -182,30 +89,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   let lastClickedScriptId = $state<string | null>(null);
   let pendingScrollScriptId = $state<string | null>(null);
 
-  let pendingApply = $state<{
+  let pendingCreate = $state<{ requestId: string; workspaceId: string } | null>(null);
+  let pendingRemove = $state<{
     requestId: string;
     workspaceId: string;
-    presentation: 'changes' | 'legacy';
+    selectedScriptId: string | null;
+    targetIds: string[];
   } | null>(null);
-  let pendingCreate = $state<{ requestId: string; workspaceId: string } | null>(null);
-  let pendingDetect = $state<{ requestId: string; workspaceId: string } | null>(null);
-  let pendingList = $state<{ requestId: string; workspaceId: string } | null>(null);
-  let reviewedAgentDefinitions = $state<{
-    workspaceId: string;
-    definitions: ScriptWithState[];
-  } | null>(null);
-  let pendingRestore = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingSave = $state<{ requestId: string; workspaceId: string } | null>(null);
   let pendingUpdate = $state<{ requestId: string; workspaceId: string } | null>(null);
   let saveStatusResetTimer: ReturnType<typeof setTimeout> | null = null;
   let workflowWorkspaceId = '';
-  let mounted = true;
   const workflowConsumerIds = [
-    applyConsumerId,
     createConsumerId,
-    detectConsumerId,
-    listConsumerId,
-    restoreConsumerId,
+    removeConsumerId,
     saveConsumerId,
     updateConsumerId,
   ];
@@ -225,7 +122,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   onDestroy(() => {
-    mounted = false;
     if (saveStatusResetTimer) clearTimeout(saveStatusResetTimer);
     if (workflowWorkspaceId) releaseWorkflows(workflowWorkspaceId);
   });
@@ -234,201 +130,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     const nextWorkspaceId = workspaceId;
     if (workflowWorkspaceId && workflowWorkspaceId !== nextWorkspaceId) {
       releaseWorkflows(workflowWorkspaceId);
-      pendingApply = null;
       pendingCreate = null;
-      pendingDetect = null;
-      pendingList = null;
-      reviewedAgentDefinitions = null;
-      pendingRestore = null;
+      pendingRemove = null;
       pendingSave = null;
       pendingUpdate = null;
-      detectFlow = 'idle';
     }
     workflowWorkspaceId = nextWorkspaceId;
   });
-
-  function handleDetectionResult(parsed: any): void {
-    const requestWorkspaceId = workspaceId;
-    const reviewedDefinitions: ScriptWithState[] | undefined =
-      reviewedAgentDefinitions?.workspaceId === requestWorkspaceId
-        ? reviewedAgentDefinitions.definitions
-        : undefined;
-    reviewedAgentDefinitions = null;
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      ('add' in parsed || 'update' in parsed || 'remove' in parsed)
-    ) {
-      const changes: ScriptDefinitionChanges = {
-        remove: Array.isArray(parsed.remove)
-          ? parsed.remove.filter((id: unknown): id is string => typeof id === 'string')
-          : [],
-        update: Array.isArray(parsed.update)
-          ? parsed.update.flatMap((entry: any) => {
-              if (typeof entry?.id !== 'string') return [];
-              const updates: ScriptDefinitionUpdate = {};
-              if (typeof entry.name === 'string') updates.name = entry.name;
-              if (typeof entry.command === 'string') updates.command = entry.command;
-              if (validModes.has(entry.mode)) updates.mode = entry.mode as ScriptMode;
-              if (validCategories.has(entry.category)) updates.category = entry.category;
-              return [{ id: entry.id, updates }];
-            })
-          : [],
-        add: Array.isArray(parsed.add)
-          ? parsed.add.flatMap((entry: any): ScriptDefinitionInput[] => {
-              if (
-                typeof entry?.name !== 'string' ||
-                typeof entry.command !== 'string' ||
-                !validModes.has(entry.mode)
-              )
-                return [];
-              return [
-                {
-                  name: entry.name,
-                  command: entry.command,
-                  mode: entry.mode as ScriptMode,
-                  purpose: 'saved',
-                  category: validCategories.has(entry.category)
-                    ? (entry.category as ScriptCategory)
-                    : 'other',
-                  source: 'auto-detected',
-                },
-              ];
-            })
-          : [],
-      };
-      const requestId = crypto.randomUUID();
-      pendingApply = { requestId, workspaceId: requestWorkspaceId, presentation: 'changes' };
-      appStore.dispatch(
-        applyScriptDefinitionChangesRequested(
-          requestWorkspaceId,
-          changes,
-          reviewedDefinitions,
-          consumer(applyConsumerId, requestId, 'agent-detection'),
-        ),
-      );
-      return;
-    }
-
-    // Fallback: old flat array format — deduplicate
-    if (Array.isArray(parsed)) {
-      const existingKeys = new Set(
-        (reviewedDefinitions ?? selectScriptEntries.select(appStore.state, requestWorkspaceId)).map(
-          (script) => `${script.name}::${script.command}`,
-        ),
-      );
-
-      const add: ScriptDefinitionInput[] = [];
-      for (const entry of parsed) {
-        if (
-          typeof entry.name === 'string' &&
-          typeof entry.command === 'string' &&
-          validModes.has(entry.mode) &&
-          !existingKeys.has(`${entry.name}::${entry.command}`)
-        ) {
-          add.push({
-            name: entry.name,
-            command: entry.command,
-            mode: entry.mode as ScriptMode,
-            purpose: 'saved',
-            category: (entry.category as ScriptCategory) || 'other',
-            source: 'auto-detected',
-          });
-        }
-      }
-      const requestId = crypto.randomUUID();
-      pendingApply = { requestId, workspaceId: requestWorkspaceId, presentation: 'legacy' };
-      appStore.dispatch(
-        applyScriptDefinitionChangesRequested(
-          requestWorkspaceId,
-          { add, update: [], remove: [] },
-          reviewedDefinitions,
-          consumer(applyConsumerId, requestId, 'agent-detection'),
-        ),
-      );
-      return;
-    }
-
-    // Neither format matched
-    logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    notify.info(m.terminal_sidebar_unexpectedFormat_info());
-    runLocalDetect({ source: 'fallback' });
-  }
-
-  const scriptDetectAgent = useBackgroundAgent('script-detect', {
-    resultTag: 'DETECTED_SCRIPTS',
-    timeout: 90000,
-    onResult: async (result) => {
-      try {
-        const parsed = JSON.parse(result);
-        handleDetectionResult(parsed);
-      } catch (e) {
-        logger.warn('Failed to parse DETECTED_SCRIPTS result', {
-          error: e instanceof Error ? e.message : String(e),
-        });
-        notify.info(m.terminal_sidebar_agentDetectFailed_info());
-        runLocalDetect({ source: 'fallback' });
-      }
-    },
-    onError: async () => {
-      // Try to salvage JSON from the agent's raw messages via Redux
-      const currentAgentId = selectExecutorAgentId.select(
-        appStore.state,
-        workspaceId,
-        'script-detect',
-      );
-      const agentSession = currentAgentId
-        ? selectAgentSession.select(appStore.state, currentAgentId)
-        : undefined;
-      const messages = agentSession?.messages;
-      if (messages && messages.length > 0) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i];
-          const texts: string[] = [];
-          if (msg.contentBlocks) {
-            for (const block of msg.contentBlocks) {
-              if (block.type === 'text' && block.text) texts.push(block.text);
-            }
-          }
-          const content = texts.join('\n');
-
-          // Try extracting JSON from code blocks or raw content
-          const jsonMatch =
-            content.match(/```json?\s*\n?([\s\S]*?)\n?\s*```/) ||
-            content.match(/(\{[\s\S]*?"add"[\s\S]*?\})/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[1].trim());
-              logger.info('Salvaged detection result from raw agent response');
-              handleDetectionResult(parsed);
-              return;
-            } catch (e) {
-              logger.warn('Failed to parse salvaged JSON', { error: e });
-            }
-          }
-        }
-      }
-
-      logger.warn('Script detection agent failed, falling back to local detection');
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      runLocalDetect({ source: 'fallback' });
-    },
-  });
-
-  function runLocalDetect(options: { source?: 'primary' | 'fallback' } = {}) {
-    detectFlow = 'local';
-    logger.info('Running local script detection', { source: options.source ?? 'primary' });
-    const requestWorkspaceId = workspaceId;
-    const requestId = crypto.randomUUID();
-    pendingDetect = { requestId, workspaceId: requestWorkspaceId };
-    appStore.dispatch(
-      detectScriptDefinitionsRequested(
-        requestWorkspaceId,
-        consumer(detectConsumerId, requestId, 'local-detection'),
-      ),
-    );
-  }
 
   // Sidebar state
   let collapsed = $state(false);
@@ -454,11 +162,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   const COLLAPSED_SCRIPT_LIMIT = 6;
 
   // Store bindings
-  const _sidebarTerminals = selectTerminalsSelector(workspaceIdStore);
-  const _sidebarActiveTerminalId = selectActiveTerminalIdSelector(workspaceIdStore);
   const scriptEntries$ = selectScriptEntries(workspaceIdStore);
-  const _scriptDetectIsRunning$ = selectExecutorIsRunning(workspaceIdStore, 'script-detect');
-  const _scriptDetectAgentId$ = selectExecutorAgentId(workspaceIdStore, 'script-detect');
 
   // Derived
   const hasScripts = $derived($scriptEntries$.length > 0);
@@ -476,11 +180,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     showAllScripts ? $scriptEntries$.length > collapsedScriptLimit : hiddenScriptCount >= 2,
   );
   const effectiveWidth = $derived(collapsed ? COLLAPSED_WIDTH : sidebarWidth);
-  const isDetecting = $derived(detectFlow !== 'idle' || $_scriptDetectIsRunning$);
-  const isLocalDetecting = $derived(detectFlow === 'local');
-  const isAgentDetecting = $derived(detectFlow === 'agent' || $_scriptDetectIsRunning$);
-  const sidebarTerminals = $derived($_sidebarTerminals);
-  const activeTerminalId = $derived($_sidebarActiveTerminalId);
 
   function completeWorkflow(
     consumerId: string,
@@ -490,8 +189,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   }
 
   $effect(() => {
-    const outcome = $applyOutcome$;
-    const pending = pendingApply;
+    const outcome = $removeOutcome$;
+    const pending = pendingRemove;
     if (
       !outcome ||
       !pending ||
@@ -502,102 +201,22 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       workspaceId !== pending.workspaceId
     )
       return;
-    pendingApply = null;
-    completeWorkflow(applyConsumerId, outcome);
-    if (outcome.status !== 'success' || !outcome.result) {
-      notify.info(m.terminal_sidebar_agentDetectFailed_info());
-      runLocalDetect({ source: 'fallback' });
-      return;
-    }
-    const result = outcome.result as ScriptDefinitionChangesOutcome;
-    showAgentAssist = selectScriptEntries.select(appStore.state, outcome.workspaceId).length === 0;
-    if (pending.presentation === 'legacy') {
-      notify[result.added > 0 ? 'success' : 'info'](
-        result.added > 0
-          ? result.added === 1
-            ? m.terminal_sidebar_detectedNew_one({ count: result.added })
-            : m.terminal_sidebar_detectedNew_many({ count: result.added })
-          : m.terminal_sidebar_noNewScripts_info(),
-      );
-      return;
-    }
-    const changes = [
-      result.added > 0 ? m.terminal_sidebar_detectAdded_part({ count: result.added }) : '',
-      result.updated > 0 ? m.terminal_sidebar_detectUpdated_part({ count: result.updated }) : '',
-      result.removed > 0 ? m.terminal_sidebar_detectRemoved_part({ count: result.removed }) : '',
-    ].filter(Boolean);
-    if (changes.length > 0) {
-      const resultWorkspaceId = outcome.workspaceId;
-      notify.success(
-        m.terminal_sidebar_scriptsUpdated_success({ changes: changes.join(', ') }),
-        withToastCountdown(
-          {
-            action: {
-              label: m.terminal_sidebar_undo_label(),
-              onClick: () => {
-                if (!mounted || workspaceId !== resultWorkspaceId) return;
-                const requestId = crypto.randomUUID();
-                pendingRestore = { requestId, workspaceId: resultWorkspaceId };
-                appStore.dispatch(
-                  restoreScriptDefinitionsRequested(
-                    resultWorkspaceId,
-                    result.snapshot,
-                    consumer(restoreConsumerId, requestId, 'restore'),
-                  ),
-                );
-              },
-            },
-            duration: 10000,
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } else {
-      notify.info(m.terminal_sidebar_noScriptChanges_info());
-    }
-    if (result.skippedRunning.length > 0) {
-      notify.warning(
-        result.skippedRunning.length === 1
-          ? m.scripts_detect_skippedRunning_one({ name: result.skippedRunning[0] })
-          : m.scripts_detect_skippedRunning_many({
-              count: result.skippedRunning.length,
-              names: result.skippedRunning.join(', '),
-            }),
-      );
-    }
-  });
-
-  $effect(() => {
-    const outcome = $detectOutcome$;
-    const pending = pendingDetect;
+    pendingRemove = null;
+    completeWorkflow(removeConsumerId, outcome);
+    const result = outcome.result as ScriptBulkRemovalOutcome | undefined;
     if (
-      !outcome ||
-      !pending ||
-      outcome.consumed ||
-      outcome.status === 'pending' ||
-      outcome.requestId !== pending.requestId ||
-      outcome.workspaceId !== pending.workspaceId ||
-      workspaceId !== pending.workspaceId
-    )
-      return;
-    pendingDetect = null;
-    detectFlow = 'idle';
-    completeWorkflow(detectConsumerId, outcome);
-    if (outcome.status !== 'success' || !outcome.result) {
-      showAgentAssist = true;
-      logger.error('Local script detection failed', { error: outcome.error });
-      notify.error(m.terminal_quakeOverlay_detectFailed_error());
-      return;
+      outcome.status === 'success' &&
+      pending.selectedScriptId &&
+      selectedScriptId === pending.selectedScriptId &&
+      result?.removed.includes(pending.selectedScriptId)
+    ) {
+      onSelectScript?.(null);
     }
-    const result = outcome.result as ScriptDetectionOutcome;
-    showAgentAssist = result.detected === 0;
-    notify[result.detected > 0 ? 'success' : 'info'](
-      result.detected > 0
-        ? result.detected === 1
-          ? m.terminal_sidebar_detectedFromFiles_one({ count: result.detected })
-          : m.terminal_sidebar_detectedFromFiles_many({ count: result.detected })
-        : m.terminal_sidebar_noScriptsLocally_info(),
+    const removedTargets = new Set(outcome.status === 'success' && result ? result.removed : []);
+    selectedScriptIds = new Set(
+      Array.from(selectedScriptIds).filter((scriptId) => !removedTargets.has(scriptId)),
     );
+    if (lastClickedScriptId && removedTargets.has(lastClickedScriptId)) lastClickedScriptId = null;
   });
 
   $effect(() => {
@@ -625,25 +244,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     newCommand = '';
     newMode = 'command';
     showAddForm = false;
-  });
-
-  $effect(() => {
-    const outcome = $restoreOutcome$;
-    const pending = pendingRestore;
-    if (
-      !outcome ||
-      !pending ||
-      outcome.consumed ||
-      outcome.status === 'pending' ||
-      outcome.requestId !== pending.requestId ||
-      outcome.workspaceId !== pending.workspaceId ||
-      workspaceId !== pending.workspaceId
-    )
-      return;
-    pendingRestore = null;
-    completeWorkflow(restoreConsumerId, outcome);
-    if (outcome.status === 'success') notify.success(m.terminal_sidebar_scriptsRestored_success());
-    else notify.warning(outcome.error ?? m.terminal_quakeOverlay_detectFailed_error());
   });
 
   $effect(() => {
@@ -689,45 +289,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     pendingUpdate = null;
     completeWorkflow(updateConsumerId, outcome);
     if (outcome.status !== 'success') logger.error('Script update failed', outcome.error);
-  });
-
-  $effect(() => {
-    const outcome = $listOutcome$;
-    const pending = pendingList;
-    if (
-      !outcome ||
-      !pending ||
-      outcome.consumed ||
-      outcome.status === 'pending' ||
-      outcome.requestId !== pending.requestId ||
-      outcome.workspaceId !== pending.workspaceId ||
-      workspaceId !== pending.workspaceId
-    )
-      return;
-    pendingList = null;
-    completeWorkflow(listConsumerId, outcome);
-    const definitions =
-      outcome.status === 'success' && Array.isArray(outcome.result)
-        ? (outcome.result as ScriptWithState[])
-        : [];
-    reviewedAgentDefinitions =
-      outcome.status === 'success' ? { workspaceId: outcome.workspaceId, definitions } : null;
-    const workspace = selectWorkspaceById.select(appStore.state, outcome.workspaceId);
-    if (!workspace || !mounted || workspaceId !== outcome.workspaceId) return;
-    const existingScripts = definitions.map((script) => ({
-      id: script.id,
-      name: script.name,
-      command: script.command,
-      mode: script.mode,
-      purpose: script.purpose ?? 'saved',
-      category: script.category,
-    }));
-    const context =
-      existingScripts.length > 0
-        ? `\n\nExisting scripts (do NOT duplicate these, return only changes):\n${JSON.stringify(existingScripts, null, 2)}`
-        : '';
-    scriptDetectAgent.execute(workspace, { message: SCRIPT_DETECT_PROMPT + context });
-    if (mounted && workspaceId === outcome.workspaceId) detectFlow = 'idle';
   });
 
   // ---- Sort function ----
@@ -823,41 +384,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         workspaceId,
         scriptId,
         m.terminal_quakeOverlay_restartScriptFailed_error(),
-      ),
-    );
-  }
-
-  function handleDetect() {
-    if (isDetecting) {
-      return;
-    }
-
-    showAgentAssist = false;
-    runLocalDetect({ source: 'primary' });
-  }
-
-  function handleAgentDetect() {
-    if (isDetecting) {
-      return;
-    }
-
-    const workspace = $activeWorkspace;
-    if (!workspace) {
-      notify.info(m.terminal_sidebar_openWorkspaceFirst_info());
-      return;
-    }
-
-    showAgentAssist = false;
-    detectFlow = 'agent';
-    reviewedAgentDefinitions = null;
-
-    const requestId = crypto.randomUUID();
-    pendingList = { requestId, workspaceId: workspace.id };
-    appStore.dispatch(
-      listScriptDefinitionsRequested(
-        workspace.id,
-        { archive: 'active' },
-        consumer(listConsumerId, requestId, 'agent-context'),
       ),
     );
   }
@@ -960,21 +486,29 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     action: 'start' | 'stop' | 'restart' | 'edit' | 'delete' | 'startAll' | 'stopAll',
   ) {
     if (action === 'delete') {
+      if (pendingRemove) return;
       // Delete all selected scripts
       const idsToDelete = Array.from(selectedScriptIds);
-      for (const id of idsToDelete) {
-        appStore.dispatch(
-          deleteScriptRequested(
-            workspaceId,
-            id,
-            m.terminal_quakeOverlay_deleteScriptFailed_error(),
-          ),
-        );
-      }
-      if (selectedScriptId && idsToDelete.includes(selectedScriptId)) onSelectScript?.(null);
-      selectedScriptIds.clear();
-      selectedScriptIds = new Set(selectedScriptIds);
-      lastClickedScriptId = null;
+      const requestId = crypto.randomUUID();
+      const selected = selectScriptEntries
+        .select(appStore.state, workspaceId)
+        .filter((script) => selectedScriptIds.has(script.id));
+      const targets = selected.map((script) => ({ ...script, workspaceId }));
+      appStore.dispatch(
+        removeScriptDefinitionsRequested(
+          workspaceId,
+          targets,
+          m.terminal_quakeOverlay_deleteScriptFailed_error(),
+          consumer(removeConsumerId, requestId, 'bulk-remove'),
+        ),
+      );
+      pendingRemove = {
+        requestId,
+        workspaceId,
+        targetIds: idsToDelete,
+        selectedScriptId:
+          selectedScriptId && idsToDelete.includes(selectedScriptId) ? selectedScriptId : null,
+      };
     } else if (action === 'startAll') {
       // Start all selected scripts
       for (const id of selectedScriptIds) {
@@ -1113,12 +647,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     return pushEscapeLayer(() => closeContextMenu());
   });
   const scriptPage$ = selectScriptListPageState(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
+  const detectionOperation$ = selectScriptDetectionOperation(workspaceIdStore);
 </script>
+
+{#snippet scriptListError()}
+  <ErrorState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+    {#snippet message()}<p class="break-words">{$scriptPage$.error}</p>{/snippet}
+  </ErrorState>
+{/snippet}
 
 <!-- Sidebar Container -->
 <div
   class={cn(
-    'flex flex-col h-full bg-sidebar border-l border-border shrink-0 relative select-none',
+    'relative flex h-full min-w-0 shrink-0 flex-col select-none border-l border-border bg-sidebar',
     isResizing && 'pointer-events-none',
     className,
   )}
@@ -1139,20 +681,33 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     </div>
   {:else}
     <!-- Expanded: full sidebar -->
-    <div class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-0">
+    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-2">
       <!-- Scripts Section -->
       <ListSection
         title={m.terminal_quakeOverlay_scripts_title()}
-        titleClass="mb-0.5 mt-1.5 px-3.5! pb-0!"
+        titleClass="mb-0 flex-wrap gap-y-0 px-3.5 py-0"
         icon={faPlay}
-        class="py-1 shrink-0"
+        class="shrink-0"
       >
         {#snippet actions()}
+          <ScriptDetectionControls {workspaceId} />
+          {#if $scriptPage$.error || (!$scriptsInitialized$ && !$scriptPage$.loading && !$detectionOperation$?.pending)}
+            <Button
+              variant="ghost-light"
+              size="icon-compact"
+              iconOnly
+              aria-label={m.terminal_sidebar_retryScripts_label()}
+              tooltip={m.terminal_sidebar_retryScripts_label()}
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(refreshScripts(workspaceId))}
+            >
+              <Fa icon={faRotateRight} size="xs" />
+            </Button>
+          {/if}
           {#if hasScripts}
             <Button
               variant="ghost-light"
               size="icon-xs"
-              class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
               onclick={(e) => {
                 e.stopPropagation();
                 handleSaveToRepo();
@@ -1164,130 +719,39 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               <Fa
                 icon={saveToRepoStatus === 'saved' ? faCheck : faFloppyDisk}
                 size="xs"
-                class={saveToRepoStatus === 'saved' ? 'text-green-500' : ''}
+                class={saveToRepoStatus === 'saved' ? 'text-success' : ''}
               />
             </Button>
           {/if}
           <Button
             variant="ghost-light"
             size="icon-xs"
-            class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
             onclick={(e) => {
               e.stopPropagation();
               showAddForm = !showAddForm;
             }}
             tooltip={m.terminal_sidebar_addScript_tooltip()}
+            aria-label={m.terminal_sidebar_addScript_tooltip()}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
-          {#if isAgentDetecting && $_scriptDetectAgentId$}
-            <Button
-              variant="plain"
-              type="button"
-              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-              onclick={(e) => {
-                e.stopPropagation();
-                const wsId = $activeWorkspace?.id;
-                if (wsId) {
-                  appStore.dispatch(
-                    openAgentTabRequested(wsId, {
-                      agentId: $_scriptDetectAgentId$,
-                      ...getNavigationContext(e),
-                    }),
-                  );
-                }
-              }}
-              title={m.terminal_sidebar_viewDetectionAgent_tooltip()}
-            >
-              <div
-                class="shrink-0 flex-none"
-                style="min-width: 16px; min-height: 16px; width: 16px; height: 16px;"
-              >
-                <AgentAvatarWithState
-                  agentId={$_scriptDetectAgentId$}
-                  state="running"
-                  variant="compact"
-                />
-              </div>
-              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
-            </Button>
-          {:else if isAgentDetecting}
-            <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
-              <!-- a11y-ignore -->
-              <IntentMarkLoader size={12} />
-              <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
-            </div>
-          {:else if isLocalDetecting}
-            <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
-              <!-- a11y-ignore -->
-              <IntentMarkLoader size={12} />
-              <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
-            </div>
-          {:else if hasScripts}
-            {#if showAgentAssist}
-              <Button
-                variant="outline"
-                size="xs"
-                class="-mt-0.5 -mb-1"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  handleAgentDetect();
-                }}
-                tooltip={m.terminal_sidebar_agentAssist_tooltip()}
-              >
-                {m.terminal_sidebar_agentAssist_label()}
-              </Button>
-            {/if}
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class={cn(
-                '-mt-0.5 -mb-1 transition-opacity',
-                showAgentAssist ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-              )}
-              onclick={(e) => {
-                e.stopPropagation();
-                handleDetect();
-              }}
-              tooltip={m.terminal_sidebar_scanLocal_tooltip()}
-            >
-              <Fa icon={faSearch} size="xs" />
-            </Button>
-          {:else}
-            <Button
-              variant="outline"
-              size="xs"
-              class="-mt-0.5 -mb-1"
-              onclick={(e) => {
-                e.stopPropagation();
-                handleAgentDetect();
-              }}
-              tooltip={m.terminal_sidebar_detectWithAi_tooltip()}
-            >
-              <Fa icon={faWandMagicSparkles} size="xs" />
-              {m.terminal_sidebar_detectWithAi_label()}
-            </Button>
-          {/if}
         {/snippet}
 
         <!-- Add Script Form -->
         {#if showAddForm}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
-            onkeydown={handleAddFormKeydown}
-          >
+          <div class="flex flex-col gap-1.5 px-3.5 py-2" onkeydown={handleAddFormKeydown}>
             <Input
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground transition-colors"
+              class="w-full type-caption bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground transition-colors"
             />
             <Input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground font-mono transition-colors"
+              class="w-full type-caption bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>
@@ -1306,19 +770,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           </div>
         {/if}
 
-        {#if $scriptPage$.nextCursor}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={$scriptPage$.loading}
-            onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
-            >{m.gitlabCheckout_loadMore_label()}</Button
-          >
+        {#if $scriptPage$.error && !hasScripts}
+          {@render scriptListError()}
         {/if}
-        {#if $scriptPage$.error}<p role="alert">{$scriptPage$.error}</p>{/if}
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-1 px-1.5">
+          <ListContainer spacing="compact" class="px-2 py-1">
             {#each visibleScripts as script (script.id)}
               <div
                 animate:flip={{
@@ -1334,8 +791,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  subtitle={editingScriptId === script.id ? '' : scriptCommandLabel(script)}
-                  subtitleClass="leading-none"
                   active={selectedScriptId === script.id}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}
                   ondblclick={() => startEditingScript(script.id, script.name)}
@@ -1370,7 +825,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                           onclick={(e) => e.stopPropagation()}
                           noFocusStyle
                           placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                          class="pointer-events-auto relative z-10 w-full cursor-text border-none bg-transparent hover:bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
+                          class="pointer-events-auto relative z-10 w-full cursor-text border-none bg-transparent hover:bg-transparent p-0 type-caption outline-none focus:outline-none! focus:ring-0!"
                         />
                       {/if}
                       <span
@@ -1390,7 +845,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               <Button
                 variant="ghost-light"
                 type="button"
-                class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                class="w-full text-left px-2 py-1.5 type-caption text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
               >
                 {showAllScripts
@@ -1420,7 +875,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     <Button
                       variant="ghost-light"
                       type="button"
-                      class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                      class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
                     >
                       {m.terminal_sidebar_startAll_label()}
@@ -1428,7 +883,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     <Button
                       variant="ghost-light"
                       type="button"
-                      class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                      class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
                     >
                       {m.terminal_sidebar_stopAll_label()}
@@ -1439,7 +894,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       <Button
                         variant="ghost-light"
                         type="button"
-                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                        class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
                       >
                         {m.terminal_quakeOverlay_stop_label()}
@@ -1447,7 +902,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       <Button
                         variant="ghost-light"
                         type="button"
-                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                        class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
                       >
                         {m.terminal_quakeOverlay_restart_label()}
@@ -1456,7 +911,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                       <Button
                         variant="ghost-light"
                         type="button"
-                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                        class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
                       >
                         {m.terminal_quakeOverlay_start_label()}
@@ -1465,7 +920,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     <Button
                       variant="ghost-light"
                       type="button"
-                      class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
+                      class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
                     >
                       {m.terminal_sidebar_edit_label()}
@@ -1475,7 +930,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                   <Button
                     variant="plain"
                     type="button"
-                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
+                    class="w-full text-left px-3 py-1.5 type-caption hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}
                   >
                     {selectedScriptIds.size > 1
@@ -1486,91 +941,31 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               {/if}
             </div>
           {/if}
-        {:else if !showAddForm && isDetecting}
-          <div class="px-3 text-center">
-            <div class="flex flex-col gap-1 px-1 py-1">
-              {#each Array(4) as { }}
-                <div class="flex items-center gap-2 py-0.75 rounded">
-                  <Skeleton class="h-2 w-2 rounded-full shrink-0" />
-                  <Skeleton class="h-3.5 flex-1 rounded" />
-                </div>
-              {/each}
-            </div>
-          </div>
-        {:else if !showAddForm}
-          <div class="px-3 py-3 text-center text-xs text-muted-foreground space-y-2">
-            {#if showAgentAssist}
-              <p>{m.terminal_sidebar_noScriptsTryAi_label()}</p>
-              <Button variant="outline" size="xs" onclick={handleAgentDetect}>
-                <Fa icon={faWandMagicSparkles} size="xs" />
-                {m.terminal_sidebar_detectWithAi_label()}
-              </Button>
-            {:else}
-              <p>{m.terminal_sidebar_noScriptsAddManually_label()}</p>
-            {/if}
-          </div>
+        {:else if !showAddForm && !$scriptPage$.error}
+          {#if $detectionOperation$?.pending || $scriptPage$.loading || !$scriptsInitialized$}
+            <LoadingState
+              density="compact"
+              count={3}
+              label={m.terminal_sidebar_loadingScripts_label()}
+              class="gap-1 px-3.5 py-2 [&_[data-slot=skeleton]]:h-(--control-height-compact)"
+            />
+          {:else}
+            <EmptyState density="compact" class="min-h-0 justify-start px-3.5 py-2 text-left">
+              {#snippet description()}{m.terminal_quakeOverlay_noScriptsYet_label()}{/snippet}
+            </EmptyState>
+          {/if}
         {/if}
-      </ListSection>
-
-      <!-- Terminals Section -->
-      <ListSection
-        title={m.terminal_sidebar_terminals_title()}
-        titleClass="mb-0.5 mt-1.5 px-3.5! pb-0!"
-        icon={faTerminal}
-        class="py-1 shrink-0"
-      >
-        {#snippet actions()}
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            class="-mt-0.5 -mb-1 opacity-0 group-hover:opacity-100 transition-opacity"
-            onclick={(e) => {
-              e.stopPropagation();
-              onCreateTerminal?.();
-            }}
-            tooltip={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
-            aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
-          >
-            <Fa icon={faPlus} size="xs" />
-          </Button>
-        {/snippet}
-
-        {#if sidebarTerminals.length > 0}
-          <ListContainer spacing="compact" class="py-0.5 px-2">
-            {#each sidebarTerminals as term (term.id)}
-              <ListItem
-                size="sm"
-                class="pr-2! pl-2!"
-                title={terminalDisplayName(term)}
-                active={selectedScriptId === null && activeTerminalId === term.id}
-                onclick={() => {
-                  onSelectScript?.(null);
-                  onSelectTerminal?.(term.id);
-                }}
-                actions={[
-                  {
-                    icon: faTrash,
-                    label: m.terminal_sidebar_closeTerminal_label(),
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, term.id));
-                    },
-                  },
-                ]}
-                actionsVisible="hover"
-                actionsClass="absolute right-0 top-1/2 -translate-y-1/2 bg-background px-1 rounded"
-              >
-                {#snippet iconSnippet()}
-                  <div class="flex items-center justify-center w-4">
-                    <Fa icon={faTerminal} size="xs" class="text-muted-foreground/60" />
-                  </div>
-                {/snippet}
-              </ListItem>
-            {/each}
-          </ListContainer>
-        {:else}
-          <div class="px-3 py-3 text-center">
-            <p class="text-ui text-muted-foreground">{m.terminal_sidebar_noTerminals_label()}</p>
+        {#if $scriptPage$.error && hasScripts}
+          {@render scriptListError()}
+        {:else if hasScripts && $scriptPage$.nextCursor}
+          <div class="px-3.5 py-1">
+            <Button
+              variant="ghost"
+              size="compact"
+              disabled={$scriptPage$.loading}
+              onclick={() => appStore.dispatch(loadMoreScripts(workspaceId))}
+              >{m.gitlabCheckout_loadMore_label()}</Button
+            >
           </div>
         {/if}
       </ListSection>

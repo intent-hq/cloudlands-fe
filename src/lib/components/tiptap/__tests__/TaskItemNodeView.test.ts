@@ -341,11 +341,7 @@ describe('TaskItemNodeView - Basic Rendering', () => {
 });
 
 describe('TaskItemNodeView - Checkbox Cycling', () => {
-  it('should cycle from todo to in-progress on click', async () => {
-    // Note: The component uses props.updateAttributes directly, not editor.chain
-    // The visual state update (indeterminate) happens via the use:setIndeterminate action
-    // which uses $effect to sync with the status prop. Since the mock doesn't update
-    // the node, we verify the click handler executes without errors.
+  it('should mark a normal checklist item done on click', async () => {
     const props = createMockProps();
     const { container } = render(TestTaskItemNodeView, { props });
 
@@ -356,13 +352,13 @@ describe('TaskItemNodeView - Checkbox Cycling', () => {
     // Initial state: todo (unchecked)
     expect(checkbox.getAttribute('data-state')).toBe('unchecked');
 
-    // Click should not throw
     await fireEvent.click(checkbox);
 
-    // The component calls updateAttributes with { checked: false, status: 'in-progress' }
-    // but since the mock doesn't update the node, the visual state doesn't change
-    // This is expected behavior for unit tests - integration tests verify the full cycle
-    expect(true).toBe(true);
+    expect(props.updateAttributes).toHaveBeenCalledWith({
+      checked: true,
+      status: 'done',
+      delegatedAgentId: null,
+    });
   });
 
   it('should cycle from in-progress to done on click', async () => {
@@ -384,12 +380,13 @@ describe('TaskItemNodeView - Checkbox Cycling', () => {
     const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
     expect(listItem.getAttribute('data-status')).toBe('in-progress');
 
-    // Click should not throw
     await fireEvent.click(checkbox);
 
-    // The component calls updateAttributes with { checked: true, status: 'done' }
-    // but since the mock doesn't update the node, the visual state doesn't change
-    expect(true).toBe(true);
+    expect(props.updateAttributes).toHaveBeenCalledWith({
+      checked: true,
+      status: 'done',
+      delegatedAgentId: null,
+    });
   });
 
   it('should cycle from done to todo on click (verifies updateAttributes call)', async () => {
@@ -417,11 +414,11 @@ describe('TaskItemNodeView - Checkbox Cycling', () => {
 
     await fireEvent.click(checkbox);
 
-    // Verify the editor chain was called (updateAttributes is called via props)
-    // The component calls props.updateAttributes directly, which is mocked in the test wrapper
-    // We can't easily verify the call here since it's in the wrapper, but we verify
-    // that the click handler executed without errors
-    expect(true).toBe(true); // Test passes if no errors thrown
+    expect(props.updateAttributes).toHaveBeenCalledWith({
+      checked: false,
+      status: 'todo',
+      delegatedAgentId: null,
+    });
   });
 });
 

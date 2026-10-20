@@ -119,6 +119,11 @@ export function foldPrMonitorEvent(
         ),
         needsRefetch: false,
       };
+    case 'prMonitor:refreshed':
+      // UI-only re-read hint: only the informational merge-queue entry
+      // (position / estimate) moved. Nothing to fold; re-list for the
+      // fresh lastSnapshot.
+      return { monitors, needsRefetch: true };
     case 'prMonitor:completed':
       // Terminal PR lifecycle (merged/closed): the row stays listed but the
       // final snapshot only arrives via prMonitor.list.

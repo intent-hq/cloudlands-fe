@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
@@ -158,6 +159,56 @@ describe('release-pr-fast-path', () => {
     expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
   });
 
+  describe('pin-only mode (direct pin merge eligibility)', () => {
+    const pinOnly = (dir: string) =>
+      evaluateFastPath('base', 'HEAD', dir, { pinOnly: true }) as {
+        fastPath: boolean;
+        reason?: string;
+      };
+
+    it('accepts a plain sidecar pin bump', () => {
+      const dir = initRepo();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      commit(dir);
+      expect(pinOnly(dir)).toEqual({ fastPath: true });
+    });
+
+    it('rejects a release-metadata diff that the CI fast path accepts', () => {
+      const dir = initRepo();
+      releaseBump(dir);
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(true);
+      expect(pinOnly(dir)).toEqual({ fastPath: false, reason: 'not a sidecar pin-bump diff' });
+    });
+
+    it('rejects a pin bump that also changes source', () => {
+      const dir = initRepo();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, 'src.ts'), 'export const value = 2;\n');
+      commit(dir);
+      expect(pinOnly(dir)).toEqual({ fastPath: false, reason: 'not a sidecar pin-bump diff' });
+    });
+
+    it('rejects a mode change on intentd.version that the CI fast path accepts', () => {
+      const dir = initRepo();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      chmodSync(join(dir, 'intentd.version'), 0o755);
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(true);
+      expect(pinOnly(dir)).toEqual({
+        fastPath: false,
+        reason: 'non-regular file or mode change: intentd.version',
+      });
+    });
+
+    it('cannot be combined with release-only mode', () => {
+      const dir = initRepo();
+      expect(() =>
+        evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true, pinOnly: true }),
+      ).toThrow(/mutually exclusive/);
+    });
+  });
+
   it('rejects nested package version changes accompanying the release version', () => {
     const dir = initRepo();
     writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A, { version: VERSION_A }));
@@ -284,6 +335,86 @@ describe('release-pr-fast-path', () => {
     writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
     commit(dir);
     expect(evaluate(dir)).toEqual({ fastPath: true });
+  });
+
+  describe('with the generated protocol-version module', () => {
+    const MODULE = 'src/test/current-protocol-version.ts';
+    const moduleFile = (pin: string, version: string) =>
+      `// GENERATED header.\n// source-pin: ${pin}\nexport const CURRENT_PROTOCOL_VERSION = '${version}';\n`;
+    const repoWithModule = () => {
+      const dir = initRepo();
+      mkdirSync(join(dir, 'src/test'), { recursive: true });
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_A, '15.0'));
+      commit(dir, 'add module');
+      execFileSync('git', ['branch', '-f', 'base'], { cwd: dir });
+      return dir;
+    };
+
+    it('matches a pin bump that only moves the module source-pin', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '15.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({ fastPath: true });
+    });
+
+    it('takes full CI when a pin bump skipped regenerating the module', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `${MODULE} not regenerated for the pin bump`,
+      });
+    });
+
+    it('takes full CI when the pin bump changes the protocol version', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '16.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `protocol version change in ${MODULE}`,
+      });
+    });
+
+    it('accepts a regenerated module in pin-only mode', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '15.0'));
+      commit(dir);
+      expect(evaluateFastPath('base', 'HEAD', dir, { pinOnly: true })).toEqual({ fastPath: true });
+    });
+
+    it('keeps a protocol bump out of pin-only mode', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_B, '16.0'));
+      commit(dir);
+      expect(evaluateFastPath('base', 'HEAD', dir, { pinOnly: true })).toEqual({
+        fastPath: false,
+        reason: `protocol version change in ${MODULE}`,
+      });
+    });
+
+    it('rejects a module source-pin that disagrees with the new pin', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+      writeFileSync(join(dir, MODULE), moduleFile('0.7.99', '15.0'));
+      commit(dir);
+      expect(evaluate(dir)).toEqual({
+        fastPath: false,
+        reason: `${MODULE} source-pin does not move ${PIN_A} -> ${PIN_B}`,
+      });
+    });
+
+    it('rejects a module-only change without a pin bump', () => {
+      const dir = repoWithModule();
+      writeFileSync(join(dir, MODULE), moduleFile(PIN_A, '16.0'));
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(false);
+    });
   });
 
   it('rejects a comment-only edit to intentd.version (identical pin)', () => {

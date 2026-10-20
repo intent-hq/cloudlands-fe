@@ -1,3 +1,4 @@
+import { BrowserMonitorAttachment } from './browser-monitor-attachment';
 import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/pr-monitor';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
@@ -19,6 +20,7 @@ import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/p
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   BackendError,
@@ -257,10 +259,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private capabilityHelloGeneration = 0;
   private reviewMonitoring: unknown;
   private readonly reviewMonitoringRecipient: number | undefined;
-  private reviewMonitoringAcknowledged = false;
+  private reviewMonitoringEnabled = false;
+  private ordinaryHello = false;
+  private monitorRetry: ReturnType<typeof setTimeout> | null = null;
   private readonly monitorRetirements = new Set<() => void>();
   private readonly monitorReady = new Set<() => void>();
-  private protocolVersion: unknown;
+  /** This socket's `client.hello` version, parsed once when the hello answers. */
+  private protocolVersion: ProtocolVersion | null = null;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
     message: 'client.hello has not completed on this connection',
@@ -276,6 +281,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private lastNotifiedStatus: BrowserWsConnectionStatus = 'disconnected';
 
   constructor(options: BrowserWebSocketTransportOptions) {
+    this.reviewMonitoringEnabled = supportsReviewMonitoring(options.reviewMonitoring);
     this.reviewMonitoringRecipient = supportsReviewMonitoring(options.reviewMonitoring)
       ? options.reviewMonitoring
       : undefined;
@@ -319,6 +325,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
         code: 'PR_MONITOR_SESSION_RETIRED',
         message: 'Monitor connection unavailable',
       });
+    let attachment: BrowserMonitorAttachment | undefined;
     let retired = false;
     const listeners = new Set<() => void>();
     const subscriptions = new Set<string>();
@@ -326,29 +333,58 @@ export class BrowserWebSocketTransport implements BackendTransport {
       if (retired) return;
       retired = true;
       this.monitorRetirements.delete(retire);
+      attachment?.close();
       for (const listener of listeners) listener();
       listeners.clear();
     };
-    const current = () =>
+    const currentSource = () =>
       !retired &&
       !this.disposed &&
       this.connected &&
       this.helloConfirmed &&
       this.socket === socket &&
       generation === this.capabilityHelloGeneration;
+    const current = () => currentSource() && (!attachment || attachment.current());
     if (!current()) throw unavailable();
     this.monitorRetirements.add(retire);
+    const advertised = supportsReviewMonitoring(this.reviewMonitoring);
+    let support: PrMonitorSession['support'] = advertised ? 'consumer-pending' : 'unsupported';
+    if (advertised && this.reviewMonitoringEnabled && this.ordinaryHello && this.clientId) {
+      try {
+        attachment = new BrowserMonitorAttachment(
+          this.webSocketFactory(this.url),
+          this.clientId,
+          Math.min(this.reviewMonitoringRecipient!, this.reviewMonitoring as number),
+          currentSource,
+          this.requestTimeoutMs,
+          this.connectTimeoutMs,
+          () => {
+            const recover = currentSource();
+            retire();
+            if (recover) this.scheduleMonitorRecovery(socket, generation);
+          },
+        );
+        await attachment.ready;
+        if (!current()) throw unavailable();
+        support = 'supported';
+      } catch (error) {
+        const recover = currentSource();
+        retire();
+        if (recover) this.scheduleMonitorRecovery(socket, generation);
+        throw error;
+      }
+    }
+    const request = <T>(method: string, params: unknown): Promise<T> =>
+      attachment
+        ? attachment.request<T>(method, params)
+        : this.requestOnSocket<T>(method, params, undefined, socket);
     return {
       origin: {
         backendId: sanitizeWsUrlForDisplay(this.url),
         sessionId: crypto.randomUUID(),
         workspaceId,
       },
-      support: supportsReviewMonitoring(this.reviewMonitoring)
-        ? this.reviewMonitoringAcknowledged
-          ? 'supported'
-          : 'consumer-pending'
-        : 'unsupported',
+      support,
       onRetired(handler) {
         if (!current()) {
           handler();
@@ -360,15 +396,16 @@ export class BrowserWebSocketTransport implements BackendTransport {
         };
       },
       onNotification: (handler) =>
-        this.onNotification((notification) => {
+        (attachment ?? this).onNotification((notification) => {
           if (current()) handler(notification);
         }),
       request: async <T>(
         method: Parameters<PrMonitorSession['request']>[0],
         params: Record<string, unknown>,
       ): Promise<T> => {
-        if (!current() || params.workspaceId !== workspaceId) throw unavailable();
-        const result = await this.requestOnSocket<T>(method, params, undefined, socket);
+        if (!current() || support === 'consumer-pending' || params.workspaceId !== workspaceId)
+          throw unavailable();
+        const result = await request<T>(method, params);
         const subscriptionId =
           method === 'events.subscribe'
             ? (result as { subscriptionId?: string })?.subscriptionId
@@ -380,12 +417,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
             this.connected &&
             generation === this.capabilityHelloGeneration
           )
-            void this.requestOnSocket(
-              'events.unsubscribe',
-              { workspaceId, subscriptionId },
-              undefined,
-              socket,
-            ).catch(() => {});
+            void request('events.unsubscribe', { workspaceId, subscriptionId }).catch(() => {});
           throw unavailable();
         }
         if (subscriptionId) subscriptions.add(subscriptionId);
@@ -395,7 +427,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
       release: async () => {
         const canRelease = current();
         retire();
-        if (canRelease)
+        if (canRelease && !attachment)
           await Promise.all(
             [...subscriptions].map((subscriptionId) =>
               this.requestOnSocket(
@@ -486,23 +518,17 @@ export class BrowserWebSocketTransport implements BackendTransport {
           method === 'client.hello' && this.clientId
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
-        let monitorRecipient = false;
         if (method === 'client.hello') {
           const hello = { ...(wireParams as Record<string, unknown>) };
           const capabilities = { ...(hello.capabilities as Record<string, unknown>) };
-          const requested = Object.prototype.hasOwnProperty.call(capabilities, 'reviewMonitoring')
-            ? capabilities.reviewMonitoring
-            : this.reviewMonitoringRecipient;
-          delete capabilities.reviewMonitoring;
-          if (this.reviewMonitoringRecipient !== undefined && supportsReviewMonitoring(requested)) {
-            capabilities.reviewMonitoring = Math.min(
-              this.reviewMonitoringRecipient,
-              requested as number,
-            );
-            monitorRecipient = true;
+          if (Object.prototype.hasOwnProperty.call(capabilities, 'reviewMonitoring')) {
+            this.reviewMonitoringEnabled =
+              this.reviewMonitoringRecipient !== undefined &&
+              supportsReviewMonitoring(capabilities.reviewMonitoring);
           }
-          if (hello.capabilities !== undefined || monitorRecipient)
-            hello.capabilities = capabilities;
+          delete capabilities.reviewMonitoring;
+          delete hello.connectionRole;
+          if (hello.capabilities !== undefined) hello.capabilities = capabilities;
           wireParams = hello;
         }
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
@@ -511,7 +537,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
         if (method === 'client.hello') {
           // A replacement generation cannot borrow the preceding hello's confirmation.
           this.helloConfirmed = false;
-          this.reviewMonitoringAcknowledged = false;
+          this.ordinaryHello = false;
+          this.clearMonitorRecovery();
           this.nodeCapabilities = null;
           this.reviewMonitoring = undefined;
           for (const retire of [...this.monitorRetirements]) retire();
@@ -533,14 +560,17 @@ export class BrowserWebSocketTransport implements BackendTransport {
                 ).server?.capabilities;
                 this.clientId = clientId;
                 this.reviewMonitoring = capabilities?.reviewMonitoring;
-                this.reviewMonitoringAcknowledged = monitorRecipient;
+                this.ordinaryHello =
+                  (result as { connectionRole?: unknown }).connectionRole === undefined;
                 this.nodeCapabilities = Object.freeze({
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
                   workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
                 });
-                this.protocolVersion = (result as { protocolVersion?: unknown }).protocolVersion;
+                this.protocolVersion = parseProtocolVersion(
+                  (result as { protocolVersion?: unknown }).protocolVersion,
+                );
                 this.helloConfirmed = true;
                 if (this.connected) for (const handler of this.monitorReady) handler();
               }
@@ -831,12 +861,32 @@ export class BrowserWebSocketTransport implements BackendTransport {
     }
   }
 
+  private scheduleMonitorRecovery(socket: BrowserWebSocketLike, generation: number): void {
+    if (this.monitorRetry || this.disposed) return;
+    this.monitorRetry = setTimeout(() => {
+      this.monitorRetry = null;
+      if (
+        !this.disposed &&
+        this.connected &&
+        this.socket === socket &&
+        this.capabilityHelloGeneration === generation
+      )
+        for (const handler of [...this.monitorReady]) handler();
+    }, this.reconnectDelayMs);
+  }
+
+  private clearMonitorRecovery(): void {
+    if (this.monitorRetry) clearTimeout(this.monitorRetry);
+    this.monitorRetry = null;
+  }
+
   private teardownSocket(): void {
     this.reviewMonitoring = undefined;
+    this.clearMonitorRecovery();
     for (const retire of [...this.monitorRetirements]) retire();
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
-    this.protocolVersion = undefined;
+    this.protocolVersion = null;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

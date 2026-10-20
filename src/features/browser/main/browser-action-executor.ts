@@ -27,7 +27,10 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
+// Visibility checks use ANY_HOST: the executor has no host for the workspace
+// (the embedded browser service keys tabs by workspace id alone).
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -359,7 +362,7 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
  * knows nothing was brought to the front.
  */
 function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?: string } {
-  if (!workspaceId || getWindowIdForWorkspace(workspaceId) !== undefined) return {};
+  if (!workspaceId || getWindowIdForWorkspace(workspaceId, ANY_HOST) !== undefined) return {};
   return {
     // i18n-ignore (agent-facing protocol warning, not user-facing)
     warning: `Workspace ${workspaceId} is not currently visible in the app, so no UI focus was attempted; the tab and layout state were still updated.`,
@@ -443,7 +446,7 @@ async function ensureCaptureTabMounted(
         : await embeddedBrowserCdp.listAllTabs(workspaceId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     return {
       failure: {
         action: actionName,
@@ -467,7 +470,7 @@ async function ensureCaptureTabMounted(
   // A stale (cached) list with no window hosting the workspace means the
   // hydration nudge reached no renderer — a mount can never happen, so fail
   // fast instead of burning the full registration wait.
-  if (listed.stale && getWindowIdsForWorkspace(workspaceId).length === 0) {
+  if (listed.stale && getWindowIdsForWorkspace(workspaceId, ANY_HOST).length === 0) {
     return {
       failure: {
         action: actionName,
@@ -487,7 +490,7 @@ async function ensureCaptureTabMounted(
   if (mountBudgetMs <= 0) return exhaustedBeforeMount();
   const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, mountBudgetMs);
   if (!mounted) {
-    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
     return {
       failure: {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
   /**
    * Browser Tab Type Component
    *
@@ -108,7 +110,12 @@
 {/snippet}
 
 {#if !isHostedHere}
-  <div bind:this={viewportActionNode} class="h-full" data-browser-tab-mirror={tab.hostClientId}>
+  <div
+    use:browserClientConsumer={workspaceId}
+    bind:this={viewportActionNode}
+    class="h-full"
+    data-browser-tab-mirror={tab.hostClientId}
+  >
     <BrowserViewerTab
       url={browserUrl}
       title={tab.title}
@@ -128,6 +135,7 @@
   </div>
 {:else if browserUrl}
   <div
+    use:browserClientConsumer={workspaceId}
     bind:this={viewportActionNode}
     class="h-full"
     use:browserViewportAction={{ layoutId: panelLayoutId, tabId: tab.id }}

@@ -66,6 +66,7 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import {
   acquireChatInterestLease,
+  HYDRATION_LEASE_HOLDER_PREFIX,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
 import {
@@ -158,7 +159,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   // cannot close the standing registration the wait depends on, released in
   // the finally (which also runs on saga cancellation).
   hydrationLeaseSeq += 1;
-  const leaseHolder = `chat-read:${hydrationLeaseSeq}`;
+  const leaseHolder = `${HYDRATION_LEASE_HOLDER_PREFIX}${hydrationLeaseSeq}`;
   yield* call(acquireChatInterestLease, agentId, leaseHolder);
   try {
     yield* put(transcriptHydrationStarted(agentId));

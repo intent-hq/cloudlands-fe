@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { listUiInvariantSuites } from './ui-invariant-suites.mjs';
 
 const self = fileURLToPath(import.meta.url);
-const unitIds = new Set([
+export const UNIT_SELECTION_IDS = new Set([
   'vitest-direct',
   'vitest-related',
   'vitest-declared',
@@ -15,9 +15,13 @@ const unitIds = new Set([
   'vitest-ui-invariants',
 ]);
 
-export async function resolveUnitSelections(plan, root) {
+// Invalidation discovery may legitimately select nothing (for example, a change
+// no test imports); ordinary plans keep refusing an empty selection.
+const ALLOW_EMPTY_ENV = 'VERIFY_UNIT_SELECTION_ALLOW_EMPTY';
+
+export async function resolveUnitSelections(plan, root, options = {}) {
   const selections = [];
-  for (const check of plan.checks.filter((check) => unitIds.has(check.id))) {
+  for (const check of plan.checks.filter((check) => UNIT_SELECTION_IDS.has(check.id))) {
     const directory = mkdtempSync(join(tmpdir(), 'verify-unit-selection-'));
     const output = join(directory, 'files.json');
     try {
@@ -30,8 +34,12 @@ export async function resolveUnitSelections(plan, root) {
         args = ['run', '--config', 'vitest.config.ts', ...inventory.suites];
       }
       await new Promise((done, reject) => {
+        const env = { ...process.env };
+        if (options.allowEmpty) env[ALLOW_EMPTY_ENV] = '1';
+        else delete env[ALLOW_EMPTY_ENV];
         const child = spawn(process.execPath, [self, output, ...args], {
           cwd: root,
+          env,
           stdio: ['ignore', 'inherit', 'pipe'],
         });
         let diagnostic = '';
@@ -91,7 +99,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(self)) {
         (spec) => !spec.testModule || spec.testModule.task.mode !== 'skip',
       );
     }
-    if (!specifications.length && !vitest.config.passWithNoTests)
+    if (
+      !specifications.length &&
+      !vitest.config.passWithNoTests &&
+      process.env[ALLOW_EMPTY_ENV] !== '1'
+    )
       throw new Error('Vitest selected no test files');
     // Discovery is pre-shard. Use the configured runner sequencer, including
     // custom implementations, so the file budget describes the actual shard.

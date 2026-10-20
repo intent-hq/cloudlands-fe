@@ -38,6 +38,7 @@ import {
   browserTabUpserted,
   initialState as browserClientsInitialState,
   ownClientIdReceived,
+  hydrateBrowserClientsRequested,
 } from '../../browser-clients/browser-clients-slice';
 import {
   browserTabRegistryReducer,
@@ -1144,7 +1145,15 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
-    it('waits for the own clientId before reporting anything', async () => {
+    it('does not request identity just for an empty Home session', async () => {
+      const h = start({ layouts: {}, ownClientId: null });
+      await flush();
+      expect(h.ofType(hydrateBrowserClientsRequested.type)).toEqual([]);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('requests identity on demand and waits before reporting anything', async () => {
       const h = start({
         layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
         ownClientId: null,
@@ -1153,6 +1162,7 @@ describe('browserTabRegistrySaga', () => {
       expect(mocks.syncTabs).not.toHaveBeenCalled();
       expect(mocks.upsertTab).not.toHaveBeenCalled();
 
+      expect(h.ofType(hydrateBrowserClientsRequested.type).length).toBeGreaterThan(0);
       h.dispatch(ownClientIdReceived(OWN));
       await flush();
       expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
