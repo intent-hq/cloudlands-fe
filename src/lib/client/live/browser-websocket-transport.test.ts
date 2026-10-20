@@ -1203,7 +1203,6 @@ describe('monitor replacement hello admission', () => {
             id: newerId,
             result: {
               ...helloResult('latest'),
-              protocolVersion: '13.0',
               server: { capabilities: {} },
             },
           });
