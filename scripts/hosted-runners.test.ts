@@ -35,8 +35,19 @@ describe('GitHub-hosted CI runners', () => {
     jobs?: { status: string; labels: string[]; created_at?: string }[];
     error?: boolean;
     env?: Record<string, string>;
+    event?: string;
+    unreadable?: string;
+    truncated?: boolean;
   };
-  async function route({ runners = [slot, slot], jobs = [], error = false, env = {} }: Fixture) {
+  async function route({
+    runners = [slot, slot],
+    jobs = [],
+    error = false,
+    env = {},
+    event = 'merge_group',
+    unreadable,
+    truncated = false,
+  }: Fixture) {
     const workflow = read('.github/workflows/intent-pr.yml');
     const step = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
     const values: Record<string, string> = {};
@@ -48,17 +59,23 @@ describe('GitHub-hosted CI runners', () => {
       listSelfHostedRunnersForRepo: () => {},
       listWorkflowRunsForRepo: async ({ repo, status }: { repo: string; status: string }) => {
         queried.push(repo);
+        if (repo === unreadable) throw new Error('403 fixture');
         // Fixture jobs belong to one queued run so each is counted once.
         return {
           data: {
             workflow_runs: repo === 'cloudlands-fe' && status === 'queued' ? [{ id: 2 }] : [],
+            ...(truncated ? { total_count: 101 } : {}),
           },
         };
       },
       listJobsForWorkflowRun: async () => ({ data: { jobs } }),
     };
     const processEnv = {
-      env: { THRESHOLD: String(workflow.env.LINUX_BURST_THRESHOLD), ...env },
+      env: {
+        THRESHOLD: String(workflow.env.LINUX_BURST_THRESHOLD),
+        SLOT_JOBS: step.env.SLOT_JOBS,
+        ...env,
+      },
     };
     await new AsyncFunction('core', 'github', 'context', 'process', step.with.script)(
       {
@@ -74,20 +91,26 @@ describe('GitHub-hosted CI runners', () => {
           return runners.map((r) => ({ ...r, labels: r.labels.map((name) => ({ name })) }));
         },
       },
-      { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1 },
+      { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1, eventName: event },
       processEnv,
     );
     return {
       labels: JSON.parse(values.linux_labels),
       burst: values.linux_burst,
+      slots: JSON.parse(values.slots) as Record<string, string[]>,
       messages,
       queried,
     };
   }
   const running = (labels = CACHE) => ({ status: 'in_progress', labels });
 
-  it('routes the heavy jobs to an idle intent-cache slot', async () => {
-    const r = await route({});
+  const onSlots = (slots: Record<string, string[]>) =>
+    Object.keys(slots)
+      .filter((key) => JSON.stringify(slots[key]) === JSON.stringify(CACHE))
+      .sort();
+
+  it('routes heavy jobs to an idle intent-cache slot while one is free', async () => {
+    const r = await route({ env: { SLOT_JOBS: '[]' } });
     expect(r.labels).toEqual(CACHE);
     expect(r.burst).toBe('false');
     expect([...new Set(r.queried)].sort()).toEqual(['cloudlands-fe', 'intent', 'intentd']);
@@ -112,13 +135,16 @@ describe('GitHub-hosted CI runners', () => {
 
   it('keeps routing to the slots while one is free and ignores non-slot jobs', async () => {
     const r = await route({
+      env: { SLOT_JOBS: '[]' },
       jobs: [
         running(),
         ...Array.from({ length: 5 }, () => running(['self-hosted', 'Linux', 'X64'])),
       ],
     });
     expect(r.labels).toEqual(CACHE);
-    expect(r.messages.some((m) => m.includes('queue depth=1 threshold=2 online=2'))).toBe(true);
+    expect(r.messages.some((m) => m.includes('queue depth=1 threshold=2 online=2 free=1'))).toBe(
+      true,
+    );
     const killed = await route({ env: { LINUX_RUNNER_DISABLED: 'true' } });
     expect(killed.messages).toContain('linux routing: burst=true (disabled for maintenance)');
     expect(killed.queried).toEqual([]);
@@ -134,7 +160,11 @@ describe('GitHub-hosted CI runners', () => {
     const fastJobs = Array.from({ length: 6 }, () =>
       running(['self-hosted', 'Linux', 'X64', 'intent-cache-small']),
     );
-    const r = await route({ runners: [slot, slot, small], jobs: fastJobs });
+    const r = await route({
+      runners: [slot, slot, small],
+      jobs: fastJobs,
+      env: { SLOT_JOBS: '[]' },
+    });
     expect(r.labels).toEqual(CACHE);
     expect(r.messages.some((m) => m.includes('queue depth=0 threshold=2 online=2'))).toBe(true);
   });
@@ -144,9 +174,76 @@ describe('GitHub-hosted CI runners', () => {
     // Two legs took ~26 min on a heavy slot and ~23 min hosted (30-min timeout).
     expect(test.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
     expect(test.name).toBe('Unit Tests (shard ${{ matrix.shard }}/4)');
-    expect(test['runs-on']).toBe('${{ fromJSON(needs.route.outputs.linux_labels) }}');
+    expect(test['runs-on']).toBe(
+      "${{ fromJSON(needs.route.outputs.slots || '{}')[format('test-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}",
+    );
     const run = test.steps.find((step: { name?: string }) => step.name === 'Unit tests').run;
     expect(run).toContain('pnpm run test:unit --shard=${{ matrix.shard }}/4');
+  });
+
+  it('2 free slots and 4 heavy jobs: exactly 2 self-hosted, 2 hosted', async () => {
+    // A PR runs Type Check & Lint plus four Unit Tests shards; the queue-only jobs hold no slot.
+    const r = await route({ event: 'pull_request' });
+    expect(Object.keys(r.slots).sort()).toEqual([
+      'build-web',
+      'checks',
+      'test-1',
+      'test-2',
+      'test-3',
+      'test-4',
+      'test-integration',
+    ]);
+    // The longest job first, then shards in order; each shard has its own key.
+    expect(onSlots(r.slots)).toEqual(['checks', 'test-1']);
+    for (const key of ['test-2', 'test-3', 'test-4', 'build-web', 'test-integration'])
+      expect(r.slots[key]).toEqual(['gh-linux-8x']);
+    expect(r.burst).toBe('true');
+    expect(r.messages.some((m) => m.includes('free=2 (org list) granted=2'))).toBe(true);
+    // The four shards alone on two free slots: exactly two self-hosted, two hosted.
+    const shards = await route({
+      env: { SLOT_JOBS: JSON.stringify([{ key: 'test', label: 'gh-linux-8x', shards: 4 }]) },
+    });
+    expect(onSlots(shards.slots)).toEqual(['test-1', 'test-2']);
+    expect(Object.values(shards.slots).filter((l) => l[0] === 'gh-linux-8x')).toHaveLength(2);
+    // One busy slot elsewhere leaves one for this run.
+    const one = await route({ jobs: [running()] });
+    expect(onSlots(one.slots)).toEqual(['checks']);
+  });
+
+  it.each([
+    ['0 free slots', { jobs: [running(), running()] }],
+    ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
+    ['probe failure', { error: true }],
+    ['offline fleet', { runners: [] }],
+    // intentd's jobs may hold both slots, so unknown demand is not zero demand.
+    ['an unreadable intentd queue', { unreadable: 'intentd' }],
+    ['an unreadable intent queue', { unreadable: 'intent' }],
+    ['a truncated queue view', { truncated: true }],
+  ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
+    const r = await route(fixture);
+    expect(Object.keys(r.slots)).toHaveLength(7);
+    for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
+  });
+
+  it('lists every routed heavy job once, with its hosted fallback', () => {
+    const workflow = read('.github/workflows/intent-pr.yml');
+    const listed = JSON.parse(
+      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide').env.SLOT_JOBS,
+    ) as { key: string; label: string; shards?: number; events?: string[] }[];
+    const readers = Object.entries(workflow.jobs as Record<string, { 'runs-on'?: string }>)
+      .filter(([, job]) => job['runs-on']?.includes('needs.route.outputs'))
+      .map(([id, job]) => [id, job['runs-on']] as const);
+    expect(readers.map(([id]) => id).sort()).toEqual(listed.map((j) => j.key).sort());
+    for (const [id, runner] of readers) {
+      const entry = listed.find((j) => j.key === id)!;
+      const key = entry.shards ? `format('${id}-{0}', matrix.shard)` : `'${id}'`;
+      expect(runner).toBe(
+        `\${{ fromJSON(needs.route.outputs.slots || '{}')[${key}] || fromJSON('["${entry.label}"]') }}`,
+      );
+    }
+    // Queue-only jobs must say so, or they would hold a slot on every PR.
+    for (const id of ['build-web', 'test-integration'])
+      expect(listed.find((j) => j.key === id)!.events).toEqual(['merge_group']);
   });
 
   it('never routes to tinybox', () => {
