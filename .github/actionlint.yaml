@@ -5,3 +5,18 @@ self-hosted-runner:
     - gh-linux-8x
     - gh-linux-arm64-8x
     - gh-windows-16x
+# Run by `pnpm run lint:workflows` (scripts/check-workflows.mjs). Keep every
+# ignore scoped to the narrowest path and message, with its reason.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # GitHub documents `concurrency.queue: max` (used by the nightly report
+      # writers to retain pending completions), but actionlint 1.7.12 does not
+      # know the key yet:
+      # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+      - 'unexpected key "queue" for "concurrency" section'
+  .github/workflows/member-controls-disposable.yml:
+    ignore:
+      # The job is disabled on purpose (`if: ${{ false }}`) until a separately
+      # reviewed grant enables it; the constant condition is the control.
+      - 'constant expression "false" in condition'
