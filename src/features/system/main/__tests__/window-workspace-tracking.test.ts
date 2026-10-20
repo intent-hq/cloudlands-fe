@@ -411,6 +411,20 @@ describe('background-hosted workspaces', () => {
     expect(lookup('ws-A', LOCAL)).toEqual([1]);
   });
 
+  it('keeps another host background candidate when only a different host has the id open', () => {
+    // Workspace ids are only unique per host: window 2 has LOCAL's ws-A
+    // open, while window 1 background-hosts REMOTE's ws-A.
+    windowBackgroundWorkspaces.set(1, tabs(['ws-A'], REMOTE));
+    windowHosts.set(1, REMOTE);
+    windowOpenWorkspaceTabs.set(2, tabs(['ws-A'], LOCAL));
+    aliveWindows.add(1);
+    aliveWindows.add(2);
+
+    expect(lookup('ws-A', ANY_HOST)).toEqual([2, 1]);
+    expect(lookup('ws-A', REMOTE)).toEqual([1]);
+    expect(lookup('ws-A', LOCAL)).toEqual([2]);
+  });
+
   it('counts background workspaces as open so their caches are not trimmed', () => {
     windowOpenWorkspaceTabs.set(1, tabs(['ws-tab']));
     windowBackgroundWorkspaces.set(1, tabs(['ws-closed']));

@@ -522,6 +522,9 @@ async function ensureCaptureTabMounted(
   };
 }
 
+/** Actions that capture the workspace's default tab when given no `tabId`. */
+const DEFAULT_TAB_CAPTURE_ACTIONS = new Set(['snapshot', 'startSession']);
+
 /**
  * The tab a `snapshot` / `startSession` without a `tabId` captures: the
  * workspace's first listed tab (the capture service's own default), so the
@@ -827,7 +830,14 @@ async function executeAction(
   ownerNameCache?: OwnerNameCache,
   deadline?: number,
 ): Promise<ActionResult> {
-  const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
+  let tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
+  // A tab-less snapshot / startSession captures the workspace's default
+  // (first) tab, which may not be mounted yet. Resolve it up front so the
+  // ownership check below, the mount on demand and the capture all target
+  // that same tab.
+  if (!tabId && workspaceId && DEFAULT_TAB_CAPTURE_ACTIONS.has(action.action)) {
+    tabId = await defaultCaptureTabId(workspaceId, deadline);
+  }
 
   // Ownership enforcement (monorepo#2857): resolve the tab the action will
   // actually hit — including the first-tab fallback the underlying service
@@ -1064,7 +1074,7 @@ async function executeAction(
         // Snapshots capture a screenshot + accessibility tree, so they mount
         // an unmounted tab on demand and let a loading guest settle, like
         // the capture ops above.
-        const targetTabId = tabId ?? (await defaultCaptureTabId(captureWorkspaceId, deadline));
+        const targetTabId = tabId;
         const mount = await ensureCaptureTabMounted(
           action.action,
           targetTabId,
@@ -1099,7 +1109,7 @@ async function executeAction(
 
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
-        const targetTabId = tabId ?? (await defaultCaptureTabId(captureWorkspaceId, deadline));
+        const targetTabId = tabId;
         const mount = await ensureCaptureTabMounted(
           action.action,
           targetTabId,

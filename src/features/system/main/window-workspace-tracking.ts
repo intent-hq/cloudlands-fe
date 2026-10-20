@@ -200,10 +200,16 @@ export function collectWindowIdsForWorkspace(
     windowBackgroundWorkspaces.delete(windowId);
   }
 
-  // Background hosting only stands in while no window genuinely has the
-  // workspace open: once one does, it alone receives the workspace's
-  // messages, so a stale background host never doubles them.
-  return matchingWindowIds.length > 0 ? matchingWindowIds : backgroundWindowIds;
+  // Background hosting only stands in while no window on the same host
+  // genuinely has the workspace open: once one does, it alone receives the
+  // workspace's messages, so a stale background host never doubles them. A
+  // window open on another host does not count — workspace ids are only
+  // unique per host, so it cannot stand in for this host's workspace.
+  const openHosts = new Set(matchingWindowIds.map((windowId) => checker.backendIdOf(windowId)));
+  return [
+    ...matchingWindowIds,
+    ...backgroundWindowIds.filter((windowId) => !openHosts.has(checker.backendIdOf(windowId))),
+  ];
 }
 
 /**

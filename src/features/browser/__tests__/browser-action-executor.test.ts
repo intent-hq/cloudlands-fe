@@ -1591,6 +1591,27 @@ describe('browser-action-executor', () => {
       );
     });
 
+    it("rejects a tab-less snapshot of another agent's default tab before mounting it", async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      // No live webview, so the old live-only fallback found no tab to check.
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue(null);
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-other');
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot' }] },
+        undefined,
+        'agent-1',
+        'workspace-a',
+      );
+
+      expect(embeddedBrowserCdp.resolveTabOwner).toHaveBeenCalledWith('tab-hidden', 'workspace-a');
+      expect(result.results[0]).toMatchObject({ success: false, errorCode: 'not-owner' });
+      expect(embeddedBrowserCdp.waitForTabRegistration).not.toHaveBeenCalled();
+      expect(browserCapture.snapshot).not.toHaveBeenCalled();
+    });
+
     it('answers still-loading instead of snapshotting a page that has not finished loading', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
