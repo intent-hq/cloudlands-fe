@@ -63,7 +63,8 @@
   const reply = $derived('replyTo' in message ? message.replyTo : undefined);
   const isAgent = $derived(!!message.author.agentId);
   const hasActions = $derived(!status && !!(onReply || onReaction || onCopy));
-  let actionWidth = $state(0);
+  let reactionMenuOpen = $state(false);
+  let moreMenuOpen = $state(false);
   const replyName = $derived(
     reply?.author.displayName ||
       reply?.author.login ||
@@ -89,8 +90,7 @@
     (continuation ? 'py-1' : 'py-[7px]') +
     (replySelected ? ' bg-primary/10' : '')}
   class:opacity-60={status === 'sending'}
-  class:continuation-actions={continuation && hasActions}
-  style:--discussion-actions-width={`${actionWidth}px`}
+  class:actions-open={reactionMenuOpen || moreMenuOpen}
   data-discussion-message={message.id}
   data-discussion-failed={status === 'failed' ? message.id : undefined}
   data-discussion-continuation={continuation || undefined}
@@ -185,44 +185,102 @@
         <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
       {/if}
 
-      <div
-        class={isAgent
-          ? 'flex min-w-0 flex-col rounded-[15px] border border-border bg-background px-[15px] py-2.5'
-          : 'flex min-w-0 flex-col rounded-[15px] bg-muted/30 px-[15px] py-2.5 dark:bg-muted'}
-        class:border-danger={status === 'failed'}
-        class:border={isAgent || status === 'failed'}
-        data-discussion-bubble={isAgent ? 'agent' : 'human'}
-      >
-        {#if isAgent}
-          {#key message.id + ':' + message.body}
-            <DiscussionCollapsibleBody>
-              <div class="type-caption leading-5 text-foreground [overflow-wrap:anywhere]">
-                <DiscussionMessageBody
-                  body={message.body}
-                  workspaceId={workspaceId ?? ''}
-                  {sourcePanelId}
-                  {agentMentions}
-                  {mentionNames}
-                  mode="markdown"
-                />
+      <div>
+        <div
+          class={isAgent
+            ? 'flex min-w-0 flex-col rounded-[15px] border border-border bg-background px-[15px] py-2.5'
+            : 'flex min-w-0 flex-col rounded-[15px] bg-muted/30 px-[15px] py-2.5 dark:bg-muted'}
+          class:border-danger={status === 'failed'}
+          class:border={isAgent || status === 'failed'}
+          data-discussion-bubble={isAgent ? 'agent' : 'human'}
+        >
+          {#if isAgent}
+            {#key message.id + ':' + message.body}
+              <DiscussionCollapsibleBody>
+                <div class="type-caption leading-5 text-foreground [overflow-wrap:anywhere]">
+                  <DiscussionMessageBody
+                    body={message.body}
+                    workspaceId={workspaceId ?? ''}
+                    {sourcePanelId}
+                    {agentMentions}
+                    {mentionNames}
+                    mode="markdown"
+                  />
+                </div>
+                {#snippet footer()}{@render messageReferences()}{/snippet}
+              </DiscussionCollapsibleBody>
+            {/key}
+          {:else}
+            <p
+              class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
+            >
+              <DiscussionMessageBody
+                body={message.body}
+                workspaceId={workspaceId ?? ''}
+                {sourcePanelId}
+                {agentMentions}
+                {mentionNames}
+                mode="text"
+              />
+            </p>
+            {@render messageReferences()}
+          {/if}
+        </div>
+        {#if hasActions}
+          <div class="discussion-actions-reveal">
+            <div class="min-h-0 overflow-hidden">
+              <div class="flex justify-end py-1">
+                <div
+                  class="discussion-actions flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-sm"
+                  data-discussion-message-actions
+                >
+                  {#if onReaction}
+                    <ActionMenu
+                      bind:open={reactionMenuOpen}
+                      actions={reactionActions}
+                      ariaLabel={m.workspace_discussion_react_label()}
+                      onAction={(emoji) => onReaction?.(emoji)}
+                    >
+                      {#snippet trigger({ props })}<Button
+                          {...props}
+                          variant="ghost"
+                          size="icon-compact"
+                          class="size-6"
+                          {disabled}
+                          aria-label={m.workspace_discussion_react_label()}
+                          ><SmileyIcon size={15} /></Button
+                        >{/snippet}
+                    </ActionMenu>
+                  {/if}
+                  {#if onReply}<Button
+                      variant="ghost"
+                      size="icon-compact"
+                      class="size-6"
+                      {disabled}
+                      aria-label={m.workspace_discussion_reply_label()}
+                      onclick={onReply}><Fa icon={faReply} /></Button
+                    >{/if}
+                  {#if onCopy}
+                    <ActionMenu
+                      bind:open={moreMenuOpen}
+                      actions={moreActions}
+                      ariaLabel={m.workspace_discussion_messageActions_label()}
+                      onAction={() => onCopy?.()}
+                    >
+                      {#snippet trigger({ props })}<Button
+                          {...props}
+                          variant="ghost"
+                          size="icon-compact"
+                          class="size-6"
+                          aria-label={m.workspace_discussion_messageActions_label()}
+                          ><Fa icon={faEllipsisVertical} /></Button
+                        >{/snippet}
+                    </ActionMenu>
+                  {/if}
+                </div>
               </div>
-              {#snippet footer()}{@render messageReferences()}{/snippet}
-            </DiscussionCollapsibleBody>
-          {/key}
-        {:else}
-          <p
-            class="discussion-text m-0 flow-root whitespace-pre-wrap type-caption leading-5 text-foreground [overflow-wrap:anywhere]"
-          >
-            <DiscussionMessageBody
-              body={message.body}
-              workspaceId={workspaceId ?? ''}
-              {sourcePanelId}
-              {agentMentions}
-              {mentionNames}
-              mode="text"
-            />
-          </p>
-          {@render messageReferences()}
+            </div>
+          </div>
         {/if}
       </div>
       {#if reactions.length}
@@ -250,54 +308,6 @@
       {/if}
     </div>
   </div>
-  {#if hasActions}
-    <div
-      class="absolute top-0.5 right-2 z-10 flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-md pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
-      data-discussion-message-actions
-      bind:clientWidth={actionWidth}
-    >
-      {#if onReaction}
-        <ActionMenu
-          actions={reactionActions}
-          ariaLabel={m.workspace_discussion_react_label()}
-          onAction={(emoji) => onReaction?.(emoji)}
-        >
-          {#snippet trigger({ props })}<Button
-              {...props}
-              variant="ghost"
-              size="icon-compact"
-              class="size-6"
-              {disabled}
-              aria-label={m.workspace_discussion_react_label()}><SmileyIcon size={15} /></Button
-            >{/snippet}
-        </ActionMenu>
-      {/if}
-      {#if onReply}<Button
-          variant="ghost"
-          size="icon-compact"
-          class="size-6"
-          {disabled}
-          aria-label={m.workspace_discussion_reply_label()}
-          onclick={onReply}><Fa icon={faReply} /></Button
-        >{/if}
-      {#if onCopy}
-        <ActionMenu
-          actions={moreActions}
-          ariaLabel={m.workspace_discussion_messageActions_label()}
-          onAction={() => onCopy?.()}
-        >
-          {#snippet trigger({ props })}<Button
-              {...props}
-              variant="ghost"
-              size="icon-compact"
-              class="size-6"
-              aria-label={m.workspace_discussion_messageActions_label()}
-              ><Fa icon={faEllipsisVertical} /></Button
-            >{/snippet}
-        </ActionMenu>
-      {/if}
-    </div>
-  {/if}
 </article>
 
 {#snippet messageReferences()}
@@ -313,23 +323,50 @@
 {/snippet}
 
 <style>
-  .continuation-actions:is(:hover, :has([data-discussion-message-actions]:focus-within))
-    .discussion-text::before,
-  .continuation-actions:is(:hover, :has([data-discussion-message-actions]:focus-within))
-    :global(.markdown-viewer)::before {
-    content: '';
-    float: right;
-    width: calc(var(--discussion-actions-width) + 8px);
-    height: 20px;
+  .discussion-actions-reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--spring-fast-exit) var(--spring-fast-ease);
+  }
+
+  .discussion-actions {
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition:
+      opacity var(--spring-fast-exit) var(--spring-fast-ease),
+      transform var(--spring-fast-exit) var(--spring-fast-ease);
+  }
+
+  article:is(:hover, :focus-within, .actions-open) .discussion-actions-reveal {
+    grid-template-rows: 1fr;
+    transition-duration: var(--spring-fast);
+  }
+
+  article:is(:hover, :focus-within, .actions-open) .discussion-actions {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    transition-duration: var(--spring-fast);
   }
 
   @media (hover: none) {
-    .continuation-actions .discussion-text::before,
-    .continuation-actions :global(.markdown-viewer)::before {
-      content: '';
-      float: right;
-      width: calc(var(--discussion-actions-width) + 8px);
-      height: 20px;
+    .discussion-actions-reveal {
+      grid-template-rows: 1fr;
+    }
+
+    .discussion-actions {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .discussion-actions-reveal,
+    .discussion-actions {
+      transition: none;
+      transform: none;
     }
   }
 </style>

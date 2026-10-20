@@ -1,10 +1,11 @@
 import { expect, test } from '../../../test/ct-test';
 import Preview from './discussion-message-refinements.preview.svelte';
 
-test('whole-row hover includes spacing and keeps the toolbar inside its row', async ({
+test('actions animate below the bubble and stay reachable across hover and keyboard focus', async ({
   mount,
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(Preview, { props: { continuationActions: false } });
   const original = component.locator('[data-discussion-message="original"]');
   const row = component.locator('[data-discussion-message="addressed"]');
@@ -12,21 +13,69 @@ test('whole-row hover includes spacing and keeps the toolbar inside its row', as
   await component.update({ props: { continuationActions: true } });
   const bounds = (await row.boundingBox())!;
   expect(bounds.height).toBe(withoutActions.height);
-  await page.mouse.move(bounds.x + 2, bounds.y + 2);
   const toolbar = row.locator('[data-discussion-message-actions]');
+  await toolbar.evaluate((node) => {
+    node.addEventListener('transitionrun', () => {
+      node.dataset.observedTransitions = String(Number(node.dataset.observedTransitions ?? 0) + 1);
+    });
+  });
+  await page.mouse.move(bounds.x + 2, bounds.y + 2);
   await expect(toolbar).toHaveCSS('opacity', '1');
+  await expect
+    .poll(() => toolbar.evaluate((node) => Number(node.dataset.observedTransitions)))
+    .toBeGreaterThan(0);
   const toolbarBounds = (await toolbar.boundingBox())!;
-  const previous = (await original.boundingBox())!;
-  expect(toolbarBounds.y).toBeGreaterThanOrEqual(previous.y + previous.height);
-  expect(toolbarBounds.y).toBeGreaterThanOrEqual(bounds.y);
-  expect(toolbarBounds.y + toolbarBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+  const bubble = (await row.locator('[data-discussion-bubble]').boundingBox())!;
+  const expanded = (await row.boundingBox())!;
+  const next = (await component.locator('[data-discussion-message="response"]').boundingBox())!;
+  expect(toolbarBounds.y).toBeGreaterThanOrEqual(bubble.y + bubble.height);
+  expect(toolbarBounds.y + toolbarBounds.height).toBeLessThanOrEqual(expanded.y + expanded.height);
+  expect(toolbarBounds.y + toolbarBounds.height).toBeLessThanOrEqual(next.y);
+  await toolbar.getByRole('button', { name: 'Message actions', exact: true }).click();
+  const copy = page.getByRole('menuitem', { name: 'Copy message', exact: true });
+  await copy.hover();
+  await expect(toolbar).toHaveCSS('opacity', '1');
+  await copy.click();
+  await expect(component.locator('[data-copied]')).toHaveText(
+    await row.locator('[data-discussion-bubble]').innerText(),
+  );
+  await row.evaluate((node) => {
+    if (node.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+  });
   await page.mouse.move(700, 700);
   await expect(toolbar).toHaveCSS('opacity', '0');
+  await expect.poll(async () => (await row.boundingBox())!.height).toBe(withoutActions.height);
   await row.getByRole('button', { name: 'Reply', exact: true }).focus();
   await expect(toolbar).toHaveCSS('opacity', '1');
   await original.getByRole('button', { name: 'Reply', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(original).toHaveAttribute('data-discussion-reply-selected', 'true');
+});
+
+test('reduced-motion keyboard reveal keeps actions below the bubble without animations', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(Preview);
+  const row = component.locator('[data-discussion-message="original"]');
+  const toolbar = row.locator('[data-discussion-message-actions]');
+  await row.getByRole('button', { name: 'Reply', exact: true }).focus();
+  await expect(toolbar).toHaveCSS('opacity', '1');
+  const revealed = await row.evaluate((node) => {
+    const bubble = node.querySelector('[data-discussion-bubble]')!.getBoundingClientRect();
+    const actions = node
+      .querySelector('[data-discussion-message-actions]')!
+      .getBoundingClientRect();
+    return {
+      below: actions.top >= bubble.bottom,
+      animations: node.getAnimations({ subtree: true }).length,
+    };
+  });
+  expect(revealed.below).toBe(true);
+  expect(revealed.animations).toBe(0);
+  await page.keyboard.press('Enter');
+  await expect(row).toHaveAttribute('data-discussion-reply-selected', 'true');
 });
 
 test('agent markdown, inline mentions, reply navigation and expansion remain usable', async ({
