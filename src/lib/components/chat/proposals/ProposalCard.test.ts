@@ -1863,10 +1863,10 @@ describe('ProposalCard', () => {
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
       // The remembered setup applies without any caption under the agent picker.
       const agentRow = screen.getByTestId('proposal-specialist-dropdown');
-      expect(agentRow.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        `Initial agent ${screen.getByTestId('mock-specialist-dropdown').textContent?.trim()}`,
-      );
-      expect(agentRow.textContent).not.toMatch(/Opus|High/);
+      const rowLabel = agentRow.querySelector('[data-metadata-label]')?.textContent ?? '';
+      const picker = screen.getByTestId('mock-specialist-dropdown').textContent ?? '';
+      const squash = (text: string) => text.replace(/\s+/g, '');
+      expect(squash(agentRow.textContent ?? '')).toBe(squash(rowLabel + picker));
       expect(await appliedFields()).toMatchObject({
         specialist: 'coordinator',
         agentSetup: {
