@@ -104,6 +104,12 @@ export type BrowserShowTabPayload = WorkspaceCommandPayload & {
   focus?: boolean;
 };
 
+/**
+ * Main asks this window to host a workspace no window has open, in the
+ * background (no tab, never displayed), so agent browser ops can reach it.
+ */
+export type BrowserHostWorkspacePayload = WorkspaceCommandPayload;
+
 export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
   /** Echoed back so main resolves the matching pending request (monorepo#2602). */
   requestId?: string;

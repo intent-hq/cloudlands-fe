@@ -1,4 +1,4 @@
-import { runSaga } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -42,6 +42,7 @@ import {
 import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { browserIpcSaga } from './browser-ipc-saga';
 
 const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
@@ -116,6 +117,7 @@ describe('browserIpcSaga', () => {
     const duplicate = start();
     await duplicate.toPromise();
     expect(on.mock.calls).toEqual([
+      ['browser:host-workspace', handlers['browser:host-workspace']],
       ['browser:open-tab', handlers['browser:open-tab']],
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
@@ -128,6 +130,7 @@ describe('browserIpcSaga', () => {
     first.cancel();
     await first.toPromise();
     expect(offById.mock.calls).toEqual([
+      ['browser:host-workspace', 'browser:host-workspace-listener'],
       ['browser:open-tab', 'browser:open-tab-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
@@ -138,7 +141,7 @@ describe('browserIpcSaga', () => {
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(14);
+    expect(on).toHaveBeenCalledTimes(16);
     restarted.cancel();
     await restarted.toPromise();
   });
@@ -2247,6 +2250,97 @@ describe('browserIpcSaga', () => {
           payload: expect.objectContaining({ wsId: 'ws-hyd-4', tabId: 'browser-1' }),
         }),
       );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    // No window had the workspace open, so main asked this window to host
+    // it in the background: it hydrates the saved layout without a
+    // workspace tab and answers the browser requests main sends after.
+    it('background-hosts a workspace outside the tab strip and answers its requests', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+      seedStorage('ws-closed', [
+        {
+          id: 'browser-1',
+          type: 'browser',
+          title: 'Sandbox',
+          browserUrl: 'http://sandbox/',
+          closable: true,
+          ownerAgentId: 'agent-1',
+        },
+      ]);
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-closed' });
+      handlers['browser:list-tabs-request']({ workspaceId: 'ws-closed', requestId: 'req-bg' });
+      await settle();
+      await settle();
+
+      expect(state.panelLayout.byWorkspaceId['ws-closed']).toBeDefined();
+      expect(
+        actions.filter((action: any) => action.type === 'panelLayout/initializeLayout'),
+      ).toHaveLength(1);
+      expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+        requestId: 'req-bg',
+        tabs: [
+          {
+            tabId: 'browser-1',
+            url: 'http://sandbox/',
+            title: 'Sandbox',
+            closable: true,
+            ownerAgentId: 'agent-1',
+            active: true,
+          },
+        ],
+      });
+      expect(state.tabState.workspaceStacks).toEqual([['ws-viewed']]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('opens an agent tab in a background-hosted workspace', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-closed' });
+      handlers['browser:open-tab']({
+        url: 'http://sandbox/',
+        workspaceId: 'ws-closed',
+        tabId: 'tab-agent',
+        ownerAgentId: 'agent-1',
+        visible: false,
+      });
+      await settle();
+      await settle();
+
+      expect(actions).toContainEqual(
+        expect.objectContaining({
+          type: 'panelLayout/openHiddenTab',
+          payload: expect.objectContaining({ wsId: 'ws-closed', newTabId: 'tab-agent' }),
+        }),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stops answering for a background-hosted workspace once it is deleted', async () => {
+      hostedState('ws-viewed');
+      const channel = stdChannel();
+      const dispatch = (action: any) => {
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+        channel.put(action);
+      };
+      const task = runSaga({ channel, dispatch, getState: () => state }, browserIpcSaga);
+
+      await emit({ workspaceId: 'ws-gone' }, 'browser:host-workspace');
+      expect(state.panelLayout.byWorkspaceId['ws-gone']).toBeDefined();
+
+      dispatch(workspaceDeleted('ws-gone', []));
+      await settle();
+      expect(state.panelLayout.byWorkspaceId['ws-gone']).toBeUndefined();
+
+      await emit({ workspaceId: 'ws-gone', requestId: 'req-gone' }, 'browser:list-tabs-request');
+      expect(mocks.invoke).not.toHaveBeenCalled();
       task.cancel();
       await task.toPromise();
     });

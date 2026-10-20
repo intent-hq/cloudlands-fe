@@ -1,5 +1,5 @@
 import type { Task } from 'redux-saga';
-import { all, call, join, put, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, join, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -12,6 +12,7 @@ import {
   type BrowserEmulatedSize,
   type BrowserTabViewport,
   type BrowserFocusTabPayload,
+  type BrowserHostWorkspacePayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
   type BrowserShowTabPayload,
@@ -51,9 +52,21 @@ import {
   requestBrowserTabNavigation,
   requestBrowserTabRecovery,
 } from '../../tab-state/tab-state-slice';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
+
+/**
+ * Workspaces main asked this window to host in the background
+ * (`browser:host-workspace`): no window had them open, so this window hosts
+ * them without a tab or display so agent browser ops keep working. A
+ * saga-local routing hint like the tab strip and route checks below — it
+ * only widens which browser IPC requests this window answers; the layout
+ * itself lives in the panel-layout slice. Main forgets the adoption on a
+ * renderer reload, matching this module state's lifetime.
+ */
+const backgroundHostedWorkspaceIds = new Set<string>();
 
 const logger = createLogger('BrowserIpcSaga');
 
@@ -138,6 +151,7 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
   if (
     !held &&
+    !backgroundHostedWorkspaceIds.has(workspaceId) &&
     !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId) &&
     routedWorkspaceId() !== workspaceId
   ) {
@@ -164,6 +178,33 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
       message: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Host a workspace no window has open, in the background: record it as
+ * hosted first (synchronously, so a request main sends right after this one
+ * is answered rather than ignored as not-hosted), then hydrate its saved
+ * layout. The offscreen webview host mounts the hydrated layout's browser
+ * tabs because the workspace is not displayed here; nothing visible changes
+ * (no workspace tab, navigation or focus).
+ */
+function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
+  backgroundHostedWorkspaceIds.add(workspaceId);
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'hydration-failed') {
+    logger.warn('Layout hydration failed while background-hosting a workspace', {
+      workspaceId,
+      error: readiness.message,
+    });
+  }
+}
+
+function* forgetBackgroundHostedWorkspace(
+  action: ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
+  backgroundHostedWorkspaceIds.delete(action.payload[0]);
 }
 
 function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
@@ -628,6 +669,18 @@ export function* browserIpcSaga(): SagaGenerator<void> {
   running = true;
   try {
     const tasks: Task[] = [
+      yield* takeEveryFromElectronChannel<BrowserHostWorkspacePayload | null>(
+        'browser:host-workspace',
+        hostWorkspace,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale:
+              'Every background-hosting request must be honoured before the requests main sends after it.',
+          },
+        },
+      ),
+      yield* takeEvery(workspaceDeleted, forgetBackgroundHostedWorkspace),
       yield* takeEveryFromElectronChannel<BrowserOpenTabPayload | null>(
         'browser:open-tab',
         openBrowser,
@@ -703,5 +756,6 @@ export function* browserIpcSaga(): SagaGenerator<void> {
     yield* all(tasks.map((task) => join(task)));
   } finally {
     running = false;
+    backgroundHostedWorkspaceIds.clear();
   }
 }
