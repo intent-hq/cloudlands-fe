@@ -17,6 +17,7 @@ import {
   onBackendReconnected,
 } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 
 const logger = createLogger('PrMonitorService');
 
@@ -53,6 +54,9 @@ export interface PrMonitorSnapshot {
   /** Additive: present (true) when the host reports the PR queued to merge;
    * absent when not queued or unknown. */
   isInMergeQueue?: boolean;
+  /** Additive: queue position and time-to-merge estimate, only while queued.
+   * Informational — queue movement never wakes the owning agent. */
+  mergeQueue?: MergeQueueEntry;
   rulesKnown: boolean;
 }
 
@@ -154,6 +158,11 @@ export function foldPrMonitorEvent(
         ),
         needsRefetch: false,
       };
+    case 'prMonitor:refreshed':
+      // UI-only re-read hint: only the informational merge-queue entry
+      // (position / estimate) moved. Nothing to fold; re-list for the
+      // fresh lastSnapshot.
+      return { monitors, needsRefetch: true };
     case 'prMonitor:completed':
       // Terminal PR lifecycle (merged/closed): the row stays listed but the
       // final snapshot only arrives via prMonitor.list.

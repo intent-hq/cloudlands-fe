@@ -202,6 +202,15 @@ describe('foldPrMonitorEvent (§6.5 prMonitor:* lifecycle)', () => {
     expect(needsRefetch).toBe(false);
   });
 
+  it('prMonitor:refreshed leaves the row untouched and requests a refetch (queue moved)', () => {
+    const before = [makeMonitor({ pendingChanges: ['x'], hasPendingChanges: true })];
+    const { monitors, needsRefetch } = foldPrMonitorEvent(before, 'prMonitor:refreshed', {
+      monitorId: 'mon-1',
+    });
+    expect(monitors).toEqual(before);
+    expect(needsRefetch).toBe(true);
+  });
+
   it('prMonitor:completed keeps the row, flips state, and requests a refetch', () => {
     const { monitors, needsRefetch } = foldPrMonitorEvent(
       [makeMonitor({ pendingChanges: ['x'], hasPendingChanges: true })],
@@ -435,6 +444,38 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
     dispose();
     expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7', 'ws-1');
+  });
+
+  it('re-lists on prMonitor:refreshed so the queue position stays current', async () => {
+    const queued = (position: number) =>
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position, queueSize: 3 },
+        },
+      });
+    mockedRequest.mockResolvedValue({ monitors: [queued(3)] });
+    const seen: PrMonitorRow[][] = [];
+    const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    await flush();
+    await flush();
+    const calls = mockedRequest.mock.calls.length;
+
+    mockedRequest.mockResolvedValue({ monitors: [queued(1)] });
+    notify?.({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'ws-sub-7',
+        event: { type: 'prMonitor:refreshed', workspaceId: 'ws-1', data: { monitorId: 'mon-1' } },
+      },
+    });
+    await flush();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(calls + 1);
+    expect(mockedRequest).toHaveBeenLastCalledWith('prMonitor.list', { workspaceId: 'ws-1' });
+    expect(seen.at(-1)?.[0].lastSnapshot?.mergeQueue?.position).toBe(1);
+    dispose();
   });
 
   it('ignores foreign-workspace and foreign-subscription events', async () => {

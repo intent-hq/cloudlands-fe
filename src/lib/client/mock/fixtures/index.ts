@@ -335,6 +335,13 @@ export const mockGitHubPullRequestQueued: GitHubPullRequestDetails = {
   url: 'https://github.com/acme/web-app/pull/45',
   headRef: 'feat/persist-sidebar-width',
   baseRef: 'main',
+  mergeQueue: {
+    position: 2,
+    queueSize: 3,
+    state: 'queued',
+    enqueuedAt: '2026-01-03T15:30:00.000Z',
+    estimatedTimeToMerge: 2254,
+  },
 };
 
 /** One issue for the GitHub link hover card (`github.issues.get` mock). */
