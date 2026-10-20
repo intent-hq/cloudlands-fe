@@ -965,6 +965,124 @@ describe('tab ownership registry (#2857)', () => {
   });
 });
 
+// A minimized or covered Intent window stops drawing frames, so a capture
+// of any of its browser tabs hung until "not-painting". During a capture
+// the guest and its hosting window keep drawing (background throttling off),
+// and the fallback capture makes the page visible instead of keeping it
+// hidden; both are restored afterwards so an idle window costs nothing.
+describe('screenshot keeps painting while the app window is minimized', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  function withHost<T extends object>(guest: T, host: { backgroundThrottling: boolean }) {
+    return Object.assign(guest, {
+      backgroundThrottling: true,
+      hostWebContents: { ...host, isDestroyed: () => false },
+    });
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('lets guest and host draw during the CDP capture, then restores throttling', async () => {
+    const service = await loadService();
+    const seen: boolean[][] = [];
+    const wc = withHost(
+      fakeCdpWebview(71, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true },
+    );
+    wc.debugger.sendCommand.mockImplementation(async (method: string) => {
+      seen.push([wc.backgroundThrottling, wc.hostWebContents.backgroundThrottling]);
+      return method === 'Page.getLayoutMetrics' ? LAYOUT_METRICS : { data: JPEG_1PX };
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-min', 71);
+
+    await expect(service.screenshot('tab-min')).resolves.toMatchObject({ base64: JPEG_1PX });
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(([guest, host]) => guest === false && host === false)).toBe(true);
+    expect(wc.backgroundThrottling).toBe(true);
+    expect(wc.hostWebContents.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-min');
+  });
+
+  it('asks the fallback capture to make the page visible and restores throttling on failure', async () => {
+    const service = await loadService();
+    const wc = withHost(fakeCdpWebview(72, { 'Page.getLayoutMetrics': 'hang' }, 'hang'), {
+      backgroundThrottling: true,
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-min-hang', 72);
+
+    const pending = service.screenshot('tab-min-hang');
+    pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(12_000);
+
+    await expect(pending).rejects.toThrow('not painting');
+    expect(wc.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: false, stayAwake: true });
+    expect(wc.backgroundThrottling).toBe(true);
+    expect(wc.hostWebContents.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-min-hang');
+  });
+
+  it('keeps a shared host drawing until its last concurrent capture finishes', async () => {
+    const service = await loadService();
+    const host = { backgroundThrottling: true, isDestroyed: () => false };
+    let releaseFirst: (value: unknown) => void = () => {};
+    const first = fakeCdpWebview(73, {});
+    first.debugger.sendCommand.mockImplementation((method: string) =>
+      method === 'Page.getLayoutMetrics'
+        ? new Promise((resolve) => (releaseFirst = () => resolve(LAYOUT_METRICS)))
+        : Promise.resolve({ data: JPEG_1PX }),
+    );
+    const second = fakeCdpWebview(74, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': { data: JPEG_1PX },
+    });
+    for (const guest of [first, second]) {
+      Object.assign(guest, { backgroundThrottling: true, hostWebContents: host });
+    }
+    mocks.fromId.mockImplementation((id) => (id === 73 ? first : id === 74 ? second : undefined));
+    service.registerTab('tab-a', 73);
+    service.registerTab('tab-b', 74);
+
+    const a = service.screenshot('tab-a');
+    await service.screenshot('tab-b');
+    expect(host.backgroundThrottling).toBe(false);
+
+    releaseFirst(undefined);
+    await a;
+    expect(host.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-a');
+    service.unregisterTab('tab-b');
+  });
+
+  it('leaves a host that already draws in the background unchanged', async () => {
+    const service = await loadService();
+    const wc = withHost(
+      fakeCdpWebview(75, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: false },
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-unthrottled', 75);
+
+    await service.screenshot('tab-unthrottled');
+
+    expect(wc.hostWebContents.backgroundThrottling).toBe(false);
+    expect(wc.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-unthrottled');
+  });
+});
+
 describe('screenshot Page-domain hang fallback (#3154)', () => {
   const LAYOUT_METRICS = {
     layoutViewport: { clientWidth: 800, clientHeight: 600 },

@@ -265,6 +265,16 @@ class EmbeddedBrowserCdpService {
   /** In-flight emulation command per tab (always settles; see applyViewportEmulation). */
   private pendingViewportEmulation = new Map<string, Promise<void>>();
 
+  /**
+   * Background-throttling holds taken for in-flight screenshots, keyed by
+   * webContents id: the throttling value to restore and how many captures
+   * still need the page drawing (see {@link holdCaptureDrawing}).
+   */
+  private captureDrawingHolds = new Map<
+    number,
+    { wc: Electron.WebContents; previous: boolean; count: number }
+  >();
+
   /** WebContents whose debugger 'detach' event is already observed. */
   private debuggerDetachListeners = new Set<number>();
 
@@ -2043,8 +2053,9 @@ class EmbeddedBrowserCdpService {
    * Bounded: on a guest whose compositor produces no frames capturePage()
    * never settles either, so it is raced against a timeout — failing fast
    * with a clear error beats eating the caller's 30s budget (#3366).
-   * stayHidden/stayAwake keep the capture from perturbing visibility state
-   * on hidden or occluded views.
+   * stayHidden: false lets a page whose window is minimized, hidden or
+   * occluded count as visible for the capture so it paints (it may see a
+   * brief visibilitychange); stayAwake keeps the system awake meanwhile.
    */
   private async capturePageFallback(
     webContentsId: number,
@@ -2058,7 +2069,9 @@ class EmbeddedBrowserCdpService {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const image = await Promise.race([
-        wc.capturePage(undefined, { stayHidden: true, stayAwake: true }),
+        // stayHidden: false — a page whose window is minimized or hidden is
+        // treated as visible while it is captured, so it paints for it.
+        wc.capturePage(undefined, { stayHidden: false, stayAwake: true }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () =>
@@ -2129,8 +2142,73 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    const releaseDrawing = this.holdCaptureDrawing(webContentsId);
     try {
-      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId, options.deadline);
+      return await this.screenshotWithFallback(webContentsId, tabId ?? firstTab?.tabId, options);
+    } finally {
+      releaseDrawing();
+    }
+  }
+
+  /**
+   * Keep a guest and the window hosting it drawing frames for the duration
+   * of one capture, even while that window is minimized or covered by other
+   * apps: Chromium stops producing frames for a backgrounded window, so the
+   * capture would otherwise hang until "not-painting". Background
+   * throttling is turned off on the guest and its host webContents (a
+   * window with one unthrottled webContents draws all of them) and restored
+   * when the last overlapping capture releases, so an idle window keeps its
+   * normal throttling. Returns the release function; never throws.
+   */
+  private holdCaptureDrawing(webContentsId: number): () => void {
+    const guest = webContents.fromId(webContentsId);
+    if (!guest || guest.isDestroyed()) return () => {};
+    const targets = [guest, guest.hostWebContents].filter(
+      (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
+    );
+    const held: Electron.WebContents[] = [];
+    for (const wc of targets) {
+      try {
+        const hold = this.captureDrawingHolds.get(wc.id);
+        if (hold) {
+          hold.count++;
+        } else {
+          this.captureDrawingHolds.set(wc.id, { wc, previous: wc.backgroundThrottling, count: 1 });
+          wc.backgroundThrottling = false;
+        }
+        held.push(wc);
+      } catch (error) {
+        logger.debug('Could not keep webContents drawing for capture', {
+          webContentsId: wc.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (const wc of held) {
+        const hold = this.captureDrawingHolds.get(wc.id);
+        if (!hold || --hold.count > 0) continue;
+        this.captureDrawingHolds.delete(wc.id);
+        try {
+          if (!hold.wc.isDestroyed()) hold.wc.backgroundThrottling = hold.previous;
+        } catch {
+          // A webContents torn down mid-capture has nothing left to restore.
+        }
+      }
+    };
+  }
+
+  /** CDP capture, degrading to capturePage() (see screenshot()). */
+  private async screenshotWithFallback(
+    webContentsId: number,
+    tabId: string | undefined,
+    options: CaptureOptions,
+  ): Promise<{ base64: string; width: number; height: number }> {
+    try {
+      return await this.screenshotViaCdp(webContentsId, tabId, options.deadline);
     } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of
