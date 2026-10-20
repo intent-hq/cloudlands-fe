@@ -114,8 +114,13 @@ describe('provider CLI startup warnings', () => {
     await settle();
     expect(mocks.request.mock.calls).toEqual([['host.providerDiscovery', {}]]);
     expect(mocks.warning).toHaveBeenCalledTimes(1);
-    const message = mocks.warning.mock.calls[0][0];
-    for (const value of ['Codex', 'codex-cli 0.114.0', '0.159.1']) expect(message).toContain(value);
+    const [title, options] = mocks.warning.mock.calls[0];
+    // The title stays short (provider only) so the toast never truncates the version detail.
+    expect(title).toContain('Codex');
+    for (const value of ['codex-cli 0.114.0', '0.159.1']) {
+      expect(title).not.toContain(value);
+      expect(options?.description).toContain(value);
+    }
   });
 
   it.each([
