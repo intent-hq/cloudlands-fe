@@ -109,7 +109,7 @@ beforeEach(() => {
 afterEach(() => task.cancel());
 
 describe('provider CLI startup warnings', () => {
-  it('uses the daemon discovery contract and includes provider, detected version and requirement', async () => {
+  it('uses the daemon discovery contract with a short provider title and version detail in the description', async () => {
     render(ProviderCliVersionToast);
     await settle();
     expect(mocks.request.mock.calls).toEqual([['host.providerDiscovery', {}]]);
