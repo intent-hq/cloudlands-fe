@@ -5,7 +5,6 @@
   import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import type { TextBlockMedia } from '$shared/types/content-block';
-  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
@@ -19,9 +18,8 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
+  import { prepareMessageBlocks } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
-  import { isQuestionResourceBlock } from '$shared/types/question-resource';
-  import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
@@ -50,7 +48,6 @@
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
-    parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
     filterWorkspaceCardsCoveredByIds,
     type RenderBlock,
@@ -213,90 +210,23 @@
     };
   }
 
+  // One shared preparation step (also used by chat search) so search block
+  // paths always address the rendered rows.
   let blocks = $derived.by(() => {
-    // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
-    // FE-lifted fallback for the same logical resource) so exactly one card
-    // renders per resource, preferring the daemon-canonical variant.
-    // Agent Q&A questions are wizard-only and never render in the transcript.
-    const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
+    const prepared = prepareMessageBlocks(hydratedContent, {
+      role,
+      workspaceId,
       isStreaming,
+      hideToolCalls,
     });
-    const rawBlocks = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(
-        dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
-        role,
-        workspaceId,
-      ),
-    ).filter((block) => !isQuestionResourceBlock(block));
-
-    if (isStreaming) {
-      const blockTypes = rawBlocks.map((b) => b.type);
-      const hasToolUse = blockTypes.includes('tool_use');
-      if (hasToolUse) {
-        logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
-          blockCount: rawBlocks.length,
-          blockTypes,
-          hideToolCalls,
-        });
-      }
-    }
-
-    let filtered: ContentBlock[];
-    if (!isStreaming) {
-      // Filter empty text blocks and optionally hide tool activity.
-      filtered = rawBlocks.filter((block) => {
-        if (hideToolCalls && block.type === 'tool_use') {
-          return false;
-        }
-
-        // Filter out empty text blocks (prevents blank spots in chat history)
-        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
-        if (block.type === 'text') {
-          const text = block.text || (block as any).content || '';
-          const { cleanedContent } = parseSuggestedPrompts(text);
-          if (!cleanedContent.trim()) {
-            return false;
-          }
-        }
-
-        if (hideToolCalls && block.type === 'tool_result') return false;
-        return true;
-      });
-    } else {
-      // Streaming with content blocks - filter empty text blocks and optionally tool calls
-      filtered = rawBlocks.filter((block) => {
-        if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
-          return false;
-        }
-        // Filter out empty text blocks during streaming (prevents spacing issues between tool calls)
-        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
-        if (block.type === 'text') {
-          const text = block.text || (block as any).content || '';
-          const { cleanedContent } = parseSuggestedPrompts(text);
-          if (!cleanedContent.trim()) {
-            return false;
-          }
-        }
-        return true;
+    if (isStreaming && prepared.some((b) => b.type === 'tool_use')) {
+      logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
+        blockCount: prepared.length,
+        blockTypes: prepared.map((b) => b.type),
+        hideToolCalls,
       });
     }
-
-    // Deduplicate tool_use blocks: if skeleton + follow-up both exist with same ID,
-    // keep only the last one (which has descriptive input parameters).
-    const toolUseLastIndex = new Map<string, number>();
-    for (let i = 0; i < filtered.length; i++) {
-      const block = filtered[i];
-      if (block.type === 'tool_use' && block.id) {
-        toolUseLastIndex.set(block.id, i);
-      }
-    }
-    if (toolUseLastIndex.size === 0) return filtered;
-    return filtered.filter((block, index) => {
-      if (block.type === 'tool_use' && block.id) {
-        return toolUseLastIndex.get(block.id) === index;
-      }
-      return true;
-    });
+    return prepared;
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.

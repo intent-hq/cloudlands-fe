@@ -1482,7 +1482,10 @@
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
-      { collapseToolRuns: $collapseToolRuns$ },
+      {
+        collapseToolRuns: $collapseToolRuns$,
+        workspaceId: workspace?.id ? String(workspace.id) : undefined,
+      },
     );
   });
 
@@ -5049,7 +5052,10 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
-            { collapseToolRuns: $collapseToolRuns$ },
+            {
+              collapseToolRuns: $collapseToolRuns$,
+              workspaceId: workspace?.id ? String(workspace.id) : undefined,
+            },
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
