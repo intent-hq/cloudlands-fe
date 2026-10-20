@@ -1,7 +1,10 @@
 import path from 'node:path';
 
-// Only modules already supported by the render scaffold. Other test doubles
-// retain their own contracts; this is not a general ban on selector mocks.
+// Selector modules the real-ChatPanel suites mock. A module with a render
+// scaffold factory may use it; every guarded module may spread its real exports.
+// A hand-listed mock misses the next selector ChatPanel reads and crashes the
+// whole suite (cloudlands-fe#3525). Other test doubles retain their own
+// contracts; this is not a general ban on selector mocks.
 const factories = new Map(
   [
     ['agent-session', 'agentSessionSelectors'],
@@ -10,6 +13,21 @@ const factories = new Map(
     ['unread-tracking', 'unreadTrackingSelectors'],
     ['transient-ui', 'transientUiSelectors'],
     ['provider-catalog', 'providerCatalogSelectors'],
+    ['browser', null],
+    ['chat-panel-ui', null],
+    ['multi-panel-context', null],
+    ['panel-layout', null],
+    ['permission', null],
+    ['presence', null],
+    ['principal', null],
+    ['question-ui', null],
+    ['specialists', null],
+    ['task-agent-associations', null],
+    ['terminals', null],
+    ['user-preferences', null],
+    ['workspace-navigation', null],
+    ['workspace-notes', null],
+    ['workspace-tasks', null],
   ].map(([slice, factory]) => [`src/store/renderer/slices/${slice}/${slice}-selectors`, factory]),
 );
 const scaffoldPath = 'src/lib/components/chat/__tests__/mocks/chat-panel-render-scaffold';
@@ -57,12 +75,14 @@ export default {
     type: 'problem',
     docs: {
       description:
-        'Require shared defaults for scaffold-supported selector mocks in real ChatPanel tests',
+        'Require real-module or shared defaults for selector mocks in real ChatPanel tests',
     },
     schema: [],
     messages: {
       sharedDefaults:
         'Copied selector mocks miss new ChatPanel imports. Return {{factory}}() from ./mocks/chat-panel-render-scaffold, spread it before stateful overrides, or spread importOriginal() to retain the real exports.',
+      realDefaults:
+        'Copied selector mocks miss new ChatPanel imports. Return withReal(importOriginal, overrides) from ./mocks/chat-panel-render-scaffold, or spread await importOriginal() before the overrides, to retain the real exports.',
     },
   },
   create(context) {
@@ -93,6 +113,16 @@ export default {
         if (scope.set.has(node.name)) return scope.set.get(node.name);
       }
       return null;
+    }
+
+    // The mock factory's own `importOriginal` parameter, not a shadowing local.
+    function isImportOriginal(node, factory) {
+      const firstParam = factory.params[0];
+      return (
+        node?.type === 'Identifier' &&
+        firstParam?.type === 'Identifier' &&
+        variable(node) === variable(firstParam)
+      );
     }
 
     // Follow only immutable local aliases. No execution, text matching, or
@@ -138,15 +168,13 @@ export default {
       )
         return `factory:${key(node)}`;
       if (node.type === 'CallExpression') {
-        if (origin(node.callee, factory, module, seen) === `factory:${factories.get(module)}`)
+        const callee = origin(node.callee, factory, module, seen);
+        if (factories.get(module) && callee === `factory:${factories.get(module)}`)
           return 'defaults';
-        const firstParam = factory.params[0];
-        if (
-          node.callee.type === 'Identifier' &&
-          firstParam?.type === 'Identifier' &&
-          variable(node.callee) === variable(firstParam)
-        )
+        // withReal(importOriginal, overrides) resolves to the real exports.
+        if (callee === 'factory:withReal' && isImportOriginal(node.arguments[0], factory))
           return 'promise:defaults';
+        if (isImportOriginal(node.callee, factory)) return 'promise:defaults';
         if (isViCall(node, ['importActual']) && modulePath(node.arguments[0]) === module)
           return 'promise:defaults';
       }
@@ -217,11 +245,12 @@ export default {
           const module = modulePath(mock.arguments[0]);
           if (!factories.has(module)) continue;
           if (preservesExports(mock, module)) continue;
-          context.report({
-            node: mock,
-            messageId: 'sharedDefaults',
-            data: { factory: factories.get(module) },
-          });
+          const factory = factories.get(module);
+          context.report(
+            factory
+              ? { node: mock, messageId: 'sharedDefaults', data: { factory } }
+              : { node: mock, messageId: 'realDefaults' },
+          );
         }
       },
     };

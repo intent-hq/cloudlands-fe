@@ -12,6 +12,15 @@ const scaffold = './mocks/chat-panel-render-scaffold';
 const incomplete = `vi.mock('${selectors}', () => ({ selectChatError: vi.fn() }));`;
 const shared = `(await import('${scaffold}')).chatStateSelectors()`;
 const error = { messageId: 'sharedDefaults' };
+const realError = { messageId: 'realDefaults' };
+const preferences = '$store/renderer/slices/user-preferences/user-preferences-selectors';
+// The cloudlands-fe#3525 shape: every selector ChatPanel read, listed by hand.
+const copiedPreferences = `vi.mock('${preferences}', () => ({
+  selectChatAuroraEnabled: vi.fn(),
+  selectIsAgentMonospace: vi.fn(),
+}));`;
+const withReal = (overrides = '{ selectChatAuroraEnabled: false }') =>
+  `(await import('${scaffold}')).withReal(importOriginal, ${overrides})`;
 const tester = new RuleTester({ languageOptions: { parser } });
 
 tester.run('no-copied-chat-panel-selector-mocks', rule, {
@@ -70,8 +79,38 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     { filename, code: `${panel} vi.mock('../ChatPanel.svelte', () => ({})); ${incomplete}` },
     {
       filename,
-      code: `${panel} vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({}));`,
+      code: `${panel} vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({}));`,
     },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => ${withReal()});`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => ${withReal('')});`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => ({
+        ...await ${withReal()}, selectChatAuroraEnabled: liveSelector,
+      }));`,
+    },
+    {
+      filename,
+      code: `${panel} import { withReal } from '${scaffold}';
+        vi.mock('${preferences}', (importOriginal) => withReal(importOriginal, {}));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => ({
+        ...(await importOriginal()), selectChatAuroraEnabled: liveSelector,
+      }));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => ${withReal()});`,
+    },
+    { filename, code: `${panel} vi.mock('../ChatPanel.svelte', () => ({})); ${copiedPreferences}` },
     { filename, code: `${panel} vi.mock('${selectors}', async () => ${shared});` },
     {
       filename,
@@ -227,6 +266,63 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
       }));`,
       errors: [error],
     },
+    { filename, code: `${panel} ${copiedPreferences}`, errors: [realError] },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async () =>
+        (await import('${scaffold}')).stub({ selectChatAuroraEnabled: false }),
+      );`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => ({
+        ...${withReal()}, selectChatAuroraEnabled: liveSelector,
+      }));`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) =>
+        (await import('${scaffold}')).withReal(async () => ({}), {}),
+      );`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => {
+        const importOriginalCopy = async () => ({});
+        return (await import('${scaffold}')).withReal(importOriginalCopy, {});
+      });`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) =>
+        (await import('./other/chat-panel-render-scaffold')).withReal(importOriginal, {}),
+      );`,
+      errors: [realError],
+    },
+    ...[
+      'browser',
+      'chat-panel-ui',
+      'multi-panel-context',
+      'panel-layout',
+      'permission',
+      'presence',
+      'principal',
+      'question-ui',
+      'specialists',
+      'task-agent-associations',
+      'terminals',
+      'workspace-navigation',
+      'workspace-notes',
+      'workspace-tasks',
+    ].map((slice) => ({
+      filename,
+      code: `${panel} vi.mock('$store/renderer/slices/${slice}/${slice}-selectors', () => ({}));`,
+      errors: [realError],
+    })),
     ...['agent-session', 'agent-queue', 'unread-tracking', 'transient-ui', 'provider-catalog'].map(
       (slice) => ({
         filename,
@@ -244,6 +340,10 @@ it('enables the guard in the repository config and accepts shared overrides', as
       (message) => message.ruleId === 'intent/no-copied-chat-panel-selector-mocks',
     );
   expect(await lint(`${panel} ${incomplete}`)).toHaveLength(1);
+  expect(await lint(`${panel} ${copiedPreferences}`)).toHaveLength(1);
+  expect(
+    await lint(`${panel} vi.mock('${preferences}', async (importOriginal) => ${withReal()});`),
+  ).toEqual([]);
   expect(
     await lint(
       `${panel} vi.mock('${selectors}', async () => ({ ...${shared}, selectChatError: liveSelector }));`,
