@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
   return {
     readable,
     dispatch: vi.fn(),
+    preparationDispatch: vi.fn(),
     goto: vi.fn(),
     fetchRepoConfig: vi.fn<(repoPath: string) => Promise<string | null>>(),
     fetchGitHubRepoConfig:
@@ -136,6 +137,26 @@ vi.mock('$lib/components/patterns/notify', () => ({
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
   resolveOnboardingModel: mocks.resolveModel,
 }));
+
+vi.mock('$features/onboarding/utils/commit-onboarding-default-model', async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import('$features/onboarding/utils/commit-onboarding-default-model')
+    >();
+  return {
+    ...original,
+    commitOnboardingDefaultModel: (
+      input: Parameters<typeof original.commitOnboardingDefaultModel>[0],
+    ) =>
+      original.commitOnboardingDefaultModel({
+        ...input,
+        dispatch: (action) => {
+          mocks.preparationDispatch(action);
+          input.dispatch(action);
+        },
+      }),
+  };
+});
 
 // Keep the real pure mention parsers (the #4050 regression test asserts
 // mention-derived context references reach the held payload); only the
@@ -270,8 +291,17 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
 const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
   result.getByTestId(testId).textContent;
 
+interface ObservedAction {
+  type: string;
+  payload?: unknown[];
+  asyncActionType?: string;
+  promise?: Promise<unknown>;
+}
+
 const dispatchedActions = () =>
-  mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
+  [...mocks.dispatch.mock.calls, ...mocks.preparationDispatch.mock.calls].map(
+    ([action]) => action as ObservedAction,
+  );
 
 /**
  * Reset every shared mock (implementation AND call history — clearAllMocks
@@ -319,8 +349,10 @@ const SETTLE_TIMEOUT_MS = 5000;
  */
 async function settleInFlightCreates() {
   const initializations = dispatchedActions().flatMap((action) => {
-    const promise = (action as { promise?: Promise<unknown> }).promise;
-    return action.type === 'workspaceInitializer/initialization' && promise ? [promise] : [];
+    return action.asyncActionType === 'workspaceInitializer/initializationSubmitted' &&
+      action.promise
+      ? [action.promise]
+      : [];
   });
   if (initializations.length === 0) return;
   const outcomes = await Promise.race([
@@ -345,6 +377,15 @@ async function settleInFlightCreates() {
         const navigated = mocks.goto.mock.calls.filter(([target]) => target === path).length;
         expect(navigated).toBeGreaterThanOrEqual(expected);
       }
+    },
+    { timeout: SETTLE_TIMEOUT_MS },
+  );
+  await waitFor(
+    () => {
+      const released = dispatchedActions().filter(
+        (action) => action.type === 'workspaceInitializer/clearInitializationOutcome',
+      ).length;
+      expect(released).toBeGreaterThanOrEqual(outcomes.length);
     },
     { timeout: SETTLE_TIMEOUT_MS },
   );

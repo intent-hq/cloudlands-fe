@@ -327,13 +327,13 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
 });
-async function submit() {
+async function submit(waitForValidation = true) {
   sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
   render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
   const b = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
   await waitFor(() => expect(b.disabled).toBe(false));
   await fireEvent.click(b);
-  await waitFor(() => expect(mocks.validate).toHaveBeenCalledTimes(1));
+  if (waitForValidation) await waitFor(() => expect(mocks.validate).toHaveBeenCalledTimes(1));
 }
 describe('actual initializer submission admission', () => {
   it('keeps ordinary owner submission functional with Multiplayer off', async () => {
@@ -414,7 +414,7 @@ it('drops an original submission held by setup-probe settlement after readmissio
       release = r;
     }),
   );
-  await submit();
+  await submit(false);
   await waitFor(() => expect(mocks.settled).toHaveBeenCalledOnce());
   store.dispatch(backendReconnected());
   admitLegacyPrincipal();

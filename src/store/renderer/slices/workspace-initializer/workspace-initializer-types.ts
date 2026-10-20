@@ -4,6 +4,8 @@ import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import type { KnownRepo } from '$shared/types/known-repo';
+import type { CheckoutSelection } from '$shared/types/repository-checkout';
+import type { SetupScriptNameSource } from '$features/setup-scripts/repo-config';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -185,10 +187,11 @@ export interface WorkspaceInitializerDraftRestore {
 export interface WorkspaceInitializerDraftClear {
   id: string;
   requestId: string;
+  ownerRequestId?: string;
   status: 'pending' | 'success' | 'failure';
 }
 
-type WorkspaceInitializationJson =
+export type WorkspaceInitializationJson =
   | null
   | boolean
   | number
@@ -256,6 +259,124 @@ export interface WorkspaceInitializationRequest {
   rememberBranch?: { repoPath: string; branch: string };
   selectedPrNumber?: number;
   recentGitHubRepository?: { repository: string; name: string; owner: string; githubUrl: string };
+  /** Last-used setup script recorded for the repository once the workspace is created. */
+  setupScriptRecord?: WorkspaceInitializationSetupScriptRecord;
+  /** Form completion applied once the workspace is created, before the success outcome. */
+  completion?: WorkspaceInitializationCompletion;
+}
+
+export interface WorkspaceInitializationSetupScriptRecord {
+  repoPath: string;
+  githubUrl?: string;
+  name: string;
+  content: string;
+  nameSource: SetupScriptNameSource;
+}
+
+interface WorkspaceInitializationCompletion {
+  draft?: { ownerId: string; restoreRequestId: string; clear: boolean };
+  lastSelectedRepo?: WorkspaceInitializerRepoSelection;
+}
+
+/** Editor context mention (issue, PR, …) captured at submit. */
+interface WorkspaceInitializationContextMention {
+  itemType?: string;
+  provider?: string;
+  identifier: string;
+  title: string;
+  url?: string;
+  description?: string;
+  metadata?: string;
+}
+
+/** Editor file/terminal/script mention captured at submit. */
+interface WorkspaceInitializationFileMention {
+  type: string;
+  id?: string;
+  label?: string;
+  uri?: string;
+  meta?: Record<string, WorkspaceInitializationJson>;
+}
+
+interface WorkspaceInitializationSubmissionBase {
+  admission: string;
+  prompt: string;
+  contextMentions: WorkspaceInitializationContextMention[];
+  fileMentions: WorkspaceInitializationFileMention[];
+  /** Terminal/script references resolved from widget snapshots at submit. */
+  runtimeReferences: WorkspaceInitializationJson[];
+  stagedItems: WorkspaceInitializationStagedItem[];
+  setupScript: string;
+  setupScriptName: string;
+  setupScriptNameSource: SetupScriptNameSource;
+  repoConfigScript: string | null;
+  repoConfigScriptRepo: string | null;
+  branchBehind: number;
+  pullEnabled: boolean;
+  skipIsolation: boolean;
+  selectedPrNumber: number | null;
+  draft: NonNullable<WorkspaceInitializationCompletion['draft']>;
+}
+
+export interface CompactWorkspaceInitializationSubmission extends WorkspaceInitializationSubmissionBase {
+  entrypoint: 'compact';
+  repoType: WorkspaceInitializerRepoType | 'gitlab';
+  repoPath: string;
+  githubUrl: string;
+  branch: string;
+  isNewRepo: boolean;
+  isValidPath: boolean;
+  scope: string;
+  prefillTitle: string;
+  remoteSetup: WorkspaceInitializerRemoteSetup | null;
+  checkoutFormId: string;
+  repositoryCheckout: CheckoutSelection | null;
+  checkoutContextUrl: string | null;
+  checkoutInstanceBaseUrl: string | null;
+  selectedPRBranch: string;
+  selectedPRTargetBranch: string;
+  agent: WorkspaceInitializerAgentSettings;
+  rememberAgentRepoKey?: string;
+  setupScriptExplicit: boolean;
+  repoConfigError: boolean;
+  /** The repo-config probe was still loading once settled. */
+  repoConfigUnavailable: boolean;
+  setupScriptProbeKey: string | null;
+  setupScriptRepoKey: string | null;
+  formPersistence: boolean;
+}
+
+export interface OnboardingWorkspaceInitializationSubmission extends WorkspaceInitializationSubmissionBase {
+  entrypoint: 'onboarding';
+  project: {
+    type: string;
+    repoPath: string;
+    githubUrl?: string;
+    branch: string;
+    scope?: string;
+  };
+  treatAsNewRepo: boolean;
+  effectiveBranch: string;
+  selectedModel?: string;
+  selectedProvider?: string;
+  modelWasOverridden: boolean;
+  defaultModelPreview?: { provider: string; model: string | undefined };
+}
+
+/** Pill state captured when retrying a retained post-create failure. */
+export interface WorkspaceInitializationResumeInput {
+  entrypoint: WorkspaceInitializationRequest['entrypoint'];
+  admission: string;
+  stagedItems: WorkspaceInitializationStagedItem[];
+}
+
+export type WorkspaceInitializationSubmission =
+  CompactWorkspaceInitializationSubmission | OnboardingWorkspaceInitializationSubmission;
+
+/** Request retained after a post-create failure so a retry resumes instead of re-creating. */
+export interface WorkspaceInitializationResume {
+  id: string;
+  request: WorkspaceInitializationRequest;
 }
 
 export interface WorkspaceInitializationResult {
@@ -268,7 +389,7 @@ export interface WorkspaceInitializationOutcome extends WorkspaceInitializationC
   seq: number;
   entrypoint: WorkspaceInitializationRequest['entrypoint'];
   status: 'pending' | 'success' | 'failure' | 'cancelled';
-  stage?: 'pull' | 'create' | 'post-create' | 'attachments' | 'first-message';
+  stage?: 'prepare' | 'pull' | 'create' | 'post-create' | 'attachments' | 'first-message';
   workspaceId?: string;
   agentId?: string;
   workspacePath?: string;
@@ -277,6 +398,16 @@ export interface WorkspaceInitializationOutcome extends WorkspaceInitializationC
   errorCode?: string;
   stagedItems?: WorkspaceInitializationStagedItem[];
   retryImageBlocks?: WorkspaceInitializationImageBlock[];
+  /** Set on a failure whose request was retained for resume. */
+  resumable?: boolean;
+  /** Published on the pending outcome once a submission is prepared. */
+  prepared?: WorkspaceInitializationPrepared;
+}
+
+export interface WorkspaceInitializationPrepared {
+  pull: boolean;
+  specialistId?: string | null;
+  specialistName?: string;
 }
 
 export interface WorkspaceInitializerState {
@@ -304,6 +435,7 @@ export interface WorkspaceInitializerState {
   recentRepoRefreshes: Collection<WorkspaceInitializerRecentRepoRefresh, 'id'>;
   directoryStatusChecks: Collection<WorkspaceInitializerDirectoryStatusCheck, 'id'>;
   initializationOutcomes: Collection<WorkspaceInitializationOutcome, 'id'>;
+  initializationResumes: Collection<WorkspaceInitializationResume, 'id'>;
   draftRestores: Collection<WorkspaceInitializerDraftRestore, 'id'>;
   draftClears: Collection<WorkspaceInitializerDraftClear, 'id'>;
 }

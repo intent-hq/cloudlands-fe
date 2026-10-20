@@ -12,8 +12,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  CompactWorkspaceInitializationSubmission,
   CompactWorkspaceInitializerFormState,
-  WorkspaceInitializationRequest,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
@@ -125,6 +125,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -673,14 +674,14 @@ describe('initializer remembers the agent setup per repository', () => {
     );
   }
 
-  function initializationRequest(): WorkspaceInitializationRequest {
+  function initializationSubmission(): CompactWorkspaceInitializationSubmission {
     const action = mocks.dispatch.mock.calls
       .map(([dispatched]) => dispatched)
       .find(
         (dispatched) =>
-          dispatched.asyncActionType === 'workspaceInitializer/initializationRequested',
+          dispatched.asyncActionType === 'workspaceInitializer/initializationSubmitted',
       );
-    return action.payload.request;
+    return action.payload.submission;
   }
 
   beforeEach(() => {
@@ -722,9 +723,9 @@ describe('initializer remembers the agent setup per repository', () => {
       reasoningEffort: 'high',
       metadata: { workMode: 'single' },
     });
-    expect(initializationRequest()).toMatchObject({
+    expect(initializationSubmission()).toMatchObject({
       rememberAgentRepoKey: 'local:/tmp/repo-a',
-      lastSubmittedAgent: {
+      agent: {
         isTeamMode: false,
         selectedSpecialist: null,
         selectedProvider: 'codex',
@@ -751,7 +752,7 @@ describe('initializer remembers the agent setup per repository', () => {
       model: 'opus4.6',
       metadata: { workMode: 'team' },
     });
-    expect(initializationRequest().rememberAgentRepoKey).toBe('local:/tmp/repo-b');
+    expect(initializationSubmission().rememberAgentRepoKey).toBe('local:/tmp/repo-b');
   });
 
   it('keeps an explicit in-session model pick when the repository changes', async () => {

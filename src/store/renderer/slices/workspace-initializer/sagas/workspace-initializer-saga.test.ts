@@ -1,18 +1,22 @@
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   update: vi.fn(),
+  clearDraft: vi.fn().mockResolvedValue(undefined),
   getJSON: vi.fn(),
   getItem: vi.fn(),
   error: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
-  appClient: { settings: { get: mocks.get, update: mocks.update } },
+  appClient: {
+    settings: { get: mocks.get, update: mocks.update },
+    drafts: { clear: mocks.clearDraft },
+  },
 }));
 vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
@@ -870,5 +874,53 @@ describe('workspaceInitializerSaga', () => {
     await task.toPromise();
     await vi.advanceTimersByTimeAsync(300);
     expect(mocks.update.mock.calls).toEqual([]);
+  });
+
+  it('reset preserves an active onboarding draft owner instead of clearing its restored draft', async () => {
+    mocks.get.mockResolvedValue({ value: {} });
+    const channel = stdChannel();
+    let slice: WorkspaceInitializerState = {
+      ...initialState,
+      onboardingFormState: { projectSelection: null, step: 'project' },
+      draftRestores: createCollection('id', [
+        {
+          id: 'onboarding-workspace-initializer',
+          requestId: 'restore-1',
+          status: 'restored',
+          text: 'saved prompt',
+          attachments: [],
+        },
+      ]),
+    };
+    const state = () => withLegacyPrincipal({ workspaceInitializer: slice });
+    const dispatch = vi.fn((action) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    });
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: state,
+      },
+      workspaceInitializerSaga,
+    );
+    await settle();
+
+    dispatch(resetOnboarding());
+    await settle();
+
+    expect(mocks.clearDraft).not.toHaveBeenCalled();
+    expect(slice.onboardingFormState).toBe(null);
+    expect(getItem(slice.draftRestores, 'onboarding-workspace-initializer')).toMatchObject({
+      requestId: 'restore-1',
+      status: 'restored',
+      text: 'saved prompt',
+    });
+
+    task.cancel();
+    await task.toPromise();
   });
 });
