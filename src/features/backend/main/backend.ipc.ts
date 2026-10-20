@@ -4464,6 +4464,45 @@ export function registerBackendHandlers(): void {
     },
   );
 
+  ipcMain.handle(BACKEND.READ_PRINCIPAL, async (event) => {
+    try {
+      return await poolWork('principal-discovery', undefined, async (owner) => {
+        const { backendId, client } = getBackendClientForIpcEvent(event);
+        poolClient(owner, client);
+        const connection = client.getRepositoryConnection();
+        const hello = client.getAcknowledgedHello();
+        if (!connection || !hello) throw new Error('Principal discovery unavailable');
+        const principal = await client.requestOnCapturedConnection(
+          connection,
+          'principal.me',
+          {},
+          undefined,
+          owner?.producer,
+        );
+        if (
+          event.sender.isDestroyed() ||
+          getBackendIdForWebContents(event.sender) !== backendId ||
+          backendClients.get(backendId) !== client ||
+          client.getRepositoryConnection() !== connection
+        )
+          throw new Error('Principal discovery connection changed');
+        const expected = invitedClientCredentials.get(client);
+        if (expected) {
+          const snapshot = parsePrincipalSnapshot(hello, principal);
+          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
+            return {
+              ok: false,
+              // i18n-ignore (internal diagnostic; principal hydration renders its localized state)
+              error: { code: 'AUTH_REJECTED', message: 'Invited principal unavailable' },
+            };
+        }
+        return { ok: true, result: { hello, principal } };
+      });
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+
   ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
     try {
       const { client } = getBackendClientForIpcEvent(event);

@@ -9,12 +9,30 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
+  hello: null as unknown,
+  helloGeneration: 0,
   subscribe: vi.fn(),
   reconnect: new Set<() => void>(),
   notifications: new Set<(event: BackendNotification) => void>(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: wire.request,
+  backendRequest: async (method: string, ...args: unknown[]) => {
+    if (method !== 'client.hello') return wire.request(method, ...args);
+    const generation = ++wire.helloGeneration;
+    wire.hello = null;
+    const result = await wire.request(method, ...args);
+    if (generation === wire.helloGeneration) wire.hello = result;
+    return result;
+  },
+  readBackendPrincipal: async () => {
+    const hello = structuredClone(wire.hello);
+    const generation = wire.helloGeneration;
+    if (!hello) throw new Error('Acknowledged hello unavailable');
+    const principal = await wire.request('principal.me', {});
+    if (generation !== wire.helloGeneration || !wire.hello)
+      throw new Error('Acknowledged hello changed');
+    return { hello, principal };
+  },
   onBackendReconnected: (handler: () => void) => {
     wire.reconnect.add(handler);
     return () => wire.reconnect.delete(handler);
@@ -89,6 +107,8 @@ async function capabilities() {
 beforeEach(() => {
   wire.subscribe.mockReset().mockResolvedValue({ subscriptionId: 'fixture-subscription' });
   role = 'owner';
+  wire.hello = { clientId: own, server: { capabilities: { hostMembership: 1 } } };
+  wire.helloGeneration = 0;
   resolution = { source: 'workspace', clientId: own, resolved: { clientId: own } };
   wire.request
     .mockReset()
@@ -374,7 +394,7 @@ describe('actual browser lifecycle to primary menu', () => {
     await waitFor(() => expect(first).toBe(false));
     store.dispatch(connectionStatusChanged('connecting'));
     store.dispatch(connectionStatusChanged('connected'));
-    release({ clientId: own });
+    release({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
     subscribe({ subscriptionId: 'first-subscription' });
     await capabilities();
     await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
@@ -413,8 +433,10 @@ describe('actual browser lifecycle to primary menu', () => {
     store.dispatch(workspaceUnmounted('ws-1'));
     failBrowserHello = false;
     store.dispatch(workspaceMounted('ws-1'));
+    const remounted = render(WorkspaceProgressCard, { workspaceId: workspace.id });
     await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
-    await mount();
+    await capabilities();
+    await fireEvent.click(remounted.container.querySelector('[data-workspace-actions-trigger]')!);
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );
@@ -513,7 +535,7 @@ describe('actual browser lifecycle to primary menu', () => {
       expect(store.state.browserClients.byWorkspaceId['ws-1'].liveClientsLoaded).toBe(true),
     );
     expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(true);
-    release({ clientId: own });
+    release({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );

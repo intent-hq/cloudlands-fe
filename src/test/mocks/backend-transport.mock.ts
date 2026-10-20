@@ -211,6 +211,13 @@ export const mockBackendTransportModule = {
       });
     return state.repositoryCapture(structuredClone(root));
   },
+  async readBackendPrincipal() {
+    // Reuse the scripted handshake facts without recording a new wire hello.
+    const handshake = state.requestHandlers.get('client.hello');
+    if (!handshake)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Mock handshake unavailable' });
+    return { hello: await handshake({}), principal: await mockBackendRequest('principal.me', {}) };
+  },
   observeBackendNodeCapabilities: () => mockBackendRequest('client.hello', {}),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
