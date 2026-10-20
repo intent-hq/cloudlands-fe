@@ -1,5 +1,14 @@
 import { buffers, type Task } from 'redux-saga';
-import { actionChannel, call, cancel, delay, fork, put, take } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  take,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -62,7 +71,7 @@ interface PendingSave {
 // cancelled root still gates the first write of its replacement.
 let writeTail: Promise<void> = Promise.resolve();
 
-function* serializedWrite(write: () => Promise<unknown>) {
+function* serializedWrite(write: () => Promise<unknown>, canIssue: () => SagaGenerator<boolean>) {
   const prior = writeTail;
   let release!: () => void;
   writeTail = new Promise<void>((done) => {
@@ -71,8 +80,10 @@ function* serializedWrite(write: () => Promise<unknown>) {
   let issued: Promise<unknown> | undefined;
   try {
     yield* call(() => prior);
+    if (!(yield* call(canIssue))) return false;
     issued = write();
     yield* call(() => issued);
+    return true;
   } finally {
     if (issued) issued.then(release, release);
     else void prior.then(release);
@@ -124,18 +135,25 @@ function* draftDebounceTimer(id: string, version: number) {
   yield* put(workspaceInitializerDraftSaveDebounceElapsed(id, version));
 }
 
-function* persistDraft(payload: WorkspaceInitializerDraftPayload) {
+function* persistDraft(
+  payload: WorkspaceInitializerDraftPayload,
+  canIssue: () => SagaGenerator<boolean>,
+) {
   try {
-    yield* call(serializedWrite, () =>
-      appClient.drafts.set(
-        NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
-        NEW_WORKSPACE_DRAFT_AGENT_ID,
-        payload.text,
-        payload.attachments,
-      ),
+    return yield* call(
+      serializedWrite,
+      () =>
+        appClient.drafts.set(
+          NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+          NEW_WORKSPACE_DRAFT_AGENT_ID,
+          payload.text,
+          payload.attachments,
+        ),
+      canIssue,
     );
   } catch (error) {
     logger.warn('drafts.set failed; draft kept in memory only', { error: String(error) });
+    return false;
   }
 }
 
@@ -268,7 +286,9 @@ export function* workspaceInitializerDraftSaga() {
     delete pending[id];
     if (!(yield* ownerAdmitted(owners, id, save.ownerRequestId, save.admission))) return;
     if (!canPersist(owners[id], save.payload)) return;
-    yield* call(persistDraft, save.payload);
+    yield* call(persistDraft, save.payload, () =>
+      ownerAdmitted(owners, id, save.ownerRequestId, save.admission),
+    );
   }
 
   try {
@@ -315,7 +335,7 @@ export function* workspaceInitializerDraftSaga() {
         )
           continue;
         mutationEpoch.value++;
-        yield* call(persistDraft, payload);
+        yield* call(persistDraft, payload, () => ownerAdmitted(owners, id, requestId, admission));
         continue;
       }
 
@@ -396,10 +416,18 @@ export function* workspaceInitializerDraftSaga() {
         }
         let cleared = false;
         try {
-          yield* call(serializedWrite, () =>
-            appClient.drafts.clear(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID),
+          const issued = yield* call(
+            serializedWrite,
+            () =>
+              appClient.drafts.clear(
+                NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+                NEW_WORKSPACE_DRAFT_AGENT_ID,
+              ),
+            function* () {
+              return (yield* currentAdmission()) === clearAdmission;
+            },
           );
-          cleared = (yield* currentAdmission()) === clearAdmission;
+          cleared = issued && (yield* currentAdmission()) === clearAdmission;
         } catch (error) {
           logger.warn('drafts.clear failed', { error: String(error) });
         }

@@ -565,6 +565,80 @@ describe('workspaceInitializerDraftSaga', () => {
     expect(sessionStorage.getItem('onboarding-prompt')).toBe('onboarding');
   });
 
+  it('does not issue a re-entered save after its serialized predecessor loses authority', async () => {
+    const held = deferred<void>();
+    mocks.set.mockReturnValueOnce(held.promise);
+    channel.put(restore('compact', 'compact-restore'));
+    await settle();
+    channel.put(save('compact', 'first', 'compact-restore'));
+    channel.put(flush('compact', 'compact-restore'));
+    await settle();
+    expect(mocks.set).toHaveBeenCalledOnce();
+
+    task.cancel();
+    await task.toPromise();
+    channel = stdChannel();
+    task = runSaga(
+      {
+        channel,
+        dispatch: (action) => {
+          dispatched.push(action);
+          channel.put(action);
+          return action;
+        },
+      },
+      workspaceInitializerDraftSaga,
+    );
+    channel.put(restore('onboarding', 'onboarding-restore'));
+    await settle();
+    channel.put(save('onboarding', 'second', 'onboarding-restore'));
+    channel.put(flush('onboarding', 'onboarding-restore'));
+    await settle();
+
+    mocks.admission = B;
+    held.resolve();
+    await settle();
+
+    expect(mocks.set).toHaveBeenCalledOnce();
+  });
+
+  it('does not issue a queued clear after its serialized predecessor loses authority', async () => {
+    const held = deferred<void>();
+    mocks.set.mockReturnValueOnce(held.promise);
+    channel.put(restore('compact', 'compact-restore'));
+    await settle();
+    channel.put(save('compact', 'first', 'compact-restore'));
+    channel.put(flush('compact', 'compact-restore'));
+    await settle();
+    expect(mocks.set).toHaveBeenCalledOnce();
+
+    task.cancel();
+    await task.toPromise();
+    channel = stdChannel();
+    task = runSaga(
+      {
+        channel,
+        dispatch: (action) => {
+          dispatched.push(action);
+          channel.put(action);
+          return action;
+        },
+      },
+      workspaceInitializerDraftSaga,
+    );
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry'));
+    await settle();
+
+    mocks.admission = B;
+    held.resolve();
+    await settle();
+
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-after-reentry', 'failure'),
+    );
+  });
+
   it('publishes nothing after root cancellation and orders a re-entered write behind it', async () => {
     const held = deferred<void>();
     mocks.set.mockReturnValueOnce(held.promise);

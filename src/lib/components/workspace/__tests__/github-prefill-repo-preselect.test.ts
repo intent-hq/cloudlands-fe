@@ -71,7 +71,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
       return () => mocks.prefillSubscribers.delete(run);
     },
   }),
-  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));

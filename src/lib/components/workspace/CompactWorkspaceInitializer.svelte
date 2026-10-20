@@ -61,7 +61,7 @@
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerDefaultParentPath,
-    selectWorkspaceInitializerDraftRestore,
+    selectWorkspaceInitializerDraftAuthority,
     selectWorkspaceInitializationOutcomeForConsumer,
     selectWorkspaceInitializationResume,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -203,8 +203,8 @@
   const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
   const draftOwnerId = 'compact-workspace-initializer';
-  const draftRestoreRequestId = crypto.randomUUID();
-  const draftRestore$ = selectWorkspaceInitializerDraftRestore(draftOwnerId, draftRestoreRequestId);
+  const draftAuthority$ = selectWorkspaceInitializerDraftAuthority(draftOwnerId);
+  const draftAdmission$ = selectPrincipalActionContext();
 
   // Constants
   const PREFILL_KEY = 'workspace-prefill';
@@ -1038,22 +1038,42 @@
   let draftRestored = $state(false);
   let draftRestoreCancelled = false;
   let draftRestoreApplied = false;
+  let draftRestoreRequestId = $state(crypto.randomUUID());
+  let draftOwnerAdmission: string | null | undefined = undefined;
   // The initialization saga clears the daemon draft on a successful create.
   // Prevent the emptied local form and teardown from scheduling a second write.
   let draftCleared = false;
-  onMount(() => {
+  $effect(() => {
+    const admission = $draftAdmission$;
+    if (draftOwnerAdmission === admission) return;
+    const priorRequestId = draftRestoreRequestId;
+    const hadOwner = draftOwnerAdmission !== undefined && draftOwnerAdmission !== null;
+    draftOwnerAdmission = admission;
+    draftRestored = false;
+    draftRestoreApplied = false;
+    if (hadOwner)
+      appStore.dispatch(workspaceInitializerDraftOwnerReleased(draftOwnerId, priorRequestId));
+    if (admission === null) return;
+    draftRestoreRequestId = crypto.randomUUID();
     appStore.dispatch(
       workspaceInitializerDraftRestoreRequested(
         draftOwnerId,
         draftRestoreRequestId,
         LEGACY_PROMPT_SESSION_KEY,
-        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        admission,
       ),
     );
   });
   $effect(() => {
-    const restore = $draftRestore$;
-    if (!restore || restore.status === 'pending' || draftRestoreApplied || draftRestoreCancelled)
+    const restore = $draftAuthority$.restore;
+    const restoreRequestId = draftRestoreRequestId;
+    if (
+      !restore ||
+      restore.requestId !== restoreRequestId ||
+      restore.status === 'pending' ||
+      draftRestoreApplied ||
+      draftRestoreCancelled
+    )
       return;
     draftRestoreApplied = true;
     if (restore.status === 'restored') {
@@ -1062,7 +1082,8 @@
       if (restore.text && !initialPrompt) {
         initialPrompt = restore.text;
         setTimeout(() => {
-          if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
+          if (!draftRestoreCancelled && draftRestoreRequestId === restoreRequestId)
+            richTextarea?.setContent(restore.text);
         }, 50);
       }
     }

@@ -89,7 +89,6 @@ vi.mock(
     selectWorkspaceInitializerOnboardingFormState: {
       select: () => mocks.persistedOnboardingFormState,
     },
-    selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
   }),
 );
 
@@ -232,9 +231,14 @@ import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store as appStore } from '$store/renderer/store';
 import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import {
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreRequested,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -417,6 +421,30 @@ afterEach(async () => {
 });
 
 describe('onboarding repo-config setup script detection', () => {
+  it('re-admits its draft owner after a principal presentation refresh', async () => {
+    renderPage();
+    const restores = () =>
+      dispatchedActions().filter(
+        (action): action is ObservedAction & { payload: [string, string, string, string] } =>
+          action.type === workspaceInitializerDraftRestoreRequested.type,
+      );
+
+    await waitFor(() => expect(restores()).toHaveLength(1));
+    const first = restores()[0];
+    appStore.dispatch(
+      setLabsMultiplayerEnabled(!appStore.state.userPreferences.labsMultiplayerEnabled),
+    );
+
+    await waitFor(() => expect(restores()).toHaveLength(2));
+    const second = restores()[1];
+    expect(dispatchedActions()).toContainEqual(
+      workspaceInitializerDraftOwnerReleased(first.payload[0], first.payload[1]),
+    );
+    expect(second.payload[0]).toBe(first.payload[0]);
+    expect(second.payload[1]).not.toBe(first.payload[1]);
+    expect(second.payload[3]).not.toBe(first.payload[3]);
+  });
+
   it('restores the prompt when admission changes during submission preparation', async () => {
     const resolution = Promise.withResolvers<{
       provider: string;
