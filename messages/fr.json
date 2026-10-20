@@ -7677,10 +7677,10 @@
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} est désactivé dans Paramètres > Agents. Choisissez un modèle avant d’envoyer un autre message.",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Non connecté",
   "chat_modelPicker_profileSignedOut_hint": "Connectez le compte de ce profil en dehors d’Intent. Ses modèles risquent de ne pas fonctionner d’ici là.",
-  "workspace_discussion_addressAgent_label": "Adresser un message à un agent",
-  "workspace_discussion_addressAgent_description": "Seuls les agents sélectionnés reçoivent ce message et peuvent lire cette discussion.",
-  "workspace_discussion_searchAgents_placeholder": "Rechercher des agents dans l’espace de travail…",
-  "workspace_discussion_noAgents_label": "Aucun agent disponible",
   "workspace_discussion_agentRecipients_label": "Agents recevant ce message",
-  "workspace_discussion_agentsUnsupported_label": "Mettez à jour Intent sur l’hôte pour envoyer ce message aux agents."
+  "workspace_discussion_agentsUnsupported_label": "Mettez à jour Intent sur l’hôte pour envoyer ce message aux agents.",
+  "workspace_discussion_mentions_label": "Mentionner quelqu’un",
+  "workspace_discussion_noMentions_label": "Aucun agent ni aucune personne ne correspond",
+  "workspace_discussion_mentionAgents_label": "Assistants",
+  "workspace_discussion_mentionUsers_label": "Personnes"
 }

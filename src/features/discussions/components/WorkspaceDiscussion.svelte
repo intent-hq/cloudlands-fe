@@ -30,6 +30,7 @@
     selectDiscussionRecipientsForComposer,
     selectDiscussionRecipients,
     selectDiscussionCanCreate,
+    selectDiscussionCapability,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import {
     discussionReadThrough,
@@ -82,6 +83,7 @@
   const recipients$ = selectDiscussionRecipients(workspaceId$);
   const composerRecipients$ = selectDiscussionRecipientsForComposer(workspaceId$, conversationId$);
   const canCreate$ = selectDiscussionCanCreate(workspaceId$);
+  const conversationsSupported$ = selectDiscussionCapability();
   const context$ = selectDiscussionContext();
   const ready$ = selectDiscussionCanSend(workspaceId$, conversationId$);
   const unread$ = selectDiscussionUnread(workspaceId$, conversationId$);
@@ -114,6 +116,20 @@
       (person) => !$recipients$.members.some((member) => member.principalId === person.principalId),
     ),
   ]);
+  let mentionQuery = $state('');
+  const mentionUsers = $derived(
+    conversationId === 'default'
+      ? $recipients$.query === mentionQuery
+        ? $recipients$.members
+        : []
+      : $composerRecipients$,
+  );
+
+  function searchMentionUsers(query: string) {
+    mentionQuery = query;
+    if (conversationId === 'default')
+      store.dispatch(discussionRecipientsRequested(workspaceId, query));
+  }
 
   $effect(() => {
     const id = workspaceId;
@@ -143,6 +159,20 @@
     {conversationId}
     {sourcePanelId}
     messages={$messages$}
+    draftVersion={$discussion$.draftVersion}
+    {mentionUsers}
+    onMentionSearch={conversationId !== 'default' || $conversationsSupported$ !== false
+      ? searchMentionUsers
+      : undefined}
+    mentionUsersLoading={conversationId === 'default' && $recipients$.status === 'loading'}
+    mentionUsersError={conversationId === 'default' && $recipients$.error
+      ? m.workspace_discussion_members_error()
+      : null}
+    mentionUsersHasMore={conversationId === 'default' &&
+      $recipients$.query === mentionQuery &&
+      $recipients$.hasMore}
+    onMentionLoadMore={() =>
+      store.dispatch(discussionRecipientsRequested(workspaceId, mentionQuery, true))}
     agents={$agents$
       .filter((agent) => !agent.retiredAt && agent.status !== AgentStatus.Deleted)
       .map((agent) => ({
@@ -152,6 +182,7 @@
     agentsSupported={$agentMessaging$ === true && conversationId === 'default'}
     agentsUnsupported={$agentMessaging$ === false}
     onAgentPickerOpen={() => {
+      if (conversationId !== 'default' || $agentMessaging$ !== true) return;
       store.dispatch(fetchDelegatedAgentsRequested(workspaceId));
       store.dispatch(fetchBackgroundAgentsRequested(workspaceId));
     }}

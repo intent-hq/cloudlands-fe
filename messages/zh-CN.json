@@ -7677,10 +7677,10 @@
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在“设置 > 代理”中停用。发送下一条消息前请选择一个模型。",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未登录",
   "chat_modelPicker_profileSignedOut_hint": "请在 Intent 之外登录此配置的账户。在此之前，其模型可能无法运行。",
-  "workspace_discussion_addressAgent_label": "向智能体发送消息",
-  "workspace_discussion_addressAgent_description": "只有选中的智能体会收到此消息，并能阅读此讨论。",
-  "workspace_discussion_searchAgents_placeholder": "搜索工作区智能体…",
-  "workspace_discussion_noAgents_label": "没有可用的智能体",
   "workspace_discussion_agentRecipients_label": "接收此消息的智能体",
-  "workspace_discussion_agentsUnsupported_label": "请更新主机上的 Intent，以向智能体发送此消息。"
+  "workspace_discussion_agentsUnsupported_label": "请更新主机上的 Intent，以向智能体发送此消息。",
+  "workspace_discussion_mentions_label": "提及某人",
+  "workspace_discussion_noMentions_label": "没有匹配的智能体或用户",
+  "workspace_discussion_mentionAgents_label": "智能体",
+  "workspace_discussion_mentionUsers_label": "用户"
 }

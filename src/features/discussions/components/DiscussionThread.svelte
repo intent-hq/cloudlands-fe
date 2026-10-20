@@ -7,13 +7,24 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatDaySeparator, formatInteger } from '$lib/i18n/format';
   import Fa from 'svelte-fa';
-  import { faArrowUp, faArrowDown, faXmark, faReply } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowUp,
+    faArrowDown,
+    faXmark,
+    faReply,
+    faAt,
+  } from '@fortawesome/free-solid-svg-icons';
   import CloudSlashIcon from 'phosphor-svelte/lib/CloudSlashIcon';
   import DiscussionMessageView from './DiscussionMessageView.svelte';
   import DiscussionSkeleton from './DiscussionSkeleton.svelte';
   import DiscussionMicrophone from './DiscussionMicrophone.svelte';
   import { Badge } from '$lib/components/ui/badge';
-  import DiscussionAgentPicker from './DiscussionAgentPicker.svelte';
+  import DiscussionMentionPicker from './DiscussionMentionPicker.svelte';
+  import {
+    discussionMentionQuery,
+    discussionMentionOptions,
+    type DiscussionMentionOption,
+  } from './discussion-mention-query';
   import type { DiscussionAgentMention } from '../discussion-agent-mentions';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
@@ -25,6 +36,12 @@
   } from '$shared/types/workspace-discussion';
 
   interface Props {
+    mentionUsers?: readonly DiscussionAuthor[];
+    onMentionSearch?: (query: string) => void;
+    mentionUsersLoading?: boolean;
+    mentionUsersError?: string | null;
+    mentionUsersHasMore?: boolean;
+    onMentionLoadMore?: () => void;
     agents?: readonly { id: string; name: string }[];
     agentMentions?: readonly DiscussionAgentMention[];
     agentsSupported?: boolean;
@@ -57,6 +74,7 @@
     onCopyMessage?: (message: DiscussionMessage) => void;
     messages: readonly DiscussionMessage[];
     draft: string;
+    draftVersion?: number;
     typingLabel?: string | null;
     onComposerFocusChange?: (focused: boolean) => void;
     onTypingInput?: (typing: boolean) => void;
@@ -86,6 +104,12 @@
   }
 
   let {
+    mentionUsers = [],
+    onMentionSearch,
+    mentionUsersLoading = false,
+    mentionUsersError = null,
+    mentionUsersHasMore = false,
+    onMentionLoadMore,
     agents = [],
     agentMentions = [],
     agentsSupported = false,
@@ -118,6 +142,7 @@
     onCopyMessage,
     messages,
     draft,
+    draftVersion = 0,
     typingLabel = null,
     onComposerFocusChange,
     onTypingInput,
@@ -147,10 +172,67 @@
   }: Props = $props();
   let scroller: HTMLDivElement | undefined = $state();
   let composer: HTMLTextAreaElement | null = $state(null);
+  let composerValue = $state('');
+  // A fast send can return the Redux draft to its previous value before selectors
+  // render the edit. Its revision still changes and must reset the local input.
+  $effect(() => {
+    void workspaceId;
+    void conversationId;
+    void draftVersion;
+    composerValue = draft;
+  });
   const tooLong = $derived(new TextEncoder().encode(draft).byteLength > DISCUSSION_MAX_BODY_BYTES);
-  let agentPickerOpen = $state(false);
-  let agentSelection = { start: 0, end: 0 };
-  let typedAt = false;
+  const uid = $props.id();
+  const mentionListId = `${uid}-mentions`;
+  let composerWrapper: HTMLDivElement | undefined = $state();
+  let mentionPickerOpen = $state(false);
+  let mentionSelection = { start: 0, end: 0 };
+  let mentionQuery = $state('');
+  let highlightedMention = $state(0);
+  let pendingMentionCaret = $state<{ value: string; position: number } | null>(null);
+  const mentionsAvailable = $derived(
+    !!onMentionSearch ||
+      (!!onAgentSelect &&
+        agentsSupported &&
+        conversationId === 'default' &&
+        agentMentions.length < DISCUSSION_MAX_RECIPIENTS),
+  );
+  const eligibleAgents = $derived(
+    agentsSupported &&
+      conversationId === 'default' &&
+      onAgentSelect &&
+      agentMentions.length < DISCUSSION_MAX_RECIPIENTS
+      ? agents.filter((agent) => !agentMentions.some((mention) => mention.agentId === agent.id))
+      : [],
+  );
+  const mentionOptions = $derived(
+    discussionMentionOptions(eligibleAgents, mentionUsers, mentionQuery),
+  );
+  const activeMentionIndex = $derived(Math.min(highlightedMention, mentionOptions.length - 1));
+  $effect(() => {
+    if (!(canCompose ?? canSend) || !isActive || !mentionsAvailable) {
+      mentionPickerOpen = false;
+      pendingMentionCaret = null;
+    }
+  });
+  $effect(() => {
+    void workspaceId;
+    void conversationId;
+    mentionPickerOpen = false;
+    pendingMentionCaret = null;
+  });
+  // Redux selector propagation can happen after the handler's first Svelte tick.
+  // Restore the caret only once the accepted draft has reached the textarea.
+  $effect(() => {
+    const pending = pendingMentionCaret;
+    if (!pending || draft !== pending.value) return;
+    void tick().then(() => {
+      if (pendingMentionCaret !== pending || composer?.value !== pending.value) return;
+      pendingMentionCaret = null;
+      composer.focus({ preventScroll: true });
+      composer.setSelectionRange(pending.position, pending.position);
+    });
+  });
   let composing = false;
   let lastReportedSequence = 0;
   const firstUnreadId = $derived(
@@ -305,24 +387,79 @@
   });
 
   function input(event: Event & { currentTarget: HTMLTextAreaElement }) {
+    pendingMentionCaret = null;
     onDraftChange(event.currentTarget.value);
-    const position = event.currentTarget.selectionStart;
-    if (
-      agentsSupported &&
-      !composing &&
-      event instanceof InputEvent &&
-      event.inputType === 'insertText' &&
-      event.data === '@' &&
-      (position === 1 || /\s/.test(event.currentTarget.value[position - 2]))
-    ) {
-      typedAt = true;
-      agentSelection = { start: position - 1, end: position };
-      agentPickerOpen = true;
-    }
+    if (!composing) updateMentionQuery();
     if (isActive && isPanelFocused && canSend && document.activeElement === composer) {
       onComposerFocusChange?.(true);
       onTypingInput?.(!!event.currentTarget.value.trim());
     }
+  }
+
+  function openMentions(start: number, end: number, query: string) {
+    if (!mentionsAvailable || !(canCompose ?? canSend)) return;
+    const opening = !mentionPickerOpen;
+    const queryChanged = mentionQuery !== query;
+    mentionSelection = { start, end };
+    mentionQuery = query;
+    mentionPickerOpen = true;
+    if (opening || queryChanged) {
+      highlightedMention = 0;
+      if (opening) onAgentPickerOpen?.();
+      onMentionSearch?.(query);
+    }
+  }
+
+  function updateMentionQuery() {
+    if (!composer || composing) return;
+    const query = discussionMentionQuery(
+      composer.value,
+      composer.selectionStart,
+      composer.selectionEnd,
+    );
+    if (query) openMentions(query.start, query.end, query.query);
+    else mentionPickerOpen = false;
+  }
+
+  function toggleMentions() {
+    if (mentionPickerOpen) {
+      mentionPickerOpen = false;
+    } else {
+      const start = composer?.selectionStart ?? draft.length;
+      const end = composer?.selectionEnd ?? draft.length;
+      const body = composer?.value ?? draft;
+      const query = discussionMentionQuery(body, start, end);
+      if (query) {
+        openMentions(query.start, query.end, query.query);
+      } else {
+        const prefix = start > 0 && !/\s/.test(body[start - 1]) ? ' ' : '';
+        const caret = start + prefix.length + 1;
+        const value = body.slice(0, start) + prefix + '@' + body.slice(end);
+        pendingMentionCaret = { value, position: caret };
+        onDraftChange(value);
+        openMentions(caret - 1, caret, '');
+      }
+    }
+    composer?.focus({ preventScroll: true });
+  }
+
+  function selectMention(option: DiscussionMentionOption) {
+    if (!(canCompose ?? canSend) || !mentionPickerOpen || composing) return;
+    const { start, end } = mentionSelection;
+    const body = composer?.value ?? draft;
+    const label = option.label.replace(/\s+/g, ' ').trim();
+    const prefix = start > 0 && !/\s/.test(body[start - 1]) ? ' ' : '';
+    const insertion = `${prefix}@${label} `;
+    const value = body.slice(0, start) + insertion + body.slice(end);
+    if (option.kind === 'agent') {
+      if (!eligibleAgents.some((agent) => agent.id === option.agent.id)) return;
+      pendingMentionCaret = { value, position: start + insertion.length };
+      onAgentSelect?.(option.agent, start, end);
+    } else {
+      pendingMentionCaret = { value, position: start + insertion.length };
+      onDraftChange(value);
+    }
+    mentionPickerOpen = false;
   }
 
   function appendToDraft(text: string) {
@@ -354,21 +491,44 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    if (
-      event.key !== 'Enter' ||
-      event.shiftKey ||
-      event.isComposing ||
-      composing ||
-      event.keyCode === 229
-    )
-      return;
+    if (event.isComposing || composing || event.keyCode === 229) return;
+    if (mentionPickerOpen) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        mentionPickerOpen = false;
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const count = mentionOptions.length;
+        if (count)
+          highlightedMention =
+            (activeMentionIndex + (event.key === 'ArrowDown' ? 1 : -1) + count) % count;
+        return;
+      }
+      if (!event.shiftKey && (event.key === 'Enter' || event.key === 'Tab')) {
+        const option = mentionOptions[activeMentionIndex];
+        if (option || event.key === 'Enter') event.preventDefault();
+        if (option) selectMention(option);
+        else mentionPickerOpen = false;
+        return;
+      }
+    }
+    if (event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
     send();
   }
 </script>
 
 <svelte:document onvisibilitychange={reportVisible} />
-<svelte:window onfocus={reportVisible} />
+<svelte:window
+  onfocus={reportVisible}
+  onpointerdown={(event) => {
+    if (event.target instanceof Node && !composerWrapper?.contains(event.target))
+      mentionPickerOpen = false;
+  }}
+/>
 <div class="relative flex h-full min-h-0 min-w-0 flex-col bg-background" data-workspace-discussion>
   {#if header}{@render header()}{/if}
   {#if sharingOff}
@@ -602,13 +762,27 @@
       </div>
     {/if}
     <div
-      class="flex min-h-[76px] flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none"
+      bind:this={composerWrapper}
+      class="relative flex min-h-[76px] flex-col rounded-(--radius-large) border border-border bg-surface-2 px-3 py-2.5 shadow-none"
       class:opacity-45={!(canCompose ?? canSend)}
     >
+      {#if mentionPickerOpen}
+        <DiscussionMentionPicker
+          id={mentionListId}
+          options={mentionOptions}
+          activeIndex={activeMentionIndex}
+          loading={mentionUsersLoading}
+          error={mentionUsersError}
+          hasMore={mentionUsersHasMore}
+          onLoadMore={onMentionLoadMore}
+          onHighlight={(index) => (highlightedMention = index)}
+          onSelect={selectMention}
+        />
+      {/if}
       <div class="flex flex-1 items-end gap-3">
         <Textarea
           bind:ref={composer}
-          value={draft}
+          bind:value={composerValue}
           aria-label={m.workspace_discussion_composer_label()}
           placeholder={composerPlaceholder ?? m.workspace_discussion_composer_placeholder()}
           class="min-h-6 flex-1 self-start resize-none rounded-none border-0 bg-transparent p-0 py-0.5 type-caption leading-5 shadow-none hover:bg-transparent"
@@ -619,40 +793,53 @@
           maxHeight={160}
           readonly={!(canCompose ?? canSend)}
           aria-invalid={tooLong || undefined}
+          aria-autocomplete={mentionsAvailable ? 'list' : undefined}
+          aria-haspopup={mentionsAvailable ? 'listbox' : undefined}
+          aria-controls={mentionPickerOpen ? mentionListId : undefined}
+          aria-activedescendant={mentionPickerOpen && activeMentionIndex >= 0
+            ? `${mentionListId}-option-${activeMentionIndex}`
+            : undefined}
           oninput={input}
           onfocus={() => onComposerFocusChange?.(isActive && isPanelFocused && canSend)}
-          onblur={() => onComposerFocusChange?.(false)}
+          onblur={() => {
+            onComposerFocusChange?.(false);
+            mentionPickerOpen = false;
+            pendingMentionCaret = null;
+          }}
+          onclick={() => {
+            if (mentionPickerOpen) updateMentionQuery();
+          }}
+          onselect={() => {
+            if (mentionPickerOpen) updateMentionQuery();
+          }}
+          onkeyup={(event) => {
+            if (mentionPickerOpen && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
+              updateMentionQuery();
+          }}
           onkeydown={onKeydown}
           oncompositionstart={() => {
             composing = true;
+            mentionPickerOpen = false;
           }}
           oncompositionend={() => {
             composing = false;
+            updateMentionQuery();
           }}
         />
         <div class="flex shrink-0 items-center gap-3">
-          {#if onAgentSelect}
-            <DiscussionAgentPicker
-              {agents}
-              selectedIds={agentMentions.map((mention) => mention.agentId)}
-              disabled={!agentsSupported ||
-                !(canCompose ?? canSend) ||
-                agentMentions.length >= DISCUSSION_MAX_RECIPIENTS}
-              bind:open={agentPickerOpen}
-              onOpen={() => {
-                onAgentPickerOpen?.();
-                if (!typedAt)
-                  agentSelection = {
-                    start: composer?.selectionStart ?? draft.length,
-                    end: composer?.selectionEnd ?? draft.length,
-                  };
-                typedAt = false;
-              }}
-              onSelect={(agent) => {
-                onAgentSelect?.(agent, agentSelection.start, agentSelection.end);
-                void tick().then(() => composer?.focus({ preventScroll: true }));
-              }}
-            />
+          {#if mentionsAvailable}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={!(canCompose ?? canSend)}
+              aria-label={m.workspace_discussion_mentions_label()}
+              tooltip={m.workspace_discussion_mentions_label()}
+              aria-haspopup="listbox"
+              aria-expanded={mentionPickerOpen}
+              aria-controls={mentionPickerOpen ? mentionListId : undefined}
+              onmousedown={(event) => event.preventDefault()}
+              onclick={toggleMentions}><Fa icon={faAt} size="sm" /></Button
+            >
           {/if}
           {#if composerActions}{@render composerActions()}{:else if workspaceId}
             <DiscussionReferencePicker

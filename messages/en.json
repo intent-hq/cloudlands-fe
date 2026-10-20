@@ -7677,10 +7677,10 @@
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} is disabled in Settings > Agents. Pick a model before sending another message.",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · Not signed in",
   "chat_modelPicker_profileSignedOut_hint": "Sign this profile's account in outside Intent. Its models may not run until then.",
-  "workspace_discussion_addressAgent_label": "Address an agent",
-  "workspace_discussion_addressAgent_description": "Only selected agents receive this message and can read this discussion.",
-  "workspace_discussion_searchAgents_placeholder": "Search workspace agents…",
-  "workspace_discussion_noAgents_label": "No available agents",
   "workspace_discussion_agentRecipients_label": "Agents receiving this message",
-  "workspace_discussion_agentsUnsupported_label": "Update Intent on the host to send this message to agents."
+  "workspace_discussion_agentsUnsupported_label": "Update Intent on the host to send this message to agents.",
+  "workspace_discussion_mentions_label": "Mention someone",
+  "workspace_discussion_noMentions_label": "No matching agents or people",
+  "workspace_discussion_mentionAgents_label": "Agents",
+  "workspace_discussion_mentionUsers_label": "People"
 }

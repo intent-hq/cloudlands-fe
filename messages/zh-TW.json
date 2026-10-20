@@ -7677,10 +7677,10 @@
   "chat_modelPicker_replacementProviderDisabled_description": "{provider} 已在「設定 > 代理程式」中停用。傳送下一則訊息前請選擇模型。",
   "chat_modelPicker_profileSignedOut_ariaLabel": "{provider} · 未登入",
   "chat_modelPicker_profileSignedOut_hint": "請在 Intent 之外登入此設定檔的帳戶。在此之前，其模型可能無法執行。",
-  "workspace_discussion_addressAgent_label": "向代理程式傳送訊息",
-  "workspace_discussion_addressAgent_description": "只有選取的代理程式會收到此訊息，並能閱讀此討論。",
-  "workspace_discussion_searchAgents_placeholder": "搜尋工作區代理程式…",
-  "workspace_discussion_noAgents_label": "沒有可用的代理程式",
   "workspace_discussion_agentRecipients_label": "接收此訊息的代理程式",
-  "workspace_discussion_agentsUnsupported_label": "請更新主機上的 Intent，以向代理程式傳送此訊息。"
+  "workspace_discussion_agentsUnsupported_label": "請更新主機上的 Intent，以向代理程式傳送此訊息。",
+  "workspace_discussion_mentions_label": "提及某人",
+  "workspace_discussion_noMentions_label": "沒有符合的代理程式或使用者",
+  "workspace_discussion_mentionAgents_label": "代理程式",
+  "workspace_discussion_mentionUsers_label": "使用者"
 }
