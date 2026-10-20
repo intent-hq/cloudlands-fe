@@ -352,6 +352,7 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
 
           body_file=$(mktemp)
+          trap 'rm -f "$body_file"' EXIT
           {
             echo "Automated intentd sidecar pin bump: \`intentd.version\` $CURRENT -> $LATEST,"
             echo "following the alpha channel manifest on [intent-hq/intentd-releases](https://github.com/intent-hq/intentd-releases)."
@@ -382,11 +383,18 @@ jobs:
             gh pr edit "$pr" --title "$title" --body-file "$body_file"
             echo "Updated existing PR #$pr."
           else
-            gh pr create --head "$BRANCH" --title "$title" --body-file "$body_file"
-            pr=$(find_pr)
+            # Take the number from the URL gh prints rather than re-listing:
+            # `gh pr list` can lag behind a just-created PR, and an empty
+            # number would silently skip the CI wait and the merge.
+            created=$(gh pr create --head "$BRANCH" --title "$title" --body-file "$body_file")
+            echo "$created"
+            pr=$(sed -En 's#^https://[^[:space:]]+/pull/([0-9]+)/?$#\1#p' <<<"$created" | tail -n 1)
+            if ! [[ "$pr" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Could not read the new PR number from gh pr create output."
+              exit 1
+            fi
             echo "Created PR #$pr."
           fi
-          rm -f "$body_file"
           echo "number=$pr" >> "$GITHUB_OUTPUT"
 
       # Bounded wait for CI Gate on exactly the pushed head; the pin fast path
