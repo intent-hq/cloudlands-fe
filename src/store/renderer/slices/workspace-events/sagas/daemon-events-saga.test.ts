@@ -380,6 +380,7 @@ describe('daemonEventsSaga', () => {
       'presence:changed',
       'discussion:message',
       'discussion:reaction',
+      'discussion:activity',
       'host:members-changed',
       'host:invites-changed',
       'host:execution-context-changed',
