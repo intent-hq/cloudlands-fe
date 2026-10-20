@@ -2829,8 +2829,6 @@
   "chat_proposalCard_task_label": "Aufgabe",
   "chat_proposalCard_project_label": "Projekt",
   "chat_proposalCard_initialAgent_label": "Anfänglicher Agent",
-  "chat_proposalCard_agentSetup_label": "{setup} (zuletzt in diesem Repository verwendet)",
-  "chat_proposalCard_agentSetupModelEffort_label": "{model} · {effort}",
   "chat_proposalCard_proposalFile_fallback": "Vorschlag",
   "chat_proposalCard_creatingWorkspace_label": "Arbeitsbereich wird erstellt…",
   "chat_proposalCard_workspaceCreationFailed_label": "Arbeitsbereich-Erstellung fehlgeschlagen",
