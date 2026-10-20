@@ -61,11 +61,8 @@
     selectOrchestratorSpecialist,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
-  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
-  import { reasoningEffortLabel } from '$features/agent/utils/reasoning-effort-label';
   import {
+    hasAgentSetupFields,
     proposalAgentSetup,
     proposalRepoKeys,
     resolveProposalRepoAgentDefault,
@@ -166,8 +163,6 @@
   // subscribed) so later modal edits never rewrite a card's selection; the
   // only re-reads are the late-hydration ones below.
   const workspaceInitializerHydrated = selectWorkspaceInitializerHydrated();
-  // Re-labels the adopted model once its provider's catalog loads.
-  const providerModelsCacheMap = selectProviderModelsCacheMap();
   const specialists = selectSpecialists();
   // True while the card's specialist is still that fallback: never edited by
   // the user, restored from a draft, or named by the proposal.
@@ -251,26 +246,6 @@
       ? proposalAgentSetup(repoAgentDefault.settings)
       : null,
   );
-  const adoptedAgentSetupLabel = $derived.by(() => {
-    if (!adoptedAgentSetup) return '';
-    void $providerModelsCacheMap;
-    const { provider } = adoptedAgentSetup;
-    const model =
-      adoptedAgentSetup.model && provider
-        ? (selectModelDisplayName.select(appStore.state, provider, adoptedAgentSetup.model) ??
-          adoptedAgentSetup.model)
-        : provider
-          ? (selectProviderDisplayName.select(appStore.state, provider) ?? provider)
-          : '';
-    const effort = adoptedAgentSetup.reasoningEffort
-      ? reasoningEffortLabel(adoptedAgentSetup.reasoningEffort)
-      : '';
-    const setup =
-      model && effort
-        ? m.chat_proposalCard_agentSetupModelEffort_label({ model, effort })
-        : model || effort;
-    return setup ? m.chat_proposalCard_agentSetup_label({ setup }) : '';
-  });
   const statusMessage = $derived(getStatusMessage());
   const prBranchLookup = $derived(
     prBranchLookupKey ? $prBranchLookupEntries[prBranchLookupKey] : undefined,
@@ -859,8 +834,7 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
-    // Sent only together with the line that shows it.
-    if (adoptedAgentSetup && adoptedAgentSetupLabel)
+    if (adoptedAgentSetup && hasAgentSetupFields(adoptedAgentSetup))
       editedFields.agentSetup = { ...adoptedAgentSetup };
     return editedFields;
   }
@@ -1237,14 +1211,6 @@
                     specialistIsModalDefault = false;
                   }}
                 />
-                {#if adoptedAgentSetupLabel}
-                  <p
-                    class="type-caption truncate text-muted-foreground"
-                    data-testid="proposal-agent-setup"
-                  >
-                    {adoptedAgentSetupLabel}
-                  </p>
-                {/if}
               </div>
             </div>
           </div>

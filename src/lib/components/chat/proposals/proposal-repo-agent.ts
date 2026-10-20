@@ -92,3 +92,11 @@ export function proposalAgentSetup(
   }
   return setup;
 }
+
+/**
+ * Whether a remembered setup carries anything worth sending: a provider (a model
+ * is only usable with one) or a non-empty reasoning effort.
+ */
+export function hasAgentSetupFields(setup: ProposalAgentSetup): boolean {
+  return Boolean(setup.provider || setup.reasoningEffort);
+}

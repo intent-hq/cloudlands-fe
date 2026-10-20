@@ -1861,7 +1861,9 @@ describe('ProposalCard', () => {
       const { appliedFields } = renderSibling();
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
-      expect(screen.getByTestId('proposal-agent-setup').textContent).toContain('Opus 4.5');
+      // The remembered setup applies without a line under the agent picker.
+      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
+      expect(screen.queryByText(/last used in this repository/)).toBeNull();
       expect(await appliedFields()).toMatchObject({
         specialist: 'coordinator',
         agentSetup: {
@@ -1872,7 +1874,7 @@ describe('ProposalCard', () => {
       });
     });
 
-    it('finds the setup remembered for the GitHub repository of the card', () => {
+    it('finds the setup remembered for the GitHub repository of the card', async () => {
       newWorkspaceDefaultState.agentByRepo = {
         'github:github.com/example-org/example-repo': {
           isTeamMode: false,
@@ -1880,13 +1882,13 @@ describe('ProposalCard', () => {
           selectedReasoningEffort: 'low',
         },
       };
-      renderSibling({
+      const { appliedFields } = renderSibling({
         repoPath: '/elsewhere/clone',
         githubUrl: 'https://github.com/example-org/example-repo',
       });
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
-      expect(screen.getByTestId('proposal-agent-setup')).toBeTruthy();
+      expect((await appliedFields()).agentSetup).toEqual({ reasoningEffort: 'low' });
     });
 
     it('drops the remembered model and effort once the user picks another agent', async () => {
@@ -1894,7 +1896,6 @@ describe('ProposalCard', () => {
       const { appliedFields } = renderSibling();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
       const fields = await appliedFields();
       expect(fields.specialist).toBe('ui-designer');
       expect(fields).not.toHaveProperty('agentSetup');
@@ -1904,11 +1905,10 @@ describe('ProposalCard', () => {
       newWorkspaceDefaultState.agentByRepo = { 'local:/repo/current': TEAM_OPUS_HIGH };
       const { appliedFields } = renderSibling({ specialist: 'coordinator' });
 
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
       expect(await appliedFields()).not.toHaveProperty('agentSetup');
     });
 
-    it('names the remembered provider when no model was picked, and sends it', async () => {
+    it('sends the remembered provider when no model was picked', async () => {
       newWorkspaceDefaultState.agentByRepo = {
         'local:/repo/current': {
           isTeamMode: false,
@@ -1919,16 +1919,15 @@ describe('ProposalCard', () => {
       };
       const { appliedFields } = renderSibling();
 
-      expect(screen.getByTestId('proposal-agent-setup').textContent).toContain('Claude Code');
       expect((await appliedFields()).agentSetup).toEqual({ provider: 'claude-code' });
     });
 
-    it('follows a repository change for the setup line after an explicit agent pick', async () => {
+    it('follows a repository change for the remembered setup after an explicit agent pick', async () => {
       newWorkspaceDefaultState.agentByRepo = {
         'local:/repo/current': TEAM_OPUS_HIGH,
       };
       specialistsState.specialists = [{ id: 'coordinator' }, { id: 'ui-designer' }];
-      render(ProposalCard, {
+      const { container } = render(ProposalCard, {
         props: {
           proposal: makeWorkspaceProposal({
             workspaceCreate: {
@@ -1940,7 +1939,10 @@ describe('ProposalCard', () => {
           }),
         },
       });
-      expect(screen.getByTestId('proposal-agent-setup')).toBeTruthy();
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
       // Pick another agent, then a repository that remembers that agent.
       await fireEvent.click(screen.getByRole('button', { name: 'Mock specialist change' }));
       newWorkspaceDefaultState.agentByRepo = {
@@ -1951,21 +1953,26 @@ describe('ProposalCard', () => {
           selectedSpecialist: 'ui-designer',
         },
       };
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
       await fireEvent.click(screen.getAllByRole('button', { name: 'Mock repo change' })[0]);
-      await waitFor(() =>
-        expect(screen.getByTestId('proposal-agent-setup').textContent).toContain('Opus 4.5'),
-      );
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const fields = (applyListener.mock.calls[0]?.[0] as CustomEvent).detail.editedFields;
+      expect(fields.specialist).toBe('ui-designer');
+      expect(fields.agentSetup).toEqual({
+        provider: 'claude-code',
+        model: 'claude-opus-4-5',
+        reasoningEffort: 'high',
+      });
+      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
     });
 
-    it('keeps the global default when the remembered agent no longer exists', () => {
+    it('keeps the global default when the remembered agent no longer exists', async () => {
       newWorkspaceDefaultState.agentByRepo = {
         'local:/repo/current': { isTeamMode: false, selectedSpecialist: 'deleted-custom' },
       };
-      renderSibling();
+      const { appliedFields } = renderSibling();
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
+      expect(await appliedFields()).not.toHaveProperty('agentSetup');
     });
   });
 });
