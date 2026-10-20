@@ -348,6 +348,70 @@ describe('workspaceInitializerReducer', () => {
     expect(state.lastSubmittedAgent).toBeNull();
   });
 
+  it('records single-agent specialists as most recently used, skipping General and team mode', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'spec-writer' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['implementor', 'spec-writer']);
+
+    for (const settings of [
+      { selectedSpecialist: null },
+      { isTeamMode: true, selectedSpecialist: 'coordinator' },
+      null,
+    ]) {
+      state = workspaceInitializerReducer(
+        state,
+        setWorkspaceInitializerLastSubmittedAgent(settings),
+      );
+    }
+    expect(state.recentSpecialistIds).toEqual(['implementor', 'spec-writer']);
+  });
+
+  it('keeps specialists used before hydration ahead of the persisted ones', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'reviewer' }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['implementor', 'reviewer'] }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['reviewer', 'implementor']);
+  });
+
+  it('takes the persisted recent specialists as-is when re-hydrating an already hydrated slice', () => {
+    let state = workspaceInitializerReducer(
+      initialState,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['implementor', 'reviewer'] }),
+    );
+    state = workspaceInitializerReducer(
+      state,
+      hydrateWorkspaceInitializer({ recentSpecialistIds: ['reviewer', 'implementor'] }),
+    );
+    expect(state.recentSpecialistIds).toEqual(['reviewer', 'implementor']);
+  });
+
+  it('keeps the same recent specialists reference when General is submitted', () => {
+    const state = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    const next = workspaceInitializerReducer(
+      state,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: null }),
+    );
+    expect(next.recentSpecialistIds).toBe(state.recentSpecialistIds);
+  });
+
   it('keeps a per-repo setup written before hydration over the persisted one', () => {
     const persisted = { selectedModel: 'sonnet' };
     const fresh = { selectedModel: 'opus' };

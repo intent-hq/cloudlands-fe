@@ -149,6 +149,8 @@ export interface WorkspaceInitializerHydrationState {
   lastSubmittedAgent?: WorkspaceInitializerAgentSettings | null;
   /** Last created agent setup per repository (`agentSettingsRepoKey`), oldest first. */
   agentByRepo?: Record<string, WorkspaceInitializerAgentSettings>;
+  /** Specialist ids used to create workspaces, most recent first. */
+  recentSpecialistIds?: string[];
 }
 
 export interface WorkspaceInitializerDraftAttachment {
@@ -295,6 +297,8 @@ export interface WorkspaceInitializerState {
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
   /** Last created agent setup per repository (`agentSettingsRepoKey`), oldest first. */
   agentByRepo: Record<string, WorkspaceInitializerAgentSettings>;
+  /** Specialist ids used to create workspaces, most recent first (single-agent mode only). */
+  recentSpecialistIds: string[];
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */
   pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
   recentRepoRefreshes: Collection<WorkspaceInitializerRecentRepoRefresh, 'id'>;
