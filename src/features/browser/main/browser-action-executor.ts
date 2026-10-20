@@ -477,7 +477,7 @@ async function ensureCaptureTabMounted(
         success: false,
         errorCode: 'workspace-not-visible' as const,
         // i18n-ignore (agent-facing protocol error, not user-facing)
-        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and workspace ${workspaceId} is not open in any window, so it cannot be mounted on demand. Open the workspace in a window and retry.`,
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and no app window is available to host workspace ${workspaceId} (it is not open in any window and none could host it in the background), so it cannot be mounted on demand. Open an Intent window and retry.`,
       },
     };
   }
@@ -1038,6 +1038,10 @@ async function executeAction(
 
       case 'snapshot': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        // Snapshots capture a screenshot + accessibility tree, so they mount
+        // an unmounted tab on demand like the capture ops above.
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        if (mount.failure) return mount.failure;
         const options: SnapshotOptions = {
           workspaceId: captureWorkspaceId,
           tabId,
@@ -1046,11 +1050,18 @@ async function executeAction(
           waitFor: action.waitFor,
         };
         const result = await browserCapture.snapshot(options);
-        return { action: 'snapshot', success: true, result };
+        return {
+          action: 'snapshot',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
+        if (mount.failure) return mount.failure;
         const options: SessionOptions = {
           ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
@@ -1058,15 +1069,29 @@ async function executeAction(
           name: action.name,
         };
         const result = await browserCapture.startSession(options);
-        return { action: 'startSession', success: true, result };
+        return {
+          action: 'startSession',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startCapture': {
-        await browserCapture.startCapture(
-          action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          captureWorkspaceId,
+          deadline,
         );
-        return { action: 'startCapture', success: true };
+        if (mount.failure) return mount.failure;
+        await browserCapture.startCapture(action.sessionId, captureWorkspaceId);
+        return {
+          action: 'startCapture',
+          success: true,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'endCapture': {
@@ -1078,26 +1103,52 @@ async function executeAction(
       }
 
       case 'captureStep': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
         const options: CaptureStepOptions | undefined =
           action.reload || action.waitFor
             ? { reload: action.reload, waitFor: action.waitFor }
             : undefined;
         const result = await browserCapture.captureStep(
           action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+          captureWorkspaceId,
           action.stepName,
           options,
         );
-        return { action: 'captureStep', success: true, result };
+        return {
+          action: 'captureStep',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startTrace': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
         const result = await browserCapture.startTrace(
           action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+          captureWorkspaceId,
           action.traceName,
         );
-        return { action: 'startTrace', success: true, result };
+        return {
+          action: 'startTrace',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'stopTrace': {

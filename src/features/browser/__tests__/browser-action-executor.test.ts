@@ -63,6 +63,7 @@ vi.mock('../main/browser-capture-service', () => ({
     startTrace: vi.fn(),
     stopTrace: vi.fn(),
     getSummary: vi.fn(),
+    getSessionTabId: vi.fn().mockReturnValue(undefined),
   },
 }));
 
@@ -1538,6 +1539,76 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
       expect(result.results[0]?.error).toContain('cannot be mounted on demand');
       expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    // snapshot / capture sessions used to throw "Tab X is not mounted. Use
+    // focusTab first" — a dead end for a hidden tab or a workspace not in
+    // view. They now mount the target on demand like screenshot does.
+    it('mounts the tab on demand for snapshot before capturing', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(browserCapture.snapshot).mockResolvedValue({ captureId: 'c-1' } as any);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot', tabId: 'tab-hidden', name: 'probe' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
+      expect(
+        vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mock.invocationCallOrder[0],
+      ).toBeLessThan(vi.mocked(browserCapture.snapshot).mock.invocationCallOrder[0]);
+      expect(result.results[0]).toMatchObject({
+        action: 'snapshot',
+        success: true,
+        result: { captureId: 'c-1' },
+        warning: expect.stringContaining('not currently visible'),
+      });
+    });
+
+    it('fails snapshot with the structured mount error instead of calling the capture service', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({ tabs: [], stale: false });
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot', tabId: 'tab-gone' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]).toMatchObject({ action: 'snapshot', success: false });
+      expect(result.results[0]?.error).toContain('Tab tab-gone not found in workspace workspace-a');
+      expect(browserCapture.snapshot).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['startSession', { action: 'startSession', tabId: 'tab-hidden' }],
+      ['startCapture', { action: 'startCapture', sessionId: 'session-1' }],
+      ['captureStep', { action: 'captureStep', sessionId: 'session-1', stepName: 'step' }],
+      ['startTrace', { action: 'startTrace', sessionId: 'session-1', traceName: 'trace' }],
+    ])('mounts the session tab on demand for %s', async (name, action) => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue('tab-hidden');
+
+      const result = await executeActions(
+        { actions: [action] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]).toMatchObject({ action: name, success: true });
+      expect(embeddedBrowserCdp.waitForTabRegistration).toHaveBeenCalledWith('tab-hidden', 10_000);
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue(undefined);
     });
 
     it('returns a structured error when the webview never registers, instead of hanging', async () => {
