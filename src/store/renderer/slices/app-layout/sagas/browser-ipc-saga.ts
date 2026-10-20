@@ -214,14 +214,23 @@ function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator
       ? data.backendId
       : yield* selectActiveBackendId();
   backgroundHostedWorkspaces.set(workspaceId, backendId);
-  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
-  if (readiness.status === 'hydration-failed') {
-    // Stay hosted: requests for the workspace are answered with the
-    // truthful hydration error instead of a silent timeout.
-    logger.warn('Layout hydration failed while background-hosting a workspace', {
-      workspaceId,
-      error: readiness.message,
-    });
+  if (yield* call(isBackgroundHosted, workspaceId)) {
+    // Restore like a reopen even when the layout is still held: closing the
+    // workspace's tab keeps its layout in memory but resets the daemon
+    // tab-registry sync, which only reloads when the layout settles again.
+    // Answering from the held layout would leave new agent tabs unreported,
+    // so the daemon could never confirm them. A layout already restored
+    // since its last teardown is left as is.
+    try {
+      yield* call(hydrateWorkspaceLayout, workspaceId);
+    } catch (error) {
+      // Stay hosted: requests for the workspace are answered with the
+      // truthful hydration error instead of a silent timeout.
+      logger.warn('Layout hydration failed while background-hosting a workspace', {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   yield* call(reportBackgroundHostedWorkspaces);
 }

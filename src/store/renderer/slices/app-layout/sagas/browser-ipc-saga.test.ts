@@ -2308,6 +2308,39 @@ describe('browserIpcSaga', () => {
       await task.toPromise();
     });
 
+    // Closing a workspace's tab keeps its layout in memory but resets the
+    // daemon tab-registry sync, which only reloads when the layout restores
+    // again. Background hosting a workspace whose layout is still held must
+    // therefore restore it like a reopen; answering from the held layout left
+    // new agent tabs unreported, so the daemon never confirmed them (live
+    // repro on the manual build: openTab "could not be confirmed").
+    it('restores a still-held layout when background-hosting a closed workspace', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+      state = {
+        ...state,
+        panelLayout: {
+          byWorkspaceId: {
+            'ws-closed-held': { ...emptyWorkspaceState, restoreStatus: 'restored' },
+          },
+        },
+      };
+      seedStorage('ws-closed-held', [
+        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
+      ]);
+
+      await emit({ workspaceId: 'ws-closed-held' }, 'browser:host-workspace');
+      await settle();
+
+      const statuses = actions
+        .filter((action: any) => action.type === 'panelLayout/setRestoreStatus')
+        .map((action: any) => action.payload);
+      expect(statuses).toContainEqual(['ws-closed-held', 'pending']);
+      expect(statuses.at(-1)?.[1]).toBe('restored');
+      task.cancel();
+      await task.toPromise();
+    });
+
     it('opens an agent tab in a background-hosted workspace', async () => {
       const { actions, task } = startWithReducer();
       hostedState('ws-viewed');
