@@ -76,13 +76,6 @@ export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelect
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
 );
 
-export const selectWorkspaceInitializerDraftRestore = store.createSelector(
-  (state, id: string, requestId: string) => {
-    const restore = getItem(state.workspaceInitializer.draftRestores, id);
-    return restore?.requestId === requestId ? restore : undefined;
-  },
-);
-
 export const selectWorkspaceInitializerDraftAuthority = store.createSelector(
   (state, id: string) => ({
     restore: getItem(state.workspaceInitializer.draftRestores, id),

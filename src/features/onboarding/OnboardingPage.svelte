@@ -119,7 +119,7 @@
   } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
-    selectWorkspaceInitializerDraftRestore,
+    selectWorkspaceInitializerDraftAuthority,
     selectWorkspaceInitializationOutcomeForConsumer,
     selectWorkspaceInitializationResume,
     selectWorkspaceInitializerOnboardingFormState,
@@ -442,25 +442,45 @@
   // re-saved by a late flush or effect re-run.
   let onboardingDraftCleared = false;
   const onboardingDraftOwnerId = 'onboarding-workspace-initializer';
-  const onboardingDraftRestoreRequestId = crypto.randomUUID();
-  const onboardingDraftRestore$ = selectWorkspaceInitializerDraftRestore(
-    onboardingDraftOwnerId,
-    onboardingDraftRestoreRequestId,
-  );
+  const onboardingDraftAuthority$ =
+    selectWorkspaceInitializerDraftAuthority(onboardingDraftOwnerId);
+  const onboardingDraftAdmission$ = selectPrincipalActionContext();
+  let onboardingDraftRestoreRequestId = $state(crypto.randomUUID());
+  let onboardingDraftOwnerAdmission: string | null | undefined = undefined;
   let onboardingDraftRestoreApplied = false;
-  onMount(() => {
+  $effect(() => {
+    const admission = $onboardingDraftAdmission$;
+    if (onboardingDraftOwnerAdmission === admission) return;
+    const priorRequestId = onboardingDraftRestoreRequestId;
+    const hadOwner =
+      onboardingDraftOwnerAdmission !== undefined && onboardingDraftOwnerAdmission !== null;
+    onboardingDraftOwnerAdmission = admission;
+    onboardingDraftRestored = false;
+    onboardingDraftRestoreApplied = false;
+    if (hadOwner)
+      appStore.dispatch(
+        workspaceInitializerDraftOwnerReleased(onboardingDraftOwnerId, priorRequestId),
+      );
+    if (admission === null) return;
+    onboardingDraftRestoreRequestId = crypto.randomUUID();
     appStore.dispatch(
       workspaceInitializerDraftRestoreRequested(
         onboardingDraftOwnerId,
         onboardingDraftRestoreRequestId,
         LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-        selectPrincipalActionContext.select(appStore.state) ?? undefined,
+        admission,
       ),
     );
   });
   $effect(() => {
-    const restore = $onboardingDraftRestore$;
-    if (!restore || restore.status === 'pending' || onboardingDraftRestoreApplied) return;
+    const restore = $onboardingDraftAuthority$.restore;
+    if (
+      !restore ||
+      restore.requestId !== onboardingDraftRestoreRequestId ||
+      restore.status === 'pending' ||
+      onboardingDraftRestoreApplied
+    )
+      return;
     onboardingDraftRestoreApplied = true;
     if (restore.status === 'restored') {
       const restoredItems = deserializeDraftAttachments(restore.attachments);
