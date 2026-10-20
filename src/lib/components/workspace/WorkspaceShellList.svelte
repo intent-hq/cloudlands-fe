@@ -3,6 +3,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
+  import ScriptDetectionControls from '$features/scripts/components/ScriptDetectionControls.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
@@ -203,12 +204,22 @@
     {/if}
   </section>
   <section>
-    <SidebarGroupHeader
-      title={m.workspace_devScripts_title()}
-      expanded={scriptsExpanded}
-      onclick={() => (scriptsExpanded = !scriptsExpanded)}
-    />
+    <div class="flex items-center gap-1 pr-2">
+      <div class="min-w-0 flex-1">
+        <SidebarGroupHeader
+          title={m.workspace_devScripts_title()}
+          expanded={scriptsExpanded}
+          onclick={() => (scriptsExpanded = !scriptsExpanded)}
+        />
+      </div>
+      <ScriptDetectionControls {workspaceId} />
+    </div>
     {#if scriptsExpanded}
+      {#if $scriptPage$.error && orderedScripts.length > 0}
+        <p role="alert" class="px-2 py-1.5 type-caption text-muted-foreground break-words">
+          {$scriptPage$.error}
+        </p>
+      {/if}
       <div class="flex flex-col gap-0">
         {#each orderedScripts as script (script.id)}
           {@const live = isLiveScriptStatus(script.runtime.status)}
@@ -385,7 +396,7 @@
         {:else}
           <!-- Only a successful, empty read may claim there are no scripts (intent-hq/intent#7206). -->
           {#if $scriptPage$.error}
-            <div class="flex flex-col items-start gap-1 px-2 py-1.5 text-sm" role="alert">
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="alert">
               <p class="text-danger">{m.terminal_sidebar_scriptsLoadFailed_error()}</p>
               <p class="break-words text-xs text-muted-foreground">{$scriptPage$.error}</p>
               <Button
@@ -396,7 +407,7 @@
               >
             </div>
           {:else if $scriptPage$.loading || !$scriptsInitialized$}
-            <div class="flex flex-col items-start gap-1 px-2 py-1.5 text-sm" role="status">
+            <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="status">
               <p class="text-muted-foreground">{m.terminal_sidebar_loadingScripts_label()}</p>
               {#if !$scriptPage$.loading}
                 <!-- Nothing in flight: a retired or never-started read must stay recoverable here. -->
@@ -409,8 +420,8 @@
               {/if}
             </div>
           {:else}
-            <p class="px-2 py-1.5 text-sm text-muted-foreground">
-              {m.terminal_sidebar_noScriptsAddManually_label()}
+            <p class="px-2 py-1.5 type-caption text-muted-foreground">
+              {m.terminal_quakeOverlay_noScriptsYet_label()}
             </p>
           {/if}
         {/each}

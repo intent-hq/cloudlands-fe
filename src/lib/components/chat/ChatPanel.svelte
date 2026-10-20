@@ -430,6 +430,7 @@
     createRangeForSpan,
     findChatSearchMatches,
     type ChatSearchMatch,
+    type ChatSearchOptions,
   } from './chat-search';
   import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
@@ -1476,13 +1477,18 @@
   // turnKey ties each match back to its enclosing conversation turn so that the
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
+  // Everything search needs to prepare blocks exactly like the rendered rows.
+  const chatSearchOptions: ChatSearchOptions = $derived({
+    collapseToolRuns: $collapseToolRuns$,
+    workspaceId: workspace?.id ? String(workspace.id) : undefined,
+  });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
       $agentMessages$,
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
-      { collapseToolRuns: $collapseToolRuns$ },
+      chatSearchOptions,
     );
   });
 
@@ -5049,7 +5055,7 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
-            { collapseToolRuns: $collapseToolRuns$ },
+            chatSearchOptions,
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);

@@ -19,7 +19,6 @@ import {
   detectScriptDefinitionsRequested,
   listScriptDefinitionsRequested,
   removeScriptDefinitionRequested,
-  restoreScriptDefinitionsRequested,
   saveScriptDefinitionsToRepoRequested,
   updateScriptDefinitionRequested,
 } from '$store/renderer/slices/scripts/scripts-slice';
@@ -149,14 +148,6 @@ export const scriptsClient = {
     return result.success && !isCurrent()
       ? { success: false, error: m.scripts_pendingChange_error() }
       : result;
-  },
-
-  /** Restore detection's snapshot as one reserved remove-and-recreate operation. */
-  async restoreSnapshot(
-    workspaceId: string,
-    snapshot: WorkspaceScript[],
-  ): Promise<CommandResponse<void>> {
-    return dispatchCommand(restoreScriptDefinitionsRequested(workspaceId, snapshot));
   },
 
   /** Start a script by ID (`script.start`, §5.8). */

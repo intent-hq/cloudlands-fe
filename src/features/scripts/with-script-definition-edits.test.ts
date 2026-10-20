@@ -263,32 +263,6 @@ describe('public definition writes and deletion', () => {
     expect(appClient.scripts.create).not.toHaveBeenCalled();
   });
 
-  it('rejects Undo without any partial removal or recreation during an edit', async () => {
-    const pending = deferred<{ success: boolean }>();
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(pending.promise);
-    const saved = save();
-    await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
-    expect((await scriptsClient.restoreSnapshot(WS, [script])).success).toBe(false);
-    expect(removeRequest).not.toHaveBeenCalled();
-    expect(appClient.scripts.create).toHaveBeenCalledOnce();
-    pending.resolve({ success: true });
-    await saved;
-  });
-
-  it('keeps Undo reserved through its last recreation and releases failures', async () => {
-    const recreation = deferred<{ success: boolean; error: string }>();
-    vi.mocked(appClient.scripts.create).mockReturnValueOnce(recreation.promise);
-    const restored = scriptsClient.restoreSnapshot(WS, [script]);
-    await vi.waitFor(() => expect(appClient.scripts.create).toHaveBeenCalledOnce());
-    store.dispatch(setScriptsData(WS, [script]));
-    expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(false);
-    expect((await scriptsClient.remove(WS, 'check')).success).toBe(false);
-    expect(removeRequest).toHaveBeenCalledOnce();
-    recreation.resolve({ success: false, error: 'offline' });
-    expect(await restored).toEqual({ success: false, error: 'offline' });
-    expect(selectCanDeleteScript.select(store.state, WS, 'check')).toBe(true);
-  });
-
   it('holds deletion until the upsert settles, then removes after the save', async () => {
     const pending = deferred<{ success: boolean }>();
     vi.mocked(appClient.scripts.create).mockReturnValue(pending.promise);
