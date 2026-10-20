@@ -1,7 +1,7 @@
 import { expect, test } from '../../../test/ct-test';
 import Preview from './discussion-message-refinements.preview.svelte';
 
-test('actions animate below the bubble and stay reachable across hover and keyboard focus', async ({
+test('actions animate below the bubble without moving content and stay reachable', async ({
   mount,
   page,
 }) => {
@@ -13,6 +13,14 @@ test('actions animate below the bubble and stay reachable across hover and keybo
   await component.update({ props: { continuationActions: true } });
   const bounds = (await row.boundingBox())!;
   expect(bounds.height).toBe(withoutActions.height);
+  const contentBounds = () =>
+    component.locator('[data-discussion-message], [data-discussion-bubble]').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const { x, y, width, height } = node.getBoundingClientRect();
+        return { x, y, width, height };
+      }),
+    );
+  const restingContent = await contentBounds();
   const toolbar = row.locator('[data-discussion-message-actions]');
   await toolbar.evaluate((node) => {
     node.addEventListener('transitionrun', () => {
@@ -26,11 +34,14 @@ test('actions animate below the bubble and stay reachable across hover and keybo
     .toBeGreaterThan(0);
   const toolbarBounds = (await toolbar.boundingBox())!;
   const bubble = (await row.locator('[data-discussion-bubble]').boundingBox())!;
-  const expanded = (await row.boundingBox())!;
-  const next = (await component.locator('[data-discussion-message="response"]').boundingBox())!;
   expect(toolbarBounds.y).toBeGreaterThanOrEqual(bubble.y + bubble.height);
-  expect(toolbarBounds.y + toolbarBounds.height).toBeLessThanOrEqual(expanded.y + expanded.height);
-  expect(toolbarBounds.y + toolbarBounds.height).toBeLessThanOrEqual(next.y);
+  expect(toolbarBounds.x + toolbarBounds.width).toBeLessThanOrEqual(bubble.x + bubble.width);
+  expect(await contentBounds()).toEqual(restingContent);
+  await page.mouse.move(toolbarBounds.x + toolbarBounds.width / 2, bubble.y + bubble.height + 1);
+  await expect(toolbar).toHaveCSS('opacity', '1');
+  await toolbar.hover();
+  await expect(toolbar).toHaveCSS('opacity', '1');
+  expect(await contentBounds()).toEqual(restingContent);
   await toolbar.getByRole('button', { name: 'Message actions', exact: true }).click();
   const copy = page.getByRole('menuitem', { name: 'Copy message', exact: true });
   await copy.hover();
@@ -44,9 +55,10 @@ test('actions animate below the bubble and stay reachable across hover and keybo
   });
   await page.mouse.move(700, 700);
   await expect(toolbar).toHaveCSS('opacity', '0');
-  await expect.poll(async () => (await row.boundingBox())!.height).toBe(withoutActions.height);
+  expect(await contentBounds()).toEqual(restingContent);
   await row.getByRole('button', { name: 'Reply', exact: true }).focus();
   await expect(toolbar).toHaveCSS('opacity', '1');
+  expect(await contentBounds()).toEqual(restingContent);
   await original.getByRole('button', { name: 'Reply', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(original).toHaveAttribute('data-discussion-reply-selected', 'true');

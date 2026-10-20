@@ -185,7 +185,7 @@
         <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
       {/if}
 
-      <div>
+      <div class="relative">
         <div
           class={isAgent
             ? 'flex min-w-0 flex-col rounded-[15px] border border-border bg-background px-[15px] py-2.5'
@@ -228,57 +228,53 @@
         </div>
         {#if hasActions}
           <div class="discussion-actions-reveal">
-            <div class="min-h-0 overflow-hidden">
-              <div class="flex justify-end py-1">
-                <div
-                  class="discussion-actions flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-sm"
-                  data-discussion-message-actions
+            <div
+              class="discussion-actions flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-sm"
+              data-discussion-message-actions
+            >
+              {#if onReaction}
+                <ActionMenu
+                  bind:open={reactionMenuOpen}
+                  actions={reactionActions}
+                  ariaLabel={m.workspace_discussion_react_label()}
+                  onAction={(emoji) => onReaction?.(emoji)}
                 >
-                  {#if onReaction}
-                    <ActionMenu
-                      bind:open={reactionMenuOpen}
-                      actions={reactionActions}
-                      ariaLabel={m.workspace_discussion_react_label()}
-                      onAction={(emoji) => onReaction?.(emoji)}
-                    >
-                      {#snippet trigger({ props })}<Button
-                          {...props}
-                          variant="ghost"
-                          size="icon-compact"
-                          class="size-6"
-                          {disabled}
-                          aria-label={m.workspace_discussion_react_label()}
-                          ><SmileyIcon size={15} /></Button
-                        >{/snippet}
-                    </ActionMenu>
-                  {/if}
-                  {#if onReply}<Button
+                  {#snippet trigger({ props })}<Button
+                      {...props}
                       variant="ghost"
                       size="icon-compact"
                       class="size-6"
                       {disabled}
-                      aria-label={m.workspace_discussion_reply_label()}
-                      onclick={onReply}><Fa icon={faReply} /></Button
-                    >{/if}
-                  {#if onCopy}
-                    <ActionMenu
-                      bind:open={moreMenuOpen}
-                      actions={moreActions}
-                      ariaLabel={m.workspace_discussion_messageActions_label()}
-                      onAction={() => onCopy?.()}
-                    >
-                      {#snippet trigger({ props })}<Button
-                          {...props}
-                          variant="ghost"
-                          size="icon-compact"
-                          class="size-6"
-                          aria-label={m.workspace_discussion_messageActions_label()}
-                          ><Fa icon={faEllipsisVertical} /></Button
-                        >{/snippet}
-                    </ActionMenu>
-                  {/if}
-                </div>
-              </div>
+                      aria-label={m.workspace_discussion_react_label()}
+                      ><SmileyIcon size={15} /></Button
+                    >{/snippet}
+                </ActionMenu>
+              {/if}
+              {#if onReply}<Button
+                  variant="ghost"
+                  size="icon-compact"
+                  class="size-6"
+                  {disabled}
+                  aria-label={m.workspace_discussion_reply_label()}
+                  onclick={onReply}><Fa icon={faReply} /></Button
+                >{/if}
+              {#if onCopy}
+                <ActionMenu
+                  bind:open={moreMenuOpen}
+                  actions={moreActions}
+                  ariaLabel={m.workspace_discussion_messageActions_label()}
+                  onAction={() => onCopy?.()}
+                >
+                  {#snippet trigger({ props })}<Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-compact"
+                      class="size-6"
+                      aria-label={m.workspace_discussion_messageActions_label()}
+                      ><Fa icon={faEllipsisVertical} /></Button
+                    >{/snippet}
+                </ActionMenu>
+              {/if}
             </div>
           </div>
         {/if}
@@ -324,9 +320,11 @@
 
 <style>
   .discussion-actions-reveal {
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows var(--spring-fast-exit) var(--spring-fast-ease);
+    position: absolute;
+    top: 100%;
+    right: 0;
+    padding-top: 4px;
+    pointer-events: none;
   }
 
   .discussion-actions {
@@ -338,9 +336,12 @@
       transform var(--spring-fast-exit) var(--spring-fast-ease);
   }
 
+  article:is(:hover, :focus-within, .actions-open) {
+    z-index: 20;
+  }
+
   article:is(:hover, :focus-within, .actions-open) .discussion-actions-reveal {
-    grid-template-rows: 1fr;
-    transition-duration: var(--spring-fast);
+    pointer-events: auto;
   }
 
   article:is(:hover, :focus-within, .actions-open) .discussion-actions {
@@ -352,7 +353,7 @@
 
   @media (hover: none) {
     .discussion-actions-reveal {
-      grid-template-rows: 1fr;
+      pointer-events: auto;
     }
 
     .discussion-actions {
@@ -363,7 +364,6 @@
   }
 
   @container style(--motion-reduced: 1) {
-    .discussion-actions-reveal,
     .discussion-actions {
       transition: none;
       transform: none;
