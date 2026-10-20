@@ -79,7 +79,19 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     { filename, code: `${panel} vi.mock('../ChatPanel.svelte', () => ({})); ${incomplete}` },
     {
       filename,
-      code: `${panel} vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({}));`,
+      code: `${panel} vi.mock('$lib/client', () => ({}));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({}));`,
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) =>
+        (await import('${scaffold}')).withRealSelectors(importOriginal, {
+          selectChatAuroraEnabled: liveSelector,
+        }),
+      );`,
     },
     {
       filename,
@@ -303,7 +315,39 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
       );`,
       errors: [realError],
     },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => {
+        importOriginal = async () => ({ selectChatAuroraEnabled: vi.fn() });
+        return (await import('${scaffold}')).withReal(importOriginal, {});
+      });`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) => {
+        importOriginal = async () => ({ selectChatAuroraEnabled: vi.fn() });
+        return { ...(await importOriginal()) };
+      });`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${preferences}', async (importOriginal) =>
+        (await import('${scaffold}')).withRealSelectors(async () => ({}), {}),
+      );`,
+      errors: [realError],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({}));`,
+      errors: [realError],
+    },
     ...[
+      'git',
+      'pending-submissions',
+      'proposal-lifecycle',
+      'workspace',
       'browser',
       'chat-panel-ui',
       'multi-panel-context',

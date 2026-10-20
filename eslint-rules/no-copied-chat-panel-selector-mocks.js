@@ -1,10 +1,11 @@
 import path from 'node:path';
 
-// Selector modules the real-ChatPanel suites mock. A module with a render
-// scaffold factory may use it; every guarded module may spread its real exports.
-// A hand-listed mock misses the next selector ChatPanel reads and crashes the
-// whole suite (cloudlands-fe#3525). Other test doubles retain their own
-// contracts; this is not a general ban on selector mocks.
+// Every store selector module mocked by a test that renders the real ChatPanel
+// must keep its real exports, either through a render scaffold factory (for the
+// modules listed here) or by spreading the real module. A hand-listed mock misses
+// the next selector ChatPanel reads and crashes the whole suite
+// (cloudlands-fe#3525). Tests that mock ChatPanel itself, and modules outside
+// the store slices, keep their own contracts.
 const factories = new Map(
   [
     ['agent-session', 'agentSessionSelectors'],
@@ -13,23 +14,11 @@ const factories = new Map(
     ['unread-tracking', 'unreadTrackingSelectors'],
     ['transient-ui', 'transientUiSelectors'],
     ['provider-catalog', 'providerCatalogSelectors'],
-    ['browser', null],
-    ['chat-panel-ui', null],
-    ['multi-panel-context', null],
-    ['panel-layout', null],
-    ['permission', null],
-    ['presence', null],
-    ['principal', null],
-    ['question-ui', null],
-    ['specialists', null],
-    ['task-agent-associations', null],
-    ['terminals', null],
-    ['user-preferences', null],
-    ['workspace-navigation', null],
-    ['workspace-notes', null],
-    ['workspace-tasks', null],
   ].map(([slice, factory]) => [`src/store/renderer/slices/${slice}/${slice}-selectors`, factory]),
 );
+const selectorModule = /^src\/store\/renderer\/slices\/[^/]+\/[^/]+-selectors$/;
+// Scaffold helpers that resolve to the real exports of `importOriginal`.
+const realHelpers = new Set(['factory:withReal', 'factory:withRealSelectors']);
 const scaffoldPath = 'src/lib/components/chat/__tests__/mocks/chat-panel-render-scaffold';
 const panelPath = 'src/lib/components/chat/ChatPanel.svelte';
 const functions = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration']);
@@ -82,7 +71,7 @@ export default {
       sharedDefaults:
         'Copied selector mocks miss new ChatPanel imports. Return {{factory}}() from ./mocks/chat-panel-render-scaffold, spread it before stateful overrides, or spread importOriginal() to retain the real exports.',
       realDefaults:
-        'Copied selector mocks miss new ChatPanel imports. Return withReal(importOriginal, overrides) from ./mocks/chat-panel-render-scaffold, or spread await importOriginal() before the overrides, to retain the real exports.',
+        'Copied selector mocks miss new ChatPanel imports. Return withReal(importOriginal, values) or withRealSelectors(importOriginal, selectors) from ./mocks/chat-panel-render-scaffold, or spread await importOriginal() before the overrides, to retain the real exports.',
     },
   },
   create(context) {
@@ -115,13 +104,15 @@ export default {
       return null;
     }
 
-    // The mock factory's own `importOriginal` parameter, not a shadowing local.
+    // The mock factory's own, never reassigned `importOriginal` parameter.
     function isImportOriginal(node, factory) {
       const firstParam = factory.params[0];
+      if (node?.type !== 'Identifier' || firstParam?.type !== 'Identifier') return false;
+      const binding = variable(node);
       return (
-        node?.type === 'Identifier' &&
-        firstParam?.type === 'Identifier' &&
-        variable(node) === variable(firstParam)
+        binding !== null &&
+        binding === variable(firstParam) &&
+        !binding.references.some((ref) => ref.isWrite())
       );
     }
 
@@ -172,7 +163,7 @@ export default {
         if (factories.get(module) && callee === `factory:${factories.get(module)}`)
           return 'defaults';
         // withReal(importOriginal, overrides) resolves to the real exports.
-        if (callee === 'factory:withReal' && isImportOriginal(node.arguments[0], factory))
+        if (realHelpers.has(callee) && isImportOriginal(node.arguments[0], factory))
           return 'promise:defaults';
         if (isImportOriginal(node.callee, factory)) return 'promise:defaults';
         if (isViCall(node, ['importActual']) && modulePath(node.arguments[0]) === module)
@@ -243,7 +234,7 @@ export default {
           return;
         for (const mock of mocks) {
           const module = modulePath(mock.arguments[0]);
-          if (!factories.has(module)) continue;
+          if (!selectorModule.test(module ?? '')) continue;
           if (preservesExports(mock, module)) continue;
           const factory = factories.get(module);
           context.report(
