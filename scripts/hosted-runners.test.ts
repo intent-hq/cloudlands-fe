@@ -36,6 +36,8 @@ describe('GitHub-hosted CI runners', () => {
     error?: boolean;
     env?: Record<string, string>;
     event?: string;
+    unreadable?: string;
+    truncated?: boolean;
   };
   async function route({
     runners = [slot, slot],
@@ -43,6 +45,8 @@ describe('GitHub-hosted CI runners', () => {
     error = false,
     env = {},
     event = 'merge_group',
+    unreadable,
+    truncated = false,
   }: Fixture) {
     const workflow = read('.github/workflows/intent-pr.yml');
     const step = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
@@ -55,10 +59,12 @@ describe('GitHub-hosted CI runners', () => {
       listSelfHostedRunnersForRepo: () => {},
       listWorkflowRunsForRepo: async ({ repo, status }: { repo: string; status: string }) => {
         queried.push(repo);
+        if (repo === unreadable) throw new Error('403 fixture');
         // Fixture jobs belong to one queued run so each is counted once.
         return {
           data: {
             workflow_runs: repo === 'cloudlands-fe' && status === 'queued' ? [{ id: 2 }] : [],
+            ...(truncated ? { total_count: 101 } : {}),
           },
         };
       },
@@ -209,6 +215,10 @@ describe('GitHub-hosted CI runners', () => {
     ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
     ['probe failure', { error: true }],
     ['offline fleet', { runners: [] }],
+    // intentd's jobs may hold both slots, so unknown demand is not zero demand.
+    ['an unreadable intentd queue', { unreadable: 'intentd' }],
+    ['an unreadable intent queue', { unreadable: 'intent' }],
+    ['a truncated queue view', { truncated: true }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
     expect(Object.keys(r.slots)).toHaveLength(7);

@@ -85,7 +85,7 @@ jobs:
           # GITHUB_TOKEN is repo-scoped and can only see cloudlands-fe. Set
           # the CI_QUEUE_READ_TOKEN secret (fine-grained PAT with
           # actions:read on the sibling repos) to enable cross-repo counting;
-          # without it those repos are skipped and contribute 0. Routing to
+          # without it the sibling queue reads fail and every job bursts. Routing to
           # the slots additionally requires the token to list them: the runners are registered at the ORG level (shared
           # across the repos via a runner group), so the token needs the
           # org-level "Self-hosted runners" read permission for the org
@@ -174,10 +174,10 @@ jobs:
                 // as much as a queued one. GitHub-hosted jobs —
                 // including this route job and bursted heavy jobs — don't
                 // match the intent-cache label filter, so they never
-                // inflate the depth. Sibling-repo probe failures are the
-                // documented degraded mode (skip, contribute 0); a failure
-                // on this repo's own probe means the depth is unknowable,
-                // so it rethrows into the fail-open burst path. A queued
+                // inflate the depth. Any unreadable or truncated queue view,
+                // in this repo or a sibling, means the depth is unknowable
+                // (the sibling's jobs may hold every slot), so it throws into
+                // the fail-open burst path and every listed job goes hosted. A queued
                 // job older than staleMs means nothing is draining the
                 // queue despite the runner looking online — burst.
                 const owner = context.repo.owner;
@@ -185,22 +185,19 @@ jobs:
                 let depth = 0;
                 let staleQueued = false;
                 for (const repo of repos) {
-                  try {
-                    for (const status of ["queued", "in_progress"]) {
-                      const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 20 });
-                      for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
-                        const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
-                        for (const j of jobs.data.jobs) {
-                          if ((j.status === "queued" || j.status === "in_progress") && hasLabels(j.labels || [])) {
-                            depth += 1;
-                            if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
-                          }
+                  for (const status of ["queued", "in_progress"]) {
+                    const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 100 });
+                    if (runs.data.total_count > runs.data.workflow_runs.length) throw new Error(`${repo} ${status} runs truncated`);
+                    for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId)) {
+                      const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
+                      if (jobs.data.total_count > jobs.data.jobs.length) throw new Error(`${repo} run ${run.id} jobs truncated`);
+                      for (const j of jobs.data.jobs) {
+                        if ((j.status === "queued" || j.status === "in_progress") && hasLabels(j.labels || [])) {
+                          depth += 1;
+                          if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
                         }
                       }
                     }
-                  } catch (e) {
-                    if (repo === context.repo.repo) throw e;
-                    core.info(`queue probe skipped ${repo}: ${e.message}`);
                   }
                 }
                 if (staleQueued) {
