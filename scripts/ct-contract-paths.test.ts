@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { devNull, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CT_CONTRACT_PATHS,
   changedFiles,
@@ -37,6 +37,8 @@ function gitRepository() {
   const root = mkdtempSync(join(tmpdir(), 'ct-contract-paths-'));
   temporaryPaths.push(root);
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'symbolic-ref', 'HEAD', 'refs/heads/main');
   git(root, 'config', 'user.name', 'ct-contract-paths test');
   git(root, 'config', 'user.email', 'ct-contract-paths@example.invalid');
@@ -60,6 +62,31 @@ function runCli(cwd: string, ...args: string[]) {
 
 afterEach(() => {
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
+});
+
+describe('disposable Git fixture ownership', () => {
+  it('does not launch automatic maintenance', () => {
+    const traceRoot = mkdtempSync(join(tmpdir(), 'ct-fixture-trace-'));
+    temporaryPaths.push(traceRoot);
+    const trace = join(traceRoot, 'events.json');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', devNull);
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('GIT_TRACE2_EVENT', trace);
+    try {
+      gitRepository();
+      const children = readFileSync(trace, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+        .filter((event) => event.event === 'child_start')
+        .map((event) => event.argv ?? []);
+      expect(
+        children.filter((argv) => argv.includes('maintenance') || argv.includes('gc')),
+      ).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('isCtContractPath', () => {
