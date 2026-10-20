@@ -376,6 +376,7 @@
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import {
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectIsAgentMonospace,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -456,6 +457,7 @@
   const logger = createLogger('ChatPanel');
 
   const chatAuroraEnabled$ = selectChatAuroraEnabled();
+  const collapseToolRuns$ = selectCollapseToolRuns();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -1480,6 +1482,7 @@
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
+      { collapseToolRuns: $collapseToolRuns$ },
     );
   });
 
@@ -5046,6 +5049,7 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
+            { collapseToolRuns: $collapseToolRuns$ },
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);

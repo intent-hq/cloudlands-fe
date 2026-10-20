@@ -243,6 +243,7 @@ export const mockUserPreferences: UserPreferencesState = {
   hasCompletedProviderSetup: true,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsMultiplayerEnabled: false,

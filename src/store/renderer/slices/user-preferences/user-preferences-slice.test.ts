@@ -23,6 +23,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -51,6 +52,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleCollapseToolRuns,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
@@ -69,6 +71,7 @@ import {
   selectAgentFontStyleLabel,
   selectActivityLogPresets,
   selectChatAuroraEnabled,
+  selectCollapseToolRuns,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
   selectCodeFontFamilyLabel,
@@ -543,6 +546,23 @@ describe('userPreferencesReducer', () => {
       const enabled = userPreferencesReducer(disabled, toggleChatAurora());
       expect(disabled.chatAuroraEnabled).toBe(false);
       expect(enabled.chatAuroraEnabled).toBe(true);
+    });
+
+    it('defaults collapseToolRuns to off, then sets and toggles it', () => {
+      expect(initialState.collapseToolRuns).toBe(false);
+      const enabled = userPreferencesReducer(initialState, setCollapseToolRuns(true));
+      const disabled = userPreferencesReducer(enabled, toggleCollapseToolRuns());
+      expect(enabled.collapseToolRuns).toBe(true);
+      expect(disabled.collapseToolRuns).toBe(false);
+    });
+
+    it('selects collapseToolRuns with an off fallback when the slice is missing', () => {
+      expect(
+        selectCollapseToolRuns.select({
+          userPreferences: { ...initialState, collapseToolRuns: true },
+        } as any),
+      ).toBe(true);
+      expect(selectCollapseToolRuns.select({} as any)).toBe(false);
     });
 
     it('sets and toggles shellTransparencyEnabled', () => {
