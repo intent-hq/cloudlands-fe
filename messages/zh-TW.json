@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "跳至 {name} 的訊息",
   "workspace_discussion_agentWorking_label": "工作中",
   "workspace_discussion_agentIdle_label": "閒置",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ 移動 · Enter 提及 · Esc 關閉",
   "workspace_discussion_agentWillReply_label": "{names} 將在此對話中回覆",
   "workspace_discussion_reply_placeholder": "回覆 {name}…",
   "workspace_discussion_replyUnavailable_label": "無法載入原始訊息。",

@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "跳转到 {name} 的消息",
   "workspace_discussion_agentWorking_label": "工作中",
   "workspace_discussion_agentIdle_label": "空闲",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ 移动 · Enter 提及 · Esc 关闭",
   "workspace_discussion_agentWillReply_label": "{names} 将在此会话中回复",
   "workspace_discussion_reply_placeholder": "回复 {name}…",
   "workspace_discussion_replyUnavailable_label": "无法加载原始消息。",

@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "Aller au message de {name}",
   "workspace_discussion_agentWorking_label": "En cours",
   "workspace_discussion_agentIdle_label": "Inactif",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ pour naviguer · Entrée pour mentionner · Échap pour fermer",
   "workspace_discussion_agentWillReply_label": "{names} répondra dans cette discussion",
   "workspace_discussion_reply_placeholder": "Répondre à {name}…",
   "workspace_discussion_replyUnavailable_label": "Impossible de charger le message d’origine.",

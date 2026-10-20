@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "{name}의 메시지로 이동",
   "workspace_discussion_agentWorking_label": "작업 중",
   "workspace_discussion_agentIdle_label": "대기 중",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ 이동 · Enter 멘션 · Esc 닫기",
   "workspace_discussion_agentWillReply_label": "{names}이(가) 이 스레드에 답장합니다",
   "workspace_discussion_reply_placeholder": "{name}에게 답장…",
   "workspace_discussion_replyUnavailable_label": "원본 메시지를 불러올 수 없습니다.",

@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "{name} のメッセージに移動",
   "workspace_discussion_agentWorking_label": "作業中",
   "workspace_discussion_agentIdle_label": "待機中",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ で移動 · Enter でメンション · Esc で閉じる",
   "workspace_discussion_agentWillReply_label": "{names} がこのスレッドで返信します",
   "workspace_discussion_reply_placeholder": "{name} に返信…",
   "workspace_discussion_replyUnavailable_label": "元のメッセージを読み込めませんでした。",

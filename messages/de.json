@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "Zur Nachricht von {name} springen",
   "workspace_discussion_agentWorking_label": "Arbeitet",
   "workspace_discussion_agentIdle_label": "Inaktiv",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ navigieren · Enter zum Erwähnen · Esc zum Schließen",
   "workspace_discussion_agentWillReply_label": "{names} antwortet in dieser Diskussion",
   "workspace_discussion_reply_placeholder": "{name} antworten…",
   "workspace_discussion_replyUnavailable_label": "Die ursprüngliche Nachricht konnte nicht geladen werden.",

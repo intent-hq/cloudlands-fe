@@ -128,8 +128,4 @@
       onclick={onLoadMore}>{m.workspace_discussion_loadMoreMembers_label()}</Button
     >
   {/if}
-  <Separator decorative class="my-1" />
-  <p class="px-2 py-1 type-caption text-muted-foreground">
-    {m.workspace_discussion_mentionKeyboard_hint()}
-  </p>
 </div>

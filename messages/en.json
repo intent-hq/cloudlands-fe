@@ -7688,7 +7688,6 @@
   "workspace_discussion_jumpToReply_label": "Jump to message from {name}",
   "workspace_discussion_agentWorking_label": "Working",
   "workspace_discussion_agentIdle_label": "Idle",
-  "workspace_discussion_mentionKeyboard_hint": "↑↓ to move · Enter to tag · Esc to close",
   "workspace_discussion_agentWillReply_label": "{names} will reply in this thread",
   "workspace_discussion_reply_placeholder": "Reply to {name}…",
   "workspace_discussion_replyUnavailable_label": "The original message could not be loaded.",
