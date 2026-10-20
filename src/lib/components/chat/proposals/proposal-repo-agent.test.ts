@@ -109,8 +109,9 @@ describe('proposalAgentSetup', () => {
 });
 
 describe('hasAgentSetupFields', () => {
-  it('needs a provider or a non-empty effort', () => {
+  it('needs a provider, a model, or a non-empty effort', () => {
     expect(hasAgentSetupFields({ provider: 'claude-code' })).toBe(true);
+    expect(hasAgentSetupFields({ model: 'claude-opus-4-5' })).toBe(true);
     expect(hasAgentSetupFields({ reasoningEffort: 'low' })).toBe(true);
     expect(hasAgentSetupFields({})).toBe(false);
     expect(hasAgentSetupFields({ reasoningEffort: '' })).toBe(false);

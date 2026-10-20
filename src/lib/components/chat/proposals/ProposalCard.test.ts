@@ -1861,9 +1861,12 @@ describe('ProposalCard', () => {
       const { appliedFields } = renderSibling();
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
-      // The remembered setup applies without a line under the agent picker.
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
-      expect(screen.queryByText(/last used in this repository/)).toBeNull();
+      // The remembered setup applies without any caption under the agent picker.
+      const agentRow = screen.getByTestId('proposal-specialist-dropdown');
+      expect(agentRow.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        `Initial agent ${screen.getByTestId('mock-specialist-dropdown').textContent?.trim()}`,
+      );
+      expect(agentRow.textContent).not.toMatch(/Opus|High/);
       expect(await appliedFields()).toMatchObject({
         specialist: 'coordinator',
         agentSetup: {
@@ -1951,6 +1954,7 @@ describe('ProposalCard', () => {
           ...TEAM_OPUS_HIGH,
           isTeamMode: false,
           selectedSpecialist: 'ui-designer',
+          selectedReasoningEffort: 'low',
         },
       };
       await fireEvent.click(screen.getAllByRole('button', { name: 'Mock repo change' })[0]);
@@ -1960,9 +1964,8 @@ describe('ProposalCard', () => {
       expect(fields.agentSetup).toEqual({
         provider: 'claude-code',
         model: 'claude-opus-4-5',
-        reasoningEffort: 'high',
+        reasoningEffort: 'low',
       });
-      expect(screen.queryByTestId('proposal-agent-setup')).toBeNull();
     });
 
     it('keeps the global default when the remembered agent no longer exists', async () => {

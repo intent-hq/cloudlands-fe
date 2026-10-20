@@ -240,12 +240,14 @@
       : '',
   );
   // Provider/model/effort adopted from the repository's remembered setup while
-  // the card still starts that remembered agent.
-  const adoptedAgentSetup = $derived(
-    repoAgentDefault && !proposalNamesAgent && workspaceSpecialist === repoAgentDefault.specialist
-      ? proposalAgentSetup(repoAgentDefault.settings)
-      : null,
-  );
+  // the card still starts that remembered agent; `null` when there is nothing
+  // to send. Applied on create without being shown on the card.
+  const adoptedAgentSetup = $derived.by(() => {
+    if (!repoAgentDefault || proposalNamesAgent) return null;
+    if (workspaceSpecialist !== repoAgentDefault.specialist) return null;
+    const setup = proposalAgentSetup(repoAgentDefault.settings);
+    return hasAgentSetupFields(setup) ? setup : null;
+  });
   const statusMessage = $derived(getStatusMessage());
   const prBranchLookup = $derived(
     prBranchLookupKey ? $prBranchLookupEntries[prBranchLookupKey] : undefined,
@@ -417,7 +419,8 @@
     void [workspaceRepoType, workspaceRepoPath, workspaceClonePath, workspaceGithubUrl];
     if (!isWorkspaceCreate) return;
     if (!specialistIsModalDefault) {
-      // Keep the user's agent, but follow the repository for the setup line.
+      // Keep the user's agent, but follow the repository for its remembered
+      // model and effort (sent on create when that agent is selected).
       repoAgentDefault = untrack(readRepoAgentDefault);
       return;
     }
@@ -834,8 +837,7 @@
     }
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
-    if (adoptedAgentSetup && hasAgentSetupFields(adoptedAgentSetup))
-      editedFields.agentSetup = { ...adoptedAgentSetup };
+    if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
     return editedFields;
   }
 
