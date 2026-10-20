@@ -337,6 +337,66 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
   });
 });
 
+describe('tab list right after a background-hosting adoption', () => {
+  // A window that was just asked to host a workspace no window had open
+  // replies only after a cold layout hydration; the usual short reply
+  // window would answer "unavailable" before the adopted window could.
+  function deferredRenderer(): { reply: (tabs: PanelTab[]) => void } {
+    let lastRequestId: string | undefined;
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string | undefined, channel: string, payload: { requestId?: string }) => {
+        if (channel === IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) lastRequestId = payload.requestId;
+        return DELIVERED;
+      },
+    );
+    return {
+      reply: (tabs) =>
+        mocks.handlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          { tabs, requestId: lastRequestId },
+        ),
+    };
+  }
+
+  it('waits for the adopted window to finish hydrating instead of timing out', async () => {
+    const service = await loadService();
+    const renderer = deferredRenderer();
+    vi.useFakeTimers();
+    try {
+      service.noteWorkspaceAdopted('ws-closed');
+      const pending = service.listAllTabs('ws-closed');
+      await vi.advanceTimersByTimeAsync(2_000);
+      renderer.reply([{ tabId: 'tab-agent', url: 'http://sandbox/', title: 'S', hidden: true }]);
+      await expect(pending).resolves.toMatchObject({
+        stale: false,
+        tabs: [{ tabId: 'tab-agent', mounted: false, hidden: true }],
+      });
+
+      // Once the adopted window has answered, later requests use the usual window.
+      const later = service.listAllTabs('ws-closed');
+      await vi.advanceTimersByTimeAsync(600);
+      await expect(later).resolves.toMatchObject({ stale: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still gives up within the longer window when the adopted window never answers', async () => {
+    const service = await loadService();
+    deferredRenderer();
+    vi.useFakeTimers();
+    try {
+      service.noteWorkspaceAdopted('ws-closed');
+      const pending = service.listAllTabs('ws-closed');
+      pending.catch(() => {});
+      await vi.advanceTimersByTimeAsync(5_100);
+      await expect(pending).rejects.toThrow('Tab list for workspace ws-closed is unavailable');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('findModelTabByExactUrl (#2541, per-agent #2857)', () => {
   const URL_A = 'http://localhost:3000/board';
 

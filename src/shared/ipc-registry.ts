@@ -584,6 +584,12 @@ export const IPC_CHANNELS = {
     SHOW_TAB: 'browser:show-tab',
     /** Request browser tab list from renderer (main->renderer event) */
     LIST_TABS_REQUEST: 'browser:list-tabs-request',
+    /**
+     * Ask a window to host a workspace in the background (no tab, never
+     * displayed) so agent browser ops work while no window has it open
+     * (main->renderer event)
+     */
+    HOST_WORKSPACE: 'browser:host-workspace',
     /** Response with browser tab list (renderer->main) */
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */
@@ -1251,6 +1257,8 @@ export const EVENT_CHANNELS = [
   'browser:show-tab',
   // Browser tab list request from main process (CDP agent wants to list all browser tabs)
   'browser:list-tabs-request',
+  // Background-host a workspace no window has open (agent browser ops on it)
+  'browser:host-workspace',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)

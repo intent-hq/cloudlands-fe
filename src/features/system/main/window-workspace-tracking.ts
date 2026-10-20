@@ -76,14 +76,16 @@ export function collectOpenWorkspaceIds(
   windowWorkspaceIds: Map<number, ActiveWorkspaceEntry>,
   windowOpenWorkspaceTabs: Map<number, OpenWorkspaceTabsEntry>,
   checker: WindowChecker,
+  windowBackgroundWorkspaces: Map<number, OpenWorkspaceTabsEntry> = new Map(),
 ): string[] {
   const workspaceIds = new Set<string>();
   const staleWindowIds: number[] = [];
 
-  // Collect all window IDs that appear in either map
+  // Collect all window IDs that appear in any map
   const allWindowIds = new Set<number>([
     ...windowWorkspaceIds.keys(),
     ...windowOpenWorkspaceTabs.keys(),
+    ...windowBackgroundWorkspaces.keys(),
   ]);
 
   for (const windowId of allWindowIds) {
@@ -103,6 +105,16 @@ export function collectOpenWorkspaceIds(
           workspaceIds.add(tabWsId);
         }
       }
+
+      // Include workspaces the window hosts in the background for agent
+      // browser ops (no tab, never displayed) so they are not treated as
+      // orphaned while their offscreen tabs are alive.
+      const background = windowBackgroundWorkspaces.get(windowId);
+      if (background) {
+        for (const backgroundWsId of background.workspaceIds) {
+          workspaceIds.add(backgroundWsId);
+        }
+      }
     } else {
       staleWindowIds.push(windowId);
     }
@@ -112,17 +124,18 @@ export function collectOpenWorkspaceIds(
   for (const windowId of staleWindowIds) {
     windowWorkspaceIds.delete(windowId);
     windowOpenWorkspaceTabs.delete(windowId);
+    windowBackgroundWorkspaces.delete(windowId);
   }
 
   return [...workspaceIds];
 }
 
 /**
- * Collect all window IDs that have a specific workspace open — either as the
- * actively viewed workspace or in that window's tab bar — on the host(s)
- * allowed by `scope`.
+ * Collect all window IDs that have a specific workspace open — as the
+ * actively viewed workspace, in that window's tab bar, or hosted in the
+ * background for agent browser ops — on the host(s) allowed by `scope`.
  *
- * Any windowId that fails the `isAlive` check is removed from **both** maps
+ * Any windowId that fails the `isAlive` check is removed from **every** map
  * as a side-effect (stale-entry cleanup).
  */
 export function collectWindowIdsForWorkspace(
@@ -131,14 +144,16 @@ export function collectWindowIdsForWorkspace(
   windowWorkspaceIds: Map<number, ActiveWorkspaceEntry>,
   windowOpenWorkspaceTabs: Map<number, OpenWorkspaceTabsEntry>,
   checker: WindowHostChecker,
+  windowBackgroundWorkspaces: Map<number, OpenWorkspaceTabsEntry> = new Map(),
 ): number[] {
   const matchingWindowIds: number[] = [];
   const staleWindowIds: number[] = [];
 
-  // Collect all window IDs that appear in either map
+  // Collect all window IDs that appear in any map
   const allWindowIds = new Set<number>([
     ...windowWorkspaceIds.keys(),
     ...windowOpenWorkspaceTabs.keys(),
+    ...windowBackgroundWorkspaces.keys(),
   ]);
 
   for (const windowId of allWindowIds) {
@@ -160,6 +175,16 @@ export function collectWindowIdsForWorkspace(
         entryMatchesScope(windowId, openTabs.backendId, scope, checker)
       ) {
         matchingWindowIds.push(windowId);
+        continue;
+      }
+
+      // Check if this window hosts the workspace in the background
+      const background = windowBackgroundWorkspaces.get(windowId);
+      if (
+        background?.workspaceIds.includes(workspaceId) &&
+        entryMatchesScope(windowId, background.backendId, scope, checker)
+      ) {
+        matchingWindowIds.push(windowId);
       }
     } else {
       staleWindowIds.push(windowId);
@@ -170,7 +195,29 @@ export function collectWindowIdsForWorkspace(
   for (const windowId of staleWindowIds) {
     windowWorkspaceIds.delete(windowId);
     windowOpenWorkspaceTabs.delete(windowId);
+    windowBackgroundWorkspaces.delete(windowId);
   }
 
   return matchingWindowIds;
+}
+
+/**
+ * Pick the window that should host `workspaceId` in the background when no
+ * window has it open: the first live candidate (callers pass the focused
+ * window first) still connected to `backendId`, the host that owns the
+ * workspace. Candidates must be app windows that run the workspace shell
+ * (they report their tab strip), so the browser IPC saga and the offscreen
+ * webview host exist there. Returns undefined when none qualifies.
+ */
+export function pickBackgroundHostWindow(
+  backendId: string,
+  candidateWindowIds: Iterable<number>,
+  checker: WindowHostChecker,
+): number | undefined {
+  for (const windowId of candidateWindowIds) {
+    if (checker.isAlive(windowId) && checker.backendIdOf(windowId) === backendId) {
+      return windowId;
+    }
+  }
+  return undefined;
 }

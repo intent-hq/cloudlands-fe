@@ -119,6 +119,19 @@ function stageBudget(
     : { timeoutMs: capMs, deadlineBound: false };
 }
 
+/** How long a tab-list request waits for the renderer's reply. */
+const LIST_TABS_TIMEOUT_MS = 500;
+
+/**
+ * Reply window for tab-list requests right after a window was asked to host
+ * the workspace in the background: the reply waits for a cold layout
+ * hydration (localStorage restore), which can exceed the usual window.
+ */
+const ADOPTED_LIST_TABS_TIMEOUT_MS = 5_000;
+
+/** How long an adoption keeps the longer reply window without any reply. */
+const ADOPTED_MARKER_TTL_MS = 30_000;
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -223,6 +236,14 @@ class EmbeddedBrowserCdpService {
   private listTabsRequestCounter = 0;
 
   /**
+   * Workspaces a window was just asked to host in the background (see
+   * {@link noteWorkspaceAdopted}), keyed to when the marker expires. Their
+   * first tab-list request waits {@link ADOPTED_LIST_TABS_TIMEOUT_MS} for
+   * the cold layout hydration instead of the usual short reply window.
+   */
+  private adoptedWorkspaceDeadlines = new Map<string, number>();
+
+  /**
    * Persistent tab ownership registry (monorepo#2857). Key is tabId. Main is
    * the atomic claim arbiter; the renderer persists `ownerAgentId` on the
    * panel-layout tab, and {@link hydrateOwnershipFromPanelTabs} re-seeds this
@@ -292,6 +313,7 @@ class EmbeddedBrowserCdpService {
             const pending = this.pendingListTabsRequests.get(data.requestId);
             if (pending) {
               this.pendingListTabsRequests.delete(data.requestId);
+              this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
               pending.reject(new Error(data.error));
             }
           }
@@ -316,6 +338,7 @@ class EmbeddedBrowserCdpService {
           const pending = this.pendingListTabsRequests.get(data.requestId);
           if (pending) {
             this.pendingListTabsRequests.delete(data.requestId);
+            this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
             this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
             pending.resolve(tabs);
           }
@@ -323,6 +346,7 @@ class EmbeddedBrowserCdpService {
           // Reply without a requestId — resolve all pending requests
           for (const [requestId, pending] of this.pendingListTabsRequests) {
             this.pendingListTabsRequests.delete(requestId);
+            this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
             this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
             pending.resolve(tabs);
           }
@@ -400,6 +424,7 @@ class EmbeddedBrowserCdpService {
       return { tabs: cached, stale: true };
     }
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
+    const timeoutMs = this.listTabsTimeoutMs(workspaceId);
 
     // Create per-request timeout promise. The fallback only consults the
     // cache entry for the SAME workspace target, so a timed-out request
@@ -429,12 +454,33 @@ class EmbeddedBrowserCdpService {
               `Tab list for workspace ${workspaceId} is unavailable: the renderer did not respond and no cached tab list exists.`,
             ),
           );
-        }, 500);
+        }, timeoutMs);
       },
     );
 
     // Race between response and timeout - each request gets independent timeout
     return Promise.race([requestPromise, timeoutPromise]);
+  }
+
+  /**
+   * Record that a window was just asked to host `workspaceId` in the
+   * background (no window had it open). Its next tab-list requests allow
+   * the cold layout hydration up to {@link ADOPTED_LIST_TABS_TIMEOUT_MS}
+   * to reply, until a reply arrives or the marker expires.
+   */
+  noteWorkspaceAdopted(workspaceId: string): void {
+    this.adoptedWorkspaceDeadlines.set(workspaceId, Date.now() + ADOPTED_MARKER_TTL_MS);
+  }
+
+  /** Reply window for a tab-list request (longer right after an adoption). */
+  private listTabsTimeoutMs(workspaceId: string): number {
+    const expiresAt = this.adoptedWorkspaceDeadlines.get(workspaceId);
+    if (expiresAt === undefined) return LIST_TABS_TIMEOUT_MS;
+    if (Date.now() >= expiresAt) {
+      this.adoptedWorkspaceDeadlines.delete(workspaceId);
+      return LIST_TABS_TIMEOUT_MS;
+    }
+    return ADOPTED_LIST_TABS_TIMEOUT_MS;
   }
 
   /**

@@ -3,6 +3,7 @@ import {
   ANY_HOST,
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
+  pickBackgroundHostWindow,
   type ActiveWorkspaceEntry,
   type OpenWorkspaceTabsEntry,
   type WindowHostChecker,
@@ -345,5 +346,99 @@ describe('collectWindowIdsForWorkspace', () => {
         ).toEqual([]);
       }
     });
+  });
+});
+
+describe('background-hosted workspaces', () => {
+  let windowWorkspaceIds: Map<number, ActiveWorkspaceEntry>;
+  let windowOpenWorkspaceTabs: Map<number, OpenWorkspaceTabsEntry>;
+  let windowBackgroundWorkspaces: Map<number, OpenWorkspaceTabsEntry>;
+  let aliveWindows: Set<number>;
+  let windowHosts: Map<number, string>;
+  let checker: WindowHostChecker;
+
+  beforeEach(() => {
+    windowWorkspaceIds = new Map();
+    windowOpenWorkspaceTabs = new Map();
+    windowBackgroundWorkspaces = new Map();
+    aliveWindows = new Set();
+    windowHosts = new Map();
+    checker = {
+      isAlive: (id) => aliveWindows.has(id),
+      backendIdOf: (id) => windowHosts.get(id) ?? LOCAL,
+    };
+  });
+
+  const lookup = (workspaceId: string, scope: string | typeof ANY_HOST) =>
+    collectWindowIdsForWorkspace(
+      workspaceId,
+      scope,
+      windowWorkspaceIds,
+      windowOpenWorkspaceTabs,
+      checker,
+      windowBackgroundWorkspaces,
+    );
+
+  it('routes to a window hosting the workspace in the background (no tab, not viewed)', () => {
+    windowWorkspaceIds.set(1, active('ws-viewed'));
+    windowOpenWorkspaceTabs.set(1, tabs(['ws-viewed']));
+    windowBackgroundWorkspaces.set(1, tabs(['ws-closed']));
+    aliveWindows.add(1);
+
+    expect(lookup('ws-closed', LOCAL)).toEqual([1]);
+    expect(lookup('ws-other', LOCAL)).toEqual([]);
+  });
+
+  it('scopes background matches by host and drops them after the window changes host', () => {
+    windowBackgroundWorkspaces.set(1, tabs(['ws-closed'], LOCAL));
+    aliveWindows.add(1);
+
+    expect(lookup('ws-closed', REMOTE)).toEqual([]);
+    expect(lookup('ws-closed', LOCAL)).toEqual([1]);
+
+    windowHosts.set(1, REMOTE);
+    expect(lookup('ws-closed', ANY_HOST)).toEqual([]);
+  });
+
+  it('counts background workspaces as open so their caches are not trimmed', () => {
+    windowOpenWorkspaceTabs.set(1, tabs(['ws-tab']));
+    windowBackgroundWorkspaces.set(1, tabs(['ws-closed']));
+    aliveWindows.add(1);
+
+    expect(
+      collectOpenWorkspaceIds(
+        windowWorkspaceIds,
+        windowOpenWorkspaceTabs,
+        checker,
+        windowBackgroundWorkspaces,
+      ).sort(),
+    ).toEqual(['ws-closed', 'ws-tab']);
+  });
+
+  it('cleans up background entries of destroyed windows', () => {
+    windowBackgroundWorkspaces.set(2, tabs(['ws-closed']));
+
+    expect(lookup('ws-closed', LOCAL)).toEqual([]);
+    expect(windowBackgroundWorkspaces.has(2)).toBe(false);
+  });
+});
+
+describe('pickBackgroundHostWindow', () => {
+  const checker = (alive: number[], hosts: Record<number, string> = {}): WindowHostChecker => ({
+    isAlive: (id) => alive.includes(id),
+    backendIdOf: (id) => (alive.includes(id) ? (hosts[id] ?? LOCAL) : null),
+  });
+
+  it('returns the first live candidate connected to the owning host', () => {
+    expect(pickBackgroundHostWindow(LOCAL, [3, 1, 2], checker([1, 2, 3]))).toBe(3);
+    expect(pickBackgroundHostWindow(REMOTE, [3, 1, 2], checker([1, 2, 3], { 2: REMOTE }))).toBe(2);
+  });
+
+  it('skips dead windows and windows on other hosts', () => {
+    expect(pickBackgroundHostWindow(LOCAL, [3, 1], checker([1], { 1: LOCAL }))).toBe(1);
+    expect(pickBackgroundHostWindow(LOCAL, [1, 2], checker([1, 2], { 1: REMOTE, 2: REMOTE }))).toBe(
+      undefined,
+    );
+    expect(pickBackgroundHostWindow(LOCAL, [], checker([]))).toBeUndefined();
   });
 });

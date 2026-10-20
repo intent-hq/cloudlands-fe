@@ -12,12 +12,14 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
   entryMatchesScope,
+  pickBackgroundHostWindow,
   type ActiveWorkspaceEntry,
   type OpenWorkspaceTabsEntry,
   type WindowHostChecker,
   type WindowHostScope,
 } from './window-workspace-tracking';
 import { getBackendIdForWindow } from '../../../main/window-backend';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
   clearWindowBrowserFocusOwner,
   hasWindowBrowserFocusOwner,
@@ -196,6 +198,13 @@ const windowWorkspaceIds = new Map<number, ActiveWorkspaceEntry>();
 const lastKnownWindowWorkspaceIds = new Map<number, string>();
 /** Track which workspace tabs are open per window, with the window's host. */
 const windowOpenWorkspaceTabs = new Map<number, OpenWorkspaceTabsEntry>();
+/**
+ * Workspaces each window hosts in the background for agent browser ops
+ * (see {@link adoptWorkspaceForBackgroundHosting}): no tab, never displayed,
+ * but routed to like an open workspace. Dropped when the window closes or
+ * its renderer reloads (the renderer forgets the adoption with its state).
+ */
+const windowBackgroundWorkspaces = new Map<number, OpenWorkspaceTabsEntry>();
 
 /** Liveness + current host of a tracked window, read from Electron. */
 const liveWindowHostChecker: WindowHostChecker = {
@@ -272,6 +281,7 @@ export function getAllOpenWorkspaceIds(): string[] {
     windowWorkspaceIds,
     windowOpenWorkspaceTabs,
     liveWindowHostChecker,
+    windowBackgroundWorkspaces,
   );
 }
 
@@ -316,7 +326,53 @@ export function getWindowIdsForWorkspace(workspaceId: string, scope: WindowHostS
     windowWorkspaceIds,
     windowOpenWorkspaceTabs,
     liveWindowHostChecker,
+    windowBackgroundWorkspaces,
   );
+}
+
+/**
+ * Make sure some window on `backendId` (the host that owns the workspace)
+ * hosts `workspaceId`, so agent browser ops can reach its layout and mount
+ * its tabs offscreen even when no window has the workspace open — its tab
+ * was closed, or it was never reopened since a restart. Nothing visible
+ * changes: the chosen window gets no workspace tab, no navigation and no
+ * focus; it only hydrates the workspace's saved layout in the background.
+ *
+ * A no-op when a window on that host already has the workspace open. The
+ * focused window is preferred, then any app window that runs the workspace
+ * shell (it reports its tab strip). The adoption is recorded before the
+ * request is sent, so messages sent right after it route to that window.
+ *
+ * @returns the hosting window id, or undefined when no window is connected
+ *          to `backendId` (nothing can host the workspace)
+ */
+export function adoptWorkspaceForBackgroundHosting(
+  workspaceId: string,
+  backendId: string,
+): number | undefined {
+  const hosting = getWindowIdsForWorkspace(workspaceId, backendId);
+  if (hosting.length > 0) return hosting[0];
+
+  const focusedId = BrowserWindow.getFocusedWindow()?.id;
+  const candidates = [
+    ...(focusedId !== undefined && windowOpenWorkspaceTabs.has(focusedId) ? [focusedId] : []),
+    ...windowOpenWorkspaceTabs.keys(),
+  ];
+  const windowId = pickBackgroundHostWindow(backendId, candidates, liveWindowHostChecker);
+  if (windowId === undefined) return undefined;
+  const window = BrowserWindow.fromId(windowId);
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return undefined;
+
+  const existing = windowBackgroundWorkspaces.get(windowId);
+  const workspaceIds =
+    existing && existing.backendId === backendId
+      ? [...existing.workspaceIds, workspaceId]
+      : [workspaceId];
+  windowBackgroundWorkspaces.set(windowId, { workspaceIds, backendId });
+  window.webContents.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId });
+  logger.info('Background-hosting workspace for browser ops', { workspaceId, windowId });
+  app.emit('window-workspace-state-changed');
+  return windowId;
 }
 
 /**
@@ -426,11 +482,21 @@ app.on('browser-window-created', (_event, window) => {
     lastKnownWindowWorkspaceIds.delete(window.id);
     clearWindowBrowserFocusOwner(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
+    windowBackgroundWorkspaces.delete(window.id);
     // A close changes the set of open workspaces: notify listeners (menu
     // rebuild, cache trim, notification-service reconciliation) so services
     // for workspaces no longer open anywhere are torn down.
     app.emit('window-workspace-state-changed');
   });
+  // A full renderer load (reload, crash recovery) starts from empty state,
+  // so the window no longer hosts any background workspace; the next agent
+  // browser op re-adopts on demand.
+  const windowId = window.id;
+  const forgetBackgroundWorkspaces = () => {
+    if (windowBackgroundWorkspaces.delete(windowId)) app.emit('window-workspace-state-changed');
+  };
+  window.webContents.on('did-navigate', forgetBackgroundWorkspaces);
+  window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
   // Keep each window's renderer in sync with its native full-screen state,
   // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
   window.on('enter-full-screen', () => {
