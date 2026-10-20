@@ -18,7 +18,7 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
-  import { prepareMessageBlocks } from './prepare-message-blocks';
+  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -207,9 +207,9 @@
     const map = new Map<string, RenderBlock[]>();
     groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const contentBlock = block as ContentBlock;
-        if (contentBlock.text) {
-          const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
+        const text = renderedBlockText(block as ContentBlock);
+        if (text) {
+          const { cleanedContent } = parseSuggestedPrompts(text);
           const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
           map.set(
             String(index),
@@ -219,8 +219,9 @@
       } else if (block.type === 'content_group') {
         const group = block as ContentBlockGroup;
         group.children.forEach((child, childIndex) => {
-          if (child.type === 'text' && child.text) {
-            const { cleanedContent } = parseSuggestedPrompts(child.text);
+          const childText = child.type === 'text' ? renderedBlockText(child) : '';
+          if (childText) {
+            const { cleanedContent } = parseSuggestedPrompts(childText);
             const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
             map.set(
               `${index}-${childIndex}`,
@@ -482,7 +483,8 @@
         {workspaceId}
       />
     </div>
-  {:else if block.type === 'text' && block.text}
+  {:else if block.type === 'text' && renderedBlockText(block)}
+    {@const blockText = renderedBlockText(block)}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
     <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       {#if isStreaming}
@@ -493,7 +495,7 @@
             : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
           data-assistant-prose={nested ? undefined : 'static-streaming'}
         >
-          {block.text}
+          {blockText}
         </div>
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
@@ -502,7 +504,7 @@
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
-        {@const cleanedText = parseSuggestedPrompts(block.text).cleanedContent}
+        {@const cleanedText = parseSuggestedPrompts(blockText).cleanedContent}
         {#if cleanedText.trim()}
           <div
             class={nested ? undefined : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}

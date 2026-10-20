@@ -80,6 +80,8 @@ const content = [
   tool('read-d'),
   tool('read-c', { path: 'src/c.ts' }),
   { type: 'text', text: 'delta needle after a superseded skeleton' },
+  tool('read-e'),
+  { type: 'text', content: 'echo needle in a legacy content-only text block' },
 ] as ContentBlock[];
 
 const message = {
@@ -121,14 +123,14 @@ describe('chat search and renderer block path parity', () => {
         workspaceId: WORKSPACE_ID,
       });
 
-      expect(matches).toHaveLength(4);
+      expect(matches).toHaveLength(5);
       const located = matches.map((match) => {
         const element = view.container.querySelector(
           `[data-chat-search-block-path="${match.blockPath}"]`,
         );
         return element?.textContent?.match(/(\w+) needle/)?.[1] ?? null;
       });
-      expect(located).toEqual(['alpha', 'bravo', 'charlie', 'delta']);
+      expect(located).toEqual(['alpha', 'bravo', 'charlie', 'delta', 'echo']);
     },
   );
 });

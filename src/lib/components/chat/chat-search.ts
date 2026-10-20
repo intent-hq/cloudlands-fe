@@ -17,7 +17,7 @@ import {
   isStandaloneToolResult,
 } from './tool-result-pairing';
 import { groupMessageBlocks } from './operational-run-collapse';
-import { prepareMessageBlocks } from './prepare-message-blocks';
+import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
 
 export interface ChatSearchOptions {
   /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
@@ -84,7 +84,7 @@ function buildMessageSearchBlocks(
   grouped.forEach((block, blockIndex) => {
     const path = chatSearchBlockPath(blockIndex);
     if (block.type === 'text') {
-      addText(block.text || block.content || '', path, []);
+      addText(renderedBlockText(block), path, []);
       return;
     }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
@@ -107,7 +107,7 @@ function buildMessageSearchBlocks(
         }
         if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
           addText(
-            child.text || child.content || '',
+            renderedBlockText(child),
             chatSearchBlockPath(blockIndex, childIndex),
             child.type === 'thinking'
               ? [`thinking:${chatSearchBlockPath(blockIndex, childIndex)}`]
@@ -140,7 +140,7 @@ function buildMessageSearchBlocks(
     block.children.forEach((child, childIndex) => {
       const childPath = chatSearchBlockPath(blockIndex, childIndex);
       if (child.type === 'text') {
-        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+        addText(renderedBlockText(child), childPath, [`group:${path}`]);
       } else if (
         child.type === 'tool_result' &&
         isStandaloneToolResult(toolResultClassification, child)

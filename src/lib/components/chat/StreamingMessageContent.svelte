@@ -18,7 +18,7 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
-  import { prepareMessageBlocks } from './prepare-message-blocks';
+  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -398,7 +398,7 @@
     const results = new Map<string, ParsedTextResult>();
     groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const textContent = (block as ContentBlock).text || (block as any).content || '';
+        const textContent = renderedBlockText(block as ContentBlock);
         if (textContent) {
           const parsed = parseTextBlock(textContent);
           results.set(String(index), {
@@ -492,7 +492,7 @@
     const contentBlock = block as ContentBlock;
     if (isNavLinkBlock(contentBlock)) return true;
     if (contentBlock.type === 'text') {
-      const text = contentBlock.text || (contentBlock as any).content || '';
+      const text = renderedBlockText(contentBlock);
       return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
     }
     if (contentBlock.type === 'image') {
@@ -714,8 +714,8 @@
         {workspaceId}
       />
     </div>
-  {:else if block.type === 'text' && (block.text || (block as any).content)}
-    {@const textContent = block.text || (block as any).content || ''}
+  {:else if block.type === 'text' && renderedBlockText(block)}
+    {@const textContent = renderedBlockText(block)}
     {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
       blocks: [],
       setupScript: null,

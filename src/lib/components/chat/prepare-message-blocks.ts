@@ -16,9 +16,13 @@ export interface PrepareMessageBlocksOptions {
   hideToolCalls?: boolean;
 }
 
+/** The text a chat renderer shows for a text block (legacy `content` as fallback). */
+export function renderedBlockText(block: Pick<ContentBlock, 'text' | 'content'>): string {
+  return block.text || block.content || '';
+}
+
 function hasVisibleText(block: ContentBlock): boolean {
-  const text = block.text || block.content || '';
-  return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
+  return parseSuggestedPrompts(renderedBlockText(block)).cleanedContent.trim().length > 0;
 }
 
 /**
@@ -29,9 +33,11 @@ function hasVisibleText(block: ContentBlock): boolean {
  * Order matters and mirrors what the transcript shows:
  * 1. strip suggested prompts (rendered separately by ChatPanel);
  * 2. collapse duplicate resource blocks to one card per resource;
- * 3. normalize assistant video shapes, then drop repeated video sources;
+ * 3. normalize assistant video shapes;
  * 4. drop wizard-only question cards, empty text, and (optionally) tool rows;
- * 5. keep only the last tool_use per id (the skeleton is superseded by the
+ * 5. drop repeated video sources among what is left, so a hidden block never
+ *    claims a source and suppresses a visible copy;
+ * 6. keep only the last tool_use per id (the skeleton is superseded by the
  *    block carrying the real input).
  */
 export function prepareMessageBlocks(
@@ -42,8 +48,10 @@ export function prepareMessageBlocks(
   const withoutPrompts = parseSuggestedPromptsFromContentBlocks(content, {
     isStreaming,
   }).contentBlocks;
-  const kept = dedupeAgentVideoContentBlocks(
-    normalizeAgentVideoContentBlocks(dedupeResourceBlocks(withoutPrompts), role, workspaceId),
+  const visible = normalizeAgentVideoContentBlocks(
+    dedupeResourceBlocks(withoutPrompts),
+    role,
+    workspaceId,
   ).filter((block) => {
     if (isQuestionResourceBlock(block)) return false;
     if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
@@ -52,6 +60,7 @@ export function prepareMessageBlocks(
     if (block.type === 'text') return hasVisibleText(block);
     return true;
   });
+  const kept = dedupeAgentVideoContentBlocks(visible);
 
   const lastToolUseIndex = new Map<string, number>();
   kept.forEach((block, index) => {

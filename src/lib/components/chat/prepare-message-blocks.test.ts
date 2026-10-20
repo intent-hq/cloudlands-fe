@@ -79,4 +79,16 @@ describe('prepareMessageBlocks', () => {
       prepareMessageBlocks(blocks, { ...assistant, hideToolCalls: true }).map((b) => b.type),
     ).toEqual(['text']);
   });
+
+  it('does not let a hidden tool result claim a video source from a visible copy', () => {
+    const source = { kind: 'remote' as const, url: 'https://media.example/recording.mp4' };
+    const result = prepareMessageBlocks(
+      [
+        block({ type: 'tool_result', tool_use_id: 't1', output: [{ type: 'video', source }] }),
+        block({ type: 'video', source }),
+      ],
+      { ...assistant, hideToolCalls: true },
+    );
+    expect(result.map((b) => b.type)).toEqual(['video']);
+  });
 });
