@@ -377,6 +377,15 @@ jobs:
             decide "$outcome" "$1" "$2; skipping."
           }
 
+          # The CI Gate and pin-PR guards below run these trusted helpers.
+          # Without them (the sparse checkout above failed) no guard can be
+          # evaluated, so stop with a named error instead of merging blind.
+          for helper in scripts/ci-gate-state.mjs scripts/rolling-pr.mjs; do
+            if [[ ! -f "$helper" ]]; then
+              decide error missing-helper "$helper is missing from the trusted checkout; cannot evaluate the merge guards" 1
+            fi
+          done
+
           # BE-dependency freshness guard (cron and push runs; the call
           # site below skips it on workflow_dispatch — manual means urgent):
           # the cut ships fe main against the sidecar pinned in
@@ -662,9 +671,11 @@ jobs:
           # Only a same-repo PR opened by the RELEASE_PAT identity ($viewer,
           # verified above) counts, exactly as auto-pin-intentd.yml finds
           # it — a fork PR named auto/intentd-pin cannot defer alpha cuts.
-          # A failed lookup ends the run as `error unexpected-exit`.
+          # A failed lookup, or output without the `number=` line, ends the
+          # run as `error unexpected-exit` (fail closed, never merge).
           pin_lookup=$(node scripts/rolling-pr.mjs --repo "$GITHUB_REPOSITORY" \
             --branch auto/intentd-pin --viewer "$viewer")
+          grep -Eq '^number=[0-9]*$' <<<"$pin_lookup"
           pin_pr=$(sed -n 's/^number=//p' <<<"$pin_lookup")
           if [[ -n "$pin_pr" ]]; then
             msg="Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
@@ -721,8 +732,9 @@ jobs:
           # auto-pin-intentd.yml) treats any concluded non-SUCCESS run —
           # including SKIPPED, NEUTRAL, STARTUP_FAILURE and STALE — as a
           # terminal failure: a hard skip (retrying cannot rerun a failed
-          # check). missing/pending (or an unreadable state) is transient.
-          gate=$(node scripts/ci-gate-state.mjs <<<"$detail") || gate=unreadable
+          # check). missing/pending is transient. Anything else (helper
+          # failure, unexpected rollup shape) is an error, not a wait.
+          gate=$(node scripts/ci-gate-state.mjs <<<"$detail") || gate=""
           case "$gate" in
             success) ;;
             failed:*)
@@ -731,8 +743,11 @@ jobs:
             missing)
               skip ci-gate-missing "CI Gate is not green on the current head (state: missing)"
               ;;
+            pending:*)
+              skip ci-gate-pending "CI Gate is not green on the current head (state: ${gate#pending:})"
+              ;;
             *)
-              skip ci-gate-pending "CI Gate is not green on the current head (state: $gate)"
+              decide error ci-gate-unreadable "could not read the CI Gate state of Release PR #$number (got '${gate:-<no output>}')" 1
               ;;
           esac
 

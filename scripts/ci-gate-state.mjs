@@ -46,6 +46,11 @@ function stateOf(run) {
  * NEUTRAL, STARTUP_FAILURE, STALE and conclusions GitHub may add later:
  * a gate that did not actually pass never counts as green.
  *
+ * This is deliberately stricter than branch protection, where a SKIPPED or
+ * NEUTRAL run satisfies a required check (intent-pr.yml relies on that for
+ * its own jobs). These workflows merge with the CI identity's exemption, so
+ * a gate that did not run is no evidence the tested head is good.
+ *
  * @param {unknown} detail parsed `gh pr view --json [headRefOid,]statusCheckRollup`
  * @param {{ head?: string }} [options] expected head commit, when it must match
  * @returns {string} the state line described in the file header

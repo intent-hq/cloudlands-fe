@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -133,6 +133,7 @@ function fixture() {
     liveHead: '',
     missingHead: false,
     missingHelper: false,
+    missingGuardHelper: '',
     fetchFail: false,
   };
 }
@@ -182,6 +183,7 @@ function runCut(
   ])
     writeFileSync(join(directory, 'scripts', script), readFileSync(`scripts/${script}`));
   if (data.missingHelper) rmSync(join(directory, 'scripts', 'release-pr-fast-path.mjs'));
+  if (data.missingGuardHelper) rmSync(join(directory, 'scripts', data.missingGuardHelper));
   writeFileSync(
     join(directory, 'fixture.json'),
     JSON.stringify({
@@ -316,12 +318,16 @@ process.stdout.write(payload);
     ? readFileSync(join(directory, 'summary'), 'utf8')
     : '';
   expect(decisionLines(summary)).toEqual(decisions);
-  const calls = readFileSync(join(directory, 'calls'), 'utf8');
+  // A run that stops before its first gh call never creates the log.
+  const calls = existsSync(join(directory, 'calls'))
+    ? readFileSync(join(directory, 'calls'), 'utf8')
+    : '';
   if (dryRun) expect(calls).not.toContain('"merge"');
   return {
     calls: calls
       .trim()
       .split('\n')
+      .filter(Boolean)
       .map((line) => JSON.parse(line) as string[]),
     slept: existsSync(join(directory, 'slept')),
     headRefOid,
@@ -1268,6 +1274,25 @@ describe('auto-cut decision line', () => {
     data.fail = 'graphql';
     const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', true, 1);
     expect(result.decision).toEqual(['error', 'unexpected-exit']);
+  });
+
+  it.each(['ci-gate-state.mjs', 'rolling-pr.mjs'])(
+    'stops with a named error, never a merge, when the trusted %s is missing',
+    (helper) => {
+      const data = pinFixture();
+      data.missingGuardHelper = helper;
+      const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+      expect(result.decision).toEqual(['error', 'missing-helper']);
+      expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
+    },
+  );
+
+  it('reports an unreadable CI Gate state as an error, not a pending wait', () => {
+    const data = pinFixture();
+    data.detail.statusCheckRollup = {} as never;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+    expect(result.decision).toEqual(['error', 'ci-gate-unreadable']);
+    expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
   });
 
   it('reports throttle and in-flight deferrals from their own steps', () => {
