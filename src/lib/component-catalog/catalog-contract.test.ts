@@ -2,6 +2,9 @@
 // Intentionally update after reviewed fixture/contract changes with:
 // NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u
 // Always review the generated snapshot diff before staging it; unrelated churn is not acceptable.
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
@@ -15,6 +18,12 @@ import PatternCatalogPreview from './renderers/PatternCatalogPreview.svelte';
 import { getCatalogEntry } from './catalog';
 import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
+import {
+  catalogContractBudgetMs,
+  snapshotLineCounts,
+  snapshotLinesFor,
+} from './catalog-contract-budget';
+import { defaultTestTimeoutMs, isCiEnv } from '../../../scripts/vitest-timeouts.mjs';
 import '../../app.css';
 
 // Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
@@ -113,8 +122,19 @@ const cases: ContractCase[] = [
     fixture,
   })) ?? []),
 ].sort((left, right) => left.key.localeCompare(right.key));
-const slowCases = cases.filter(({ key }) => key === 'product:fields:field-state-matrix');
-const standardCases = cases.filter(({ key }) => key !== 'product:fields:field-state-matrix');
+// Each entry's budget follows its committed DOM snapshot size, so heavy fixtures
+// get time in proportion to what they render (see catalog-contract-budget.ts).
+// A filesystem path, not `new URL(…, import.meta.url)`: Vite rewrites that into a dev-server URL.
+const snapshotPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__snapshots__',
+  'catalog-contract.test.ts.snap',
+);
+const snapshotLines = snapshotLineCounts(
+  existsSync(snapshotPath) ? readFileSync(snapshotPath, 'utf8') : '',
+);
+const budgetMs = (testCase: ContractCase) =>
+  catalogContractBudgetMs(snapshotLinesFor(snapshotLines, testCase.key), defaultTestTimeoutMs());
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
   'pattern:collection:collection-states': [
@@ -236,7 +256,7 @@ async function verifyCatalogContract(testCase: ContractCase) {
         ),
       ).not.toBeNull();
     },
-    { timeout: 30_000 },
+    { timeout: budgetMs(testCase) },
   );
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
@@ -304,7 +324,24 @@ describe('catalog generated identity normalization', () => {
   });
 });
 
+describe('catalog contract budgets', () => {
+  // Without this, an unreadable snapshot would silently put every entry on the fallback.
+  it.runIf(existsSync(snapshotPath))('reads entry sizes from the committed snapshot', () => {
+    expect(snapshotLines.size).toBeGreaterThan(0);
+  });
+
+  // CI never writes new snapshots, so there every entry must resolve to its committed
+  // snapshot; an unresolved one means the title matching drifted from vitest's format.
+  it.runIf(isCiEnv())('sizes every entry from its committed snapshot', () => {
+    expect(
+      cases.filter((testCase) => snapshotLinesFor(snapshotLines, testCase.key) === undefined),
+    ).toEqual([]);
+  });
+});
+
 describe.sequential('catalog DOM, token, and accessibility contracts', () => {
-  it.each(standardCases)('$key', verifyCatalogContract);
-  it.each(slowCases)('$key', verifyCatalogContract, 90_000);
+  // One `it.each` per case keeps the `$key` titles, and so the snapshot keys, unchanged.
+  for (const testCase of cases) {
+    it.each([testCase])('$key', verifyCatalogContract, budgetMs(testCase));
+  }
 });
