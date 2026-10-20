@@ -81,19 +81,14 @@ vi.mock('../workspace-task-fallback', async (importOriginal) => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const [{ createAppStoreMockModule }, { initialState: chatDrafts }, { initialState: questionUi }] =
-    await Promise.all([
-      import('$store/renderer/utils/test-helpers/store-mock'),
-      import('$store/renderer/slices/chat-drafts/chat-drafts-slice'),
-      import('$store/renderer/slices/question-ui/question-ui-slice'),
-    ]);
+  const [{ createAppStoreMockModule }, { chatPanelSliceState }] = await Promise.all([
+    import('$store/renderer/utils/test-helpers/store-mock'),
+    import('./mocks/chat-panel-render-scaffold'),
+  ]);
   return createAppStoreMockModule({
     state: () => ({
+      ...chatPanelSliceState(),
       agentSubscriptionUI: { entries: {} },
-      browser: { byWorkspaceId: {} },
-      chatDrafts,
-      chatPanelUi: { byWorkspaceId: {} },
-      questionUi,
     }),
     dispatch: testState.dispatch,
   });
@@ -127,7 +122,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/panel-layout/panel-layout-selectors')
+  >()),
   selectAllTabs: vi.fn(() => testState.readable([] as unknown[])),
   selectPanels: testState.selector({}),
   selectHiddenTabs: testState.selector([] as unknown[]),
@@ -147,48 +145,83 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
 );
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
-  selectNoteById: testState.selector(null),
-}));
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasks: testState.selectorFrom(() => testState.workspaceTasks),
-  selectWorkspaceTasksInitialized: testState.selectorFrom(
-    () => testState.workspaceTasksInitialized,
-  ),
-}));
-vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+vi.mock(
+  '$store/renderer/slices/workspace-notes/workspace-notes-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-notes/workspace-notes-selectors')
+    >()),
+    selectNoteById: testState.selector(null),
+  }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors')
+    >()),
+    selectWorkspaceTasks: testState.selectorFrom(() => testState.workspaceTasks),
+    selectWorkspaceTasksInitialized: testState.selectorFrom(
+      () => testState.workspaceTasksInitialized,
+    ),
+  }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/presence/presence-selectors')>()),
   selectAgentTypingPeople: testState.selector([]),
   selectPresenceOwnPrincipalId: testState.selector(null),
 }));
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
-  selectCheckedPanels: testState.selector([]),
-  selectPanels: testState.selector([]),
-  selectCheckedSelections: testState.selector([]),
-}));
-vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors')
+    >()),
+    selectCheckedPanels: testState.selector([]),
+    selectPanels: testState.selector([]),
+    selectCheckedSelections: testState.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/terminals/terminals-selectors')
+  >()),
   selectWorkspaceSetupTerminal: testState.selector(null),
 }));
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
-  selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors')
+    >()),
+    selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
+  }),
+);
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
 );
-vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
-  selectTasksForAgent: testState.selector([]),
-}));
-vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+vi.mock(
+  '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors')
+    >()),
+    selectTasksForAgent: testState.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/permission/permission-selectors')
+  >()),
   selectPermissionRequests: testState.selector([]),
-}));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectChatAuroraEnabled: testState.selector(true),
-  selectCollapseToolRuns: testState.selector(false),
-  selectIsAgentMonospace: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
 );
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/specialists/specialists-selectors')
+  >()),
   selectSpecialists: testState.selector([]),
   selectEffectiveBehaviorPrompt: testState.selector(''),
   selectEffectiveModel: testState.selector(''),

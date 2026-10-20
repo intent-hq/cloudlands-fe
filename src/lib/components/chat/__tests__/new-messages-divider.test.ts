@@ -51,56 +51,74 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
 );
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectAllTabs: [] }),
-);
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectNoteById: null }),
-);
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectWorkspaceTasks: [],
-    selectWorkspaceTasksInitialized: false,
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectAllTabs: [],
   }),
 );
-vi.mock('$store/renderer/slices/presence/presence-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
+vi.mock(
+  '$store/renderer/slices/workspace-notes/workspace-notes-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectNoteById: null,
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectWorkspaceTasks: [],
+      selectWorkspaceTasksInitialized: false,
+    }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
     selectAgentTypingPeople: [],
     selectPresenceOwnPrincipalId: null,
   }),
 );
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectCheckedPanels: [],
-    selectPanels: [],
-    selectCheckedSelections: [],
-  }),
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectCheckedPanels: [],
+      selectPanels: [],
+      selectCheckedSelections: [],
+    }),
 );
-vi.mock('$store/renderer/slices/terminals/terminals-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectWorkspaceSetupTerminal: null }),
-);
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectWorkspaceNavigationMainPanel: { type: 'empty' },
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectWorkspaceSetupTerminal: null,
   }),
 );
 vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectWorkspaceNavigationMainPanel: { type: 'empty' },
+    }),
+);
+vi.mock(
   '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
-  async () =>
-    (await import('./mocks/chat-panel-render-scaffold')).stub({ selectTasksForAgent: [] }),
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectTasksForAgent: [],
+    }),
 );
-vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectPermissionRequests: [] }),
-);
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
-    selectChatAuroraEnabled: false,
-    selectCollapseToolRuns: false,
-    selectIsAgentMonospace: false,
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+    selectPermissionRequests: [],
   }),
 );
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).stub({
+vi.mock(
+  '$store/renderer/slices/user-preferences/user-preferences-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
+      selectChatAuroraEnabled: false,
+    }),
+);
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {
     selectSpecialists: [],
     selectEffectiveBehaviorPrompt: '',
     selectEffectiveModel: '',
