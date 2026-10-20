@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "브랜치 이름 검색 또는 입력...",
   "workspace_branchSelector_selectBranch_label": "브랜치 선택",
   "workspace_branchSelector_selectRepoFirst_label": "먼저 저장소를 선택하세요",
-  "workspace_branchSelector_stayInFolder_description": "저장소 폴더에서 그대로 작업합니다(격리된 {isolationLabel} 없음). 에이전트가 실행 중일 때는 하나의 브랜치에 머물러야 합니다.",
+  "workspace_branchSelector_stayInFolder_description": "저장소 폴더에서 그대로 작업합니다(격리된 {isolationLabel} 없음).",
   "workspace_branchSelector_typeManually_description": "위에서 브랜치 이름을 직접 입력할 수도 있습니다.",
   "workspace_branchSelector_uncommittedChanges_tooltip": "커밋되지 않은 변경 사항은 포함되지 않습니다",
   "workspace_branchSelector_uncommittedNotIncluded_label": "커밋되지 않은 변경 사항은 포함되지 않습니다.",

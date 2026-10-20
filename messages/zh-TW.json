@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "搜尋或輸入分支名…",
   "workspace_branchSelector_selectBranch_label": "選擇分支",
   "workspace_branchSelector_selectRepoFirst_label": "請先選擇儲存庫",
-  "workspace_branchSelector_stayInFolder_description": "留在你的儲存庫資料夾中（不使用隔離的{isolationLabel}）。智慧體執行期間請保持在同一分支上。",
+  "workspace_branchSelector_stayInFolder_description": "留在你的儲存庫資料夾中（不使用隔離的{isolationLabel}）。",
   "workspace_branchSelector_typeManually_description": "你仍可以在上方手動輸入分支名。",
   "workspace_branchSelector_uncommittedChanges_tooltip": "未提交的更改不會包含在內",
   "workspace_branchSelector_uncommittedNotIncluded_label": "未提交的更改不會包含在內。",

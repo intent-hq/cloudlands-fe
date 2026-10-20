@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "Suchen oder Branch-Namen eingeben...",
   "workspace_branchSelector_selectBranch_label": "Branch auswählen",
   "workspace_branchSelector_selectRepoFirst_label": "Wählen Sie zuerst ein Repository aus",
-  "workspace_branchSelector_stayInFolder_description": "Bleiben Sie in Ihrem Repo-Ordner (kein isoliertes {isolationLabel}). Achten Sie darauf, auf einem Branch zu bleiben, während Agenten laufen.",
+  "workspace_branchSelector_stayInFolder_description": "Bleiben Sie in Ihrem Repo-Ordner (kein isoliertes {isolationLabel}).",
   "workspace_branchSelector_typeManually_description": "Sie können oben trotzdem manuell einen Branch-Namen eingeben.",
   "workspace_branchSelector_uncommittedChanges_tooltip": "Nicht committete Änderungen werden nicht übernommen",
   "workspace_branchSelector_uncommittedNotIncluded_label": "Nicht committete Änderungen werden nicht übernommen.",

@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "ブランチ名を検索または入力...",
   "workspace_branchSelector_selectBranch_label": "ブランチを選択",
   "workspace_branchSelector_selectRepoFirst_label": "先にリポジトリを選択してください",
-  "workspace_branchSelector_stayInFolder_description": "リポジトリフォルダ内でそのまま作業します（分離された {isolationLabel} なし）。エージェントの実行中は 1 つのブランチにとどまるようにしてください。",
+  "workspace_branchSelector_stayInFolder_description": "リポジトリフォルダ内でそのまま作業します（分離された {isolationLabel} なし）。",
   "workspace_branchSelector_typeManually_description": "上でブランチ名を手動で入力することもできます。",
   "workspace_branchSelector_uncommittedChanges_tooltip": "未コミットの変更は含まれません",
   "workspace_branchSelector_uncommittedNotIncluded_label": "未コミットの変更は含まれません。",

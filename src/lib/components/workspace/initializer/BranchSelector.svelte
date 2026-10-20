@@ -160,6 +160,7 @@
   let isOpen = $state(false); // Track dropdown open state
   let containerEl: HTMLDivElement | undefined = $state(); // Container for positioning
   let triggerEl: HTMLButtonElement | null = $state(null); // Focus target after a selection closes the content
+  let directCheckoutFooterEl: HTMLDivElement | undefined = $state();
 
   $effect(() => {
     if (!isOpen) return;
@@ -1758,6 +1759,11 @@
             oncommit={(branch) => {
               if (typeof branch === 'string') selectBranch(branch);
             }}
+            oninteractoutside={(event) => {
+              if (event.target instanceof Node && directCheckoutFooterEl?.contains(event.target)) {
+                event.preventDefault();
+              }
+            }}
             class="px-3 pb-2"
             contentClass="border-0 shadow-none"
           />
@@ -1774,7 +1780,10 @@
 
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
-          <div class="shrink-0 px-2 pt-2 pb-3 border-t border-border bg-popover">
+          <div
+            bind:this={directCheckoutFooterEl}
+            class="shrink-0 px-2 pt-2 pb-3 border-t border-border bg-popover"
+          >
             <label class="w-full flex items-start gap-3 px-2 py-1 text-left cursor-pointer">
               <Checkbox
                 checked={skipIsolation}
@@ -1782,8 +1791,7 @@
                   branch: currentBranch,
                 })}
                 class="-mb-1"
-                onCheckedChange={() => {
-                  const enabling = !skipIsolation;
+                onCheckedChange={(enabling) => {
                   try {
                     onSkipIsolationChange(enabling);
                   } catch (e) {

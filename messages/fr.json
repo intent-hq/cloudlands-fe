@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "Rechercher ou saisir un nom de branche...",
   "workspace_branchSelector_selectBranch_label": "Sélectionner une branche",
   "workspace_branchSelector_selectRepoFirst_label": "Sélectionnez d'abord un dépôt",
-  "workspace_branchSelector_stayInFolder_description": "Restez dans votre dossier de dépôt (pas de {isolationLabel} isolé). Veillez à rester sur une seule branche pendant que des agents sont actifs.",
+  "workspace_branchSelector_stayInFolder_description": "Restez dans votre dossier de dépôt (pas de {isolationLabel} isolé).",
   "workspace_branchSelector_typeManually_description": "Vous pouvez toujours saisir un nom de branche manuellement ci-dessus.",
   "workspace_branchSelector_uncommittedChanges_tooltip": "Les modifications non validées ne seront pas incluses",
   "workspace_branchSelector_uncommittedNotIncluded_label": "Les modifications non validées ne seront pas incluses.",

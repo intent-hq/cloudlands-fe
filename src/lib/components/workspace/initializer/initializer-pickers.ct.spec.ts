@@ -322,6 +322,48 @@ for (const { name, width, height, position } of [
   });
 }
 
+test('work directly registers the first pointer click and preserves branches when reopened', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Pickers);
+  const fixture = page.getByTestId('initializer-pickers-fixture');
+  const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
+  const selection = page.getByTestId('initializer-selection');
+  const menu = page.getByRole('dialog');
+  const direct = menu.getByRole('checkbox', { name: /Work directly/ });
+  const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
+
+  await trigger.click();
+  await otherBranch.click();
+  await expect(selection).toContainText('"branch":"feature/task-3"');
+  await trigger.click();
+  await direct.hover();
+  await page.mouse.down();
+  await expect(menu.getByRole('listbox')).toBeVisible();
+  await page.mouse.up();
+  await expect(selection).toContainText('"skipIsolation":true');
+  await expect(selection).toContainText('"branch":"main"');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await expect(direct).toBeChecked();
+  await expect(otherBranch).toBeVisible();
+  await direct.focus();
+  await direct.press('Space');
+  await expect(selection).toContainText('"skipIsolation":false');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await direct.locator('..').click();
+  await expect(selection).toContainText('"skipIsolation":true');
+  await expect(menu).toHaveCount(0);
+});
+
 test('closed branch menu cannot refocus its input from a queued autofocus frame', async ({
   mount,
   page,

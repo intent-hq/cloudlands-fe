@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "Buscar o introducir nombre de rama...",
   "workspace_branchSelector_selectBranch_label": "Seleccionar una rama",
   "workspace_branchSelector_selectRepoFirst_label": "Seleccione primero un repositorio",
-  "workspace_branchSelector_stayInFolder_description": "Permanezca en su carpeta del repositorio (sin {isolationLabel} aislado). Asegúrese de permanecer en una sola rama mientras los agentes están en ejecución.",
+  "workspace_branchSelector_stayInFolder_description": "Permanezca en su carpeta del repositorio (sin {isolationLabel} aislado).",
   "workspace_branchSelector_typeManually_description": "Aún puede escribir un nombre de rama manualmente arriba.",
   "workspace_branchSelector_uncommittedChanges_tooltip": "Los cambios sin confirmar no se incluirán",
   "workspace_branchSelector_uncommittedNotIncluded_label": "Los cambios sin confirmar no se incluirán.",

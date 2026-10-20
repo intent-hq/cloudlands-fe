@@ -59,6 +59,7 @@
     /** Accepted user activation, including reselecting the current single value. */
     oncommit?: (value: string | string[], option: ComboboxOption) => void;
     onopenchange?: (open: boolean) => void;
+    oninteractoutside?: (event: PointerEvent) => void;
   }
 
   type StaticContentChildProps = { props: Record<string, unknown> };
@@ -107,6 +108,7 @@
     onchange,
     oncommit,
     onopenchange,
+    oninteractoutside,
   }: Props = $props();
 
   const surface = clampSurface(useSurface() + 2);
@@ -661,6 +663,7 @@
   {#if staticPosition}
     <ComboboxPrimitive.ContentStatic
       preventScroll={false}
+      onInteractOutside={oninteractoutside}
       data-static-position
       data-surface-level={surface}
       class={cn(menuOverlay(), 'w-full max-h-72 rounded-(--radius-medium)', contentClass)}
@@ -671,6 +674,7 @@
     <ComboboxPrimitive.Portal disabled={!portal}>
       <ComboboxPrimitive.Content
         {side}
+        onInteractOutside={oninteractoutside}
         sideOffset={4}
         collisionPadding={OVERLAY_VIEWPORT_GUTTER}
         data-surface-level={surface}

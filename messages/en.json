@@ -1189,7 +1189,7 @@
   "workspace_branchSelector_search_placeholder": "Search or enter branch name...",
   "workspace_branchSelector_selectBranch_label": "Select a branch",
   "workspace_branchSelector_selectRepoFirst_label": "Select a repository first",
-  "workspace_branchSelector_stayInFolder_description": "Stay in your repo folder (no isolated {isolationLabel}). Make sure to stay on one branch while agents are running.",
+  "workspace_branchSelector_stayInFolder_description": "Stay in your repo folder (no isolated {isolationLabel}).",
   "workspace_branchSelector_typeManually_description": "You can still type a branch name manually above.",
   "workspace_branchSelector_uncommittedChanges_tooltip": "Uncommitted changes won't be included",
   "workspace_branchSelector_uncommittedNotIncluded_label": "Uncommitted changes won't be included.",
