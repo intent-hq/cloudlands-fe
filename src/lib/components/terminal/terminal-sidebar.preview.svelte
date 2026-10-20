@@ -13,7 +13,6 @@
       | 'detecting';
     longContent?: boolean;
     scriptCount?: number;
-    terminalCount?: number;
     short?: boolean;
   }
 
@@ -31,8 +30,7 @@
       refreshing: { props: { state: 'refreshing' } },
       'pagination-error': { props: { state: 'page-error' } },
       'long-content': { props: { state: 'page-error', longContent: true } },
-      'no-terminals': { props: { terminalCount: 0 } },
-      'short-many': { props: { state: 'ready', scriptCount: 12, terminalCount: 12, short: true } },
+      'short-many': { props: { state: 'ready', scriptCount: 12, short: true } },
     },
   });
 </script>
@@ -47,12 +45,9 @@
     setScriptPageCursor,
     setScriptsData,
     setScriptsInitialized,
+    scriptDetectionRequested,
+    scriptDetectionFinished,
   } from '$store/renderer/slices/scripts/scripts-slice';
-  import {
-    loadWorkspaceTerminals,
-    selectTerminal,
-  } from '$store/renderer/slices/terminals/terminals-slice';
-  import { setExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { m } from '$shared/paraglide/messages.js';
   import type { ScriptListEntry } from '$features/scripts/types';
@@ -61,7 +56,6 @@
     state: listState = 'empty',
     longContent = false,
     scriptCount = 3,
-    terminalCount = 1,
     short = false,
   }: Props = $props();
   const workspaceId = 'preview-terminal-sidebar';
@@ -111,28 +105,9 @@
     );
     store.dispatch(setScriptPageCursor(workspaceId, populated ? 'preview-next-page' : undefined));
     store.dispatch(
-      setExecutorState(workspaceId, 'script-detect', {
-        status: listState === 'detecting' ? 'running' : 'idle',
-        agentId: null,
-      }),
-    );
-    const terminals = Array.from({ length: terminalCount }, (_, index) => ({
-      id: `preview-terminal-${index}`,
-      name: longContent
-        ? `Terminal for console development and deployment ${index + 1}`
-        : index === 0
-          ? 'Terminal'
-          : `Terminal ${index + 1}`,
-      workspaceId,
-      createdAt,
-    }));
-    store.dispatch(
-      loadWorkspaceTerminals(
-        workspaceId,
-        terminals,
-        { isOpen: true, activeTerminalId: terminals[0]?.id ?? null },
-        'preview-terminal-boot',
-      ),
+      listState === 'detecting'
+        ? scriptDetectionRequested(workspaceId, 'preview-detection')
+        : scriptDetectionFinished(workspaceId, 'preview-detection'),
     );
   });
 </script>
@@ -148,7 +123,6 @@
     {workspaceId}
     {selectedScriptId}
     onSelectScript={(id) => (selectedScriptId = id)}
-    onSelectTerminal={(id) => store.dispatch(selectTerminal(workspaceId, id))}
     class="w-full! border-l-0"
   />
 </div>
