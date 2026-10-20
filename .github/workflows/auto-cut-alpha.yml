@@ -165,15 +165,18 @@ jobs:
       - name: Checkout trusted release helpers
         if: steps.token.outputs.enabled == 'true'
         uses: actions/checkout@v7
-        # Missing helper means no exemption; retain the original guard even
-        # if checkout is unavailable. No package install/build is needed.
+        # Missing fast-path helper means no exemption. The CI Gate and
+        # pin-PR helpers fail closed: without them the run does not merge.
+        # No package install/build is needed.
         continue-on-error: true
         with:
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /scripts/ci-gate-state.mjs
             /scripts/intentd-release-readiness.mjs
             /scripts/release-pr-fast-path.mjs
+            /scripts/rolling-pr.mjs
       # Every automated attempt obeys the hourly floor, including pin pushes.
       # Manual dispatch bypasses it. The merge step re-checks the newest tag
       # to close the race with another cut. Tag/date lookup errors fail open.
@@ -656,12 +659,13 @@ jobs:
           # commit refreshes the Release PR — so the fe alpha carries the
           # new sidecar; its merge push chains straight into a fresh cut
           # run (and the next ten-minute run backstops it).
-          # `--head` also matches fork PRs whose branch merely shares the
-          # name, so restrict to same-repo heads — otherwise a fork PR
-          # named auto/intentd-pin could defer alpha cuts indefinitely.
-          pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --head auto/intentd-pin --json number,isCrossRepository \
-            --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
+          # Only a same-repo PR opened by the RELEASE_PAT identity ($viewer,
+          # verified above) counts, exactly as auto-pin-intentd.yml finds
+          # it — a fork PR named auto/intentd-pin cannot defer alpha cuts.
+          # A failed lookup ends the run as `error unexpected-exit`.
+          pin_lookup=$(node scripts/rolling-pr.mjs --repo "$GITHUB_REPOSITORY" \
+            --branch auto/intentd-pin --viewer "$viewer")
+          pin_pr=$(sed -n 's/^number=//p' <<<"$pin_lookup")
           if [[ -n "$pin_pr" ]]; then
             msg="Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the alpha cut until the new sidecar pin lands"
             echo "::notice::$msg"
@@ -713,20 +717,24 @@ jobs:
           # (statusCheckRollup reflects the head commit). "missing" covers
           # a head whose checks have not started yet — the release-PR CI
           # fast path normally turns the gate green ~1 min after each
-          # release-please refresh. A terminal non-success conclusion is a
-          # hard skip (retrying cannot rerun a failed check); anything else
-          # (missing/pending) is transient.
-          gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
-            | if length == 0 then "missing"
-              elif all(.conclusion == "SUCCESS") then "success"
-              else (map(.conclusion // .status // "PENDING") | join(","))
-              end' <<<"$detail")
-          if [[ "$gate" != "success" ]]; then
-            if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED' <<<"$gate"; then
-              decide skip ci-gate-failed "CI Gate concluded unsuccessfully on the current head (state: $gate); skipping."
-            fi
-            skip "$([[ "$gate" == "missing" ]] && echo ci-gate-missing || echo ci-gate-pending)" "CI Gate is not green on the current head (state: $gate)"
-          fi
+          # release-please refresh. scripts/ci-gate-state.mjs (shared with
+          # auto-pin-intentd.yml) treats any concluded non-SUCCESS run —
+          # including SKIPPED, NEUTRAL, STARTUP_FAILURE and STALE — as a
+          # terminal failure: a hard skip (retrying cannot rerun a failed
+          # check). missing/pending (or an unreadable state) is transient.
+          gate=$(node scripts/ci-gate-state.mjs <<<"$detail") || gate=unreadable
+          case "$gate" in
+            success) ;;
+            failed:*)
+              decide skip ci-gate-failed "CI Gate concluded unsuccessfully on the current head (state: ${gate#failed:}); skipping."
+              ;;
+            missing)
+              skip ci-gate-missing "CI Gate is not green on the current head (state: missing)"
+              ;;
+            *)
+              skip ci-gate-pending "CI Gate is not green on the current head (state: $gate)"
+              ;;
+          esac
 
           # --paginate walks every reviewThreads page (an unresolved
           # thread past the first page must still block the merge); --jq
@@ -742,6 +750,7 @@ jobs:
           # comments (totalCount > 100) is treated as human too:
           # authorship past the first page is unverifiable in one read,
           # and unverifiable authorship must block, never skip.
+          # shellcheck disable=SC2016 # GraphQL variables, not shell expansions.
           unresolved=$(gh api graphql --paginate \
             -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
               repository(owner: $owner, name: $repo) {
