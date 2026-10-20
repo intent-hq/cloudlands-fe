@@ -595,6 +595,40 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('still being checked');
   });
 
+  it('adds the queue position and estimate when the snapshot carries mergeQueue', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 2, queueSize: 2, estimatedTimeToMerge: 2254 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain(
+      'Open; queued to merge (#2 of 2 in queue · ~38 min to merge).',
+    );
+  });
+
+  it('shows the position alone while GitHub has no estimate yet', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 1, queueSize: 3 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open; queued to merge (#1 of 3 in queue).');
+  });
+
   it('renders the pre-existing readiness statuses when isInMergeQueue is absent', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });

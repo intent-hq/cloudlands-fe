@@ -17,6 +17,7 @@ import {
   onBackendReconnected,
 } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 
 const logger = createLogger('PrMonitorService');
 
@@ -53,6 +54,9 @@ export interface PrMonitorSnapshot {
   /** Additive: present (true) when the host reports the PR queued to merge;
    * absent when not queued or unknown. */
   isInMergeQueue?: boolean;
+  /** Additive: queue position and time-to-merge estimate, only while queued.
+   * Informational — queue movement never wakes the owning agent. */
+  mergeQueue?: MergeQueueEntry;
   rulesKnown: boolean;
 }
 

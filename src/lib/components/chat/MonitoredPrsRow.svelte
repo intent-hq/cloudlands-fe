@@ -37,6 +37,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
+  import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
@@ -312,7 +313,10 @@
     const snapshot = monitor.lastSnapshot;
     if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
     if (snapshot?.state === 'open' && snapshot.isInMergeQueue) {
-      return m.chat_monitoredPrs_status_mergeQueue();
+      const detail = formatMergeQueueSummary(snapshot.mergeQueue);
+      return detail
+        ? m.chat_monitoredPrs_status_mergeQueueDetail({ detail })
+        : m.chat_monitoredPrs_status_mergeQueue();
     }
     const blocker = inferredBlocker(monitor);
     if (blocker) return m.chat_monitoredPrs_status_blocked({ reason: blocker });
