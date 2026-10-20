@@ -1,10 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
-import {
-  parseSuggestedPrompts,
-  parseSuggestedPromptsFromContentBlocks,
-} from '$lib/utils/messageParser';
+import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
 interface ChatSearchBlock {
   messageId: string;
@@ -20,13 +17,13 @@ import {
   isStandaloneToolResult,
 } from './tool-result-pairing';
 import { groupMessageBlocks } from './operational-run-collapse';
-import type { ContentBlock } from '$shared/types';
-import { isQuestionResourceBlock } from '$shared/types/question-resource';
-import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
 
 export interface ChatSearchOptions {
   /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
   collapseToolRuns?: boolean;
+  /** Owning workspace, so video normalization (and its dedupe) matches the renderer. */
+  workspaceId?: string;
 }
 
 export interface ChatSearchMatch {
@@ -40,22 +37,6 @@ export interface ChatSearchMatch {
 
 export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
   childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
-
-/**
- * Mirror the transcript renderers' block filtering that changes block order or
- * count (resource dedupe, wizard-only questions, superseded tool_use skeletons)
- * so search block paths match the rendered DOM.
- */
-function renderedContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
-  const kept = dedupeResourceBlocks(blocks).filter((block) => !isQuestionResourceBlock(block));
-  const lastToolUse = new Map<string, number>();
-  kept.forEach((block, index) => {
-    if (block.type === 'tool_use' && block.id) lastToolUse.set(block.id, index);
-  });
-  return kept.filter(
-    (block, index) => block.type !== 'tool_use' || !block.id || lastToolUse.get(block.id) === index,
-  );
-}
 
 /** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
 function buildMessageSearchBlocks(
@@ -82,12 +63,14 @@ function buildMessageSearchBlocks(
     ];
   }
 
-  const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
-    isStreaming: !!message.isStreaming,
-  });
+  const isStreaming = !!message.isStreaming;
   const grouped = groupMessageBlocks(
-    renderedContentBlocks(parsedPromptBlocks.contentBlocks),
-    !!message.isStreaming,
+    prepareMessageBlocks(contentBlocks, {
+      role: message.role,
+      workspaceId: options.workspaceId,
+      isStreaming,
+    }),
+    isStreaming,
     !!options.collapseToolRuns,
   );
   const toolResultClassification = classifyToolResults(grouped);
@@ -101,7 +84,7 @@ function buildMessageSearchBlocks(
   grouped.forEach((block, blockIndex) => {
     const path = chatSearchBlockPath(blockIndex);
     if (block.type === 'text') {
-      addText(block.text || block.content || '', path, []);
+      addText(renderedBlockText(block), path, []);
       return;
     }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
@@ -124,7 +107,7 @@ function buildMessageSearchBlocks(
         }
         if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
           addText(
-            child.text || child.content || '',
+            renderedBlockText(child),
             chatSearchBlockPath(blockIndex, childIndex),
             child.type === 'thinking'
               ? [`thinking:${chatSearchBlockPath(blockIndex, childIndex)}`]
@@ -157,7 +140,7 @@ function buildMessageSearchBlocks(
     block.children.forEach((child, childIndex) => {
       const childPath = chatSearchBlockPath(blockIndex, childIndex);
       if (child.type === 'text') {
-        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+        addText(renderedBlockText(child), childPath, [`group:${path}`]);
       } else if (
         child.type === 'tool_result' &&
         isStandaloneToolResult(toolResultClassification, child)

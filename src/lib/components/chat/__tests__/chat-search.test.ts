@@ -265,3 +265,61 @@ describe('chat search with collapsed tool runs', () => {
     expect(match.blockPath).toBe('b:1');
   });
 });
+
+describe('chat search block paths follow the shared renderer preparation', () => {
+  const view = { type: 'tool_use', id: 'tool-a', name: 'view', input: {} };
+  const inlineVideo = { type: 'file', data: 'bXA0', mimeType: 'video/mp4', fileName: 'demo.mp4' };
+
+  it('skips empty and suggested-prompts-only text the renderer drops', () => {
+    const message = assistant('assistant-empty-text', [
+      { type: 'text', text: '   ' },
+      view,
+      { type: 'text', text: '<!-- suggested-prompts\nDo the thing.\n-->' },
+      { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
+      { type: 'text', text: 'prose needle' },
+    ] as AgentMessage['contentBlocks']);
+    const [match] = findChatSearchMatches([message], 'prose needle', new Map());
+    expect(match.blockPath).toBe('b:2');
+  });
+
+  it('counts a repeated video once, like the renderer', () => {
+    const message = assistant('assistant-videos', [
+      inlineVideo,
+      { ...inlineVideo },
+      { type: 'text', text: 'prose needle' },
+    ] as AgentMessage['contentBlocks']);
+    const [match] = findChatSearchMatches([message], 'prose needle', new Map());
+    expect(match.blockPath).toBe('b:1');
+  });
+
+  it('counts a duplicated resource card once, like the renderer', () => {
+    const card = {
+      type: 'resource',
+      resource: {
+        uri: 'intent-card://generic/1',
+        name: 'Generic',
+        mimeType: 'application/vnd.intent.other+json',
+        text: JSON.stringify({ a: 1 }),
+      },
+    };
+    const message = assistant('assistant-resources', [
+      card,
+      { ...card },
+      { type: 'text', text: 'prose needle' },
+    ] as AgentMessage['contentBlocks']);
+    const [match] = findChatSearchMatches([message], 'prose needle', new Map());
+    expect(match.blockPath).toBe('b:1');
+  });
+
+  it('drops the superseded tool_use skeleton, like the renderer', () => {
+    const message = assistant('assistant-skeleton', [
+      view,
+      { type: 'text', text: 'first needle' },
+      { ...view, input: { path: 'a.ts' } },
+      { type: 'text', text: 'second needle' },
+    ] as AgentMessage['contentBlocks']);
+    expect(
+      findChatSearchMatches([message], 'needle', new Map()).map((match) => match.blockPath),
+    ).toEqual(['b:0', 'b:2']);
+  });
+});
