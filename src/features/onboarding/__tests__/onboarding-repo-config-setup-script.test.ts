@@ -81,15 +81,29 @@ vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
-    >()),
-    selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
-    selectWorkspaceInitializerOnboardingFormState: {
-      select: () => mocks.persistedOnboardingFormState,
-    },
-  }),
+  async (importOriginal) => {
+    const original =
+      await importOriginal<
+        typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+      >();
+    return {
+      ...original,
+      selectWorkspaceInitializerHydrated: Object.assign(
+        () => mocks.readable(() => mocks.initializerHydrated),
+        {
+          effect: original.selectWorkspaceInitializerHydrated.effect,
+          select: () => mocks.initializerHydrated,
+        },
+      ),
+      selectWorkspaceInitializerOnboardingFormState: Object.assign(
+        () => mocks.readable(() => mocks.persistedOnboardingFormState),
+        {
+          effect: original.selectWorkspaceInitializerOnboardingFormState.effect,
+          select: () => mocks.persistedOnboardingFormState,
+        },
+      ),
+    };
+  },
 );
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -121,7 +135,18 @@ vi.mock('$shared/generated/ipc-client', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: mocks.gitPull } },
+  appClient: {
+    git: { pull: mocks.gitPull },
+    drafts: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+    },
+    settings: {
+      get: vi.fn(async () => ({ value: {} })),
+      update: vi.fn(async () => undefined),
+    },
+  },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -230,7 +255,7 @@ import OnboardingPage from '../OnboardingPage.svelte';
 import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup-scripts';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store as appStore } from '$store/renderer/store';
-import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import {
   workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreRequested,
@@ -408,7 +433,7 @@ beforeEach(() => {
     mocks.dispatch(action);
     return dispatch(action);
   });
-  cancelInitializationSaga = appStore.runSaga(workspaceInitializationSaga);
+  cancelInitializationSaga = appStore.runSaga(workspaceInitializerSaga);
 });
 
 afterEach(async () => {

@@ -1,6 +1,7 @@
 import {
   call,
   cancelled,
+  delay,
   fork,
   put,
   race,
@@ -16,10 +17,6 @@ import {
   retainImagePlacementIdentity,
   sendHeldFirstMessage,
 } from '$lib/components/workspace/initializer/staged-attachments';
-import {
-  releaseWorkspaceInitializationPreparation,
-  resolveWorkspaceInitializationPreparation,
-} from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -46,9 +43,11 @@ import { hydrateWorkspaceNavigation } from '../../workspace-navigation/workspace
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { recordLastUsedSetupScript } from '$features/setup-scripts/last-used';
+import { REPO_CONFIG_SCRIPT_NAME } from '$features/setup-scripts/repo-config';
 import {
   selectWorkspaceInitializationOutcome,
   selectWorkspaceInitializationResume,
+  selectWorkspaceInitializerRepoConfigProbe,
 } from '../workspace-initializer-selectors';
 import {
   setWorkspaceInitializerAgentForRepo,
@@ -66,12 +65,15 @@ import {
   workspaceInitializationSubmitted,
   workspaceInitializerDraftClearRequested,
   workspaceInitializerDraftSaveCancelled,
+  workspaceInitializerRepoConfigProbeFinished,
+  workspaceInitializerRepoConfigProbeReleased,
 } from '../workspace-initializer-slice';
 import type {
   WorkspaceInitializationConsumer,
   WorkspaceInitializationOutcome,
   WorkspaceInitializationRequest,
   WorkspaceInitializationResult,
+  WorkspaceInitializationSubmission,
   WorkspaceInitializationStagedItem,
 } from '../workspace-initializer-types';
 import {
@@ -462,6 +464,21 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
 type RequestedAction = ReturnType<typeof workspaceInitializationRequested>;
 type SubmittedAction = ReturnType<typeof workspaceInitializationSubmitted>;
 type ResumeAction = ReturnType<typeof workspaceInitializationResumeRequested>;
+type ObservedAction = { type: string; payload?: unknown };
+
+function isRepoConfigProbeSettlement(
+  candidate: ObservedAction,
+  id: string,
+  requestId: string,
+): boolean {
+  return (
+    (candidate.type === workspaceInitializerRepoConfigProbeFinished.type ||
+      candidate.type === workspaceInitializerRepoConfigProbeReleased.type) &&
+    Array.isArray(candidate.payload) &&
+    candidate.payload[0] === id &&
+    candidate.payload[1] === requestId
+  );
+}
 
 function* waitForSubmissionRelease(action: SubmittedAction): SagaGenerator<true> {
   while (true) {
@@ -469,6 +486,53 @@ function* waitForSubmissionRelease(action: SubmittedAction): SagaGenerator<true>
     const [id, seq] = released.payload;
     if (id === action.payload.consumer.id && (seq === undefined || seq === action.seq)) return true;
   }
+}
+
+function* settleSubmissionProbe(
+  submission: WorkspaceInitializationSubmission,
+  action: SubmittedAction,
+): SagaGenerator<WorkspaceInitializationSubmission> {
+  const reference = submission.repoConfigProbe;
+  if (!reference) return submission;
+  let probe = yield* selectWorkspaceInitializerRepoConfigProbe.effect(reference.id);
+  if (probe?.requestId === reference.requestId && probe.status === 'pending') {
+    const settled = yield* race({
+      changed: take((candidate: ObservedAction) =>
+        isRepoConfigProbeSettlement(candidate, reference.id, reference.requestId),
+      ),
+      timeout: delay(2000),
+      released: call(waitForSubmissionRelease, action),
+    });
+    if (settled.released) throw new Error('initialization-cancelled');
+    probe = yield* selectWorkspaceInitializerRepoConfigProbe.effect(reference.id);
+  }
+  if (!probe || probe.requestId !== reference.requestId || probe.status === 'pending') {
+    return submission.entrypoint === 'compact'
+      ? { ...submission, repoConfigUnavailable: true }
+      : submission;
+  }
+  if (probe.status === 'failed') {
+    return submission.entrypoint === 'compact'
+      ? { ...submission, repoConfigUnavailable: false, repoConfigError: true }
+      : submission;
+  }
+  const canApply =
+    probe.applyAllowed &&
+    !submission.setupScriptExplicit &&
+    submission.setupScript === probe.setupScriptAtRequest;
+  return {
+    ...submission,
+    repoConfigUnavailable: false,
+    repoConfigScript: probe.script,
+    repoConfigScriptRepo: submission.entrypoint === 'compact' ? probe.probeKey : probe.repoKey,
+    ...(canApply && probe.script
+      ? {
+          setupScript: probe.script,
+          setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+          setupScriptNameSource: 'repo-config' as const,
+        }
+      : {}),
+  };
 }
 
 function* requestInitialization(action: RequestedAction): SagaGenerator<void> {
@@ -491,17 +555,8 @@ function* submit(action: SubmittedAction): SagaGenerator<void> {
   let preparationSettled = false;
   try {
     if (!isCurrent()) throw new Error('initialization-cancelled');
-    const preparationResult = submission.preparationId
-      ? yield* race({
-          preparation: call(resolveWorkspaceInitializationPreparation, submission.preparationId),
-          released: call(waitForSubmissionRelease, action),
-        })
-      : undefined;
-    if (preparationResult?.released === true) throw new Error('initialization-cancelled');
-    const preparation = preparationResult?.preparation;
-    if (submission.preparationId && (!preparation || !isCurrent()))
-      throw new Error('initialization-cancelled');
-    const preparedSubmission = preparation ? { ...submission, ...preparation } : submission;
+    const preparedSubmission = yield* call(settleSubmissionProbe, submission, action);
+    if (!isCurrent()) throw new Error('initialization-cancelled');
     prepared =
       preparedSubmission.entrypoint === 'compact'
         ? yield* call(prepareCompactWorkspaceInitialization, preparedSubmission, isCurrent)
@@ -522,8 +577,6 @@ function* submit(action: SubmittedAction): SagaGenerator<void> {
     preparationSettled = true;
     return;
   } finally {
-    if (submission.preparationId)
-      yield* call(releaseWorkspaceInitializationPreparation, submission.preparationId);
     if (!preparationSettled && (yield* cancelled())) {
       const failure = new Error('initialization-cancelled');
       yield* finishAttempt(action.seq, consumer, submission.entrypoint, {

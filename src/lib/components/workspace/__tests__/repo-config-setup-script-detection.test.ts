@@ -12,7 +12,10 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+import {
+  createWorkspaceInitializationDispatchAdapter,
+  selectTestWorkspaceInitializerRepoConfigProbe,
+} from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
@@ -74,6 +77,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftAuthority: () =>
     mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializerRepoConfigProbe: selectTestWorkspaceInitializerRepoConfigProbe,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));
@@ -368,6 +372,18 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
     await waitFor(() => {
       expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
     });
+  });
+
+  it('does not re-probe a local repository when only its branch changes', async () => {
+    mocks.savedFormState = { repoPath: '/repo/a', repoType: 'local', isValidPath: true };
+    renderInitializer();
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+
+    pickerCallbacks().onBranchChange({ detail: { branch: 'release-1.x' } });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(mocks.fetchRepoConfig).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchGitHubRepoConfig).not.toHaveBeenCalled();
   });
 
   it('discards a stale probe result for a superseded ref after a branch change', async () => {

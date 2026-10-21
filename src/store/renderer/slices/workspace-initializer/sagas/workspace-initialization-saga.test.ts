@@ -24,7 +24,6 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
-import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import {
   chooseDefaultSetupScript,
   getLastUsedSetupScript,
@@ -61,6 +60,8 @@ import {
   workspaceInitializationRequested,
   workspaceInitializationResumeRequested,
   workspaceInitializationSubmitted,
+  workspaceInitializerRepoConfigProbeFinished,
+  workspaceInitializerRepoConfigProbeRequested,
 } from '../workspace-initializer-slice';
 import type {
   CompactWorkspaceInitializationSubmission,
@@ -709,16 +710,24 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
     });
   });
 
-  it('cancels deferred preparation through production registration and settles the original action', async () => {
-    const pendingPreparation = deferred<never>();
-    const prepare = vi.fn(() => pendingPreparation.promise);
-    const release = registerWorkspaceInitializationPreparation('deferred-preparation', prepare);
+  it('cancels a submission waiting on its correlated probe when the owner stops', async () => {
+    const admission = selectPrincipalActionContext.select(appStore.state) as string;
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeRequested('deferred-probe', 'probe-1', admission, {
+        identity: { path: null, type: null },
+        probeKey: null,
+        repoKey: null,
+        debounce: true,
+        setupScriptAtRequest: '',
+        applyAllowed: true,
+      }),
+    );
     const action = workspaceInitializationSubmitted(
-      compactSubmission({ preparationId: 'deferred-preparation' }),
+      compactSubmission({ repoConfigProbe: { id: 'deferred-probe', requestId: 'probe-1' } }),
       consumer,
     );
     appStore.dispatch(action);
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
 
     stops[1]();
     stops[1] = () => undefined;
@@ -731,24 +740,93 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       status: 'cancelled',
       stage: 'prepare',
     });
-    release();
   });
 
-  it('settles deferred preparation when its form releases the correlated outcome', async () => {
-    const pendingPreparation = deferred<never>();
-    const prepare = vi.fn(() => pendingPreparation.promise);
-    registerWorkspaceInitializationPreparation('released-preparation', prepare);
+  it('ignores another form probe settling while its correlated probe is pending', async () => {
+    const admission = selectPrincipalActionContext.select(appStore.state) as string;
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeRequested('target-probe', 'probe-1', admission, {
+        identity: { path: null, type: null },
+        probeKey: null,
+        repoKey: null,
+        debounce: true,
+        setupScriptAtRequest: '',
+        applyAllowed: true,
+      }),
+    );
     const action = workspaceInitializationSubmitted(
-      compactSubmission({ preparationId: 'released-preparation' }),
+      compactSubmission({ repoConfigProbe: { id: 'target-probe', requestId: 'probe-1' } }),
       consumer,
     );
     appStore.dispatch(action);
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeFinished('another-probe', 'probe-2', 'ready', 'echo no'),
+    );
+    await Promise.resolve();
+    expect(create).not.toHaveBeenCalled();
+
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeFinished('target-probe', 'probe-1', 'ready', null),
+    );
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it('settles a submission waiting on its probe when the form releases the correlated outcome', async () => {
+    const admission = selectPrincipalActionContext.select(appStore.state) as string;
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeRequested('released-probe', 'probe-1', admission, {
+        identity: { path: null, type: null },
+        probeKey: null,
+        repoKey: null,
+        debounce: true,
+        setupScriptAtRequest: '',
+        applyAllowed: true,
+      }),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ repoConfigProbe: { id: 'released-probe', requestId: 'probe-1' } }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await Promise.resolve();
 
     appStore.dispatch(clearWorkspaceInitializationOutcome(consumer.id, action.seq));
 
     await expect(action.promise).rejects.toThrow('initialization-cancelled');
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('preserves an explicit fallback after a correlated probe fails', async () => {
+    const admission = selectPrincipalActionContext.select(appStore.state) as string;
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeRequested('failed-probe', 'probe-1', admission, {
+        identity: { path: '/repo', type: 'local' },
+        probeKey: '/repo',
+        repoKey: '/repo',
+        debounce: false,
+        setupScriptAtRequest: 'cd .',
+        applyAllowed: false,
+      }),
+    );
+    appStore.dispatch(
+      workspaceInitializerRepoConfigProbeFinished('failed-probe', 'probe-1', 'failed', null),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        setupScript: 'cd .',
+        setupScriptExplicit: true,
+        repoConfigProbe: { id: 'failed-probe', requestId: 'probe-1' },
+      }),
+      consumer,
+    );
+
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: 'cd .' });
   });
 
   it('pulls, creates with exact params, installs, and publishes a correlated success', async () => {

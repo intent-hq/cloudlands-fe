@@ -40,8 +40,7 @@ const mocks = vi.hoisted(() => {
     goto: vi.fn(),
     validate: vi.fn(),
     placement: vi.fn(),
-    settled: vi.fn(),
-    realSetupScriptProbe: false,
+    localRepoConfig: vi.fn(),
     send: vi.fn(),
     gitCheck: vi.fn(),
     create: vi.fn(),
@@ -49,6 +48,9 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     getBranches: vi.fn(),
     branchStatus: vi.fn(),
+    draftGet: vi.fn(),
+    draftSet: vi.fn(),
+    draftClear: vi.fn(),
     toastError: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
@@ -87,19 +89,55 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  async (original) => ({
-    ...(await original<
-      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
-    >()),
-    selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-    selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
-    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
-    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-    selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
-    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-  }),
+  async (original) => {
+    const actual =
+      await original<
+        typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+      >();
+    const preserveSagaMethods = <T extends { select: unknown; effect: unknown }>(
+      selector: T,
+      readable: unknown,
+    ) =>
+      Object.assign(() => readable, {
+        select: selector.select,
+        effect: selector.effect,
+      });
+    return {
+      ...actual,
+      selectWorkspaceInitializerHydrated: preserveSagaMethods(
+        actual.selectWorkspaceInitializerHydrated,
+        mocks.hydrated$,
+      ),
+      selectCompactWorkspaceInitializerFormState: preserveSagaMethods(
+        actual.selectCompactWorkspaceInitializerFormState,
+        mocks.compactFormState$,
+      ),
+      selectWorkspaceInitializerLastSelectedRepo: preserveSagaMethods(
+        actual.selectWorkspaceInitializerLastSelectedRepo,
+        mocks.readable(() => null),
+      ),
+      selectWorkspaceInitializerLastSubmittedAgent: preserveSagaMethods(
+        actual.selectWorkspaceInitializerLastSubmittedAgent,
+        mocks.lastSubmittedAgent$,
+      ),
+      selectWorkspaceInitializerRecentRepos: preserveSagaMethods(
+        actual.selectWorkspaceInitializerRecentRepos,
+        mocks.readable(() => []),
+      ),
+      selectWorkspaceInitializerPendingGitHubPrefill: preserveSagaMethods(
+        actual.selectWorkspaceInitializerPendingGitHubPrefill,
+        mocks.readable(() => null),
+      ),
+      selectWorkspaceInitializerBranchByRepo: preserveSagaMethods(
+        actual.selectWorkspaceInitializerBranchByRepo,
+        mocks.readable(() => ({})),
+      ),
+      selectWorkspaceInitializerDefaultParentPath: preserveSagaMethods(
+        actual.selectWorkspaceInitializerDefaultParentPath,
+        mocks.readable(() => ''),
+      ),
+    };
+  },
 );
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -142,17 +180,13 @@ vi.mock('$features/setup-scripts', async (importOriginal) => {
     ...actual,
     SETUP_SCRIPT_TEMPLATES: [],
     getTemplateContent: vi.fn(() => ''),
-    createRepoConfigProbeScheduler: vi.fn(() =>
-      mocks.realSetupScriptProbe
-        ? actual.createRepoConfigProbeScheduler()
-        : {
-            onSelectionChange: vi.fn(),
-            settled: mocks.settled,
-            dispose: vi.fn(),
-          },
-    ),
   };
 });
+
+vi.mock('$features/setup-scripts/repo-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts/repo-config')>()),
+  fetchRepoConfigSetupScript: mocks.localRepoConfig,
+}));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => mocks.readable(() => []),
@@ -176,9 +210,13 @@ vi.mock('$lib/client', () => ({
       branchStatus: mocks.branchStatus,
     },
     drafts: {
-      get: vi.fn(async () => null),
-      set: vi.fn(async () => undefined),
-      clear: vi.fn(async () => undefined),
+      get: mocks.draftGet,
+      set: mocks.draftSet,
+      clear: mocks.draftClear,
+    },
+    settings: {
+      get: vi.fn(async () => ({ value: { version: 1 } })),
+      update: vi.fn(async () => undefined),
     },
   },
 }));
@@ -270,8 +308,7 @@ import {
   gitlabAuthChanged,
   setGitLabAuthStatus,
 } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
-import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
-import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import {
   urlSubmitted,
   branchQueryChanged,
@@ -283,8 +320,7 @@ import {
   workspaceInitializerDraftRestoreRequested,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
-let stopGit: () => void;
-let stopInitialization: () => void;
+let stopInitializer: () => void;
 let stopCheckout: (() => void) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -292,8 +328,7 @@ beforeEach(() => {
   localStorage.clear();
   mocks.gitCheck.mockResolvedValue({ success: true, data: { available: true } });
   dispose = store.init();
-  stopGit = store.runSaga(workspaceInitializerGitSaga);
-  stopInitialization = store.runSaga(workspaceInitializationSaga);
+  stopInitializer = store.runSaga(workspaceInitializerSaga);
   admitLegacyPrincipal();
   store.dispatch(setLabsMultiplayerEnabled(false));
   mocks.hydrated$.set(true);
@@ -314,8 +349,10 @@ beforeEach(() => {
   });
   mocks.branchStatus.mockResolvedValue({ ahead: 0, behind: 1, diverged: false });
   mocks.validate.mockResolvedValue({ valid: true });
-  mocks.settled.mockResolvedValue(undefined);
-  mocks.realSetupScriptProbe = false;
+  mocks.draftGet.mockResolvedValue(null);
+  mocks.draftSet.mockResolvedValue(undefined);
+  mocks.draftClear.mockResolvedValue(undefined);
+  mocks.localRepoConfig.mockResolvedValue(null);
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: vi.fn(),
@@ -323,8 +360,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  stopInitialization();
-  stopGit();
+  stopInitializer();
   stopCheckout?.();
   stopCheckout = undefined;
   dispose();
@@ -340,6 +376,36 @@ async function submit(waitForValidation = true) {
   if (waitForValidation) await waitFor(() => expect(mocks.validate).toHaveBeenCalledTimes(1));
 }
 describe('actual initializer submission admission', () => {
+  it('flushes typing before restore and ignores the late retained draft', async () => {
+    const pendingRestore = Promise.withResolvers<{
+      text: string;
+      attachments: Array<{ id: string; type: string; label: string; path: string }>;
+    }>();
+    mocks.draftGet.mockReturnValueOnce(pendingRestore.promise);
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await waitFor(() => expect(mocks.draftGet).toHaveBeenCalledOnce());
+
+    const editor = screen.getByTestId('mock-rich-textarea');
+    editor.textContent = 'typed before restore';
+    await fireEvent.input(editor);
+    window.dispatchEvent(new Event('beforeunload'));
+
+    await waitFor(() =>
+      expect(mocks.draftSet.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__', 'typed before restore', undefined],
+      ]),
+    );
+    pendingRestore.resolve({
+      text: 'retained daemon draft',
+      attachments: [{ id: 'old', type: 'file', label: 'old.txt', path: '/old.txt' }],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(editor.textContent).toBe('typed before restore');
+    expect(mocks.draftSet).toHaveBeenCalledOnce();
+  });
+
   it('re-admits its draft owner after a reconnect replaces the principal context', async () => {
     const dispatch = vi.spyOn(store, 'dispatch');
     render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
@@ -440,17 +506,13 @@ it.each([false, true])(
 );
 
 it('drops an original submission held by setup-probe settlement after readmission', async () => {
-  let release!: () => void;
-  mocks.settled.mockReturnValue(
-    new Promise<void>((r) => {
-      release = r;
-    }),
-  );
+  const probe = Promise.withResolvers<string | null>();
+  mocks.localRepoConfig.mockReturnValue(probe.promise);
   await submit(false);
-  await waitFor(() => expect(mocks.settled).toHaveBeenCalledOnce());
+  await waitFor(() => expect(mocks.localRepoConfig).toHaveBeenCalledOnce());
   store.dispatch(backendReconnected());
   admitLegacyPrincipal();
-  release();
+  probe.resolve(null);
   await new Promise((r) => setTimeout(r, 20));
   expect(mocks.create).not.toHaveBeenCalled();
 });
@@ -601,6 +663,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
         for (const listener of [...listeners]) listener();
         listeners.clear();
       }),
+      repoConfig: configRead(null),
     };
     mocks.captureCheckout.mockResolvedValue({ status: 'ready', value: session });
     stopCheckout = store.runSaga(repositoryCheckoutSaga);
@@ -678,7 +741,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   }
 
   it('drops committed content when the newly selected branch has no config', async () => {
-    mocks.realSetupScriptProbe = true;
     session.repoConfig = vi.fn().mockImplementation(async (query) => ({
       status: 'ready',
       value: {
@@ -739,7 +801,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
         name: 'Wrong project',
         content: 'echo wrong project',
       });
-      mocks.realSetupScriptProbe = true;
       session.repoConfig = configRead(null);
       await renderCheckout('direct');
       await waitFor(() => expect(session.repoConfig).toHaveBeenCalledOnce());
@@ -773,7 +834,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   it.each(['direct', 'cached'] as const)(
     'shows committed config and submits its exact qualified %s selection',
     async (mode) => {
-      mocks.realSetupScriptProbe = true;
       session.repoConfig = configRead('echo from selected commit');
       await renderCheckout(mode);
       await waitFor(() => expect(screen.getByText('From repo config')).toBeTruthy());
@@ -801,7 +861,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   ] as const)(
     'keeps an explicit %s choice when a late config read arrives and submits it',
     async (choice, expected) => {
-      mocks.realSetupScriptProbe = true;
       const pending =
         Promise.withResolvers<
           Awaited<ReturnType<NonNullable<RepositoryCheckoutSession['repoConfig']>>>
@@ -834,12 +893,12 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   it.each(['missing', 'unavailable', 'unsupported'] as const)(
     'does not claim repo-config provenance for %s reads',
     async (kind) => {
-      mocks.realSetupScriptProbe = true;
       if (kind === 'missing') session.repoConfig = configRead(null);
       if (kind === 'unavailable')
         session.repoConfig = vi
           .fn()
           .mockResolvedValue({ status: 'unavailable', reason: 'rate-limited' });
+      if (kind === 'unsupported') session.repoConfig = undefined;
       await renderCheckout('direct');
       await waitFor(() => expect(screen.getByText('Custom')).toBeTruthy());
       if (kind !== 'missing')
@@ -894,7 +953,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       expect(mocks.validate).not.toHaveBeenCalled();
       expect(mocks.getBranches).not.toHaveBeenCalled();
       expect(mocks.pull).not.toHaveBeenCalled();
-      expect(mocks.settled).toHaveBeenCalledOnce();
+      expect(session.repoConfig).toHaveBeenCalledOnce();
       expect(session.warm).toHaveBeenCalledTimes(mode === 'cached' ? 1 : 0);
     },
   );

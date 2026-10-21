@@ -1,4 +1,3 @@
-import { store as appStore } from '$store/renderer/store';
 /**
  * Parse RichTextarea mentions into structured context references
  * for workspace creation.
@@ -121,10 +120,10 @@ export function parseFileMentions(mentions: FileMention[]): ContextReference[] {
 }
 
 /**
- * Convert RichTextarea terminal/script mentions into context references.
- * Keeps onboarding runtime context payloads aligned with regular chat mentions.
+ * Snapshot terminal widget buffers at the component edge. Script state is
+ * Redux-owned and is resolved by the workspace-initialization saga.
  */
-export async function parseRuntimeMentions(
+export async function snapshotTerminalMentions(
   mentions: FileMention[],
   logger?: ContextLogger,
 ): Promise<ContextReference[]> {
@@ -148,52 +147,6 @@ export async function parseRuntimeMentions(
       } catch (error) {
         // i18n-ignore — developer log message
         logger?.warn('[OnboardingContext] Failed to read terminal buffer:', error);
-      }
-    }
-
-    if (mention.type === 'script') {
-      try {
-        const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
-          await import('$store/renderer/slices/scripts/scripts-selectors');
-        const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
-        const wsId = (mention.meta?.workspaceId as string) || '';
-        const scriptId = mention.id ?? '';
-        const state = appStore.state;
-        const outputLines = scriptOutputToLines(selectScriptOutput.select(state, wsId, scriptId));
-        const script = selectScriptById.select(state, wsId, scriptId);
-        const runtime = selectScriptRuntime.select(state, wsId, scriptId);
-
-        let content = `Script: ${script?.name || mention.label}\n`;
-        content += `Command: ${script?.command || 'unknown'}\n`;
-        content += `Status: ${runtime.status}`;
-        if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
-          content += ` (exit code: ${runtime.exitCode})`;
-        }
-        content += '\n';
-        if (runtime.detectedUrl) content += `URL: ${runtime.detectedUrl}\n`;
-        if (outputLines.length > 0) {
-          const lastLines = outputLines.slice(-100).join('\n');
-          content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
-        } else {
-          // i18n-ignore — agent-directed context payload, not rendered UI text
-          content += '\nNo output yet.';
-        }
-
-        refs.push({
-          type: 'script',
-          content,
-          title: script?.name || mention.label,
-          metadata: {
-            scriptId,
-            command: script?.command,
-            status: runtime.status,
-            exitCode: runtime.exitCode,
-            detectedUrl: runtime.detectedUrl,
-          },
-        });
-      } catch (error) {
-        // i18n-ignore — developer log message
-        logger?.warn('[OnboardingContext] Failed to resolve script context:', error);
       }
     }
   }

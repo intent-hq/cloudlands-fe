@@ -40,8 +40,10 @@
   bind:this={element}
   aria-label={ariaLabel}
   role="textbox"
+  contenteditable={!disabled}
   data-testid="mock-rich-textarea"
   data-disabled={disabled}
+  oninput={(event) => (value = event.currentTarget.textContent ?? '')}
 >
   {value}
 </div>
