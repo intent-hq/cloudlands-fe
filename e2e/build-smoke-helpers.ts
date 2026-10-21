@@ -1028,8 +1028,9 @@ async function waitForFileContentWithNudge(
  * (The on-disk JSON `status` field is never updated when agents complete, so disk
  * polling does not work.)
  *
- * Falls back to UI-based detection if the IPC call consistently fails (e.g. when
- * the agent backend service is unavailable in the packaged build).
+ * In CI, and when the IPC call consistently fails, waits instead for the
+ * daemon's `agent:idle` for each agent's latest turn via the renderer store
+ * (see {@link assessAgentTurnIdle}); that path throws on timeout.
  *
  * Polls every 2 seconds. Resolves when all agents are settled or timeout expires.
  */
@@ -1046,16 +1047,16 @@ export async function waitForAgentCompletion(
   console.log(`⏳ Waiting for agents to complete (timeout: ${(timeout / 1000).toFixed(0)}s)...`);
 
   if (process.env.CI) {
-    console.log('⏩ CI detected — skipping IPC polling, using UI-based agent completion detection');
-    await waitForAgentCompletionViaUI(page, deadline);
+    console.log('⏩ CI detected — skipping IPC polling, waiting for daemon agent idle');
+    await waitForAgentTurnIdle(page, workspaceId, deadline);
     return;
   }
 
   while (Date.now() < deadline) {
-    // If IPC is consistently broken, fall back to UI-based detection
+    // If IPC is consistently broken, fall back to the daemon-idle store check
     if (consecutiveIpcFailures >= IPC_FAILURE_THRESHOLD) {
-      console.log('⚠️  IPC agent polling failed repeatedly — switching to UI-based detection');
-      await waitForAgentCompletionViaUI(page, deadline);
+      console.log('⚠️  IPC agent polling failed repeatedly — waiting for daemon agent idle');
+      await waitForAgentTurnIdle(page, workspaceId, deadline);
       return;
     }
 
@@ -1274,70 +1275,199 @@ export async function waitForAgentNotStreaming(
   }
 }
 
+/** Raw renderer-store facts sampled for {@link assessAgentTurnIdle}. */
+export interface AgentTurnIdleSample {
+  available: boolean;
+  reason?: string;
+  agents: Array<{
+    id: string;
+    status?: string;
+    activationState?: string | null;
+    isStreaming: boolean;
+    isResponding: boolean;
+    isProcessing: boolean;
+    lastAssistantStreaming: boolean;
+    /** ISO time of the newest user message in the session transcript. */
+    lastUserMessageAt: string | null;
+  }>;
+  /** Daemon lifecycle events from the workspace event buffer (daemon timestamps). */
+  events: Array<{ type: string; agentId: string; role?: string; timestamp: string }>;
+}
+
+interface AgentTurnIdleVerdict {
+  done: boolean;
+  reason: string;
+}
+
+const ACTIVE_AGENT_STATUSES = ['active', 'processing', 'waiting', 'responding'];
+const UNSETTLED_ACTIVATION_STATES = ['activating', 'pending'];
+
+function timeOf(value: string | null | undefined): number {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 /**
- * UI-based fallback for detecting agent completion.
+ * Positive, turn-scoped completion predicate for the packaged smoke harness.
  *
- * Checks the page for visual indicators that agents have finished:
- * - No spinning/loading indicators in the agent sidebar
- * - Agent chat shows a final message (not streaming)
- * - The "Send message" button is present (chat is idle)
- *
- * This is less precise than IPC polling but works when the agent backend
- * service is unavailable.
+ * A turn is complete only when the daemon has emitted a terminal lifecycle
+ * event (`agent:idle` / `agent:failed`) at or after the newest user message
+ * for every agent that has received one, AND every agent's renderer state is
+ * settled. The absence of a streaming indicator is never sufficient on its
+ * own: it is vacuously true before streaming starts, between tool calls, and
+ * whenever the renderer misses the streaming edge.
  */
-async function waitForAgentCompletionViaUI(page: Page, deadline: number): Promise<void> {
-  const pollInterval = 3_000;
+export function assessAgentTurnIdle(sample: AgentTurnIdleSample): AgentTurnIdleVerdict {
+  if (!sample.available) {
+    return { done: false, reason: `renderer store unavailable: ${sample.reason ?? 'unknown'}` };
+  }
+  if (sample.agents.length === 0) return { done: false, reason: 'no agents in workspace yet' };
+
+  let turns = 0;
+  for (const agent of sample.agents) {
+    let turnStart = timeOf(agent.lastUserMessageAt);
+    let terminalAt = NaN;
+    for (const event of sample.events) {
+      if (event.agentId !== agent.id) continue;
+      const at = timeOf(event.timestamp);
+      if (!Number.isFinite(at)) continue;
+      if (event.type === 'agent:message' && event.role === 'user') {
+        if (!(at <= turnStart)) turnStart = at;
+      } else if (event.type === 'agent:idle' || event.type === 'agent:failed') {
+        if (!(at <= terminalAt)) terminalAt = at;
+      }
+    }
+
+    if (Number.isFinite(turnStart)) {
+      turns++;
+      if (!(terminalAt >= turnStart)) {
+        return { done: false, reason: `${agent.id}: no daemon agent:idle since its latest turn` };
+      }
+    }
+
+    const busy: string[] = [];
+    if (agent.isStreaming) busy.push('isStreaming');
+    if (agent.isResponding) busy.push('isResponding');
+    if (agent.isProcessing) busy.push('isProcessing');
+    if (agent.lastAssistantStreaming) busy.push('assistant message streaming');
+    if (agent.status && ACTIVE_AGENT_STATUSES.includes(agent.status)) {
+      busy.push(`status=${agent.status}`);
+    }
+    if (agent.activationState && UNSETTLED_ACTIVATION_STATES.includes(agent.activationState)) {
+      busy.push(`activationState=${agent.activationState}`);
+    }
+    if (busy.length > 0) return { done: false, reason: `${agent.id}: ${busy.join(', ')}` };
+  }
+
+  if (turns === 0) return { done: false, reason: 'no agent turn has started yet' };
+  return {
+    done: true,
+    reason: `daemon reported idle for ${turns} agent turn(s); ${sample.agents.length} agent(s) settled`,
+  };
+}
+
+async function sampleAgentTurnIdle(page: Page, workspaceId: string): Promise<AgentTurnIdleSample> {
+  return page.evaluate((wsId) => {
+    const toIso = (value: unknown): string | null => {
+      if (value === null || value === undefined || value === '') return null;
+      const date = new Date(value as string | number | Date);
+      return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    };
+    try {
+      const ctx = (window as any).intent?.reduxContext;
+      const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
+      if (!store) return { available: false, reason: 'no-store', agents: [], events: [] };
+      const state = typeof store.getState === 'function' ? store.getState() : store.state;
+      const agentIds: string[] = state?.workspaceAgents?.byWorkspaceId?.[wsId]?.agentIds || [];
+      const byAgentId = state?.agentSessions?.byAgentId || {};
+      const agents = agentIds.map((id: string) => {
+        const session = byAgentId[id];
+        const messages: any[] = session?.messages || [];
+        let lastAssistantStreaming = false;
+        let lastUserMessageAt: string | null = null;
+        let sawAssistant = false;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i];
+          if (!sawAssistant && msg?.role === 'assistant') {
+            sawAssistant = true;
+            lastAssistantStreaming = !!(msg.isStreaming || msg.streamingComplete === false);
+          }
+          if (lastUserMessageAt === null && msg?.role === 'user') {
+            lastUserMessageAt = toIso(msg.timestamp);
+          }
+          if (sawAssistant && lastUserMessageAt !== null) break;
+        }
+        return {
+          id,
+          status: session?.status,
+          activationState: session?.activationState ?? null,
+          isStreaming: !!session?.isStreaming,
+          isResponding: !!session?.isResponding,
+          isProcessing: !!session?.isProcessing,
+          lastAssistantStreaming,
+          lastUserMessageAt,
+        };
+      });
+      const rawEvents: any[] = state?.workspaceEvents?.byWorkspaceId?.[wsId]?.events || [];
+      const events = rawEvents
+        .filter(
+          (e) =>
+            e?.type === 'agent:idle' ||
+            e?.type === 'agent:failed' ||
+            (e?.type === 'agent:message' && e?.data?.role === 'user'),
+        )
+        .map((e) => ({
+          type: String(e.type),
+          agentId: String(e.data?.agentId ?? e.data?.sessionId ?? ''),
+          role: typeof e.data?.role === 'string' ? e.data.role : undefined,
+          timestamp: String(e.timestamp),
+        }));
+      return { available: true, agents, events };
+    } catch (e: any) {
+      return { available: false, reason: String(e?.message ?? e), agents: [], events: [] };
+    }
+  }, workspaceId);
+}
+
+/**
+ * Wait until the daemon has reported every agent idle for its latest turn
+ * (see {@link assessAgentTurnIdle}), then assert the chat shows no streaming
+ * indicator. Throws on timeout: proceeding while an agent is still active
+ * lets teardown race the turn (Build Smoke run 39545719291).
+ */
+async function waitForAgentTurnIdle(page: Page, workspaceId: string, deadline: number) {
+  const pollInterval = 500;
+  let last: AgentTurnIdleVerdict = { done: false, reason: 'not sampled' };
+  let lastLogged = '';
 
   while (Date.now() < deadline) {
     try {
-      // Check if there are any streaming indicators visible.
-      // NOTE: Do NOT include `.animate-pulse` — it matches generic loading
-      // spinners that are always visible, causing this to never detect completion.
-      const hasStreamingIndicator = await page
+      last = assessAgentTurnIdle(await sampleAgentTurnIdle(page, workspaceId));
+    } catch (err) {
+      last = { done: false, reason: `sample error: ${err}` };
+    }
+    if (last.done) {
+      console.log(`✅ All agents complete (${last.reason})`);
+      const streamingVisible = await page
         .locator(
           '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
         )
         .first()
         .isVisible({ timeout: 1_000 })
         .catch(() => false);
-
-      if (!hasStreamingIndicator) {
-        // Double-check: the chat input should be enabled (not disabled) when agents are idle
-        const sendButtonDisabled = await page
-          .locator('button:has-text("Send message")[disabled]')
-          .isVisible({ timeout: 1_000 })
-          .catch(() => false);
-
-        // If send button is disabled, the agent might still be processing
-        // But if there's no streaming indicator AND the page looks settled, we're done
-        if (!sendButtonDisabled) {
-          console.log('✅ All agents appear complete (UI-based detection)');
-          return;
-        }
-
-        // Even with disabled send button, if no streaming indicators, give it one more check
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
-        const stillStreaming = await page
-          .locator(
-            '.tab-content-wrapper:not(.hidden) [data-streaming="true"], .tab-content-wrapper:not(.hidden) [data-agent-status="streaming"]',
-          )
-          .first()
-          .isVisible({ timeout: 1_000 })
-          .catch(() => false);
-
-        if (!stillStreaming) {
-          console.log('✅ All agents appear complete (UI-based detection, confirmed)');
-          return;
-        }
+      if (streamingVisible) {
+        console.warn('⚠️  Daemon reported idle but a streaming indicator is still visible');
       }
-    } catch (err) {
-      console.log(`🔄 UI polling error (will retry): ${err}`);
+      return;
     }
-
+    if (last.reason !== lastLogged) {
+      console.log(`🔄 Waiting for daemon agent idle: ${last.reason}`);
+      lastLogged = last.reason;
+    }
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  console.warn('⚠️  Timed out waiting for agents (UI-based) — proceeding anyway');
+  throw new Error(`Timed out waiting for daemon agent idle: ${last.reason}`);
 }
 
 // ---------------------------------------------------------------------------
