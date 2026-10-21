@@ -5,7 +5,6 @@
   import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import type { TextBlockMedia } from '$shared/types/content-block';
-  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
@@ -19,9 +18,8 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
+  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
-  import { isQuestionResourceBlock } from '$shared/types/question-resource';
-  import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
@@ -48,7 +46,6 @@
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
-    parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
     filterWorkspaceCardsCoveredByIds,
     type ParsedContent,
@@ -145,58 +142,11 @@
     return blockId ? isHydrationPending($hydratedBlocks$, messageId, [blockId]) : false;
   }
 
-  // Filter out empty text blocks and deduplicate tool_use blocks by ID.
-  // Deduplication: when a skeleton tool_use (vague label) and its follow-up
-  // (descriptive label) both exist with the same ID, keep only the last one.
-  // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
-  const blocks = $derived.by(() => {
-    // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
-    // FE-lifted fallback for the same logical resource) so exactly one card
-    // renders per resource, preferring the daemon-canonical variant.
-    const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
-      isStreaming,
-    });
-    const filtered = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(
-        dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
-        role,
-        workspaceId,
-      ),
-    ).filter((block) => {
-      // Agent Q&A questions are wizard-only: they never render in the
-      // transcript (pending or resolved), so strip them here.
-      if (isQuestionResourceBlock(block)) {
-        return false;
-      }
-      if (block.type === 'text') {
-        const text = block.text || '';
-        const { cleanedContent } = parseSuggestedPrompts(text);
-        return cleanedContent.trim().length > 0;
-      }
-      return true;
-    });
-
-    // Deduplicate tool_use blocks: if multiple blocks share the same ID,
-    // keep only the last occurrence (which has the real input parameters).
-    const toolUseLastIndex = new Map<string, number>();
-    for (let i = 0; i < filtered.length; i++) {
-      const block = filtered[i];
-      if (block.type === 'tool_use' && block.id) {
-        toolUseLastIndex.set(block.id, i);
-      }
-    }
-
-    // Only filter if there are actual duplicates
-    if (toolUseLastIndex.size === 0) return filtered;
-
-    return filtered.filter((block, index) => {
-      if (block.type === 'tool_use' && block.id) {
-        // Keep only the last occurrence of each tool_use ID
-        return toolUseLastIndex.get(block.id) === index;
-      }
-      return true;
-    });
-  });
+  // One shared preparation step (also used by chat search) so search block
+  // paths always address the rendered rows.
+  const blocks = $derived(
+    prepareMessageBlocks(hydratedContent, { role, workspaceId, isStreaming }),
+  );
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
   const collapseToolRuns$ = selectCollapseToolRuns();
@@ -257,9 +207,9 @@
     const map = new Map<string, RenderBlock[]>();
     groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const contentBlock = block as ContentBlock;
-        if (contentBlock.text) {
-          const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
+        const text = renderedBlockText(block as ContentBlock);
+        if (text) {
+          const { cleanedContent } = parseSuggestedPrompts(text);
           const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
           map.set(
             String(index),
@@ -269,8 +219,9 @@
       } else if (block.type === 'content_group') {
         const group = block as ContentBlockGroup;
         group.children.forEach((child, childIndex) => {
-          if (child.type === 'text' && child.text) {
-            const { cleanedContent } = parseSuggestedPrompts(child.text);
+          const childText = child.type === 'text' ? renderedBlockText(child) : '';
+          if (childText) {
+            const { cleanedContent } = parseSuggestedPrompts(childText);
             const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
             map.set(
               `${index}-${childIndex}`,
@@ -532,7 +483,8 @@
         {workspaceId}
       />
     </div>
-  {:else if block.type === 'text' && block.text}
+  {:else if block.type === 'text' && renderedBlockText(block)}
+    {@const blockText = renderedBlockText(block)}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
     <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       {#if isStreaming}
@@ -543,7 +495,7 @@
             : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
           data-assistant-prose={nested ? undefined : 'static-streaming'}
         >
-          {block.text}
+          {blockText}
         </div>
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
@@ -552,7 +504,7 @@
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
-        {@const cleanedText = parseSuggestedPrompts(block.text).cleanedContent}
+        {@const cleanedText = parseSuggestedPrompts(blockText).cleanedContent}
         {#if cleanedText.trim()}
           <div
             class={nested ? undefined : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}

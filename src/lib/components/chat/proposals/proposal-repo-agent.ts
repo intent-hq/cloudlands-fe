@@ -92,3 +92,8 @@ export function proposalAgentSetup(
   }
   return setup;
 }
+
+/** Whether a remembered setup names a provider, a model, or a non-empty effort. */
+export function hasAgentSetupFields(setup: ProposalAgentSetup): boolean {
+  return Boolean(setup.provider || setup.model || setup.reasoningEffort);
+}

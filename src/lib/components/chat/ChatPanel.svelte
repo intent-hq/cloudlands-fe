@@ -88,8 +88,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import {
     selectCanAdministerHost,
+    selectHostRole,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
+  import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -430,6 +432,7 @@
     createRangeForSpan,
     findChatSearchMatches,
     type ChatSearchMatch,
+    type ChatSearchOptions,
   } from './chat-search';
   import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
@@ -451,6 +454,7 @@
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
@@ -1268,6 +1272,19 @@
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
+  // The sender row the daemon will give the viewer's own sends here, shown on
+  // pending conversation rows so it does not pop in when the row is confirmed.
+  const hostRole$ = selectHostRole();
+  const ownPendingSender = $derived(
+    predictOwnSenderAttribution({
+      hostRole: $hostRole$,
+      principal: $admittedPrincipal$?.principal,
+      workspace,
+    }),
+  );
+  const pendingConversationIds = $derived(
+    new Set($submissionDisplay$.conversation.map((submission) => submission.id)),
+  );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -1476,13 +1493,18 @@
   // turnKey ties each match back to its enclosing conversation turn so that the
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
+  // Everything search needs to prepare blocks exactly like the rendered rows.
+  const chatSearchOptions: ChatSearchOptions = $derived({
+    collapseToolRuns: $collapseToolRuns$,
+    workspaceId: workspace?.id ? String(workspace.id) : undefined,
+  });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
       $agentMessages$,
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
-      { collapseToolRuns: $collapseToolRuns$ },
+      chatSearchOptions,
     );
   });
 
@@ -5049,7 +5071,7 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
-            { collapseToolRuns: $collapseToolRuns$ },
+            chatSearchOptions,
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
@@ -5912,6 +5934,8 @@
     if (!session) return;
 
     logger.info('Changing agent specialist', { agentId, specialistId });
+    // A composer pick counts as a recent use for every specialist picker's MRU order.
+    appStore.dispatch(rememberWorkspaceInitializerRecentSpecialist(specialistId));
 
     let behaviorPrompt: string | undefined;
     let newModel: string | null | undefined;
@@ -7620,7 +7644,14 @@
                   data-send-app-message-id={message.appMessageId}
                   class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
                 >
-                  <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+                  <ChatMessage
+                    {agentId}
+                    {message}
+                    {workspace}
+                    ownPrincipalId={$presenceOwnPrincipalId$}
+                    pendingSender={pendingConversationIds.has(message.id) ? ownPendingSender : null}
+                    ownsMessageIdentity={false}
+                  />
                 </div>
                 {#if ownsStatus}
                   <div class={isCompactMode ? 'mb-2' : 'mb-8'}>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   /* eslint-disable max-lines -- merging hover-card keyboard and interaction behavior exceeds the limit */
   import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
@@ -57,7 +58,7 @@
     selectHidesOwnerWorkspaceActions,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import {
     buildWorkspacePRPresentationModel,
@@ -166,7 +167,7 @@
   });
   // Agent PR monitors (PROTOCOL §6.9): all monitors (active + completed) feed
   // the shared presentation model used by the row and hover card.
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const prMonitors$ = selectReviewMonitors(workspaceIdStore);
 
   // Micro-key slot badge/menus: only while a micro is connected (manager
   // status connected — not mere presence).
@@ -447,10 +448,13 @@
   // the compact row shows only that PR so the sidebar stays scannable.
   const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
-    const identity = pr.repo
-      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
-      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
-    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+    const identity =
+      pr.resource?.repository.provider === 'gitlab'
+        ? `${pr.repo} !${pr.number}`
+        : pr.repo
+          ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+          : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [monitorAccessibleLabel(identity, pr), pr.title, pr.details].filter(Boolean).join('\n');
   }
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
@@ -923,7 +927,9 @@
         {@const pr = primaryPr}
         <span
           class="flex shrink-0 items-center"
-          aria-label={m.workspace_hoverCard_pullRequest_label()}
+          aria-label={pr.resource?.repository.provider === 'gitlab'
+            ? m.workspace_hoverCard_mergeRequest_label()
+            : m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
           <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>

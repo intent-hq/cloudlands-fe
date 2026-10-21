@@ -122,11 +122,16 @@
           data-home-status={group}
           data-home-status-error={failed || undefined}
         >
+          {#if supplementalWaiting && waitingPresentation.icon}
+            <span class="inline-flex size-3 shrink-0 text-muted-foreground" aria-hidden="true">
+              <Fa icon={waitingPresentation.icon} weight="regular" class="size-full!" />
+            </span>
+          {/if}
           <span class="inline-flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
             {#if presentation.icon}
               <Fa
                 icon={presentation.icon}
-                weight="fill"
+                weight="regular"
                 class={cause === 'pr_queued' || (waiting && cause === 'idle')
                   ? 'size-3!'
                   : 'size-full!'}
@@ -135,11 +140,6 @@
               <span class="size-2 rounded-full bg-current"></span>
             {/if}
           </span>
-          {#if supplementalWaiting && waitingPresentation.icon}
-            <span class="inline-flex size-3 shrink-0 text-muted-foreground" aria-hidden="true">
-              <Fa icon={waitingPresentation.icon} weight="fill" class="size-full!" />
-            </span>
-          {/if}
           {#if showLabel}<span>{presentation.label}</span><span class="sr-only">{description}</span
             >{/if}
         </span>{/snippet}</Tooltip.Trigger

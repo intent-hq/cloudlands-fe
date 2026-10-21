@@ -3,6 +3,7 @@
  */
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import pollingProducer from '../../../../test/fixtures/qualified-monitor-polling-producer.json';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -17,6 +18,7 @@ import {
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
 import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
+import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
 
 const { dispatchMock, handleLinkMock, agentSelectorHarness } = vi.hoisted(() => {
   type Snapshot = {
@@ -1814,4 +1816,154 @@ describe('ChatMessage script monitor wake attribution', () => {
       expect(onEditSubmit).not.toHaveBeenCalled();
     },
   );
+});
+
+// Backend38c1aa82 actual ACP prompts and stored typed wakes, including retained history.
+describe('actual GitLab polling wake messages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentSelectorHarness.reset();
+  });
+  for (const fixture of pollingProducer.fixtures) {
+    for (const [index, wake] of fixture.wakes.entries()) {
+      it.each([false, true])(`${fixture.terminal} wake ${index}, retained=%s`, async (retained) => {
+        const message: AgentMessage = {
+          id: 'actual-producer-wake',
+          role: 'user',
+          timestamp: new Date(),
+          contentBlocks: structuredClone(wake.content) as AgentMessage['contentBlocks'],
+          ...(retained ? {} : { metadata: wake.metadata }),
+        };
+        const stored = structuredClone(message);
+        render(ChatMessage, { props: { message } });
+        const toggle = screen.getByTestId('automated-wake-toggle');
+        await fireEvent.click(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        const body = screen.getByTestId('automated-wake-details').textContent;
+        expect(body).not.toContain('[MR monitor ');
+        expect(body).toContain(wake.content[0].text.replace(/^\[MR monitor [^\]]+\]\s*/, ''));
+        expect(screen.getByTestId('pr-monitor-wake-chip').getAttribute('aria-label')).toContain(
+          'gitlab.test/forge',
+        );
+        await fireEvent.click(screen.getByTestId('pr-monitor-wake-chip'));
+        expect(handleLinkMock).toHaveBeenCalledWith(
+          wake.metadata.url,
+          expect.objectContaining({ forceExternal: true }),
+        );
+        expect(message).toEqual(stored);
+      });
+    }
+  }
+});
+
+describe('ChatMessage pending own-send sender row', () => {
+  // A pending (display-only) row of the viewer's own send carries neither the
+  // daemon's `author` projection nor its sender preamble, so without a
+  // prediction its author row pops in when the confirmed row replaces it.
+  const self = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: 'https://avatars.example/octocat.png',
+  };
+  const workspace = () =>
+    createMockWorkspace({
+      memberCount: 2,
+      myRole: 'collaborator',
+      ownerPrincipalId: 'principal-owner',
+    });
+  const confirmedGuestRow = (): AgentMessage => ({
+    ...userMessage(
+      { fromPrincipalId: self.principalId },
+      'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.\n\nhello team',
+    ),
+    author: self,
+  });
+  const pendingRow = (): AgentMessage => userTextMessage('hello team');
+  const prediction = () =>
+    predictOwnSenderAttribution({
+      hostRole: 'guest',
+      principal: {
+        id: self.principalId,
+        login: self.login,
+        displayName: self.displayName,
+        avatarUrl: self.avatarUrl,
+      },
+      workspace: workspace(),
+    });
+  const chipSnapshot = () => {
+    const chip = screen.getByTestId('user-message-author');
+    return {
+      principalId: chip.getAttribute('data-principal-id'),
+      senderRole: chip.getAttribute('data-sender-role'),
+      ariaLabel: chip.getAttribute('aria-label'),
+      name: screen.getByTestId('user-message-author-name').textContent,
+      role: screen.queryByTestId('user-message-author-role')?.textContent ?? null,
+      avatar: (screen.getByTestId('user-message-author-avatar') as HTMLImageElement).src,
+    };
+  };
+
+  it('renders the same author row on the pending row as on its confirmed row', () => {
+    const confirmed = render(ChatMessage, {
+      props: {
+        message: confirmedGuestRow(),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+      },
+    });
+    const expected = chipSnapshot();
+    expect(screen.getByText('hello team')).toBeTruthy();
+    confirmed.unmount();
+
+    render(ChatMessage, {
+      props: {
+        message: pendingRow(),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+        pendingSender: prediction(),
+      },
+    });
+    expect(chipSnapshot()).toEqual(expected);
+    expect(screen.getByText('hello team')).toBeTruthy();
+  });
+
+  it('renders no author row on a pending row without a prediction', () => {
+    render(ChatMessage, {
+      props: { message: pendingRow(), workspace: workspace(), ownPrincipalId: self.principalId },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('keeps the agent sender header, not the prediction, on agent-to-agent rows', () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'a-1',
+          fromAgentName: 'Sender',
+        }),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+        pendingSender: prediction(),
+      },
+    });
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it("does not attribute the owner's own pending row", () => {
+    render(ChatMessage, {
+      props: {
+        message: { ...pendingRow(), author: { ...self, principalId: 'principal-owner' } },
+        workspace: workspace(),
+        ownPrincipalId: 'principal-owner',
+        pendingSender: predictOwnSenderAttribution({
+          hostRole: 'owner',
+          principal: { id: 'principal-owner', login: 'owner', displayName: null, avatarUrl: null },
+          workspace: workspace(),
+        }),
+      },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
 });

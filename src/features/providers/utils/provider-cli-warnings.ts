@@ -15,7 +15,17 @@ export interface ProviderCliWarning {
   providerName: string;
   version: string;
   minimumVersion: string;
+  /** Self-update command run in a host terminal; absent when none is known. */
+  updateCommand?: string;
 }
+
+/**
+ * Provider CLIs with a self-update command that needs no package-manager
+ * knowledge (`codex update` detects npm, Homebrew, or standalone installs).
+ */
+export const PROVIDER_CLI_UPDATE_COMMANDS: Readonly<Record<string, string>> = {
+  codex: 'codex update',
+};
 
 /**
  * Trust the daemon's verdict and requirement, never duplicate its minimum table.
@@ -35,6 +45,17 @@ export function providerCliWarnings(providers: ProviderCliDiscovery[]): Provider
       !minimumVersion
     )
       return [];
-    return [{ providerId: row.id, providerName: row.displayName, version, minimumVersion }];
+    const updateCommand = Object.hasOwn(PROVIDER_CLI_UPDATE_COMMANDS, row.id)
+      ? PROVIDER_CLI_UPDATE_COMMANDS[row.id]
+      : undefined;
+    return [
+      {
+        providerId: row.id,
+        providerName: row.displayName,
+        version,
+        minimumVersion,
+        ...(updateCommand ? { updateCommand } : {}),
+      },
+    ];
   });
 }

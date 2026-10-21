@@ -61,6 +61,7 @@ import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
 import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
+import { registerPrMonitorHandlers } from './pr-monitor-lifecycle';
 import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
@@ -416,6 +417,7 @@ const repositoryFeeds = new WeakMap<
 const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
+let prMonitorRoutes: ReturnType<typeof registerPrMonitorHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -821,6 +823,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    prMonitorRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
@@ -1006,6 +1009,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        prMonitorRoutes?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -1636,6 +1640,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  prMonitorRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
@@ -2033,6 +2038,9 @@ function createAdditionalBackendClient(
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
+  instance.on('identity-confirmed', () => {
+    if (backendClients.get(id) === instance) broadcast(BACKEND.PR_MONITOR.READY, {}, id);
+  });
   instance.on('notification', (notification: JsonRpcNotification) => {
     if (
       notification.method === 'workspace.repositoryContext.retired' ||
@@ -4299,6 +4307,10 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  prMonitorRoutes = registerPrMonitorHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    errorPayload: toErrorPayload,
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4319,7 +4331,13 @@ export function registerBackendHandlers(): void {
     BACKEND.REQUEST,
     async (
       event,
-      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+      payload: {
+        method?: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+        reviewMonitoring?: unknown;
+      },
     ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
@@ -4370,6 +4388,17 @@ export function registerBackendHandlers(): void {
       // bound exceeds the flat 30s default) pass a larger value so the daemon's
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
+      const history =
+        payload.localMachine === true
+          ? undefined
+          : prMonitorRoutes?.requestHistory(
+              event,
+              method,
+              payload.params,
+              payload.reviewMonitoring,
+              timeoutMs,
+            );
+      if (history !== undefined) return history;
       try {
         const { backendId, client } =
           payload.localMachine === true
@@ -5417,6 +5446,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  prMonitorRoutes?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();

@@ -71,8 +71,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
       return () => mocks.prefillSubscribers.delete(run);
     },
   }),
-  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -159,13 +161,6 @@ vi.mock('$shared/generated/ipc-client', () => ({
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
-}));
-
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
 }));
 
 // Route the electron-bridge `git-tracking:get-remote-url` probe (used both by

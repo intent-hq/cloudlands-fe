@@ -67,11 +67,15 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
+  import {
+    getCollaboratorSenderAttribution,
+    type CollaboratorSenderAttribution,
+  } from '$lib/utils/collaborator-sender-attribution';
   import {
     getHumanMessageAuthor,
     getMessageAuthorLabel,
     getMessageAuthorTooltip,
+    isUserAuthoredMetadata,
   } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -225,6 +229,13 @@
      */
     ownPrincipalId?: string | null;
     /**
+     * Predicted sender attribution for the viewer's own display-only pending
+     * row (`predictOwnSenderAttribution`), so its author row matches the
+     * confirmed row instead of popping in. Used only when the row itself
+     * resolves no collaborator sender; never pass it for confirmed rows.
+     */
+    pendingSender?: CollaboratorSenderAttribution | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -278,6 +289,7 @@
     sessionMetadata,
     workspace = null,
     ownPrincipalId = null,
+    pendingSender = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -451,7 +463,8 @@
   // preamble for collaborators only), so an owner-typed lookalike line stays.
   let collaboratorSender = $derived(
     role === 'user' && !agentAttribution && !automatedWakePresentation
-      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      ? (getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId) ??
+          (pendingSender && isUserAuthoredMetadata(message?.metadata) ? pendingSender : null))
       : null,
   );
   const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));

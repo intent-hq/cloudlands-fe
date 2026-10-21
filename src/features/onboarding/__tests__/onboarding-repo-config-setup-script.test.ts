@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
   return {
     readable,
     dispatch: vi.fn(),
+    preparationDispatch: vi.fn(),
     goto: vi.fn(),
     fetchRepoConfig: vi.fn<(repoPath: string) => Promise<string | null>>(),
     fetchGitHubRepoConfig:
@@ -88,7 +89,6 @@ vi.mock(
     selectWorkspaceInitializerOnboardingFormState: {
       select: () => mocks.persistedOnboardingFormState,
     },
-    selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
   }),
 );
 
@@ -136,6 +136,26 @@ vi.mock('$lib/components/patterns/notify', () => ({
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
   resolveOnboardingModel: mocks.resolveModel,
 }));
+
+vi.mock('$features/onboarding/utils/commit-onboarding-default-model', async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import('$features/onboarding/utils/commit-onboarding-default-model')
+    >();
+  return {
+    ...original,
+    commitOnboardingDefaultModel: (
+      input: Parameters<typeof original.commitOnboardingDefaultModel>[0],
+    ) =>
+      original.commitOnboardingDefaultModel({
+        ...input,
+        dispatch: (action) => {
+          mocks.preparationDispatch(action);
+          input.dispatch(action);
+        },
+      }),
+  };
+});
 
 // Keep the real pure mention parsers (the #4050 regression test asserts
 // mention-derived context references reach the held payload); only the
@@ -211,9 +231,14 @@ import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store as appStore } from '$store/renderer/store';
 import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import {
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreRequested,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -270,8 +295,17 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
 const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
   result.getByTestId(testId).textContent;
 
+interface ObservedAction {
+  type: string;
+  payload?: unknown[];
+  asyncActionType?: string;
+  promise?: Promise<unknown>;
+}
+
 const dispatchedActions = () =>
-  mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
+  [...mocks.dispatch.mock.calls, ...mocks.preparationDispatch.mock.calls].map(
+    ([action]) => action as ObservedAction,
+  );
 
 /**
  * Reset every shared mock (implementation AND call history — clearAllMocks
@@ -319,8 +353,10 @@ const SETTLE_TIMEOUT_MS = 5000;
  */
 async function settleInFlightCreates() {
   const initializations = dispatchedActions().flatMap((action) => {
-    const promise = (action as { promise?: Promise<unknown> }).promise;
-    return action.type === 'workspaceInitializer/initialization' && promise ? [promise] : [];
+    return action.asyncActionType === 'workspaceInitializer/initializationSubmitted' &&
+      action.promise
+      ? [action.promise]
+      : [];
   });
   if (initializations.length === 0) return;
   const outcomes = await Promise.race([
@@ -345,6 +381,15 @@ async function settleInFlightCreates() {
         const navigated = mocks.goto.mock.calls.filter(([target]) => target === path).length;
         expect(navigated).toBeGreaterThanOrEqual(expected);
       }
+    },
+    { timeout: SETTLE_TIMEOUT_MS },
+  );
+  await waitFor(
+    () => {
+      const released = dispatchedActions().filter(
+        (action) => action.type === 'workspaceInitializer/clearInitializationOutcome',
+      ).length;
+      expect(released).toBeGreaterThanOrEqual(outcomes.length);
     },
     { timeout: SETTLE_TIMEOUT_MS },
   );
@@ -376,6 +421,35 @@ afterEach(async () => {
 });
 
 describe('onboarding repo-config setup script detection', () => {
+  it('re-admits its draft owner after a principal presentation refresh', async () => {
+    renderPage();
+    const restores = () =>
+      dispatchedActions().filter(
+        (
+          action,
+        ): action is ObservedAction & {
+          payload: ReturnType<typeof workspaceInitializerDraftRestoreRequested>['payload'];
+        } => action.type === workspaceInitializerDraftRestoreRequested.type,
+      );
+
+    await waitFor(() => expect(restores()).toHaveLength(1));
+    const first = restores()[0];
+    appStore.dispatch(
+      setLabsMultiplayerEnabled(!appStore.state.userPreferences.labsMultiplayerEnabled),
+    );
+
+    await waitFor(() => expect(restores()).toHaveLength(2));
+    const second = restores()[1];
+    expect(dispatchedActions()).toContainEqual(
+      workspaceInitializerDraftOwnerReleased(first.payload[0], first.payload[1]),
+    );
+    expect(second.payload[0]).toBe(first.payload[0]);
+    expect(second.payload[1]).not.toBe(first.payload[1]);
+    expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
+  });
+
   it('restores the prompt when admission changes during submission preparation', async () => {
     const resolution = Promise.withResolvers<{
       provider: string;
@@ -1923,9 +1997,9 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
 
 describe('onboarding test teardown', () => {
   it('settles a successful create through its completion before the store is disposed', async () => {
-    // A successful create keeps running after workspace.create resolves: up to
-    // two 300ms setup-card beats, then store dispatches and navigation. If
-    // afterEach disposes the store first, those late dispatches throw
+    // A successful create keeps running after workspace.create resolves: domain
+    // completion is immediate, while navigation waits up to two 300ms setup-card
+    // beats. If afterEach disposes the store first, late presentation work throws
     // "Cannot access Store.dispatch before Store.init()" as an unhandled error
     // that fails whichever shard is still running.
     mocks.workspaceCreate.mockResolvedValue({
@@ -1957,9 +2031,7 @@ describe('onboarding test teardown', () => {
 
     await settleInFlightCreates();
 
-    expect(dispatchedActions().filter((a) => a.type === 'onboarding/setWorkspaceId')).toHaveLength(
-      1,
-    );
+    expect(appStore.state.onboarding.workspaceId).toBe('ws-1');
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
   });
 });

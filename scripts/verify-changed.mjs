@@ -566,11 +566,17 @@ function isKnownNonCode(file) {
   );
 }
 
+// `lint:workflows` (actionlint) inputs: the workflows and their lint config.
+function isWorkflowLintInput(file) {
+  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
+}
+
 function isArchitectureSource(file) {
   return (
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
+    isWorkflowLintInput(file) ||
     basename(file) === 'AGENTS.md'
   );
 }

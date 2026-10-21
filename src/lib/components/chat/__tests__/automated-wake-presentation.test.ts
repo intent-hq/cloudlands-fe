@@ -75,3 +75,84 @@ describe('automated wake presentation', () => {
     ).toBeNull();
   });
 });
+
+it('retains qualified MR identity in persisted and queued wake metadata', () => {
+  const metadata = {
+    type: 'pr_monitor_wake',
+    monitorId: 'mr',
+    repo: 'Team/Sub/Repo',
+    prNumber: 42,
+    resource: {
+      repository: {
+        provider: 'gitlab',
+        instanceBaseUrl: 'https://forge.test/install',
+        projectPath: 'Team/Sub/Repo',
+      },
+      kind: 'merge-request',
+      number: 42,
+    },
+  };
+  for (const retained of [false, true]) {
+    const wake = message('Pipeline passed', retained ? undefined : metadata);
+    if (retained)
+      wake.contentBlocks = [{ type: 'text', text: 'Pipeline passed', messageMetadata: metadata }];
+    expect(getAutomatedWakePresentation(wake)).toMatchObject({
+      kind: 'pr',
+      attribution: { resource: metadata.resource },
+      bodyText: 'Pipeline passed',
+    });
+  }
+});
+
+it('does not reinterpret rejected qualified wake metadata through the legacy prefix', () => {
+  expect(
+    getAutomatedWakePresentation(
+      message('[PR monitor Team/Sub/Repo#42] wake', {
+        type: 'pr_monitor_wake',
+        repo: 'Team/Sub/Repo',
+        prNumber: 42,
+        resource: {
+          repository: {
+            provider: 'gitlab',
+            instanceBaseUrl: 'https://forge.test/install',
+            projectPath: 'Team/Sub/Repo',
+          },
+          kind: 'merge-request',
+          number: 43,
+        },
+      }),
+    ),
+  ).toBeNull();
+});
+
+it('uses qualified persisted metadata instead of a same-number legacy row attribution', () => {
+  const wake = message('Pipeline passed', {
+    type: 'pr_monitor_wake',
+    repo: 'Team/Sub/Repo',
+    prNumber: 42,
+  });
+  wake.contentBlocks = [
+    {
+      type: 'text',
+      text: 'Pipeline passed',
+      messageMetadata: {
+        type: 'pr_monitor_wake',
+        repo: 'Team/Sub/Repo',
+        prNumber: 42,
+        resource: {
+          repository: {
+            provider: 'gitlab',
+            instanceBaseUrl: 'https://forge.test/install',
+            projectPath: 'Team/Sub/Repo',
+          },
+          kind: 'merge-request',
+          number: 42,
+        },
+      },
+    },
+  ];
+  expect(getAutomatedWakePresentation(wake)).toMatchObject({
+    kind: 'pr',
+    attribution: { resource: { repository: { provider: 'gitlab' } } },
+  });
+});

@@ -133,7 +133,7 @@ corepack pnpm run test:playwright
 
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
-(`vitest.config.ts` raises it to 60 s on CI) or the documented per-test budget.
+(`vitest.config.ts` raises it to 60 s on CI, from `scripts/vitest-timeouts.mjs`) or the documented per-test budget; catalog contract entries derive theirs from their snapshot size (`src/lib/component-catalog/catalog-contract-budget.ts`).
 `intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
 `performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
 names the alternatives; today's offenders are baselined under
@@ -709,8 +709,10 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   original archives survive reporting errors; rerun that workflow after correcting
   auth/API failures. Python 3 reads bounded ZIP members without extracting files.
   Writers use GitHub's `concurrency.queue: max` to retain pending completions;
-  actionlint 1.7.12 needs only its unknown-`queue` syntax diagnostic ignored until
-  it supports this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+  `.github/actionlint.yaml` ignores only actionlint's unknown-`queue` diagnostic for
+  this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+  `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned actionlint
+  with shellcheck over every workflow; add path-scoped ignores with a reason there.
   Quarantined CT tests still run as an advisory step on shard 1 and must carry an
   open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;

@@ -171,9 +171,18 @@
       ),
       'pr-queued': scenario(
         'PR — queued',
-        'Hourglass icon + Queued badge in the info tone for a PR in the merge queue.',
+        'Hourglass icon + Queued badge in the info tone, plus the queue position and time-to-merge estimate.',
         `${REPO_URL}/pull/${mockGitHubPullRequestQueued.number}`,
         mock,
+      ),
+      'pr-queued-no-estimate': scenario(
+        'PR — queued, no estimate yet',
+        'Queue position alone while GitHub has not produced a time-to-merge estimate.',
+        `${REPO_URL}/pull/${mockGitHubPullRequestQueued.number}`,
+        prClient({
+          ...mockGitHubPullRequestQueued,
+          mergeQueue: { position: 1, queueSize: 1, state: 'awaiting_checks' },
+        }),
       ),
       'pr-draft': scenario(
         'PR — draft',

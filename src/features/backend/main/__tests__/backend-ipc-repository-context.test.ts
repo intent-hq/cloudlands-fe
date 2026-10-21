@@ -256,3 +256,41 @@ describe('production repository IPC chain with controlled socket I/O', () => {
       ).resolves.toMatchObject({ ok: false });
   });
 });
+
+describe('production monitor IPC registration', () => {
+  it('retires monitor sessions on re-hello and signals only the original backend to re-seed', async () => {
+    const { a, b, remote } = await setup();
+    const monitor = IPC_CHANNELS.BACKEND.PR_MONITOR;
+    const capture = await call(monitor.CAPTURE, a.event, { workspaceId: 'equal-id' });
+    expect(capture).toMatchObject({
+      ok: true,
+      result: { origin: { backendId: 'host-A', workspaceId: 'equal-id' }, support: 'unsupported' },
+    });
+    a.sender.send.mockClear();
+    b.sender.send.mockClear();
+    await remote.request('client.hello', {});
+    expect(a.sender.mainFrame.send).toHaveBeenCalledWith(monitor.RETIRED, {
+      id: capture.result.origin.sessionId,
+    });
+    expect(a.sender.send).toHaveBeenCalledWith(monitor.READY, {});
+    expect(b.sender.send.mock.calls.filter(([channel]) => channel === monitor.READY)).toEqual([]);
+    await expect(
+      call(monitor.REQUEST, a.event, {
+        id: capture.result.origin.sessionId,
+        workspaceId: 'equal-id',
+        method: 'prMonitor.cancel',
+        params: { workspaceId: 'equal-id', monitorId: 'm' },
+      }),
+    ).resolves.toMatchObject({ ok: false });
+    const replacement = await call(monitor.CAPTURE, a.event, { workspaceId: 'equal-id' });
+    expect(replacement.result.origin.sessionId).not.toBe(capture.result.origin.sessionId);
+    const socket = data.sockets.find((s) => s.name === 'host-A');
+    expect(
+      socket.writes.filter((request: { method: string }) => request.method === 'prMonitor.cancel'),
+    ).toEqual([]);
+    await call(monitor.RELEASE, a.event, {
+      id: replacement.result.origin.sessionId,
+      workspaceId: 'equal-id',
+    });
+  });
+});
