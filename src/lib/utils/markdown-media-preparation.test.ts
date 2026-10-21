@@ -93,3 +93,46 @@ describe('Markdown media stays inert throughout preparation', () => {
     });
   }
 });
+
+describe('chat workspace-relative images', () => {
+  it.each([
+    ['artifacts/plot.png', 'artifacts/plot.png'],
+    ['./.intent/artifacts/plot%20one.png', '.intent/artifacts/plot%20one.png'],
+  ])('resolves %s from the owning workspace', async (source, path) => {
+    const view = render(MarkdownViewer, {
+      content: `![chart](${source})`,
+      workspaceId: 'owning-workspace',
+    });
+    await waitFor(() =>
+      expect(view.container.querySelector('img')?.getAttribute('src')).toMatch(
+        new RegExp(`^workspace-file://owning-workspace/${path.replaceAll('.', '\\.')}\\?v=`),
+      ),
+    );
+  });
+
+  it('retains the explicit document directory', async () => {
+    const view = render(MarkdownViewer, {
+      content: '![chart](../images/plot.png)',
+      workspaceId: 'owning-workspace',
+      relativeMediaBase: 'docs/pages',
+    });
+    await waitFor(() =>
+      expect(view.container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/owning-workspace\/docs\/images\/plot.png\?v=/,
+      ),
+    );
+  });
+
+  it('does not load relative workspace media without file authority', async () => {
+    const view = render(MarkdownViewer, {
+      content: '![chart](artifacts/plot.png)',
+      workspaceId: 'owning-workspace',
+      allowFileMedia: false,
+    });
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-testid="media-unavailable"]')).not.toBeNull(),
+    );
+    expect(view.container.querySelector('img[src]')).toBeNull();
+    expect(activeMediaParses).toEqual([]);
+  });
+});

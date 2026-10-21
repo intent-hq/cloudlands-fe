@@ -190,13 +190,15 @@
 {/if}
 
 <style>
-  .reasoning-expanded-body :global(.markdown-viewer) {
+  .reasoning-expanded-body :global(.markdown-viewer),
+  .reasoning-expanded-body :global(.markdown-content) {
     display: flex;
     flex-direction: column;
     row-gap: 0.5rem;
   }
 
-  .reasoning-expanded-body :global(.markdown-viewer > *) {
+  .reasoning-expanded-body :global(.markdown-viewer > *),
+  .reasoning-expanded-body :global(.markdown-content > *) {
     margin-block: 0 !important;
   }
 

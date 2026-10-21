@@ -17761,15 +17761,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                             <div class="gap-4 grid grid-cols-1 min-w-0">
                               <div class="min-w-0 release-notes-body svelte-<scope>">
                                 <div class="markdown-viewer static-content svelte-<scope>" role="group">
-                                  <h2>
-                                    "Highlights"
-                                  <ul>
-                                    <li>
-                                      <p>
-                                        "Refined modal compositions"
-                                    <li>
-                                      <p>
-                                        "Improved keyboard navigation"
+                                  <div class="markdown-content">
+                                    <h2>
+                                      "Highlights"
+                                    <ul>
+                                      <li>
+                                        <p>
+                                          "Refined modal compositions"
+                                      <li>
+                                        <p>
+                                          "Improved keyboard navigation"
                           <div class="dialog-actions flex flex-wrap gap-2 items-center justify-end m-0 min-w-0 pb-6 px-6 shrink-0 svelte-<scope>" data-slot="dialog-footer">
                             <div>
                               <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
@@ -20353,39 +20354,43 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                       "Media unavailable · missing"
                     <div class="preview-frame svelte-<scope>" data-preview-width="full">
                       <div class="p-4">
-                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="missing" data-testid="media-unavailable" role="status">
-                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="regular" role="img">
-                            <rect>
-                            <path>
-                          <span class="flex-1 min-w-0">
-                            <span class="block font-medium text-foreground truncate type-caption">
-                              "architecture.png"
-                            <span class="block type-caption">
-                              "File is missing."
+                        <div class="flex gap-3 items-center max-w-full min-w-0 py-1 text-muted-foreground type-caption w-fit whitespace-normal" data-reason="missing" data-testid="media-unavailable" role="status">
+                          <span class="flex flex-1 gap-2 items-start max-w-full min-w-0">
+                            <span aria-hidden="true" class="first-line-icon">
+                              <svg aria-hidden="true" class="size-3.5" data-icon="image" data-weight="regular" role="img">
+                                <rect>
+                                <path>
+                            <span class="min-w-0">
+                              <span class="block text-foreground truncate">
+                                "architecture.png"
+                              <span class="block break-words">
+                                "File is missing."
                   <article aria-labelledby="media-unavailable-actions-320-label" class="preview-cell svelte-<scope>" data-screen-preview="media-unavailable-actions-320">
                     <h4 class="preview-label svelte-<scope>" id="media-unavailable-actions-320-label">
                       "Media unavailable · actions · 320 px"
                     <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
                       <div class="p-4">
-                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="unsupported" data-testid="media-unavailable" role="status">
-                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="regular" role="img">
-                            <rect>
-                            <path>
-                          <span class="flex-1 min-w-0">
-                            <span class="block font-medium text-foreground truncate type-caption">
-                              "recording.webm"
-                            <span class="block type-caption">
-                              "This file type is not supported."
-                          <span class="flex gap-1 items-center shrink-0">
-                            <div>
-                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-6 hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                                <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg aria-hidden="true" data-icon="copy" data-weight="regular" role="img">
-                                      <rect>
-                                      <path>
-                                    "Copy path"
+                        <div class="flex gap-3 items-center max-w-full min-w-0 py-1 text-muted-foreground type-caption w-fit whitespace-normal" data-reason="unsupported" data-testid="media-unavailable" role="status">
+                          <span class="flex flex-1 gap-2 items-start max-w-full min-w-0">
+                            <span aria-hidden="true" class="first-line-icon">
+                              <svg aria-hidden="true" class="size-3.5" data-icon="image" data-weight="regular" role="img">
+                                <rect>
+                                <path>
+                            <span class="min-w-0">
+                              <span class="block text-foreground truncate">
+                                "recording.webm"
+                              <span class="block break-words">
+                                "This file type is not supported."
+                          <span class="flex flex-wrap gap-1 items-center shrink-0">
+                            <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                              <div>
+                                <button aria-label="Copy path" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                                  <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      <svg aria-hidden="true" data-icon="copy" data-weight="regular" role="img">
+                                        <rect>
+                                        <path>
                   <article aria-labelledby="notify-error-toast-static-label" class="preview-cell svelte-<scope>" data-screen-preview="notify-error-toast-static">
                     <h4 class="preview-label svelte-<scope>" id="notify-error-toast-static-label">
                       "NotifyErrorToast · static"
